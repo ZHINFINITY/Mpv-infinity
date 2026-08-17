@@ -5282,7 +5282,8 @@ class PlayerActivity :
         service: IBinder?,
       ) {
         val binder = service as? MediaPlaybackService.MediaPlaybackBinder ?: return
-        mediaPlaybackService = binder.getService()
+        val connectedService = binder.getService() ?: return
+        mediaPlaybackService = connectedService
         serviceBound = true
         Log.d(TAG, "Service connected")
         syncBackgroundPlaybackService(updateThumbnail = true)

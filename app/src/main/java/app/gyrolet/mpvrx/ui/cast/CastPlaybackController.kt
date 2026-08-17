@@ -33,7 +33,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.lang.ref.WeakReference
 
 data class CastMediaSnapshot(
   val source: Uri,
@@ -45,12 +47,18 @@ data class CastMediaSnapshot(
 )
 
 class CastPlaybackController(
-  private val activity: AppCompatActivity,
-  private val currentMedia: () -> CastMediaSnapshot?,
-  private val pauseLocal: () -> Unit,
-  private val restoreLocal: (positionMs: Long, play: Boolean) -> Unit,
-  private val notifyUser: (String) -> Unit,
+  activity: AppCompatActivity,
+  currentMedia: () -> CastMediaSnapshot?,
+  pauseLocal: () -> Unit,
+  restoreLocal: (positionMs: Long, play: Boolean) -> Unit,
+  notifyUser: (String) -> Unit,
 ) {
+  private val activityReference = WeakReference(activity)
+  private var currentMedia: (() -> CastMediaSnapshot?)? = currentMedia
+  private var pauseLocal: (() -> Unit)? = pauseLocal
+  private var restoreLocal: ((positionMs: Long, play: Boolean) -> Unit)? = restoreLocal
+  private var notifyUser: ((String) -> Unit)? = notifyUser
+
   init {
     instance = this
   }
@@ -89,8 +97,8 @@ class CastPlaybackController(
         val remote = session.remoteMediaClient
         if (remote?.mediaInfo != null) {
           transferredByThisController = true
-          localWasPlaying = currentMedia()?.isPlaying == true
-          pauseLocal()
+          localWasPlaying = currentMedia?.invoke()?.isPlaying == true
+          pauseLocal?.invoke()
           startPositionPolling()
         } else {
           loadCurrentMedia(session)
@@ -112,7 +120,7 @@ class CastPlaybackController(
         CastMediaServer.stop()
         stopPositionPolling()
         if (transferredByThisController) {
-          restoreLocal(
+          restoreLocal?.invoke(
             lastRemotePositionMs,
             if (capturedRemoteEndState) remoteWasPlaying else localWasPlaying,
           )
@@ -129,7 +137,7 @@ class CastPlaybackController(
         error: Int,
       ) {
         CastMediaServer.stop()
-        notifyUser("Could not connect to Cast device")
+        notifyUser?.invoke("Could not connect to Cast device")
       }
 
       override fun onSessionResumeFailed(
@@ -176,6 +184,7 @@ class CastPlaybackController(
   fun start() {
     released = false
     try {
+      val activity = activityReference.get() ?: return
       CastContext
         .getSharedInstance(activity.applicationContext, ContextCompat.getMainExecutor(activity))
         .addOnSuccessListener { context ->
@@ -197,6 +206,7 @@ class CastPlaybackController(
     released = true
     stopPositionPolling()
     volumeDebounceJob?.cancel()
+    scope.cancel()
     val context = castContext
     castContext = null
     remoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
@@ -206,6 +216,12 @@ class CastPlaybackController(
     if (context?.sessionManager?.currentCastSession?.isConnected != true) {
       CastMediaServer.stop()
     }
+    currentMedia = null
+    pauseLocal = null
+    restoreLocal = null
+    notifyUser = null
+    activityReference.clear()
+    if (instance === this) instance = null
   }
 
   fun play() {
@@ -261,20 +277,21 @@ class CastPlaybackController(
   }
 
   fun openRemoteController() {
+    val activity = activityReference.get() ?: return
     activity.startActivity(Intent(activity, CastRemoteControllerActivity::class.java))
   }
 
   private fun loadCurrentMedia(session: CastSession) {
-    val snapshot = currentMedia()
+    val snapshot = currentMedia?.invoke()
     if (snapshot == null) {
-      notifyUser("Media is not ready to cast")
+      notifyUser?.invoke("Media is not ready to cast")
       castContext?.sessionManager?.endCurrentSession(true)
       return
     }
 
     val contentUrl = resolveContentUrl(snapshot)
     if (contentUrl == null) {
-      notifyUser("This media source cannot be reached by the Cast device")
+      notifyUser?.invoke("This media source cannot be reached by the Cast device")
       castContext?.sessionManager?.endCurrentSession(true)
       return
     }
@@ -308,12 +325,12 @@ class CastPlaybackController(
         .build()
     val remote =
       session.remoteMediaClient ?: run {
-        notifyUser("Cast receiver is not ready")
+        notifyUser?.invoke("Cast receiver is not ready")
         return
       }
 
     remote.load(request).setResultCallback { result ->
-      activity.runOnUiThread {
+      activityReference.get()?.runOnUiThread {
         if (result.status.isSuccess) {
           localWasPlaying = snapshot.isPlaying
           lastRemotePositionMs = snapshot.positionMs
@@ -327,12 +344,12 @@ class CastPlaybackController(
               currentPosition = snapshot.positionMs.coerceAtLeast(0L),
             )
           }
-          pauseLocal()
+          pauseLocal?.invoke()
           startPositionPolling()
           openRemoteController()
         } else {
           CastMediaServer.stop()
-          notifyUser(result.status.statusMessage ?: "Unable to play this media on the Cast device")
+          notifyUser?.invoke(result.status.statusMessage ?: "Unable to play this media on the Cast device")
         }
       }
     }
@@ -400,6 +417,7 @@ class CastPlaybackController(
       return null
     }
     if (scheme == "content" || scheme == "file") {
+      val activity = activityReference.get() ?: return null
       return CastMediaServer.expose(
         context = activity,
         source = snapshot.source,
@@ -410,7 +428,7 @@ class CastPlaybackController(
   }
 
   private fun inferMimeType(uri: Uri): String {
-    activity.contentResolver.getType(uri)?.let { return it }
+    activityReference.get()?.contentResolver?.getType(uri)?.let { return it }
     val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
     return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.lowercase()) ?: "video/mp4"
   }
