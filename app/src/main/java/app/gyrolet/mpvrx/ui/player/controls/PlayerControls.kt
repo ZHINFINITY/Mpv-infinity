@@ -121,6 +121,7 @@ import app.gyrolet.mpvrx.preferences.preference.minusAssign
 import app.gyrolet.mpvrx.preferences.preference.plusAssign
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.Decoder
 import app.gyrolet.mpvrx.ui.player.Decoder.Companion.getDecoderFromValue
 import app.gyrolet.mpvrx.ui.player.Panels
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
