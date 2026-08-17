@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.media3.common.C
-import androidx.media3.common.DecoderReuseEvaluation
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
