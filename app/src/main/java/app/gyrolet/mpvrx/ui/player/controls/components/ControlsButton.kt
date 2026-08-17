@@ -55,7 +55,7 @@ fun ControlsButton(
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
 
   val clickEvent = LocalPlayerButtonsClickEvent.current
-  Surface(
+  PlayerGlassSurface(
     modifier =
       modifier
         .clip(CircleShape)
@@ -69,19 +69,8 @@ fun ControlsButton(
           indication = ripple(),
         ),
     shape = CircleShape,
-    color = if (hideBackground) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
+    hideBackground = hideBackground,
     contentColor = color ?: MaterialTheme.colorScheme.onSurface,
-    tonalElevation = 0.dp,
-    shadowElevation = 0.dp,
-    border =
-      if (hideBackground) {
-        null
-      } else {
-        BorderStroke(
-          1.dp,
-          MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-        )
-      },
   ) {
     Icon(
       imageVector = icon,
@@ -98,18 +87,26 @@ fun ControlsButton(
 @Composable
 fun ControlsGroup(
   modifier: Modifier = Modifier,
+  hideBackground: Boolean = false,
   content: @Composable RowScope.() -> Unit,
 ) {
   val spacing = MaterialTheme.spacing
 
-  Row(
+  PlayerGlassSurface(
     modifier = modifier,
-    verticalAlignment = Alignment.CenterVertically,
+    shape = CircleShape,
+    hideBackground = hideBackground,
+    contentColor = MaterialTheme.colorScheme.onSurface,
+  ) {
+    Row(
+      modifier = androidx.compose.ui.Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+      verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement =
       androidx.compose.foundation.layout.Arrangement
         .spacedBy(spacing.extraSmall),
-    content = content,
-  )
+      content = content,
+    )
+  }
 }
 
 @Preview

@@ -1546,8 +1546,17 @@ fun PlayerControls(
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
 
-            SeekbarWithTimers(
-              position = displayedSeekbarPosition,
+            PlayerGlassSurface(
+              modifier =
+                Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 4.dp, vertical = 2.dp),
+              shape = RoundedCornerShape(26.dp),
+              hideBackground = hideBackground,
+              contentColor = Color.White,
+            ) {
+              SeekbarWithTimers(
+                position = displayedSeekbarPosition,
               committedPosition = precisePosition,
               duration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f,
               onValueChangeStarted = {
@@ -1589,8 +1598,10 @@ fun PlayerControls(
               loopStart = abLoopA?.toFloat(),
               loopEnd = abLoopB?.toFloat(),
               bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
-              isPortrait = isPortrait,
-            )
+                isPortrait = isPortrait,
+                applyHorizontalPadding = false,
+              )
+            }
           }
 
           val seekPreviewChapterTitle =
