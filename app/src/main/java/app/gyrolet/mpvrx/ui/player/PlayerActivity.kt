@@ -1439,7 +1439,11 @@ class PlayerActivity :
     media3ItemId = item.stableId
     media3VideoFrameRendered = false
     media3VideoWatchdogJob?.cancel()
-    binding.player.visibility = View.INVISIBLE
+    // MPVView is backed by a native SurfaceView. It must be GONE, not merely INVISIBLE, while
+    // Media3 uses its TextureView; otherwise the old SurfaceView can keep a black surface above
+    // the Media3 view on OEM compositors. MPV's surface callbacks unbind it and rebind it when
+    // visibility is restored.
+    binding.player.visibility = View.GONE
     binding.media3Player.visibility = View.VISIBLE
     // MPV remains initialized for advanced playback, but it must not render or continue audio
     // while Media3 owns this item.
