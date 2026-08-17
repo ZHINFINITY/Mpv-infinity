@@ -61,6 +61,7 @@ import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
@@ -409,6 +410,7 @@ class PlayerActivity :
   private var media3ItemId: String? = null
   private var media3VideoFrameRendered = false
   private var media3VideoWatchdogJob: Job? = null
+  private var media3Attached = false
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
   private var savePlaybackStateJob: Job? = null // Track ongoing save job
@@ -593,7 +595,8 @@ class PlayerActivity :
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
     setContentView(binding.root)
-    media3PlaybackController.attach(binding.media3Player)
+    // Media3 is attached when its visible PlayerView has completed layout. Attaching while the
+    // view is still GONE can leave a TextureView/decoder surface with zero bounds on some OEMs.
     setupSystemBarsAutoHide()
     setupPipHelper()
 
@@ -1024,6 +1027,42 @@ class PlayerActivity :
     }
   }
 
+  private fun startMedia3PlaybackWhenReady(
+    item: PlaybackItem,
+    resumePositionMs: Long,
+    onStarted: () -> Unit,
+  ) {
+    val playerView = binding.media3Player
+
+    fun startPlayback() {
+      if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId != item.stableId) return
+      if (!media3Attached) {
+        media3PlaybackController.attach(playerView)
+        media3Attached = true
+      }
+      runCatching {
+        media3PlaybackController.play(
+          uri = Uri.parse(item.playableUri),
+          title = item.title,
+          headers = item.headers,
+          startPositionMs = resumePositionMs,
+          playWhenReady = true,
+        )
+      }.onSuccess {
+        onStarted()
+      }.onFailure { error ->
+        Log.e(TAG, "Media3 could not start playback; falling back to MPV", error)
+        switchToMpvEngine()
+      }
+    }
+
+    if (playerView.width > 0 && playerView.height > 0) {
+      startPlayback()
+    } else {
+      playerView.doOnLayout { startPlayback() }
+    }
+  }
+
   private fun setupAudioPlayerViewObserver() {
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -1402,34 +1441,22 @@ class PlayerActivity :
       PlaybackSession.setPropertyBoolean("pause", true)
       PlaybackSession.setPropertyString("vid", "no")
     }
-    runCatching {
-      media3PlaybackController.play(
-        uri = Uri.parse(item.playableUri),
-        title = item.title,
-        headers = item.headers,
-        startPositionMs = resumePositionMs,
-        playWhenReady = true,
-      )
-    }.onFailure { error ->
-      Log.e(TAG, "Media3 could not start playback; falling back to MPV", error)
-      switchToMpvEngine()
-      return
-    }
-
-    // Dolby Vision routing must not leave the user with audio and a permanently blank video surface.
-    // Some Dolby Vision profiles are accepted by Media3’s audio pipeline but never produce a
-    // rendered video frame on a particular device decoder. Give the renderer time to initialize,
-    // then return to MPV, which is known to render this device’s file correctly.
-    if (isDolbyVisionItem(item)) {
-      media3VideoWatchdogJob = lifecycleScope.launch {
-        delay(10_000L)
-        if (
-          playbackEngine == PlaybackEngine.MEDIA3 &&
-            media3ItemId == item.stableId &&
-            !media3VideoFrameRendered
-        ) {
-          Log.w(TAG, "Media3 produced no video frame; falling back to MPV")
-          switchToMpvEngine()
+    startMedia3PlaybackWhenReady(item, resumePositionMs) {
+      // Dolby Vision routing must not leave the user with audio and a permanently blank video
+      // surface. Some profiles are accepted by Media3’s audio pipeline but never produce a
+      // rendered video frame on a particular device decoder. Give the renderer time to initialize,
+      // then return to MPV, which is known to render this device’s file correctly.
+      if (isDolbyVisionItem(item)) {
+        media3VideoWatchdogJob = lifecycleScope.launch {
+          delay(10_000L)
+          if (
+            playbackEngine == PlaybackEngine.MEDIA3 &&
+              media3ItemId == item.stableId &&
+              !media3VideoFrameRendered
+          ) {
+            Log.w(TAG, "Media3 produced no video frame; falling back to MPV")
+            switchToMpvEngine()
+          }
         }
       }
     }

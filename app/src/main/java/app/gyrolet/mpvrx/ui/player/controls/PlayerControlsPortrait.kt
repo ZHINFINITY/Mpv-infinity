@@ -217,6 +217,18 @@ fun BottomPlayerControlsPortrait(
   viewModel: PlayerViewModel,
   activity: PlayerActivity,
 ) {
+  val compactButtons =
+    remember(buttons) {
+      val preferredButtons =
+        listOf(
+          PlayerButton.SUBTITLES,
+          PlayerButton.VIDEO_ZOOM,
+          PlayerButton.SCREEN_ROTATION,
+          PlayerButton.MORE_OPTIONS,
+        )
+      preferredButtons.filter { it in buttons }.ifEmpty { buttons.take(4) }
+    }
+
   FlowRow(
     modifier =
       Modifier
@@ -224,13 +236,13 @@ fun BottomPlayerControlsPortrait(
         .padding(
           start = MaterialTheme.spacing.small,
           end = MaterialTheme.spacing.small,
-          bottom = MaterialTheme.spacing.medium,
+          bottom = MaterialTheme.spacing.small,
         ),
-    maxItemsInEachRow = 5,
-    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
-    verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+    maxItemsInEachRow = 4,
+    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small, Alignment.CenterHorizontally),
+    verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
   ) {
-    buttons.forEach { button ->
+    compactButtons.forEach { button ->
       RenderPlayerButton(
         button = button,
         chapters = chapters,
@@ -248,7 +260,7 @@ fun BottomPlayerControlsPortrait(
         activity = activity,
         decoder = decoder,
         playbackSpeed = playbackSpeed,
-        buttonSize = 44.dp, // Slightly more compact size
+        buttonSize = 42.dp,
       )
     }
   }
