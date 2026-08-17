@@ -48,6 +48,7 @@ import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoAspect
 import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
 import app.gyrolet.mpvrx.ui.player.controls.components.ControlsGroup
+import app.gyrolet.mpvrx.ui.player.controls.components.PlayerGlassSurface
 import app.gyrolet.mpvrx.ui.theme.controlColor
 import app.gyrolet.mpvrx.ui.theme.spacing
 import dev.vivvvek.seeker.Segment
@@ -79,7 +80,7 @@ fun TopPlayerControlsPortrait(
     Row(
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      ControlsGroup {
+      ControlsGroup(hideBackground = hideBackground) {
         ControlsButton(
           icon = Icons.RoundedFilled.ArrowBack,
           onClick = onBackPress,
@@ -90,38 +91,21 @@ fun TopPlayerControlsPortrait(
         Column(
           modifier = Modifier.padding(start = 4.dp),
         ) {
-          val titleInteractionSource =
-            remember {
-              androidx.compose.foundation.interaction
-                .MutableInteractionSource()
-            }
-
-          Surface(
+          PlayerGlassSurface(
             shape = CircleShape,
-            color =
-              if (hideBackground) {
-                Color.Transparent
-              } else {
-                MaterialTheme.colorScheme.surfaceContainer.copy(
-                  alpha = 0.55f,
-                )
-              },
+            hideBackground = hideBackground,
             contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-            onClick = {
-              clickEvent()
-              onOpenSheet(Sheets.Playlist)
-            },
-            enabled = playlistModeEnabled,
-            border =
-              if (hideBackground) {
-                null
-              } else {
-                BorderStroke(
-                  1.dp,
-                  MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                )
-              },
-            modifier = Modifier.height(45.dp),
+            modifier =
+              Modifier
+                .height(45.dp)
+                .clip(CircleShape)
+                .clickable(
+                  enabled = playlistModeEnabled,
+                  onClick = {
+                    clickEvent()
+                    onOpenSheet(Sheets.Playlist)
+                  },
+                ),
           ) {
             Row(
               verticalAlignment = Alignment.CenterVertically,

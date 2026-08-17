@@ -49,6 +49,7 @@ import app.gyrolet.mpvrx.ui.player.VideoFormatStatusRow
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoAspect
 import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
+import app.gyrolet.mpvrx.ui.player.controls.components.PlayerGlassSurface
 import app.gyrolet.mpvrx.ui.theme.controlColor
 import app.gyrolet.mpvrx.ui.theme.spacing
 import dev.vivvvek.seeker.Segment
@@ -85,16 +86,15 @@ fun TopLeftPlayerControlsLandscape(
       )
 
       Column {
-        val titleInteractionSource = remember { MutableInteractionSource() }
-
-        Box(
+        PlayerGlassSurface(
+          shape = CircleShape,
+          hideBackground = hideBackground,
+          contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
           modifier =
             Modifier
               .height(45.dp)
               .clip(CircleShape)
               .clickable(
-                interactionSource = titleInteractionSource,
-                indication = ripple(bounded = true),
                 enabled = playlistModeEnabled,
                 onClick = {
                   clickEvent()
@@ -102,29 +102,6 @@ fun TopLeftPlayerControlsLandscape(
                 },
               ),
         ) {
-          Surface(
-            shape = CircleShape,
-            color =
-              if (hideBackground) {
-                Color.Transparent
-              } else {
-                MaterialTheme.colorScheme.surfaceContainer.copy(
-                  alpha = 0.55f,
-                )
-              },
-            contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-            border =
-              if (hideBackground) {
-                null
-              } else {
-                BorderStroke(
-                  1.dp,
-                  MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                )
-              },
-          ) {
             Row(
               verticalAlignment = Alignment.CenterVertically,
               modifier =
