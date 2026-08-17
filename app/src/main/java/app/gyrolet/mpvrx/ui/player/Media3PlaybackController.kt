@@ -8,6 +8,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
@@ -23,6 +24,7 @@ class Media3PlaybackController(
   context: Context,
   private val onStateChanged: (State) -> Unit = {},
   private val onError: (PlaybackException) -> Unit = {},
+  private val onVideoFrameRendered: () -> Unit = {},
 ) : Player.Listener {
   data class State(
     val playbackState: Int = Player.STATE_IDLE,
@@ -40,8 +42,9 @@ class Media3PlaybackController(
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
+    val renderersFactory = DefaultRenderersFactory(appContext).setEnableDecoderFallback(true)
     player =
-      ExoPlayer.Builder(appContext)
+      ExoPlayer.Builder(appContext, renderersFactory)
         .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
         .build()
         .also { it.addListener(this) }
@@ -129,6 +132,10 @@ class Media3PlaybackController(
   override fun onPlayerError(error: PlaybackException) {
     onError(error)
     publishState()
+  }
+
+  override fun onRenderedFirstFrame() {
+    onVideoFrameRendered()
   }
 
   private fun mediaItem(

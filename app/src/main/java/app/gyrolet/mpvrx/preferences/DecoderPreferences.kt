@@ -24,11 +24,22 @@ enum class PlaybackEngineMode(
   Media3("Media3", "Always use the Media3 playback engine when supported"),
 }
 
+enum class MPVDecoderMode(
+  val displayName: String,
+  val value: String,
+) {
+  Auto("Auto", "auto"),
+  SW("Software", "no"),
+  HW("HW", "mediacodec-copy"),
+  HWPlus("HW+", "mediacodec"),
+}
+
 class DecoderPreferences(
   preferenceStore: PreferenceStore,
 ) {
   val profile = preferenceStore.getString("mpv_profile", "fast")
   val playbackEngine = preferenceStore.getEnum("playback_engine", PlaybackEngineMode.Auto)
+  val mpvDecoderMode = preferenceStore.getEnum("mpv_decoder_mode", MPVDecoderMode.Auto)
   val tryHWDecoding = preferenceStore.getBoolean("try_hw_dec", true)
   val gpuNext = preferenceStore.getBoolean("gpu_next")
   val useVulkan = preferenceStore.getBoolean("use_vulkan", false)
