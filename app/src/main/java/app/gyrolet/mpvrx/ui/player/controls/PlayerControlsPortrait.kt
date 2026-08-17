@@ -42,6 +42,8 @@ import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.Panels
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
+import app.gyrolet.mpvrx.ui.player.VideoFormatStatus
+import app.gyrolet.mpvrx.ui.player.VideoFormatStatusRow
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoAspect
 import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
@@ -62,6 +64,7 @@ fun TopPlayerControlsPortrait(
   realtimeSubsLanguage: String = "",
   translationStatus: String = "",
   translatingTrackName: String = "",
+  videoFormatStatus: VideoFormatStatus? = null,
 ) {
   val playlistModeEnabled = viewModel.hasPlaylistSupport()
   val clickEvent = LocalPlayerButtonsClickEvent.current
@@ -144,6 +147,11 @@ fun TopPlayerControlsPortrait(
         }
       }
     }
+
+    VideoFormatStatusRow(
+      status = videoFormatStatus,
+      modifier = Modifier.padding(start = 14.dp, top = 8.dp),
+    )
 
     androidx.compose.animation.AnimatedVisibility(
       visible = isTranslatingSub || isRealtimeSubsActive,

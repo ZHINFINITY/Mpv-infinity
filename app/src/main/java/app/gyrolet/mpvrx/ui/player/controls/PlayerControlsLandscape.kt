@@ -44,6 +44,8 @@ import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.Panels
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
+import app.gyrolet.mpvrx.ui.player.VideoFormatStatus
+import app.gyrolet.mpvrx.ui.player.VideoFormatStatusRow
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoAspect
 import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
@@ -63,6 +65,7 @@ fun TopLeftPlayerControlsLandscape(
   realtimeSubsLanguage: String = "",
   translationStatus: String = "",
   translatingTrackName: String = "",
+  videoFormatStatus: VideoFormatStatus? = null,
 ) {
   val playlistModeEnabled = viewModel.hasPlaylistSupport()
   val clickEvent = LocalPlayerButtonsClickEvent.current
@@ -153,6 +156,11 @@ fun TopLeftPlayerControlsLandscape(
         }
       }
     }
+
+    VideoFormatStatusRow(
+      status = videoFormatStatus,
+      modifier = Modifier.padding(start = MaterialTheme.spacing.medium, top = 8.dp),
+    )
 
     val syncplayManager = org.koin.compose.koinInject<app.gyrolet.mpvrx.domain.syncplay.SyncplayManager>()
     val syncplayState by syncplayManager.state.collectAsState()
