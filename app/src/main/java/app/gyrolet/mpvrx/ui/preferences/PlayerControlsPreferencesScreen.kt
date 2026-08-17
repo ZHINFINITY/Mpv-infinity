@@ -265,6 +265,7 @@ object PlayerControlsPreferencesScreen : Screen {
           item {
             val hidePlayerButtonsBackground by appearancePrefs.hidePlayerButtonsBackground.collectAsState()
             val playerControlsStyle by appearancePrefs.playerControlsStyle.collectAsState()
+            val showSeekbarContainer by appearancePrefs.showSeekbarContainer.collectAsState()
             val portraitPlaybackControlsPosition by
               appearancePrefs.portraitPlaybackControlsPosition.collectAsState()
             val playerTimeToDisappear by playerPrefs.playerTimeToDisappear.collectAsState()
@@ -293,6 +294,16 @@ object PlayerControlsPreferencesScreen : Screen {
                       ) + " · " + playerControlsStyle.displayName,
                   )
                 },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_show_seekbar_container_title),
+                value = showSeekbarContainer,
+                onValueChange = { appearancePrefs.showSeekbarContainer.set(it) },
+                title = { Text(stringResource(R.string.pref_appearance_show_seekbar_container_title)) },
+                summary = { Text(stringResource(R.string.pref_appearance_show_seekbar_container_summary)) },
               )
 
               PreferenceDivider()

@@ -89,6 +89,7 @@ import app.gyrolet.mpvrx.preferences.AudioPlayerOrientation
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
+import app.gyrolet.mpvrx.preferences.PlaybackEngineMode
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
 import app.gyrolet.mpvrx.preferences.VideoSortType
@@ -608,6 +609,7 @@ class PlayerActivity :
     setupAudioPlayerViewObserver()
     setupMediaSession()
     observePlaybackSessionQueue()
+    observeAutomaticDolbyVisionEngine()
     // Note: screenStateReceiver is now registered in onStart() and
     // unregistered in onStop(), matching the noisyReceiver pattern.
     // Previously it was registered here in onCreate and stayed registered
@@ -1316,20 +1318,55 @@ class PlayerActivity :
     }
   }
 
+  private fun isDolbyVisionItem(item: PlaybackItem): Boolean {
+    val searchable = listOf(item.mimeType, item.title, item.originalUri, item.playableUri)
+      .filterNotNull()
+      .joinToString(" ")
+      .lowercase()
+    return searchable.contains("dolby vision") ||
+      searchable.contains("dolby-vision") ||
+      searchable.contains("dovi") ||
+      Regex("\\bdv(?:he|h1)\\.?(?:[0-9]{2})?").containsMatchIn(searchable)
+  }
+
+  private fun isDolbyVisionTrack(track: TrackNode): Boolean {
+    val searchable = listOf(track.codec, track.codecDesc, track.codecProfile, track.formatName)
+      .filterNotNull()
+      .joinToString(" ")
+      .lowercase()
+    val metadata = track.metadata?.values?.joinToString(" ").orEmpty().lowercase()
+    return track.dolbyVisionProfile != null ||
+      searchable.contains("dolby vision") ||
+      searchable.contains("dolby-vision") ||
+      searchable.contains("dovi") ||
+      Regex("\\bdv(?:he|h1)\\.?(?:[0-9]{2})?").containsMatchIn("$searchable $metadata")
+  }
+
+  private fun isMedia3Stream(item: PlaybackItem): Boolean {
+    val mime = item.mimeType.orEmpty().lowercase()
+    val extension = item.playableUri.substringBefore('?').substringAfterLast('.', "").lowercase()
+    return mime.contains("mpegurl") || mime.contains("dash+xml") || extension in setOf("m3u8", "mpd")
+  }
+
   private fun shouldUseMedia3(item: PlaybackItem): Boolean {
     if (item.originalUri.startsWith("magnet:", ignoreCase = true)) return false
-    val uri = Uri.parse(item.playableUri)
-    val extension = item.playableUri.substringBefore('?').substringAfterLast('.', "").lowercase()
-    val mime = item.mimeType.orEmpty().lowercase()
-    if (mime.startsWith("audio/") || mime.startsWith("video/")) return true
-    return extension in setOf(
-      "mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "webm",
-      "mp4", "m4v", "mov", "3gp", "m3u8", "mpd",
-    ) || uri.scheme in setOf("http", "https", "content", "file") && extension.isBlank()
+    return when (decoderPreferences.playbackEngine.get()) {
+      PlaybackEngineMode.MPV -> false
+      PlaybackEngineMode.Media3 -> true
+      // MPV remains the default for ordinary video; Media3 is retained for Dolby Vision and
+      // adaptive IPTV streams, which require the Media3 HLS/DASH modules added earlier.
+      PlaybackEngineMode.Auto -> isDolbyVisionItem(item) || isMedia3Stream(item)
+    }
   }
 
   private fun switchToMedia3Engine(item: PlaybackItem) {
     if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) return
+    val resumePositionMs =
+      if (playbackEngine == PlaybackEngine.MPV) {
+        ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
+      } else {
+        0L
+      }
     playbackEngine = PlaybackEngine.MEDIA3
     media3ItemId = item.stableId
     binding.player.visibility = View.INVISIBLE
@@ -1345,6 +1382,7 @@ class PlayerActivity :
         uri = Uri.parse(item.playableUri),
         title = item.title,
         headers = item.headers,
+        startPositionMs = resumePositionMs,
         playWhenReady = true,
       )
     }.onFailure { error ->
@@ -1375,6 +1413,20 @@ class PlayerActivity :
       switchToMedia3Engine(item)
     } else {
       switchToMpvEngine()
+    }
+  }
+
+  private fun observeAutomaticDolbyVisionEngine() {
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        viewModel.videoTracks.collect { tracks ->
+          if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) return@collect
+          val currentItem = PlaybackSession.queue.value.currentItem ?: return@collect
+          if (playbackEngine == PlaybackEngine.MPV && tracks.any(::isDolbyVisionTrack)) {
+            switchToMedia3Engine(currentItem)
+          }
+        }
+      }
     }
   }
 

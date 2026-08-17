@@ -48,6 +48,7 @@ class AppearancePreferences(
   val unlimitedNameLines = preferenceStore.getBoolean("unlimited_name_lines", false)
   val hidePlayerButtonsBackground = preferenceStore.getBoolean("hide_player_buttons_background", false)
   val playerControlsStyle = preferenceStore.getEnum("player_controls_style", PlayerControlsStyle.Glass)
+  val showSeekbarContainer = preferenceStore.getBoolean("show_seekbar_container", true)
   val showUnplayedOldVideoLabel = preferenceStore.getBoolean("show_unplayed_old_video_label", true)
   val unplayedOldVideoDays = preferenceStore.getInt("unplayed_old_video_days", 7)
   val showNetworkThumbnails = preferenceStore.getBoolean("show_network_thumbnails", false)

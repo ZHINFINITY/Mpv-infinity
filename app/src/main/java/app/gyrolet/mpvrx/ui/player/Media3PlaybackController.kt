@@ -59,10 +59,11 @@ class Media3PlaybackController(
     uri: Uri,
     title: String? = null,
     headers: Map<String, String> = emptyMap(),
+    startPositionMs: Long = 0L,
     playWhenReady: Boolean = true,
   ) {
     httpFactory.setDefaultRequestProperties(headers)
-    player.setMediaItem(mediaItem(uri, title, headers))
+    player.setMediaItem(mediaItem(uri, title, headers), startPositionMs.coerceAtLeast(0L))
     player.prepare()
     player.playWhenReady = playWhenReady
   }

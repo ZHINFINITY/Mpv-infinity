@@ -127,7 +127,6 @@ import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.player.PlayerUpdates
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 import app.gyrolet.mpvrx.ui.player.Sheets
-import app.gyrolet.mpvrx.ui.player.VideoFormatStatusRow
 import app.gyrolet.mpvrx.ui.player.VideoOpenAnimationOverlay
 import app.gyrolet.mpvrx.ui.player.detectVideoFormatStatus
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterH
@@ -194,6 +193,7 @@ fun PlayerControls(
   val aiEnabled by aiPreferences.enabled.collectAsState()
   val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
+  val showSeekbarContainer by appearancePreferences.showSeekbarContainer.collectAsState()
   val portraitPlaybackControlsPosition by
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
@@ -375,6 +375,7 @@ fun PlayerControls(
       PlayerSheets(
         viewModel = viewModel,
         sheetShown = sheetShown,
+        videoFormatStatus = videoFormatStatus,
         subtitles = subtitles.toImmutableList(),
         onAddSubtitle = viewModel::addSubtitle,
         onToggleSubtitle = viewModel::toggleSubtitle,
@@ -1547,15 +1548,7 @@ fun PlayerControls(
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
 
-            PlayerGlassSurface(
-              modifier =
-                Modifier
-                  .fillMaxWidth()
-                  .padding(horizontal = 4.dp, vertical = 2.dp),
-              shape = RoundedCornerShape(26.dp),
-              hideBackground = hideBackground,
-              contentColor = Color.White,
-            ) {
+            val renderSeekbar: @Composable () -> Unit = {
               SeekbarWithTimers(
                 position = displayedSeekbarPosition,
                 committedPosition = precisePosition,
@@ -1602,6 +1595,21 @@ fun PlayerControls(
                 isPortrait = isPortrait,
                 applyHorizontalPadding = false,
               )
+            }
+            if (showSeekbarContainer) {
+              PlayerGlassSurface(
+                modifier =
+                  Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(26.dp),
+                hideBackground = hideBackground,
+                contentColor = Color.White,
+              ) {
+                renderSeekbar()
+              }
+            } else {
+              renderSeekbar()
             }
           }
 
@@ -1679,7 +1687,6 @@ fun PlayerControls(
                 realtimeSubsLanguage = realtimeSubsLanguage,
                 translationStatus = translationStatus,
                 translatingTrackName = translatingTrackName,
-                videoFormatStatus = videoFormatStatus,
               )
             } else {
               TopLeftPlayerControlsLandscape(
@@ -1693,7 +1700,6 @@ fun PlayerControls(
                 realtimeSubsLanguage = realtimeSubsLanguage,
                 translationStatus = translationStatus,
                 translatingTrackName = translatingTrackName,
-                videoFormatStatus = videoFormatStatus,
               )
             }
           }
@@ -1908,6 +1914,7 @@ fun PlayerControls(
       onStartSleepTimer = viewModel::startTimer,
       onOpenPanel = onOpenPanel,
       onShowSheet = onOpenSheet,
+      videoFormatStatus = videoFormatStatus,
       onDismissRequest = { onOpenSheet(Sheets.None) },
     )
 

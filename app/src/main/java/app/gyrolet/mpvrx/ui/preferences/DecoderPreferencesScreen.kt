@@ -50,6 +50,7 @@ import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
+import app.gyrolet.mpvrx.preferences.PlaybackEngineMode
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.icons.Icon
@@ -125,6 +126,7 @@ object DecoderPreferencesScreen : Screen {
             PreferenceCard {
               val profile by preferences.profile.collectAsState()
               val currentProfile = MPVProfile.fromValue(profile)
+              val playbackEngine by preferences.playbackEngine.collectAsState()
               ListPreference(
                 value = currentProfile,
                 onValueChange = { preferences.profile.set(it.value) },
@@ -133,6 +135,23 @@ object DecoderPreferencesScreen : Screen {
                 summary = {
                   Text(
                     currentProfile.displayName,
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_playback_engine_title),
+                value = playbackEngine,
+                onValueChange = { preferences.playbackEngine.set(it) },
+                values = PlaybackEngineMode.entries,
+                valueToText = { AnnotatedString(it.displayName) },
+                title = { Text(stringResource(R.string.pref_decoder_playback_engine_title)) },
+                summary = {
+                  Text(
+                    text = playbackEngine.summary,
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

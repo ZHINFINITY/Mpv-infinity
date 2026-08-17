@@ -80,6 +80,7 @@ fun PlayerSheets(
   onStartSleepTimer: (Int) -> Unit,
   onOpenPanel: (Panels) -> Unit,
   onShowSheet: (Sheets) -> Unit,
+  videoFormatStatus: app.gyrolet.mpvrx.ui.player.VideoFormatStatus? = null,
   onDismissRequest: () -> Unit,
 ) {
   when (sheetShown) {
@@ -349,6 +350,7 @@ fun PlayerSheets(
         onEnterEqualizerSheet = { onShowSheet(Sheets.Equalizer) },
         anime4KUiState = anime4KUiState,
         onAnime4KModeSelected = viewModel::selectAnime4KMode,
+        videoFormatStatus = videoFormatStatus,
       )
     }
 
