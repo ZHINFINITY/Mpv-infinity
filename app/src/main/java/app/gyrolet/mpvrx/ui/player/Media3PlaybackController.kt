@@ -2,7 +2,7 @@ package app.gyrolet.mpvrx.ui.player
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import app.gyrolet.mpvrx.presentation.crash.AppDebugLog
 import androidx.media3.common.C
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.common.Format
@@ -191,7 +191,7 @@ class Media3PlaybackController(
 
   override fun onPlayerError(error: PlaybackException) {
     val cause = error.cause
-    Log.e(
+    AppDebugLog.error(
       TAG,
       "Media3: player error code=${error.errorCode} name=${error.errorCodeName} " +
         "message=${error.message.orEmpty()} cause=${cause?.javaClass?.name}: ${cause?.message}",
@@ -268,7 +268,7 @@ class Media3PlaybackController(
     )
 
   private fun logInfo(message: String) {
-    Log.i(TAG, "Media3: $message")
+    AppDebugLog.info(TAG, "Media3: $message")
   }
 
   private fun formatDescription(format: Format): String =
