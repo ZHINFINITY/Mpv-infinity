@@ -51,6 +51,7 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.PlayerButton
 import app.gyrolet.mpvrx.preferences.PlayerClockFormat
+import app.gyrolet.mpvrx.preferences.PlayerControlsStyle
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.PortraitPlaybackControlsPosition
 import app.gyrolet.mpvrx.preferences.SeekbarStyle
@@ -263,6 +264,7 @@ object PlayerControlsPreferencesScreen : Screen {
 
           item {
             val hidePlayerButtonsBackground by appearancePrefs.hidePlayerButtonsBackground.collectAsState()
+            val playerControlsStyle by appearancePrefs.playerControlsStyle.collectAsState()
             val portraitPlaybackControlsPosition by
               appearancePrefs.portraitPlaybackControlsPosition.collectAsState()
             val playerTimeToDisappear by playerPrefs.playerTimeToDisappear.collectAsState()
@@ -274,6 +276,27 @@ object PlayerControlsPreferencesScreen : Screen {
             var customTimeValue by remember { mutableStateOf("") }
 
             PreferenceCard {
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_player_controls_style_title),
+                value = playerControlsStyle,
+                onValueChange = { appearancePrefs.playerControlsStyle.set(it) },
+                values = PlayerControlsStyle.entries,
+                valueToText = { AnnotatedString(it.displayName) },
+                title = {
+                  Text(text = stringResource(R.string.pref_appearance_player_controls_style_title))
+                },
+                summary = {
+                  Text(
+                    text =
+                      stringResource(
+                        R.string.pref_appearance_player_controls_style_summary,
+                      ) + " · " + playerControlsStyle.displayName,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
               ListPreference(
                 value = portraitPlaybackControlsPosition,
                 onValueChange = { appearancePrefs.portraitPlaybackControlsPosition.set(it) },

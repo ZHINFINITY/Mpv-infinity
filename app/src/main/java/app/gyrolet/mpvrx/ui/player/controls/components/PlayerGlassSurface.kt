@@ -15,15 +15,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.PlayerControlsStyle
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import org.koin.compose.koinInject
 
 /**
- * A dark, translucent control surface intended to remain legible over changing video frames.
- * Keeping this in one place makes the player theme consistent across portrait and landscape.
+ * A player control surface that follows the selected player-controls theme.
+ * Keeping the switch here makes the preference apply consistently to portrait
+ * and landscape controls, headers, groups, and the seekbar rail.
  */
 @Composable
 fun PlayerGlassSurface(
@@ -33,36 +39,65 @@ fun PlayerGlassSurface(
   contentColor: Color = MaterialTheme.colorScheme.onSurface,
   content: @Composable () -> Unit,
 ) {
-  val decoratedModifier =
-    if (hideBackground) {
-      modifier
-    } else {
-      modifier.background(
-        brush =
-          Brush.linearGradient(
-            colors =
-              listOf(
-                Color.White.copy(alpha = 0.16f),
-                Color.White.copy(alpha = 0.04f),
-              ),
-          ),
-        shape = shape,
-      )
-    }
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val playerControlsStyle by appearancePreferences.playerControlsStyle.collectAsState()
 
-  Surface(
-    modifier = decoratedModifier,
-    shape = shape,
-    color = if (hideBackground) Color.Transparent else Color.Black.copy(alpha = 0.30f),
-    contentColor = contentColor,
-    tonalElevation = 0.dp,
-    shadowElevation = 0.dp,
-    border =
+  if (playerControlsStyle == PlayerControlsStyle.Glass) {
+    val decoratedModifier =
       if (hideBackground) {
-        null
+        modifier
       } else {
-        BorderStroke(1.dp, Color.White.copy(alpha = 0.24f))
-      },
-    content = content,
-  )
+        modifier.background(
+          brush =
+            Brush.linearGradient(
+              colors =
+                listOf(
+                  Color.White.copy(alpha = 0.16f),
+                  Color.White.copy(alpha = 0.04f),
+                ),
+            ),
+          shape = shape,
+        )
+      }
+
+    Surface(
+      modifier = decoratedModifier,
+      shape = shape,
+      color = if (hideBackground) Color.Transparent else Color.Black.copy(alpha = 0.30f),
+      contentColor = contentColor,
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+      border =
+        if (hideBackground) {
+          null
+        } else {
+          BorderStroke(1.dp, Color.White.copy(alpha = 0.24f))
+        },
+      content = content,
+    )
+  } else {
+    Surface(
+      modifier = modifier,
+      shape = shape,
+      color =
+        if (hideBackground) {
+          Color.Transparent
+        } else {
+          MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
+        },
+      contentColor = contentColor,
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+      border =
+        if (hideBackground) {
+          null
+        } else {
+          BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+          )
+        },
+      content = content,
+    )
+  }
 }
