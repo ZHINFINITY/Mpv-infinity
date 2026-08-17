@@ -1340,12 +1340,17 @@ class PlayerActivity :
       PlaybackSession.setPropertyBoolean("pause", true)
       PlaybackSession.setPropertyString("vid", "no")
     }
-    media3PlaybackController.play(
-      uri = Uri.parse(item.playableUri),
-      title = item.title,
-      headers = item.headers,
-      playWhenReady = true,
-    )
+    runCatching {
+      media3PlaybackController.play(
+        uri = Uri.parse(item.playableUri),
+        title = item.title,
+        headers = item.headers,
+        playWhenReady = true,
+      )
+    }.onFailure { error ->
+      Log.e(TAG, "Media3 could not start IPTV playback; falling back to MPV", error)
+      switchToMpvEngine()
+    }
   }
 
   private fun switchToMpvEngine() {
