@@ -135,6 +135,7 @@ import app.gyrolet.mpvrx.ui.player.buildControlsEnterV
 import app.gyrolet.mpvrx.ui.player.buildControlsExitH
 import app.gyrolet.mpvrx.ui.player.buildControlsExitV
 import app.gyrolet.mpvrx.ui.player.controls.components.AnimatedPlayPauseIcon
+import app.gyrolet.mpvrx.ui.player.controls.components.PlayerGlassSurface
 import app.gyrolet.mpvrx.ui.player.controls.components.BrightnessSlider
 import app.gyrolet.mpvrx.ui.player.controls.components.MultipleSpeedPlayerUpdate
 import app.gyrolet.mpvrx.ui.player.controls.components.SeekPlayerUpdate
@@ -1557,47 +1558,47 @@ fun PlayerControls(
             ) {
               SeekbarWithTimers(
                 position = displayedSeekbarPosition,
-              committedPosition = precisePosition,
-              duration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f,
-              onValueChangeStarted = {
-                if (!useThumbFastSeekPreview) {
-                  viewModel.beginLegacySeekPreview()
-                }
-              },
-              onValueChange = {
-                isSeeking = true
-                resetControlsTimestamp = System.currentTimeMillis()
-                if (useThumbFastSeekPreview) {
-                  viewModel.updateSeekThumbnailPreview(it, seekbarDuration)
-                } else {
-                  viewModel.updateLegacySeekPreview(it.toDouble(), seekbarDuration.toDouble())
-                }
-              },
-              onValueChangeFinished = { targetPosition ->
-                isSeeking = false
-                resetControlsTimestamp = System.currentTimeMillis()
-                if (useThumbFastSeekPreview) {
-                  viewModel.hideSeekThumbnailPreview()
-                  viewModel.seekTo(targetPosition.toDouble(), fast = false)
-                } else {
-                  viewModel.commitLegacySeekPreview(targetPosition.toDouble(), seekbarDuration.toDouble())
-                }
-                viewModel.showControls()
-              },
-              timersInverted = Pair(false, invertDuration),
-              durationTimerOnCLick = {
-                resetControlsTimestamp = System.currentTimeMillis()
-                playerPreferences.invertDuration.set(!invertDuration)
-              },
-              positionTimerOnClick = {},
-              chapters = seekbarChapters,
-              skipSegments = skipSegmentsImmutable,
-              paused = paused ?: false,
-              seekbarStyle = seekbarStyle,
-              useWavySeekbar = useWavySeekbar,
-              loopStart = abLoopA?.toFloat(),
-              loopEnd = abLoopB?.toFloat(),
-              bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
+                committedPosition = precisePosition,
+                duration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f,
+                onValueChangeStarted = {
+                  if (!useThumbFastSeekPreview) {
+                    viewModel.beginLegacySeekPreview()
+                  }
+                },
+                onValueChange = {
+                  isSeeking = true
+                  resetControlsTimestamp = System.currentTimeMillis()
+                  if (useThumbFastSeekPreview) {
+                    viewModel.updateSeekThumbnailPreview(it, seekbarDuration)
+                  } else {
+                    viewModel.updateLegacySeekPreview(it.toDouble(), seekbarDuration.toDouble())
+                  }
+                },
+                onValueChangeFinished = { targetPosition ->
+                  isSeeking = false
+                  resetControlsTimestamp = System.currentTimeMillis()
+                  if (useThumbFastSeekPreview) {
+                    viewModel.hideSeekThumbnailPreview()
+                    viewModel.seekTo(targetPosition.toDouble(), fast = false)
+                  } else {
+                    viewModel.commitLegacySeekPreview(targetPosition.toDouble(), seekbarDuration.toDouble())
+                  }
+                  viewModel.showControls()
+                },
+                timersInverted = Pair(false, invertDuration),
+                durationTimerOnCLick = {
+                  resetControlsTimestamp = System.currentTimeMillis()
+                  playerPreferences.invertDuration.set(!invertDuration)
+                },
+                positionTimerOnClick = {},
+                chapters = seekbarChapters,
+                skipSegments = skipSegmentsImmutable,
+                paused = paused ?: false,
+                seekbarStyle = seekbarStyle,
+                useWavySeekbar = useWavySeekbar,
+                loopStart = abLoopA?.toFloat(),
+                loopEnd = abLoopB?.toFloat(),
+                bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
                 isPortrait = isPortrait,
                 applyHorizontalPadding = false,
               )

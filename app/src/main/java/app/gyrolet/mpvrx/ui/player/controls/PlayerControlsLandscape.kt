@@ -204,7 +204,6 @@ fun TopLeftPlayerControlsLandscape(
       }
     }
   }
-}
 
 @Composable
 fun TopRightPlayerControlsLandscape(
