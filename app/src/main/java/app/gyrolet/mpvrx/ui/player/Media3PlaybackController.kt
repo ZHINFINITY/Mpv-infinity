@@ -2,14 +2,21 @@ package app.gyrolet.mpvrx.ui.player
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.C
+import androidx.media3.common.DecoderReuseEvaluation
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 
@@ -20,12 +27,13 @@ import androidx.media3.ui.PlayerView
  * the only visible controls, while this class owns Media3 lifecycle, playlist loading, and
  * playback state. It can therefore be introduced incrementally without changing the mpvRx look.
  */
+@OptIn(UnstableApi::class)
 class Media3PlaybackController(
   context: Context,
   private val onStateChanged: (State) -> Unit = {},
   private val onError: (PlaybackException) -> Unit = {},
   private val onVideoFrameRendered: () -> Unit = {},
-) : Player.Listener {
+) : Player.Listener, AnalyticsListener {
   data class State(
     val playbackState: Int = Player.STATE_IDLE,
     val isPlaying: Boolean = false,
@@ -39,6 +47,7 @@ class Media3PlaybackController(
   private val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
   private val player: ExoPlayer
   private var attachedView: PlayerView? = null
+  private var lastPlaybackState = Player.STATE_IDLE
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
@@ -47,7 +56,11 @@ class Media3PlaybackController(
       ExoPlayer.Builder(appContext, renderersFactory)
         .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
         .build()
-        .also { it.addListener(this) }
+        .also {
+          it.addListener(this)
+          it.addAnalyticsListener(this)
+        }
+    logInfo("controller created decoderFallback=true")
   }
 
   fun attach(view: PlayerView) {
@@ -56,6 +69,10 @@ class Media3PlaybackController(
     attachedView = view
     view.useController = false
     view.player = player
+    logInfo(
+      "surface attached view=${view.javaClass.simpleName} " +
+        "layout=${view.width}x${view.height} visibility=${view.visibility} children=${view.childCount}",
+    )
   }
 
   fun play(
@@ -65,6 +82,11 @@ class Media3PlaybackController(
     startPositionMs: Long = 0L,
     playWhenReady: Boolean = true,
   ) {
+    logInfo(
+      "play requested uri=$uri title=${title.orEmpty().ifBlank { "<untitled>" }} " +
+        "headers=${headers.keys.sorted().joinToString(",").ifBlank { "none" }} " +
+        "startPositionMs=${startPositionMs.coerceAtLeast(0L)} playWhenReady=$playWhenReady",
+    )
     httpFactory.setDefaultRequestProperties(headers)
     player.setMediaItem(mediaItem(uri, title, headers), startPositionMs.coerceAtLeast(0L))
     player.prepare()
@@ -79,6 +101,10 @@ class Media3PlaybackController(
     startPositionMs: Long = 0L,
     playWhenReady: Boolean = true,
   ) {
+    logInfo(
+      "playlist requested count=${uris.size} startIndex=$startIndex " +
+        "startPositionMs=${startPositionMs.coerceAtLeast(0L)} playWhenReady=$playWhenReady",
+    )
     httpFactory.setDefaultRequestProperties(headers)
     if (uris.isEmpty()) {
       player.clearMediaItems()
@@ -94,10 +120,12 @@ class Media3PlaybackController(
   }
 
   fun setPlayWhenReady(value: Boolean) {
+    logInfo("playWhenReady=$value")
     player.playWhenReady = value
   }
 
   fun stop() {
+    logInfo("stop requested")
     player.stop()
     player.clearMediaItems()
   }
@@ -111,31 +139,102 @@ class Media3PlaybackController(
   }
 
   fun setPlaybackSpeed(speed: Float) {
-    player.setPlaybackSpeed(speed.coerceIn(0.1f, 16f))
+    val clampedSpeed = speed.coerceIn(0.1f, 16f)
+    logInfo("playback speed=$clampedSpeed")
+    player.setPlaybackSpeed(clampedSpeed)
   }
 
   fun currentState(): State = snapshot()
 
   fun release() {
+    logInfo("controller releasing")
     attachedView?.player = null
     attachedView = null
     player.removeListener(this)
+    player.removeAnalyticsListener(this)
     player.release()
   }
 
-  override fun onPlaybackStateChanged(playbackState: Int) = publishState()
+  override fun onPlaybackStateChanged(playbackState: Int) {
+    if (playbackState != lastPlaybackState) {
+      logInfo(
+        "playback state=${playbackStateName(playbackState)} " +
+          "isPlaying=${player.isPlaying} positionMs=${player.currentPosition} " +
+          "bufferedPositionMs=${player.bufferedPosition}",
+      )
+      lastPlaybackState = playbackState
+    }
+    publishState()
+  }
 
-  override fun onIsPlayingChanged(isPlaying: Boolean) = publishState()
+  override fun onIsPlayingChanged(isPlaying: Boolean) {
+    logInfo("isPlaying=$isPlaying state=${playbackStateName(player.playbackState)}")
+    publishState()
+  }
 
   override fun onEvents(player: Player, events: Player.Events) = publishState()
 
+  override fun onTracksChanged(tracks: Tracks) {
+    val trackDetails =
+      tracks.groups.flatMap { group ->
+        (0 until group.length).mapNotNull { index ->
+          val format = group.getTrackFormat(index)
+          if (!group.isTrackSelected(index)) return@mapNotNull null
+          "${trackTypeName(group.type)}:${formatDescription(format)}"
+        }
+      }
+    logInfo(
+      "tracks changed selected=${trackDetails.joinToString(" | ").ifBlank { "none" }} " +
+        "groups=${tracks.groups.size}",
+    )
+  }
+
   override fun onPlayerError(error: PlaybackException) {
+    val cause = error.cause
+    Log.e(
+      TAG,
+      "Media3: player error code=${error.errorCode} name=${error.errorCodeName} " +
+        "message=${error.message.orEmpty()} cause=${cause?.javaClass?.name}: ${cause?.message}",
+      error,
+    )
     onError(error)
     publishState()
   }
 
   override fun onRenderedFirstFrame() {
+    logInfo(
+      "first video frame rendered surface=${attachedView?.javaClass?.simpleName ?: "none"} " +
+        "layout=${attachedView?.width ?: 0}x${attachedView?.height ?: 0}",
+    )
     onVideoFrameRendered()
+  }
+
+  override fun onVideoDecoderInitialized(
+    eventTime: AnalyticsListener.EventTime,
+    decoderName: String,
+    initializedTimestampMs: Long,
+    initializationDurationMs: Long,
+  ) {
+    logInfo(
+      "video decoder initialized name=$decoderName " +
+        "initializationDurationMs=$initializationDurationMs",
+    )
+  }
+
+  override fun onVideoInputFormatChanged(
+    eventTime: AnalyticsListener.EventTime,
+    format: Format,
+    decoderReuseEvaluation: DecoderReuseEvaluation?,
+  ) {
+    logInfo("video input format changed ${formatDescription(format)}")
+  }
+
+  override fun onVideoSizeChanged(videoSize: VideoSize) {
+    logInfo(
+      "video size changed width=${videoSize.width} height=${videoSize.height} " +
+        "pixelWidthHeightRatio=${videoSize.pixelWidthHeightRatio} " +
+        "unappliedRotationDegrees=${videoSize.unappliedRotationDegrees}",
+    )
   }
 
   private fun mediaItem(
@@ -167,4 +266,35 @@ class Media3PlaybackController(
       bufferedPositionMs = player.bufferedPosition,
       mediaItemIndex = player.currentMediaItemIndex,
     )
+
+  private fun logInfo(message: String) {
+    Log.i(TAG, "Media3: $message")
+  }
+
+  private fun formatDescription(format: Format): String =
+    "name=${format.label ?: format.language ?: format.id ?: "<unnamed>"} " +
+      "mime=${format.sampleMimeType ?: format.containerMimeType ?: "<unknown>"} " +
+      "codecs=${format.codecs ?: "<unknown>"} profile=${format.codecs ?: "<unknown>"} " +
+      "size=${format.width}x${format.height} bitrate=${format.bitrate}"
+
+  private fun trackTypeName(trackType: Int): String =
+    when (trackType) {
+      C.TRACK_TYPE_VIDEO -> "video"
+      C.TRACK_TYPE_AUDIO -> "audio"
+      C.TRACK_TYPE_TEXT -> "text"
+      else -> "type=$trackType"
+    }
+
+  private fun playbackStateName(playbackState: Int): String =
+    when (playbackState) {
+      Player.STATE_IDLE -> "IDLE"
+      Player.STATE_BUFFERING -> "BUFFERING"
+      Player.STATE_READY -> "READY"
+      Player.STATE_ENDED -> "ENDED"
+      else -> "UNKNOWN($playbackState)"
+    }
+
+  private companion object {
+    const val TAG = "mpvrx"
+  }
 }

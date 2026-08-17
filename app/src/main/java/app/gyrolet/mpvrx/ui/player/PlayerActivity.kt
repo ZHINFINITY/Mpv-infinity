@@ -1423,6 +1423,12 @@ class PlayerActivity :
 
   private fun switchToMedia3Engine(item: PlaybackItem) {
     if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) return
+    Log.i(
+      TAG,
+      "Playback engine selected engine=MEDIA3 uri=${item.playableUri} " +
+        "originalUri=${item.originalUri} title=${item.title.orEmpty().ifBlank { "<untitled>" }} " +
+        "configuredMode=${decoderPreferences.playbackEngine.get().name}",
+    )
     val resumePositionMs =
       if (playbackEngine == PlaybackEngine.MPV) {
         ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
@@ -1471,6 +1477,15 @@ class PlayerActivity :
       binding.player.visibility = View.VISIBLE
       return
     }
+    val currentItem = PlaybackSession.queue.value.currentItem
+    Log.i(
+      TAG,
+      "Playback engine selected engine=MPV " +
+        "uri=${currentItem?.playableUri.orEmpty()} " +
+        "originalUri=${currentItem?.originalUri.orEmpty()} " +
+        "title=${currentItem?.title.orEmpty().ifBlank { "<untitled>" }} " +
+        "configuredMode=${decoderPreferences.playbackEngine.get().name}",
+    )
     playbackEngine = PlaybackEngine.MPV
     media3ItemId = null
     media3PlaybackController.stop()
