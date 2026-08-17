@@ -1,0 +1,3 @@
+Added ThumbFast seek thumbnails with a Player setting to switch back to legacy live-video seek preview.
+Added subtitle font management: choose a fonts folder, view the selected source, reload fonts, and pick the default subtitle font.
+Improved subtitle gestures, playlist swipe-up, theme auto-scroll, Media Library behavior, folder actions, SMB stability, icons, launch smoothness, and settings organization.

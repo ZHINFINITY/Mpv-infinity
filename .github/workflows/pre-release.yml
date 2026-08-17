@@ -1,0 +1,186 @@
+name: Make Pre Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+-preview.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release-for-github:
+    name: Tagged preview release for GitHub
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Resolve release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_tag="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-preview\.[0-9]+$ ]]; then
+            echo "Invalid tagged preview version: $version_tag"
+            exit 1
+          fi
+          echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build preview APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew assembleStandardPreview --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleFongmiPreview --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleNoVulkanPreview --stacktrace --no-daemon --max-workers=2
+
+      - name: Sign and verify preview APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+
+          if [[ -z "${{ secrets.SIGNING_KEYSTORE }}" || -z "${{ secrets.SIGNING_KEY_ALIAS }}" || -z "${{ secrets.SIGNING_STORE_PASSWORD }}" || -z "${{ secrets.KEY_PASSWORD }}" ]]; then
+            echo "Tagged preview releases require all signing secrets."
+            exit 1
+          fi
+          test -x "$apksigner"
+
+          printf '%s' "${{ secrets.SIGNING_KEYSTORE }}" | base64 --decode > release.keystore
+          trap 'rm -f release.keystore' EXIT
+
+          sign_apk() {
+            local unsigned="$1"
+            local signed="$2"
+            local label="$3"
+            if [[ ! -f "$unsigned" ]]; then
+              echo "Missing expected $label APK: $unsigned"
+              find app/build/outputs/apk -type f -name '*.apk' -print || true
+              exit 1
+            fi
+
+            "$apksigner" sign \
+              --ks release.keystore \
+              --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+              --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
+              --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+              --out "$signed" \
+              "$unsigned"
+            "$apksigner" verify --verbose "$signed"
+            rm -f "$unsigned"
+          }
+
+          preview_dir="app/build/outputs/apk/standard/preview"
+          test -d "$preview_dir"
+          architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
+          for abi in "${architectures[@]}"; do
+            sign_apk \
+              "$preview_dir/app-standard-${abi}-preview-unsigned.apk" \
+              "$preview_dir/app-standard-${abi}-preview.apk" \
+              "standard $abi preview"
+          done
+
+          flavor_dir="app/build/outputs/apk/fongmi/preview"
+          test -d "$flavor_dir"
+          sign_apk \
+            "$flavor_dir/app-fongmi-universal-preview-unsigned.apk" \
+            "$flavor_dir/app-fongmi-universal-preview.apk" \
+            "fongmi universal preview"
+
+          flavor_dir="app/build/outputs/apk/noVulkan/preview"
+          test -d "$flavor_dir"
+          sign_apk \
+            "$flavor_dir/app-noVulkan-universal-preview-unsigned.apk" \
+            "$flavor_dir/app-noVulkan-universal-preview.apk" \
+            "non-Vulkan universal preview"
+
+      - name: Stage pre-release assets and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          preview_dir="app/build/outputs/apk/standard/preview"
+          mkdir -p preview
+          : > checksums.txt
+          architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
+
+          for abi in "${architectures[@]}"; do
+            src="$preview_dir/app-standard-${abi}-preview.apk"
+            dst="preview/mpvRx-preview-${abi}-${VERSION_TAG}.apk"
+            test -f "$src"
+            cp "$src" "$dst"
+            sha256sum "$dst" | tee -a checksums.txt
+          done
+
+          src="app/build/outputs/apk/fongmi/preview/app-fongmi-universal-preview.apk"
+          dst="preview/mpvRx-preview-fongmi-${VERSION_TAG}.apk"
+          test -f "$src"
+          cp "$src" "$dst"
+          sha256sum "$dst" | tee -a checksums.txt
+
+          src="app/build/outputs/apk/noVulkan/preview/app-noVulkan-universal-preview.apk"
+          dst="preview/mpvRx-preview-no-vulkan-${VERSION_TAG}.apk"
+          test -f "$src"
+          cp "$src" "$dst"
+          sha256sum "$dst" | tee -a checksums.txt
+
+      - name: Prepare pre-release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          changelog = Path('CHANGELOG.md').read_text(encoding='utf-8').splitlines()
+          section = []
+          in_latest = False
+          for line in changelog:
+              if line.startswith('## '):
+                  if in_latest:
+                      break
+                  in_latest = True
+              if in_latest:
+                  section.append(line)
+
+          latest = '\n'.join(section).strip()
+          if not latest:
+              raise SystemExit('Could not find latest changelog section')
+          Path('pre-release-notes.md').write_text(latest + '\n\n---\n### SHA-256 checksums\n\n```text\n', encoding='utf-8')
+          PY
+          cat checksums.txt >> pre-release-notes.md
+          printf '%s\n' '```' >> pre-release-notes.md
+
+      - name: Create GitHub pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          name: mpvRx ${{ env.VERSION_TAG }}
+          body_path: pre-release-notes.md
+          generate_release_notes: true
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            preview/mpvRx-preview-universal-${{ env.VERSION_TAG }}.apk
+            preview/mpvRx-preview-arm64-v8a-${{ env.VERSION_TAG }}.apk
+            preview/mpvRx-preview-armeabi-v7a-${{ env.VERSION_TAG }}.apk
+            preview/mpvRx-preview-x86-${{ env.VERSION_TAG }}.apk
+            preview/mpvRx-preview-x86_64-${{ env.VERSION_TAG }}.apk
+            preview/mpvRx-preview-fongmi-${{ env.VERSION_TAG }}.apk
+            preview/mpvRx-preview-no-vulkan-${{ env.VERSION_TAG }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

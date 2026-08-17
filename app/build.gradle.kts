@@ -1,0 +1,325 @@
+import com.android.build.api.variant.FilterConfiguration
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+val enableX86 = project.findProperty("enableX86") != "false"
+val x86Abis = if (enableX86) listOf("x86", "x86_64") else emptyList()
+val universalOnlyDistributions = setOf("noVulkan", "fongmi")
+
+plugins {
+  alias(libs.plugins.android.application)
+  alias(libs.plugins.kotlin.compose.compiler)
+  alias(libs.plugins.kotlinx.serialization)
+  alias(libs.plugins.ksp)
+  alias(libs.plugins.room)
+  alias(libs.plugins.ktlint)
+}
+
+android {
+  namespace = "app.gyrolet.mpvrx"
+  compileSdk = 37
+  ndkVersion = "27.3.13750724"
+
+  defaultConfig {
+    applicationId = "app.gyrolet.mpvrx"
+    minSdk = 26
+    targetSdk = 36
+    versionCode = 210
+    versionName = "2.1.0"
+
+    vectorDrawables {
+      useSupportLibrary = true
+    }
+
+    buildConfigField("String", "GIT_SHA", "\"${getCommitSha()}\"")
+    buildConfigField("int", "GIT_COUNT", getCommitCount())
+
+    externalNativeBuild {
+      cmake {
+        abiFilters += listOf("arm64-v8a", "armeabi-v7a") + x86Abis
+      }
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path = file("src/main/cpp/CMakeLists.txt")
+      version = "3.22.1"
+    }
+  }
+
+  flavorDimensions += "distribution"
+
+  productFlavors {
+    create("standard") {
+      dimension = "distribution"
+      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
+      buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
+      buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
+      buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+    }
+
+    create("noVulkan") {
+      dimension = "distribution"
+      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "false")
+      buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
+      buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "false")
+      buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+    }
+
+    create("fongmi") {
+      dimension = "distribution"
+      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "false")
+      buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
+      buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
+      buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "true")
+    }
+  }
+
+  dependenciesInfo {
+    includeInApk = false
+    includeInBundle = false
+  }
+
+  splits {
+    abi {
+      isEnable = true
+      reset()
+      include("armeabi-v7a", "arm64-v8a")
+      if (enableX86) {
+        include("x86", "x86_64")
+      }
+      isUniversalApk = true
+    }
+  }
+
+  buildTypes {
+    named("release") {
+      isMinifyEnabled = true
+      isShrinkResources = true
+      proguardFiles(
+        getDefaultProguardFile("proguard-android-optimize.txt"),
+        "proguard-rules.pro",
+      )
+      ndk {
+        debugSymbolLevel = "none"
+      }
+    }
+
+    create("preview") {
+      initWith(getByName("release"))
+      signingConfig = null
+      applicationIdSuffix = ".preview"
+      versionNameSuffix = "-${getCommitCount()}"
+    }
+
+    named("debug") {
+      applicationIdSuffix = ".debug"
+      versionNameSuffix = "-${getCommitCount()}"
+      resValue("string", "app_name", "mpvRx-Debug")
+    }
+  }
+
+  compileOptions {
+    isCoreLibraryDesugaringEnabled = true
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+  }
+
+  buildFeatures {
+    compose = true
+    viewBinding = true
+    buildConfig = true
+    resValues = true
+    prefab = true
+  }
+
+  packaging {
+    resources {
+      excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      excludes += "META-INF/DEPENDENCIES"
+      excludes += "META-INF/LICENSE*"
+      excludes += "META-INF/NOTICE*"
+      excludes += "META-INF/*.kotlin_module"
+      excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+    }
+    jniLibs {
+      useLegacyPackaging = true
+      pickFirsts += "**/libc++_shared.so"
+    }
+  }
+
+  @Suppress("UnstableApiUsage")
+  androidResources {
+    generateLocaleConfig = true
+  }
+
+  lint {
+    checkReleaseBuilds = false
+    abortOnError = false
+  }
+}
+
+androidComponents {
+  val abiCodes =
+    mutableMapOf(
+      "armeabi-v7a" to 1,
+      "arm64-v8a" to 2,
+    )
+  if (enableX86) {
+    abiCodes["x86"] = 3
+    abiCodes["x86_64"] = 4
+  }
+
+  onVariants { variant ->
+    val isUniversalOnly =
+      variant.productFlavors.any { (dimension, flavor) ->
+        dimension == "distribution" && flavor in universalOnlyDistributions
+      }
+
+    variant.outputs.forEach { output ->
+      val abi =
+        output.filters
+          .find { it.filterType == FilterConfiguration.FilterType.ABI }
+          ?.identifier
+
+      if (isUniversalOnly && abi != null) {
+        output.enabled.set(false)
+      }
+
+      output.versionCode.set(
+        (output.versionCode.orNull ?: 0) * 10 + (abiCodes[abi] ?: 0),
+      )
+    }
+  }
+}
+
+kotlin {
+  compilerOptions {
+    freeCompilerArgs.addAll(
+      "-Xcontext-parameters",
+      "-Xannotation-default-target=param-property",
+      "-opt-in=com.google.accompanist.permissions.ExperimentalPermissionsApi",
+      "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+      "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+    )
+    jvmTarget.set(JvmTarget.JVM_17)
+  }
+}
+
+composeCompiler {
+  includeSourceInformation = false
+}
+
+room {
+  schemaDirectory("$projectDir/schemas")
+}
+
+dependencies {
+  implementation(libs.androidx.activity.compose)
+  implementation(platform(libs.androidx.compose.bom))
+  implementation(libs.androidx.ui)
+  implementation(libs.androidx.ui.graphics)
+  implementation(libs.androidx.material3.android)
+  implementation(libs.google.material)
+  implementation(libs.androidx.compose.material)
+  implementation(libs.androidx.ui.tooling.preview)
+  debugImplementation(libs.androidx.ui.tooling)
+  debugImplementation(libs.leakcanary.android)
+  implementation(libs.bundles.compose.navigation3)
+  implementation(libs.androidx.appcompat)
+  implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.compose.constraintlayout)
+  implementation(libs.androidx.preference.ktx)
+  implementation(libs.androidx.constraintlayout)
+  implementation(libs.composables.material.symbols.rounded.filled.android)
+  implementation(libs.composables.material.symbols.rounded.filled.cmp)
+  implementation(libs.androidx.compose.animation.graphics)
+  implementation(libs.mediasession)
+  implementation(libs.androidx.documentfile)
+  implementation(libs.androidx.palette)
+
+  implementation(platform(libs.koin.bom))
+  implementation(libs.bundles.koin)
+
+  implementation(libs.seeker)
+  implementation(libs.compose.prefs)
+
+  implementation(libs.accompanist.permissions)
+
+  implementation(libs.room.runtime)
+  ksp(libs.room.compiler)
+  implementation(libs.room.ktx)
+
+  implementation(libs.kotlinx.immutable.collections)
+  implementation(libs.kotlinx.serialization.json)
+  implementation(libs.okhttp)
+  implementation(libs.curl.android)
+  implementation(libs.jsoup)
+  implementation(libs.androidx.media3.common)
+  implementation(libs.androidx.media3.exoplayer)
+  implementation(libs.androidx.media3.ui)
+  implementation(libs.androidx.media3.effect)
+  implementation(libs.androidx.media3.transformer)
+  implementation(platform(libs.sora.editor.bom))
+  implementation(libs.sora.editor)
+  implementation(libs.sora.language.textmate)
+  // implementation(libs.sora.oniguruma.native)
+
+  coreLibraryDesugaring(libs.desugar.jdk.libs)
+
+  implementation(libs.truetype.parser)
+  implementation(libs.fsaf)
+  implementation(libs.mediainfo.lib)
+  implementation(libs.androidx.profileinstaller)
+  implementation(libs.google.cast.framework)
+
+  "standardImplementation"(files("libs/mpvlib.aar"))
+  "noVulkanImplementation"(files("libs/mpvlib-no-vulkun.aar"))
+  "fongmiImplementation"(files("libs/mpvlib-fongmi.aar"))
+
+  // Network protocol libraries
+  implementation(libs.smbj)
+  implementation(libs.commons.net)
+  implementation(libs.sardine.android) {
+    exclude(group = "xpp3", module = "xpp3")
+  }
+  implementation(libs.nanohttpd)
+  implementation(libs.lazycolumnscrollbar)
+  implementation(libs.reorderable)
+  implementation(libs.androidx.biometric)
+
+  // libtorrent4j's Java API plus the native library for every enabled APK ABI.
+  implementation(libs.libtorrent4j)
+  implementation(libs.libtorrent4j.android.arm64)
+  implementation(libs.libtorrent4j.android.arm)
+  if (enableX86) {
+    implementation(libs.libtorrent4j.android.x86)
+    implementation(libs.libtorrent4j.android.x8664)
+  }
+}
+
+// ---------------- Git helpers ----------------
+
+fun getCommitCount(): String = runCommand("git rev-list --count HEAD") ?: "0"
+
+fun getCommitSha(): String = runCommand("git rev-parse --short HEAD") ?: "unknown"
+
+fun runCommand(command: String): String? =
+  try {
+    val parts = command.split(' ')
+    val process =
+      ProcessBuilder(parts)
+        .redirectErrorStream(true)
+        .start()
+
+    val output =
+      process.inputStream
+        .bufferedReader()
+        .readText()
+        .trim()
+
+    process.waitFor()
+    output.ifEmpty { null }
+  } catch (e: Exception) {
+    null
+  }

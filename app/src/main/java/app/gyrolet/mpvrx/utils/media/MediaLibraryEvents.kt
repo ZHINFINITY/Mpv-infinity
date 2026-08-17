@@ -1,0 +1,28 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.gyrolet.mpvrx.utils.media
+
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+
+/**
+ * Simple app-wide event bus to notify screens/viewmodels when the media library changes
+ * (copy/move/delete/rename, private storage move/restore, rescans, etc.).
+ */
+object MediaLibraryEvents {
+  private val _changes =
+    MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+  val changes: SharedFlow<Unit> = _changes
+
+  fun notifyChanged() {
+    _changes.tryEmit(Unit)
+  }
+}

@@ -1,0 +1,6 @@
+Anime4K should feel much smoother now, with a simpler six-preset picker.
+Removed frame interpolation, old thumbnail modes, the unused old player screen, and SubDL from subtitle sources.
+Network streaming is now opt-in on fresh installs.
+HDR and Ambient controls are no longer added to the default player buttons.
+Turning HDR on now starts with Linear HDR by default.
+Startup does less background scanning and cache cleanup for large libraries.

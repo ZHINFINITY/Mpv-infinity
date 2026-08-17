@@ -1,0 +1,9 @@
+#!/system/bin/sh
+NATIVE_LIB_DIR=$1
+shift
+cd $(dirname "$0")
+export PYTHONHOME=.
+export PYTHONPATH=./python313.zip
+export SSL_CERT_FILE=$PWD/../cacert.pem
+export LD_LIBRARY_PATH=$NATIVE_LIB_DIR
+exec $NATIVE_LIB_DIR/libytdl.so "$@"

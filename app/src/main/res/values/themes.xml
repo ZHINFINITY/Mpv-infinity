@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.mpvrx" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar" />
+
+    <style name="Theme.mpvrx.Player" parent="Theme.mpvrx">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <style name="leak_canary_LeakCanary.Base" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="android:fitsSystemWindows">true</item>
+    </style>
+</resources>

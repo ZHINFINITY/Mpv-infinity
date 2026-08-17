@@ -1,0 +1,28 @@
+{
+  "languages": [
+    {
+      "grammar": "textmate/lua/syntaxes/lua.tmLanguage.json",
+      "name": "lua",
+      "scopeName": "source.lua",
+      "languageConfiguration": "textmate/lua/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/javascript/syntaxes/JavaScript.tmLanguage.json",
+      "name": "javascript",
+      "scopeName": "source.js",
+      "languageConfiguration": "textmate/javascript/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/mpvconf/syntaxes/mpv-conf.tmLanguage.json",
+      "name": "mpv-conf",
+      "scopeName": "source.mpv.conf",
+      "languageConfiguration": "textmate/mpvconf/language-configuration.json"
+    },
+    {
+      "grammar": "textmate/inputconf/syntaxes/input-conf.tmLanguage.json",
+      "name": "input-conf",
+      "scopeName": "source.mpv.input",
+      "languageConfiguration": "textmate/inputconf/language-configuration.json"
+    }
+  ]
+}

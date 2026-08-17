@@ -1,0 +1,261 @@
+name: CI/CD Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      build_flavor:
+        description: APK flavor to build
+        required: true
+        default: standard
+        type: choice
+        options:
+          - standard
+          - all
+          - dual
+          - fongmi
+          - no_vulkan
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  SELECTED_FLAVOR: ${{ inputs.build_flavor || 'standard' }}
+
+jobs:
+  build:
+    name: Build selected APK flavors
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          # BuildConfig.GIT_COUNT and preview build identities rely on the real repository history.
+          fetch-depth: 0
+
+      - name: Generate build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "COMMIT_COUNT=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build selected release APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
+            ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
+          fi
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "fongmi" ]]; then
+            ./gradlew assembleFongmiRelease --stacktrace --no-daemon --max-workers=2
+          fi
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "no_vulkan" ]]; then
+            ./gradlew assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
+          fi
+
+      - name: Sign APKs when signing secrets are available
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+
+          test -x "$apksigner"
+
+          if [[ -z "${{ secrets.SIGNING_KEYSTORE }}" ]]; then
+            echo "SIGNING_KEYSTORE is unavailable (expected for untrusted fork PRs); keeping CI APKs unsigned."
+            exit 0
+          fi
+
+          if [[ -z "${{ secrets.SIGNING_KEY_ALIAS }}" || -z "${{ secrets.SIGNING_STORE_PASSWORD }}" || -z "${{ secrets.KEY_PASSWORD }}" ]]; then
+            echo "SIGNING_KEYSTORE exists but one or more required signing secrets are missing."
+            exit 1
+          fi
+
+          printf '%s' "${{ secrets.SIGNING_KEYSTORE }}" | base64 --decode > release.keystore
+          trap 'rm -f release.keystore' EXIT
+
+          sign_apk() {
+            local unsigned="$1"
+            local signed="$2"
+            local label="$3"
+            if [[ ! -f "$unsigned" ]]; then
+              echo "Missing expected $label APK: $unsigned"
+              find app/build/outputs/apk -type f -name '*.apk' -print || true
+              exit 1
+            fi
+
+            "$apksigner" sign \
+              --ks release.keystore \
+              --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+              --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
+              --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+              --out "$signed" \
+              "$unsigned"
+            "$apksigner" verify --verbose "$signed"
+            rm -f "$unsigned"
+          }
+
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
+            release_dir="app/build/outputs/apk/standard/release"
+            test -d "$release_dir"
+            architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
+            for abi in "${architectures[@]}"; do
+              sign_apk \
+                "$release_dir/app-standard-${abi}-release-unsigned.apk" \
+                "$release_dir/app-standard-${abi}-release.apk" \
+                "standard $abi release"
+            done
+          fi
+
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "fongmi" ]]; then
+            flavor="fongmi"
+            flavor_dir="app/build/outputs/apk/fongmi/release"
+            test -d "$flavor_dir"
+            sign_apk \
+              "$flavor_dir/app-${flavor}-universal-release-unsigned.apk" \
+              "$flavor_dir/app-${flavor}-universal-release.apk" \
+              "$flavor universal release"
+          fi
+
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "no_vulkan" ]]; then
+            flavor="noVulkan"
+            flavor_dir="app/build/outputs/apk/noVulkan/release"
+            test -d "$flavor_dir"
+            sign_apk \
+              "$flavor_dir/app-${flavor}-universal-release-unsigned.apk" \
+              "$flavor_dir/app-${flavor}-universal-release.apk" \
+              "non-Vulkan universal release"
+          fi
+
+      - name: Verify expected flavor outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
+            release_dir="app/build/outputs/apk/standard/release"
+            architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
+            for abi in "${architectures[@]}"; do
+              if ! compgen -G "$release_dir/app-standard-${abi}-release*.apk" >/dev/null; then
+                echo "No standard release APK found for $abi"
+                exit 1
+              fi
+            done
+          fi
+
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "fongmi" ]]; then
+            flavor="fongmi"
+            flavor_dir="app/build/outputs/apk/fongmi/release"
+            if ! compgen -G "$flavor_dir/app-${flavor}-universal-release*.apk" >/dev/null; then
+              echo "No universal release APK found for $flavor"
+              exit 1
+            fi
+            if find "$flavor_dir" -maxdepth 1 -type f -name "app-${flavor}-*-release*.apk" ! -name "app-${flavor}-universal-release*.apk" | grep -q .; then
+              echo "$flavor produced an unexpected ABI-specific APK"
+              find "$flavor_dir" -maxdepth 1 -type f -name '*.apk' -print
+              exit 1
+            fi
+          fi
+
+          if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "no_vulkan" ]]; then
+            flavor="noVulkan"
+            flavor_dir="app/build/outputs/apk/noVulkan/release"
+            if ! compgen -G "$flavor_dir/app-${flavor}-universal-release*.apk" >/dev/null; then
+              echo "No universal non-Vulkan release APK found"
+              exit 1
+            fi
+            if find "$flavor_dir" -maxdepth 1 -type f -name "app-${flavor}-*-release*.apk" ! -name "app-${flavor}-universal-release*.apk" | grep -q .; then
+              echo "The non-Vulkan flavor produced an unexpected ABI-specific APK"
+              find "$flavor_dir" -maxdepth 1 -type f -name '*.apk' -print
+              exit 1
+            fi
+          fi
+
+      - name: Upload arm64-v8a APK
+        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-standard-arm64-v8a-release-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/release/app-standard-arm64-v8a-release*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload armeabi-v7a APK
+        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-standard-armeabi-v7a-release-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/release/app-standard-armeabi-v7a-release*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload universal APK
+        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-standard-universal-release-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/release/app-standard-universal-release*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload x86 APK
+        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-standard-x86-release-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/release/app-standard-x86-release*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload x86_64 APK
+        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-standard-x86_64-release-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/release/app-standard-x86_64-release*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload Fongmi universal APK
+        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'fongmi' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-fongmi-release-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/fongmi/release/app-fongmi-universal-release*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload non-Vulkan universal APK
+        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'no_vulkan' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-no-vulkan-release-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
