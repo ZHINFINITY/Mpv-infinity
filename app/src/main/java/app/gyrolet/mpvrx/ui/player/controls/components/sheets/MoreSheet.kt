@@ -37,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
@@ -60,6 +61,8 @@ import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.components.PlayerSheet
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.VideoFormatStatus
+import app.gyrolet.mpvrx.ui.player.VideoFormatStatusRow
 import app.gyrolet.mpvrx.ui.player.anime4k.Anime4KUiState
 import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import app.gyrolet.mpvrx.ui.theme.spacing
@@ -76,10 +79,12 @@ fun MoreSheet(
   onEnterEqualizerSheet: (() -> Unit)? = null,
   anime4KUiState: Anime4KUiState,
   onAnime4KModeSelected: (Anime4KManager.Mode) -> Unit,
+  videoFormatStatus: VideoFormatStatus? = null,
   modifier: Modifier = Modifier,
 ) {
   val advancedPreferences = koinInject<AdvancedPreferences>()
   val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
+  val showVideoFormatStatus by advancedPreferences.showVideoFormatStatus.collectAsState()
   val enableLuaScripts by advancedPreferences.enableLuaScripts.collectAsState()
   val selectedLuaScripts by advancedPreferences.selectedLuaScripts.collectAsState()
   val mpvConfStorageLocation by advancedPreferences.mpvConfStorageUri.collectAsState()
@@ -270,6 +275,34 @@ fun MoreSheet(
             leadingIcon = null,
           )
         }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.player_sheets_video_format_title),
+            style = MaterialTheme.typography.titleSmall,
+          )
+          Text(
+            text = stringResource(R.string.player_sheets_video_format_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+          )
+        }
+        Switch(
+          checked = showVideoFormatStatus,
+          onCheckedChange = { advancedPreferences.showVideoFormatStatus.set(it) },
+        )
+      }
+      if (showVideoFormatStatus) {
+        VideoFormatStatusRow(
+          status = videoFormatStatus,
+          modifier = Modifier.padding(top = 2.dp),
+        )
       }
 
       // Standard Anime4K needs legacy gpu or gpu-next with Vulkan.

@@ -27,6 +27,8 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">Hide the background of all player control buttons</string>
   <string name="pref_appearance_player_controls_style_title">Player controls theme</string>
   <string name="pref_appearance_player_controls_style_summary">Choose the visual style used for the video-player controls</string>
+  <string name="pref_appearance_show_seekbar_container_title">Show seekbar outer container</string>
+  <string name="pref_appearance_show_seekbar_container_summary">Show the transparent/glass box surrounding the seekbar</string>
   <string name="pref_appearance_category_file_browser">File Browser</string>
   <string name="pref_appearance_category_thumbnails">Thumbnails</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Show label for new unplayed videos</string>
@@ -458,6 +460,8 @@
   <string name="player_sheets_stats_page_3_desc">Cache status. Buffer health, demuxer cache, seekable ranges.</string>
   <string name="player_sheets_stats_page_4_desc">Current keybindings. List of mapped keyboard shortcuts.</string>
   <string name="player_sheets_stats_page_5_desc">Track list. Details of video, audio and subtitle tracks.</string>
+  <string name="player_sheets_video_format_title">Video format indicator</string>
+  <string name="player_sheets_video_format_summary">Show the detected source and output format on this Statistics page</string>
   <string name="player_aspect_fit">Fit Screen</string>
   <string name="player_aspect_crop">Crop</string>
   <string name="player_aspect_stretch">Stretch</string>
@@ -897,6 +901,8 @@
   <!-- Decoder Preferences                                        -->
   <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_decoder_vulkan_experimental_suffix">(Experimental)</string>
+  <string name="pref_decoder_playback_engine_title">Playback engine</string>
+  <string name="pref_decoder_playback_engine_summary">Automatic uses MPV by default and Media3 for Dolby Vision or HLS/DASH IPTV streams; the choice applies to new playback</string>
   <string name="pref_anime4k_link">github.com/bloc97/Anime4K</string>
 
   <!-- ═══════════════════════════════════════════════════════════ -->

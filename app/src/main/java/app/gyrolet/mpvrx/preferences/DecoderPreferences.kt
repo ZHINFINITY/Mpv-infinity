@@ -15,10 +15,20 @@ import app.gyrolet.mpvrx.preferences.preference.getEnum
 import app.gyrolet.mpvrx.ui.player.Debanding
 import app.gyrolet.mpvrx.ui.player.HdrScreenMode
 
+enum class PlaybackEngineMode(
+  val displayName: String,
+  val summary: String,
+) {
+  Auto("Automatic", "Use MPV by default and switch Dolby Vision to Media3 when detected"),
+  MPV("MPV", "Always use the MPV playback engine"),
+  Media3("Media3", "Always use the Media3 playback engine when supported"),
+}
+
 class DecoderPreferences(
   preferenceStore: PreferenceStore,
 ) {
   val profile = preferenceStore.getString("mpv_profile", "fast")
+  val playbackEngine = preferenceStore.getEnum("playback_engine", PlaybackEngineMode.Auto)
   val tryHWDecoding = preferenceStore.getBoolean("try_hw_dec", true)
   val gpuNext = preferenceStore.getBoolean("gpu_next")
   val useVulkan = preferenceStore.getBoolean("use_vulkan", false)

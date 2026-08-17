@@ -11,16 +11,16 @@ package app.gyrolet.mpvrx.ui.player.controls
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -44,8 +44,6 @@ import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.Panels
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.VideoFormatStatus
-import app.gyrolet.mpvrx.ui.player.VideoFormatStatusRow
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoAspect
 import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
@@ -67,7 +65,6 @@ fun TopPlayerControlsPortrait(
   realtimeSubsLanguage: String = "",
   translationStatus: String = "",
   translatingTrackName: String = "",
-  videoFormatStatus: VideoFormatStatus? = null,
 ) {
   val playlistModeEnabled = viewModel.hasPlaylistSupport()
   val clickEvent = LocalPlayerButtonsClickEvent.current
@@ -133,11 +130,6 @@ fun TopPlayerControlsPortrait(
         }
       }
     }
-
-    VideoFormatStatusRow(
-      status = videoFormatStatus,
-      modifier = Modifier.padding(start = 14.dp, top = 8.dp),
-    )
 
     androidx.compose.animation.AnimatedVisibility(
       visible = isTranslatingSub || isRealtimeSubsActive,
@@ -206,6 +198,7 @@ fun TopPlayerControlsPortrait(
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BottomPlayerControlsPortrait(
   buttons: List<PlayerButton>,
@@ -224,14 +217,14 @@ fun BottomPlayerControlsPortrait(
   viewModel: PlayerViewModel,
   activity: PlayerActivity,
 ) {
-  Row(
+  FlowRow(
     modifier =
       Modifier
         .fillMaxWidth()
-        .horizontalScroll(rememberScrollState())
-        .padding(bottom = MaterialTheme.spacing.medium),
+        .padding(horizontal = MaterialTheme.spacing.small, bottom = MaterialTheme.spacing.medium),
+    maxItemsInEachRow = 5,
     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
-    verticalAlignment = Alignment.CenterVertically,
+    verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
   ) {
     buttons.forEach { button ->
       RenderPlayerButton(
