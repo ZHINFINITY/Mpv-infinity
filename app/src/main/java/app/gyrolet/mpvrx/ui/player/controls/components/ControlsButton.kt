@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.PlayerControlsStyle
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.icons.AppIcon
 import app.gyrolet.mpvrx.ui.icons.Icon
@@ -53,25 +54,10 @@ fun ControlsButton(
   val interactionSource = remember { MutableInteractionSource() }
   val appearancePreferences = koinInject<AppearancePreferences>()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
-
+  val playerControlsStyle by appearancePreferences.playerControlsStyle.collectAsState()
+  val glassTheme = playerControlsStyle == PlayerControlsStyle.Glass
   val clickEvent = LocalPlayerButtonsClickEvent.current
-  PlayerGlassSurface(
-    modifier =
-      modifier
-        .clip(CircleShape)
-        .combinedClickable(
-          onClick = {
-            clickEvent()
-            onClick()
-          },
-          onLongClick = onLongClick,
-          interactionSource = interactionSource,
-          indication = ripple(),
-        ),
-    shape = CircleShape,
-    hideBackground = hideBackground,
-    contentColor = color ?: MaterialTheme.colorScheme.onSurface,
-  ) {
+  val iconContent: @Composable () -> Unit = {
     Icon(
       imageVector = icon,
       contentDescription = title,
@@ -82,28 +68,87 @@ fun ControlsButton(
           .size(20.dp),
     )
   }
+  val buttonModifier =
+    modifier
+      .clip(CircleShape)
+      .combinedClickable(
+        onClick = {
+          clickEvent()
+          onClick()
+        },
+        onLongClick = onLongClick,
+        interactionSource = interactionSource,
+        indication = ripple(),
+      )
+
+  if (glassTheme) {
+    PlayerGlassSurface(
+      modifier = buttonModifier,
+      shape = CircleShape,
+      hideBackground = hideBackground,
+      contentColor = color ?: MaterialTheme.colorScheme.onSurface,
+      content = iconContent,
+    )
+  } else {
+    Surface(
+      modifier = buttonModifier,
+      shape = CircleShape,
+      color =
+        if (hideBackground) {
+          Color.Transparent
+        } else {
+          MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
+        },
+      contentColor = color ?: MaterialTheme.colorScheme.onSurface,
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+      border =
+        if (hideBackground) {
+          null
+        } else {
+          BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+          )
+        },
+      content = iconContent,
+    )
+  }
 }
 
 @Composable
 fun ControlsGroup(
   modifier: Modifier = Modifier,
   hideBackground: Boolean = false,
+  glassTheme: Boolean = true,
   content: @Composable RowScope.() -> Unit,
 ) {
   val spacing = MaterialTheme.spacing
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val playerControlsStyle by appearancePreferences.playerControlsStyle.collectAsState()
+  val useGlassTheme = glassTheme && playerControlsStyle == PlayerControlsStyle.Glass
 
-  PlayerGlassSurface(
-    modifier = modifier,
-    shape = CircleShape,
-    hideBackground = hideBackground,
-    contentColor = MaterialTheme.colorScheme.onSurface,
-  ) {
+  if (useGlassTheme) {
+    PlayerGlassSurface(
+      modifier = modifier,
+      shape = CircleShape,
+      hideBackground = hideBackground,
+      contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+      Row(
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement =
+          androidx.compose.foundation.layout.Arrangement.spacedBy(spacing.extraSmall),
+        content = content,
+      )
+    }
+  } else {
     Row(
-      modifier = androidx.compose.ui.Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+      modifier = modifier,
       verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement =
-      androidx.compose.foundation.layout.Arrangement
-        .spacedBy(spacing.extraSmall),
+      horizontalArrangement =
+        androidx.compose.foundation.layout.Arrangement.spacedBy(spacing.extraSmall),
       content = content,
     )
   }
