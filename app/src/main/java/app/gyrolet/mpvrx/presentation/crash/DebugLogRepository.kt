@@ -97,7 +97,7 @@ internal object DebugLogReader {
       val parsed = parseLines(primary.lines, expectedPid = pid, allowRawFallback = true)
       if (parsed.isNotEmpty()) {
         return DebugLogSnapshot(
-          entries = parsed.takeLast(DEBUG_LOG_ENTRY_LIMIT),
+          entries = mergeWithBufferedEntries(parsed),
           source = "process-filtered",
           rawLineCount = primary.lines.size,
         )
@@ -122,7 +122,7 @@ internal object DebugLogReader {
       val parsed = parseLines(fallback.lines, expectedPid = pid, allowRawFallback = false)
       if (parsed.isNotEmpty()) {
         return DebugLogSnapshot(
-          entries = parsed.takeLast(DEBUG_LOG_ENTRY_LIMIT),
+          entries = mergeWithBufferedEntries(parsed),
           source = "pid-fallback",
           rawLineCount = fallback.lines.size,
         )
@@ -130,15 +130,27 @@ internal object DebugLogReader {
 
       // A successful command with no entries is not an error. Android can legitimately expose an
       // empty current-process buffer immediately after process start or after a buffer clear.
+      val bufferedEntries = mergeWithBufferedEntries(emptyList())
       return DebugLogSnapshot(
-        entries = emptyList(),
-        source = "empty",
+        entries = bufferedEntries,
+        source = if (bufferedEntries.isEmpty()) "empty" else "in-app-buffer",
         rawLineCount = fallback.lines.size,
       )
     }
 
     failures += fallback.errorMessage("fallback logcat")
     throw IOException(failures.filter { it.isNotBlank() }.joinToString("; ").ifBlank { "Unable to read logcat" })
+  }
+
+  private fun mergeWithBufferedEntries(parsed: List<DebugLogEntry>): List<DebugLogEntry> {
+    val merged = (parsed + DebugLogBuffer.snapshot())
+      .distinctBy { entry ->
+        // Logcat and the in-app buffer may contain the same event. Keep one copy when their
+        // timestamp, severity, tag, and message match, while preserving genuinely distinct lines.
+        "${entry.timeMillis}|${entry.level.code}|${entry.tag}|${entry.message}"
+      }
+      .sortedBy { it.timeMillis }
+    return merged.takeLast(DEBUG_LOG_ENTRY_LIMIT)
   }
 
   internal fun parseForTesting(
@@ -330,5 +342,5 @@ private fun parseAndroidTimestamp(
     parsedCalendar.timeInMillis
   }.getOrNull()
 
-private fun formatDisplayTime(timeMillis: Long): String =
+internal fun formatDisplayTime(timeMillis: Long): String =
   SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(timeMillis))

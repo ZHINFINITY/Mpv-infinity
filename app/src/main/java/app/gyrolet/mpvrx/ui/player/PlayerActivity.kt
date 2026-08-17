@@ -37,6 +37,7 @@ import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
+import app.gyrolet.mpvrx.presentation.crash.AppDebugLog
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
@@ -1051,7 +1052,7 @@ class PlayerActivity :
       }.onSuccess {
         onStarted()
       }.onFailure { error ->
-        Log.e(TAG, "Media3 could not start playback; falling back to MPV", error)
+        AppDebugLog.error(TAG, "Media3 could not start playback; falling back to MPV", error)
         switchToMpvEngine()
       }
     }
@@ -1423,7 +1424,7 @@ class PlayerActivity :
 
   private fun switchToMedia3Engine(item: PlaybackItem) {
     if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) return
-    Log.i(
+    AppDebugLog.info(
       TAG,
       "Playback engine selected engine=MEDIA3 uri=${item.playableUri} " +
         "originalUri=${item.originalUri} title=${item.title.orEmpty().ifBlank { "<untitled>" }} " +
@@ -1464,7 +1465,7 @@ class PlayerActivity :
               media3ItemId == item.stableId &&
               !media3VideoFrameRendered
           ) {
-            Log.w(TAG, "Media3 produced no video frame; falling back to MPV")
+            AppDebugLog.warn(TAG, "Media3 produced no video frame; falling back to MPV")
             switchToMpvEngine()
           }
         }
@@ -1482,7 +1483,7 @@ class PlayerActivity :
       return
     }
     val currentItem = PlaybackSession.queue.value.currentItem
-    Log.i(
+    AppDebugLog.info(
       TAG,
       "Playback engine selected engine=MPV " +
         "uri=${currentItem?.playableUri.orEmpty()} " +
