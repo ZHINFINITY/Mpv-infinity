@@ -65,6 +65,7 @@ fun PlayerSheets(
   onSeekToChapter: (Int) -> Unit,
   // Decoders sheet
   decoder: Decoder,
+  isMedia3Active: Boolean = false,
   onUpdateDecoder: (Decoder) -> Unit,
   // Speed sheet
   speed: Float,
@@ -334,8 +335,9 @@ fun PlayerSheets(
     Sheets.Decoders -> {
       DecodersSheet(
         selectedDecoder = decoder,
+        isMedia3Active = isMedia3Active,
         onSelect = onUpdateDecoder,
-        onDismissRequest,
+        onDismissRequest = onDismissRequest,
       )
     }
 

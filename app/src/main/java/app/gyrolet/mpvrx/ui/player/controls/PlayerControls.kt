@@ -184,6 +184,10 @@ fun <T> playerControlsEnterAnimationSpec(): FiniteAnimationSpec<T> =
 fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
+  isMedia3Active: Boolean = false,
+  onDecoderSelected: (Decoder) -> Unit = { decoder ->
+    PlaybackSession.setPropertyString("hwdec", decoder.value)
+  },
   modifier: Modifier = Modifier,
 ) {
   val spacing = MaterialTheme.spacing
@@ -398,7 +402,8 @@ fun PlayerControls(
           viewModel.unpause()
         },
         decoder = decoder,
-        onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+        isMedia3Active = isMedia3Active,
+        onUpdateDecoder = onDecoderSelected,
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
         onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
         onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
@@ -1899,7 +1904,8 @@ fun PlayerControls(
         viewModel.unpause()
       },
       decoder = decoder,
-      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      isMedia3Active = isMedia3Active,
+      onUpdateDecoder = onDecoderSelected,
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
       onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
       onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },

@@ -50,6 +50,7 @@ import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
+import app.gyrolet.mpvrx.preferences.MPVDecoderMode
 import app.gyrolet.mpvrx.preferences.PlaybackEngineMode
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.Screen
@@ -152,6 +153,24 @@ object DecoderPreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = playbackEngine.summary,
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              val mpvDecoderMode by preferences.mpvDecoderMode.collectAsState()
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpv_mode_title),
+                value = mpvDecoderMode,
+                onValueChange = { preferences.mpvDecoderMode.set(it) },
+                values = MPVDecoderMode.entries,
+                valueToText = { AnnotatedString(it.displayName) },
+                title = { Text(stringResource(R.string.pref_decoder_mpv_mode_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(R.string.pref_decoder_mpv_mode_summary, mpvDecoderMode.displayName),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

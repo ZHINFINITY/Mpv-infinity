@@ -206,10 +206,7 @@ class MPVView(
     )
 
     // Fongmi can map direct MediaCodec frames into Vulkan; other Vulkan builds start with copy mode.
-    PlaybackSession.setOptionString(
-      "hwdec",
-      hwdecMode,
-    )
+    PlaybackSession.setOptionString("hwdec", hwdecMode)
     PlaybackSession.setOptionString("hwdec-codecs", "all")
 
     // These were forced on between the last known-good build (e3b1de8) and the first build
@@ -642,6 +639,7 @@ class MPVView(
 
   private fun preferredHwdecMode(usesVulkan: Boolean): String =
     RendererBackendPolicy.preferredHwdecMode(
+      requestedMode = decoderPreferences.mpvDecoderMode.get().value,
       hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
       usesVulkan = usesVulkan,
       buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,

@@ -89,6 +89,7 @@ import app.gyrolet.mpvrx.preferences.AudioPlayerOrientation
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
+import app.gyrolet.mpvrx.preferences.MPVDecoderMode
 import app.gyrolet.mpvrx.preferences.PlaybackEngineMode
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
@@ -192,6 +193,14 @@ class PlayerActivity :
         Log.w(TAG, "Media3 playback error; falling back to MPV", error)
         lifecycleScope.launch(Dispatchers.Main.immediate) {
           switchToMpvEngine()
+        }
+      },
+      onVideoFrameRendered = {
+        lifecycleScope.launch(Dispatchers.Main.immediate) {
+          if (playbackEngine == PlaybackEngine.MEDIA3) {
+            media3VideoFrameRendered = true
+            media3VideoWatchdogJob?.cancel()
+          }
         }
       },
     )
@@ -396,8 +405,10 @@ class PlayerActivity :
   private var isInBackgroundPlayback = false // Track if we are currently in background playback mode
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
-  private var playbackEngine = PlaybackEngine.MPV
+  private var playbackEngine by mutableStateOf(PlaybackEngine.MPV)
   private var media3ItemId: String? = null
+  private var media3VideoFrameRendered = false
+  private var media3VideoWatchdogJob: Job? = null
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
   private var savePlaybackStateJob: Job? = null // Track ongoing save job
@@ -976,6 +987,16 @@ class PlayerActivity :
           PlayerControls(
             viewModel = viewModel,
             onBackPress = ::handleBackPress,
+            isMedia3Active = playbackEngine == PlaybackEngine.MEDIA3,
+            onDecoderSelected = { decoder ->
+              decoderPreferences.mpvDecoderMode.set(
+                MPVDecoderMode.entries.firstOrNull {
+                  it.value == decoder.value
+                } ?: MPVDecoderMode.Auto,
+              )
+              PlaybackSession.setPropertyString("hwdec", decoder.value)
+              if (playbackEngine == PlaybackEngine.MEDIA3) switchToMpvEngine()
+            },
             modifier = Modifier,
           )
         }
@@ -1275,6 +1296,8 @@ class PlayerActivity :
       Log.e(TAG, "Error during onDestroy", e)
     }
 
+    media3VideoWatchdogJob?.cancel()
+    media3VideoWatchdogJob = null
     media3PlaybackController.release()
     super.onDestroy()
     // The core remains alive throughout Android/ViewModel/window cleanup. Only after super returns
@@ -1369,6 +1392,8 @@ class PlayerActivity :
       }
     playbackEngine = PlaybackEngine.MEDIA3
     media3ItemId = item.stableId
+    media3VideoFrameRendered = false
+    media3VideoWatchdogJob?.cancel()
     binding.player.visibility = View.INVISIBLE
     binding.media3Player.visibility = View.VISIBLE
     // MPV remains initialized for advanced playback, but it must not render or continue audio
@@ -1386,12 +1411,34 @@ class PlayerActivity :
         playWhenReady = true,
       )
     }.onFailure { error ->
-      Log.e(TAG, "Media3 could not start IPTV playback; falling back to MPV", error)
+      Log.e(TAG, "Media3 could not start playback; falling back to MPV", error)
       switchToMpvEngine()
+      return
+    }
+
+    // Dolby Vision routing must not leave the user with audio and a permanently blank video surface.
+    // Some Dolby Vision profiles are accepted by Media3’s audio pipeline but never produce a
+    // rendered video frame on a particular device decoder. Give the renderer time to initialize,
+    // then return to MPV, which is known to render this device’s file correctly.
+    if (isDolbyVisionItem(item)) {
+      media3VideoWatchdogJob = lifecycleScope.launch {
+        delay(10_000L)
+        if (
+          playbackEngine == PlaybackEngine.MEDIA3 &&
+            media3ItemId == item.stableId &&
+            !media3VideoFrameRendered
+        ) {
+          Log.w(TAG, "Media3 produced no video frame; falling back to MPV")
+          switchToMpvEngine()
+        }
+      }
     }
   }
 
   private fun switchToMpvEngine() {
+    media3VideoWatchdogJob?.cancel()
+    media3VideoWatchdogJob = null
+    media3VideoFrameRendered = false
     if (playbackEngine == PlaybackEngine.MPV) {
       binding.media3Player.visibility = View.GONE
       binding.player.visibility = View.VISIBLE
