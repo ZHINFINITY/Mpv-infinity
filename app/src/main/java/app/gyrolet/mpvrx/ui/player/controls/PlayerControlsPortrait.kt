@@ -221,7 +221,11 @@ fun BottomPlayerControlsPortrait(
     modifier =
       Modifier
         .fillMaxWidth()
-        .padding(horizontal = MaterialTheme.spacing.small, bottom = MaterialTheme.spacing.medium),
+        .padding(
+          start = MaterialTheme.spacing.small,
+          end = MaterialTheme.spacing.small,
+          bottom = MaterialTheme.spacing.medium,
+        ),
     maxItemsInEachRow = 5,
     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
     verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
