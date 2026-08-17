@@ -518,6 +518,15 @@ class PlayerViewModel : ViewModel(),
           ?: persistentListOf()
       }.stateIn(viewModelScope, SharingStarted.Lazily, persistentListOf())
 
+  val videoTracks: StateFlow<List<TrackNode>> =
+    PlaybackSession.propNode["track-list"]
+      .map { node ->
+        node?.toObject<List<TrackNode>>(json)
+          ?.filter { it.isVideo && !it.isAlbumArtwork }
+          ?.toImmutableList()
+          ?: persistentListOf()
+      }.stateIn(viewModelScope, SharingStarted.Lazily, persistentListOf())
+
   val isAudioOnly: StateFlow<Boolean> =
     combine(
       PlaybackSession.propNode["track-list"],

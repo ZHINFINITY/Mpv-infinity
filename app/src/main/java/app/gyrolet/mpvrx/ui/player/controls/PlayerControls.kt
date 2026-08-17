@@ -127,7 +127,9 @@ import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.player.PlayerUpdates
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 import app.gyrolet.mpvrx.ui.player.Sheets
+import app.gyrolet.mpvrx.ui.player.VideoFormatStatusRow
 import app.gyrolet.mpvrx.ui.player.VideoOpenAnimationOverlay
+import app.gyrolet.mpvrx.ui.player.detectVideoFormatStatus
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterH
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterV
 import app.gyrolet.mpvrx.ui.player.buildControlsExitH
@@ -257,6 +259,50 @@ fun PlayerControls(
   val activeDecoder by PlaybackSession.propString["hwdec-current"].collectAsState()
   val decoder = remember(activeDecoder, configuredDecoder) {
     getDecoderFromValue(activeDecoder?.takeIf { it.isNotBlank() } ?: configuredDecoder ?: "auto")
+  }
+  val videoTracks by viewModel.videoTracks.collectAsState(persistentListOf())
+  val activeVideoTrack = remember(videoTracks) {
+    videoTracks.firstOrNull { it.isSelected } ?: videoTracks.firstOrNull()
+  }
+  val sourcePrimaries by PlaybackSession.propString["video-params/primaries"].collectAsState()
+  val sourceGamma by PlaybackSession.propString["video-params/gamma"].collectAsState()
+  val sourcePixelFormat by PlaybackSession.propString["video-params/pixelformat"].collectAsState()
+  val sourceMaxLuma by PlaybackSession.propDouble["video-params/max-luma"].collectAsState()
+  val sourceMaxCll by PlaybackSession.propDouble["video-params/max-cll"].collectAsState()
+  val sourceMaxFall by PlaybackSession.propDouble["video-params/max-fall"].collectAsState()
+  val outputPrimaries by PlaybackSession.propString["video-target-params/primaries"].collectAsState()
+  val outputGamma by PlaybackSession.propString["video-target-params/gamma"].collectAsState()
+  val outputPixelFormat by PlaybackSession.propString["video-target-params/pixelformat"].collectAsState()
+  val filteredOutputPrimaries by PlaybackSession.propString["video-out-params/primaries"].collectAsState()
+  val filteredOutputGamma by PlaybackSession.propString["video-out-params/gamma"].collectAsState()
+  val filteredOutputPixelFormat by PlaybackSession.propString["video-out-params/pixelformat"].collectAsState()
+  val videoFormatStatus = remember(
+    activeVideoTrack,
+    sourcePrimaries,
+    sourceGamma,
+    sourcePixelFormat,
+    sourceMaxLuma,
+    sourceMaxCll,
+    sourceMaxFall,
+    outputPrimaries,
+    outputGamma,
+    outputPixelFormat,
+    filteredOutputPrimaries,
+    filteredOutputGamma,
+    filteredOutputPixelFormat,
+  ) {
+    detectVideoFormatStatus(
+      videoTrack = activeVideoTrack,
+      sourcePrimaries = sourcePrimaries,
+      sourceGamma = sourceGamma,
+      sourcePixelFormat = sourcePixelFormat,
+      sourceMaxLuma = sourceMaxLuma,
+      sourceMaxCll = sourceMaxCll,
+      sourceMaxFall = sourceMaxFall,
+      outputPrimaries = outputPrimaries ?: filteredOutputPrimaries,
+      outputGamma = outputGamma ?: filteredOutputGamma,
+      outputPixelFormat = outputPixelFormat ?: filteredOutputPixelFormat,
+    )
   }
   val isSpeedNonOne = remember(playbackSpeed) {
     abs((playbackSpeed ?: 1f) - 1f) > 0.001f
@@ -1621,6 +1667,7 @@ fun PlayerControls(
                 realtimeSubsLanguage = realtimeSubsLanguage,
                 translationStatus = translationStatus,
                 translatingTrackName = translatingTrackName,
+                videoFormatStatus = videoFormatStatus,
               )
             } else {
               TopLeftPlayerControlsLandscape(
@@ -1634,6 +1681,7 @@ fun PlayerControls(
                 realtimeSubsLanguage = realtimeSubsLanguage,
                 translationStatus = translationStatus,
                 translatingTrackName = translatingTrackName,
+                videoFormatStatus = videoFormatStatus,
               )
             }
           }
