@@ -189,7 +189,7 @@ class MediaPlaybackService :
     }
   }
 
-  private val binder = MediaPlaybackBinder()
+  private val binder = MediaPlaybackBinder(this)
   private lateinit var mediaSession: MediaSessionCompat
   private val playerPreferences: PlayerPreferences by inject()
   private val advancedPreferences: AdvancedPreferences by inject()
@@ -291,8 +291,14 @@ class MediaPlaybackService :
       }
     }
 
-  inner class MediaPlaybackBinder : Binder() {
-    fun getService() = this@MediaPlaybackService
+  class MediaPlaybackBinder(service: MediaPlaybackService) : Binder() {
+    private val serviceReference = WeakReference(service)
+
+    fun getService(): MediaPlaybackService? = serviceReference.get()
+
+    fun clear() {
+      serviceReference.clear()
+    }
   }
 
   fun isForegroundReady(): Boolean = foregroundReady
@@ -1677,6 +1683,7 @@ class MediaPlaybackService :
     } finally {
       isServiceRunning = false
       if (activeInstance === this) activeInstance = null
+      binder.clear()
       stopDetachedPlaybackIfNeeded()
       handingBackToActivity = false
       super.onDestroy()
