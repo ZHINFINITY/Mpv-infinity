@@ -115,7 +115,7 @@ android {
     named("debug") {
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-${getCommitCount()}"
-      resValue("string", "app_name", "mpvRx-Debug")
+      resValue("string", "app_name", "Mpv∞-Debug")
     }
   }
 
