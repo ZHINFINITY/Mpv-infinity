@@ -361,10 +361,6 @@
   <string name="pref_about_summary">شكر وتقدير، تراخيص</string>
   <string name="pref_about_oss_libraries">المكتبات</string>
   <string name="pref_about_donate_title">تبرع</string>
-  <string name="pref_about_donate_kofi">Ko-fi</string>
-  <string name="pref_about_donate_kofi_summary">ادعم المطور على Ko-fi</string>
-  <string name="pref_about_donate_paypal">PayPal</string>
-  <string name="pref_about_donate_paypal_summary">ادعم المطور على PayPal</string>
   <string name="pref_about_donate_upi">UPI</string>
   <string name="player_sheets_add_ext_sub">إضافة ترجمة خارجية</string>
   <string name="player_sheets_add_ext_audio">إضافة مسارات صوت خارجية</string>
@@ -1307,13 +1303,13 @@
   <string name="ui_pan_zoom">التحريك والتكبير</string>
   <string name="ui_decrease_zoom">تصغير</string>
   <string name="ui_increase_zoom">تكبير</string>
-  <string name="ui_by_ritesh_pandit">إعداد Ritesh Pandit</string>
+  <string name="ui_by_zhinfinity">إعداد ZHINFINITY</string>
   <string name="ui_github">GitHub</string>
   <string name="ui_device_info">معلومات الجهاز</string>
-  <string name="ui_buy_me_a_coffee">ادعمني بقهوة</string>
-  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">إذا أعجبك Mpv∞، فكّر في دعم تطويره. كل مساهمة تساعد!</string>
+  <string name="ui_buy_me_a_coffee">Support ZHINFINITY</string>
+  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Support ZHINFINITY's work on Mpv∞.</string>
   <string name="ui_upi_id">معرّف UPI</string>
-  <string name="ui_panditritesh2001_okhdfcbank">panditritesh2001@okhdfcbank</string>
+  <string name="ui_zhinfinity_upi">zhjjk001-1@oksbi</string>
   <string name="ui_send_love">أرسل دعمك</string>
   <string name="ui_auto_check_for_updates">البحث التلقائي عن التحديثات</string>
   <string name="ui_check_on_startup">التحقق عند بدء التشغيل</string>
@@ -1516,7 +1512,7 @@
   <string name="syncplay_player_status">Syncplay: %1$s (%2$d مستخدمين)</string>
   <!-- Additional synchronized strings -->
   <string name="app_name">Mpv∞</string>
-  <string name="github_repo_url">https://github.com/Riteshp2001/mpvRx</string>
+  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-</string>
   <string name="hdr_mode_bt2020">BT.2020</string>
   <string name="hdr_mode_bt2100_hlg">BT.2100 HLG</string>
   <string name="hdr_mode_bt2100_pq">BT.2100 PQ</string>
@@ -1528,9 +1524,7 @@
   <string name="player_sheets_track_lang_wo_title">#%1$d: %2$s</string>
   <string name="player_sheets_track_title_w_lang">#%1$d: %2$s (%3$s)</string>
   <string name="player_sheets_track_title_wo_lang">#%1$d: %2$s</string>
-  <string name="pref_about_donate_kofi_url">https://ko-fi.com/adityanarvekar</string>
-  <string name="pref_about_donate_paypal_url">https://paypal.me/aadinarvekar</string>
-  <string name="pref_about_donate_upi_id">aadiinarvekar@upi</string>
+  <string name="pref_about_donate_upi_id">zhjjk001-1@oksbi</string>
   <string name="ui_24fps">24fps</string>
   <string name="ui_30fps">30fps</string>
   <string name="ui_60fps">60fps</string>

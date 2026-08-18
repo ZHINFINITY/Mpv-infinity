@@ -361,10 +361,6 @@ Suivant : NEXT</string>
   <string name="pref_about_summary">Remerciements, licences</string>
   <string name="pref_about_oss_libraries">Bibliothèques</string>
   <string name="pref_about_donate_title">Faire un don</string>
-  <string name="pref_about_donate_kofi">Ko-fi</string>
-  <string name="pref_about_donate_kofi_summary">Soutenir le développeur sur Ko-fi</string>
-  <string name="pref_about_donate_paypal">PayPal</string>
-  <string name="pref_about_donate_paypal_summary">Soutenir le développeur sur PayPal</string>
   <string name="pref_about_donate_upi">UPI</string>
   <string name="player_sheets_add_ext_sub">Ajouter des sous-titres externes</string>
   <string name="player_sheets_add_ext_audio">Ajouter des pistes audio externes</string>
@@ -1307,13 +1303,13 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="ui_pan_zoom">Panoramique et zoom</string>
   <string name="ui_decrease_zoom">Réduire le zoom</string>
   <string name="ui_increase_zoom">Augmenter le zoom</string>
-  <string name="ui_by_ritesh_pandit">Par Ritesh Pandit</string>
+  <string name="ui_by_zhinfinity">Par ZHINFINITY</string>
   <string name="ui_github">GitHub</string>
   <string name="ui_device_info">Informations sur l’appareil</string>
-  <string name="ui_buy_me_a_coffee">Offrez-moi un café</string>
-  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Si vous appréciez Mpv∞, pensez à soutenir son développement. Chaque contribution compte !</string>
+  <string name="ui_buy_me_a_coffee">Support ZHINFINITY</string>
+  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Support ZHINFINITY's work on Mpv∞.</string>
   <string name="ui_upi_id">Identifiant UPI</string>
-  <string name="ui_panditritesh2001_okhdfcbank">panditritesh2001@okhdfcbank</string>
+  <string name="ui_zhinfinity_upi">zhjjk001-1@oksbi</string>
   <string name="ui_send_love">Envoyer votre soutien</string>
   <string name="ui_auto_check_for_updates">Rechercher automatiquement les mises à jour</string>
   <string name="ui_check_on_startup">Vérifier au démarrage</string>
@@ -1516,7 +1512,7 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="syncplay_player_status">Syncplay : %1$s (%2$d utilisateurs)</string>
   <!-- Additional synchronized strings -->
   <string name="app_name">Mpv∞</string>
-  <string name="github_repo_url">https://github.com/Riteshp2001/mpvRx</string>
+  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-</string>
   <string name="hdr_mode_bt2020">BT.2020</string>
   <string name="hdr_mode_bt2100_hlg">BT.2100 HLG</string>
   <string name="hdr_mode_bt2100_pq">BT.2100 PQ</string>
@@ -1528,9 +1524,7 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="player_sheets_track_lang_wo_title">#%1$d: %2$s</string>
   <string name="player_sheets_track_title_w_lang">#%1$d: %2$s (%3$s)</string>
   <string name="player_sheets_track_title_wo_lang">#%1$d: %2$s</string>
-  <string name="pref_about_donate_kofi_url">https://ko-fi.com/adityanarvekar</string>
-  <string name="pref_about_donate_paypal_url">https://paypal.me/aadinarvekar</string>
-  <string name="pref_about_donate_upi_id">aadiinarvekar@upi</string>
+  <string name="pref_about_donate_upi_id">zhjjk001-1@oksbi</string>
   <string name="ui_24fps">24fps</string>
   <string name="ui_30fps">30fps</string>
   <string name="ui_60fps">60fps</string>

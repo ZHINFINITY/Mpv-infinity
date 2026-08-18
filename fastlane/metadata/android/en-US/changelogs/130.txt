@@ -1,4 +1,4 @@
-MpvRx branding refresh across the app and project links
+Mpv∞ branding refresh across the app and ZHINFINITY project links
 Tree View NEW labels now update properly as you watch
 Single-child folders now flatten automatically
 Subtitle matching is smarter and more accurate

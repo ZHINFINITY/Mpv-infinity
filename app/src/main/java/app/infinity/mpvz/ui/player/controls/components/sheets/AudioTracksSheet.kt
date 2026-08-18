@@ -1,0 +1,216 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.infinity.mpvz.ui.player.controls.components.sheets
+
+import app.infinity.mpvz.ui.player.PlaybackSession
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AudioChannels
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.TrackNode
+import app.infinity.mpvz.ui.theme.spacing
+import kotlinx.collections.immutable.ImmutableList
+import org.koin.compose.koinInject
+
+@Composable
+fun AudioTracksSheet(
+  tracks: ImmutableList<TrackNode>,
+  onSelect: (TrackNode) -> Unit,
+  onAddAudioTrack: () -> Unit,
+  onOpenDelayPanel: () -> Unit,
+  onOpenEqualizerSheet: (() -> Unit)? = null,
+  isMedia3Active: Boolean = false,
+  onMedia3AudioChannels: ((AudioChannels) -> Unit)? = null,
+  onMedia3AudioProcessing: ((Boolean, Boolean) -> Unit)? = null,
+  onDismissRequest: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val audioPreferences = koinInject<AudioPreferences>()
+  val audioChannels by audioPreferences.audioChannels.collectAsState()
+
+  PlayerSheet(onDismissRequest) {
+    Column(modifier) {
+      AddTrackRow(
+        stringResource(R.string.player_sheets_add_ext_audio),
+        onAddAudioTrack,
+        actions = {
+          if (onOpenEqualizerSheet != null) {
+            IconButton(onClick = onOpenEqualizerSheet) {
+              Icon(Icons.RoundedFilled.Equalizer, stringResource(R.string.btn_label_equalizer))
+            }
+          }
+          IconButton(onClick = onOpenDelayPanel) {
+            Icon(Icons.RoundedFilled.AvTimer, null)
+          }
+        },
+      )
+
+      LazyColumn {
+        items(tracks, key = { it.id }) {
+          AudioTrackRow(
+            title =
+              buildString {
+                append(getTrackTitle(it))
+                if (it.supported == false) append(" (unsupported)")
+              },
+            isSelected = it.isSelected,
+            onClick = { onSelect(it) },
+            enabled = it.supported != false,
+          )
+        }
+        item {
+          Column(
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .padding(MaterialTheme.spacing.medium),
+          ) {
+            Spacer(modifier = Modifier.height(MaterialTheme.spacing.medium))
+            Text(
+              text = stringResource(id = R.string.pref_audio_channels),
+              style = MaterialTheme.typography.titleMedium,
+              color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(MaterialTheme.spacing.smaller))
+            LazyRow(
+              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
+            ) {
+              items(AudioChannels.entries, key = { it.name }) {
+                FilterChip(
+                  selected = audioChannels == it,
+                  onClick = {
+                    audioPreferences.audioChannels.set(it)
+                    if (isMedia3Active) {
+                      onMedia3AudioChannels?.invoke(it)
+                    } else if (it == AudioChannels.ReverseStereo) {
+                      PlaybackSession.setPropertyString(AudioChannels.AutoSafe.property, AudioChannels.AutoSafe.value)
+                    } else {
+                      PlaybackSession.setPropertyString(it.property, it.value)
+                    }
+                  },
+                  label = { Text(text = stringResource(id = it.title)) },
+                  leadingIcon = null,
+                )
+              }
+            }
+
+            val volumeNormalization by audioPreferences.volumeNormalization.collectAsState()
+            val drcEnabled by audioPreferences.drcEnabled.collectAsState()
+
+            Spacer(modifier = Modifier.height(MaterialTheme.spacing.medium))
+            Text(
+              text = stringResource(id = R.string.pref_audio_effects),
+              style = MaterialTheme.typography.titleMedium,
+              color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(MaterialTheme.spacing.smaller))
+            if (isMedia3Active) {
+              Text(
+                text = "Native effects apply to PCM audio; passthrough or offload may bypass them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = MaterialTheme.spacing.smaller),
+              )
+            }
+            LazyRow(
+              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
+            ) {
+              item {
+                FilterChip(
+                  selected = volumeNormalization,
+                  onClick = {
+                    val enabled = !volumeNormalization
+                    audioPreferences.volumeNormalization.set(enabled)
+                    if (isMedia3Active) onMedia3AudioProcessing?.invoke(enabled, drcEnabled)
+                  },
+                  label = { Text(text = stringResource(id = R.string.pref_audio_volume_normalization_title)) },
+                  leadingIcon = null,
+                )
+              }
+              item {
+                FilterChip(
+                  selected = drcEnabled,
+                  onClick = {
+                    val enabled = !drcEnabled
+                    audioPreferences.drcEnabled.set(enabled)
+                    if (isMedia3Active) onMedia3AudioProcessing?.invoke(volumeNormalization, enabled)
+                  },
+                  label = { Text(text = stringResource(id = R.string.pref_audio_drc_title)) },
+                  leadingIcon = null,
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun AudioTrackRow(
+  title: String,
+  isSelected: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  enabled: Boolean = true,
+  textColor: Color = MaterialTheme.colorScheme.onSurface,
+) {
+  Row(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .clickable(enabled = enabled, onClick = onClick)
+        .padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.extraSmall),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
+  ) {
+    RadioButton(
+      selected = isSelected,
+      onClick = onClick,
+      enabled = enabled,
+    )
+    Text(
+      title,
+      fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
+      fontStyle = if (isSelected) FontStyle.Italic else FontStyle.Normal,
+      color = textColor,
+    )
+  }
+}

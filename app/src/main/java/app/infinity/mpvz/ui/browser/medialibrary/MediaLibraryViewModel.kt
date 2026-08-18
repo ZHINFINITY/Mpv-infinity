@@ -1,0 +1,201 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.infinity.mpvz.ui.browser.medialibrary
+
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.repository.MediaFileRepository
+import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
+import app.infinity.mpvz.ui.browser.videolist.VideoWithPlaybackInfo
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.utils.media.MetadataRetrieval
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+
+class MediaLibraryViewModel(
+  application: Application,
+) : BaseBrowserViewModel(application),
+  KoinComponent {
+  private val appearancePreferences: AppearancePreferences by inject()
+  private val browserPreferences: BrowserPreferences by inject()
+  private val playbackStateRepository: PlaybackStateRepository by inject()
+
+  private val _videos = MutableStateFlow<List<Video>>(emptyList())
+  val videos: StateFlow<List<Video>> = _videos.asStateFlow()
+
+  private val _videosWithPlaybackInfo = MutableStateFlow<List<VideoWithPlaybackInfo>>(emptyList())
+  val videosWithPlaybackInfo: StateFlow<List<VideoWithPlaybackInfo>> = _videosWithPlaybackInfo.asStateFlow()
+
+  private val _isLoading = MutableStateFlow(false)
+  val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+  private val tag = "MediaLibraryViewModel"
+
+  init {
+    loadData()
+    viewModelScope.launch(Dispatchers.IO) {
+      PlaybackStateEvents.changes.collect {
+        if (_videos.value.isNotEmpty()) loadPlaybackInfo(_videos.value)
+      }
+    }
+  }
+
+  private fun loadData() {
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        _isLoading.value = true
+        var videoList =
+          MediaFileRepository.getAllVideos(
+            context = getApplication(),
+            includeAudioOverride = true,
+          )
+
+        if (MetadataRetrieval.isVideoMetadataNeeded(browserPreferences)) {
+          videoList =
+            MetadataRetrieval.enrichVideosIfNeeded(
+              context = getApplication(),
+              videos = videoList,
+              browserPreferences = browserPreferences,
+              metadataCache = metadataCache,
+            )
+        }
+
+        _videos.value = videoList
+        loadPlaybackInfo(videoList)
+      } catch (e: Exception) {
+        Log.e(tag, "Error loading media library videos", e)
+      } finally {
+        _isLoading.value = false
+      }
+    }
+  }
+
+  override fun refresh() {
+    loadData()
+  }
+
+  private suspend fun loadPlaybackInfo(videos: List<Video>) {
+    val playbackStates = playbackStateRepository.getAllPlaybackStates()
+    val currentTime = System.currentTimeMillis()
+    val thresholdDays = appearancePreferences.unplayedOldVideoDays.get()
+    val thresholdMillis = thresholdDays * 24L * 60L * 60L * 1000L
+    val watchedThreshold = browserPreferences.watchedThreshold.get()
+    val playbackByTitle = playbackStates.associateBy { it.mediaTitle }
+
+    fun findPlaybackState(video: Video) =
+      linkedSetOf(
+        PlaybackIdentity.forUri(video.uri.toString()),
+        PlaybackIdentity.forUri(video.path),
+        PlaybackIdentity.forUri("file://${video.path}"),
+      ).firstNotNullOfOrNull { playbackByTitle[it] }
+
+    val videosWithInfo =
+      videos.map { video ->
+        val playbackState = findPlaybackState(video)
+
+        val progress =
+          if (playbackState != null && video.duration > 0) {
+            val durationSeconds = video.duration / 1000
+            val watched = durationSeconds - playbackState.timeRemaining.toLong()
+            val progressValue = (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
+            if (progressValue in 0.01f..0.99f) progressValue else null
+          } else {
+            null
+          }
+
+        val videoAge = currentTime - (video.dateModified * 1000)
+
+        val isWatched =
+          if (playbackState != null && video.duration > 0) {
+            val durationSeconds = video.duration / 1000
+            val watched = durationSeconds - playbackState.timeRemaining.toLong()
+            val progressValue = (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
+            // Threshold 0 ("Infinitely") means never considered watched by progress.
+            val calculatedWatched = watchedThreshold > 0 && progressValue >= (watchedThreshold / 100f)
+            playbackState.hasBeenWatched || calculatedWatched
+          } else {
+            false
+          }
+
+        // 0 days means no age expiry. Otherwise NEW is bounded by the configured
+        // age window and is removed sooner if the watched threshold is reached.
+        val isWithinNewLabelAgeWindow = thresholdDays == 0 || videoAge <= thresholdMillis
+        val isOldAndUnplayed = !isWatched && isWithinNewLabelAgeWindow
+
+        VideoWithPlaybackInfo(
+          video = video,
+          timeRemaining = playbackState?.timeRemaining?.toLong(),
+          progressPercentage = progress,
+          isOldAndUnplayed = isOldAndUnplayed,
+          isWatched = isWatched,
+        )
+      }
+    _videosWithPlaybackInfo.value = videosWithInfo
+  }
+
+  fun setWatched(video: Video, watched: Boolean) {
+    viewModelScope.launch(Dispatchers.IO) {
+      val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+      val identifiers =
+        linkedSetOf(
+          PlaybackIdentity.forUri(video.uri.toString()),
+          PlaybackIdentity.forUri(video.path),
+          PlaybackIdentity.forUri("file://${video.path}"),
+        )
+      val existing = playbackStateRepository.getAllPlaybackStates().firstNotNullOfOrNull { state ->
+        if (state.mediaTitle in identifiers) state else null
+      }
+      playbackStateRepository.upsert(
+        (existing ?: PlaybackStateEntity(
+          mediaTitle = PlaybackIdentity.forUri(video.uri.toString()),
+          lastPosition = 0,
+          playbackSpeed = 1.0,
+          sid = -1,
+          secondarySid = -1,
+          subDelay = 0,
+          subSpeed = 1.0,
+          aid = -1,
+          audioDelay = 0,
+          timeRemaining = durationSeconds,
+          hasBeenWatched = false,
+        )).copy(
+          mediaTitle = PlaybackIdentity.forUri(video.uri.toString()),
+          lastPosition = 0,
+          timeRemaining = if (watched) 0 else durationSeconds,
+          hasBeenWatched = watched,
+        ),
+      )
+      PlaybackStateEvents.notifyChanged(PlaybackIdentity.forUri(video.uri.toString()))
+    }
+  }
+
+  companion object {
+    fun factory(application: Application): ViewModelProvider.Factory =
+      object : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = MediaLibraryViewModel(application) as T
+      }
+  }
+}

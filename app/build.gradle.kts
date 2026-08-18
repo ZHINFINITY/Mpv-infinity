@@ -15,12 +15,12 @@ plugins {
 }
 
 android {
-  namespace = "app.gyrolet.mpvrx"
+  namespace = "app.infinity.mpvz"
   compileSdk = 37
   ndkVersion = "27.3.13750724"
 
   defaultConfig {
-    applicationId = "app.gyrolet.mpvrx"
+    applicationId = "app.infinity.mpvz"
     minSdk = 26
     targetSdk = 36
     versionCode = 210
