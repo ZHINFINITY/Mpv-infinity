@@ -104,9 +104,11 @@ class Media3PlaybackController(
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
     val renderersFactory =
       DefaultRenderersFactory(appContext)
-        // Prefer Media3's bundled FFmpeg audio renderer for DTS/DTS-HD/TrueHD. The platform
-        // renderer remains available as a fallback for formats better handled by hardware.
-        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+        // Keep Android hardware/platform renderers first for formats the device supports, then
+        // fall back to the bundled FFmpeg renderer for DTS/DTS-HD/TrueHD and other unsupported
+        // platform formats. Prefer-mode would make FFmpeg decode every compatible audio track,
+        // adding avoidable native startup and CPU cost for E-AC-3/AC-3 on this device.
+        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         .setEnableDecoderFallback(true)
     player =
       ExoPlayer.Builder(appContext, renderersFactory)
@@ -116,7 +118,7 @@ class Media3PlaybackController(
           it.addListener(this)
           it.addAnalyticsListener(this)
         }
-    logInfo("controller created decoderFallback=true ffmpegRenderer=prefer")
+    logInfo("controller created decoderFallback=true ffmpegRenderer=platform-first")
   }
 
   fun attach(view: PlayerView) {
