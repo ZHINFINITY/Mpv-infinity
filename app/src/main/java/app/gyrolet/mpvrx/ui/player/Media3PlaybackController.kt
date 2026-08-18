@@ -93,7 +93,12 @@ class Media3PlaybackController(
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
-    val renderersFactory = DefaultRenderersFactory(appContext).setEnableDecoderFallback(true)
+    val renderersFactory =
+      DefaultRenderersFactory(appContext)
+        // Prefer Media3's bundled FFmpeg audio renderer for DTS/DTS-HD/TrueHD. The platform
+        // renderer remains available as a fallback for formats better handled by hardware.
+        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+        .setEnableDecoderFallback(true)
     player =
       ExoPlayer.Builder(appContext, renderersFactory)
         .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
@@ -102,7 +107,7 @@ class Media3PlaybackController(
           it.addListener(this)
           it.addAnalyticsListener(this)
         }
-    logInfo("controller created decoderFallback=true")
+    logInfo("controller created decoderFallback=true ffmpegRenderer=prefer")
   }
 
   fun attach(view: PlayerView) {
