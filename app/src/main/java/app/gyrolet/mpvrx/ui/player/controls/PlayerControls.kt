@@ -1593,7 +1593,7 @@ fun PlayerControls(
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
             val displayedSeekbarPosition =
-              if (useThumbFastSeekPreview && seekPreview.visible) {
+              if (!isMedia3Active && useThumbFastSeekPreview && seekPreview.visible) {
                 seekPreview.positionSeconds
               } else {
                 precisePosition
@@ -1687,7 +1687,7 @@ fun PlayerControls(
           SeekThumbnailPreviewBubble(
             position = seekPreview.positionSeconds,
             duration = seekbarDuration,
-            visible = useThumbFastSeekPreview && seekPreview.visible && !areControlsLocked,
+            visible = !isMedia3Active && useThumbFastSeekPreview && seekPreview.visible && !areControlsLocked,
             bitmap = seekPreview.bitmap,
             isLoading = seekPreview.isLoading,
             isPortrait = isPortrait,

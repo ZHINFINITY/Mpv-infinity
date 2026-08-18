@@ -434,6 +434,8 @@ class PlayerActivity :
   private var mpvStoppedForMedia3 = false
   private var media3VideoFrameRendered = false
   private var media3AutoFallbackItemId: String? = null
+  private var manualEngineOverrideItemId: String? = null
+  private var manualEngineOverride: PlaybackEngine? = null
   private var media3VideoWatchdogJob: Job? = null
   private var media3Attached = false
   private var viewModelHostAttached = false
@@ -1030,21 +1032,7 @@ class PlayerActivity :
               } else {
                 PlaybackEngineMode.MPV
               },
-            onEngineSelected = { selectedEngine ->
-              when (selectedEngine) {
-                PlaybackEngineMode.MPV -> {
-                  decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
-                  media3AutoFallbackItemId = null
-                  switchToMpvEngine()
-                }
-                PlaybackEngineMode.Media3 -> {
-                  decoderPreferences.playbackEngine.set(PlaybackEngineMode.Media3)
-                  media3AutoFallbackItemId = null
-                  switchToMedia3ForCurrentItem()
-                }
-                PlaybackEngineMode.Auto -> Unit
-              }
-            },
+            onEngineSelected = ::selectEngineFromDecoderSheet,
             onDecoderSelected = { decoder ->
               // MPV decoder choices must never wake or switch to MPV while Media3 owns playback.
               // Keep this guard at the Activity boundary in case a stale Compose callback arrives.
@@ -1630,6 +1618,9 @@ class PlayerActivity :
 
   private fun shouldUseMedia3(item: PlaybackItem): Boolean {
     if (item.originalUri.startsWith("magnet:", ignoreCase = true)) return false
+    if (manualEngineOverrideItemId == item.stableId) {
+      return manualEngineOverride == PlaybackEngine.MEDIA3
+    }
     return when (decoderPreferences.playbackEngine.get()) {
       PlaybackEngineMode.MPV -> false
       PlaybackEngineMode.Media3 -> true
@@ -1726,6 +1717,39 @@ class PlayerActivity :
 
   private fun currentPlaybackItem(): PlaybackItem? =
     PlaybackSession.state.value.currentItem ?: PlaybackSession.queue.value.currentItem
+
+  private fun selectEngineFromDecoderSheet(selectedEngine: PlaybackEngineMode) {
+    if (selectedEngine == PlaybackEngineMode.Auto) return
+    lifecycleScope.launch(Dispatchers.Main.immediate) {
+      var item: PlaybackItem? = currentPlaybackItem()
+      repeat(40) { attempt ->
+        if (item != null) return@repeat
+        delay(50L)
+        item = currentPlaybackItem()
+        if (item == null && attempt == 39) {
+          AppDebugLog.warn(TAG, "Manual engine selection timed out: no active PlaybackSession item")
+        }
+      }
+      val resolvedItem = item ?: return@launch
+      manualEngineOverrideItemId = resolvedItem.stableId
+      media3AutoFallbackItemId = null
+      when (selectedEngine) {
+        PlaybackEngineMode.MPV -> {
+          decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
+          manualEngineOverride = PlaybackEngine.MPV
+          AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=MPV")
+          switchToMpvEngine()
+        }
+        PlaybackEngineMode.Media3 -> {
+          decoderPreferences.playbackEngine.set(PlaybackEngineMode.Media3)
+          manualEngineOverride = PlaybackEngine.MEDIA3
+          AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=Media3")
+          switchToMedia3Engine(resolvedItem)
+        }
+        PlaybackEngineMode.Auto -> Unit
+      }
+    }
+  }
 
   private fun switchToMedia3ForCurrentItem() {
     lifecycleScope.launch(Dispatchers.Main.immediate) {
