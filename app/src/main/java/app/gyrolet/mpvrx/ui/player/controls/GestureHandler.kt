@@ -1125,12 +1125,14 @@ fun GestureHandler(
                       gestureType = "horizontal_seek"
                       hasStartedSeeking = true
                       initialVideoPosition =
-                        (
+                        if (viewModel.isMedia3ActiveForGesture()) {
+                          viewModel.precisePosition.value.toDouble()
+                        } else {
                           PlaybackSession.getPropertyDouble("time-pos")
                             ?: viewModel.precisePosition.value.toDouble()
-                        ).takeIf { it.isFinite() } ?: 0.0
+                        }.takeIf { it.isFinite() } ?: 0.0
                       pendingSeekPosition = initialVideoPosition
-                      if (!useThumbFastSeekPreview) {
+                      if (!useThumbFastSeekPreview && !viewModel.isMedia3ActiveForGesture()) {
                         viewModel.beginLegacySeekPreview()
                         legacySeekPreviewActive = true
                       }
