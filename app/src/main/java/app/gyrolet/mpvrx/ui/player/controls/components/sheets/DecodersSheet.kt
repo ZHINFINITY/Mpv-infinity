@@ -10,13 +10,20 @@
 package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import app.gyrolet.mpvrx.ui.theme.spacing
 import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.presentation.components.PlayerSheet
@@ -44,23 +51,42 @@ fun DecodersSheet(
     LazyColumn {
       if (isMedia3Active) {
         item {
-          Text(
-            text = stringResource(R.string.player_sheets_decoder_media3_notice),
-            color = MaterialTheme.colorScheme.outline,
-          )
-          Text(
-            text = "Active Media3 decoder: ${media3DecoderName ?: "waiting for decoder"}",
-            color = MaterialTheme.colorScheme.outline,
+          Column(
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .padding(
+                  start = MaterialTheme.spacing.medium + 48.dp,
+                  end = MaterialTheme.spacing.medium,
+                  top = MaterialTheme.spacing.extraSmall,
+                  bottom = MaterialTheme.spacing.extraSmall,
+                ),
+          ) {
+            Text(
+              text = stringResource(R.string.player_sheets_decoder_media3_notice),
+              color = Color.White,
+            )
+          }
+        }
+        item {
+          AudioTrackRow(
+            title = "Media3: ${media3DecoderName ?: "waiting for decoder"}",
+            isSelected = true,
+            enabled = false,
+            onClick = {},
+            textColor = Color.White,
           )
         }
-      }
-      items(Decoder.entries, key = { it.name }) { decoder ->
-        AudioTrackRow(
-          title = stringResource(R.string.player_sheets_decoder_formatted, decoder.title, decoder.value),
-          isSelected = selectedDecoder == decoder,
-          enabled = decoder != Decoder.HWPlus || directMediaCodecAllowed,
-          onClick = { onSelect(decoder) },
-        )
+      } else {
+        items(Decoder.entries, key = { it.name }) { decoder ->
+          AudioTrackRow(
+            title = stringResource(R.string.player_sheets_decoder_formatted, decoder.title, decoder.value),
+            isSelected = selectedDecoder == decoder,
+            enabled = decoder != Decoder.HWPlus || directMediaCodecAllowed,
+            onClick = { onSelect(decoder) },
+            textColor = Color.White,
+          )
+        }
       }
     }
   }

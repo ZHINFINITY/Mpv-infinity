@@ -10,7 +10,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
+import app.gyrolet.mpvrx.ui.player.TrackNode
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -48,8 +50,11 @@ class Media3PlaybackController(
     val videoDecoderName: String? = null,
     val videoWidth: Int = C.LENGTH_UNSET,
     val videoHeight: Int = C.LENGTH_UNSET,
+    val videoFrameRate: Float = -1f,
     val videoColorSpace: Int = -1,
     val videoColorTransfer: Int = -1,
+    val audioTracks: List<TrackNode> = emptyList(),
+    val subtitleTracks: List<TrackNode> = emptyList(),
   )
 
   private val appContext = context.applicationContext
@@ -58,7 +63,11 @@ class Media3PlaybackController(
   private var attachedView: PlayerView? = null
   private var lastPlaybackState = Player.STATE_IDLE
   private var latestVideoFormat: Format? = null
+  private var latestAudioTracks: List<TrackNode> = emptyList()
+  private var latestSubtitleTracks: List<TrackNode> = emptyList()
   private var latestVideoDecoderName: String? = null
+  private var media3AudioTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
+  private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
@@ -155,6 +164,45 @@ class Media3PlaybackController(
     player.setPlaybackSpeed(clampedSpeed)
   }
 
+  fun selectAudioTrack(trackId: Int): Boolean {
+    val selection = media3AudioTrackGroups[trackId] ?: return false
+    val (group, trackIndex) = selection
+    logInfo("selecting audio track id=$trackId group=${group.id} index=$trackIndex")
+    player.trackSelectionParameters =
+      player.trackSelectionParameters
+        .buildUpon()
+        .setOverrideForType(TrackSelectionOverride(group, listOf(trackIndex)))
+        .build()
+    return true
+  }
+
+  fun selectSubtitleTrack(trackId: Int): Boolean {
+    val selection = media3SubtitleTrackGroups[trackId] ?: return false
+    val (group, trackIndex) = selection
+    logInfo("selecting subtitle track id=$trackId group=${group.id} index=$trackIndex")
+    player.trackSelectionParameters =
+      player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .setOverrideForType(TrackSelectionOverride(group, listOf(trackIndex)))
+        .build()
+    return true
+  }
+
+  fun disableSubtitles(): Boolean {
+    logInfo("disabling subtitles")
+    player.trackSelectionParameters =
+      player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        .build()
+    return true
+  }
+
+  fun isSubtitleSelected(trackId: Int): Boolean {
+    return latestSubtitleTracks.any { it.id == trackId && it.selected == true }
+  }
+
   fun currentState(): State = snapshot()
 
   fun release() {
@@ -204,6 +252,57 @@ class Media3PlaybackController(
   override fun onEvents(player: Player, events: Player.Events) = publishState()
 
   override fun onTracksChanged(tracks: Tracks) {
+    val audioEntries = mutableListOf<TrackNode>()
+    val audioSelections = mutableMapOf<Int, Pair<androidx.media3.common.TrackGroup, Int>>()
+    val subtitleEntries = mutableListOf<TrackNode>()
+    val subtitleSelections = mutableMapOf<Int, Pair<androidx.media3.common.TrackGroup, Int>>()
+    var audioId = 1
+    var subtitleId = 10_001
+    tracks.groups.forEach { group ->
+      when (group.type) {
+        C.TRACK_TYPE_AUDIO -> {
+          (0 until group.length).forEach { trackIndex ->
+            val format = group.getTrackFormat(trackIndex)
+            val id = audioId++
+            audioSelections[id] = group.mediaTrackGroup to trackIndex
+            audioEntries +=
+              TrackNode(
+                id = id,
+                type = "audio",
+                title = format.label ?: format.id ?: format.codecs,
+                lang = format.language,
+                selected = group.isTrackSelected(trackIndex),
+                default = (format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0,
+                forced = (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0,
+                codec = format.codecs ?: format.sampleMimeType,
+                audioChannels = format.channelCount.takeIf { it != C.LENGTH_UNSET }?.toLong(),
+                formatName = format.sampleMimeType,
+              )
+          }
+        }
+        C.TRACK_TYPE_TEXT -> {
+          (0 until group.length).forEach { trackIndex ->
+            val format = group.getTrackFormat(trackIndex)
+            val id = subtitleId++
+            subtitleSelections[id] = group.mediaTrackGroup to trackIndex
+            subtitleEntries +=
+              TrackNode(
+                id = id,
+                type = "sub",
+                title = format.label ?: format.id ?: format.codecs,
+                lang = format.language,
+                selected = group.isTrackSelected(trackIndex),
+                default = (format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0,
+                forced = (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0,
+                codec = format.codecs ?: format.sampleMimeType,
+                formatName = format.sampleMimeType,
+              )
+          }
+        }
+      }
+    }
+    media3AudioTrackGroups = audioSelections
+    media3SubtitleTrackGroups = subtitleSelections
     latestVideoFormat =
       tracks.groups
         .asSequence()
@@ -220,8 +319,10 @@ class Media3PlaybackController(
       }
     logInfo(
       "tracks changed selected=${trackDetails.joinToString(" | ").ifBlank { "none" }} " +
-        "groups=${tracks.groups.size}",
+        "groups=${tracks.groups.size} audioTracks=${audioEntries.size}",
     )
+    latestAudioTracks = audioEntries
+    latestSubtitleTracks = subtitleEntries
     publishState()
   }
 
@@ -311,8 +412,11 @@ class Media3PlaybackController(
       videoDecoderName = latestVideoDecoderName,
       videoWidth = latestVideoFormat?.width ?: C.LENGTH_UNSET,
       videoHeight = latestVideoFormat?.height ?: C.LENGTH_UNSET,
+      videoFrameRate = latestVideoFormat?.frameRate ?: -1f,
       videoColorSpace = latestVideoFormat?.colorInfo?.colorSpace ?: -1,
       videoColorTransfer = latestVideoFormat?.colorInfo?.colorTransfer ?: -1,
+      audioTracks = latestAudioTracks,
+      subtitleTracks = latestSubtitleTracks,
     )
 
   private fun logInfo(message: String) {

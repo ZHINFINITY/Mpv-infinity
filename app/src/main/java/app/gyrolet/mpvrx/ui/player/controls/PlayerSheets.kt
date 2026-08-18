@@ -438,6 +438,8 @@ fun PlayerSheets(
         onPause = viewModel::pause,
         onUnpause = viewModel::unpause,
         onPauseUnpause = viewModel::pauseUnpause,
+        onPreviousFrame = viewModel::frameStepBackward,
+        onNextFrame = viewModel::frameStepForward,
         onSeekTo = { position, _ -> viewModel.seekTo(position) },
         onDismissRequest = onDismissRequest,
       )

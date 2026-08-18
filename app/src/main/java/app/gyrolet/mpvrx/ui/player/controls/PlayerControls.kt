@@ -221,8 +221,12 @@ fun PlayerControls(
   val preciseDuration by viewModel.preciseDuration.collectAsState()
   val paused = if (isMedia3Active) !media3State.isPlaying else mpvPaused
   val duration =
-    if (isMedia3Active && media3State.durationMs != androidx.media3.common.C.TIME_UNSET) {
-      (media3State.durationMs / 1000L).toInt()
+    if (isMedia3Active) {
+      // Do not reuse the inactive MPV timeline while Media3 is preparing. That stale duration can
+      // make a slider interaction submit an unintended seek back to zero.
+      media3State.durationMs
+        .takeIf { it > 0L && it != androidx.media3.common.C.TIME_UNSET }
+        ?.let { (it / 1000L).coerceAtLeast(1L).toInt() }
     } else {
       mpvDuration
     }
@@ -1906,26 +1910,29 @@ fun PlayerControls(
     PlayerSheets(
       viewModel = viewModel,
       sheetShown = sheetShown,
-      subtitles = subtitles.toImmutableList(),
-      onAddSubtitle = viewModel::addSubtitle,
+      subtitles =
+        if (isMedia3Active) media3State.subtitleTracks.toImmutableList()
+        else subtitles.toImmutableList(),
+      onAddSubtitle = { uri -> if (!isMedia3Active) viewModel.addSubtitle(uri) },
       onToggleSubtitle = viewModel::toggleSubtitle,
       isSubtitleSelected = viewModel::isSubtitleSelected,
       subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,
       onRemoveSubtitle = viewModel::removeSubtitle,
-      audioTracks = audioTracks.toImmutableList(),
+      audioTracks =
+        if (isMedia3Active) media3State.audioTracks.toImmutableList()
+        else audioTracks.toImmutableList(),
       onAddAudio = viewModel::addAudio,
-      onSelectAudio = {
-        if (getTrackSelectionId("aid") == it.id) {
-          setTrackSelectionId("aid", null)
-        } else {
-          setTrackSelectionId("aid", it.id)
-        }
-      },
+      onSelectAudio = viewModel::selectAudioTrack,
       chapter = chapters.getOrNull(currentChapter ?: 0),
       chapters = chapters.toImmutableList(),
-      onSeekToChapter = {
-        PlaybackSession.setPropertyInt("chapter", it)
-        viewModel.unpause()
+      onSeekToChapter = { index ->
+        if (isMedia3Active) {
+          chapters.getOrNull(index)?.start?.let { viewModel.seekTo(it.toDouble()) }
+          viewModel.unpause()
+        } else {
+          PlaybackSession.setPropertyInt("chapter", index)
+          viewModel.unpause()
+        }
       },
       decoder = decoder,
       isMedia3Active = isMedia3Active,
