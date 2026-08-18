@@ -24,6 +24,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.ui.PlayerView
 
 /**
@@ -65,6 +66,8 @@ class Media3PlaybackController(
   private val appContext = context.applicationContext
   private val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
   private val player: ExoPlayer
+  private lateinit var normalMediaSourceFactory: DefaultMediaSourceFactory
+  private lateinit var fastMatroskaMediaSourceFactory: DefaultMediaSourceFactory
   private var attachedView: PlayerView? = null
   private var lastPlaybackState = Player.STATE_IDLE
   private var latestVideoFormat: Format? = null
@@ -107,10 +110,16 @@ class Media3PlaybackController(
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
-    // Keep Matroska Cues-based seeking enabled. Disabling Cues can make ExoPlayer accept a seek
-    // request while buffering, then rebuild the timeline at the default position (zero) when the
-    // renderer becomes READY. Startup may scan more metadata, but reliable seeking is required.
+    // Keep Cues enabled for ordinary files because it provides the most reliable timeline seeking.
+    // Very large local Matroska files use a second extractor factory without Cues scanning; their
+    // first frame can otherwise be delayed by a full metadata scan before decoding begins.
     val extractorsFactory = DefaultExtractorsFactory()
+    val fastMatroskaExtractorsFactory =
+      DefaultExtractorsFactory()
+        .setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES)
+    normalMediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+    fastMatroskaMediaSourceFactory =
+      DefaultMediaSourceFactory(dataSourceFactory, fastMatroskaExtractorsFactory)
     val renderersFactory =
       DefaultRenderersFactory(appContext)
         // Keep Android hardware/platform renderers first for formats the device supports, then
@@ -121,15 +130,13 @@ class Media3PlaybackController(
         .setEnableDecoderFallback(true)
     player =
       ExoPlayer.Builder(appContext, renderersFactory)
-        .setMediaSourceFactory(
-          DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory),
-        )
+        .setMediaSourceFactory(normalMediaSourceFactory)
         .build()
         .also {
           it.addListener(this)
           it.addAnalyticsListener(this)
         }
-    logInfo("controller created decoderFallback=true ffmpegRenderer=platform-first")
+    logInfo("controller created decoderFallback=true ffmpegRenderer=platform-first fastLargeMatroska=true")
   }
 
   fun attach(view: PlayerView) {
@@ -150,6 +157,7 @@ class Media3PlaybackController(
     headers: Map<String, String> = emptyMap(),
     startPositionMs: Long = 0L,
     playWhenReady: Boolean = true,
+    fastStart: Boolean = false,
   ) {
     stateTickerHandler.removeCallbacks(stateTicker)
     stateTickerHandler.post(stateTicker)
@@ -181,7 +189,16 @@ class Media3PlaybackController(
       return
     }
     resetMediaMetadata()
-    player.setMediaItem(mediaItem(uri, title, headers), requestedStartPositionMs)
+    val item = mediaItem(uri, title, headers)
+    if (fastStart) {
+      player.setMediaSource(
+        fastMatroskaMediaSourceFactory.createMediaSource(item),
+        requestedStartPositionMs,
+      )
+      logInfo("fast-start extractor selected uri=$uri startPositionMs=$requestedStartPositionMs")
+    } else {
+      player.setMediaItem(item, requestedStartPositionMs)
+    }
     player.prepare()
     player.playWhenReady = playWhenReady
   }
