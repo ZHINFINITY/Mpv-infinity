@@ -10,7 +10,7 @@ import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
-import androidx.media3.common.SeekParameters
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionOverride
@@ -122,8 +122,7 @@ class Media3PlaybackController(
     player =
       ExoPlayer.Builder(appContext, renderersFactory)
         .setMediaSourceFactory(
-          DefaultMediaSourceFactory(dataSourceFactory)
-            .setExtractorsFactory(extractorsFactory),
+          DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory),
         )
         .build()
         .also {
