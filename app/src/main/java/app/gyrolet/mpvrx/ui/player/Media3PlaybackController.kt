@@ -76,6 +76,8 @@ class Media3PlaybackController(
   private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var requestedAudioTrackId: Int? = null
   private var pendingSeekPositionMs: Long? = null
+  private var pendingSeekRequestedAtMs: Long = 0L
+  private var lastKnownDurationMs: Long = 0L
   private var loopAPositionMs: Long? = null
   private var loopBPositionMs: Long? = null
   private val loopHandler = Handler(Looper.getMainLooper())
@@ -151,7 +153,6 @@ class Media3PlaybackController(
     startPositionMs: Long = 0L,
     playWhenReady: Boolean = true,
   ) {
-    resetMediaMetadata()
     stateTickerHandler.removeCallbacks(stateTicker)
     stateTickerHandler.post(stateTicker)
     logInfo(
@@ -160,7 +161,29 @@ class Media3PlaybackController(
         "startPositionMs=${startPositionMs.coerceAtLeast(0L)} playWhenReady=$playWhenReady",
     )
     httpFactory.setDefaultRequestProperties(headers)
-    player.setMediaItem(mediaItem(uri, title, headers), startPositionMs.coerceAtLeast(0L))
+    val requestedStartPositionMs = startPositionMs.coerceAtLeast(0L)
+    val loadedUri = player.currentMediaItem?.localConfiguration?.uri
+    if (
+      loadedUri == uri &&
+        player.currentMediaItem != null &&
+        player.playbackState != Player.STATE_IDLE
+    ) {
+      val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+      val pendingPositionMs = pendingSeekPositionMs
+      val duplicateTargetMs = pendingPositionMs ?: requestedStartPositionMs
+      if (kotlin.math.abs(currentPositionMs - duplicateTargetMs) > 1_500L) {
+        seekTo(duplicateTargetMs, fast = false)
+      }
+      player.playWhenReady = playWhenReady
+      publishState()
+      logInfo(
+        "duplicate same-item play ignored uri=$uri currentPositionMs=$currentPositionMs " +
+          "targetPositionMs=$duplicateTargetMs pendingSeek=${pendingPositionMs != null}",
+      )
+      return
+    }
+    resetMediaMetadata()
+    player.setMediaItem(mediaItem(uri, title, headers), requestedStartPositionMs)
     player.prepare()
     player.playWhenReady = playWhenReady
   }
@@ -173,7 +196,6 @@ class Media3PlaybackController(
     startPositionMs: Long = 0L,
     playWhenReady: Boolean = true,
   ) {
-    resetMediaMetadata()
     stateTickerHandler.removeCallbacks(stateTicker)
     stateTickerHandler.post(stateTicker)
     logInfo(
@@ -181,6 +203,31 @@ class Media3PlaybackController(
         "startPositionMs=${startPositionMs.coerceAtLeast(0L)} playWhenReady=$playWhenReady",
     )
     httpFactory.setDefaultRequestProperties(headers)
+    val requestedStartPositionMs = startPositionMs.coerceAtLeast(0L)
+    val requestedUri = uris.getOrNull(startIndex.coerceIn(0, (uris.size - 1).coerceAtLeast(0)))
+    val loadedUri = player.currentMediaItem?.localConfiguration?.uri
+    if (
+      requestedUri != null &&
+        uris.size == 1 &&
+        loadedUri == requestedUri &&
+        player.currentMediaItem != null &&
+        player.playbackState != Player.STATE_IDLE
+    ) {
+      val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+      val pendingPositionMs = pendingSeekPositionMs
+      val duplicateTargetMs = pendingPositionMs ?: requestedStartPositionMs
+      if (kotlin.math.abs(currentPositionMs - duplicateTargetMs) > 1_500L) {
+        seekTo(duplicateTargetMs, fast = false)
+      }
+      player.playWhenReady = playWhenReady
+      publishState()
+      logInfo(
+        "duplicate same-item playlist ignored uri=$requestedUri currentPositionMs=$currentPositionMs " +
+          "targetPositionMs=$duplicateTargetMs pendingSeek=${pendingPositionMs != null}",
+      )
+      return
+    }
+    resetMediaMetadata()
     if (uris.isEmpty()) {
       player.clearMediaItems()
       return
@@ -188,7 +235,7 @@ class Media3PlaybackController(
     player.setMediaItems(
       uris.mapIndexed { index, uri -> mediaItem(uri, titles.getOrNull(index), headers) },
       startIndex.coerceIn(0, uris.lastIndex),
-      startPositionMs.coerceAtLeast(0L),
+      requestedStartPositionMs,
     )
     player.prepare()
     player.playWhenReady = playWhenReady
@@ -243,6 +290,7 @@ class Media3PlaybackController(
   fun seekTo(positionMs: Long, fast: Boolean = false) {
     val targetPositionMs = positionMs.coerceAtLeast(0L)
     pendingSeekPositionMs = targetPositionMs
+    pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
     logInfo("seekTo requested positionMs=$targetPositionMs fast=$fast")
     // Gesture seeking should land on the nearest keyframe. Exact seeks can require decoding
     // a long interval from the previous keyframe on 4K HEVC/Dolby Vision files.
@@ -255,6 +303,7 @@ class Media3PlaybackController(
   fun seekBy(offsetMs: Long) {
     val targetPositionMs = (player.currentPosition + offsetMs).coerceAtLeast(0L)
     pendingSeekPositionMs = targetPositionMs
+    pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
     logInfo("seekBy requested offsetMs=$offsetMs targetPositionMs=$targetPositionMs")
     player.seekTo(targetPositionMs)
   }
@@ -509,6 +558,8 @@ class Media3PlaybackController(
     media3SubtitleTrackGroups = emptyMap()
     requestedAudioTrackId = null
     pendingSeekPositionMs = null
+    pendingSeekRequestedAtMs = 0L
+    lastKnownDurationMs = 0L
   }
 
   private fun mediaItem(
@@ -532,6 +583,34 @@ class Media3PlaybackController(
   }
 
   private fun snapshot(): State {
+    val livePositionMs = player.currentPosition.coerceAtLeast(0L)
+    val pendingPositionMs = pendingSeekPositionMs
+    val positionMs =
+      if (pendingPositionMs != null) {
+        val distanceMs = kotlin.math.abs(livePositionMs - pendingPositionMs)
+        val ageMs = android.os.SystemClock.elapsedRealtime() - pendingSeekRequestedAtMs
+        when {
+          distanceMs <= 1_500L -> {
+            pendingSeekPositionMs = null
+            pendingSeekRequestedAtMs = 0L
+            livePositionMs
+          }
+          ageMs in 0L..3_000L -> pendingPositionMs
+          else -> {
+            pendingSeekPositionMs = null
+            pendingSeekRequestedAtMs = 0L
+            livePositionMs
+          }
+        }
+      } else {
+        livePositionMs
+      }
+    val liveDurationMs = player.duration
+    if (liveDurationMs > 0L && liveDurationMs != C.TIME_UNSET) {
+      lastKnownDurationMs = liveDurationMs
+    }
+    val stableDurationMs =
+      liveDurationMs.takeIf { it > 0L && it != C.TIME_UNSET } ?: lastKnownDurationMs
     val videoSize = latestVideoSize
     val rawWidth = videoSize?.width?.takeIf { it > 0 } ?: latestVideoFormat?.width ?: C.LENGTH_UNSET
     val rawHeight = videoSize?.height?.takeIf { it > 0 } ?: latestVideoFormat?.height ?: C.LENGTH_UNSET
@@ -541,8 +620,8 @@ class Media3PlaybackController(
     return State(
       playbackState = player.playbackState,
       isPlaying = player.isPlaying,
-      positionMs = player.currentPosition,
-      durationMs = player.duration,
+      positionMs = positionMs,
+      durationMs = stableDurationMs,
       bufferedPositionMs = player.bufferedPosition,
       mediaItemIndex = player.currentMediaItemIndex,
       playbackSpeed = player.playbackParameters.speed,
