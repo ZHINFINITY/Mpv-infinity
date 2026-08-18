@@ -17,7 +17,7 @@
   <string name="pref_appearance_amoled_mode_title">AMOLEDブラックモード</string>
   <string name="pref_appearance_amoled_mode_summary">ダークテーマで完全な黒の背景を使用します</string>
   <string name="pref_appearance_system_font_title">システムフォントを使用</string>
-  <string name="pref_appearance_system_font_summary">Google Sans Flexの代わりにAndroidのシステム書体をmpvRx全体で使用します</string>
+  <string name="pref_appearance_system_font_summary">Google Sans Flexの代わりにAndroidのシステム書体をMpv∞全体で使用します</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">ダイナミックカラーを有効にする</string>
   <string name="pref_appearance_material_you_summary_disabled">Android 12以降でのみ利用できます</string>
@@ -309,7 +309,7 @@
   <string name="pref_app_language_title">言語</string>
   <string name="pref_app_language_system_default">システムのデフォルト</string>
   <string name="pref_app_language_restart_title">再起動が必要です</string>
-  <string name="pref_app_language_restart_message">新しい言語を適用するには mpvRx を再起動してください。</string>
+  <string name="pref_app_language_restart_message">新しい言語を適用するには Mpv∞ を再起動してください。</string>
   <string name="pref_app_language_restart_now">今すぐ再起動</string>
   <string name="pref_advanced_mpv_conf_storage_location">設定の保存場所を選択</string>
   <string name="pref_advanced_mpv_conf">mpv.confを編集</string>
@@ -515,7 +515,7 @@
   <string name="notification_playing">再生中</string>
   <string name="notification_chapter_counter">チャプター %1$d / %2$d</string>
   <string name="notification_permission_denied">バックグラウンド再生の操作には通知権限が必要です。</string>
-  <string name="notification_permission_disabled">mpvRxの通知が無効です。再生操作を表示するには有効にしてください。</string>
+  <string name="notification_permission_disabled">Mpv∞の通知が無効です。再生操作を表示するには有効にしてください。</string>
   <string name="notification_disabled_in_advanced_settings">バックグラウンド再生を使用するには、高度な設定で通知を有効にしてください。</string>
   <string name="pref_advanced_notification_style">通知スタイル</string>
   <!-- Media Info Activity -->
@@ -1218,15 +1218,15 @@
   <string name="ui_allow_access">アクセスを許可</string>
   <string name="ui_why_do_i_see_this">なぜこれが表示されるのですか？</string>
   <string name="ui_why_this_permission_is_needed">この権限が必要な理由</string>
-  <string name="ui_mpvrx_needs_access_to_your_video_files_to_provide_its_core_funct">mpvRxがメディアプレーヤーとしての基本機能を提供するには、動画ファイルへのアクセスが必要です。</string>
+  <string name="ui_mpvrx_needs_access_to_your_video_files_to_provide_its_core_funct">Mpv∞がメディアプレーヤーとしての基本機能を提供するには、動画ファイルへのアクセスが必要です。</string>
   <string name="ui_the_permission_is_used_exclusively_for">この権限は次の目的にのみ使用されます：</string>
   <string name="ui_discovering_and_displaying_your_video_files_n_playing_media_cont">• 動画ファイルの検出と表示
 • メディアコンテンツの再生
 • 字幕ファイルの読み込み</string>
-  <string name="ui_mpvrx_has_always_required_storage_access_permission_as_it_s_esse">mpvRxでは、システムが対応していないものを含む端末上のすべてのメディアおよび字幕ファイルを見つけるために、以前からストレージへのアクセス権限が必要でした。</string>
+  <string name="ui_mpvrx_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞では、システムが対応していないものを含む端末上のすべてのメディアおよび字幕ファイルを見つけるために、以前からストレージへのアクセス権限が必要でした。</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">ただし、セキュリティポリシーの変更により、Android 11以降向けのアプリでは同じアクセスを継続するために追加の権限が必要になりました。</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">この権限は端末上のメディア／字幕ファイルの自動検出にのみ使用され、他のアプリが保存した個人データにアクセスすることはありません。</string>
-  <string name="ui_mpvrx_is_an_open_source_project_you_can_review_the_source_code_a">mpvRxはオープンソースプロジェクトです。GitHubリポジトリでソースコードと権限の使用方法を確認できます：</string>
+  <string name="ui_mpvrx_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞はオープンソースプロジェクトです。GitHubリポジトリでソースコードと権限の使用方法を確認できます：</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">ご安心ください。プライバシーを最優先しており、他の目的でファイルにアクセスしたり、サーバーへ転送・保存したりすることはありません。ファイルは端末内に安全に保たれます。</string>
   <string name="ui_app_permissions">アプリの権限</string>
   <string name="ui_permissions_setup_subtitle">主要機能とメディア再生を有効にするために権限を設定します。</string>
@@ -1311,14 +1311,14 @@
   <string name="ui_github">GitHub</string>
   <string name="ui_device_info">端末情報</string>
   <string name="ui_buy_me_a_coffee">コーヒーをおごる</string>
-  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">mpvRxを気に入っていただけたら、開発支援をご検討ください。どんな支援も助けになります！</string>
+  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Mpv∞を気に入っていただけたら、開発支援をご検討ください。どんな支援も助けになります！</string>
   <string name="ui_upi_id">UPI ID</string>
   <string name="ui_panditritesh2001_okhdfcbank">panditritesh2001@okhdfcbank</string>
   <string name="ui_send_love">応援を送る</string>
   <string name="ui_auto_check_for_updates">アップデートを自動確認</string>
   <string name="ui_check_on_startup">起動時に確認</string>
   <string name="ui_check_for_updates_now">今すぐアップデートを確認</string>
-  <string name="ui_core_open_source_dependencies_used_by_mpvrx">mpvRxで使用している主要なオープンソース依存関係。</string>
+  <string name="ui_core_open_source_dependencies_used_by_mpvrx">Mpv∞で使用している主要なオープンソース依存関係。</string>
   <string name="ui_copy_upi_id">UPI IDをコピー</string>
   <string name="ui_already_using_latest_version">すでに最新バージョンです</string>
   <string name="ui_upi_id_copied">UPI IDをコピーしました！</string>

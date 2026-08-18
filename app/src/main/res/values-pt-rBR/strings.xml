@@ -17,7 +17,7 @@
   <string name="pref_appearance_amoled_mode_title">Modo preto AMOLED</string>
   <string name="pref_appearance_amoled_mode_summary">Usar fundo totalmente preto em temas escuros</string>
   <string name="pref_appearance_system_font_title">Usar fonte do sistema</string>
-  <string name="pref_appearance_system_font_summary">Usar a fonte do sistema Android em todo o mpvRx no lugar da Google Sans Flex</string>
+  <string name="pref_appearance_system_font_summary">Usar a fonte do sistema Android em todo o Mpv∞ no lugar da Google Sans Flex</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Ativar cores dinâmicas</string>
   <string name="pref_appearance_material_you_summary_disabled">Disponível somente no Android 12 ou superior</string>
@@ -309,7 +309,7 @@ Próximo: NEXT</string>
   <string name="pref_app_language_title">Idioma</string>
   <string name="pref_app_language_system_default">Padrão do sistema</string>
   <string name="pref_app_language_restart_title">É necessário reiniciar</string>
-  <string name="pref_app_language_restart_message">Reinicie o mpvRx para aplicar o novo idioma.</string>
+  <string name="pref_app_language_restart_message">Reinicie o Mpv∞ para aplicar o novo idioma.</string>
   <string name="pref_app_language_restart_now">Reiniciar agora</string>
   <string name="pref_advanced_mpv_conf_storage_location">Escolher local de armazenamento da configuração</string>
   <string name="pref_advanced_mpv_conf">Editar mpv.conf</string>
@@ -515,7 +515,7 @@ Próximo: NEXT</string>
   <string name="notification_playing">Reproduzindo</string>
   <string name="notification_chapter_counter">Capítulo %1$d de %2$d</string>
   <string name="notification_permission_denied">A permissão de notificações é necessária para os controles de reprodução em segundo plano.</string>
-  <string name="notification_permission_disabled">As notificações estão desativadas para o mpvRx. Ative-as para mostrar os controles de reprodução.</string>
+  <string name="notification_permission_disabled">As notificações estão desativadas para o Mpv∞. Ative-as para mostrar os controles de reprodução.</string>
   <string name="notification_disabled_in_advanced_settings">Ative as notificações nas configurações avançadas para usar a reprodução em segundo plano.</string>
   <string name="pref_advanced_notification_style">Estilo da notificação</string>
   <!-- Media Info Activity -->
@@ -1218,15 +1218,15 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="ui_allow_access">PERMITIR ACESSO</string>
   <string name="ui_why_do_i_see_this">Por que estou vendo isso?</string>
   <string name="ui_why_this_permission_is_needed">Por que esta permissão é necessária</string>
-  <string name="ui_mpvrx_needs_access_to_your_video_files_to_provide_its_core_funct">O mpvRx precisa acessar seus arquivos de vídeo para oferecer sua funcionalidade principal como player de mídia.</string>
+  <string name="ui_mpvrx_needs_access_to_your_video_files_to_provide_its_core_funct">O Mpv∞ precisa acessar seus arquivos de vídeo para oferecer sua funcionalidade principal como player de mídia.</string>
   <string name="ui_the_permission_is_used_exclusively_for">A permissão é usada exclusivamente para:</string>
   <string name="ui_discovering_and_displaying_your_video_files_n_playing_media_cont">• Descobrir e exibir seus arquivos de vídeo
 • Reproduzir conteúdo de mídia
 • Carregar arquivos de legenda</string>
-  <string name="ui_mpvrx_has_always_required_storage_access_permission_as_it_s_esse">O mpvRx sempre exigiu permissão de acesso ao armazenamento, pois ela é essencial para localizar todos os arquivos de mídia e legenda no dispositivo, inclusive os não compatíveis com o sistema.</string>
+  <string name="ui_mpvrx_has_always_required_storage_access_permission_as_it_s_esse">O Mpv∞ sempre exigiu permissão de acesso ao armazenamento, pois ela é essencial para localizar todos os arquivos de mídia e legenda no dispositivo, inclusive os não compatíveis com o sistema.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">No entanto, devido a uma mudança na política de segurança, apps criados para Android 11 ou superior agora precisam de uma permissão adicional para continuar com o mesmo acesso.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">Esta permissão é usada apenas para descobrir automaticamente arquivos de mídia e legenda no dispositivo e não permite que acessemos de forma alguma os dados privados armazenados por outros apps.</string>
-  <string name="ui_mpvrx_is_an_open_source_project_you_can_review_the_source_code_a">O mpvRx é um projeto de código aberto. Você pode revisar o código-fonte e verificar como as permissões são usadas em nosso repositório do GitHub:</string>
+  <string name="ui_mpvrx_is_an_open_source_project_you_can_review_the_source_code_a">O Mpv∞ é um projeto de código aberto. Você pode revisar o código-fonte e verificar como as permissões são usadas em nosso repositório do GitHub:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">Fique tranquilo: sua privacidade é nossa maior prioridade. Não acessamos seus arquivos para outros fins nem os transferimos ou armazenamos em nossos servidores. Eles permanecem seguros no dispositivo.</string>
   <string name="ui_app_permissions">Permissões do aplicativo</string>
   <string name="ui_permissions_setup_subtitle">Configure as permissões para ativar os recursos principais e a reprodução de mídia.</string>
@@ -1311,14 +1311,14 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="ui_github">GitHub</string>
   <string name="ui_device_info">Informações do dispositivo</string>
   <string name="ui_buy_me_a_coffee">Pague-me um café</string>
-  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Se você gosta do mpvRx, considere apoiar o desenvolvimento. Toda ajuda conta!</string>
+  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Se você gosta do Mpv∞, considere apoiar o desenvolvimento. Toda ajuda conta!</string>
   <string name="ui_upi_id">ID UPI</string>
   <string name="ui_panditritesh2001_okhdfcbank">panditritesh2001@okhdfcbank</string>
   <string name="ui_send_love">Enviar carinho</string>
   <string name="ui_auto_check_for_updates">Verificar atualizações automaticamente</string>
   <string name="ui_check_on_startup">Verificar ao iniciar</string>
   <string name="ui_check_for_updates_now">Verificar atualizações agora</string>
-  <string name="ui_core_open_source_dependencies_used_by_mpvrx">Principais dependências de código aberto usadas pelo mpvRx.</string>
+  <string name="ui_core_open_source_dependencies_used_by_mpvrx">Principais dependências de código aberto usadas pelo Mpv∞.</string>
   <string name="ui_copy_upi_id">Copiar ID UPI</string>
   <string name="ui_already_using_latest_version">Você já está usando a versão mais recente</string>
   <string name="ui_upi_id_copied">ID UPI copiado!</string>
