@@ -1110,6 +1110,14 @@ fun GestureHandler(
                       change.consume()
                     }
 
+                    // Re-read the live Media3 timeline at activation time. ExoPlayer can
+                    // briefly expose an unknown duration during preparation or a seek.
+                    if (media3Active) {
+                      viewModel.media3GestureDurationSeconds()
+                        .takeIf { it.isFinite() && it > 0.0 }
+                        ?.let { mediaDuration = it }
+                    }
+
                     // Only activate if this is clearly a horizontal gesture
                     // and not conflicting with other gestures
                     if (gestureType == null &&
@@ -1128,7 +1136,10 @@ fun GestureHandler(
                       // Refresh the timeline at activation time. Media3 can publish its duration
                       // shortly after the finger goes down; a duration captured only at touch-down
                       // would remain zero and permanently disable this gesture.
-                      (currentMediaDuration().also { mediaDuration = it } > 0.0)
+                      (currentMediaDuration().also { mediaDuration = it } > 0.0) &&
+                      // Do not claim the seekbar's bottom touch target. The Seeker composable
+                      // below the gesture layer must receive horizontal scrubs there.
+                      startPosition.y < size.height - with(density) { 96.dp.toPx() }
                     ) { // Only when no panels are shown
 
                       gestureType = "horizontal_seek"
