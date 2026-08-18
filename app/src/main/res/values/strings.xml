@@ -902,10 +902,10 @@
   <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_decoder_vulkan_experimental_suffix">(Experimental)</string>
   <string name="pref_decoder_playback_engine_title">Playback engine</string>
-  <string name="pref_decoder_playback_engine_summary">Automatic uses MPV by default and Media3 for Dolby Vision or HLS/DASH IPTV streams; the choice applies to new playback</string>
+  <string name="pref_decoder_playback_engine_summary">Automatic uses MPV by default and Native for Dolby Vision or HLS/DASH IPTV streams; the choice applies to new playback</string>
   <string name="pref_decoder_mpv_mode_title">MPV decoder</string>
   <string name="pref_decoder_mpv_mode_summary">Current MPV mode: %1$s. Applies to MPV playback.</string>
-  <string name="player_sheets_decoder_media3_notice">Media3 is active. Only the active Media3 decoder is shown.</string>
+  <string name="player_sheets_decoder_media3_notice">Native is active. Only the active Native decoder is shown.</string>
   <string name="pref_anime4k_link">github.com/bloc97/Anime4K</string>
 
   <!-- ═══════════════════════════════════════════════════════════ -->

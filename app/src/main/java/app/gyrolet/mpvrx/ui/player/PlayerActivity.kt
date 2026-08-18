@@ -1048,6 +1048,12 @@ class PlayerActivity :
                 PlaybackEngineMode.MPV
               },
             onEngineSelected = ::selectEngineFromDecoderSheet,
+            onMedia3AudioChannels = { channels ->
+              media3PlaybackController.setAudioChannels(channels)
+            },
+            onMedia3AudioProcessing = { normalization, drc ->
+              media3PlaybackController.setAudioProcessing(normalization, drc)
+            },
             onDecoderSelected = { decoder ->
               // MPV decoder choices must never wake or switch to MPV while Media3 owns playback.
               // Keep this guard at the Activity boundary in case a stale Compose callback arrives.
@@ -1168,6 +1174,11 @@ class PlayerActivity :
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
             RepeatMode.ALL -> Player.REPEAT_MODE_ALL
           },
+        )
+        media3PlaybackController.setAudioChannels(audioPreferences.audioChannels.get())
+        media3PlaybackController.setAudioProcessing(
+          volumeNormalization = audioPreferences.volumeNormalization.get(),
+          drcEnabled = audioPreferences.drcEnabled.get(),
         )
         media3PlaybackController.play(
           uri = sourceUri,
@@ -6296,6 +6307,18 @@ class PlayerActivity :
         RepeatMode.ALL -> Player.REPEAT_MODE_ALL
       },
     )
+    return true
+  }
+
+  override fun media3SetAudioChannels(channels: AudioChannels): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.setAudioChannels(channels)
+    return true
+  }
+
+  override fun media3SetAudioProcessing(volumeNormalization: Boolean, drcEnabled: Boolean): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.setAudioProcessing(volumeNormalization, drcEnabled)
     return true
   }
 

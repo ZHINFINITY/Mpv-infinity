@@ -140,6 +140,7 @@ enum class PlayerControlsStyle(
 ) {
   Classic("Classic"),
   Glass("Glass"),
+  Glossy("Glossy"),
 }
 
 enum class PortraitPlaybackControlsPosition(

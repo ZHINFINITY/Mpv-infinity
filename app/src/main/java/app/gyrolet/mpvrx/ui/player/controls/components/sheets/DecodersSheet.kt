@@ -64,7 +64,7 @@ fun DecodersSheet(
             color = Color.White,
             style = MaterialTheme.typography.titleSmall,
           )
-          // Keep the same surface treatment as the MPV engine selector. Media3 status and
+          // Keep the same surface treatment as the MPV engine selector. Native status and
           // codec information belong to the sheet background, not inside this selection card.
           Surface(
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -84,7 +84,7 @@ fun DecodersSheet(
                 modifier = Modifier.weight(1f),
               )
               AudioTrackRow(
-                title = "Media3",
+                title = "Native",
                 isSelected = engineSelection == PlaybackEngineMode.Media3,
                 onClick = {
                   onEngineSelected(PlaybackEngineMode.Media3)
@@ -111,7 +111,7 @@ fun DecodersSheet(
               modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             ) {
               Text(
-                text = "Active decoder: Media3 · $decoderMode",
+                text = "Active decoder: Native · $decoderMode",
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
               )
@@ -123,7 +123,7 @@ fun DecodersSheet(
                 )
               }
               Text(
-                text = "Codec mode: selected automatically by Media3",
+                text = "Codec mode: selected automatically by Native",
                 color = Color.White.copy(alpha = 0.9f),
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.padding(top = 10.dp),

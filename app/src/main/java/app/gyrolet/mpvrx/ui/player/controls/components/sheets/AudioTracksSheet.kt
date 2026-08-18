@@ -55,6 +55,9 @@ fun AudioTracksSheet(
   onAddAudioTrack: () -> Unit,
   onOpenDelayPanel: () -> Unit,
   onOpenEqualizerSheet: (() -> Unit)? = null,
+  isMedia3Active: Boolean = false,
+  onMedia3AudioChannels: ((AudioChannels) -> Unit)? = null,
+  onMedia3AudioProcessing: ((Boolean, Boolean) -> Unit)? = null,
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -113,7 +116,9 @@ fun AudioTracksSheet(
                   selected = audioChannels == it,
                   onClick = {
                     audioPreferences.audioChannels.set(it)
-                    if (it == AudioChannels.ReverseStereo) {
+                    if (isMedia3Active) {
+                      onMedia3AudioChannels?.invoke(it)
+                    } else if (it == AudioChannels.ReverseStereo) {
                       PlaybackSession.setPropertyString(AudioChannels.AutoSafe.property, AudioChannels.AutoSafe.value)
                     } else {
                       PlaybackSession.setPropertyString(it.property, it.value)
@@ -135,13 +140,25 @@ fun AudioTracksSheet(
               color = MaterialTheme.colorScheme.primary,
             )
             Spacer(modifier = Modifier.height(MaterialTheme.spacing.smaller))
+            if (isMedia3Active) {
+              Text(
+                text = "Native effects apply to PCM audio; passthrough or offload may bypass them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = MaterialTheme.spacing.smaller),
+              )
+            }
             LazyRow(
               horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
             ) {
               item {
                 FilterChip(
                   selected = volumeNormalization,
-                  onClick = { audioPreferences.volumeNormalization.set(!volumeNormalization) },
+                  onClick = {
+                    val enabled = !volumeNormalization
+                    audioPreferences.volumeNormalization.set(enabled)
+                    if (isMedia3Active) onMedia3AudioProcessing?.invoke(enabled, drcEnabled)
+                  },
                   label = { Text(text = stringResource(id = R.string.pref_audio_volume_normalization_title)) },
                   leadingIcon = null,
                 )
@@ -149,7 +166,11 @@ fun AudioTracksSheet(
               item {
                 FilterChip(
                   selected = drcEnabled,
-                  onClick = { audioPreferences.drcEnabled.set(!drcEnabled) },
+                  onClick = {
+                    val enabled = !drcEnabled
+                    audioPreferences.drcEnabled.set(enabled)
+                    if (isMedia3Active) onMedia3AudioProcessing?.invoke(volumeNormalization, enabled)
+                  },
                   label = { Text(text = stringResource(id = R.string.pref_audio_drc_title)) },
                   leadingIcon = null,
                 )

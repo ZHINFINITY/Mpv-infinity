@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import androidx.media3.common.audio.ChannelMixingAudioProcessor
+import androidx.media3.common.audio.ChannelMixingMatrix
 import app.gyrolet.mpvrx.presentation.crash.AppDebugLog
 import androidx.media3.common.C
 import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -16,10 +18,13 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
 import app.gyrolet.mpvrx.ui.player.TrackNode
+import app.gyrolet.mpvrx.preferences.AudioChannels
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -65,6 +70,9 @@ class Media3PlaybackController(
 
   private val appContext = context.applicationContext
   private val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+  private val channelMixingProcessor = ChannelMixingAudioProcessor()
+  private val nativeAudioEffectsProcessor = NativeAudioEffectsProcessor()
+  private var audioChannels = AudioChannels.AutoSafe
   private val player: ExoPlayer
   private lateinit var normalMediaSourceFactory: DefaultMediaSourceFactory
   private lateinit var fastMediaSourceFactory: DefaultMediaSourceFactory
@@ -123,8 +131,9 @@ class Media3PlaybackController(
         DefaultExtractorsFactory()
           .setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES),
       )
+    applyChannelMixingMatrices(audioChannels)
     val renderersFactory =
-      DefaultRenderersFactory(appContext)
+      NativeRenderersFactory(appContext)
         // Keep Android hardware/platform renderers first for formats the device supports, then
         // fall back to the bundled FFmpeg renderer for DTS/DTS-HD/TrueHD and other unsupported
         // platform formats. Prefer-mode would make FFmpeg decode every compatible audio track,
@@ -139,7 +148,77 @@ class Media3PlaybackController(
           it.addListener(this)
           it.addAnalyticsListener(this)
         }
-    logInfo("controller created decoderFallback=true ffmpegRenderer=platform-first fastLargeMatroska=true")
+    logInfo("controller created decoderFallback=true ffmpegRenderer=platform-first channelMixing=true nativeEffects=true fastLargeMatroska=true")
+  }
+
+  fun setAudioChannels(channels: AudioChannels) {
+    audioChannels = channels
+    applyChannelMixingMatrices(channels)
+    logInfo("native audio channels=${channels.name}")
+  }
+
+  fun setAudioProcessing(volumeNormalization: Boolean, drcEnabled: Boolean) {
+    nativeAudioEffectsProcessor.volumeNormalizationEnabled = volumeNormalization
+    nativeAudioEffectsProcessor.drcEnabled = drcEnabled
+    logInfo("native audio processing normalization=$volumeNormalization drc=$drcEnabled")
+  }
+
+  private inner class NativeRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
+    override fun buildAudioSink(
+      context: Context,
+      enableFloatOutput: Boolean,
+      enableAudioOutputPlaybackParams: Boolean,
+    ): AudioSink? =
+      DefaultAudioSink.Builder(context)
+        .setEnableFloatOutput(enableFloatOutput)
+        .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+        .setAudioProcessors(arrayOf(channelMixingProcessor, nativeAudioEffectsProcessor))
+        .build()
+  }
+
+  private fun applyChannelMixingMatrices(channels: AudioChannels) {
+    for (inputChannels in 1..6) {
+      val matrix =
+        when (channels) {
+          AudioChannels.Mono ->
+            ChannelMixingMatrix(
+              inputChannels,
+              1,
+              FloatArray(inputChannels) { 1f / inputChannels },
+            )
+          AudioChannels.ReverseStereo ->
+            when (inputChannels) {
+              1 -> ChannelMixingMatrix(1, 2, floatArrayOf(1f, 1f))
+              2 -> ChannelMixingMatrix(2, 2, floatArrayOf(0f, 1f, 1f, 0f))
+              else -> stereoMatrix(inputChannels, reverse = true)
+            }
+          AudioChannels.Stereo -> stereoMatrix(inputChannels, reverse = false)
+          AudioChannels.Auto, AudioChannels.AutoSafe ->
+            if (inputChannels <= 2) {
+              ChannelMixingMatrix(
+                inputChannels,
+                inputChannels,
+                FloatArray(inputChannels * inputChannels) { index ->
+                  if (index / inputChannels == index % inputChannels) 1f else 0f
+                },
+              )
+            } else {
+              stereoMatrix(inputChannels, reverse = false)
+            }
+        }
+      channelMixingProcessor.putChannelMixingMatrix(matrix)
+    }
+  }
+
+  private fun stereoMatrix(inputChannels: Int, reverse: Boolean): ChannelMixingMatrix {
+    val coefficients = FloatArray(inputChannels * 2)
+    for (input in 0 until inputChannels) {
+      val left = if (input == 0) 1f else if (input == 1 && reverse) 1f else if (input > 1) 0.35f else 0f
+      val right = if (input == 1) 1f else if (input == 0 && reverse) 1f else if (input > 1) 0.35f else 0f
+      coefficients[input * 2] = left
+      coefficients[input * 2 + 1] = right
+    }
+    return ChannelMixingMatrix(inputChannels, 2, coefficients)
   }
 
   fun attach(view: PlayerView) {
