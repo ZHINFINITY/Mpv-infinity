@@ -1634,7 +1634,10 @@ fun PlayerControls(
                 modifier =
                   Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                    .padding(
+                      horizontal = if (isPortrait) 8.dp else 6.dp,
+                      vertical = 4.dp,
+                    ),
                 shape = RoundedCornerShape(26.dp),
                 hideBackground = hideBackground,
                 contentColor = Color.White,

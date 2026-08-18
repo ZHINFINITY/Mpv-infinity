@@ -465,6 +465,10 @@ private fun SeekbarContent(
       SeekbarStyle.Standard -> 8.dp
       SeekbarStyle.Wavy -> 8.dp
     }
+  // Keep the visual rail away from the rounded container edge. The transparent
+  // touch target follows the same inset so the thumb and rendered progress stay
+  // aligned instead of appearing to disappear under the border on narrow screens.
+  val trackHorizontalInset = if (isPortrait) 8.dp else 6.dp
   var latestInteractionPosition by remember { mutableFloatStateOf(currentPos) }
   var interactionStarted by remember { mutableStateOf(false) }
 
@@ -515,7 +519,8 @@ private fun SeekbarContent(
       modifier =
         Modifier
           .fillMaxWidth()
-          .height(32.dp),
+          .height(32.dp)
+          .padding(horizontal = trackHorizontalInset),
       contentAlignment = Alignment.Center,
     ) {
       when (seekbarStyle) {
@@ -592,6 +597,7 @@ private fun SeekbarContent(
         Modifier
           .fillMaxWidth()
           .height(overlayTrackHeight)
+          .padding(horizontal = trackHorizontalInset)
           .clip(RoundedCornerShape(percent = 50))
           .align(Alignment.Center),
     ) {
@@ -680,6 +686,7 @@ private fun SeekbarContent(
         Modifier
           .fillMaxWidth()
           .height(touchAreaHeight)
+          .padding(horizontal = trackHorizontalInset)
           .graphicsLayer(alpha = 0f),
     )
   }
