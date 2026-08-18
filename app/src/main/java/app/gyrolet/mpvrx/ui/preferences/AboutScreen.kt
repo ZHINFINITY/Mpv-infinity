@@ -96,7 +96,9 @@ object AboutScreen : Screen {
     val versionName =
       packageInfo.versionName?.substringBefore('-') ?: packageInfo.versionName ?: BuildConfig.VERSION_NAME
     val buildType = BuildConfig.BUILD_TYPE
-    val githubRepoUrl = stringResource(R.string.github_repo_url)
+    val githubRepoUrl = "https://github.com/ZHINFINITY/Mpv-"
+    // Deliberately blank during development; add the final UPI ID only for the stable release.
+    val upiId = ""
     val settingsScrollState = rememberScrollState()
     val settingsHighlight =
       rememberSettingsSearchHighlight(AboutScreen, settingsScrollState, MaterialTheme.colorScheme.primary)
@@ -241,9 +243,7 @@ object AboutScreen : Screen {
                     color = cs.primary.copy(alpha = 0.16f),
                   ) {
                     Text(
-                      text =
-                        androidx.compose.ui.res
-                          .stringResource(app.gyrolet.mpvrx.R.string.ui_by_ritesh_pandit),
+                      text = "By ZHINFINITY",
                       modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                       style = MaterialTheme.typography.titleSmall,
                       fontWeight = FontWeight.SemiBold,
@@ -408,11 +408,11 @@ object AboutScreen : Screen {
                 modifier =
                   Modifier
                     .fillMaxWidth()
-                    .clickable {
+                    .clickable(enabled = upiId.isNotBlank()) {
                       SafeClipboard.copyPlainText(
                         context = context,
                         label = "mpvrx_upi_id",
-                        text = "panditritesh2001@okhdfcbank",
+                        text = upiId,
                         showToast = false,
                       )
                       Toast
@@ -435,10 +435,7 @@ object AboutScreen : Screen {
                   )
                   Spacer(Modifier.height(2.dp))
                   Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_panditritesh2001_okhdfcbank,
-                      ),
+                    text = upiId,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     color = cs.onSurface,
@@ -457,12 +454,13 @@ object AboutScreen : Screen {
             }
             Spacer(Modifier.height(12.dp))
             Button(
+              enabled = upiId.isNotBlank(),
               onClick = {
                 try {
                   val upiIntent =
                     Intent(
                       Intent.ACTION_VIEW,
-                      "upi://pay?pa=panditritesh2001@okhdfcbank&pn=Ritesh%20Pandit&cu=INR".toUri(),
+                      "upi://pay?pa=$upiId&pn=ZHINFINITY&cu=INR".toUri(),
                     )
                   context.startActivity(upiIntent)
                 } catch (_: Exception) {

@@ -1024,6 +1024,27 @@ class PlayerActivity :
             onBackPress = ::handleBackPress,
             isMedia3Active = playbackEngine == PlaybackEngine.MEDIA3,
             media3State = media3State,
+            engineSelection =
+              if (playbackEngine == PlaybackEngine.MEDIA3) {
+                PlaybackEngineMode.Media3
+              } else {
+                PlaybackEngineMode.MPV
+              },
+            onEngineSelected = { selectedEngine ->
+              when (selectedEngine) {
+                PlaybackEngineMode.MPV -> {
+                  decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
+                  media3AutoFallbackItemId = null
+                  switchToMpvEngine()
+                }
+                PlaybackEngineMode.Media3 -> {
+                  decoderPreferences.playbackEngine.set(PlaybackEngineMode.Media3)
+                  media3AutoFallbackItemId = null
+                  PlaybackSession.queue.value.currentItem?.let(::switchToMedia3Engine)
+                }
+                PlaybackEngineMode.Auto -> Unit
+              }
+            },
             onDecoderSelected = { decoder ->
               // MPV decoder choices must never wake or switch to MPV while Media3 owns playback.
               // Keep this guard at the Activity boundary in case a stale Compose callback arrives.

@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import app.gyrolet.mpvrx.preferences.PlaybackEngineMode
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.player.Decoder
 import app.gyrolet.mpvrx.ui.player.Panels
@@ -67,6 +68,8 @@ fun PlayerSheets(
   // Decoders sheet
   decoder: Decoder,
   isMedia3Active: Boolean = false,
+  engineSelection: PlaybackEngineMode = if (isMedia3Active) PlaybackEngineMode.Media3 else PlaybackEngineMode.MPV,
+  onEngineSelected: (PlaybackEngineMode) -> Unit = {},
   media3DecoderName: String? = null,
   onUpdateDecoder: (Decoder) -> Unit,
   // Speed sheet
@@ -338,6 +341,8 @@ fun PlayerSheets(
       DecodersSheet(
         selectedDecoder = decoder,
         isMedia3Active = isMedia3Active,
+        engineSelection = engineSelection,
+        onEngineSelected = onEngineSelected,
         media3DecoderName = media3DecoderName,
         onSelect = onUpdateDecoder,
         onDismissRequest = onDismissRequest,
