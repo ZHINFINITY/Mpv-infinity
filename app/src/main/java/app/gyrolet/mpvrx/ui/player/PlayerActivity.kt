@@ -1040,7 +1040,7 @@ class PlayerActivity :
                 PlaybackEngineMode.Media3 -> {
                   decoderPreferences.playbackEngine.set(PlaybackEngineMode.Media3)
                   media3AutoFallbackItemId = null
-                  PlaybackSession.queue.value.currentItem?.let(::switchToMedia3Engine)
+                  switchToMedia3ForCurrentItem()
                 }
                 PlaybackEngineMode.Auto -> Unit
               }
@@ -1644,7 +1644,11 @@ class PlayerActivity :
     if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) {
       media3AutoFallbackItemId = null
     }
-    if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) return
+    if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) {
+      val currentState = media3PlaybackController.currentState()
+      if (currentState.playbackState != Player.STATE_IDLE && currentState.mediaItemIndex >= 0) return
+      AppDebugLog.info(TAG, "Media3 session is idle for current item; rebuilding item=${item.stableId}")
+    }
     AppDebugLog.info(
       TAG,
       "Playback engine selected engine=MEDIA3 uri=${item.playableUri} " +
@@ -1720,6 +1724,24 @@ class PlayerActivity :
     }
   }
 
+  private fun currentPlaybackItem(): PlaybackItem? =
+    PlaybackSession.state.value.currentItem ?: PlaybackSession.queue.value.currentItem
+
+  private fun switchToMedia3ForCurrentItem() {
+    lifecycleScope.launch(Dispatchers.Main.immediate) {
+      repeat(40) { attempt ->
+        val item = currentPlaybackItem()
+        if (item != null) {
+          AppDebugLog.info(TAG, "Manual Media3 selection resolved item=${item.stableId} attempt=$attempt")
+          switchToMedia3Engine(item)
+          return@launch
+        }
+        delay(50L)
+      }
+      AppDebugLog.warn(TAG, "Manual Media3 selection timed out: no active PlaybackSession item")
+    }
+  }
+
   private fun switchToMpvEngine() {
     media3VideoWatchdogJob?.cancel()
     media3VideoWatchdogJob = null
@@ -1729,7 +1751,7 @@ class PlayerActivity :
       binding.player.visibility = View.VISIBLE
       return
     }
-    val currentItem = PlaybackSession.queue.value.currentItem
+    val currentItem = currentPlaybackItem()
     AppDebugLog.info(
       TAG,
       "Playback engine selected engine=MPV " +

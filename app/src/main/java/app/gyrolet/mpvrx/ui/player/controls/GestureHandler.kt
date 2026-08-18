@@ -1056,13 +1056,15 @@ fun GestureHandler(
             // Use the sensitivity preference instead of hardcoded value
             val seekSensitivity = horizontalSwipeSensitivity
             val media3Active = viewModel.isMedia3ActiveForGesture()
-            val mediaDuration =
-              if (media3Active) {
+            fun currentMediaDuration(): Double =
+              (if (media3Active) {
                 viewModel.media3GestureDurationSeconds()
               } else {
                 PlaybackSession.getPropertyDouble("duration")
                   ?: viewModel.preciseDuration.value.toDouble()
-              }.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+              }).takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+
+            var mediaDuration = currentMediaDuration()
 
             do {
               val event =
@@ -1123,8 +1125,10 @@ fun GestureHandler(
                       !isDynamicSpeedControlActive &&
                       // Don't conflict with speed control
                       panelShown == Panels.None &&
-                      // Do not convert an unready Media3 timeline into a seek-to-zero request.
-                      (!media3Active || mediaDuration > 0.0)
+                      // Refresh the timeline at activation time. Media3 can publish its duration
+                      // shortly after the finger goes down; a duration captured only at touch-down
+                      // would remain zero and permanently disable this gesture.
+                      (currentMediaDuration().also { mediaDuration = it } > 0.0)
                     ) { // Only when no panels are shown
 
                       gestureType = "horizontal_seek"
@@ -1148,7 +1152,10 @@ fun GestureHandler(
                     }
 
                     if (gestureType == "horizontal_seek" && hasStartedSeeking) {
-                      // Calculate seek amount based on horizontal movement
+                      // Calculate seek amount based on horizontal movement. Refresh the duration
+                      // on every event so delayed Media3 timeline publication cannot leave the
+                      // gesture using a zero or stale upper bound.
+                      mediaDuration = currentMediaDuration()
                       val seekAmount = (deltaX * seekSensitivity).toDouble()
                       val targetPosition = (initialVideoPosition + seekAmount).coerceAtLeast(0.0)
                       val clampedPosition =
