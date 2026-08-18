@@ -5044,15 +5044,18 @@ class PlayerActivity :
             ) {
               // Prefer the resolved playable path. Probe the original URI only when the resolved
               // path did not identify Dolby Vision, avoiding two extractor opens for normal files.
-              listOf(resolvedPlayableUri, resolvedOriginalUri)
-                .filter { source ->
-                  val scheme = Uri.parse(source).scheme?.lowercase()
-                  scheme == null || scheme == "file" || scheme == "content"
-                }
-                .distinct()
-                .asSequence()
-                .mapNotNull(::probeDolbyVisionMimeCached)
-                .firstOrNull()
+              var detectedDolbyVisionMime: String? = null
+              for (source in
+                listOf(resolvedPlayableUri, resolvedOriginalUri)
+                  .filter { candidate ->
+                    val scheme = Uri.parse(candidate).scheme?.lowercase()
+                    scheme == null || scheme == "file" || scheme == "content"
+                  }
+                  .distinct()) {
+                detectedDolbyVisionMime = probeDolbyVisionMimeCached(source)
+                if (detectedDolbyVisionMime != null) break
+              }
+              detectedDolbyVisionMime
             } else {
               null
             }
