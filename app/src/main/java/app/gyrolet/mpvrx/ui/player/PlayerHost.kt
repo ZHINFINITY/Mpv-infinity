@@ -56,6 +56,8 @@ interface PlayerHost {
 
   fun media3SetPlaybackSpeed(speed: Float): Boolean = false
 
+  fun media3SetRepeatMode(mode: RepeatMode): Boolean = false
+
   fun media3SelectAudioTrack(trackId: Int): Boolean = false
 
   fun media3SelectSubtitleTrack(trackId: Int): Boolean = false

@@ -224,6 +224,13 @@ class PlayerActivity :
           }
         }
       },
+      onEnded = {
+        lifecycleScope.launch(Dispatchers.Main.immediate) {
+          if (playbackEngine == PlaybackEngine.MEDIA3) {
+            handleEndOfFile(isEof = true)
+          }
+        }
+      },
     )
   }
 
@@ -1131,6 +1138,13 @@ class PlayerActivity :
         media3Attached = true
       }
       runCatching {
+        media3PlaybackController.setRepeatMode(
+          when (viewModel.repeatMode.value) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+          },
+        )
         media3PlaybackController.play(
           uri = sourceUri,
           title = item.title,
@@ -1519,8 +1533,8 @@ class PlayerActivity :
     }
   }
 
-  private fun isDolbyVisionItem(item: PlaybackItem): Boolean {
-    val searchable = listOf(item.mimeType, item.title, item.originalUri, item.playableUri)
+  private fun isDolbyVisionSourceHint(vararg values: String?): Boolean {
+    val searchable = values
       .filterNotNull()
       .joinToString(" ")
       .lowercase()
@@ -1529,6 +1543,9 @@ class PlayerActivity :
       searchable.contains("dovi") ||
       Regex("\\bdv(?:he|h1)\\.?(?:[0-9]{2})?").containsMatchIn(searchable)
   }
+
+  private fun isDolbyVisionItem(item: PlaybackItem): Boolean =
+    isDolbyVisionSourceHint(item.mimeType, item.title, item.originalUri, item.playableUri)
 
   /**
    * Probes local/content sources before MPV opens them so Auto mode can route Dolby Vision directly
@@ -1635,12 +1652,12 @@ class PlayerActivity :
     }
   }
 
-  private fun switchToMedia3Engine(item: PlaybackItem) {
+  private fun switchToMedia3Engine(item: PlaybackItem, force: Boolean = false) {
     activePlaybackItem = item
     if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) {
       media3AutoFallbackItemId = null
     }
-    if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) {
+    if (!force && playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) {
       val currentState = media3PlaybackController.currentState()
       if (currentState.playbackState != Player.STATE_IDLE && currentState.mediaItemIndex >= 0) return
       AppDebugLog.info(TAG, "Media3 session is idle for current item; rebuilding item=${item.stableId}")
@@ -1652,10 +1669,10 @@ class PlayerActivity :
         "configuredMode=${decoderPreferences.playbackEngine.get().name}",
     )
     val resumePositionMs =
-      if (playbackEngine == PlaybackEngine.MPV) {
-        ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
-      } else {
-        0L
+      when (playbackEngine) {
+        PlaybackEngine.MPV ->
+          ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
+        PlaybackEngine.MEDIA3 -> media3PlaybackController.positionForEngineHandoffMs()
       }
     if (playbackEngine == PlaybackEngine.MPV) {
       // Stop libmpv rather than only pausing it. This releases its demuxer/decoder/audio queues so
@@ -1734,13 +1751,13 @@ class PlayerActivity :
         decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
         manualEngineOverride = PlaybackEngine.MPV
         AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=MPV")
-        switchToMpvEngine(resolvedItem)
+        switchToMpvEngine(resolvedItem, force = true)
       }
       PlaybackEngineMode.Media3 -> {
         decoderPreferences.playbackEngine.set(PlaybackEngineMode.Media3)
         manualEngineOverride = PlaybackEngine.MEDIA3
         AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=Media3")
-        switchToMedia3Engine(resolvedItem)
+        switchToMedia3Engine(resolvedItem, force = true)
       }
       PlaybackEngineMode.Auto -> Unit
     }
@@ -1761,12 +1778,12 @@ class PlayerActivity :
     }
   }
 
-  private fun switchToMpvEngine(itemOverride: PlaybackItem? = null) {
+  private fun switchToMpvEngine(itemOverride: PlaybackItem? = null, force: Boolean = false) {
     media3VideoWatchdogJob?.cancel()
     media3VideoWatchdogJob = null
     media3VideoFrameRendered = false
     val currentItem = itemOverride ?: currentPlaybackItem()
-    if (playbackEngine == PlaybackEngine.MPV && !mpvStoppedForMedia3) {
+    if (!force && playbackEngine == PlaybackEngine.MPV && !mpvStoppedForMedia3) {
       binding.media3Player.visibility = View.GONE
       binding.player.visibility = View.VISIBLE
       return
@@ -1781,7 +1798,12 @@ class PlayerActivity :
     )
     // Prefer the controller's requested target because the Compose state callback may lag behind
     // a seek, especially when an unsupported audio switch causes Media3 to fail immediately after it.
-    val resumePositionMs = media3PlaybackController.positionForEngineHandoffMs()
+    val resumePositionMs =
+      if (playbackEngine == PlaybackEngine.MEDIA3) {
+        media3PlaybackController.positionForEngineHandoffMs()
+      } else {
+        ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
+      }
     playbackEngine = PlaybackEngine.MPV
     media3State = Media3PlaybackController.State()
     media3PreparedItemId = null
@@ -1795,10 +1817,13 @@ class PlayerActivity :
       // remains stopped and no video can appear.
       mpvStoppedForMedia3 = false
       runCatching { PlaybackSession.load(currentItem) }
-      if (resumePositionMs > 0L) {
-        lifecycleScope.launch {
-          delay(300L)
-          if (playbackEngine == PlaybackEngine.MPV) {
+      lifecycleScope.launch {
+        // libmpv may be reloaded in a paused state after Media3 owned the item. Resume it on the
+        // same delayed boundary used for the handoff seek so the visible MPV surface is live.
+        delay(300L)
+        if (playbackEngine == PlaybackEngine.MPV) {
+          runCatching { PlaybackSession.setPropertyBoolean("pause", false) }
+          if (resumePositionMs > 0L) {
             runCatching {
               PlaybackSession.command(
                 "seek",
@@ -1807,6 +1832,10 @@ class PlayerActivity :
               )
             }
           }
+          AppDebugLog.info(
+            TAG,
+            "MPV handoff resumed item=${currentItem.stableId} positionMs=$resumePositionMs",
+          )
         }
       }
     } else {
@@ -1830,8 +1859,9 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         viewModel.videoTracks.collect { tracks ->
           if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) return@collect
-          val currentItem = PlaybackSession.queue.value.currentItem ?: return@collect
+          val currentItem = PlaybackSession.queue.value.currentItem ?: activePlaybackItem ?: return@collect
           if (playbackEngine == PlaybackEngine.MPV && tracks.any(::isDolbyVisionTrack)) {
+            AppDebugLog.info(TAG, "Auto engine detected Dolby Vision track; switching to Media3 item=${currentItem.stableId}")
             switchToMedia3Engine(currentItem)
           }
         }
@@ -3840,6 +3870,12 @@ class PlayerActivity :
 
   private fun restartCurrentAtEof() {
     isAdvancingAtEof = false
+    if (playbackEngine == PlaybackEngine.MEDIA3) {
+      AppDebugLog.info(TAG, "Media3 repeat replay positionMs=0")
+      media3PlaybackController.seekTo(0L, fast = false)
+      media3PlaybackController.setPlayWhenReady(true)
+      return
+    }
     PlaybackSession.command("seek", "0", "absolute")
     viewModel.unpause()
   }
@@ -5196,10 +5232,15 @@ class PlayerActivity :
             } else {
               null
             }
+          // Do not open a large local Matroska file with MediaExtractor before playback. That
+          // preflight was on the critical path and made ordinary Media3/MPV startup take seconds.
+          // Explicit DV markers are cheap to recognize here; unlabelled DV is detected after
+          // playback begins by observeAutomaticDolbyVisionEngine() from the actual MPV track.
           val probedDolbyVisionMime =
             if (
               decoderPreferences.playbackEngine.get() == PlaybackEngineMode.Auto &&
-                !resolvedMimeType.orEmpty().equals("video/dolby-vision", ignoreCase = true)
+                !resolvedMimeType.orEmpty().equals("video/dolby-vision", ignoreCase = true) &&
+                isDolbyVisionSourceHint(resolvedFileName, resolvedOriginalUri, resolvedPlayableUri)
             ) {
               // Prefer the resolved playable path. Probe the original URI only when the resolved
               // path did not identify Dolby Vision, avoiding two extractor opens for normal files.
@@ -6190,6 +6231,18 @@ class PlayerActivity :
   override fun media3SetPlaybackSpeed(speed: Float): Boolean {
     if (!isMedia3Active()) return false
     media3PlaybackController.setPlaybackSpeed(speed)
+    return true
+  }
+
+  override fun media3SetRepeatMode(mode: RepeatMode): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.setRepeatMode(
+      when (mode) {
+        RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+        RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+      },
+    )
     return true
   }
 

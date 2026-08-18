@@ -351,6 +351,9 @@ fun GestureHandler(
                     pendingSingleTapPosition = null
                     wasConsumedByTapGesture = true
                     pointer.consume()
+                    // A double tap is an active command; keep the shared controls visible while
+                    // the seek feedback is shown instead of allowing an older hide coroutine to win.
+                    viewModel.showControls()
 
                     when (region) {
                       "right" -> {

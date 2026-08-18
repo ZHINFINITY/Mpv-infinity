@@ -506,8 +506,16 @@ fun PlayerControls(
     areControlsLocked,
     isUnlockSliderDragging,
     isAudioOnly,
+    doubleTapSeekAmount,
   ) {
-    if (!isAudioOnly && controlsShown && paused == false && !isSeeking && !isUnlockSliderDragging) {
+    if (
+      !isAudioOnly &&
+        controlsShown &&
+        paused == false &&
+        !isSeeking &&
+        doubleTapSeekAmount == 0 &&
+        !isUnlockSliderDragging
+    ) {
       // Use 2 second delay when controls are locked, otherwise use user preference
       val delayTime = if (areControlsLocked) 2000L else playerTimeToDisappear.toLong()
       delay(delayTime)
