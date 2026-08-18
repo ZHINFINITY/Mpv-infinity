@@ -2055,15 +2055,21 @@ private fun Media3StatsOverlay(
 ) {
   val position = formatStatsTime(media3State.positionMs)
   val duration = formatStatsTime(media3State.durationMs)
+  val buffered = formatStatsTime(media3State.bufferedPositionMs)
   val decoder = media3State.videoDecoderName ?: "waiting"
-  val video = media3State.videoMimeType ?: media3State.videoCodecs ?: "unknown"
+  val videoMime = media3State.videoMimeType ?: "unknown"
+  val videoCodec = media3State.videoCodecs ?: "unknown"
+  val videoProfile = media3State.videoProfile ?: "unknown"
   val resolution =
     if (media3State.videoWidth > 0 && media3State.videoHeight > 0) {
       "${media3State.videoWidth}×${media3State.videoHeight}"
     } else {
       "unknown"
     }
-  val buffered = formatStatsTime(media3State.bufferedPositionMs)
+  val frameRate =
+    media3State.videoFrameRate.takeIf { it > 0f }?.let { "%.2f fps".format(it) } ?: "unknown"
+  val colorSpace = media3ColorSpaceName(media3State.videoColorSpace)
+  val transfer = media3TransferName(media3State.videoColorTransfer)
   val state =
     when (media3State.playbackState) {
       androidx.media3.common.Player.STATE_BUFFERING -> "buffering"
@@ -2072,32 +2078,132 @@ private fun Media3StatsOverlay(
       androidx.media3.common.Player.STATE_IDLE -> "idle"
       else -> "unknown"
     }
-  val hdr =
-    when (media3State.videoColorTransfer) {
-      androidx.media3.common.C.COLOR_TRANSFER_ST2084 -> "HDR10/PQ"
-      androidx.media3.common.C.COLOR_TRANSFER_HLG -> "HLG"
-      androidx.media3.common.C.COLOR_TRANSFER_LINEAR -> "SDR/linear"
-      else -> "SDR/unknown"
+  val audioTracks = media3State.audioTracks
+  val selectedAudio = audioTracks.filter { it.selected == true }
+  val selectedAudioSummary =
+    selectedAudio
+      .map { track ->
+        listOfNotNull(
+          track.title?.takeIf { it.isNotBlank() },
+          track.lang?.takeIf { it.isNotBlank() },
+          track.codec?.takeIf { it.isNotBlank() },
+        ).joinToString(" · ")
+      }.filter { it.isNotBlank() }
+      .joinToString(" | ")
+      .ifBlank { "none" }
+  val subtitleSummary =
+    media3State.subtitleTracks
+      .filter { it.selected == true }
+      .map { track ->
+        listOfNotNull(
+          track.title?.takeIf { it.isNotBlank() },
+          track.lang?.takeIf { it.isNotBlank() },
+          track.codec?.takeIf { it.isNotBlank() },
+        ).joinToString(" · ")
+      }.filter { it.isNotBlank() }
+      .joinToString(" | ")
+      .ifBlank { "none" }
+  val pageTitle =
+    when (page) {
+      1 -> "PLAYBACK & DECODER"
+      2 -> "VIDEO FORMAT"
+      3 -> "AUDIO & TRACKS"
+      4 -> "BUFFER & SESSION"
+      5 -> "COLOR & OUTPUT"
+      6 -> "MEDIA3 PERFORMANCE"
+      else -> "MEDIA3"
     }
-  val audioCount = media3State.audioTracks.size
-  val subtitleCount = media3State.subtitleTracks.size
-  Surface(
-    modifier = modifier.widthIn(max = 420.dp),
-    color = Color.Black.copy(alpha = 0.78f),
-    shape = RoundedCornerShape(12.dp),
+  val baseStyle =
+    MaterialTheme.typography.bodySmall.copy(
+      color = Color.White,
+      fontSize = 8.sp,
+      lineHeight = 10.sp,
+      shadow =
+        Shadow(
+          color = Color.Black,
+          offset = androidx.compose.ui.geometry.Offset(1.2f, 1.2f),
+          blurRadius = 3f,
+        ),
+    )
+  val headerStyle =
+    baseStyle.copy(
+      fontWeight = FontWeight.Bold,
+      fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+      fontSize = 8.5.sp,
+    )
+  val labelStyle = baseStyle.copy(fontWeight = FontWeight.Bold)
+
+  Column(
+    modifier = modifier.widthIn(max = 520.dp).alpha(0.88f),
+    verticalArrangement = Arrangement.spacedBy(1.dp),
   ) {
-    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-      Text("Media3 · Page $page", color = Color.White, fontWeight = FontWeight.Bold)
-      Text("Decoder: $decoder", color = Color.White)
-      Text("Video: $video", color = Color.White)
-      Text("Output: $resolution · $hdr", color = Color.White)
-      Text("State: $state · Buffer: $buffered", color = Color.White)
-      Text("Position: $position / $duration", color = Color.White)
-      Text("Audio tracks: $audioCount · Subtitles: $subtitleCount", color = Color.White)
-      Text("Speed: ${"%.2f".format(media3State.playbackSpeed)}×", color = Color.White)
+    OutlinedText("MEDIA3 · PAGE $page · $pageTitle", headerStyle)
+    when (page) {
+      1 -> {
+        OutlinedLabeled("Decoder", "$decoder · ${media3DecoderKind(decoder)}", labelStyle, baseStyle)
+        OutlinedLabeled("Video", "$videoMime | $videoCodec", labelStyle, baseStyle)
+        OutlinedLabeled("State", "$state · ${if (media3State.isPlaying) "playing" else "paused"}", labelStyle, baseStyle)
+        OutlinedLabeled("Speed", "%.2f×".format(media3State.playbackSpeed), labelStyle, baseStyle)
+      }
+      2 -> {
+        OutlinedLabeled("Format", videoMime, labelStyle, baseStyle)
+        OutlinedLabeled("Codec", "$videoCodec · Profile: $videoProfile", labelStyle, baseStyle)
+        OutlinedLabeled("Output", "$resolution · $frameRate", labelStyle, baseStyle)
+        OutlinedLabeled("Decoder", decoder, labelStyle, baseStyle)
+      }
+      3 -> {
+        OutlinedLabeled("Audio", "$selectedAudioSummary · Tracks: ${audioTracks.size}", labelStyle, baseStyle)
+        OutlinedLabeled("Subtitles", "$subtitleSummary · Tracks: ${media3State.subtitleTracks.size}", labelStyle, baseStyle)
+        OutlinedLabeled("Playback", "$state · Position: $position / $duration", labelStyle, baseStyle)
+      }
+      4 -> {
+        OutlinedLabeled("Position", "$position / $duration", labelStyle, baseStyle)
+        OutlinedLabeled("Buffer", buffered, labelStyle, baseStyle)
+        val bufferLead =
+          if (media3State.bufferedPositionMs >= media3State.positionMs) {
+            formatStatsTime(media3State.bufferedPositionMs - media3State.positionMs)
+          } else {
+            "--:--"
+          }
+        OutlinedLabeled("Buffer lead", bufferLead, labelStyle, baseStyle)
+        OutlinedLabeled("State", "$state · Item ${media3State.mediaItemIndex + 1}", labelStyle, baseStyle)
+      }
+      5 -> {
+        val hdr = if (transfer == "SDR/unknown" || transfer == "SDR/linear") "SDR" else transfer
+        OutlinedLabeled("Source", "$videoCodec · $videoProfile", labelStyle, baseStyle)
+        OutlinedLabeled("Output", "$resolution · $hdr", labelStyle, baseStyle)
+        OutlinedLabeled("Color", "$colorSpace · $transfer", labelStyle, baseStyle)
+        OutlinedLabeled("Decoder", "$decoder · ${media3DecoderKind(decoder)}", labelStyle, baseStyle)
+      }
+      6 -> {
+        OutlinedLabeled("Video", "$resolution · $frameRate · $videoMime", labelStyle, baseStyle)
+        OutlinedLabeled("Decoder", decoder, labelStyle, baseStyle)
+        OutlinedLabeled("Session", "$state · $position / $duration", labelStyle, baseStyle)
+        OutlinedLabeled("Tracks", "Audio ${audioTracks.size} · Subtitles ${media3State.subtitleTracks.size}", labelStyle, baseStyle)
+        OutlinedLabeled("Buffer", buffered, labelStyle, baseStyle)
+      }
     }
   }
 }
+
+private fun media3DecoderKind(decoder: String): String =
+  if (decoder.contains("ffmpeg", ignoreCase = true) || decoder.contains("software", ignoreCase = true)) "SW" else "HW"
+
+private fun media3ColorSpaceName(value: Int): String =
+  when (value) {
+    androidx.media3.common.C.COLOR_SPACE_BT709 -> "BT.709"
+    androidx.media3.common.C.COLOR_SPACE_BT601 -> "BT.601"
+    androidx.media3.common.C.COLOR_SPACE_BT2020 -> "BT.2020"
+    else -> "unknown"
+  }
+
+private fun media3TransferName(value: Int): String =
+  when (value) {
+    androidx.media3.common.C.COLOR_TRANSFER_ST2084 -> "HDR10/PQ"
+    androidx.media3.common.C.COLOR_TRANSFER_HLG -> "HLG"
+    androidx.media3.common.C.COLOR_TRANSFER_LINEAR -> "SDR/linear"
+    else -> "SDR/unknown"
+  }
 
 private fun formatStatsTime(valueMs: Long): String {
   if (valueMs <= 0L || valueMs == androidx.media3.common.C.TIME_UNSET) return "--:--"
