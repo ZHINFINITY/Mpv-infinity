@@ -41,6 +41,15 @@ class Media3PlaybackController(
     val durationMs: Long = C.TIME_UNSET,
     val bufferedPositionMs: Long = 0L,
     val mediaItemIndex: Int = 0,
+    val playbackSpeed: Float = 1f,
+    val videoMimeType: String? = null,
+    val videoCodecs: String? = null,
+    val videoProfile: String? = null,
+    val videoDecoderName: String? = null,
+    val videoWidth: Int = C.LENGTH_UNSET,
+    val videoHeight: Int = C.LENGTH_UNSET,
+    val videoColorSpace: Int = C.COLOR_SPACE_UNSPECIFIED,
+    val videoColorTransfer: Int = C.COLOR_TRANSFER_UNSPECIFIED,
   )
 
   private val appContext = context.applicationContext
@@ -48,6 +57,8 @@ class Media3PlaybackController(
   private val player: ExoPlayer
   private var attachedView: PlayerView? = null
   private var lastPlaybackState = Player.STATE_IDLE
+  private var latestVideoFormat: Format? = null
+  private var latestVideoDecoderName: String? = null
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
@@ -193,6 +204,12 @@ class Media3PlaybackController(
   override fun onEvents(player: Player, events: Player.Events) = publishState()
 
   override fun onTracksChanged(tracks: Tracks) {
+    latestVideoFormat =
+      tracks.groups
+        .asSequence()
+        .filter { it.type == C.TRACK_TYPE_VIDEO }
+        .flatMap { group -> (0 until group.length).asSequence().map { group.getTrackFormat(it) } }
+        .firstOrNull()
     val trackDetails =
       tracks.groups.flatMap { group ->
         (0 until group.length).mapNotNull { index ->
@@ -205,6 +222,7 @@ class Media3PlaybackController(
       "tracks changed selected=${trackDetails.joinToString(" | ").ifBlank { "none" }} " +
         "groups=${tracks.groups.size}",
     )
+    publishState()
   }
 
   override fun onPlayerError(error: PlaybackException) {
@@ -233,6 +251,7 @@ class Media3PlaybackController(
     initializedTimestampMs: Long,
     initializationDurationMs: Long,
   ) {
+    latestVideoDecoderName = decoderName
     logInfo(
       "video decoder initialized name=$decoderName " +
         "initializationDurationMs=$initializationDurationMs",
@@ -244,7 +263,9 @@ class Media3PlaybackController(
     format: Format,
     decoderReuseEvaluation: DecoderReuseEvaluation?,
   ) {
+    latestVideoFormat = format
     logInfo("video input format changed ${formatDescription(format)}")
+    publishState()
   }
 
   override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -283,6 +304,15 @@ class Media3PlaybackController(
       durationMs = player.duration,
       bufferedPositionMs = player.bufferedPosition,
       mediaItemIndex = player.currentMediaItemIndex,
+      playbackSpeed = player.playbackParameters.speed,
+      videoMimeType = latestVideoFormat?.sampleMimeType,
+      videoCodecs = latestVideoFormat?.codecs,
+      videoProfile = latestVideoFormat?.codecs,
+      videoDecoderName = latestVideoDecoderName,
+      videoWidth = latestVideoFormat?.width ?: C.LENGTH_UNSET,
+      videoHeight = latestVideoFormat?.height ?: C.LENGTH_UNSET,
+      videoColorSpace = latestVideoFormat?.colorInfo?.colorSpace ?: C.COLOR_SPACE_UNSPECIFIED,
+      videoColorTransfer = latestVideoFormat?.colorInfo?.colorTransfer ?: C.COLOR_TRANSFER_UNSPECIFIED,
     )
 
   private fun logInfo(message: String) {

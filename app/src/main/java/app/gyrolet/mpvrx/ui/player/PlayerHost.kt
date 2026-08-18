@@ -43,6 +43,19 @@ interface PlayerHost {
 
   fun abandonAudioFocus()
 
+  /** Returns true when the Media3 backend owns the current video. */
+  fun isMedia3Active(): Boolean = false
+
+  fun media3IsPlaying(): Boolean = false
+
+  fun media3SetPlayWhenReady(value: Boolean): Boolean = false
+
+  fun media3SeekBy(offsetMs: Long): Boolean = false
+
+  fun media3SeekTo(positionMs: Long): Boolean = false
+
+  fun media3SetPlaybackSpeed(speed: Float): Boolean = false
+
   fun currentMediaLookupHint(): String? = null
 
   fun currentPlayerLookupHints(): PlayerLookupHints = PlayerLookupHints()

@@ -5,6 +5,7 @@
 package app.gyrolet.mpvrx.ui.player
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.media3.common.C
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -21,7 +22,38 @@ data class VideoFormatStatus(
 )
 
 /**
- * Classifies the source and output independently. A Dolby Vision source can legitimately be
+ * Classifies the format reported by Media3 when the MPV property store is not authoritative.
+ */
+fun detectMedia3VideoFormatStatus(
+  mimeType: String?,
+  codecs: String?,
+  colorSpace: Int,
+  colorTransfer: Int,
+): VideoFormatStatus? {
+  val values = listOf(mimeType, codecs).filterNotNull().joinToString(" ").lowercase()
+  if (values.isBlank()) return null
+  val isDolbyVision = values.contains("dolby-vision") || values.contains("dolby_vision") || values.contains("dvhe") || values.contains("dvh1")
+  val isHdr10 =
+    colorSpace == C.COLOR_SPACE_BT2020 && colorTransfer == C.COLOR_TRANSFER_ST2084
+  val isHlg =
+    colorSpace == C.COLOR_SPACE_BT2020 && colorTransfer == C.COLOR_TRANSFER_HLG
+  val sourceLabel = when {
+    isDolbyVision -> "Dolby Vision"
+    isHdr10 -> "HDR10"
+    isHlg -> "HLG"
+    values.contains("10") -> "10-bit video"
+    else -> "SDR"
+  }
+  val outputLabel = when {
+    isDolbyVision || isHdr10 || isHlg -> "Media3 HDR pipeline"
+    else -> "Media3 renderer"
+  }
+  return VideoFormatStatus(sourceLabel = sourceLabel, outputLabel = outputLabel)
+}
+
+/**
+ * Classifies the source and output independently.
+ A Dolby Vision source can legitimately be
  * rendered as HDR10 or tone-mapped to SDR, so the UI must never conflate the two values.
  */
 fun detectVideoFormatStatus(

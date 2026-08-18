@@ -3606,6 +3606,16 @@ class PlayerViewModel : ViewModel(),
 
   fun pauseUnpause() {
     viewModelScope.launch(playbackStateDispatcher) {
+      if (host.isMedia3Active()) {
+        val shouldPlay = withContext(Dispatchers.Main.immediate) { !host.media3IsPlaying() }
+        if (shouldPlay) {
+          val focusGranted = withContext(Dispatchers.Main.immediate) { host.requestAudioFocus() }
+          if (!focusGranted) return@launch
+        }
+        withContext(Dispatchers.Main.immediate) { host.media3SetPlayWhenReady(shouldPlay) }
+        if (!shouldPlay) withContext(Dispatchers.Main.immediate) { host.abandonAudioFocus() }
+        return@launch
+      }
       val wasPaused = PlaybackSession.getPropertyBoolean("pause") ?: PlaybackSession.state.value.paused
       if (wasPaused) {
         val focusGranted = withContext(Dispatchers.Main) { host.requestAudioFocus() }
@@ -3622,6 +3632,11 @@ class PlayerViewModel : ViewModel(),
 
   fun pause() {
     viewModelScope.launch(playbackStateDispatcher) {
+      if (host.isMedia3Active()) {
+        withContext(Dispatchers.Main.immediate) { host.media3SetPlayWhenReady(false) }
+        withContext(Dispatchers.Main.immediate) { host.abandonAudioFocus() }
+        return@launch
+      }
       PlaybackSession.setPropertyBoolean("pause", true)
       syncplayManager.updatePlayerState(precisePosition.value.toDouble(), true, doSeek = false)
       withContext(Dispatchers.Main) { host.abandonAudioFocus() }
@@ -3630,10 +3645,24 @@ class PlayerViewModel : ViewModel(),
 
   fun unpause() {
     viewModelScope.launch(playbackStateDispatcher) {
+      if (host.isMedia3Active()) {
+        val focusGranted = withContext(Dispatchers.Main.immediate) { host.requestAudioFocus() }
+        if (!focusGranted) return@launch
+        withContext(Dispatchers.Main.immediate) { host.media3SetPlayWhenReady(true) }
+        return@launch
+      }
       val focusGranted = withContext(Dispatchers.Main) { host.requestAudioFocus() }
       if (!focusGranted) return@launch
       PlaybackSession.setPropertyBoolean("pause", false)
       syncplayManager.updatePlayerState(precisePosition.value.toDouble(), false, doSeek = false)
+    }
+  }
+
+  fun setPlaybackSpeed(speed: Float) {
+    if (host.isMedia3Active()) {
+      host.media3SetPlaybackSpeed(speed)
+    } else {
+      PlaybackSession.setPropertyFloat("speed", speed)
     }
   }
 
@@ -4063,6 +4092,12 @@ class PlayerViewModel : ViewModel(),
   // ==================== Seeking ====================
 
   fun seekBy(offset: Int) {
+    if (host.isMedia3Active()) {
+      viewModelScope.launch(Dispatchers.Main.immediate) {
+        host.media3SeekBy(offset.toLong() * 1000L)
+      }
+      return
+    }
     coalesceSeek(offset)
   }
 
@@ -4258,6 +4293,12 @@ class PlayerViewModel : ViewModel(),
     fast: Boolean,
     forceExact: Boolean,
   ) {
+    if (host.isMedia3Active()) {
+      viewModelScope.launch(Dispatchers.Main.immediate) {
+        host.media3SeekTo((position.coerceAtLeast(0.0) * 1000.0).toLong())
+      }
+      return
+    }
     val detachedPreview = detachLegacySeekPreview()
     detachedPreview?.second?.cancel()
     val generation = PlaybackSession.state.value.generation

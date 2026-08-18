@@ -125,10 +125,12 @@ import app.gyrolet.mpvrx.ui.player.Decoder
 import app.gyrolet.mpvrx.ui.player.Decoder.Companion.getDecoderFromValue
 import app.gyrolet.mpvrx.ui.player.Panels
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
+import app.gyrolet.mpvrx.ui.player.Media3PlaybackController
 import app.gyrolet.mpvrx.ui.player.PlayerUpdates
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoOpenAnimationOverlay
+import app.gyrolet.mpvrx.ui.player.detectMedia3VideoFormatStatus
 import app.gyrolet.mpvrx.ui.player.detectVideoFormatStatus
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterH
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterV
@@ -186,6 +188,7 @@ fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
   isMedia3Active: Boolean = false,
+  media3State: Media3PlaybackController.State = Media3PlaybackController.State(),
   onDecoderSelected: (Decoder) -> Unit = { decoder ->
     PlaybackSession.setPropertyString("hwdec", decoder.value)
   },
@@ -213,12 +216,20 @@ fun PlayerControls(
   val pausedForCache by PlaybackSession.propBoolean["paused-for-cache"].collectAsState()
   val cacheBufferingState by PlaybackSession.propInt["cache-buffering-state"].collectAsState()
   val demuxerCacheDuration by PlaybackSession.propDouble["demuxer-cache-duration"].collectAsState()
-  val paused by PlaybackSession.propBoolean["pause"].collectAsState()
-  val duration by PlaybackSession.propInt["duration"].collectAsState()
+  val mpvPaused by PlaybackSession.propBoolean["pause"].collectAsState()
+  val mpvDuration by PlaybackSession.propInt["duration"].collectAsState()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
+  val paused = if (isMedia3Active) !media3State.isPlaying else mpvPaused
+  val duration =
+    if (isMedia3Active && media3State.durationMs != androidx.media3.common.C.TIME_UNSET) {
+      (media3State.durationMs / 1000L).toInt()
+    } else {
+      mpvDuration
+    }
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
-  val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
-  val seekbarDuration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
+  val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
+  val playbackSpeed = if (isMedia3Active) media3State.playbackSpeed else mpvPlaybackSpeed
+  val seekbarDuration = if (preciseDuration > 0 && !isMedia3Active) preciseDuration else duration?.toFloat() ?: 0f
   val seekState by viewModel.seekState.collectAsState()
   val seekPreview by viewModel.seekThumbnailPreview.collectAsState()
   val brightness by viewModel.currentBrightness.collectAsState()
@@ -282,7 +293,14 @@ fun PlayerControls(
   val filteredOutputPrimaries by PlaybackSession.propString["video-out-params/primaries"].collectAsState()
   val filteredOutputGamma by PlaybackSession.propString["video-out-params/gamma"].collectAsState()
   val filteredOutputPixelFormat by PlaybackSession.propString["video-out-params/pixelformat"].collectAsState()
-  val videoFormatStatus = remember(
+  val videoFormatStatus = if (isMedia3Active) {
+    detectMedia3VideoFormatStatus(
+      mimeType = media3State.videoMimeType,
+      codecs = media3State.videoCodecs,
+      colorSpace = media3State.videoColorSpace,
+      colorTransfer = media3State.videoColorTransfer,
+    )
+  } else remember(
     activeVideoTrack,
     sourcePrimaries,
     sourceGamma,
@@ -404,16 +422,17 @@ fun PlayerControls(
         },
         decoder = decoder,
         isMedia3Active = isMedia3Active,
+        media3DecoderName = media3State.videoDecoderName,
         onUpdateDecoder = onDecoderSelected,
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
-        onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
+        onSpeedChange = { viewModel.setPlaybackSpeed(it.toFixed(2)) },
         onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
         onAddSpeedPreset = { playerPreferences.speedPresets += it.toFixed(2).toString() },
         onRemoveSpeedPreset = { playerPreferences.speedPresets -= it.toFixed(2).toString() },
         onResetSpeedPresets = playerPreferences.speedPresets::delete,
         speedPresets = sortedSpeedPresets,
         onResetDefaultSpeed = {
-          PlaybackSession.setPropertyFloat("speed", playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
+          viewModel.setPlaybackSpeed(playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
         },
         sleepTimerTimeRemaining = sleepTimerTimeRemaining,
         onStartSleepTimer = viewModel::startTimer,
@@ -1535,8 +1554,12 @@ fun PlayerControls(
                   end.linkTo(parent.end, spacing.large)
                 },
           ) {
-            val position by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
-            val precisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
+            val mpvPosition by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
+            val mpvPrecisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
+            val position =
+              if (isMedia3Active) (media3State.positionMs / 1000L).toInt() else mpvPosition
+            val precisePosition =
+              if (isMedia3Active) media3State.positionMs / 1000f else mpvPrecisePosition
             val invertDuration by playerPreferences.invertDuration.collectAsState()
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
@@ -1906,16 +1929,17 @@ fun PlayerControls(
       },
       decoder = decoder,
       isMedia3Active = isMedia3Active,
+      media3DecoderName = media3State.videoDecoderName,
       onUpdateDecoder = onDecoderSelected,
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
-      onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
+      onSpeedChange = { viewModel.setPlaybackSpeed(it.toFixed(2)) },
       onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
       onAddSpeedPreset = { playerPreferences.speedPresets += it.toFixed(2).toString() },
       onRemoveSpeedPreset = { playerPreferences.speedPresets -= it.toFixed(2).toString() },
       onResetSpeedPresets = playerPreferences.speedPresets::delete,
       speedPresets = sortedSpeedPresets,
       onResetDefaultSpeed = {
-        PlaybackSession.setPropertyFloat("speed", playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
+        viewModel.setPlaybackSpeed(playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
       },
       sleepTimerTimeRemaining = sleepTimerTimeRemaining,
       onStartSleepTimer = viewModel::startTimer,
