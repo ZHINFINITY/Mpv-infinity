@@ -56,6 +56,7 @@ import org.koin.compose.koinInject
 @Composable
 fun VideoZoomSheet(
   videoZoom: Float,
+  isMedia3Active: Boolean = false,
   onSetVideoZoom: (Float) -> Unit,
   onResetVideoPan: () -> Unit,
   onDismissRequest: () -> Unit,
@@ -69,8 +70,10 @@ fun VideoZoomSheet(
   val currentOnSetVideoZoom by rememberUpdatedState(onSetVideoZoom)
 
   LaunchedEffect(Unit) {
-    val mpvZoom = PlaybackSession.getPropertyDouble("video-zoom")?.toFloat() ?: videoZoom
-    zoom = mpvZoom
+    if (!isMedia3Active) {
+      val mpvZoom = PlaybackSession.getPropertyDouble("video-zoom")?.toFloat() ?: videoZoom
+      zoom = mpvZoom
+    }
   }
 
   LaunchedEffect(zoom) {

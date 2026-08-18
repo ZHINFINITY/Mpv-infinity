@@ -376,6 +376,7 @@ fun PlayerSheets(
       val videoZoom by viewModel.videoZoom.composeCollectAsState()
       VideoZoomSheet(
         videoZoom = videoZoom,
+        isMedia3Active = isMedia3Active,
         onSetVideoZoom = viewModel::setVideoZoom,
         onResetVideoPan = viewModel::resetVideoPan,
         onDismissRequest = onDismissRequest,
