@@ -1051,10 +1051,15 @@ class PlayerActivity :
           Triple(zoom, panX, panY)
         }.collect { (zoom, panX, panY) ->
           val scale = 2f.pow(zoom)
+          // Both surfaces receive the same transform; only the active engine's surface is visible.
           binding.player.scaleX = scale
           binding.player.scaleY = scale
           binding.player.translationX = panX
           binding.player.translationY = panY
+          binding.media3Player.scaleX = scale
+          binding.media3Player.scaleY = scale
+          binding.media3Player.translationX = panX
+          binding.media3Player.translationY = panY
         }
       }
     }
@@ -1650,7 +1655,9 @@ class PlayerActivity :
         "title=${currentItem?.title.orEmpty().ifBlank { "<untitled>" }} " +
         "configuredMode=${decoderPreferences.playbackEngine.get().name}",
     )
-    val resumePositionMs = media3State.positionMs
+    // Prefer the controller's requested target because the Compose state callback may lag behind
+    // a seek, especially when an unsupported audio switch causes Media3 to fail immediately after it.
+    val resumePositionMs = media3PlaybackController.positionForEngineHandoffMs()
     playbackEngine = PlaybackEngine.MPV
     media3State = Media3PlaybackController.State()
     media3PreparedItemId = null

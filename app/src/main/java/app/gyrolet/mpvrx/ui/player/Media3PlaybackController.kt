@@ -70,6 +70,7 @@ class Media3PlaybackController(
   private var media3AudioTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var requestedAudioTrackId: Int? = null
+  private var pendingSeekPositionMs: Long? = null
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
@@ -155,12 +156,22 @@ class Media3PlaybackController(
   }
 
   fun seekTo(positionMs: Long) {
-    player.seekTo(positionMs.coerceAtLeast(0L))
+    val targetPositionMs = positionMs.coerceAtLeast(0L)
+    pendingSeekPositionMs = targetPositionMs
+    logInfo("seekTo requested positionMs=$targetPositionMs")
+    player.seekTo(targetPositionMs)
   }
 
   fun seekBy(offsetMs: Long) {
-    player.seekTo((player.currentPosition + offsetMs).coerceAtLeast(0L))
+    val targetPositionMs = (player.currentPosition + offsetMs).coerceAtLeast(0L)
+    pendingSeekPositionMs = targetPositionMs
+    logInfo("seekBy requested offsetMs=$offsetMs targetPositionMs=$targetPositionMs")
+    player.seekTo(targetPositionMs)
   }
+
+  /** Position to use when handing playback to MPV after a Media3 error. */
+  fun positionForEngineHandoffMs(): Long =
+    maxOf(player.currentPosition.coerceAtLeast(0L), pendingSeekPositionMs ?: 0L)
 
   fun setPlaybackSpeed(speed: Float) {
     val clampedSpeed = speed.coerceIn(0.1f, 16f)
@@ -271,10 +282,15 @@ class Media3PlaybackController(
       when (group.type) {
         C.TRACK_TYPE_AUDIO -> {
           (0 until group.length).forEach { trackIndex ->
+            // Do not expose tracks that this Media3 renderer cannot decode. A device may list a
+            // DTS-HD track in the container while ExoPlayer reports FORMAT_UNSUPPORTED_SUBTYPE;
+            // selecting it tears down the audio renderer and can make the entire item appear silent.
+            if (group.getTrackSupport(trackIndex) != C.FORMAT_HANDLED) return@forEach
             val format = group.getTrackFormat(trackIndex)
             val id = audioId++
             audioSelections[id] = group.mediaTrackGroup to trackIndex
             audioEntries +=
+
               TrackNode(
                 id = id,
                 type = "audio",
@@ -397,6 +413,7 @@ class Media3PlaybackController(
     media3AudioTrackGroups = emptyMap()
     media3SubtitleTrackGroups = emptyMap()
     requestedAudioTrackId = null
+    pendingSeekPositionMs = null
   }
 
   private fun mediaItem(

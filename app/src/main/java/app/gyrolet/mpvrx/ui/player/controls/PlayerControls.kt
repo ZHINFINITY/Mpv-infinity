@@ -411,13 +411,7 @@ fun PlayerControls(
         onRemoveSubtitle = viewModel::removeSubtitle,
         audioTracks = audioTracks.toImmutableList(),
         onAddAudio = viewModel::addAudio,
-        onSelectAudio = {
-          if (getTrackSelectionId("aid") == it.id) {
-            setTrackSelectionId("aid", null)
-          } else {
-            setTrackSelectionId("aid", it.id)
-          }
-        },
+        onSelectAudio = viewModel::selectAudioTrack,
         chapter = chapters.getOrNull(currentChapter ?: 0),
         chapters = chapters.toImmutableList(),
         onSeekToChapter = {

@@ -4898,7 +4898,9 @@ class PlayerViewModel : ViewModel(),
 
   fun setVideoZoom(zoom: Float) {
     _videoZoom.value = zoom
-    runCatching { PlaybackSession.setPropertyDouble("video-zoom", zoom.toDouble()) }
+    if (!host.isMedia3Active()) {
+      runCatching { PlaybackSession.setPropertyDouble("video-zoom", zoom.toDouble()) }
+    }
   }
 
   // Video pan (for pan & zoom feature)
