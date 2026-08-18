@@ -26,6 +26,7 @@ androidxCore = "1.18.0"
 androidxPreference = "1.2.1"
 androidxConstraintLayout = "2.2.1"
 media3 = "1.11.0"
+media3Ffmpeg = "1.9.0+1"
 soraEditor = "0.24.5"
 androidxMaterial3 = "1.5.0-alpha19"
 androidxAppcompat = "1.7.1"
@@ -82,6 +83,7 @@ androidx-media3-common = { module = "androidx.media3:media3-common", version.ref
 androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 androidx-media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
 androidx-media3-exoplayer-dash = { module = "androidx.media3:media3-exoplayer-dash", version.ref = "media3" }
+media3-ffmpeg = { module = "org.jellyfin.media3:media3-ffmpeg-decoder", version.ref = "media3Ffmpeg" }
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 androidx-media3-effect = { module = "androidx.media3:media3-effect", version.ref = "media3" }
 androidx-media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "media3" }
