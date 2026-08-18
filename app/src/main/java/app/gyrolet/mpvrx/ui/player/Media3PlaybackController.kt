@@ -48,8 +48,8 @@ class Media3PlaybackController(
     val videoDecoderName: String? = null,
     val videoWidth: Int = C.LENGTH_UNSET,
     val videoHeight: Int = C.LENGTH_UNSET,
-    val videoColorSpace: Int = C.COLOR_SPACE_UNSPECIFIED,
-    val videoColorTransfer: Int = C.COLOR_TRANSFER_UNSPECIFIED,
+    val videoColorSpace: Int = -1,
+    val videoColorTransfer: Int = -1,
   )
 
   private val appContext = context.applicationContext
@@ -311,8 +311,8 @@ class Media3PlaybackController(
       videoDecoderName = latestVideoDecoderName,
       videoWidth = latestVideoFormat?.width ?: C.LENGTH_UNSET,
       videoHeight = latestVideoFormat?.height ?: C.LENGTH_UNSET,
-      videoColorSpace = latestVideoFormat?.colorInfo?.colorSpace ?: C.COLOR_SPACE_UNSPECIFIED,
-      videoColorTransfer = latestVideoFormat?.colorInfo?.colorTransfer ?: C.COLOR_TRANSFER_UNSPECIFIED,
+      videoColorSpace = latestVideoFormat?.colorInfo?.colorSpace ?: -1,
+      videoColorTransfer = latestVideoFormat?.colorInfo?.colorTransfer ?: -1,
     )
 
   private fun logInfo(message: String) {
