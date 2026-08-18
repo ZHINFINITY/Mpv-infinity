@@ -1983,6 +1983,8 @@ fun PlayerControls(
       },
       decoder = decoder,
       isMedia3Active = isMedia3Active,
+      engineSelection = engineSelection,
+      onEngineSelected = onEngineSelected,
       media3DecoderName = media3State.videoDecoderName,
       onUpdateDecoder = onDecoderSelected,
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),

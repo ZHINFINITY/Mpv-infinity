@@ -92,6 +92,33 @@ fun DecodersSheet(
                 modifier = Modifier.weight(1f),
               )
             }
+            if (isMedia3Active) {
+              val decoderName = media3DecoderName.orEmpty()
+              val decoderMode =
+                if (decoderName.lowercase().contains("ffmpeg") ||
+                  decoderName.lowercase().contains("software")
+                ) {
+                  "SW"
+                } else {
+                  "HW"
+                }
+              Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, start = 16.dp, end = 16.dp),
+              ) {
+                Text(
+                  text = "Active decoder: Media3 · $decoderMode",
+                  color = Color.White,
+                  style = MaterialTheme.typography.bodyMedium,
+                )
+                if (decoderName.isNotBlank()) {
+                  Text(
+                    text = decoderName,
+                    color = Color.White.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.bodySmall,
+                  )
+                }
+              }
+            }
           }
         }
       }
