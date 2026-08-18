@@ -234,12 +234,12 @@ fun BottomPlayerControlsPortrait(
       Modifier
         .fillMaxWidth()
         .padding(
-          start = MaterialTheme.spacing.small,
-          end = MaterialTheme.spacing.small,
-          bottom = MaterialTheme.spacing.small,
+          start = MaterialTheme.spacing.large,
+          end = MaterialTheme.spacing.large,
+          bottom = MaterialTheme.spacing.medium,
         ),
     maxItemsInEachRow = 4,
-    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small, Alignment.CenterHorizontally),
+    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
     verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
   ) {
     compactButtons.forEach { button ->
@@ -260,7 +260,7 @@ fun BottomPlayerControlsPortrait(
         activity = activity,
         decoder = decoder,
         playbackSpeed = playbackSpeed,
-        buttonSize = 42.dp,
+        buttonSize = 46.dp,
       )
     }
   }

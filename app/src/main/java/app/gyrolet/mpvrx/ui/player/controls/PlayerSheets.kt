@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import app.gyrolet.mpvrx.preferences.AudioChannels
 import app.gyrolet.mpvrx.preferences.PlaybackEngineMode
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.player.Decoder
@@ -61,6 +62,8 @@ fun PlayerSheets(
   audioTracks: ImmutableList<TrackNode>,
   onAddAudio: (Uri) -> Unit,
   onSelectAudio: (TrackNode) -> Unit,
+  onMedia3AudioChannels: ((AudioChannels) -> Unit)? = null,
+  onMedia3AudioProcessing: ((Boolean, Boolean) -> Unit)? = null,
   // chapters sheet
   chapter: Segment?,
   chapters: ImmutableList<Segment>,
@@ -324,6 +327,9 @@ fun PlayerSheets(
         onAddAudioTrack = { showAudioFilePicker = true },
         onOpenDelayPanel = { onOpenPanel(Panels.AudioDelay) },
         onOpenEqualizerSheet = { onShowSheet(Sheets.Equalizer) },
+        isMedia3Active = isMedia3Active,
+        onMedia3AudioChannels = onMedia3AudioChannels,
+        onMedia3AudioProcessing = onMedia3AudioProcessing,
         onDismissRequest = onDismissRequest,
       )
     }

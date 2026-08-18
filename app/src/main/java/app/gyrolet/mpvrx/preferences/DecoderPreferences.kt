@@ -19,9 +19,9 @@ enum class PlaybackEngineMode(
   val displayName: String,
   val summary: String,
 ) {
-  Auto("Automatic", "Use MPV by default and switch Dolby Vision to Media3 when detected"),
+  Auto("Automatic", "Use MPV by default and switch Dolby Vision to Native when detected"),
   MPV("MPV", "Always use the MPV playback engine"),
-  Media3("Media3", "Always use the Media3 playback engine when supported"),
+  Media3("Native", "Always use the Native playback engine when supported"),
 }
 
 enum class MPVDecoderMode(

@@ -111,6 +111,7 @@ import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AdvancedPreferences
+import app.gyrolet.mpvrx.preferences.AudioChannels
 import app.gyrolet.mpvrx.preferences.AiPreferences
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.AudioPreferences
@@ -195,6 +196,8 @@ fun PlayerControls(
   onDecoderSelected: (Decoder) -> Unit = { decoder ->
     PlaybackSession.setPropertyString("hwdec", decoder.value)
   },
+  onMedia3AudioChannels: (AudioChannels) -> Unit = {},
+  onMedia3AudioProcessing: (Boolean, Boolean) -> Unit = { _, _ -> },
   modifier: Modifier = Modifier,
 ) {
   val spacing = MaterialTheme.spacing
@@ -435,6 +438,8 @@ fun PlayerControls(
         audioTracks = audioTracks.toImmutableList(),
         onAddAudio = viewModel::addAudio,
         onSelectAudio = viewModel::selectAudioTrack,
+        onMedia3AudioChannels = onMedia3AudioChannels,
+        onMedia3AudioProcessing = onMedia3AudioProcessing,
         chapter = chapters.getOrNull(currentChapter ?: 0),
         chapters = chapters.toImmutableList(),
         onSeekToChapter = {
@@ -1588,7 +1593,7 @@ fun PlayerControls(
                     if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
                       bottom.linkTo(playerPauseButton.top, spacing.small)
                     } else {
-                      bottom.linkTo(bottomRightControls.top, spacing.medium)
+                      bottom.linkTo(bottomRightControls.top, spacing.large)
                     }
                   } else {
                     bottom.linkTo(parent.bottom, spacing.medium)
@@ -1848,7 +1853,7 @@ fun PlayerControls(
                   },
                 ).constrainAs(bottomRightControls) {
                   if (isPortrait) {
-                    bottom.linkTo(parent.bottom, spacing.large) // Reduced from extraLarge
+                    bottom.linkTo(parent.bottom, spacing.extraLarge)
                     start.linkTo(parent.start, spacing.large)
                     end.linkTo(parent.end, spacing.large)
                     width = Dimension.fillToConstraints
@@ -1970,6 +1975,8 @@ fun PlayerControls(
         else audioTracks.toImmutableList(),
       onAddAudio = viewModel::addAudio,
       onSelectAudio = viewModel::selectAudioTrack,
+      onMedia3AudioChannels = onMedia3AudioChannels,
+      onMedia3AudioProcessing = onMedia3AudioProcessing,
       chapter = chapters.getOrNull(currentChapter ?: 0),
       chapters = chapters.toImmutableList(),
       onSeekToChapter = { index ->
@@ -2110,8 +2117,8 @@ private fun Media3StatsOverlay(
       3 -> "AUDIO & TRACKS"
       4 -> "BUFFER & SESSION"
       5 -> "COLOR & OUTPUT"
-      6 -> "MEDIA3 PERFORMANCE"
-      else -> "MEDIA3"
+      6 -> "NATIVE PERFORMANCE"
+      else -> "NATIVE"
     }
   val baseStyle =
     MaterialTheme.typography.bodySmall.copy(
@@ -2137,7 +2144,7 @@ private fun Media3StatsOverlay(
     modifier = modifier.widthIn(max = 520.dp).alpha(0.88f),
     verticalArrangement = Arrangement.spacedBy(1.dp),
   ) {
-    OutlinedText("MEDIA3 · PAGE $page · $pageTitle", headerStyle)
+    OutlinedText("NATIVE · PAGE $page · $pageTitle", headerStyle)
     when (page) {
       1 -> {
         OutlinedLabeled("Decoder", "$decoder · ${media3DecoderKind(decoder)}", labelStyle, baseStyle)

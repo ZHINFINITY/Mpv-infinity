@@ -75,6 +75,34 @@ fun PlayerGlassSurface(
         },
       content = content,
     )
+  } else if (playerControlsStyle == PlayerControlsStyle.Glossy) {
+    val decoratedModifier =
+      if (hideBackground) {
+        modifier
+      } else {
+        modifier.background(
+          brush =
+            Brush.linearGradient(
+              colors =
+                listOf(
+                  Color.White.copy(alpha = 0.22f),
+                  Color.White.copy(alpha = 0.08f),
+                  Color.White.copy(alpha = 0.02f),
+                ),
+            ),
+          shape = shape,
+        )
+      }
+    Surface(
+      modifier = decoratedModifier,
+      shape = shape,
+      color = Color.Transparent,
+      contentColor = contentColor,
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+      border = if (hideBackground) null else BorderStroke(0.5.dp, Color.White.copy(alpha = 0.18f)),
+      content = content,
+    )
   } else {
     Surface(
       modifier = modifier,

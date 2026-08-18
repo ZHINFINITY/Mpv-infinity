@@ -15,6 +15,7 @@ import android.media.AudioManager
 import android.view.Window
 import android.view.WindowManager
 import androidx.core.view.WindowInsetsControllerCompat
+import app.gyrolet.mpvrx.preferences.AudioChannels
 
 data class PlayerLookupHints(
   val canonicalTitle: String? = null,
@@ -57,6 +58,10 @@ interface PlayerHost {
   fun media3SetPlaybackSpeed(speed: Float): Boolean = false
 
   fun media3SetRepeatMode(mode: RepeatMode): Boolean = false
+
+  fun media3SetAudioChannels(channels: AudioChannels): Boolean = false
+
+  fun media3SetAudioProcessing(volumeNormalization: Boolean, drcEnabled: Boolean): Boolean = false
 
   fun media3SelectAudioTrack(trackId: Int): Boolean = false
 
