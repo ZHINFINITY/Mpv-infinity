@@ -1078,15 +1078,17 @@ fun RenderPlayerButton(
               indication = ripple(bounded = true),
               onClick = {
                 clickEvent()
-                if (PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true) {
-                  PlaybackSession.command("script-message-to", "console", "disable")
+                if (!activity.isMedia3Active()) {
+                  if (PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true) {
+                    PlaybackSession.command("script-message-to", "console", "disable")
+                  }
+                  if (statisticsPage in 1..5) {
+                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  }
                 }
                 if (statisticsPage == 6) {
                   advancedPreferences.enabledStatisticsPage.set(0)
                 } else {
-                  if (statisticsPage in 1..5) {
-                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                  }
                   advancedPreferences.enabledStatisticsPage.set(6)
                 }
                 onOpenSheet(Sheets.None)

@@ -51,26 +51,10 @@ fun DecodersSheet(
     LazyColumn {
       if (isMedia3Active) {
         item {
-          Column(
-            modifier =
-              Modifier
-                .fillMaxWidth()
-                .padding(
-                  start = MaterialTheme.spacing.medium + 48.dp,
-                  end = MaterialTheme.spacing.medium,
-                  top = MaterialTheme.spacing.extraSmall,
-                  bottom = MaterialTheme.spacing.extraSmall,
-                ),
-          ) {
-            Text(
-              text = stringResource(R.string.player_sheets_decoder_media3_notice),
-              color = Color.White,
-            )
-          }
-        }
-        item {
+          val mode =
+            if (media3DecoderName?.contains("sw", ignoreCase = true) == true) "SW" else "HW"
           AudioTrackRow(
-            title = "Media3: ${media3DecoderName ?: "waiting for decoder"}",
+            title = "Media3 · $mode",
             isSelected = true,
             enabled = false,
             onClick = {},

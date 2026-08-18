@@ -2,6 +2,8 @@ package app.gyrolet.mpvrx.ui.player
 
 import android.content.Context
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import app.gyrolet.mpvrx.presentation.crash.AppDebugLog
 import androidx.media3.common.C
 import androidx.media3.exoplayer.DecoderReuseEvaluation
@@ -71,6 +73,23 @@ class Media3PlaybackController(
   private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var requestedAudioTrackId: Int? = null
   private var pendingSeekPositionMs: Long? = null
+  private var loopAPositionMs: Long? = null
+  private var loopBPositionMs: Long? = null
+  private val loopHandler = Handler(Looper.getMainLooper())
+  private val loopCheck = object : Runnable {
+    override fun run() {
+      val a = loopAPositionMs
+      val b = loopBPositionMs
+      if (a != null && b != null && b > a) {
+        if (player.isPlaying && player.currentPosition >= b) {
+          logInfo("A-B loop reached B=${b}ms; seeking to A=${a}ms")
+          pendingSeekPositionMs = a
+          player.seekTo(a)
+        }
+        loopHandler.postDelayed(this, 250L)
+      }
+    }
+  }
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
@@ -151,8 +170,42 @@ class Media3PlaybackController(
 
   fun stop() {
     logInfo("stop requested")
+    clearABLoop()
     player.stop()
     player.clearMediaItems()
+  }
+
+  fun setLoopA(positionMs: Long) {
+    loopAPositionMs = positionMs.coerceAtLeast(0L)
+    if (loopBPositionMs != null && loopBPositionMs!! <= loopAPositionMs!!) {
+      loopBPositionMs = null
+    }
+    logInfo("A-B loop A=${loopAPositionMs}ms B=${loopBPositionMs ?: "unset"}")
+    startLoopMonitorIfReady()
+  }
+
+  fun setLoopB(positionMs: Long) {
+    val a = loopAPositionMs
+    if (a == null || positionMs <= a) return
+    loopBPositionMs = positionMs
+    logInfo("A-B loop A=${a}ms B=$positionMs")
+    startLoopMonitorIfReady()
+  }
+
+  fun clearABLoop() {
+    loopAPositionMs = null
+    loopBPositionMs = null
+    loopHandler.removeCallbacks(loopCheck)
+  }
+
+  fun media3LoopA(): Long? = loopAPositionMs
+
+  fun media3LoopB(): Long? = loopBPositionMs
+
+  private fun startLoopMonitorIfReady() {
+    if (loopAPositionMs == null || loopBPositionMs == null) return
+    loopHandler.removeCallbacks(loopCheck)
+    loopHandler.post(loopCheck)
   }
 
   fun seekTo(positionMs: Long) {
@@ -227,6 +280,7 @@ class Media3PlaybackController(
 
   fun release() {
     logInfo("controller releasing")
+    clearABLoop()
     attachedView?.player = null
     attachedView = null
     player.removeListener(this)
@@ -282,15 +336,14 @@ class Media3PlaybackController(
       when (group.type) {
         C.TRACK_TYPE_AUDIO -> {
           (0 until group.length).forEach { trackIndex ->
-            // Do not expose tracks that this Media3 renderer cannot decode. A device may list a
-            // DTS-HD track in the container while ExoPlayer reports FORMAT_UNSUPPORTED_SUBTYPE;
-            // selecting it tears down the audio renderer and can make the entire item appear silent.
-            if (group.getTrackSupport(trackIndex) != C.FORMAT_HANDLED) return@forEach
             val format = group.getTrackFormat(trackIndex)
+            val supported = group.getTrackSupport(trackIndex) == C.FORMAT_HANDLED
             val id = audioId++
-            audioSelections[id] = group.mediaTrackGroup to trackIndex
+            // Keep unsupported entries visible for transparency, but never submit them to Media3.
+            if (supported) {
+              audioSelections[id] = group.mediaTrackGroup to trackIndex
+            }
             audioEntries +=
-
               TrackNode(
                 id = id,
                 type = "audio",
@@ -302,6 +355,7 @@ class Media3PlaybackController(
                 codec = format.codecs ?: format.sampleMimeType,
                 audioChannels = format.channelCount.takeIf { it != C.LENGTH_UNSET }?.toLong(),
                 formatName = format.sampleMimeType,
+                supported = supported,
               )
           }
         }

@@ -355,6 +355,8 @@ fun PlayerSheets(
         anime4KUiState = anime4KUiState,
         onAnime4KModeSelected = viewModel::selectAnime4KMode,
         videoFormatStatus = videoFormatStatus,
+        isMedia3Active = isMedia3Active,
+        modifier = Modifier,
       )
     }
 
