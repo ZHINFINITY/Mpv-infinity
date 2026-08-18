@@ -1,4 +1,5 @@
 /*
+ * Mpv∞
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify
@@ -26,7 +27,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
-import app.gyrolet.mpvrx.ui.theme.spacing
 import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.PlaybackEngineMode
@@ -64,80 +64,79 @@ fun DecodersSheet(
             color = Color.White,
             style = MaterialTheme.typography.titleSmall,
           )
+          // Keep the same surface treatment as the MPV engine selector. Media3 status and
+          // codec information belong to the sheet background, not inside this selection card.
           Surface(
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
             tonalElevation = 0.dp,
           ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-              Row(modifier = Modifier.fillMaxWidth()) {
-                AudioTrackRow(
-                  title = "MPV",
-                  isSelected = engineSelection == PlaybackEngineMode.MPV,
-                  onClick = {
-                    onEngineSelected(PlaybackEngineMode.MPV)
-                    onDismissRequest()
-                  },
-                  textColor = Color.White,
-                  modifier = Modifier.weight(1f),
-                )
-                AudioTrackRow(
-                  title = "Media3",
-                  isSelected = engineSelection == PlaybackEngineMode.Media3,
-                  onClick = {
-                    onEngineSelected(PlaybackEngineMode.Media3)
-                    onDismissRequest()
-                  },
-                  textColor = Color.White,
-                  modifier = Modifier.weight(1f),
+            Row(modifier = Modifier.fillMaxWidth()) {
+              AudioTrackRow(
+                title = "MPV",
+                isSelected = engineSelection == PlaybackEngineMode.MPV,
+                onClick = {
+                  onEngineSelected(PlaybackEngineMode.MPV)
+                  onDismissRequest()
+                },
+                textColor = Color.White,
+                modifier = Modifier.weight(1f),
+              )
+              AudioTrackRow(
+                title = "Media3",
+                isSelected = engineSelection == PlaybackEngineMode.Media3,
+                onClick = {
+                  onEngineSelected(PlaybackEngineMode.Media3)
+                  onDismissRequest()
+                },
+                textColor = Color.White,
+                modifier = Modifier.weight(1f),
+              )
+            }
+          }
+
+          if (isMedia3Active) {
+            val decoderName = media3DecoderName.orEmpty()
+            val decoderMode =
+              if (
+                decoderName.lowercase().contains("ffmpeg") ||
+                  decoderName.lowercase().contains("software")
+              ) {
+                "SW"
+              } else {
+                "HW"
+              }
+            Column(
+              modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            ) {
+              Text(
+                text = "Active decoder: Media3 · $decoderMode",
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+              )
+              if (decoderName.isNotBlank()) {
+                Text(
+                  text = decoderName,
+                  color = Color.White.copy(alpha = 0.75f),
+                  style = MaterialTheme.typography.bodySmall,
                 )
               }
-              if (isMedia3Active) {
-                val decoderName = media3DecoderName.orEmpty()
-                val decoderMode =
-                  if (decoderName.lowercase().contains("ffmpeg") ||
-                    decoderName.lowercase().contains("software")
-                  ) {
-                    "SW"
-                  } else {
-                    "HW"
-                  }
-                Column(
-                  modifier =
-                    Modifier
-                      .fillMaxWidth()
-                      .padding(horizontal = 16.dp, vertical = 8.dp),
-                ) {
-                  Text(
-                    text = "Active decoder: Media3 · $decoderMode",
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyMedium,
-                  )
-                  if (decoderName.isNotBlank()) {
-                    Text(
-                      text = decoderName,
-                      color = Color.White.copy(alpha = 0.75f),
-                      style = MaterialTheme.typography.bodySmall,
-                    )
-                  }
-                  Text(
-                    text = "Codec modes · selected automatically by Media3",
-                    color = Color.White.copy(alpha = 0.9f),
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(top = 10.dp),
-                  )
-                  Decoder.entries.forEach { decoder ->
-                    AudioTrackRow(
-                      title = "${decoder.title} (${decoder.value})",
-                      isSelected = false,
-                      onClick = {},
-                      enabled = false,
-                      textColor = Color.White.copy(alpha = 0.72f),
-                      modifier = Modifier.fillMaxWidth(),
-                    )
-                  }
-                }
+              Text(
+                text = "Codec mode: selected automatically by Media3",
+                color = Color.White.copy(alpha = 0.9f),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = 10.dp),
+              )
+              Decoder.entries.forEach { decoder ->
+                AudioTrackRow(
+                  title = "${decoder.title} (${decoder.value})",
+                  isSelected = false,
+                  onClick = {},
+                  enabled = false,
+                  textColor = Color.White.copy(alpha = 0.72f),
+                  modifier = Modifier.fillMaxWidth(),
+                )
               }
             }
           }

@@ -69,6 +69,7 @@ class Media3PlaybackController(
   private lateinit var normalMediaSourceFactory: DefaultMediaSourceFactory
   private lateinit var fastMediaSourceFactory: DefaultMediaSourceFactory
   private var fastStartActive = false
+  private var restoreSeekParametersWhenReady = false
   private var attachedView: PlayerView? = null
   private var lastPlaybackState = Player.STATE_IDLE
   private var latestVideoFormat: Format? = null
@@ -191,6 +192,8 @@ class Media3PlaybackController(
       return
     }
     resetMediaMetadata()
+    restoreSeekParametersWhenReady = false
+    player.setSeekParameters(SeekParameters.EXACT)
     val item = mediaItem(uri, title, headers)
     if (fastStart && requestedStartPositionMs <= 0L) {
       fastStartActive = true
@@ -248,6 +251,8 @@ class Media3PlaybackController(
     }
     resetMediaMetadata()
     fastStartActive = false
+    restoreSeekParametersWhenReady = false
+    player.setSeekParameters(SeekParameters.EXACT)
     if (uris.isEmpty()) {
       player.clearMediaItems()
       return
@@ -271,6 +276,8 @@ class Media3PlaybackController(
     stateTickerHandler.removeCallbacks(stateTicker)
     clearABLoop()
     fastStartActive = false
+    restoreSeekParametersWhenReady = false
+    player.setSeekParameters(SeekParameters.EXACT)
     player.stop()
     player.clearMediaItems()
   }
@@ -324,10 +331,13 @@ class Media3PlaybackController(
     // earlier keyframe on high-bitrate HEVC/Dolby Vision files.
     val previousSeekParameters = player.seekParameters
     player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+    restoreSeekParametersWhenReady = previousSeekParameters != SeekParameters.CLOSEST_SYNC
     player.setMediaSource(normalMediaSourceFactory.createMediaSource(currentItem), targetPositionMs)
     player.prepare()
     player.playWhenReady = shouldPlay
-    player.setSeekParameters(previousSeekParameters)
+    if (!restoreSeekParametersWhenReady) {
+      player.setSeekParameters(previousSeekParameters)
+    }
     return true
   }
 
@@ -350,8 +360,11 @@ class Media3PlaybackController(
     if (restoreSeekableTimelineIfNeeded(targetPositionMs)) return
     pendingSeekPositionMs = targetPositionMs
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
-    logInfo("seekBy requested offsetMs=$offsetMs targetPositionMs=$targetPositionMs")
+    logInfo("seekBy requested offsetMs=$offsetMs targetPositionMs=$targetPositionMs seekMode=closestSync")
+    val previousSeekParameters = player.seekParameters
+    player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     player.seekTo(targetPositionMs)
+    player.setSeekParameters(previousSeekParameters)
   }
 
   /** Position to use when handing playback to MPV after a Media3 error. */
@@ -428,6 +441,11 @@ class Media3PlaybackController(
   }
 
   override fun onPlaybackStateChanged(playbackState: Int) {
+    if (playbackState == Player.STATE_READY && restoreSeekParametersWhenReady) {
+      restoreSeekParametersWhenReady = false
+      player.setSeekParameters(SeekParameters.EXACT)
+      logInfo("restored exact seek parameters after Cues timeline became ready")
+    }
     val stateChanged = playbackState != lastPlaybackState
     if (stateChanged) {
       logInfo(
