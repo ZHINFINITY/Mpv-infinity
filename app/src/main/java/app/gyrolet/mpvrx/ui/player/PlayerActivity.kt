@@ -142,6 +142,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import org.koin.android.ext.android.inject
 import okhttp3.OkHttpClient
 import java.io.File
@@ -442,6 +443,8 @@ class PlayerActivity :
   private var media3VideoFrameRendered = false
   private var media3AutoFallbackItemId: String? = null
   private var activePlaybackItem: PlaybackItem? = null
+  /** Last item submitted to Media3; retained while MPV is stopped and its queue is transiently empty. */
+  private var media3ActiveItem: PlaybackItem? = null
   // A rotation button tap is authoritative for the current item. Video-aspect callbacks must not
   // immediately replace a user's manual Vertical/Landscape choice.
   private var manualOrientationOverride: Int? = null
@@ -1112,6 +1115,23 @@ class PlayerActivity :
     return playableUri
   }
 
+  private fun shouldUseFastMedia3Start(item: PlaybackItem): Boolean {
+    val sourceUri = media3SourceUri(item)
+    val sizeBytes =
+      runCatching {
+        when (sourceUri.scheme?.lowercase()) {
+          "file", null -> sourceUri.path?.let(::File)?.length() ?: -1L
+          "content" -> contentResolver.openAssetFileDescriptor(sourceUri, "r")?.use { it.length }
+            ?: -1L
+          else -> -1L
+        }
+      }.getOrDefault(-1L)
+    // Cues scanning becomes disproportionate on multi-gigabyte local Matroska files. Keep the
+    // reliable normal path for smaller files and all network streams.
+    return sizeBytes >= 4L * 1024L * 1024L * 1024L &&
+      sourceUri.scheme?.lowercase() in setOf("file", "content")
+  }
+
   private fun startMedia3PlaybackWhenReady(
     item: PlaybackItem,
     resumePositionMs: Long,
@@ -1155,6 +1175,9 @@ class PlayerActivity :
           headers = item.headers,
           startPositionMs = resumePositionMs,
           playWhenReady = true,
+          // The no-Cues path is only used for a fresh large-file start. Handoffs with a nonzero
+          // position stay on the Cues-enabled path so the position cannot reset during prepare.
+          fastStart = resumePositionMs <= 0L && shouldUseFastMedia3Start(item),
         )
       }.onSuccess {
         media3PreparedItemId = item.stableId
@@ -1639,6 +1662,7 @@ class PlayerActivity :
 
   private fun switchToMedia3Engine(item: PlaybackItem, force: Boolean = false) {
     activePlaybackItem = item
+    media3ActiveItem = item
     if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) {
       media3AutoFallbackItemId = null
     }
@@ -1729,8 +1753,15 @@ class PlayerActivity :
     // The decoder sheet is rendered above the active player surface. During Media3 ownership MPV's
     // queue can briefly be empty, so prefer the item that owns the visible Media3 session and then
     // fall back to the normal PlaybackSession lookup.
+    AppDebugLog.info(
+      TAG,
+      "Manual engine selection requested engine=$selectedEngine playbackEngine=$playbackEngine " +
+        "media3ItemId=$media3ItemId activeItem=${activePlaybackItem?.stableId} " +
+        "media3ActiveItem=${media3ActiveItem?.stableId}",
+    )
     val resolvedItem =
-      activePlaybackItem?.takeIf { media3ItemId == null || it.stableId == media3ItemId }
+      media3ActiveItem?.takeIf { media3ItemId == it.stableId }
+        ?: activePlaybackItem?.takeIf { media3ItemId == null || it.stableId == media3ItemId }
         ?: currentPlaybackItem()
     if (resolvedItem == null) {
       AppDebugLog.warn(
@@ -1742,20 +1773,28 @@ class PlayerActivity :
     }
     manualEngineOverrideItemId = resolvedItem.stableId
     media3AutoFallbackItemId = null
-    when (selectedEngine) {
-      PlaybackEngineMode.MPV -> {
-        decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
-        manualEngineOverride = PlaybackEngine.MPV
-        AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=MPV")
-        switchToMpvEngine(resolvedItem, force = true)
+    val targetEngine =
+      when (selectedEngine) {
+        PlaybackEngineMode.MPV -> PlaybackEngine.MPV
+        PlaybackEngineMode.Media3 -> PlaybackEngine.MEDIA3
+        PlaybackEngineMode.Auto -> return
       }
-      PlaybackEngineMode.Media3 -> {
-        decoderPreferences.playbackEngine.set(PlaybackEngineMode.Media3)
-        manualEngineOverride = PlaybackEngine.MEDIA3
-        AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=Media3")
-        switchToMedia3Engine(resolvedItem, force = true)
+    decoderPreferences.playbackEngine.set(selectedEngine)
+    manualEngineOverride = targetEngine
+    AppDebugLog.info(
+      TAG,
+      "Manual engine override scheduled item=${resolvedItem.stableId} engine=$targetEngine",
+    )
+    // The decoder sheet invokes this callback immediately before its dismiss callback. Defer the
+    // heavy handoff one main-loop turn so the sheet can finish closing and the Compose engine state
+    // can recompose instead of competing with a synchronous MPV stop/load operation.
+    lifecycleScope.launch(Dispatchers.Main.immediate) {
+      yield()
+      if (manualEngineOverrideItemId != resolvedItem.stableId) return@launch
+      when (targetEngine) {
+        PlaybackEngine.MPV -> switchToMpvEngine(resolvedItem, force = true)
+        PlaybackEngine.MEDIA3 -> switchToMedia3Engine(resolvedItem, force = true)
       }
-      PlaybackEngineMode.Auto -> Unit
     }
   }
 
@@ -1804,6 +1843,7 @@ class PlayerActivity :
     media3State = Media3PlaybackController.State()
     media3PreparedItemId = null
     media3ItemId = null
+    media3ActiveItem = null
     media3PlaybackController.stop()
     binding.media3Player.visibility = View.GONE
     binding.player.visibility = View.VISIBLE
