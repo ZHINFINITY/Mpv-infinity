@@ -76,6 +76,15 @@ class Media3PlaybackController(
   private var loopAPositionMs: Long? = null
   private var loopBPositionMs: Long? = null
   private val loopHandler = Handler(Looper.getMainLooper())
+  private val stateTickerHandler = Handler(Looper.getMainLooper())
+  private val stateTicker = object : Runnable {
+    override fun run() {
+      if (player.currentMediaItem != null) {
+        publishState()
+      }
+      stateTickerHandler.postDelayed(this, 250L)
+    }
+  }
   private val loopCheck = object : Runnable {
     override fun run() {
       val a = loopAPositionMs
@@ -130,6 +139,8 @@ class Media3PlaybackController(
     playWhenReady: Boolean = true,
   ) {
     resetMediaMetadata()
+    stateTickerHandler.removeCallbacks(stateTicker)
+    stateTickerHandler.post(stateTicker)
     logInfo(
       "play requested uri=$uri title=${title.orEmpty().ifBlank { "<untitled>" }} " +
         "headers=${headers.keys.sorted().joinToString(",").ifBlank { "none" }} " +
@@ -150,6 +161,8 @@ class Media3PlaybackController(
     playWhenReady: Boolean = true,
   ) {
     resetMediaMetadata()
+    stateTickerHandler.removeCallbacks(stateTicker)
+    stateTickerHandler.post(stateTicker)
     logInfo(
       "playlist requested count=${uris.size} startIndex=$startIndex " +
         "startPositionMs=${startPositionMs.coerceAtLeast(0L)} playWhenReady=$playWhenReady",
@@ -175,6 +188,7 @@ class Media3PlaybackController(
 
   fun stop() {
     logInfo("stop requested")
+    stateTickerHandler.removeCallbacks(stateTicker)
     clearABLoop()
     player.stop()
     player.clearMediaItems()
@@ -285,6 +299,7 @@ class Media3PlaybackController(
 
   fun release() {
     logInfo("controller releasing")
+    stateTickerHandler.removeCallbacks(stateTicker)
     clearABLoop()
     attachedView?.player = null
     attachedView = null
@@ -315,6 +330,7 @@ class Media3PlaybackController(
       "loading changed isLoading=$isLoading state=${playbackStateName(player.playbackState)} " +
         "positionMs=${player.currentPosition} bufferedPositionMs=${player.bufferedPosition}",
     )
+    publishState()
   }
 
   override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -322,10 +338,12 @@ class Media3PlaybackController(
       "media item transition reason=$reason uri=${mediaItem?.localConfiguration?.uri ?: "none"} " +
         "mediaId=${mediaItem?.mediaId ?: "none"}",
     )
+    publishState()
   }
 
   override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
     logInfo("timeline changed reason=$reason windows=${timeline.windowCount} periods=${timeline.periodCount}")
+    publishState()
   }
 
   override fun onEvents(player: Player, events: Player.Events) = publishState()
