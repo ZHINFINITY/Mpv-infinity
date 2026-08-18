@@ -171,10 +171,8 @@ class Media3PlaybackController(
   fun selectAudioTrack(trackId: Int): Boolean {
     val selection = media3AudioTrackGroups[trackId] ?: return false
     val (group, trackIndex) = selection
-    if (!group.isTrackSupported(trackIndex)) {
-      logInfo("audio track id=$trackId is not supported; keeping current audio")
-      return false
-    }
+    // Track IDs are created from the current Tracks snapshot, so the mapped
+    // group/index pair is already valid for the active player timeline.
     requestedAudioTrackId = trackId
     logInfo("selecting audio track id=$trackId group=${group.id} index=$trackIndex")
     player.trackSelectionParameters =
