@@ -18,7 +18,7 @@
         android:fitsSystemWindows="false"
         android:keepScreenOn="true"
         app:resize_mode="fit"
-        app:surface_type="texture_view"
+        app:surface_type="surface_view"
         android:visibility="gone" />
 
     <androidx.compose.ui.platform.ComposeView
