@@ -3246,6 +3246,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun removeSubtitle(id: Int) {
+    if (host.isMedia3Active()) return
     viewModelScope.launch(Dispatchers.IO) {
       // Find the subtitle track info before removing
       val tracks = subtitleTracks.value
@@ -3551,6 +3552,14 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun toggleSubtitle(id: Int) {
+    if (host.isMedia3Active()) {
+      if (host.media3IsSubtitleSelected(id)) {
+        host.media3DisableSubtitles()
+      } else {
+        host.media3SelectSubtitleTrack(id)
+      }
+      return
+    }
     val primarySid = getTrackSelectionId("sid")
     val secondarySid = getTrackSelectionId("secondary-sid")
 
@@ -3572,12 +3581,14 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun isSubtitleSelected(id: Int): Boolean {
+    if (host.isMedia3Active()) return host.media3IsSubtitleSelected(id)
     val primarySid = getTrackSelectionId("sid")
     val secondarySid = getTrackSelectionId("secondary-sid")
     return (id == primarySid && primarySid > 0) || (id == secondarySid && secondarySid > 0)
   }
 
   fun subtitleSelectionIndicator(id: Int): String? {
+    if (host.isMedia3Active()) return "P".takeIf { host.media3IsSubtitleSelected(id) }
     val primarySid = getTrackSelectionId("sid")
     val secondarySid = getTrackSelectionId("secondary-sid")
     return when {
@@ -3663,6 +3674,18 @@ class PlayerViewModel : ViewModel(),
       host.media3SetPlaybackSpeed(speed)
     } else {
       PlaybackSession.setPropertyFloat("speed", speed)
+    }
+  }
+
+  fun selectAudioTrack(track: TrackNode) {
+    if (host.isMedia3Active()) {
+      host.media3SelectAudioTrack(track.id)
+    } else {
+      if (getTrackSelectionId("aid") == track.id) {
+        setTrackSelectionId("aid", null)
+      } else {
+        setTrackSelectionId("aid", track.id)
+      }
     }
   }
 
@@ -4903,7 +4926,7 @@ class PlayerViewModel : ViewModel(),
 
   // ==================== Frame Navigation ====================
 
-  fun updateFrameInfo() {
+  private fun refreshFrameInfoFromMpv() {
     _currentFrame.value = PlaybackSession.getPropertyInt("estimated-frame-number") ?: 0
 
     val durationValue = PlaybackSession.getPropertyDouble("duration") ?: 0.0
@@ -4920,6 +4943,26 @@ class PlayerViewModel : ViewModel(),
       }
   }
 
+  private fun refreshFrameInfoFromMedia3() {
+    val frameDurationMs = host.media3FrameDurationMs() ?: return
+    val positionMs = host.media3CurrentPositionMs().coerceAtLeast(0L)
+    val durationMs = host.media3DurationMs().takeIf { it > 0L } ?: 0L
+    _currentFrame.value = (positionMs / frameDurationMs).toInt()
+    _totalFrames.value = if (durationMs > 0L) (durationMs / frameDurationMs).toInt() else 0
+  }
+
+  fun updateFrameInfo() {
+    frameNavigationJob?.cancel()
+    frameNavigationJob =
+      viewModelScope.launch(playbackStateDispatcher) {
+        if (withContext(Dispatchers.Main.immediate) { host.isMedia3Active() }) {
+          withContext(Dispatchers.Main.immediate) { refreshFrameInfoFromMedia3() }
+        } else {
+          refreshFrameInfoFromMpv()
+        }
+      }
+  }
+
   fun toggleFrameNavigationExpanded() {
     val wasExpanded = _isFrameNavigationExpanded.value
     _isFrameNavigationExpanded.update { !it }
@@ -4930,11 +4973,11 @@ class PlayerViewModel : ViewModel(),
         pauseUnpause()
       }
       updateFrameInfo()
-      showFrameInfoOverlay()
       resetFrameNavigationTimer()
     } else {
-      // Cancel timer when manually collapsing
+      // Cancel timer and any pending native frame operation when manually collapsing
       frameNavigationCollapseJob?.cancel()
+      frameNavigationJob?.cancel()
     }
   }
 
@@ -4942,40 +4985,54 @@ class PlayerViewModel : ViewModel(),
     playerUpdate.value = PlayerUpdates.FrameInfo(_currentFrame.value, _totalFrames.value)
   }
 
-  fun frameStepForward() {
-    viewModelScope.launch(Dispatchers.IO) {
-      if (paused != true) {
-        pauseUnpause()
-        delay(50)
+  private fun frameStep(command: String) {
+    if (!frameStepMutex.tryLock()) return
+    frameNavigationJob?.cancel()
+    frameNavigationJob =
+      viewModelScope.launch(playbackStateDispatcher) {
+        try {
+          if (withContext(Dispatchers.Main.immediate) { host.isMedia3Active() }) {
+            val frameDurationMs =
+              withContext(Dispatchers.Main.immediate) { host.media3FrameDurationMs() }
+                ?: 40L
+            val offsetMs = if (command == "frame-step") frameDurationMs else -frameDurationMs
+            withContext(Dispatchers.Main.immediate) {
+              host.media3SeekBy(offsetMs)
+              refreshFrameInfoFromMedia3()
+              showFrameInfoOverlay()
+              resetFrameNavigationTimer()
+            }
+            return@launch
+          }
+          if (paused != true) {
+            pauseUnpause()
+            delay(75)
+          }
+          // Engine switching can happen while the pause request is in flight. Never send an MPV
+          // frame command after Media3 has taken ownership of the item.
+          if (withContext(Dispatchers.Main.immediate) { host.isMedia3Active() }) return@launch
+          runCatching { PlaybackSession.command("no-osd", command) }
+            .onFailure { error -> Log.w("PlayerViewModel", "Frame navigation command failed", error) }
+          delay(100)
+          refreshFrameInfoFromMpv()
+          withContext(Dispatchers.Main.immediate) {
+            if (!host.isMedia3Active()) {
+              showFrameInfoOverlay()
+              resetFrameNavigationTimer()
+            }
+          }
+        } finally {
+          frameStepMutex.unlock()
+        }
       }
-      PlaybackSession.command("no-osd", "frame-step")
-      delay(100)
-      updateFrameInfo()
-      withContext(Dispatchers.Main) {
-        showFrameInfoOverlay()
-        // Reset the inactivity timer
-        resetFrameNavigationTimer()
-      }
-    }
   }
 
-  fun frameStepBackward() {
-    viewModelScope.launch(Dispatchers.IO) {
-      if (paused != true) {
-        pauseUnpause()
-        delay(50)
-      }
-      PlaybackSession.command("no-osd", "frame-back-step")
-      delay(100)
-      updateFrameInfo()
-      withContext(Dispatchers.Main) {
-        showFrameInfoOverlay()
-        // Reset the inactivity timer
-        resetFrameNavigationTimer()
-      }
-    }
-  }
+  fun frameStepForward() = frameStep("frame-step")
 
+  fun frameStepBackward() = frameStep("frame-back-step")
+
+  private val frameStepMutex = Mutex()
+  private var frameNavigationJob: Job? = null
   private var frameNavigationCollapseJob: Job? = null
 
   fun resetFrameNavigationTimer() {
@@ -6231,6 +6288,9 @@ class PlayerViewModel : ViewModel(),
 
   override fun onCleared() {
     // Deterministic cleanup of resources that previously relied on GC.
+    // Cancel native frame work explicitly so no late command can race with teardown.
+    frameNavigationJob?.cancel()
+    frameNavigationCollapseJob?.cancel()
     // viewModelScope is auto-cancelled by ViewModel, but the following
     // resources are not coroutine-scoped and need explicit release.
     // See issue 2.1 in the leak audit.

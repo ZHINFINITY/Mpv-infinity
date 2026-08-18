@@ -56,6 +56,20 @@ interface PlayerHost {
 
   fun media3SetPlaybackSpeed(speed: Float): Boolean = false
 
+  fun media3SelectAudioTrack(trackId: Int): Boolean = false
+
+  fun media3SelectSubtitleTrack(trackId: Int): Boolean = false
+
+  fun media3DisableSubtitles(): Boolean = false
+
+  fun media3IsSubtitleSelected(trackId: Int): Boolean = false
+
+  fun media3CurrentPositionMs(): Long = 0L
+
+  fun media3DurationMs(): Long = 0L
+
+  fun media3FrameDurationMs(): Long? = null
+
   fun currentMediaLookupHint(): String? = null
 
   fun currentPlayerLookupHints(): PlayerLookupHints = PlayerLookupHints()

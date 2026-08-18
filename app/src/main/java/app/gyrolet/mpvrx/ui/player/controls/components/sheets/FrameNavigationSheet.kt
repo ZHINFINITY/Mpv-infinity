@@ -81,6 +81,8 @@ fun FrameNavigationSheet(
   onPause: () -> Unit,
   onUnpause: () -> Unit,
   onPauseUnpause: () -> Unit,
+  onPreviousFrame: () -> Unit,
+  onNextFrame: () -> Unit,
   onSeekTo: (Int, Boolean) -> Unit,
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
@@ -100,6 +102,8 @@ fun FrameNavigationSheet(
   val currentOnPause by rememberUpdatedState(onPause)
   val currentOnUnpause by rememberUpdatedState(onUnpause)
   val currentOnUpdateFrameInfo by rememberUpdatedState(onUpdateFrameInfo)
+  val currentOnPreviousFrame by rememberUpdatedState(onPreviousFrame)
+  val currentOnNextFrame by rememberUpdatedState(onNextFrame)
 
   // Use the same logic as PlayerControls for pause state
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
@@ -144,32 +148,10 @@ fun FrameNavigationSheet(
   PlayerSheet(onDismissRequest = onDismissRequest) {
     FrameNavigationCard(
       onPreviousFrame = {
-        if (!isFrameStepping) {
-          coroutineScope.launch {
-            // Pause if not already paused
-            if (!isPaused) {
-              currentOnPause()
-              delay(50)
-            }
-            PlaybackSession.command("no-osd", "frame-back-step")
-            delay(100)
-            currentOnUpdateFrameInfo()
-          }
-        }
+        if (!isFrameStepping) currentOnPreviousFrame()
       },
       onNextFrame = {
-        if (!isFrameStepping) {
-          coroutineScope.launch {
-            // Pause if not already paused
-            if (!isPaused) {
-              currentOnPause()
-              delay(50)
-            }
-            PlaybackSession.command("no-osd", "frame-step")
-            delay(100)
-            currentOnUpdateFrameInfo()
-          }
-        }
+        if (!isFrameStepping) currentOnNextFrame()
       },
       onPlayPause = {
         coroutineScope.launch {

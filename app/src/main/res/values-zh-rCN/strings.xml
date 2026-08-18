@@ -1515,7 +1515,7 @@
   <string name="syncplay_connecting">正在连接…</string>
   <string name="syncplay_player_status">Syncplay：%1$s（%2$d 位用户）</string>
   <!-- Additional synchronized strings -->
-  <string name="app_name">mpvRx</string>
+  <string name="app_name">Mpv∞</string>
   <string name="github_repo_url">https://github.com/Riteshp2001/mpvRx</string>
   <string name="hdr_mode_bt2020">BT.2020</string>
   <string name="hdr_mode_bt2100_hlg">BT.2100 HLG</string>

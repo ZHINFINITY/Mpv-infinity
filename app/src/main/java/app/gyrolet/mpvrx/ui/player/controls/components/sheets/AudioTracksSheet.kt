@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -163,6 +164,7 @@ fun AudioTrackRow(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
+  textColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
   Row(
     modifier =
@@ -182,6 +184,7 @@ fun AudioTrackRow(
       title,
       fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
       fontStyle = if (isSelected) FontStyle.Italic else FontStyle.Normal,
+      color = textColor,
     )
   }
 }

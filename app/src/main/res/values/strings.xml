@@ -1,5 +1,5 @@
 <resources>
-  <string name="app_name" translatable="false">mpvRx</string>
+  <string name="app_name" translatable="false">Mpv∞</string>
   <string name="generic_reset">Reset</string>
   <string name="generic_share">Share</string>
   <string name="generic_confirm">Confirm</string>
@@ -17,7 +17,7 @@
   <string name="pref_appearance_amoled_mode_title">AMOLED Black Mode</string>
   <string name="pref_appearance_amoled_mode_summary">Use pure black background for dark themes</string>
   <string name="pref_appearance_system_font_title">Use system font</string>
-  <string name="pref_appearance_system_font_summary">Use the Android system typeface across mpvRx instead of Google Sans Flex</string>
+  <string name="pref_appearance_system_font_summary">Use the Android system typeface across Mpv∞ instead of Google Sans Flex</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Enable dynamic colors</string>
   <string name="pref_appearance_material_you_summary_disabled">Only available on Android 12 and above</string>
@@ -319,7 +319,7 @@
   <string name="pref_app_language_title">Language</string>
   <string name="pref_app_language_system_default">System default</string>
   <string name="pref_app_language_restart_title">Restart required</string>
-  <string name="pref_app_language_restart_message">Restart mpvRx to apply the new language.</string>
+  <string name="pref_app_language_restart_message">Restart Mpv∞ to apply the new language.</string>
   <string name="pref_app_language_restart_now">Restart now</string>
   <string name="pref_advanced_mpv_conf_storage_location">Pick configuration storage location</string>
   <string name="pref_advanced_mpv_conf">Edit mpv.conf</string>
@@ -538,7 +538,7 @@
   <string name="notification_playing">Playing</string>
   <string name="notification_chapter_counter">Chapter %1$d of %2$d</string>
   <string name="notification_permission_denied">Notification permission is required for background playback controls.</string>
-  <string name="notification_permission_disabled">Notifications are disabled for mpvRx. Enable them to show playback controls.</string>
+  <string name="notification_permission_disabled">Notifications are disabled for Mpv∞. Enable them to show playback controls.</string>
   <string name="notification_disabled_in_advanced_settings">Enable notifications in Advanced Settings to use background playback.</string>
   <string name="pref_advanced_notification_style">Notification style</string>
   <!-- Media Info Activity -->
@@ -905,7 +905,7 @@
   <string name="pref_decoder_playback_engine_summary">Automatic uses MPV by default and Media3 for Dolby Vision or HLS/DASH IPTV streams; the choice applies to new playback</string>
   <string name="pref_decoder_mpv_mode_title">MPV decoder</string>
   <string name="pref_decoder_mpv_mode_summary">Current MPV mode: %1$s. Applies to MPV playback.</string>
-  <string name="player_sheets_decoder_media3_notice">Media3 is active. Selecting an MPV decoder will switch this item back to MPV.</string>
+  <string name="player_sheets_decoder_media3_notice">Media3 is active. Only the active Media3 decoder is shown.</string>
   <string name="pref_anime4k_link">github.com/bloc97/Anime4K</string>
 
   <!-- ═══════════════════════════════════════════════════════════ -->

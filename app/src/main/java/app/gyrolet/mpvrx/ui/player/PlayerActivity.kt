@@ -139,10 +139,13 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.android.ext.android.inject
 import okhttp3.OkHttpClient
 import java.io.File
+import java.util.LinkedHashMap
 import kotlin.math.pow
+import kotlin.math.roundToLong
 
 private enum class BackgroundPlaybackStartResult {
   Started,
@@ -195,6 +198,14 @@ class PlayerActivity :
       onStateChanged = { state ->
         lifecycleScope.launch(Dispatchers.Main.immediate) {
           media3State = state
+          if (
+            playbackEngine == PlaybackEngine.MEDIA3 &&
+              state.videoWidth > 0 &&
+              state.videoHeight > 0 &&
+              playerPreferences.orientation.get() == PlayerOrientation.Video
+          ) {
+            setOrientation()
+          }
         }
       },
       onError = { error ->
@@ -451,6 +462,13 @@ class PlayerActivity :
   private var currentPlayableUri: String? = null // Store current URI for notification re-entry
   private val playbackRenderDispatcher = Dispatchers.Main
   private val mediaLoadDispatcher = Dispatchers.Default.limitedParallelism(1)
+  // Auto-mode preflight is intentionally bounded and cached: MediaExtractor metadata is useful
+  // for Dolby Vision routing, but it must not add repeated startup latency on the same file.
+  private val dolbyVisionProbeCache =
+    object : LinkedHashMap<String, Boolean>(32, 0.75f, true) {
+      override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean =
+        size > 32
+    }
 
   // ==================== Background Playback ====================
 
@@ -1451,6 +1469,28 @@ class PlayerActivity :
    * to Media3. Network streams are intentionally left to their declared MIME/extension because a
    * blocking extractor probe would delay IPTV startup.
    */
+  private suspend fun probeDolbyVisionMimeCached(source: String): String? {
+    val cacheKey = source.trim()
+    if (cacheKey.isBlank()) return null
+    synchronized(dolbyVisionProbeCache) {
+      dolbyVisionProbeCache[cacheKey]?.let { isDolbyVision ->
+        return if (isDolbyVision) "video/dolby-vision" else null
+      }
+    }
+    val isDolbyVision =
+      withTimeoutOrNull(750L) {
+        // Keep a slow content provider off the single media-load dispatcher. The timeout prevents
+        // an extractor stall from delaying the actual player startup indefinitely.
+        withContext(Dispatchers.IO) {
+          probeDolbyVisionMime(cacheKey) == "video/dolby-vision"
+        }
+      } ?: false
+    synchronized(dolbyVisionProbeCache) {
+      dolbyVisionProbeCache[cacheKey] = isDolbyVision
+    }
+    return if (isDolbyVision) "video/dolby-vision" else null
+  }
+
   private fun probeDolbyVisionMime(source: String): String? {
     val uri = Uri.parse(source)
     val scheme = uri.scheme?.lowercase()
@@ -1482,6 +1522,8 @@ class PlayerActivity :
           }
         }
         .firstOrNull()
+    } catch (cancellation: CancellationException) {
+      throw cancellation
     } catch (error: Exception) {
       AppDebugLog.info(TAG, "Media3: Dolby Vision preflight unavailable source=$source error=${error.message}")
       null
@@ -4996,8 +5038,21 @@ class PlayerActivity :
               null
             }
           val probedDolbyVisionMime =
-            if (!resolvedMimeType.orEmpty().equals("video/dolby-vision", ignoreCase = true)) {
-              probeDolbyVisionMime(resolvedOriginalUri) ?: probeDolbyVisionMime(resolvedPlayableUri)
+            if (
+              decoderPreferences.playbackEngine.get() == PlaybackEngineMode.Auto &&
+                !resolvedMimeType.orEmpty().equals("video/dolby-vision", ignoreCase = true)
+            ) {
+              // Prefer the resolved playable path. Probe the original URI only when the resolved
+              // path did not identify Dolby Vision, avoiding two extractor opens for normal files.
+              listOf(resolvedPlayableUri, resolvedOriginalUri)
+                .filter { source ->
+                  val scheme = Uri.parse(source).scheme?.lowercase()
+                  scheme == null || scheme == "file" || scheme == "content"
+                }
+                .distinct()
+                .asSequence()
+                .mapNotNull(::probeDolbyVisionMimeCached)
+                .firstOrNull()
             } else {
               null
             }
@@ -5219,7 +5274,14 @@ class PlayerActivity :
         PlayerOrientation.Free -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
         PlayerOrientation.Video -> {
           // For video orientation, check if aspect is available
-          val aspect = runCatching { player.getVideoOutAspect() }.getOrNull()
+          val aspect =
+            if (playbackEngine == PlaybackEngine.MEDIA3) {
+              val width = media3State.videoWidth
+              val height = media3State.videoHeight
+              if (width > 0 && height > 0) width.toDouble() / height.toDouble() else null
+            } else {
+              runCatching { player.getVideoOutAspect() }.getOrNull()
+            }
           Log.d(TAG, "setOrientation - Video mode: aspect=$aspect")
           if (aspect == null || aspect <= 0.0) {
             // Aspect not available yet - wait for video-params/aspect update
@@ -5955,6 +6017,42 @@ class PlayerActivity :
     if (!isMedia3Active()) return false
     media3PlaybackController.setPlaybackSpeed(speed)
     return true
+  }
+
+  override fun media3SelectAudioTrack(trackId: Int): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.selectAudioTrack(trackId)
+  }
+
+  override fun media3SelectSubtitleTrack(trackId: Int): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.selectSubtitleTrack(trackId)
+  }
+
+  override fun media3DisableSubtitles(): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.disableSubtitles()
+  }
+
+  override fun media3IsSubtitleSelected(trackId: Int): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.isSubtitleSelected(trackId)
+  }
+
+  override fun media3CurrentPositionMs(): Long {
+    if (!isMedia3Active()) return 0L
+    return media3PlaybackController.currentState().positionMs
+  }
+
+  override fun media3DurationMs(): Long {
+    if (!isMedia3Active()) return 0L
+    return media3PlaybackController.currentState().durationMs
+  }
+
+  override fun media3FrameDurationMs(): Long? {
+    if (!isMedia3Active()) return null
+    val frameRate = media3PlaybackController.currentState().videoFrameRate
+    return frameRate.takeIf { it > 0f && it.isFinite() }?.let { (1000f / it).roundToLong().coerceIn(1L, 1000L) }
   }
 
   private val keyguardManager: KeyguardManager
