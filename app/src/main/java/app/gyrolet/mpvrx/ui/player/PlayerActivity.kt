@@ -1027,12 +1027,28 @@ class PlayerActivity :
     }
   }
 
+  private fun media3SourceUri(item: PlaybackItem): Uri {
+    val playableUri = Uri.parse(item.playableUri)
+    if (!playableUri.scheme.isNullOrBlank()) return playableUri
+    if (item.playableUri.startsWith("/")) return Uri.fromFile(File(item.playableUri))
+    val originalUri = Uri.parse(item.originalUri)
+    if (!originalUri.scheme.isNullOrBlank()) return originalUri
+    return playableUri
+  }
+
   private fun startMedia3PlaybackWhenReady(
     item: PlaybackItem,
     resumePositionMs: Long,
     onStarted: () -> Unit,
   ) {
     val playerView = binding.media3Player
+    val sourceUri = media3SourceUri(item)
+    AppDebugLog.info(
+      TAG,
+      "Media3: source resolved original=${item.originalUri} playable=${item.playableUri} " +
+        "resolved=$sourceUri scheme=${sourceUri.scheme ?: "none"} " +
+        "localExists=${sourceUri.path?.let(::File)?.exists() ?: false}",
+    )
 
     fun startPlayback() {
       if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId != item.stableId) return
@@ -1047,7 +1063,7 @@ class PlayerActivity :
       }
       runCatching {
         media3PlaybackController.play(
-          uri = Uri.parse(item.playableUri),
+          uri = sourceUri,
           title = item.title,
           headers = item.headers,
           startPositionMs = resumePositionMs,
