@@ -1868,9 +1868,12 @@ class PlayerActivity :
               )
             }
           }
+          // A seek started during the handoff can nest a second mute guard inside the replacement
+          // guard. Complete both in one place so MPV does not remain silent after Media3 stops.
+          PlaybackSession.restorePlaybackAudioAfterTransition()
           AppDebugLog.info(
             TAG,
-            "MPV handoff resumed item=${currentItem.stableId} positionMs=$resumePositionMs",
+            "MPV handoff resumed item=${currentItem.stableId} positionMs=$resumePositionMs audioRestored=true",
           )
         }
       }

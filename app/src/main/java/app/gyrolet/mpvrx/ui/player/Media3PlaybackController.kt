@@ -317,11 +317,17 @@ class Media3PlaybackController(
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
     logInfo(
       "restoring Cues-enabled timeline for first nonzero seek targetPositionMs=$targetPositionMs " +
-        "wasPlaying=$shouldPlay",
+        "wasPlaying=$shouldPlay seekMode=closestSync",
     )
+    // The initial fast-start timeline has no Cues index. Recreate it with a closest-sync target so
+    // ExoPlayer can resume from the nearest keyframe instead of doing an exact long decode from an
+    // earlier keyframe on high-bitrate HEVC/Dolby Vision files.
+    val previousSeekParameters = player.seekParameters
+    player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     player.setMediaSource(normalMediaSourceFactory.createMediaSource(currentItem), targetPositionMs)
     player.prepare()
     player.playWhenReady = shouldPlay
+    player.setSeekParameters(previousSeekParameters)
     return true
   }
 

@@ -70,52 +70,73 @@ fun DecodersSheet(
             color = MaterialTheme.colorScheme.surfaceVariant,
             tonalElevation = 0.dp,
           ) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-              AudioTrackRow(
-                title = "MPV",
-                isSelected = engineSelection == PlaybackEngineMode.MPV,
-                onClick = {
-                  onEngineSelected(PlaybackEngineMode.MPV)
-                  onDismissRequest()
-                },
-                textColor = Color.White,
-                modifier = Modifier.weight(1f),
-              )
-              AudioTrackRow(
-                title = "Media3",
-                isSelected = engineSelection == PlaybackEngineMode.Media3,
-                onClick = {
-                  onEngineSelected(PlaybackEngineMode.Media3)
-                  onDismissRequest()
-                },
-                textColor = Color.White,
-                modifier = Modifier.weight(1f),
-              )
-            }
-            if (isMedia3Active) {
-              val decoderName = media3DecoderName.orEmpty()
-              val decoderMode =
-                if (decoderName.lowercase().contains("ffmpeg") ||
-                  decoderName.lowercase().contains("software")
-                ) {
-                  "SW"
-                } else {
-                  "HW"
-                }
-              Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, start = 16.dp, end = 16.dp),
-              ) {
-                Text(
-                  text = "Active decoder: Media3 · $decoderMode",
-                  color = Color.White,
-                  style = MaterialTheme.typography.bodyMedium,
+            Column(modifier = Modifier.fillMaxWidth()) {
+              Row(modifier = Modifier.fillMaxWidth()) {
+                AudioTrackRow(
+                  title = "MPV",
+                  isSelected = engineSelection == PlaybackEngineMode.MPV,
+                  onClick = {
+                    onEngineSelected(PlaybackEngineMode.MPV)
+                    onDismissRequest()
+                  },
+                  textColor = Color.White,
+                  modifier = Modifier.weight(1f),
                 )
-                if (decoderName.isNotBlank()) {
+                AudioTrackRow(
+                  title = "Media3",
+                  isSelected = engineSelection == PlaybackEngineMode.Media3,
+                  onClick = {
+                    onEngineSelected(PlaybackEngineMode.Media3)
+                    onDismissRequest()
+                  },
+                  textColor = Color.White,
+                  modifier = Modifier.weight(1f),
+                )
+              }
+              if (isMedia3Active) {
+                val decoderName = media3DecoderName.orEmpty()
+                val decoderMode =
+                  if (decoderName.lowercase().contains("ffmpeg") ||
+                    decoderName.lowercase().contains("software")
+                  ) {
+                    "SW"
+                  } else {
+                    "HW"
+                  }
+                Column(
+                  modifier =
+                    Modifier
+                      .fillMaxWidth()
+                      .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
                   Text(
-                    text = decoderName,
-                    color = Color.White.copy(alpha = 0.75f),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Active decoder: Media3 · $decoderMode",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
                   )
+                  if (decoderName.isNotBlank()) {
+                    Text(
+                      text = decoderName,
+                      color = Color.White.copy(alpha = 0.75f),
+                      style = MaterialTheme.typography.bodySmall,
+                    )
+                  }
+                  Text(
+                    text = "Codec modes · selected automatically by Media3",
+                    color = Color.White.copy(alpha = 0.9f),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 10.dp),
+                  )
+                  Decoder.entries.forEach { decoder ->
+                    AudioTrackRow(
+                      title = "${decoder.title} (${decoder.value})",
+                      isSelected = false,
+                      onClick = {},
+                      enabled = false,
+                      textColor = Color.White.copy(alpha = 0.72f),
+                      modifier = Modifier.fillMaxWidth(),
+                    )
+                  }
                 }
               }
             }
