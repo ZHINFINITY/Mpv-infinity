@@ -24,7 +24,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.ui.PlayerView
 
 /**
@@ -67,7 +66,6 @@ class Media3PlaybackController(
   private val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
   private val player: ExoPlayer
   private lateinit var normalMediaSourceFactory: DefaultMediaSourceFactory
-  private lateinit var fastMatroskaMediaSourceFactory: DefaultMediaSourceFactory
   private var attachedView: PlayerView? = null
   private var lastPlaybackState = Player.STATE_IDLE
   private var latestVideoFormat: Format? = null
@@ -110,16 +108,11 @@ class Media3PlaybackController(
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
-    // Keep Cues enabled for ordinary files because it provides the most reliable timeline seeking.
-    // Very large local Matroska files use a second extractor factory without Cues scanning; their
-    // first frame can otherwise be delayed by a full metadata scan before decoding begins.
-    val extractorsFactory = DefaultExtractorsFactory()
-    val fastMatroskaExtractorsFactory =
-      DefaultExtractorsFactory()
-        .setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES)
-    normalMediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
-    fastMatroskaMediaSourceFactory =
-      DefaultMediaSourceFactory(dataSourceFactory, fastMatroskaExtractorsFactory)
+    // Keep Matroska Cues enabled. Disabling the Cues seek path makes fresh large-file startup
+    // slightly faster, but ExoPlayer can then accept a seek and immediately recreate the timeline
+    // at position zero. Reliable seekbar and gesture seeking takes priority over that optimization.
+    normalMediaSourceFactory =
+      DefaultMediaSourceFactory(dataSourceFactory, DefaultExtractorsFactory())
     val renderersFactory =
       DefaultRenderersFactory(appContext)
         // Keep Android hardware/platform renderers first for formats the device supports, then
@@ -191,14 +184,12 @@ class Media3PlaybackController(
     resetMediaMetadata()
     val item = mediaItem(uri, title, headers)
     if (fastStart) {
-      player.setMediaSource(
-        fastMatroskaMediaSourceFactory.createMediaSource(item),
-        requestedStartPositionMs,
+      logInfo(
+        "fast-start request ignored: keeping Cues-enabled extractor for seek reliability " +
+          "uri=$uri startPositionMs=$requestedStartPositionMs",
       )
-      logInfo("fast-start extractor selected uri=$uri startPositionMs=$requestedStartPositionMs")
-    } else {
-      player.setMediaItem(item, requestedStartPositionMs)
     }
+    player.setMediaItem(item, requestedStartPositionMs)
     player.prepare()
     player.playWhenReady = playWhenReady
   }

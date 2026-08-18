@@ -95,19 +95,7 @@ fun DecodersSheet(
           }
         }
       }
-      if (isMedia3Active) {
-        item {
-          val mode =
-            if (media3DecoderName?.contains("sw", ignoreCase = true) == true) "SW" else "HW"
-          AudioTrackRow(
-            title = "Media3 · $mode",
-            isSelected = true,
-            enabled = false,
-            onClick = {},
-            textColor = Color.White,
-          )
-        }
-      } else {
+      if (!isMedia3Active) {
         items(Decoder.entries, key = { it.name }) { decoder ->
           AudioTrackRow(
             title = stringResource(R.string.player_sheets_decoder_formatted, decoder.title, decoder.value),
