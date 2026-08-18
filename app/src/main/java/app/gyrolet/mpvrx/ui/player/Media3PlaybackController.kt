@@ -24,7 +24,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.ui.PlayerView
 
 /**
@@ -107,12 +106,10 @@ class Media3PlaybackController(
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
-    // Avoid a full-file Cues seek before exposing tracks for large local Matroska files. The
-    // default scan can delay the first frame for several seconds on device; cluster boundaries
-    // remain available for playback and normal seeking.
-    val extractorsFactory =
-      DefaultExtractorsFactory()
-        .setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES)
+    // Keep Matroska Cues-based seeking enabled. Disabling Cues can make ExoPlayer accept a seek
+    // request while buffering, then rebuild the timeline at the default position (zero) when the
+    // renderer becomes READY. Startup may scan more metadata, but reliable seeking is required.
+    val extractorsFactory = DefaultExtractorsFactory()
     val renderersFactory =
       DefaultRenderersFactory(appContext)
         // Keep Android hardware/platform renderers first for formats the device supports, then
@@ -400,6 +397,18 @@ class Media3PlaybackController(
     publishState()
   }
 
+  override fun onPositionDiscontinuity(
+    oldPosition: Player.PositionInfo,
+    newPosition: Player.PositionInfo,
+    reason: Int,
+  ) {
+    logInfo(
+      "position discontinuity reason=$reason oldPositionMs=${oldPosition.positionMs} " +
+        "newPositionMs=${newPosition.positionMs} currentPositionMs=${player.currentPosition} " +
+        "mediaItemIndex=${player.currentMediaItemIndex}",
+    )
+    publishState()
+  }
   override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
     logInfo(
       "media item transition reason=$reason uri=${mediaItem?.localConfiguration?.uri ?: "none"} " +
