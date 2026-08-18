@@ -172,6 +172,24 @@ class Media3PlaybackController(
     publishState()
   }
 
+  override fun onIsLoadingChanged(isLoading: Boolean) {
+    logInfo(
+      "loading changed isLoading=$isLoading state=${playbackStateName(player.playbackState)} " +
+        "positionMs=${player.currentPosition} bufferedPositionMs=${player.bufferedPosition}",
+    )
+  }
+
+  override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+    logInfo(
+      "media item transition reason=$reason uri=${mediaItem?.localConfiguration?.uri ?: "none"} " +
+        "mediaId=${mediaItem?.mediaId ?: "none"}",
+    )
+  }
+
+  override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+    logInfo("timeline changed reason=$reason windows=${timeline.windowCount} periods=${timeline.periodCount}")
+  }
+
   override fun onEvents(player: Player, events: Player.Events) = publishState()
 
   override fun onTracksChanged(tracks: Tracks) {
