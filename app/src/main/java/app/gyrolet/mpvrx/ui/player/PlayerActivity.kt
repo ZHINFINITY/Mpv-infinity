@@ -434,6 +434,7 @@ class PlayerActivity :
   private var mpvStoppedForMedia3 = false
   private var media3VideoFrameRendered = false
   private var media3AutoFallbackItemId: String? = null
+  private var activePlaybackItem: PlaybackItem? = null
   private var manualEngineOverrideItemId: String? = null
   private var manualEngineOverride: PlaybackEngine? = null
   private var media3VideoWatchdogJob: Job? = null
@@ -1610,6 +1611,9 @@ class PlayerActivity :
       Regex("\\bdv(?:he|h1)\\.?(?:[0-9]{2})?").containsMatchIn("$searchable $metadata")
   }
 
+  private fun currentPlaybackItem(): PlaybackItem? =
+    PlaybackSession.state.value.currentItem ?: PlaybackSession.queue.value.currentItem ?: activePlaybackItem
+
   private fun isMedia3Stream(item: PlaybackItem): Boolean {
     val mime = item.mimeType.orEmpty().lowercase()
     val extension = item.playableUri.substringBefore('?').substringAfterLast('.', "").lowercase()
@@ -1632,6 +1636,7 @@ class PlayerActivity :
   }
 
   private fun switchToMedia3Engine(item: PlaybackItem) {
+    activePlaybackItem = item
     if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) {
       media3AutoFallbackItemId = null
     }
@@ -1714,9 +1719,6 @@ class PlayerActivity :
       }
     }
   }
-
-  private fun currentPlaybackItem(): PlaybackItem? =
-    PlaybackSession.state.value.currentItem ?: PlaybackSession.queue.value.currentItem
 
   private fun selectEngineFromDecoderSheet(selectedEngine: PlaybackEngineMode) {
     if (selectedEngine == PlaybackEngineMode.Auto) return
@@ -1849,7 +1851,7 @@ class PlayerActivity :
           .distinctUntilChanged()
           .collect { (index, item) ->
             if (item == null || index < 0) return@collect
-
+            activePlaybackItem = item
             syncPlaybackEngine(item)
             val queueItems = PlaybackSession.queue.value.items
             playlist = queueItems.map { queued -> Uri.parse(queued.originalUri) }
