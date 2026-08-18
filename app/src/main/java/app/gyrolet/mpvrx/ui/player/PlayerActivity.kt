@@ -1598,6 +1598,17 @@ class PlayerActivity :
       AppDebugLog.info(TAG, "MPV stopped for exclusive Media3 playback item=${item.stableId}")
     }
     playbackEngine = PlaybackEngine.MEDIA3
+    // Dolby Vision items routed here are known widescreen assets in the current Auto/Media3 path.
+    // Request landscape before asynchronous Media3 VideoSize arrives so the activity does not
+    // remain portrait during decoder initialization. The normal setOrientation() callback still
+    // applies the exact aspect once Media3 reports dimensions.
+    if (
+      isDolbyVisionItem(item) &&
+        playerPreferences.orientation.get() == PlayerOrientation.Video
+    ) {
+      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+      AppDebugLog.info(TAG, "Media3: provisional landscape requested for Dolby Vision item=${item.stableId}")
+    }
     media3State = Media3PlaybackController.State()
     media3PreparedItemId = null
     media3ItemId = item.stableId

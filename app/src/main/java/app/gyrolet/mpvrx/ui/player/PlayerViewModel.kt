@@ -4114,6 +4114,9 @@ class PlayerViewModel : ViewModel(),
 
   // ==================== Seeking ====================
 
+  /** Returns whether seek gestures should target the Media3 controller rather than libmpv. */
+  fun isMedia3ActiveForGesture(): Boolean = host.isMedia3Active()
+
   fun seekBy(offset: Int) {
     if (host.isMedia3Active()) {
       viewModelScope.launch(Dispatchers.Main.immediate) {
@@ -4126,6 +4129,9 @@ class PlayerViewModel : ViewModel(),
 
   /** Starts a full-screen preview transaction without changing the user's pause/mute choices. */
   fun beginLegacySeekPreview() {
+    // Legacy preview controls libmpv directly. Media3 owns playback exclusively, so never mute or
+    // pause the stopped MPV instance when the user begins scrubbing a Media3 item.
+    if (host.isMedia3Active()) return
     val generation = PlaybackSession.state.value.generation
     if (generation <= 0L || PlaybackSession.getPropertyBoolean("seekable") == false) return
 
@@ -4162,6 +4168,9 @@ class PlayerViewModel : ViewModel(),
     positionSeconds: Double,
     durationSeconds: Double,
   ) {
+    // The seekbar keeps its own visual thumb while dragging. The committed position is sent to
+    // Media3 from commitLegacySeekPreview(), so this method must not issue MPV commands.
+    if (host.isMedia3Active()) return
     beginLegacySeekPreview()
     val session =
       synchronized(legacySeekPreviewLock) {
@@ -4239,6 +4248,10 @@ class PlayerViewModel : ViewModel(),
     positionSeconds: Double,
     durationSeconds: Double,
   ) {
+    if (host.isMedia3Active()) {
+      seekTo(positionSeconds, fast = false)
+      return
+    }
     val detached = detachLegacySeekPreview() ?: run {
       seekTo(positionSeconds, fast = false)
       return
@@ -4263,6 +4276,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun cancelLegacySeekPreview() {
+    if (host.isMedia3Active()) return
     val detached = detachLegacySeekPreview() ?: return
     val (session, job) = detached
     job?.cancel()
