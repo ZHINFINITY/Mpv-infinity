@@ -638,8 +638,13 @@ fun PlayerControls(
           val currentZoom by viewModel.videoZoom.collectAsState()
 
           val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
-          val mediaTitle = remember(rawMediaTitle, activity) {
-            rawMediaTitle?.takeIf { it.isNotBlank() } ?: activity.getTitleForControls()
+          val playbackQueueState by PlaybackSession.queue.collectAsState()
+          val activeItemStableId = playbackQueueState.currentItem?.stableId
+          val activityTitle = activity.getTitleForControls()
+          val mediaTitle = remember(rawMediaTitle, activityTitle, activeItemStableId) {
+            activityTitle.takeIf { it.isNotBlank() && it != "Unknown Video" }
+              ?: rawMediaTitle?.takeIf { it.isNotBlank() }
+              ?: activityTitle
           }
 
           // Slider display duration: 1000ms shown + 300ms exit animation = 1300ms total
