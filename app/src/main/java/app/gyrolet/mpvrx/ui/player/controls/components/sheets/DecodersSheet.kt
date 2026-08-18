@@ -74,14 +74,20 @@ fun DecodersSheet(
               AudioTrackRow(
                 title = "MPV",
                 isSelected = engineSelection == PlaybackEngineMode.MPV,
-                onClick = { onEngineSelected(PlaybackEngineMode.MPV) },
+                onClick = {
+                  onEngineSelected(PlaybackEngineMode.MPV)
+                  onDismissRequest()
+                },
                 textColor = Color.White,
                 modifier = Modifier.weight(1f),
               )
               AudioTrackRow(
                 title = "Media3",
                 isSelected = engineSelection == PlaybackEngineMode.Media3,
-                onClick = { onEngineSelected(PlaybackEngineMode.Media3) },
+                onClick = {
+                  onEngineSelected(PlaybackEngineMode.Media3)
+                  onDismissRequest()
+                },
                 textColor = Color.White,
                 modifier = Modifier.weight(1f),
               )

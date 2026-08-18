@@ -1722,34 +1722,27 @@ class PlayerActivity :
 
   private fun selectEngineFromDecoderSheet(selectedEngine: PlaybackEngineMode) {
     if (selectedEngine == PlaybackEngineMode.Auto) return
-    lifecycleScope.launch(Dispatchers.Main.immediate) {
-      var item: PlaybackItem? = currentPlaybackItem()
-      repeat(40) { attempt ->
-        if (item != null) return@repeat
-        delay(50L)
-        item = currentPlaybackItem()
-        if (item == null && attempt == 39) {
-          AppDebugLog.warn(TAG, "Manual engine selection timed out: no active PlaybackSession item")
-        }
+    val resolvedItem = currentPlaybackItem()
+    if (resolvedItem == null) {
+      AppDebugLog.warn(TAG, "Manual engine selection ignored: no active PlaybackSession item")
+      return
+    }
+    manualEngineOverrideItemId = resolvedItem.stableId
+    media3AutoFallbackItemId = null
+    when (selectedEngine) {
+      PlaybackEngineMode.MPV -> {
+        decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
+        manualEngineOverride = PlaybackEngine.MPV
+        AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=MPV")
+        switchToMpvEngine(resolvedItem)
       }
-      val resolvedItem = item ?: return@launch
-      manualEngineOverrideItemId = resolvedItem.stableId
-      media3AutoFallbackItemId = null
-      when (selectedEngine) {
-        PlaybackEngineMode.MPV -> {
-          decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
-          manualEngineOverride = PlaybackEngine.MPV
-          AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=MPV")
-          switchToMpvEngine()
-        }
-        PlaybackEngineMode.Media3 -> {
-          decoderPreferences.playbackEngine.set(PlaybackEngineMode.Media3)
-          manualEngineOverride = PlaybackEngine.MEDIA3
-          AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=Media3")
-          switchToMedia3Engine(resolvedItem)
-        }
-        PlaybackEngineMode.Auto -> Unit
+      PlaybackEngineMode.Media3 -> {
+        decoderPreferences.playbackEngine.set(PlaybackEngineMode.Media3)
+        manualEngineOverride = PlaybackEngine.MEDIA3
+        AppDebugLog.info(TAG, "Manual engine override item=${resolvedItem.stableId} engine=Media3")
+        switchToMedia3Engine(resolvedItem)
       }
+      PlaybackEngineMode.Auto -> Unit
     }
   }
 
@@ -1768,16 +1761,16 @@ class PlayerActivity :
     }
   }
 
-  private fun switchToMpvEngine() {
+  private fun switchToMpvEngine(itemOverride: PlaybackItem? = null) {
     media3VideoWatchdogJob?.cancel()
     media3VideoWatchdogJob = null
     media3VideoFrameRendered = false
-    if (playbackEngine == PlaybackEngine.MPV) {
+    val currentItem = itemOverride ?: currentPlaybackItem()
+    if (playbackEngine == PlaybackEngine.MPV && !mpvStoppedForMedia3) {
       binding.media3Player.visibility = View.GONE
       binding.player.visibility = View.VISIBLE
       return
     }
-    val currentItem = currentPlaybackItem()
     AppDebugLog.info(
       TAG,
       "Playback engine selected engine=MPV " +
@@ -1796,7 +1789,10 @@ class PlayerActivity :
     media3PlaybackController.stop()
     binding.media3Player.visibility = View.GONE
     binding.player.visibility = View.VISIBLE
-    if (mpvStoppedForMedia3 && currentItem != null) {
+    if (currentItem != null) {
+      // Media3 playback stops MPV for exclusive ownership. A manual switch back must explicitly
+      // reload the same item into MPV; otherwise the visible MPV surface is shown while libmpv
+      // remains stopped and no video can appear.
       mpvStoppedForMedia3 = false
       runCatching { PlaybackSession.load(currentItem) }
       if (resumePositionMs > 0L) {
@@ -1852,7 +1848,11 @@ class PlayerActivity :
           .collect { (index, item) ->
             if (item == null || index < 0) return@collect
             activePlaybackItem = item
-            syncPlaybackEngine(item)
+            // A decoder-page selection is authoritative for this item. The queue emits again
+            // during the handoff, so automatic synchronization must not immediately switch back.
+            if (manualEngineOverrideItemId != item.stableId) {
+              syncPlaybackEngine(item)
+            }
             val queueItems = PlaybackSession.queue.value.items
             playlist = queueItems.map { queued -> Uri.parse(queued.originalUri) }
             playlistIndex = index
@@ -2062,7 +2062,16 @@ class PlayerActivity :
       if (isDeviceScreenOffOrLocked() && !isBackgroundPlaybackEnabled()) {
         rememberResumeAfterUnlockBeforeForcedPause()
         viewModel.pause()
-      } else if (!isBackgroundPlaybackSessionActive && (isUserFinishing || isFinishing)) {
+      } else if (
+        !isBackgroundPlaybackSessionActive &&
+        !isBackgroundPlaybackEnabled() &&
+        !isInPictureInPictureMode &&
+        !isChangingConfigurations
+      ) {
+        // onStop is also delivered when the user presses Home. The old code only paused on
+        // finish/screen-off, so a normal video continued audibly behind the launcher even though
+        // video background playback was disabled.
+        AppDebugLog.info(TAG, "Pausing playback because the player entered background")
         viewModel.pause()
       } else if (isBackgroundPlaybackSessionActive && !isInBackgroundPlayback) {
         disableVideoForBackground()
@@ -5243,6 +5252,17 @@ class PlayerActivity :
               .exportForPlayback(cookieSource, AndroidCookieJar.playbackCookieFile(this@PlayerActivity))
               .onFailure { error -> Log.w(TAG, "Failed to prepare playback cookies", error) }
           }
+          withContext(Dispatchers.Main) {
+            if (requestGeneration == mediaRequestGeneration) {
+              fileName = item.title.orEmpty().ifBlank { getFileNameFromUri(item.originalUri) }
+              legacyMediaIdentifier = null
+              mediaIdentifier = item.stableId
+              currentPlayableUri = item.playableUri
+              intent.putExtra("title", fileName)
+              intent.putExtra("media_identifier", item.stableId)
+              intent.setDataAndType(Uri.parse(item.originalUri), item.mimeType)
+            }
+          }
           if (requestedQueueItem == null || isTorrentRequest) PlaybackSession.replaceQueue(listOf(item), 0)
           if (shouldUseMedia3(item)) {
             withContext(Dispatchers.Main) {
@@ -6569,6 +6589,12 @@ class PlayerActivity :
    * For m3u/m3u8 streams, only uses MPV's media-title when it looks valid.
    */
   fun getTitleForControls(): String {
+    PlaybackSession.state.value.currentItem?.title
+      ?.takeIf { it.isNotBlank() && !HttpUtils.isLikelyJunkTitle(it) }
+      ?.let { return it }
+    activePlaybackItem?.title
+      ?.takeIf { it.isNotBlank() && !HttpUtils.isLikelyJunkTitle(it) }
+      ?.let { return it }
     getExplicitIntentTitle()?.let { return it }
 
     if (HttpUtils.shouldPreferResolvedMediaTitle(extractUriFromIntent(intent), fileName)) {
