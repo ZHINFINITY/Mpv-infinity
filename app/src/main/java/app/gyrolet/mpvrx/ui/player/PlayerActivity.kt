@@ -25,6 +25,8 @@ import android.graphics.Bitmap
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -414,6 +416,8 @@ class PlayerActivity :
   private var playbackEngine by mutableStateOf(PlaybackEngine.MPV)
   private var media3State by mutableStateOf(Media3PlaybackController.State())
   private var media3ItemId: String? = null
+  /** True when MPV was fully stopped so Media3 could exclusively own the current item. */
+  private var mpvStoppedForMedia3 = false
   private var media3VideoFrameRendered = false
   private var media3VideoWatchdogJob: Job? = null
   private var media3Attached = false
@@ -1442,6 +1446,50 @@ class PlayerActivity :
       Regex("\\bdv(?:he|h1)\\.?(?:[0-9]{2})?").containsMatchIn(searchable)
   }
 
+  /**
+   * Probes local/content sources before MPV opens them so Auto mode can route Dolby Vision directly
+   * to Media3. Network streams are intentionally left to their declared MIME/extension because a
+   * blocking extractor probe would delay IPTV startup.
+   */
+  private fun probeDolbyVisionMime(source: String): String? {
+    val uri = Uri.parse(source)
+    val scheme = uri.scheme?.lowercase()
+    if (scheme != null && scheme !in setOf("file", "content")) return null
+    val extractor = MediaExtractor()
+    return try {
+      if (scheme == "content") {
+        extractor.setDataSource(this, uri, emptyMap())
+      } else {
+        val path = if (scheme == "file") uri.path else source
+        if (path.isNullOrBlank()) return null
+        extractor.setDataSource(path)
+      }
+      (0 until extractor.trackCount)
+        .asSequence()
+        .map { index -> extractor.getTrackFormat(index) }
+        .filter { format -> format.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true }
+        .mapNotNull { format ->
+          val mime = format.getString(MediaFormat.KEY_MIME).orEmpty().lowercase()
+          val codec =
+            listOf("codecs", "codec", "codec-string")
+              .firstNotNullOfOrNull { key -> format.getString(key) }
+              .orEmpty()
+              .lowercase()
+          if (mime == "video/dolby-vision" || codec.startsWith("dvhe") || codec.startsWith("dvh1")) {
+            "video/dolby-vision"
+          } else {
+            null
+          }
+        }
+        .firstOrNull()
+    } catch (error: Exception) {
+      AppDebugLog.info(TAG, "Media3: Dolby Vision preflight unavailable source=$source error=${error.message}")
+      null
+    } finally {
+      runCatching { extractor.release() }
+    }
+  }
+
   private fun isDolbyVisionTrack(track: TrackNode): Boolean {
     val searchable = listOf(track.codec, track.codecDesc, track.codecProfile, track.formatName)
       .filterNotNull()
@@ -1486,6 +1534,13 @@ class PlayerActivity :
       } else {
         0L
       }
+    if (playbackEngine == PlaybackEngine.MPV) {
+      // Stop libmpv rather than only pausing it. This releases its demuxer/decoder/audio queues so
+      // Media3 is the only active engine and the device does not spend battery on a hidden player.
+      runCatching { PlaybackSession.stop(clearQueue = false) }
+      mpvStoppedForMedia3 = true
+      AppDebugLog.info(TAG, "MPV stopped for exclusive Media3 playback item=${item.stableId}")
+    }
     playbackEngine = PlaybackEngine.MEDIA3
     media3ItemId = item.stableId
     media3VideoFrameRendered = false
@@ -1501,12 +1556,8 @@ class PlayerActivity :
       "Media3: surfaces switched media3=${binding.media3Player.width}x${binding.media3Player.height} " +
         "mpvVisibility=${binding.player.visibility} media3Visibility=${binding.media3Player.visibility}",
     )
-    // MPV remains initialized for advanced playback, but it must not render or continue audio
-    // while Media3 owns this item.
-    runCatching {
-      PlaybackSession.setPropertyBoolean("pause", true)
-      PlaybackSession.setPropertyString("vid", "no")
-    }
+    // MPV has already been stopped above; keep the native core initialized but idle for fast
+    // switching back. Only the active Media3 controller owns this item now.
     startMedia3PlaybackWhenReady(item, resumePositionMs) {
       // Dolby Vision routing must not leave the user with audio and a permanently blank video
       // surface. Some profiles are accepted by Media3’s audio pipeline but never produce a
@@ -1546,15 +1597,35 @@ class PlayerActivity :
         "title=${currentItem?.title.orEmpty().ifBlank { "<untitled>" }} " +
         "configuredMode=${decoderPreferences.playbackEngine.get().name}",
     )
+    val resumePositionMs = media3State.positionMs
     playbackEngine = PlaybackEngine.MPV
     media3State = Media3PlaybackController.State()
     media3ItemId = null
     media3PlaybackController.stop()
     binding.media3Player.visibility = View.GONE
     binding.player.visibility = View.VISIBLE
-    runCatching {
-      PlaybackSession.setPropertyString("vid", "auto")
-      PlaybackSession.setPropertyBoolean("pause", false)
+    if (mpvStoppedForMedia3 && currentItem != null) {
+      mpvStoppedForMedia3 = false
+      runCatching { PlaybackSession.load(currentItem) }
+      if (resumePositionMs > 0L) {
+        lifecycleScope.launch {
+          delay(300L)
+          if (playbackEngine == PlaybackEngine.MPV) {
+            runCatching {
+              PlaybackSession.command(
+                "seek",
+                (resumePositionMs / 1000.0).toString(),
+                "absolute+exact",
+              )
+            }
+          }
+        }
+      }
+    } else {
+      runCatching {
+        PlaybackSession.setPropertyString("vid", "auto")
+        PlaybackSession.setPropertyBoolean("pause", false)
+      }
     }
   }
 
@@ -4924,9 +4995,26 @@ class PlayerActivity :
             } else {
               null
             }
+          val probedDolbyVisionMime =
+            if (!resolvedMimeType.orEmpty().equals("video/dolby-vision", ignoreCase = true)) {
+              probeDolbyVisionMime(resolvedOriginalUri) ?: probeDolbyVisionMime(resolvedPlayableUri)
+            } else {
+              null
+            }
+          if (probedDolbyVisionMime != null) {
+            resolvedMimeType = probedDolbyVisionMime
+            AppDebugLog.info(
+              TAG,
+              "Auto engine preflight detected Dolby Vision source=$resolvedOriginalUri",
+            )
+          }
           val item =
             if (!isTorrentRequest) {
-              requestedQueueItem?.copy(playableUri = resolvedPlayableUri, headers = requestedHeaders)
+              requestedQueueItem?.copy(
+                playableUri = resolvedPlayableUri,
+                mimeType = resolvedMimeType ?: requestedQueueItem.mimeType,
+                headers = requestedHeaders,
+              )
             } else {
               null
             }
@@ -4948,7 +5036,13 @@ class PlayerActivity :
               .onFailure { error -> Log.w(TAG, "Failed to prepare playback cookies", error) }
           }
           if (requestedQueueItem == null || isTorrentRequest) PlaybackSession.replaceQueue(listOf(item), 0)
-          PlaybackSession.load(item)
+          if (shouldUseMedia3(item)) {
+            withContext(Dispatchers.Main) {
+              if (requestGeneration == mediaRequestGeneration) syncPlaybackEngine(item)
+            }
+          } else {
+            PlaybackSession.load(item)
+          }
         } catch (error: CancellationException) {
           throw error
         } catch (error: Exception) {
