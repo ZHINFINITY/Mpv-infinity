@@ -427,6 +427,7 @@ class PlayerActivity :
   private var playbackEngine by mutableStateOf(PlaybackEngine.MPV)
   private var media3State by mutableStateOf(Media3PlaybackController.State())
   private var media3ItemId: String? = null
+  private var media3PreparedItemId: String? = null
   /** True when MPV was fully stopped so Media3 could exclusively own the current item. */
   private var mpvStoppedForMedia3 = false
   private var media3VideoFrameRendered = false
@@ -1021,13 +1022,16 @@ class PlayerActivity :
             isMedia3Active = playbackEngine == PlaybackEngine.MEDIA3,
             media3State = media3State,
             onDecoderSelected = { decoder ->
-              decoderPreferences.mpvDecoderMode.set(
-                MPVDecoderMode.entries.firstOrNull {
-                  it.value == decoder.value
-                } ?: MPVDecoderMode.Auto,
-              )
-              PlaybackSession.setPropertyString("hwdec", decoder.value)
-              if (playbackEngine == PlaybackEngine.MEDIA3) switchToMpvEngine()
+              // MPV decoder choices must never wake or switch to MPV while Media3 owns playback.
+              // Keep this guard at the Activity boundary in case a stale Compose callback arrives.
+              if (playbackEngine != PlaybackEngine.MEDIA3) {
+                decoderPreferences.mpvDecoderMode.set(
+                  MPVDecoderMode.entries.firstOrNull {
+                    it.value == decoder.value
+                  } ?: MPVDecoderMode.Auto,
+                )
+                PlaybackSession.setPropertyString("hwdec", decoder.value)
+              }
             },
             modifier = Modifier,
           )
@@ -1081,6 +1085,10 @@ class PlayerActivity :
 
     fun startPlayback() {
       if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId != item.stableId) return
+      if (media3PreparedItemId == item.stableId) {
+        AppDebugLog.info(TAG, "Media3: duplicate start ignored item=${item.stableId}")
+        return
+      }
       AppDebugLog.info(
         TAG,
         "Media3: start attempt layout=${playerView.width}x${playerView.height} " +
@@ -1099,6 +1107,7 @@ class PlayerActivity :
           playWhenReady = true,
         )
       }.onSuccess {
+        media3PreparedItemId = item.stableId
         AppDebugLog.info(TAG, "Media3: playback submitted state=${media3PlaybackController.currentState().playbackState}")
         onStarted()
       }.onFailure { error ->
@@ -1584,6 +1593,8 @@ class PlayerActivity :
       AppDebugLog.info(TAG, "MPV stopped for exclusive Media3 playback item=${item.stableId}")
     }
     playbackEngine = PlaybackEngine.MEDIA3
+    media3State = Media3PlaybackController.State()
+    media3PreparedItemId = null
     media3ItemId = item.stableId
     media3VideoFrameRendered = false
     media3VideoWatchdogJob?.cancel()
@@ -1642,6 +1653,7 @@ class PlayerActivity :
     val resumePositionMs = media3State.positionMs
     playbackEngine = PlaybackEngine.MPV
     media3State = Media3PlaybackController.State()
+    media3PreparedItemId = null
     media3ItemId = null
     media3PlaybackController.stop()
     binding.media3Player.visibility = View.GONE
@@ -5046,7 +5058,7 @@ class PlayerActivity :
               // path did not identify Dolby Vision, avoiding two extractor opens for normal files.
               var detectedDolbyVisionMime: String? = null
               for (source in
-                listOf(resolvedPlayableUri, resolvedOriginalUri)
+                listOf(resolvedPlayableUri)
                   .filter { candidate ->
                     val scheme = Uri.parse(candidate).scheme?.lowercase()
                     scheme == null || scheme == "file" || scheme == "content"
@@ -5287,9 +5299,10 @@ class PlayerActivity :
             }
           Log.d(TAG, "setOrientation - Video mode: aspect=$aspect")
           if (aspect == null || aspect <= 0.0) {
-            // Aspect not available yet - wait for video-params/aspect update
-            Log.d(TAG, "setOrientation - Aspect not available, defaulting to landscape")
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            // Media3 dimensions arrive asynchronously. Do not force an orientation using stale
+            // MPV metadata or the previous screen state before Media3 reports VideoSize.
+            Log.d(TAG, "setOrientation - Aspect not available yet; leaving current orientation")
+            return
           } else {
             // Aspect available - set correct orientation now
             val orientation =

@@ -63,11 +63,13 @@ class Media3PlaybackController(
   private var attachedView: PlayerView? = null
   private var lastPlaybackState = Player.STATE_IDLE
   private var latestVideoFormat: Format? = null
+  private var latestVideoSize: VideoSize? = null
   private var latestAudioTracks: List<TrackNode> = emptyList()
   private var latestSubtitleTracks: List<TrackNode> = emptyList()
   private var latestVideoDecoderName: String? = null
   private var media3AudioTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
+  private var requestedAudioTrackId: Int? = null
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
@@ -102,6 +104,7 @@ class Media3PlaybackController(
     startPositionMs: Long = 0L,
     playWhenReady: Boolean = true,
   ) {
+    resetMediaMetadata()
     logInfo(
       "play requested uri=$uri title=${title.orEmpty().ifBlank { "<untitled>" }} " +
         "headers=${headers.keys.sorted().joinToString(",").ifBlank { "none" }} " +
@@ -121,6 +124,7 @@ class Media3PlaybackController(
     startPositionMs: Long = 0L,
     playWhenReady: Boolean = true,
   ) {
+    resetMediaMetadata()
     logInfo(
       "playlist requested count=${uris.size} startIndex=$startIndex " +
         "startPositionMs=${startPositionMs.coerceAtLeast(0L)} playWhenReady=$playWhenReady",
@@ -167,10 +171,17 @@ class Media3PlaybackController(
   fun selectAudioTrack(trackId: Int): Boolean {
     val selection = media3AudioTrackGroups[trackId] ?: return false
     val (group, trackIndex) = selection
+    if (!group.isTrackSupported(trackIndex)) {
+      logInfo("audio track id=$trackId is not supported; keeping current audio")
+      return false
+    }
+    requestedAudioTrackId = trackId
     logInfo("selecting audio track id=$trackId group=${group.id} index=$trackIndex")
     player.trackSelectionParameters =
       player.trackSelectionParameters
         .buildUpon()
+        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
         .setOverrideForType(TrackSelectionOverride(group, listOf(trackIndex)))
         .build()
     return true
@@ -370,11 +381,24 @@ class Media3PlaybackController(
   }
 
   override fun onVideoSizeChanged(videoSize: VideoSize) {
+    latestVideoSize = videoSize
     logInfo(
       "video size changed width=${videoSize.width} height=${videoSize.height} " +
         "pixelWidthHeightRatio=${videoSize.pixelWidthHeightRatio} " +
         "unappliedRotationDegrees=${videoSize.unappliedRotationDegrees}",
     )
+    publishState()
+  }
+
+  private fun resetMediaMetadata() {
+    latestVideoFormat = null
+    latestVideoSize = null
+    latestVideoDecoderName = null
+    latestAudioTracks = emptyList()
+    latestSubtitleTracks = emptyList()
+    media3AudioTrackGroups = emptyMap()
+    media3SubtitleTrackGroups = emptyMap()
+    requestedAudioTrackId = null
   }
 
   private fun mediaItem(
@@ -397,8 +421,14 @@ class Media3PlaybackController(
     onStateChanged(snapshot())
   }
 
-  private fun snapshot(): State =
-    State(
+  private fun snapshot(): State {
+    val videoSize = latestVideoSize
+    val rawWidth = videoSize?.width?.takeIf { it > 0 } ?: latestVideoFormat?.width ?: C.LENGTH_UNSET
+    val rawHeight = videoSize?.height?.takeIf { it > 0 } ?: latestVideoFormat?.height ?: C.LENGTH_UNSET
+    val rotated = videoSize?.unappliedRotationDegrees == 90 || videoSize?.unappliedRotationDegrees == 270
+    val videoWidth = if (rotated) rawHeight else rawWidth
+    val videoHeight = if (rotated) rawWidth else rawHeight
+    return State(
       playbackState = player.playbackState,
       isPlaying = player.isPlaying,
       positionMs = player.currentPosition,
@@ -410,14 +440,15 @@ class Media3PlaybackController(
       videoCodecs = latestVideoFormat?.codecs,
       videoProfile = latestVideoFormat?.codecs,
       videoDecoderName = latestVideoDecoderName,
-      videoWidth = latestVideoFormat?.width ?: C.LENGTH_UNSET,
-      videoHeight = latestVideoFormat?.height ?: C.LENGTH_UNSET,
+      videoWidth = videoWidth,
+      videoHeight = videoHeight,
       videoFrameRate = latestVideoFormat?.frameRate ?: -1f,
       videoColorSpace = latestVideoFormat?.colorInfo?.colorSpace ?: -1,
       videoColorTransfer = latestVideoFormat?.colorInfo?.colorTransfer ?: -1,
       audioTracks = latestAudioTracks,
       subtitleTracks = latestSubtitleTracks,
     )
+  }
 
   private fun logInfo(message: String) {
     AppDebugLog.info(TAG, "Media3: $message")
