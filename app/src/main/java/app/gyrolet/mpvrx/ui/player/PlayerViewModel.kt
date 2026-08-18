@@ -4117,6 +4117,16 @@ class PlayerViewModel : ViewModel(),
   /** Returns whether seek gestures should target the Media3 controller rather than libmpv. */
   fun isMedia3ActiveForGesture(): Boolean = host.isMedia3Active()
 
+  /** Live Media3 position used by gesture seeking; MPV is stopped while Media3 owns playback. */
+  fun media3GesturePositionSeconds(): Double =
+    (host.media3CurrentPositionMs().coerceAtLeast(0L) / 1000.0).takeIf { it.isFinite() } ?: 0.0
+
+  /** Live Media3 duration used by gesture seeking; zero means the timeline is not ready yet. */
+  fun media3GestureDurationSeconds(): Double =
+    (host.media3DurationMs().takeIf { it > 0L }?.div(1000.0) ?: 0.0)
+      .takeIf { it.isFinite() }
+      ?: 0.0
+
   fun seekBy(offset: Int) {
     if (host.isMedia3Active()) {
       viewModelScope.launch(Dispatchers.Main.immediate) {

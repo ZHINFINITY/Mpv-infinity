@@ -1058,7 +1058,7 @@ fun GestureHandler(
             val media3Active = viewModel.isMedia3ActiveForGesture()
             val mediaDuration =
               if (media3Active) {
-                viewModel.preciseDuration.value.toDouble()
+                viewModel.media3GestureDurationSeconds()
               } else {
                 PlaybackSession.getPropertyDouble("duration")
                   ?: viewModel.preciseDuration.value.toDouble()
@@ -1122,14 +1122,16 @@ fun GestureHandler(
                       // Don't conflict with long press
                       !isDynamicSpeedControlActive &&
                       // Don't conflict with speed control
-                      panelShown == Panels.None
+                      panelShown == Panels.None &&
+                      // Do not convert an unready Media3 timeline into a seek-to-zero request.
+                      (!media3Active || mediaDuration > 0.0)
                     ) { // Only when no panels are shown
 
                       gestureType = "horizontal_seek"
                       hasStartedSeeking = true
                       initialVideoPosition =
-                        if (viewModel.isMedia3ActiveForGesture()) {
-                          viewModel.precisePosition.value.toDouble()
+                        if (media3Active) {
+                          viewModel.media3GesturePositionSeconds()
                         } else {
                           PlaybackSession.getPropertyDouble("time-pos")
                             ?: viewModel.precisePosition.value.toDouble()
