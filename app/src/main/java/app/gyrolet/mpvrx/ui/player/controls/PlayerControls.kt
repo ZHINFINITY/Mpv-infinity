@@ -233,7 +233,17 @@ fun PlayerControls(
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
   val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val playbackSpeed = if (isMedia3Active) media3State.playbackSpeed else mpvPlaybackSpeed
-  val seekbarDuration = if (preciseDuration > 0 && !isMedia3Active) preciseDuration else duration?.toFloat() ?: 0f
+  val seekbarDuration =
+    if (isMedia3Active) {
+      media3State.durationMs
+        .takeIf { it > 0L && it != androidx.media3.common.C.TIME_UNSET }
+        ?.div(1000f)
+        ?: 0f
+    } else if (preciseDuration > 0) {
+      preciseDuration
+    } else {
+      duration?.toFloat() ?: 0f
+    }
   val seekState by viewModel.seekState.collectAsState()
   val seekPreview by viewModel.seekThumbnailPreview.collectAsState()
   val brightness by viewModel.currentBrightness.collectAsState()
@@ -1586,7 +1596,9 @@ fun PlayerControls(
               SeekbarWithTimers(
                 position = displayedSeekbarPosition,
                 committedPosition = precisePosition,
-                duration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f,
+                // Media3 owns the timeline while active; do not let the inactive MPV precise-duration
+                // flow override the live Media3 timer after an engine handoff.
+                duration = seekbarDuration,
                 onValueChangeStarted = {
                   if (!useThumbFastSeekPreview) {
                     viewModel.beginLegacySeekPreview()
@@ -2012,6 +2024,28 @@ private fun Media3StatsOverlay(
   val duration = formatStatsTime(media3State.durationMs)
   val decoder = media3State.videoDecoderName ?: "waiting"
   val video = media3State.videoMimeType ?: media3State.videoCodecs ?: "unknown"
+  val resolution =
+    if (media3State.videoWidth > 0 && media3State.videoHeight > 0) {
+      "${media3State.videoWidth}×${media3State.videoHeight}"
+    } else {
+      "unknown"
+    }
+  val buffered = formatStatsTime(media3State.bufferedPositionMs)
+  val state =
+    when (media3State.playbackState) {
+      androidx.media3.common.Player.STATE_BUFFERING -> "buffering"
+      androidx.media3.common.Player.STATE_READY -> "ready"
+      androidx.media3.common.Player.STATE_ENDED -> "ended"
+      androidx.media3.common.Player.STATE_IDLE -> "idle"
+      else -> "unknown"
+    }
+  val hdr =
+    when (media3State.videoColorTransfer) {
+      androidx.media3.common.C.COLOR_TRANSFER_ST2084 -> "HDR10/PQ"
+      androidx.media3.common.C.COLOR_TRANSFER_HLG -> "HLG"
+      androidx.media3.common.C.COLOR_TRANSFER_LINEAR -> "SDR/linear"
+      else -> "SDR/unknown"
+    }
   val audioCount = media3State.audioTracks.size
   val subtitleCount = media3State.subtitleTracks.size
   Surface(
@@ -2023,6 +2057,8 @@ private fun Media3StatsOverlay(
       Text("Media3 · Page $page", color = Color.White, fontWeight = FontWeight.Bold)
       Text("Decoder: $decoder", color = Color.White)
       Text("Video: $video", color = Color.White)
+      Text("Output: $resolution · $hdr", color = Color.White)
+      Text("State: $state · Buffer: $buffered", color = Color.White)
       Text("Position: $position / $duration", color = Color.White)
       Text("Audio tracks: $audioCount · Subtitles: $subtitleCount", color = Color.White)
       Text("Speed: ${"%.2f".format(media3State.playbackSpeed)}×", color = Color.White)

@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.SeekParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionOverride
@@ -22,6 +23,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.ui.PlayerView
 
 /**
@@ -102,6 +105,12 @@ class Media3PlaybackController(
 
   init {
     val dataSourceFactory = DefaultDataSource.Factory(appContext, httpFactory)
+    // Avoid a full-file Cues seek before exposing tracks for large local Matroska files. The
+    // default scan can delay the first frame for several seconds on device; cluster boundaries
+    // remain available for playback and normal seeking.
+    val extractorsFactory =
+      DefaultExtractorsFactory()
+        .setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES)
     val renderersFactory =
       DefaultRenderersFactory(appContext)
         // Keep Android hardware/platform renderers first for formats the device supports, then
@@ -112,7 +121,10 @@ class Media3PlaybackController(
         .setEnableDecoderFallback(true)
     player =
       ExoPlayer.Builder(appContext, renderersFactory)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+        .setMediaSourceFactory(
+          DefaultMediaSourceFactory(dataSourceFactory)
+            .setExtractorsFactory(extractorsFactory),
+        )
         .build()
         .also {
           it.addListener(this)
@@ -229,11 +241,16 @@ class Media3PlaybackController(
     loopHandler.post(loopCheck)
   }
 
-  fun seekTo(positionMs: Long) {
+  fun seekTo(positionMs: Long, fast: Boolean = false) {
     val targetPositionMs = positionMs.coerceAtLeast(0L)
     pendingSeekPositionMs = targetPositionMs
-    logInfo("seekTo requested positionMs=$targetPositionMs")
+    logInfo("seekTo requested positionMs=$targetPositionMs fast=$fast")
+    // Gesture seeking should land on the nearest keyframe. Exact seeks can require decoding
+    // a long interval from the previous keyframe on 4K HEVC/Dolby Vision files.
+    val previousSeekParameters = player.seekParameters
+    player.setSeekParameters(if (fast) SeekParameters.CLOSEST_SYNC else SeekParameters.EXACT)
     player.seekTo(targetPositionMs)
+    player.setSeekParameters(previousSeekParameters)
   }
 
   fun seekBy(offsetMs: Long) {
