@@ -17,7 +17,7 @@
   <string name="pref_appearance_amoled_mode_title">Чёрный режим AMOLED</string>
   <string name="pref_appearance_amoled_mode_summary">Использовать полностью чёрный фон для тёмных тем</string>
   <string name="pref_appearance_system_font_title">Использовать системный шрифт</string>
-  <string name="pref_appearance_system_font_summary">Использовать системный шрифт Android во всём mpvRx вместо Google Sans Flex</string>
+  <string name="pref_appearance_system_font_summary">Использовать системный шрифт Android во всём Mpv∞ вместо Google Sans Flex</string>
   <string name="pref_appearance_material_you_title">Material You</string>
   <string name="pref_appearance_material_you_summary">Включить динамические цвета</string>
   <string name="pref_appearance_material_you_summary_disabled">Доступно только на Android 12 и новее</string>
@@ -309,7 +309,7 @@
   <string name="pref_app_language_title">Язык</string>
   <string name="pref_app_language_system_default">Как в системе</string>
   <string name="pref_app_language_restart_title">Требуется перезапуск</string>
-  <string name="pref_app_language_restart_message">Перезапустите mpvRx, чтобы применить новый язык.</string>
+  <string name="pref_app_language_restart_message">Перезапустите Mpv∞, чтобы применить новый язык.</string>
   <string name="pref_app_language_restart_now">Перезапустить сейчас</string>
   <string name="pref_advanced_mpv_conf_storage_location">Выбрать место хранения конфигурации</string>
   <string name="pref_advanced_mpv_conf">Изменить mpv.conf</string>
@@ -515,7 +515,7 @@
   <string name="notification_playing">Воспроизводится</string>
   <string name="notification_chapter_counter">Глава %1$d из %2$d</string>
   <string name="notification_permission_denied">Для управления фоновым воспроизведением требуется разрешение на уведомления.</string>
-  <string name="notification_permission_disabled">Уведомления для mpvRx отключены. Включите их, чтобы показывать элементы управления воспроизведением.</string>
+  <string name="notification_permission_disabled">Уведомления для Mpv∞ отключены. Включите их, чтобы показывать элементы управления воспроизведением.</string>
   <string name="notification_disabled_in_advanced_settings">Включите уведомления в расширенных настройках для фонового воспроизведения.</string>
   <string name="pref_advanced_notification_style">Стиль уведомлений</string>
   <!-- Media Info Activity -->
@@ -1218,15 +1218,15 @@
   <string name="ui_allow_access">РАЗРЕШИТЬ ДОСТУП</string>
   <string name="ui_why_do_i_see_this">Почему я это вижу?</string>
   <string name="ui_why_this_permission_is_needed">Зачем нужно это разрешение</string>
-  <string name="ui_mpvrx_needs_access_to_your_video_files_to_provide_its_core_funct">mpvRx необходим доступ к видеофайлам для выполнения основных функций медиаплеера.</string>
+  <string name="ui_mpvrx_needs_access_to_your_video_files_to_provide_its_core_funct">Mpv∞ необходим доступ к видеофайлам для выполнения основных функций медиаплеера.</string>
   <string name="ui_the_permission_is_used_exclusively_for">Разрешение используется исключительно для:</string>
   <string name="ui_discovering_and_displaying_your_video_files_n_playing_media_cont">• Поиск и отображение видеофайлов
 • Воспроизведение медиаконтента
 • Загрузка файлов субтитров</string>
-  <string name="ui_mpvrx_has_always_required_storage_access_permission_as_it_s_esse">mpvRx всегда требовался доступ к хранилищу, поскольку он необходим для поиска всех медиафайлов и субтитров на устройстве, включая неподдерживаемые системой.</string>
+  <string name="ui_mpvrx_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ всегда требовался доступ к хранилищу, поскольку он необходим для поиска всех медиафайлов и субтитров на устройстве, включая неподдерживаемые системой.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">Однако из-за изменения политики безопасности приложения для Android 11 и новее теперь требуют дополнительного разрешения для сохранения такого доступа.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">Это разрешение используется только для автоматического поиска медиафайлов и субтитров на устройстве и не позволяет нам получать доступ к личным данным других приложений.</string>
-  <string name="ui_mpvrx_is_an_open_source_project_you_can_review_the_source_code_a">mpvRx — проект с открытым исходным кодом. Вы можете проверить код и использование разрешений в нашем репозитории GitHub:</string>
+  <string name="ui_mpvrx_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ — проект с открытым исходным кодом. Вы можете проверить код и использование разрешений в нашем репозитории GitHub:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">Будьте уверены: конфиденциальность — наш главный приоритет. Мы не используем ваши файлы в других целях, не передаём и не храним их на серверах. Они остаются на устройстве.</string>
   <string name="ui_app_permissions">Разрешения приложения</string>
   <string name="ui_permissions_setup_subtitle">Настройте разрешения для работы основных функций и воспроизведения медиа.</string>
@@ -1311,14 +1311,14 @@
   <string name="ui_github">GitHub</string>
   <string name="ui_device_info">Информация об устройстве</string>
   <string name="ui_buy_me_a_coffee">Угостить кофе</string>
-  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Если вам нравится mpvRx, поддержите его разработку. Важна любая помощь!</string>
+  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Если вам нравится Mpv∞, поддержите его разработку. Важна любая помощь!</string>
   <string name="ui_upi_id">Идентификатор UPI</string>
   <string name="ui_panditritesh2001_okhdfcbank">panditritesh2001@okhdfcbank</string>
   <string name="ui_send_love">Поддержать</string>
   <string name="ui_auto_check_for_updates">Автоматически проверять обновления</string>
   <string name="ui_check_on_startup">Проверять при запуске</string>
   <string name="ui_check_for_updates_now">Проверить обновления сейчас</string>
-  <string name="ui_core_open_source_dependencies_used_by_mpvrx">Основные зависимости с открытым исходным кодом, используемые mpvRx.</string>
+  <string name="ui_core_open_source_dependencies_used_by_mpvrx">Основные зависимости с открытым исходным кодом, используемые Mpv∞.</string>
   <string name="ui_copy_upi_id">Копировать идентификатор UPI</string>
   <string name="ui_already_using_latest_version">Уже используется последняя версия</string>
   <string name="ui_upi_id_copied">Идентификатор UPI скопирован!</string>
