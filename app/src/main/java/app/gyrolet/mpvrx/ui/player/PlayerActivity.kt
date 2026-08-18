@@ -62,7 +62,6 @@ import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.doOnLayout
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
@@ -1037,6 +1036,11 @@ class PlayerActivity :
 
     fun startPlayback() {
       if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId != item.stableId) return
+      AppDebugLog.info(
+        TAG,
+        "Media3: start attempt layout=${playerView.width}x${playerView.height} " +
+          "visibility=${playerView.visibility} attachedToWindow=${playerView.isAttachedToWindow}",
+      )
       if (!media3Attached) {
         media3PlaybackController.attach(playerView)
         media3Attached = true
@@ -1050,6 +1054,7 @@ class PlayerActivity :
           playWhenReady = true,
         )
       }.onSuccess {
+        AppDebugLog.info(TAG, "Media3: playback submitted state=${media3PlaybackController.currentState().playbackState}")
         onStarted()
       }.onFailure { error ->
         AppDebugLog.error(TAG, "Media3 could not start playback; falling back to MPV", error)
@@ -1057,11 +1062,33 @@ class PlayerActivity :
       }
     }
 
-    if (playerView.width > 0 && playerView.height > 0) {
-      startPlayback()
-    } else {
-      playerView.doOnLayout { startPlayback() }
+    fun waitForLayout(attempt: Int = 0) {
+      if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId != item.stableId) return
+      if (playerView.width > 0 && playerView.height > 0) {
+        startPlayback()
+        return
+      }
+      if (attempt == 0 || attempt % 10 == 0) {
+        AppDebugLog.info(
+          TAG,
+          "Media3: waiting for non-zero PlayerView layout attempt=$attempt " +
+            "layout=${playerView.width}x${playerView.height} visibility=${playerView.visibility} " +
+            "attachedToWindow=${playerView.isAttachedToWindow}",
+        )
+      }
+      if (attempt < 60) {
+        playerView.postDelayed({ waitForLayout(attempt + 1) }, 16L)
+      } else {
+        AppDebugLog.error(
+          TAG,
+          "Media3: PlayerView never received a non-zero layout; falling back to MPV " +
+            "layout=${playerView.width}x${playerView.height}",
+        )
+        switchToMpvEngine()
+      }
     }
+
+    waitForLayout()
   }
 
   private fun setupAudioPlayerViewObserver() {
@@ -1441,11 +1468,16 @@ class PlayerActivity :
     media3VideoFrameRendered = false
     media3VideoWatchdogJob?.cancel()
     // MPVView is backed by a native SurfaceView. It must be GONE, not merely INVISIBLE, while
-    // Media3 uses its TextureView; otherwise the old SurfaceView can keep a black surface above
-    // the Media3 view on OEM compositors. MPV's surface callbacks unbind it and rebind it when
+    // Media3 owns its separate video surface; otherwise the old MPV SurfaceView can keep a black
+    // surface above Media3 on OEM compositors. MPV's surface callbacks unbind it and rebind it when
     // visibility is restored.
     binding.player.visibility = View.GONE
     binding.media3Player.visibility = View.VISIBLE
+    AppDebugLog.info(
+      TAG,
+      "Media3: surfaces switched media3=${binding.media3Player.width}x${binding.media3Player.height} " +
+        "mpvVisibility=${binding.player.visibility} media3Visibility=${binding.media3Player.visibility}",
+    )
     // MPV remains initialized for advanced playback, but it must not render or continue audio
     // while Media3 owns this item.
     runCatching {
