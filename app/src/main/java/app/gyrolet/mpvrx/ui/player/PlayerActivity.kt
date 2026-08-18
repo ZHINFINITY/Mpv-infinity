@@ -190,6 +190,11 @@ class PlayerActivity :
   private val media3PlaybackController by lazy {
     Media3PlaybackController(
       context = this,
+      onStateChanged = { state ->
+        lifecycleScope.launch(Dispatchers.Main.immediate) {
+          media3State = state
+        }
+      },
       onError = { error ->
         Log.w(TAG, "Media3 playback error; falling back to MPV", error)
         lifecycleScope.launch(Dispatchers.Main.immediate) {
@@ -407,6 +412,7 @@ class PlayerActivity :
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
   private var playbackEngine by mutableStateOf(PlaybackEngine.MPV)
+  private var media3State by mutableStateOf(Media3PlaybackController.State())
   private var media3ItemId: String? = null
   private var media3VideoFrameRendered = false
   private var media3VideoWatchdogJob: Job? = null
@@ -991,6 +997,7 @@ class PlayerActivity :
             viewModel = viewModel,
             onBackPress = ::handleBackPress,
             isMedia3Active = playbackEngine == PlaybackEngine.MEDIA3,
+            media3State = media3State,
             onDecoderSelected = { decoder ->
               decoderPreferences.mpvDecoderMode.set(
                 MPVDecoderMode.entries.firstOrNull {
@@ -1540,6 +1547,7 @@ class PlayerActivity :
         "configuredMode=${decoderPreferences.playbackEngine.get().name}",
     )
     playbackEngine = PlaybackEngine.MPV
+    media3State = Media3PlaybackController.State()
     media3ItemId = null
     media3PlaybackController.stop()
     binding.media3Player.visibility = View.GONE
@@ -5825,6 +5833,36 @@ class PlayerActivity :
     get() = contentResolver
   override val audioManager: AudioManager
     get() = getSystemService(AUDIO_SERVICE) as AudioManager
+
+  override fun isMedia3Active(): Boolean = playbackEngine == PlaybackEngine.MEDIA3
+
+  override fun media3IsPlaying(): Boolean =
+    playbackEngine == PlaybackEngine.MEDIA3 && media3PlaybackController.currentState().isPlaying
+
+  override fun media3SetPlayWhenReady(value: Boolean): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.setPlayWhenReady(value)
+    return true
+  }
+
+  override fun media3SeekBy(offsetMs: Long): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.seekBy(offsetMs)
+    return true
+  }
+
+  override fun media3SeekTo(positionMs: Long): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.seekTo(positionMs)
+    return true
+  }
+
+  override fun media3SetPlaybackSpeed(speed: Float): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.setPlaybackSpeed(speed)
+    return true
+  }
+
   private val keyguardManager: KeyguardManager
     get() = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
   override var hostRequestedOrientation: Int

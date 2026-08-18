@@ -28,6 +28,7 @@ import app.gyrolet.mpvrx.ui.player.RendererBackendPolicy
 fun DecodersSheet(
   selectedDecoder: Decoder,
   isMedia3Active: Boolean = false,
+  media3DecoderName: String? = null,
   onSelect: (Decoder) -> Unit,
   onDismissRequest: () -> Unit,
 ) {
@@ -45,6 +46,10 @@ fun DecodersSheet(
         item {
           Text(
             text = stringResource(R.string.player_sheets_decoder_media3_notice),
+            color = MaterialTheme.colorScheme.outline,
+          )
+          Text(
+            text = "Active Media3 decoder: ${media3DecoderName ?: "waiting for decoder"}",
             color = MaterialTheme.colorScheme.outline,
           )
         }

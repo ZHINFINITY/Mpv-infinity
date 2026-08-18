@@ -66,6 +66,7 @@ fun PlayerSheets(
   // Decoders sheet
   decoder: Decoder,
   isMedia3Active: Boolean = false,
+  media3DecoderName: String? = null,
   onUpdateDecoder: (Decoder) -> Unit,
   // Speed sheet
   speed: Float,
@@ -336,6 +337,7 @@ fun PlayerSheets(
       DecodersSheet(
         selectedDecoder = decoder,
         isMedia3Active = isMedia3Active,
+        media3DecoderName = media3DecoderName,
         onSelect = onUpdateDecoder,
         onDismissRequest = onDismissRequest,
       )
