@@ -69,6 +69,8 @@ data class TrackNode(
   @SerialName("dolby-vision-profile") val dolbyVisionProfile: Long? = null,
   @SerialName("dolby-vision-level") val dolbyVisionLevel: Long? = null,
   val metadata: Map<String, String?>? = null,
+  /** Whether the active engine can decode and select this track. */
+  val supported: Boolean? = null,
 ) {
   val isAudio = type == "audio"
   val isVideo = type == "video"

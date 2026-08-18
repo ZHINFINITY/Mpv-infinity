@@ -534,17 +534,24 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    if (statisticsPage == 6) {
+    val statisticsOverlayModifier =
+      Modifier
+        .align(Alignment.TopStart)
+        .windowInsetsPadding(
+          WindowInsets.safeDrawing.only(
+            WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+          ),
+        ).padding(top = 16.dp, start = 14.dp)
+    if (isMedia3Active && statisticsPage in 1..6) {
+      Media3StatsOverlay(
+        page = statisticsPage,
+        media3State = media3State,
+        modifier = statisticsOverlayModifier,
+      )
+    } else if (!isMedia3Active && statisticsPage == 6) {
       CustomStatsPageSixOverlay(
         viewModel = viewModel,
-        modifier =
-          Modifier
-            .align(Alignment.TopStart)
-            .windowInsetsPadding(
-              WindowInsets.safeDrawing.only(
-                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
-              ),
-            ).padding(top = 16.dp, start = 14.dp),
+        modifier = statisticsOverlayModifier,
       )
     }
 
@@ -1994,6 +2001,40 @@ private data class CustomStatsSnapshot(
   val peakTempText: String,
   val tempRiseText: String,
 )
+
+@Composable
+private fun Media3StatsOverlay(
+  page: Int,
+  media3State: Media3PlaybackController.State,
+  modifier: Modifier = Modifier,
+) {
+  val position = formatStatsTime(media3State.positionMs)
+  val duration = formatStatsTime(media3State.durationMs)
+  val decoder = media3State.videoDecoderName ?: "waiting"
+  val video = media3State.videoMimeType ?: media3State.videoCodecs ?: "unknown"
+  val audioCount = media3State.audioTracks.size
+  val subtitleCount = media3State.subtitleTracks.size
+  Surface(
+    modifier = modifier.widthIn(max = 420.dp),
+    color = Color.Black.copy(alpha = 0.78f),
+    shape = RoundedCornerShape(12.dp),
+  ) {
+    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+      Text("Media3 · Page $page", color = Color.White, fontWeight = FontWeight.Bold)
+      Text("Decoder: $decoder", color = Color.White)
+      Text("Video: $video", color = Color.White)
+      Text("Position: $position / $duration", color = Color.White)
+      Text("Audio tracks: $audioCount · Subtitles: $subtitleCount", color = Color.White)
+      Text("Speed: ${"%.2f".format(media3State.playbackSpeed)}×", color = Color.White)
+    }
+  }
+}
+
+private fun formatStatsTime(valueMs: Long): String {
+  if (valueMs <= 0L || valueMs == androidx.media3.common.C.TIME_UNSET) return "--:--"
+  val totalSeconds = valueMs / 1000L
+  return "%d:%02d:%02d".format(totalSeconds / 3600L, (totalSeconds / 60L) % 60L, totalSeconds % 60L)
+}
 
 @Composable
 private fun CustomStatsPageSixOverlay(

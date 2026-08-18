@@ -5566,29 +5566,37 @@ class PlayerViewModel : ViewModel(),
   fun setLoopA() {
     if (_abLoopState.value.a != null) {
       _abLoopState.update { it.copy(a = null) }
-      PlaybackSession.setPropertyString("ab-loop-a", "no")
+      if (!host.media3ClearABLoop()) PlaybackSession.setPropertyString("ab-loop-a", "no")
       return
     }
-    val currentPos = PlaybackSession.getPropertyDouble("time-pos") ?: return
+    val currentPosMs =
+      if (host.isMedia3Active()) host.media3CurrentPositionMs()
+      else ((PlaybackSession.getPropertyDouble("time-pos") ?: return) * 1000.0).toLong()
+    val currentPos = currentPosMs / 1000.0
     _abLoopState.update { it.copy(a = currentPos) }
-    PlaybackSession.setPropertyDouble("ab-loop-a", currentPos)
+    if (!host.media3SetLoopA(currentPosMs)) PlaybackSession.setPropertyDouble("ab-loop-a", currentPos)
   }
 
   fun setLoopB() {
     if (_abLoopState.value.b != null) {
       _abLoopState.update { it.copy(b = null) }
-      PlaybackSession.setPropertyString("ab-loop-b", "no")
+      if (!host.media3ClearABLoop()) PlaybackSession.setPropertyString("ab-loop-b", "no")
       return
     }
-    val currentPos = PlaybackSession.getPropertyDouble("time-pos") ?: return
+    val currentPosMs =
+      if (host.isMedia3Active()) host.media3CurrentPositionMs()
+      else ((PlaybackSession.getPropertyDouble("time-pos") ?: return) * 1000.0).toLong()
+    val currentPos = currentPosMs / 1000.0
     _abLoopState.update { it.copy(b = currentPos) }
-    PlaybackSession.setPropertyDouble("ab-loop-b", currentPos)
+    if (!host.media3SetLoopB(currentPosMs)) PlaybackSession.setPropertyDouble("ab-loop-b", currentPos)
   }
 
   fun clearABLoop() {
     _abLoopState.update { it.copy(a = null, b = null) }
-    PlaybackSession.setPropertyString("ab-loop-a", "no")
-    PlaybackSession.setPropertyString("ab-loop-b", "no")
+    if (!host.media3ClearABLoop()) {
+      PlaybackSession.setPropertyString("ab-loop-a", "no")
+      PlaybackSession.setPropertyString("ab-loop-b", "no")
+    }
   }
 
   fun formatTimestamp(seconds: Double): String {

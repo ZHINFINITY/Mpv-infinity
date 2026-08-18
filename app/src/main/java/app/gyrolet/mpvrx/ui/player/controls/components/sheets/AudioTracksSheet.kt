@@ -81,9 +81,14 @@ fun AudioTracksSheet(
       LazyColumn {
         items(tracks, key = { it.id }) {
           AudioTrackRow(
-            title = getTrackTitle(it),
+            title =
+              buildString {
+                append(getTrackTitle(it))
+                if (it.supported == false) append(" (unsupported)")
+              },
             isSelected = it.isSelected,
             onClick = { onSelect(it) },
+            enabled = it.supported != false,
           )
         }
         item {

@@ -6078,6 +6078,30 @@ class PlayerActivity :
     return frameRate.takeIf { it > 0f && it.isFinite() }?.let { (1000f / it).roundToLong().coerceIn(1L, 1000L) }
   }
 
+  override fun media3LoopA(): Long? =
+    if (isMedia3Active()) media3PlaybackController.media3LoopA() else null
+
+  override fun media3LoopB(): Long? =
+    if (isMedia3Active()) media3PlaybackController.media3LoopB() else null
+
+  override fun media3SetLoopA(positionMs: Long): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.setLoopA(positionMs)
+    return true
+  }
+
+  override fun media3SetLoopB(positionMs: Long): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.setLoopB(positionMs)
+    return true
+  }
+
+  override fun media3ClearABLoop(): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.clearABLoop()
+    return true
+  }
+
   private val keyguardManager: KeyguardManager
     get() = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
   override var hostRequestedOrientation: Int

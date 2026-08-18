@@ -70,6 +70,16 @@ interface PlayerHost {
 
   fun media3FrameDurationMs(): Long? = null
 
+  fun media3LoopA(): Long? = null
+
+  fun media3LoopB(): Long? = null
+
+  fun media3SetLoopA(positionMs: Long): Boolean = false
+
+  fun media3SetLoopB(positionMs: Long): Boolean = false
+
+  fun media3ClearABLoop(): Boolean = false
+
   fun currentMediaLookupHint(): String? = null
 
   fun currentPlayerLookupHints(): PlayerLookupHints = PlayerLookupHints()
