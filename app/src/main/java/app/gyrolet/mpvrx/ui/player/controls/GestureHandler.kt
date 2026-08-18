@@ -1206,7 +1206,7 @@ fun GestureHandler(
             // Apply the final seek when gesture ends
             if (hasStartedSeeking) {
               if (useThumbFastSeekPreview) {
-                pendingSeekPosition?.let { viewModel.seekTo(it, fast = false) }
+                pendingSeekPosition?.let { viewModel.seekTo(it, fast = media3Active) }
                 viewModel.hideSeekThumbnailPreview()
               } else if (media3Active) {
                 // Media3 owns the player exclusively; never route the final gesture through the

@@ -9,6 +9,7 @@
 
 package app.gyrolet.mpvrx.ui.player.controls
 
+import app.gyrolet.mpvrx.preferences.PlaybackEngineMode
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
@@ -189,6 +190,8 @@ fun PlayerControls(
   onBackPress: () -> Unit,
   isMedia3Active: Boolean = false,
   media3State: Media3PlaybackController.State = Media3PlaybackController.State(),
+  engineSelection: PlaybackEngineMode = if (isMedia3Active) PlaybackEngineMode.Media3 else PlaybackEngineMode.MPV,
+  onEngineSelected: (PlaybackEngineMode) -> Unit = {},
   onDecoderSelected: (Decoder) -> Unit = { decoder ->
     PlaybackSession.setPropertyString("hwdec", decoder.value)
   },
@@ -233,12 +236,21 @@ fun PlayerControls(
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
   val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val playbackSpeed = if (isMedia3Active) media3State.playbackSpeed else mpvPlaybackSpeed
+  val media3DurationSeconds =
+    media3State.durationMs
+      .takeIf { it > 0L && it != androidx.media3.common.C.TIME_UNSET }
+      ?.div(1000f)
+      ?.takeIf { it.isFinite() && it > 0f }
+      ?: 0f
+  val media3PositionSeconds =
+    media3State.positionMs
+      .takeIf { it >= 0L && it != androidx.media3.common.C.TIME_UNSET }
+      ?.div(1000f)
+      ?.takeIf { it.isFinite() && it >= 0f }
+      ?: 0f
   val seekbarDuration =
     if (isMedia3Active) {
-      media3State.durationMs
-        .takeIf { it > 0L && it != androidx.media3.common.C.TIME_UNSET }
-        ?.div(1000f)
-        ?: 0f
+      media3DurationSeconds
     } else if (preciseDuration > 0) {
       preciseDuration
     } else {
@@ -430,6 +442,8 @@ fun PlayerControls(
         },
         decoder = decoder,
         isMedia3Active = isMedia3Active,
+        engineSelection = engineSelection,
+        onEngineSelected = onEngineSelected,
         media3DecoderName = media3State.videoDecoderName,
         onUpdateDecoder = onDecoderSelected,
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
@@ -1572,9 +1586,9 @@ fun PlayerControls(
             val mpvPosition by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
             val mpvPrecisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
             val position =
-              if (isMedia3Active) (media3State.positionMs / 1000L).toInt() else mpvPosition
+              if (isMedia3Active) media3PositionSeconds.toInt() else mpvPosition
             val precisePosition =
-              if (isMedia3Active) media3State.positionMs / 1000f else mpvPrecisePosition
+              if (isMedia3Active) media3PositionSeconds else mpvPrecisePosition
             val invertDuration by playerPreferences.invertDuration.collectAsState()
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
@@ -1600,23 +1614,26 @@ fun PlayerControls(
                 // flow override the live Media3 timer after an engine handoff.
                 duration = seekbarDuration,
                 onValueChangeStarted = {
-                  if (!useThumbFastSeekPreview) {
+                  if (!isMedia3Active && !useThumbFastSeekPreview) {
                     viewModel.beginLegacySeekPreview()
                   }
                 },
                 onValueChange = {
                   isSeeking = true
                   resetControlsTimestamp = System.currentTimeMillis()
-                  if (useThumbFastSeekPreview) {
-                    viewModel.updateSeekThumbnailPreview(it, seekbarDuration)
-                  } else {
-                    viewModel.updateLegacySeekPreview(it.toDouble(), seekbarDuration.toDouble())
+                  when {
+                    isMedia3Active -> Unit
+                    useThumbFastSeekPreview -> viewModel.updateSeekThumbnailPreview(it, seekbarDuration)
+                    else -> viewModel.updateLegacySeekPreview(it.toDouble(), seekbarDuration.toDouble())
                   }
                 },
                 onValueChangeFinished = { targetPosition ->
                   isSeeking = false
                   resetControlsTimestamp = System.currentTimeMillis()
-                  if (useThumbFastSeekPreview) {
+                  if (isMedia3Active) {
+                    viewModel.hideSeekThumbnailPreview()
+                    viewModel.seekTo(targetPosition.toDouble(), fast = true)
+                  } else if (useThumbFastSeekPreview) {
                     viewModel.hideSeekThumbnailPreview()
                     viewModel.seekTo(targetPosition.toDouble(), fast = false)
                   } else {
