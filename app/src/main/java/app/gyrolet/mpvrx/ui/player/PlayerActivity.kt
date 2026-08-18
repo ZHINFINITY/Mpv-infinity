@@ -69,6 +69,8 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.media3.common.Player
+import androidx.media3.ui.AspectRatioFrameLayout
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
 import app.gyrolet.mpvrx.database.entities.PlaylistEntity
@@ -431,6 +433,7 @@ class PlayerActivity :
   /** True when MPV was fully stopped so Media3 could exclusively own the current item. */
   private var mpvStoppedForMedia3 = false
   private var media3VideoFrameRendered = false
+  private var media3AutoFallbackItemId: String? = null
   private var media3VideoWatchdogJob: Job? = null
   private var media3Attached = false
   private var viewModelHostAttached = false
@@ -1047,23 +1050,37 @@ class PlayerActivity :
           viewModel.videoZoom,
           viewModel.videoPanX,
           viewModel.videoPanY,
-        ) { zoom, panX, panY ->
-          Triple(zoom, panX, panY)
-        }.collect { (zoom, panX, panY) ->
-          val scale = 2f.pow(zoom)
+          viewModel.videoAspect,
+        ) { zoom, panX, panY, aspect ->
+          TransformState(zoom, panX, panY, aspect)
+        }.collect { transform ->
+          val scale = 2f.pow(transform.zoom)
           // Both surfaces receive the same transform; only the active engine's surface is visible.
           binding.player.scaleX = scale
           binding.player.scaleY = scale
-          binding.player.translationX = panX
-          binding.player.translationY = panY
+          binding.player.translationX = transform.panX
+          binding.player.translationY = transform.panY
           binding.media3Player.scaleX = scale
           binding.media3Player.scaleY = scale
-          binding.media3Player.translationX = panX
-          binding.media3Player.translationY = panY
+          binding.media3Player.translationX = transform.panX
+          binding.media3Player.translationY = transform.panY
+          binding.media3Player.resizeMode =
+            when (transform.aspect) {
+              VideoAspect.Fit -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+              VideoAspect.Crop -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+              VideoAspect.Stretch -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            }
         }
       }
     }
   }
+
+  private data class TransformState(
+    val zoom: Float,
+    val panX: Float,
+    val panY: Float,
+    val aspect: VideoAspect,
+  )
 
   private fun media3SourceUri(item: PlaybackItem): Uri {
     val playableUri = Uri.parse(item.playableUri)
@@ -1196,9 +1213,34 @@ class PlayerActivity :
   private fun setupPipHelper() {
     pipHelper = MPVPipHelper(
       activity = this,
-      mpvView = player,
+      videoViewProvider = {
+        if (playbackEngine == PlaybackEngine.MEDIA3) binding.media3Player else player
+      },
       isAudioPlayer = { viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() },
-      isVideoLoaded = { isReady },
+      isVideoLoaded = {
+        if (playbackEngine == PlaybackEngine.MEDIA3) {
+          media3State.playbackState != Player.STATE_IDLE
+        } else {
+          isReady
+        }
+      },
+      isMedia3Active = { playbackEngine == PlaybackEngine.MEDIA3 },
+      isMedia3Playing = { media3State.isPlaying },
+      media3VideoSize = {
+        val width = media3State.videoWidth
+        val height = media3State.videoHeight
+        if (width > 0 && height > 0) width to height else null
+      },
+      media3PlayWhenReady = { playWhenReady ->
+        if (playbackEngine == PlaybackEngine.MEDIA3) {
+          media3PlaybackController.setPlayWhenReady(playWhenReady)
+        }
+      },
+      media3SeekBy = { offsetMs ->
+        if (playbackEngine == PlaybackEngine.MEDIA3) {
+          media3PlaybackController.seekBy(offsetMs)
+        }
+      },
     )
   }
 
@@ -1572,11 +1614,15 @@ class PlayerActivity :
       PlaybackEngineMode.Media3 -> true
       // MPV remains the default for ordinary video; Media3 is retained for Dolby Vision and
       // adaptive IPTV streams, which require the Media3 HLS/DASH modules added earlier.
-      PlaybackEngineMode.Auto -> isDolbyVisionItem(item) || isMedia3Stream(item)
+      PlaybackEngineMode.Auto ->
+        (isDolbyVisionItem(item) && media3AutoFallbackItemId != item.stableId) || isMedia3Stream(item)
     }
   }
 
   private fun switchToMedia3Engine(item: PlaybackItem) {
+    if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) {
+      media3AutoFallbackItemId = null
+    }
     if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) return
     AppDebugLog.info(
       TAG,
@@ -1640,7 +1686,12 @@ class PlayerActivity :
               media3ItemId == item.stableId &&
               !media3VideoFrameRendered
           ) {
-            AppDebugLog.warn(TAG, "Media3 produced no video frame; falling back to MPV")
+            media3AutoFallbackItemId = item.stableId
+            AppDebugLog.warn(
+              TAG,
+              "Media3 produced no video frame after watchdog; falling back to MPV " +
+                "and suppressing Media3 retry for item=${item.stableId}",
+            )
             switchToMpvEngine()
           }
         }

@@ -4634,42 +4634,31 @@ class PlayerViewModel : ViewModel(),
     aspect: VideoAspect,
     showUpdate: Boolean = true,
   ) {
-    when (aspect) {
-      VideoAspect.Fit -> {
-        // To FIT: Reset both properties to their defaults.
-        PlaybackSession.setPropertyDouble("panscan", 0.0)
-        PlaybackSession.setPropertyString("video-aspect-override", "no")
-      }
-      VideoAspect.Crop -> {
-        // To CROP: Reset aspect override first, then set panscan
-        PlaybackSession.setPropertyString("video-aspect-override", "no")
-        PlaybackSession.setPropertyDouble("panscan", 1.0)
-      }
-      VideoAspect.Stretch -> {
-        // To STRETCH: Calculate screen ratio accounting for video rotation
-        @Suppress("DEPRECATION")
-        val dm = DisplayMetrics()
-        @Suppress("DEPRECATION")
-        host.hostWindowManager.defaultDisplay.getRealMetrics(dm)
-
-        // Get video rotation from metadata
-        val rotate = PlaybackSession.getPropertyInt("video-params/rotate") ?: 0
-        val isVideoRotated = (rotate % 180 == 90) // 90° or 270° rotation
-
-        // Calculate screen ratio, inverting if video is rotated
-        val screenRatio =
-          if (isVideoRotated) {
-            // Video is rotated, so invert the screen ratio
-            dm.heightPixels.toDouble() / dm.widthPixels.toDouble()
-          } else {
-            // Video is not rotated, use normal screen ratio
-            dm.widthPixels.toDouble() / dm.heightPixels.toDouble()
-          }
-
-        // Set aspect override first, then reset panscan
-        // This prevents the brief flash of Fit mode
-        PlaybackSession.setPropertyDouble("video-aspect-override", screenRatio)
-        PlaybackSession.setPropertyDouble("panscan", 0.0)
+    // Media3 applies the selected aspect through PlayerView.resizeMode in PlayerActivity.
+    // These libmpv properties must only be written while MPV owns the item.
+    if (!host.isMedia3Active()) {
+      when (aspect) {
+        VideoAspect.Fit -> {
+          PlaybackSession.setPropertyDouble("panscan", 0.0)
+          PlaybackSession.setPropertyString("video-aspect-override", "no")
+        }
+        VideoAspect.Crop -> {
+          PlaybackSession.setPropertyString("video-aspect-override", "no")
+          PlaybackSession.setPropertyDouble("panscan", 1.0)
+        }
+        VideoAspect.Stretch -> {
+          @Suppress("DEPRECATION")
+          val dm = DisplayMetrics()
+          @Suppress("DEPRECATION")
+          host.hostWindowManager.defaultDisplay.getRealMetrics(dm)
+          val rotate = PlaybackSession.getPropertyInt("video-params/rotate") ?: 0
+          val isVideoRotated = (rotate % 180 == 90)
+          val screenRatio =
+            if (isVideoRotated) dm.heightPixels.toDouble() / dm.widthPixels.toDouble()
+            else dm.widthPixels.toDouble() / dm.heightPixels.toDouble()
+          PlaybackSession.setPropertyDouble("video-aspect-override", screenRatio)
+          PlaybackSession.setPropertyDouble("panscan", 0.0)
+        }
       }
     }
 
@@ -4689,8 +4678,10 @@ class PlayerViewModel : ViewModel(),
     ratio: Double,
     showUpdate: Boolean = true,
   ) {
-    PlaybackSession.setPropertyDouble("panscan", 0.0)
-    PlaybackSession.setPropertyDouble("video-aspect-override", ratio)
+    if (!host.isMedia3Active()) {
+      PlaybackSession.setPropertyDouble("panscan", 0.0)
+      PlaybackSession.setPropertyDouble("video-aspect-override", ratio)
+    }
     playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
     _currentAspectRatio.value = ratio
     if (showUpdate) {

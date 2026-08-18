@@ -1055,11 +1055,14 @@ fun GestureHandler(
             var legacySeekPreviewActive = false
             // Use the sensitivity preference instead of hardcoded value
             val seekSensitivity = horizontalSwipeSensitivity
+            val media3Active = viewModel.isMedia3ActiveForGesture()
             val mediaDuration =
-              (
+              if (media3Active) {
+                viewModel.preciseDuration.value.toDouble()
+              } else {
                 PlaybackSession.getPropertyDouble("duration")
                   ?: viewModel.preciseDuration.value.toDouble()
-              ).takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+              }.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
 
             do {
               val event =
@@ -1203,6 +1206,11 @@ fun GestureHandler(
               if (useThumbFastSeekPreview) {
                 pendingSeekPosition?.let { viewModel.seekTo(it, fast = false) }
                 viewModel.hideSeekThumbnailPreview()
+              } else if (media3Active) {
+                // Media3 owns the player exclusively; never route the final gesture through the
+                // legacy MPV preview transaction, which can restore a stale zero position.
+                pendingSeekPosition?.let { viewModel.seekTo(it, fast = false) }
+                legacySeekPreviewActive = false
               } else {
                 pendingSeekPosition?.let { viewModel.commitLegacySeekPreview(it, mediaDuration) }
                 legacySeekPreviewActive = false
