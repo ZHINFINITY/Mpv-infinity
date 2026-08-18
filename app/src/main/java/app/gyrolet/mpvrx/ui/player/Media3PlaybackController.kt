@@ -24,6 +24,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.ui.PlayerView
 
 /**
@@ -66,6 +67,8 @@ class Media3PlaybackController(
   private val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
   private val player: ExoPlayer
   private lateinit var normalMediaSourceFactory: DefaultMediaSourceFactory
+  private lateinit var fastMediaSourceFactory: DefaultMediaSourceFactory
+  private var fastStartActive = false
   private var attachedView: PlayerView? = null
   private var lastPlaybackState = Player.STATE_IDLE
   private var latestVideoFormat: Format? = null
@@ -113,6 +116,12 @@ class Media3PlaybackController(
     // at position zero. Reliable seekbar and gesture seeking takes priority over that optimization.
     normalMediaSourceFactory =
       DefaultMediaSourceFactory(dataSourceFactory, DefaultExtractorsFactory())
+    fastMediaSourceFactory =
+      DefaultMediaSourceFactory(
+        dataSourceFactory,
+        DefaultExtractorsFactory()
+          .setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES),
+      )
     val renderersFactory =
       DefaultRenderersFactory(appContext)
         // Keep Android hardware/platform renderers first for formats the device supports, then
@@ -183,13 +192,17 @@ class Media3PlaybackController(
     }
     resetMediaMetadata()
     val item = mediaItem(uri, title, headers)
-    if (fastStart) {
+    if (fastStart && requestedStartPositionMs <= 0L) {
+      fastStartActive = true
       logInfo(
-        "fast-start request ignored: keeping Cues-enabled extractor for seek reliability " +
-          "uri=$uri startPositionMs=$requestedStartPositionMs",
+        "fast-start enabled for fresh large-file load; seek-safe Cues timeline will be restored " +
+          "on first nonzero seek uri=$uri",
       )
+      player.setMediaSource(fastMediaSourceFactory.createMediaSource(item), requestedStartPositionMs)
+    } else {
+      fastStartActive = false
+      player.setMediaItem(item, requestedStartPositionMs)
     }
-    player.setMediaItem(item, requestedStartPositionMs)
     player.prepare()
     player.playWhenReady = playWhenReady
   }
@@ -234,6 +247,7 @@ class Media3PlaybackController(
       return
     }
     resetMediaMetadata()
+    fastStartActive = false
     if (uris.isEmpty()) {
       player.clearMediaItems()
       return
@@ -256,6 +270,7 @@ class Media3PlaybackController(
     logInfo("stop requested")
     stateTickerHandler.removeCallbacks(stateTicker)
     clearABLoop()
+    fastStartActive = false
     player.stop()
     player.clearMediaItems()
   }
@@ -293,8 +308,26 @@ class Media3PlaybackController(
     loopHandler.post(loopCheck)
   }
 
+  private fun restoreSeekableTimelineIfNeeded(targetPositionMs: Long): Boolean {
+    if (!fastStartActive || targetPositionMs <= 0L) return false
+    val currentItem = player.currentMediaItem ?: return false
+    val shouldPlay = player.playWhenReady
+    fastStartActive = false
+    pendingSeekPositionMs = targetPositionMs
+    pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
+    logInfo(
+      "restoring Cues-enabled timeline for first nonzero seek targetPositionMs=$targetPositionMs " +
+        "wasPlaying=$shouldPlay",
+    )
+    player.setMediaSource(normalMediaSourceFactory.createMediaSource(currentItem), targetPositionMs)
+    player.prepare()
+    player.playWhenReady = shouldPlay
+    return true
+  }
+
   fun seekTo(positionMs: Long, fast: Boolean = false) {
     val targetPositionMs = positionMs.coerceAtLeast(0L)
+    if (restoreSeekableTimelineIfNeeded(targetPositionMs)) return
     pendingSeekPositionMs = targetPositionMs
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
     logInfo("seekTo requested positionMs=$targetPositionMs fast=$fast")
@@ -308,6 +341,7 @@ class Media3PlaybackController(
 
   fun seekBy(offsetMs: Long) {
     val targetPositionMs = (player.currentPosition + offsetMs).coerceAtLeast(0L)
+    if (restoreSeekableTimelineIfNeeded(targetPositionMs)) return
     pendingSeekPositionMs = targetPositionMs
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
     logInfo("seekBy requested offsetMs=$offsetMs targetPositionMs=$targetPositionMs")
