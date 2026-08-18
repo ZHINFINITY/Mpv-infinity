@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<app.gyrolet.mpvrx.ui.player.StretchAwarePlayerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<app.infinity.mpvz.ui.player.StretchAwarePlayerLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/black"
     android:fitsSystemWindows="false">
 
-    <app.gyrolet.mpvrx.ui.player.MPVView
+    <app.infinity.mpvz.ui.player.MPVView
         android:id="@+id/player"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <app.gyrolet.mpvrx.ui.player.Media3PlayerView
+    <app.infinity.mpvz.ui.player.Media3PlayerView
         android:id="@+id/media3_player"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -26,4 +26,4 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-</app.gyrolet.mpvrx.ui.player.StretchAwarePlayerLayout>
+</app.infinity.mpvz.ui.player.StretchAwarePlayerLayout>

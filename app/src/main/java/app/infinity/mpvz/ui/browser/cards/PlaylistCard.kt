@@ -1,0 +1,106 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.infinity.mpvz.ui.browser.cards
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.domain.media.model.VideoFolder
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
+
+/**
+ * Card for displaying a playlist item
+ *
+ * @param playlist The playlist entity to display
+ * @param itemCount Number of items in the playlist
+ * @param onClick Action to perform when the card is clicked
+ * @param onLongClick Action to perform when the card is long-pressed
+ * @param onThumbClick Action to perform when the thumbnail is clicked
+ * @param modifier Optional modifier for the card
+ * @param isSelected Whether the card is in a selected state
+ * @param isGridMode Whether the card should display in grid mode
+ * @param thumbnail Optional thumbnail bitmap to display
+ */
+@Composable
+fun PlaylistCard(
+  playlist: PlaylistEntity,
+  itemCount: Int,
+  onClick: () -> Unit,
+  onLongClick: () -> Unit,
+  onThumbClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  isSelected: Boolean = false,
+  isGridMode: Boolean = false,
+  thumbnail: android.graphics.Bitmap? = null,
+) {
+  // Convert playlist to VideoFolder format for FolderCard
+  val folderModel =
+    VideoFolder(
+      bucketId = playlist.id.toString(),
+      name = playlist.name,
+      path = "", // Not used for playlists
+      videoCount = itemCount,
+      totalSize = 0, // Not tracked for playlists
+      totalDuration = 0, // Not tracked for playlists
+      lastModified = playlist.updatedAt / 1000,
+    )
+
+  // Create a custom chip renderer for playlist type
+  val customChipRenderer: @Composable () -> Unit = {
+    val chipText = if (playlist.isM3uPlaylist) stringResource(R.string.playlist_m3u_badge) else "Local"
+
+    // Use Material Design theme colors
+    val materialTheme = androidx.compose.material3.MaterialTheme.colorScheme
+    val (chipColor, chipBgColor) =
+      if (playlist.isM3uPlaylist) {
+        Pair(materialTheme.tertiary, materialTheme.tertiaryContainer)
+      } else {
+        Pair(materialTheme.primary, materialTheme.primaryContainer)
+      }
+
+    androidx.compose.material3.Text(
+      text = chipText,
+      style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+      modifier =
+        Modifier
+          .background(
+            chipBgColor,
+            AppShapeScale.small,
+          ).padding(horizontal = 8.dp, vertical = 4.dp),
+      color = chipColor,
+    )
+  }
+
+  val thumbnailBitmap = remember(thumbnail) { thumbnail?.asImageBitmap() }
+
+  // Use the FolderCard component with playlist-specific customizations
+  FolderCard(
+    folder = folderModel,
+    isSelected = isSelected,
+    isRecentlyPlayed = false,
+    onClick = onClick,
+    onLongClick = onLongClick,
+    onThumbClick = onThumbClick,
+    showDateModified = true,
+    customIcon = Icons.RoundedFilled.PlaylistPlay,
+    modifier = modifier,
+    customChipContent = customChipRenderer,
+    isGridMode = isGridMode,
+    thumbnail = thumbnailBitmap,
+  )
+}

@@ -1,0 +1,1761 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.infinity.mpvz.ui.browser.folderlist
+
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FloatingActionButtonMenu
+import androidx.compose.material3.FloatingActionButtonMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.SearchBar
+import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleFloatingActionButton
+import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.animateFloatingActionButton
+import androidx.compose.material3.rememberTooltipState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.browser.FileSystemItem
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.media.model.VideoFolder
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.FolderViewMode
+import app.infinity.mpvz.preferences.FoldersPreferences
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
+import app.infinity.mpvz.ui.browser.cards.FolderCard
+import app.infinity.mpvz.ui.browser.cards.VideoCard
+import app.infinity.mpvz.ui.browser.cards.VideoCardUiConfig
+import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
+import app.infinity.mpvz.ui.browser.dialogs.FileOperationProgressDialog
+import app.infinity.mpvz.ui.browser.dialogs.FolderPickerDialog
+import app.infinity.mpvz.ui.browser.dialogs.FolderSortDialog
+import app.infinity.mpvz.ui.browser.dialogs.RenameDialog
+import app.infinity.mpvz.ui.browser.filesystem.FileSystemBrowserRootScreen
+import app.infinity.mpvz.ui.browser.medialibrary.MediaLibraryContent
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.browser.sheets.PlayLinkSheet
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.browser.states.LoadingState
+import app.infinity.mpvz.ui.browser.states.PermissionDeniedState
+import app.infinity.mpvz.ui.browser.videolist.VideoListScreen
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.calculateResponsiveGridSpans
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.CopyPasteOps
+import app.infinity.mpvz.utils.media.MediaSearchEngine
+import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
+import app.infinity.mpvz.utils.permission.PermissionUtils
+import app.infinity.mpvz.utils.sort.SortUtils
+import app.infinity.mpvz.utils.storage.FileTypeUtils
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.PermissionStatus
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import org.koin.compose.koinInject
+import java.io.File
+
+@Serializable
+object FolderListScreen : Screen {
+  @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
+  @Composable
+  override fun Content() {
+    val browserPreferences = koinInject<BrowserPreferences>()
+    val folderViewMode by browserPreferences.folderViewMode.collectAsState()
+
+    when (folderViewMode) {
+      FolderViewMode.FileManager -> FileSystemBrowserRootScreen.Content()
+      FolderViewMode.AlbumView -> MediaStoreFolderListContent()
+      FolderViewMode.MediaLibrary -> MediaLibraryContent()
+    }
+  }
+
+  @OptIn(ExperimentalMaterial3ExpressiveApi::class)
+  @Composable
+  internal fun MediaStoreFolderListContent(
+    audioOnly: Boolean = false,
+    embedded: Boolean = false,
+    searchQuery: String = "",
+  ) {
+    val context = LocalContext.current
+    val backstack = LocalBackStack.current
+    val coroutineScope = rememberCoroutineScope()
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    // ViewModels and preferences
+    val viewModel: FolderListViewModel =
+      viewModel(
+        key = if (audioOnly) "MusicListViewModel" else "FolderListViewModel",
+        factory = FolderListViewModel.factory(context.applicationContext as android.app.Application, audioOnly),
+      )
+    val browserPreferences = koinInject<BrowserPreferences>()
+    val gesturePreferences = koinInject<GesturePreferences>()
+    val foldersPreferences = koinInject<FoldersPreferences>()
+    val advancedPreferences = koinInject<app.infinity.mpvz.preferences.AdvancedPreferences>()
+    val appearancePreferences = koinInject<AppearancePreferences>()
+    val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+    val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
+
+    // State collection
+    val videoFolders by viewModel.videoFolders.collectAsState()
+    val foldersWithNewCount by viewModel.foldersWithNewCount.collectAsState()
+    val recentlyPlayedFilePath by viewModel.recentlyPlayedFilePath.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val scanStatus by viewModel.scanStatus.collectAsState()
+    val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
+    val foldersWereDeleted by viewModel.foldersWereDeleted.collectAsState()
+
+    // Preferences
+    val mediaLayoutMode by browserPreferences.folderViewFolderLayoutMode.collectAsState()
+    val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
+    val folderSortType by browserPreferences.folderSortType.collectAsState()
+    val folderSortOrder by browserPreferences.folderSortOrder.collectAsState()
+    val tapThumbnailToSelect by gesturePreferences.tapThumbnailToSelect.collectAsState()
+    val enableRecentlyPlayed by advancedPreferences.enableRecentlyPlayed.collectAsState()
+    val pinnedFolderPaths by foldersPreferences.pinnedFolders.collectAsState()
+    val dualPaneForTablet by browserPreferences.dualPaneForTablet.collectAsState()
+
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val isDualPaneActive = isTablet && dualPaneForTablet
+
+    var selectedFolderBucketId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedFolderName by rememberSaveable { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(isDualPaneActive) {
+      if (!isDualPaneActive) {
+        selectedFolderBucketId = null
+        selectedFolderName = null
+      }
+    }
+
+    // UI state - use standalone states to avoid scroll issues with predictive back gesture
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    val navigationBarHeight = LocalNavigationBarHeight.current
+    val navBarState = app.infinity.mpvz.ui.browser.NavigationBarState
+    val isRefreshing = remember { mutableStateOf(false) }
+    val sortDialogOpen = rememberSaveable { mutableStateOf(false) }
+    var pendingDeleteFolders by remember { mutableStateOf<List<VideoFolder>>(emptyList()) }
+    val showLinkDialog = remember { mutableStateOf(false) }
+    val folderPickerOpen = rememberSaveable { mutableStateOf(false) }
+    val operationType = remember { mutableStateOf<CopyPasteOps.OperationType?>(null) }
+    val progressDialogOpen = rememberSaveable { mutableStateOf(false) }
+    var renameDialogOpen by rememberSaveable { mutableStateOf(false) }
+    val operationProgress by CopyPasteOps.operationProgress.collectAsState()
+
+    // Move-to-Secure-Folder state (moves every video inside the selected folders)
+    val secureFolderRepository = koinInject<app.infinity.mpvz.database.repository.SecureFolderRepository>()
+    val secureFolderPreferences = koinInject<app.infinity.mpvz.preferences.SecureFolderPreferences>()
+    val moveToSecureConfirmOpen = rememberSaveable { mutableStateOf(false) }
+    val moveToSecureProgressOpen = rememberSaveable { mutableStateOf(false) }
+    val secureFolderProgress by secureFolderRepository.progress.collectAsState()
+
+    // Search state
+    var internalSearchQuery by rememberSaveable { mutableStateOf("") }
+    var internalIsSearching by rememberSaveable { mutableStateOf(false) }
+    val effectiveSearchQuery = if (embedded) searchQuery else searchQuery.ifBlank { internalSearchQuery }
+    val effectiveIsSearching = if (embedded) searchQuery.isNotBlank() else (internalIsSearching || internalSearchQuery.isNotBlank())
+    var searchResults by remember { mutableStateOf<List<FileSystemItem>>(emptyList()) }
+    var isSearchLoading by remember { mutableStateOf(false) }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
+    val foldersBlacklistedMessage = stringResource(app.infinity.mpvz.R.string.pref_folders_blacklisted)
+
+    // Search logic
+    LaunchedEffect(effectiveSearchQuery, effectiveIsSearching, audioOnly, videoFolders) {
+      if (effectiveIsSearching && effectiveSearchQuery.isNotBlank()) {
+        delay(250)
+        isSearchLoading = true
+        try {
+          searchResults =
+            if (audioOnly) {
+              val q = effectiveSearchQuery.trim().lowercase()
+              val matchingFolders = videoFolders.filter { folder ->
+                folder.name.lowercase().contains(q) || folder.path.lowercase().contains(q)
+              }.map { folder ->
+                FileSystemItem.Folder(
+                  name = folder.name,
+                  path = folder.path,
+                  lastModified = folder.lastModified,
+                  videoCount = folder.videoCount,
+                  totalSize = folder.totalSize,
+                  totalDuration = folder.totalDuration,
+                )
+              }
+              val matchingAudioFiles = app.infinity.mpvz.repository.MediaFileRepository
+                .searchAudio(context, effectiveSearchQuery)
+                .map { audio ->
+                  FileSystemItem.VideoFile(
+                    name = audio.displayName,
+                    path = audio.path,
+                    lastModified = audio.dateModified,
+                    video = audio,
+                  )
+                }
+              matchingFolders + matchingAudioFiles
+            } else {
+              searchFoldersAndVideos(context, effectiveSearchQuery)
+            }
+        } catch (e: Exception) {
+          Log.e("FolderListScreen", "Error during search", e)
+          searchResults = emptyList()
+        } finally {
+          isSearchLoading = false
+        }
+      } else {
+        searchResults = emptyList()
+        isSearchLoading = false
+      }
+    }
+
+    // FAB state
+    val isFabVisible = remember { mutableStateOf(true) }
+    val isFabExpanded = remember { mutableStateOf(false) }
+
+    // File picker
+    val filePicker =
+      rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+      ) { uri ->
+        uri?.let {
+          runCatching {
+            context.contentResolver.takePersistableUriPermission(
+              it,
+              Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+          }
+          MediaUtils.playFile(it.toString(), context, "open_file")
+        }
+      }
+
+    // Sorting and filtering
+    val sortedFolders =
+      remember(videoFolders, folderSortType, folderSortOrder, pinnedFolderPaths) {
+        val sorted = SortUtils.sortFolders(videoFolders, folderSortType, folderSortOrder)
+        val (pinned, unpinned) = sorted.partition { it.path in pinnedFolderPaths }
+        pinned + unpinned
+      }
+
+    val filteredFolders = sortedFolders
+
+    suspend fun deleteFolders(folders: List<VideoFolder>): Pair<Int, Int> {
+      var deleted = 0
+      var failed = 0
+      val deleteAll = browserPreferences.deleteFolderAllContents.get()
+      // The audio-only folder browser must always be able to delete the audio files it shows,
+      // regardless of the general "include audio in browser" preference (which only governs the
+      // regular video browser). The regular (video) browser keeps its existing preference-driven behavior.
+      val includeAudio = audioOnly || browserPreferences.includeAudioBrowser.get()
+      for (folder in folders) {
+        try {
+          if (deleteAll) {
+            val ids = setOf(folder.bucketId)
+            val videos =
+              app.infinity.mpvz.repository.MediaFileRepository
+                .getVideosForBuckets(context, ids, includeAudioOverride = if (audioOnly) true else null)
+            if (videos.isNotEmpty()) {
+              val (d, f) = viewModel.deleteVideos(videos)
+              deleted += d
+              failed += f
+            }
+            val dir = java.io.File(folder.path)
+            if (dir.exists()) {
+              if (dir.deleteRecursively()) {
+                deleted++
+              } else {
+                failed++
+              }
+            }
+          } else {
+            var deletedAny = false
+            val dir = java.io.File(folder.path)
+            if (dir.exists()) {
+              dir.listFiles()?.forEach { file ->
+                if (file.isFile) {
+                  val ext = file.extension.lowercase()
+                  // In the audio-only browser, only touch audio files - never delete video files
+                  // that might live alongside them in the same on-disk folder.
+                  val isVideo = !audioOnly && ext in FileTypeUtils.VIDEO_EXTENSIONS
+                  val isAudio = includeAudio && ext in FileTypeUtils.AUDIO_EXTENSIONS
+                  if (isVideo || isAudio) {
+                    if (file.delete()) deletedAny = true
+                  }
+                }
+              }
+            }
+            if (deletedAny) {
+              deleted++
+            } else {
+              failed++
+            }
+          }
+        } catch (e: Exception) {
+          Log.e("FolderListScreen", "Error deleting folder ${folder.path}", e)
+          failed++
+        }
+      }
+      return Pair(deleted, failed)
+    }
+
+    // Selection manager
+    val selectionManager =
+      rememberSelectionManager(
+        items = sortedFolders,
+        getId = { it.bucketId },
+        onDeleteItems = { folders, _ -> deleteFolders(folders) },
+        onOperationComplete = { viewModel.refresh() },
+      )
+
+    fun moveSelectedFoldersToSecureFolder() {
+      val selectedIds = selectionManager.getSelectedItems().map { it.bucketId }.toSet()
+      if (selectedIds.isEmpty()) return
+      moveToSecureProgressOpen.value = true
+      coroutineScope.launch {
+        val allVideos =
+          app.infinity.mpvz.repository.MediaFileRepository
+            .getVideosForBuckets(context, selectedIds, includeAudioOverride = if (audioOnly) true else null)
+        if (allVideos.isNotEmpty()) {
+          val result = secureFolderRepository.moveIn(context, allVideos)
+          result
+            .onSuccess { batch ->
+              val message =
+                if (batch.failedIds.isEmpty()) {
+                  context.getString(R.string.secure_folder_moved_success, batch.succeededIds.size)
+                } else {
+                  context.getString(R.string.secure_folder_moved_partial, batch.succeededIds.size, batch.failedIds.size)
+                }
+              Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }.onFailure {
+              Toast.makeText(context, context.getString(R.string.secure_folder_move_failed), Toast.LENGTH_SHORT).show()
+            }
+        }
+        moveToSecureProgressOpen.value = false
+        selectionManager.clear()
+        viewModel.refresh()
+      }
+    }
+
+    val treePickerLauncher =
+      rememberLauncherForActivityResult(
+        contract = OpenDocumentTreeContract(),
+      ) { uri ->
+        if (uri == null || operationType.value == null) return@rememberLauncherForActivityResult
+        runCatching {
+          context.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+          )
+        }
+        progressDialogOpen.value = true
+        coroutineScope.launch {
+          val selectedFolders = selectionManager.getSelectedItems()
+          val selectedVideos =
+            selectedFolders.flatMap { folder ->
+              app.infinity.mpvz.repository.MediaFileRepository
+                .getVideosForBuckets(context, setOf(folder.bucketId), includeAudioOverride = if (audioOnly) true else null)
+            }
+          if (selectedVideos.isNotEmpty()) {
+            when (operationType.value) {
+              is CopyPasteOps.OperationType.Copy -> CopyPasteOps.copyFilesToTreeUri(context, selectedVideos, uri)
+              is CopyPasteOps.OperationType.Move -> CopyPasteOps.moveFilesToTreeUri(context, selectedVideos, uri)
+              else -> {}
+            }
+          }
+        }
+      }
+
+    // Permissions
+    val permissionState =
+      PermissionUtils.handleStoragePermission(
+        audioOnly = audioOnly,
+        onPermissionGranted = { viewModel.refresh() },
+      )
+
+    var isPermissionSetupCompleted by androidx.compose.runtime.saveable.rememberSaveable {
+      androidx.compose.runtime.mutableStateOf(permissionState.status == PermissionStatus.Granted)
+    }
+
+    // Update MainScreen about permission state
+    LaunchedEffect(permissionState.status, isPermissionSetupCompleted) {
+      app.infinity.mpvz.ui.browser.MainScreen.updatePermissionState(
+        isDenied = !isPermissionSetupCompleted || permissionState.status is PermissionStatus.Denied,
+      )
+    }
+
+    // Update NavigationBarState synchronously when selection mode changes
+    SideEffect {
+      navBarState.updateSelectionState(
+        inSelectionMode = selectionManager.isInSelectionMode,
+        onlyVideos = true,
+      )
+    }
+
+    DisposableEffect(isDualPaneActive, selectedFolderBucketId) {
+      navBarState.isDualPaneFolderSelected = isDualPaneActive && selectedFolderBucketId != null
+      onDispose {
+        navBarState.isDualPaneFolderSelected = false
+      }
+    }
+
+    // Lifecycle observer for refresh
+    DisposableEffect(lifecycleOwner) {
+      val observer =
+        LifecycleEventObserver { _, event ->
+          if (event == Lifecycle.Event.ON_RESUME) {
+            viewModel.recalculateNewVideoCounts()
+          }
+        }
+      lifecycleOwner.lifecycle.addObserver(observer)
+      onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Optimized back handler for immediate response
+    val shouldHandleBack =
+      selectionManager.isInSelectionMode ||
+        (!embedded && internalIsSearching) ||
+        isFabExpanded.value ||
+        (isDualPaneActive && selectedFolderBucketId != null)
+    androidx.activity.compose.BackHandler(enabled = shouldHandleBack) {
+      when {
+        isFabExpanded.value -> isFabExpanded.value = false
+        selectionManager.isInSelectionMode -> selectionManager.clear()
+        !embedded && internalIsSearching -> {
+          internalIsSearching = false
+          internalSearchQuery = ""
+        }
+        isDualPaneActive && selectedFolderBucketId != null -> {
+          selectedFolderBucketId = null
+          selectedFolderName = null
+        }
+      }
+    }
+
+    // FAB scroll tracking
+    app.infinity.mpvz.ui.browser.fab.FabScrollHelper.trackScrollForFabVisibility(
+      listState = listState,
+      gridState = if (mediaLayoutMode == MediaLayoutMode.GRID) gridState else null,
+      isFabVisible = isFabVisible,
+      expanded = isFabExpanded.value,
+      onExpandedChange = { isFabExpanded.value = it },
+    )
+
+    @Composable
+    fun FoldersPane() {
+      Scaffold(
+        contentWindowInsets = if (embedded) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
+        topBar = {
+          if (embedded) {
+            // Embedded inside another screen (e.g. Music tab) which already renders its own top bar.
+          } else if (internalIsSearching) {
+            SearchBar(
+              inputField = {
+                SearchBarDefaults.InputField(
+                  query = internalSearchQuery,
+                  onQueryChange = { internalSearchQuery = it },
+                  onSearch = { },
+                  expanded = false,
+                  onExpandedChange = { },
+                  placeholder = {
+                    Text(
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.ui_search_folders_and_videos),
+                    )
+                  },
+                  leadingIcon = {
+                    Icon(
+                      imageVector = Icons.RoundedFilled.Search,
+                      contentDescription =
+                        androidx.compose.ui.res.stringResource(
+                          app.infinity.mpvz.R.string.settings_search_title,
+                        ),
+                    )
+                  },
+                  trailingIcon = {
+                    IconButton(
+                      onClick = {
+                        internalIsSearching = false
+                        internalSearchQuery = ""
+                      },
+                    ) {
+                      Icon(
+                        imageVector = Icons.RoundedFilled.Close,
+                        contentDescription =
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.generic_cancel,
+                          ),
+                      )
+                    }
+                  },
+                  modifier = Modifier.focusRequester(focusRequester),
+                )
+              },
+              expanded = false,
+              onExpandedChange = { },
+              modifier =
+                Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp),
+              shape = RoundedCornerShape(28.dp),
+              tonalElevation = 6.dp,
+            ) {
+              // Empty content for SearchBar
+            }
+          } else {
+            BrowserTopBar(
+              title = stringResource(app.infinity.mpvz.R.string.app_name),
+              isInSelectionMode = selectionManager.isInSelectionMode,
+              selectedCount = selectionManager.selectedCount,
+              totalCount = videoFolders.size,
+              onBackClick = null,
+              onCancelSelection = { selectionManager.clear() },
+              onSortClick = { sortDialogOpen.value = true },
+              onSearchClick = {
+                internalIsSearching = !internalIsSearching
+                coroutineScope.launch {
+                  buildSearchIndex(context)
+                }
+              },
+              onSettingsClick = {
+                backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
+              },
+              onTitleDoubleTap = { backstack.add(SecureFolderGateScreen) },
+              onTitleLongPress = { backstack.add(SecureFolderGateScreen) },
+              onRenameClick = null,
+              isSingleSelection = selectionManager.isSingleSelection,
+              onInfoClick = null,
+              onShareClick = {
+                coroutineScope.launch {
+                  val selectedIds = selectionManager.getSelectedItems().map { it.bucketId }.toSet()
+                  val allVideos =
+                    app.infinity.mpvz.repository.MediaFileRepository
+                      .getVideosForBuckets(context, selectedIds, includeAudioOverride = if (audioOnly) true else null)
+                  if (allVideos.isNotEmpty()) {
+                    MediaUtils.shareVideos(context, allVideos)
+                  }
+                }
+              },
+              onPlayClick = {
+                coroutineScope.launch {
+                  val selectedIds = selectionManager.getSelectedItems().map { it.bucketId }.toSet()
+                  val allVideos =
+                    app.infinity.mpvz.repository.MediaFileRepository
+                      .getVideosForBuckets(context, selectedIds, includeAudioOverride = if (audioOnly) true else null)
+                  if (allVideos.isNotEmpty()) {
+                    if (allVideos.size == 1) {
+                      MediaUtils.playFile(allVideos.first(), context)
+                    } else {
+                      val intent = Intent(Intent.ACTION_VIEW, allVideos.first().uri)
+                      intent.setClass(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java)
+                      intent.putExtra("internal_launch", true)
+                      intent.putParcelableArrayListExtra("playlist", ArrayList(allVideos.map { it.uri }))
+                      intent.putExtra("playlist_index", 0)
+                      intent.putExtra("launch_source", "playlist")
+                      context.startActivity(intent)
+                    }
+                    selectionManager.clear()
+                  }
+                }
+              },
+              onPinClick = {
+                coroutineScope.launch {
+                  val selectedFolders = selectionManager.getSelectedItems()
+                  if (selectedFolders.isEmpty()) return@launch
+                  val updated = foldersPreferences.pinnedFolders.get().toMutableSet()
+                  val shouldUnpinAll = selectedFolders.all { it.path in updated }
+                  selectedFolders.forEach { folder ->
+                    if (shouldUnpinAll) {
+                      updated.remove(folder.path)
+                    } else {
+                      updated.add(folder.path)
+                    }
+                  }
+                  foldersPreferences.pinnedFolders.set(updated)
+                  selectionManager.clear()
+                }
+              },
+              onBlacklistClick = {
+                coroutineScope.launch {
+                  val selectedFolders = selectionManager.getSelectedItems()
+                  val paths = selectedFolders.map { it.path }.toSet()
+                  val scope = if (audioOnly) app.infinity.mpvz.preferences.BlacklistScope.AUDIO_ONLY else app.infinity.mpvz.preferences.BlacklistScope.VIDEO_ONLY
+                  foldersPreferences.addBlacklistedFolders(paths, scope)
+                  selectionManager.clear()
+                  viewModel.refresh()
+                  android.widget.Toast
+                    .makeText(
+                      context,
+                      foldersBlacklistedMessage,
+                      android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+              },
+              onDeleteClick = null,
+              onSelectAll = { selectionManager.selectAll() },
+              onInvertSelection = { selectionManager.invertSelection() },
+              onDeselectAll = { selectionManager.clear() },
+              onMoveToSecureClick = {
+                if (!secureFolderPreferences.isPinSet()) {
+                  backstack.add(SecureFolderGateScreen)
+                } else if (secureFolderPreferences.dontAskBeforeMove.get()) {
+                  moveSelectedFoldersToSecureFolder()
+                } else {
+                  moveToSecureConfirmOpen.value = true
+                }
+              },
+            )
+          }
+        },
+        floatingActionButton = {
+          FloatingActionButtonMenu(
+            modifier = Modifier.padding(bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp)),
+            expanded = isFabExpanded.value && !quickPlayFabDirect,
+            button = {
+              TooltipBox(
+                positionProvider =
+                  TooltipDefaults.rememberTooltipPositionProvider(
+                    if (isFabExpanded.value && !quickPlayFabDirect) {
+                      TooltipAnchorPosition.Start
+                    } else {
+                      TooltipAnchorPosition.Above
+                    },
+                  ),
+                tooltip = {
+                  PlainTooltip {
+                    Text(
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.ui_toggle_menu),
+                    )
+                  }
+                },
+                state = rememberTooltipState(),
+              ) {
+                ToggleFloatingActionButton(
+                  modifier =
+                    Modifier.animateFloatingActionButton(
+                      visible =
+                        showQuickPlayFab &&
+                          !selectionManager.isInSelectionMode &&
+                          isFabVisible.value &&
+                          !app.infinity.mpvz.ui.browser.MainScreen
+                            .getPermissionDeniedState() &&
+                          !(isDualPaneActive && selectedFolderBucketId != null),
+                      alignment = Alignment.BottomEnd,
+                    ),
+                  checked = isFabExpanded.value && !quickPlayFabDirect,
+                  onCheckedChange = {
+                    if (quickPlayFabDirect) {
+                      coroutineScope.launch {
+                        val lastPlayed =
+                          app.infinity.mpvz.utils.history.RecentlyPlayedOps
+                            .getLastPlayedEntity()
+                        if (lastPlayed != null) {
+                          MediaUtils.playFile(
+                            source = lastPlayed.filePath,
+                            context = context,
+                            launchSource = "quick_play_fab",
+                            title =
+                              lastPlayed.videoTitle?.takeIf { it.isNotBlank() }
+                                ?: lastPlayed.fileName.takeIf { it.isNotBlank() },
+                          )
+                        }
+                      }
+                    } else {
+                      isFabExpanded.value = !isFabExpanded.value
+                    }
+                  },
+                ) {
+                  val imageVector by remember {
+                    derivedStateOf {
+                      if (checkedProgress > 0.5f && !quickPlayFabDirect) Icons.RoundedFilled.Close else Icons.RoundedFilled.PlayArrow
+                    }
+                  }
+                  Icon(
+                    imageVector = imageVector,
+                    contentDescription = null,
+                    modifier = Modifier.animateIcon({ if (quickPlayFabDirect) 0f else checkedProgress }),
+                  )
+                }
+              }
+            },
+          ) {
+            if (!quickPlayFabDirect) {
+              FloatingActionButtonMenuItem(
+                onClick = {
+                  isFabExpanded.value = false
+                  filePicker.launch(arrayOf("video/*"))
+                },
+                icon = { Icon(Icons.RoundedFilled.FileOpen, contentDescription = null) },
+                text = {
+                  Text(
+                    text =
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.ui_open_file),
+                  )
+                },
+              )
+
+              FloatingActionButtonMenuItem(
+                onClick = {
+                  isFabExpanded.value = false
+                  coroutineScope.launch {
+                    val recentlyPlayedVideos = RecentlyPlayedOps.getRecentlyPlayed(limit = 1)
+                    val lastPlayed = recentlyPlayedVideos.firstOrNull()
+                    if (lastPlayed != null) {
+                      MediaUtils.playFile(lastPlayed.filePath, context, "recently_played_button")
+                    }
+                  }
+                },
+                icon = { Icon(Icons.RoundedFilled.History, contentDescription = null) },
+                text = {
+                  Text(
+                    text =
+                      androidx.compose.ui.res.stringResource(
+                        app.infinity.mpvz.R.string.pref_advanced_enable_recently_played_title,
+                      ),
+                  )
+                },
+              )
+
+              FloatingActionButtonMenuItem(
+                onClick = {
+                  isFabExpanded.value = false
+                  showLinkDialog.value = true
+                },
+                icon = { Icon(Icons.RoundedFilled.Link, contentDescription = null) },
+                text = {
+                  Text(
+                    text =
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.ui_open_link),
+                  )
+                },
+              )
+            }
+          }
+        },
+      ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
+          if (isPermissionSetupCompleted && permissionState.status == PermissionStatus.Granted) {
+              if (effectiveIsSearching) {
+                // Show search results
+                Box(modifier = Modifier.fillMaxSize()) {
+                  if (isSearchLoading) {
+                    // Loading state
+                    Box(
+                      modifier = Modifier.fillMaxSize(),
+                      contentAlignment = Alignment.Center,
+                    ) {
+                      CircularProgressIndicator()
+                    }
+                  } else if (searchResults.isEmpty()) {
+                    // No results
+                    EmptyState(
+                      icon = Icons.RoundedFilled.Search,
+                      title = stringResource(R.string.ui_no_results_found),
+                      message = if (audioOnly) "No audio folders or songs match your search query" else "No folders or videos match your search query",
+                      modifier = Modifier.fillMaxSize(),
+                    )
+                  } else {
+                    // Show search results
+                    SearchResultsContent(
+                      searchResults = searchResults,
+                      navigationBarHeight = navigationBarHeight,
+                      onFolderClick = { folder ->
+                        if (isDualPaneActive) {
+                          selectedFolderBucketId = folder.bucketId
+                          selectedFolderName = folder.name
+                          if (!embedded) {
+                            internalIsSearching = false
+                            internalSearchQuery = ""
+                          }
+                        } else {
+                          backstack.add(
+                            app.infinity.mpvz.ui.browser.videolist
+                              .VideoListScreen(folder.bucketId, folder.name, isAudio = audioOnly),
+                          )
+                        }
+                      },
+                      onVideoClick = { video ->
+                        MediaUtils.playFile(video, context)
+                      },
+                      mediaLayoutMode = mediaLayoutMode,
+                    )
+                  }
+                }
+              } else {
+                FolderListContent(
+                  folders = filteredFolders,
+                  foldersWithNewCount = foldersWithNewCount,
+                  pinnedFolderPaths = pinnedFolderPaths,
+                  recentlyPlayedFilePath = recentlyPlayedFilePath,
+                  isLoading = isLoading,
+                  scanStatus = scanStatus,
+                  hasCompletedInitialLoad = hasCompletedInitialLoad,
+                  foldersWereDeleted = foldersWereDeleted,
+                  mediaLayoutMode = mediaLayoutMode,
+                  tapThumbnailToSelect = tapThumbnailToSelect,
+                  navigationBarHeight = navigationBarHeight,
+                  listState = listState,
+                  gridState = gridState,
+                  isRefreshing = isRefreshing,
+                  selectionManager = selectionManager,
+                  onRefresh = { viewModel.refresh() },
+                  onFolderClick = { folder ->
+                    if (selectionManager.isInSelectionMode) {
+                      selectionManager.toggle(folder)
+                    } else {
+                      if (isDualPaneActive) {
+                        selectedFolderBucketId = folder.bucketId
+                        selectedFolderName = folder.name
+                      } else {
+                        backstack.add(
+                          app.infinity.mpvz.ui.browser.videolist
+                            .VideoListScreen(folder.bucketId, folder.name, isAudio = audioOnly),
+                        )
+                      }
+                    }
+                  },
+                  onFolderLongClick = { folder ->
+                    selectionManager.handleLongClick(folder)
+                  },
+                  onTogglePin = { folder ->
+                    coroutineScope.launch {
+                      val updated = foldersPreferences.pinnedFolders.get().toMutableSet()
+                      if (!updated.add(folder.path)) {
+                        updated.remove(folder.path)
+                      }
+                      foldersPreferences.pinnedFolders.set(updated)
+                    }
+                  },
+                  selectedFolderBucketId = selectedFolderBucketId,
+                  audioOnly = audioOnly,
+                )
+              }
+          } else {
+            PermissionDeniedState(
+              onRequestPermission = { permissionState.launchPermissionRequest() },
+              onNext = {
+                isPermissionSetupCompleted = true
+                viewModel.refresh()
+              },
+              modifier = Modifier,
+            )
+          }
+
+          BrowserBottomBar(
+            isSelectionMode = selectionManager.isInSelectionMode,
+            onCopyClick = {
+              operationType.value = CopyPasteOps.OperationType.Copy
+              if (CopyPasteOps.canUseDirectFileOperations()) {
+                folderPickerOpen.value = true
+              } else {
+                treePickerLauncher.launch(null)
+              }
+            },
+            onMoveClick = {
+              operationType.value = CopyPasteOps.OperationType.Move
+              if (CopyPasteOps.canUseDirectFileOperations()) {
+                folderPickerOpen.value = true
+              } else {
+                treePickerLauncher.launch(null)
+              }
+            },
+            onRenameClick = { renameDialogOpen = true },
+            onDeleteClick = { pendingDeleteFolders = selectionManager.getSelectedItems() },
+            onAddToPlaylistClick = { },
+            showCopy = true,
+            showMove = true,
+            showRename = selectionManager.isSingleSelection,
+            showDownscale = false,
+            showAddToPlaylist = false,
+            modifier =
+              Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 0.dp),
+          )
+        }
+      }
+    }
+
+    if (isDualPaneActive && selectedFolderBucketId != null) {
+      Row(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(0.4f)) {
+          FoldersPane()
+        }
+        VerticalDivider(
+          modifier = Modifier.fillMaxHeight(),
+          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+          thickness = 1.dp,
+        )
+        Box(modifier = Modifier.weight(0.6f)) {
+          key(selectedFolderBucketId) {
+            CompositionLocalProvider(
+              app.infinity.mpvz.ui.browser.LocalNavigationBarHeight provides 0.dp,
+            ) {
+              VideoListScreen(
+                bucketId = selectedFolderBucketId!!,
+                folderName = selectedFolderName.orEmpty(),
+                isDualPane = true,
+                isAudio = audioOnly,
+                onBack = {
+                  selectedFolderBucketId = null
+                  selectedFolderName = null
+                },
+              ).Content()
+            }
+          }
+        }
+      }
+    } else {
+      FoldersPane()
+    }
+
+    // Dialogs
+    PlayLinkSheet(
+      isOpen = showLinkDialog.value,
+      onDismiss = { showLinkDialog.value = false },
+      onPlayLink = { url -> MediaUtils.playFile(url, context, "play_link") },
+    )
+
+    FolderPickerDialog(
+      isOpen = folderPickerOpen.value,
+      currentPath = "",
+      onDismiss = { folderPickerOpen.value = false },
+      onFolderSelected = { destinationPath ->
+        folderPickerOpen.value = false
+        val op = operationType.value
+        if (op != null) {
+          coroutineScope.launch {
+            val selectedFolders = selectionManager.getSelectedItems()
+            if (selectedFolders.isNotEmpty()) {
+              when (op) {
+                is CopyPasteOps.OperationType.Move -> {
+                  val needFallback = mutableListOf<VideoFolder>()
+                  for (folder in selectedFolders) {
+                    val dst = File(destinationPath, folder.name)
+                    if (!File(folder.path).renameTo(dst)) needFallback.add(folder)
+                  }
+                  if (needFallback.isNotEmpty()) {
+                    progressDialogOpen.value = true
+                    for (folder in needFallback) {
+                      val videos =
+                        app.infinity.mpvz.repository.MediaFileRepository.getVideosForBuckets(
+                          context,
+                          setOf(folder.bucketId),
+                          includeAudioOverride = if (audioOnly) true else null,
+                        )
+                      if (videos.isNotEmpty()) {
+                        val subDest = File(destinationPath, folder.name).also { it.mkdirs() }.absolutePath
+                        CopyPasteOps.moveFiles(context, videos, subDest)
+                      }
+                    }
+                  } else {
+                    selectionManager.clear()
+                    viewModel.refresh()
+                  }
+                }
+                is CopyPasteOps.OperationType.Copy -> {
+                  progressDialogOpen.value = true
+                  for (folder in selectedFolders) {
+                    val videos =
+                      app.infinity.mpvz.repository.MediaFileRepository.getVideosForBuckets(
+                        context,
+                        setOf(folder.bucketId),
+                        includeAudioOverride = if (audioOnly) true else null,
+                      )
+                    if (videos.isNotEmpty()) {
+                      val subDest = File(destinationPath, folder.name).also { it.mkdirs() }.absolutePath
+                      CopyPasteOps.copyFiles(context, videos, subDest)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+    )
+
+    if (operationType.value != null) {
+      FileOperationProgressDialog(
+        isOpen = progressDialogOpen.value,
+        operationType = operationType.value!!,
+        progress = operationProgress,
+        onCancel = { CopyPasteOps.cancelOperation() },
+        onDismiss = {
+          progressDialogOpen.value = false
+          operationType.value = null
+          selectionManager.clear()
+          viewModel.refresh()
+        },
+      )
+    }
+
+    // Move to Secure Folder — confirm (skippable via "don't ask again"), then progress
+    app.infinity.mpvz.ui.securefolder.SecureConfirmDialog(
+      isOpen = moveToSecureConfirmOpen.value,
+      title = stringResource(R.string.secure_folder_move_folders_title, selectionManager.selectedCount),
+      subtitle = stringResource(R.string.secure_folder_move_folders_subtitle),
+      dontAskAgain = secureFolderPreferences.dontAskBeforeMove,
+      onConfirm = {
+        moveToSecureConfirmOpen.value = false
+        moveSelectedFoldersToSecureFolder()
+      },
+      onDismiss = { moveToSecureConfirmOpen.value = false },
+    )
+
+    app.infinity.mpvz.ui.securefolder.SecureFolderProgressDialog(
+      isOpen = moveToSecureProgressOpen.value,
+      progress = secureFolderProgress,
+      label = stringResource(R.string.secure_folder_moving_progress),
+      onCancel = { secureFolderRepository.cancelOperation() },
+    )
+
+    if (renameDialogOpen && selectionManager.isSingleSelection) {
+      val folder = selectionManager.getSelectedItems().firstOrNull()
+      if (folder != null) {
+        RenameDialog(
+          isOpen = true,
+          onDismiss = { renameDialogOpen = false },
+          onConfirm = { newName ->
+            renameDialogOpen = false
+            coroutineScope.launch {
+              val ok = viewModel.renameFolder(folder, newName)
+              if (!ok) {
+                android.widget.Toast
+                  .makeText(
+                    context,
+                    context.getString(app.infinity.mpvz.R.string.ui_rename_failed),
+                    android.widget.Toast.LENGTH_SHORT,
+                  ).show()
+              }
+              selectionManager.clear()
+              viewModel.refresh()
+            }
+          },
+          currentName = folder.name,
+          itemType = "folder",
+        )
+      }
+    }
+
+    FolderSortDialog(
+      isOpen = sortDialogOpen.value,
+      onDismiss = { sortDialogOpen.value = false },
+      sortType = folderSortType,
+      sortOrder = folderSortOrder,
+      onSortTypeChange = { browserPreferences.folderSortType.set(it) },
+      onSortOrderChange = { browserPreferences.folderSortOrder.set(it) },
+      isDualPane = isDualPaneActive && selectedFolderBucketId != null,
+    )
+
+    if (pendingDeleteFolders.isNotEmpty()) {
+      DeleteConfirmationDialog(
+        isOpen = true,
+        onDismiss = { pendingDeleteFolders = emptyList() },
+        onConfirm = {
+          val foldersToDelete = pendingDeleteFolders
+          pendingDeleteFolders = emptyList()
+          coroutineScope.launch {
+            runCatching {
+              val (deleted, failed) = deleteFolders(foldersToDelete)
+              if (deleted > 0) {
+                android.widget.Toast
+                  .makeText(
+                    context,
+                    context.getString(app.infinity.mpvz.R.string.ui_deleted_successfully),
+                    android.widget.Toast.LENGTH_SHORT,
+                  ).show()
+              } else if (failed > 0) {
+                android.widget.Toast
+                  .makeText(
+                    context,
+                    context.getString(app.infinity.mpvz.R.string.ui_failed_to_delete),
+                    android.widget.Toast.LENGTH_SHORT,
+                  ).show()
+              }
+            }.onFailure {
+              android.widget.Toast
+                .makeText(
+                  context,
+                  context.getString(
+                    R.string.toast_failed_to_delete_reason,
+                    it.message ?: context.getString(R.string.generic_unknown_error),
+                  ),
+                  android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            }
+            selectionManager.clear()
+            viewModel.refresh()
+          }
+        },
+        itemType = "folder",
+        itemCount = pendingDeleteFolders.size,
+        itemNames = pendingDeleteFolders.map { it.name },
+      )
+    }
+  }
+}
+
+@Composable
+private fun FolderListContent(
+  folders: List<VideoFolder>,
+  foldersWithNewCount: List<app.infinity.mpvz.ui.browser.folderlist.FolderWithNewCount>,
+  pinnedFolderPaths: Set<String>,
+  recentlyPlayedFilePath: String?,
+  isLoading: Boolean,
+  scanStatus: String?,
+  hasCompletedInitialLoad: Boolean,
+  foldersWereDeleted: Boolean,
+  mediaLayoutMode: MediaLayoutMode,
+  tapThumbnailToSelect: Boolean,
+  navigationBarHeight: androidx.compose.ui.unit.Dp,
+  listState: LazyListState,
+  gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+  isRefreshing: androidx.compose.runtime.MutableState<Boolean>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<VideoFolder, String>,
+  onRefresh: suspend () -> Unit,
+  onFolderClick: (VideoFolder) -> Unit,
+  onFolderLongClick: (VideoFolder) -> Unit,
+  onTogglePin: (VideoFolder) -> Unit,
+  selectedFolderBucketId: String? = null,
+  audioOnly: Boolean = false,
+) {
+  val isGridMode = mediaLayoutMode == MediaLayoutMode.GRID
+  val showLoading = isLoading && !hasCompletedInitialLoad
+  val showEmpty = folders.isEmpty() && hasCompletedInitialLoad && !foldersWereDeleted
+
+  val hasEnoughItems = folders.size > 20
+  val scrollbarAlpha by androidx.compose.animation.core.animateFloatAsState(
+    targetValue = if (hasEnoughItems) 1f else 0f,
+    animationSpec =
+      androidx.compose.animation.core.spring(
+        dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
+        stiffness = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.stiffness,
+      ),
+    label = "scrollbarAlpha",
+  )
+
+  PullRefreshBox(
+    isRefreshing = isRefreshing,
+    onRefresh = onRefresh,
+    listState = listState,
+    modifier = Modifier.fillMaxSize(),
+  ) {
+    if (showLoading || showEmpty) {
+      Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+      ) {
+        if (showLoading) {
+          LoadingState(
+            icon = Icons.RoundedFilled.Folder,
+            title = if (audioOnly) "Scanning for songs" else stringResource(R.string.ui_scanning_for_videos),
+            message = scanStatus ?: if (audioOnly) "Please wait while we search your device" else "Please wait while we search your device",
+          )
+        } else if (showEmpty) {
+          EmptyState(
+            icon = Icons.RoundedFilled.Folder,
+            title = if (audioOnly) "No song folders found" else stringResource(R.string.ui_no_video_folders_found),
+            message = if (audioOnly) "Add some audio files to your device to see them here" else "Add some video files to your device to see them here",
+          )
+        }
+      }
+    } else {
+      if (isGridMode) {
+        GridContent(
+          folders = folders,
+          foldersWithNewCount = foldersWithNewCount,
+          pinnedFolderPaths = pinnedFolderPaths,
+          recentlyPlayedFilePath = recentlyPlayedFilePath,
+          tapThumbnailToSelect = tapThumbnailToSelect,
+          navigationBarHeight = navigationBarHeight,
+          gridState = gridState,
+          scrollbarAlpha = scrollbarAlpha,
+          selectionManager = selectionManager,
+          onFolderClick = onFolderClick,
+          onFolderLongClick = onFolderLongClick,
+          onTogglePin = onTogglePin,
+          selectedFolderBucketId = selectedFolderBucketId,
+          audioOnly = audioOnly,
+        )
+      } else {
+        ListContent(
+          folders = folders,
+          foldersWithNewCount = foldersWithNewCount,
+          pinnedFolderPaths = pinnedFolderPaths,
+          recentlyPlayedFilePath = recentlyPlayedFilePath,
+          tapThumbnailToSelect = tapThumbnailToSelect,
+          navigationBarHeight = navigationBarHeight,
+          listState = listState,
+          scrollbarAlpha = scrollbarAlpha,
+          selectionManager = selectionManager,
+          onFolderClick = onFolderClick,
+          onFolderLongClick = onFolderLongClick,
+          onTogglePin = onTogglePin,
+          selectedFolderBucketId = selectedFolderBucketId,
+          audioOnly = audioOnly,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun GridContent(
+  folders: List<VideoFolder>,
+  foldersWithNewCount: List<app.infinity.mpvz.ui.browser.folderlist.FolderWithNewCount>,
+  pinnedFolderPaths: Set<String>,
+  recentlyPlayedFilePath: String?,
+  tapThumbnailToSelect: Boolean,
+  navigationBarHeight: androidx.compose.ui.unit.Dp,
+  gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+  scrollbarAlpha: Float,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<VideoFolder, String>,
+  onFolderClick: (VideoFolder) -> Unit,
+  onFolderLongClick: (VideoFolder) -> Unit,
+  onTogglePin: (VideoFolder) -> Unit,
+  selectedFolderBucketId: String? = null,
+  audioOnly: Boolean = false,
+) {
+  val newCountByBucketId =
+    remember(foldersWithNewCount) {
+      foldersWithNewCount.associate { it.folder.bucketId to it.newVideoCount }
+    }
+  val recentlyPlayedParent = remember(recentlyPlayedFilePath) { recentlyPlayedFilePath?.let(::File)?.parent }
+
+  BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    val browserPreferences = org.koin.compose.koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
+    val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
+    val folderGridColumnsPortrait by browserPreferences.folderGridColumnsPortrait.collectAsState()
+    val folderGridColumnsLandscape by browserPreferences.folderGridColumnsLandscape.collectAsState()
+
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    val folderGridColumnsPref = if (isLandscape) folderGridColumnsLandscape else folderGridColumnsPortrait
+
+    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val dualPaneForTablet by browserPreferences.dualPaneForTablet.collectAsState()
+    val isDualPaneActive = isTablet && dualPaneForTablet
+    val isDualPane = isDualPaneActive && selectedFolderBucketId != null
+
+    val computedColumns =
+      if (manualGridColumnsEnabled) {
+        folderGridColumnsPref.coerceAtLeast(1)
+      } else {
+        val contentHorizontalPadding = 8.dp
+        val itemSpacing = 2.dp
+        val usableWidth = maxWidth - (contentHorizontalPadding * 2) - itemSpacing
+        val folderMinWidth = 100.dp
+        (usableWidth / folderMinWidth).toInt().coerceAtLeast(1)
+      }
+
+    LazyVerticalGrid(
+      columns = GridCells.Fixed(computedColumns),
+      state = gridState,
+      modifier = Modifier.fillMaxSize(),
+      contentPadding =
+        PaddingValues(
+          start = 8.dp,
+          end = 8.dp,
+          bottom = navigationBarHeight,
+        ),
+      horizontalArrangement = Arrangement.spacedBy(2.dp),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      items(count = folders.size, key = { index -> folders[index].bucketId }) { index ->
+        val folder = folders[index]
+        val isRecentlyPlayed = recentlyPlayedParent == folder.path
+        val newCount = newCountByBucketId[folder.bucketId] ?: 0
+
+        val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
+
+        FolderCard(
+          folder = folder,
+          isSelected = selectionManager.isSelected(folder),
+          isRecentlyPlayed = isRecentlyPlayed,
+          onClick = { onFolderClick(folder) },
+          onLongClick = { onFolderLongClick(folder) },
+          onThumbClick =
+            if (tapThumbnailToSelect) {
+              { selectionManager.toggle(folder) }
+            } else {
+              { onFolderClick(folder) }
+            },
+          newVideoCount = newCount,
+          isGridMode = true,
+          isPinned = folder.path in pinnedFolderPaths,
+          onPinClick =
+            if (!selectionManager.isInSelectionMode) {
+              { onTogglePin(folder) }
+            } else {
+              null
+            },
+          isDualPane = isDualPane,
+          isActive = isActive,
+          isAudioOnly = audioOnly,
+        )
+      }
+    }
+
+    // Scrollbar with bottom padding
+    if (folders.isNotEmpty() && scrollbarAlpha > 0.01f) {
+      ExpressiveScrollBar(
+        gridState = gridState,
+        dragLabelProvider = { index ->
+          fastScrollGlyph(folders.getOrNull(index)?.name)
+        },
+        modifier =
+          Modifier
+            .align(Alignment.CenterEnd)
+            .padding(end = 2.dp, top = 6.dp, bottom = navigationBarHeight + 6.dp)
+            .graphicsLayer { alpha = scrollbarAlpha },
+      )
+    }
+  }
+}
+
+@Composable
+private fun ListContent(
+  folders: List<VideoFolder>,
+  foldersWithNewCount: List<FolderWithNewCount>,
+  pinnedFolderPaths: Set<String>,
+  recentlyPlayedFilePath: String?,
+  tapThumbnailToSelect: Boolean,
+  navigationBarHeight: androidx.compose.ui.unit.Dp,
+  listState: LazyListState,
+  scrollbarAlpha: Float,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<VideoFolder, String>,
+  onFolderClick: (VideoFolder) -> Unit,
+  onFolderLongClick: (VideoFolder) -> Unit,
+  onTogglePin: (VideoFolder) -> Unit,
+  selectedFolderBucketId: String? = null,
+  audioOnly: Boolean = false,
+) {
+  val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+  val isTablet = configuration.smallestScreenWidthDp >= 600
+  val browserPreferences = org.koin.compose.koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
+  val dualPaneForTablet by browserPreferences.dualPaneForTablet.collectAsState()
+  val isDualPaneActive = isTablet && dualPaneForTablet
+  val newCountByBucketId =
+    remember(foldersWithNewCount) {
+      foldersWithNewCount.associate { it.folder.bucketId to it.newVideoCount }
+    }
+  val recentlyPlayedParent = remember(recentlyPlayedFilePath) { recentlyPlayedFilePath?.let(::File)?.parent }
+
+  Box(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+      state = listState,
+      modifier = Modifier.fillMaxSize(),
+      contentPadding =
+        PaddingValues(
+          start = 8.dp,
+          end = 8.dp,
+          bottom = navigationBarHeight,
+        ),
+    ) {
+      items(folders, key = { it.bucketId }) { folder ->
+        val isRecentlyPlayed = recentlyPlayedParent == folder.path
+        val newCount = newCountByBucketId[folder.bucketId] ?: 0
+
+        val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
+
+        FolderCard(
+          folder = folder,
+          isSelected = selectionManager.isSelected(folder),
+          isRecentlyPlayed = isRecentlyPlayed,
+          onClick = { onFolderClick(folder) },
+          onLongClick = { onFolderLongClick(folder) },
+          onThumbClick =
+            if (tapThumbnailToSelect) {
+              { selectionManager.toggle(folder) }
+            } else {
+              { onFolderClick(folder) }
+            },
+          newVideoCount = newCount,
+          isGridMode = false,
+          isPinned = folder.path in pinnedFolderPaths,
+          onPinClick =
+            if (!selectionManager.isInSelectionMode) {
+              { onTogglePin(folder) }
+            } else {
+              null
+            },
+          customChipContent =
+            if (folder.path in pinnedFolderPaths) {
+              {
+                Text(
+                  androidx.compose.ui.res
+                    .stringResource(app.infinity.mpvz.R.string.ui_pinned),
+                  style = MaterialTheme.typography.labelSmall,
+                  modifier =
+                    Modifier
+                      .background(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        RoundedCornerShape(8.dp),
+                      ).padding(horizontal = 8.dp, vertical = 4.dp),
+                  color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+              }
+            } else {
+              null
+            },
+          isDualPane = isDualPaneActive && selectedFolderBucketId != null,
+          isActive = isActive,
+          isAudioOnly = audioOnly,
+        )
+      }
+    }
+
+    // Scrollbar with bottom padding
+    if (folders.isNotEmpty() && scrollbarAlpha > 0.01f) {
+      ExpressiveScrollBar(
+        listState = listState,
+        dragLabelProvider = { index ->
+          fastScrollGlyph(folders.getOrNull(index)?.name)
+        },
+        modifier =
+          Modifier
+            .align(Alignment.CenterEnd)
+            .padding(end = 2.dp, top = 6.dp, bottom = navigationBarHeight + 6.dp)
+            .graphicsLayer { alpha = scrollbarAlpha },
+      )
+    }
+  }
+}
+
+/**
+ * Displays search results based on the user's layout preference (grid or list)
+ */
+@Composable
+private fun SearchResultsContent(
+  searchResults: List<FileSystemItem>,
+  navigationBarHeight: androidx.compose.ui.unit.Dp,
+  onFolderClick: (app.infinity.mpvz.domain.media.model.VideoFolder) -> Unit,
+  onVideoClick: (app.infinity.mpvz.domain.media.model.Video) -> Unit,
+  mediaLayoutMode: app.infinity.mpvz.preferences.MediaLayoutMode,
+) {
+  val folders =
+    searchResults.filterIsInstance<FileSystemItem.Folder>().map { folder ->
+      app.infinity.mpvz.domain.media.model.VideoFolder(
+        bucketId = folder.path, // Use path as bucketId since FileSystemItem.Folder doesn't have bucketId
+        name = folder.name,
+        path = folder.path,
+        videoCount = folder.videoCount,
+        totalSize = folder.totalSize,
+        totalDuration = folder.totalDuration,
+        lastModified = folder.lastModified,
+      )
+    }
+  val videos = searchResults.filterIsInstance<FileSystemItem.VideoFile>().map { it.video }
+  val browserPreferences = koinInject<BrowserPreferences>()
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
+  val showSizeChip by browserPreferences.showSizeChip.collectAsState()
+  val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
+  val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
+  val showProgressBar by browserPreferences.showProgressBar.collectAsState()
+  val showDateChip by browserPreferences.showDateChip.collectAsState()
+  val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
+  val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
+  val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
+  val unplayedOldVideoDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
+  val showExtensionField by browserPreferences.showExtensionField.collectAsState()
+  val showDurationField by browserPreferences.showDurationField.collectAsState()
+  val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val videoCardUiConfig =
+    remember(
+      unlimitedNameLines,
+      showVideoThumbnails,
+      showSizeChip,
+      showResolutionChip,
+      showFramerateInResolution,
+      showProgressBar,
+      showDateChip,
+      showUnplayedOldVideoLabel,
+      unplayedOldVideoDays,
+      showExtensionField,
+      showDurationField,
+      centerGridTitles,
+    ) {
+      VideoCardUiConfig(
+        unlimitedNameLines = unlimitedNameLines,
+        showThumbnails = showVideoThumbnails,
+        showSizeChip = showSizeChip,
+        showResolutionChip = showResolutionChip,
+        showFramerateInResolution = showFramerateInResolution,
+        showProgressBar = showProgressBar,
+        showDateChip = showDateChip,
+        showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
+        unplayedOldVideoDays = unplayedOldVideoDays,
+        showExtensionField = showExtensionField,
+        showDurationField = showDurationField,
+        centerGridTitles = centerGridTitles,
+      )
+    }
+
+  val isGridMode = mediaLayoutMode == app.infinity.mpvz.preferences.MediaLayoutMode.GRID
+
+  Box(modifier = Modifier.fillMaxSize()) {
+    if (isGridMode) {
+      BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val spansInfo =
+          calculateResponsiveGridSpans(
+            maxWidth = maxWidth,
+            isGridMode = true,
+          )
+        LazyVerticalGrid(
+          columns = GridCells.Fixed(spansInfo.spans),
+          modifier = Modifier.fillMaxSize(),
+          contentPadding =
+            PaddingValues(
+              start = 8.dp,
+              end = 8.dp,
+              top = 8.dp,
+              bottom = navigationBarHeight + 8.dp,
+            ),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          items(
+            count = folders.size,
+            key = { index -> folders[index].bucketId },
+            contentType = { "folder_item" },
+            span = { GridItemSpan(spansInfo.folderSpan) },
+          ) { index ->
+            val folder = folders[index]
+            FolderCard(
+              folder = folder,
+              isSelected = false,
+              isRecentlyPlayed = false,
+              onClick = { onFolderClick(folder) },
+              onLongClick = {},
+              onThumbClick = { onFolderClick(folder) },
+              newVideoCount = 0,
+              isGridMode = true,
+            )
+          }
+
+          items(
+            count = videos.size,
+            key = { index -> videos[index].id },
+            contentType = { "video_item" },
+            span = { GridItemSpan(spansInfo.videoSpan) },
+          ) { index ->
+            val video = videos[index]
+            VideoCard(
+              video = video,
+              isSelected = false,
+              onClick = { onVideoClick(video) },
+              onLongClick = {},
+              onThumbClick = { onVideoClick(video) },
+              isGridMode = true,
+              showSubtitleIndicator = showSubtitleIndicator,
+              uiConfig = videoCardUiConfig,
+            )
+          }
+        }
+      }
+    } else {
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding =
+          PaddingValues(
+            start = 8.dp,
+            end = 8.dp,
+            top = 8.dp,
+            bottom = navigationBarHeight + 8.dp,
+          ),
+      ) {
+        items(
+          count = folders.size,
+          key = { index -> folders[index].bucketId },
+          contentType = { "folder_item" },
+        ) { index ->
+          val folder = folders[index]
+          FolderCard(
+            folder = folder,
+            isSelected = false,
+            isRecentlyPlayed = false,
+            onClick = { onFolderClick(folder) },
+            onLongClick = {},
+            onThumbClick = { onFolderClick(folder) },
+            newVideoCount = 0,
+            isGridMode = false,
+          )
+        }
+
+        items(
+          count = videos.size,
+          key = { index -> videos[index].id },
+          contentType = { "video_item" },
+        ) { index ->
+          val video = videos[index]
+          VideoCard(
+            video = video,
+            isSelected = false,
+            onClick = { onVideoClick(video) },
+            onLongClick = {},
+            onThumbClick = { onVideoClick(video) },
+            isGridMode = false,
+            showSubtitleIndicator = showSubtitleIndicator,
+            uiConfig = videoCardUiConfig,
+          )
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Searches for folders and videos matching the query
+ * Returns FileSystemItem results containing matching folders and videos
+ */
+
+object SearchManager {
+  val engine = MediaSearchEngine
+}
+
+private suspend fun buildSearchIndex(context: Context) {
+  val folders =
+    app.infinity.mpvz.repository.MediaFileRepository
+      .getAllVideoFoldersFast(context)
+  val videosByFolder =
+    folders.associate { folder ->
+      folder.bucketId to
+        app.infinity.mpvz.repository.MediaFileRepository
+          .getVideosInFolder(context, folder.bucketId)
+    }
+  SearchManager.engine.buildIndex(folders, videosByFolder)
+}
+
+private suspend fun searchFoldersAndVideos(
+  context: Context,
+  query: String,
+): List<FileSystemItem> {
+  val results = mutableListOf<FileSystemItem>()
+  try {
+    Log.d("FolderListScreen", "Searching for: $query")
+
+    // Get all search matches from the optimized engine
+    val matches = SearchManager.engine.search(query, limit = 50)
+
+    for (item in matches) {
+      when (item) {
+        // Kotlin smart-casts 'item' to your domain model VideoFolder
+        is VideoFolder -> {
+          results.add(
+            FileSystemItem.Folder(
+              name = item.name,
+              path = item.path,
+              lastModified = item.lastModified,
+              videoCount = item.videoCount,
+              totalSize = item.totalSize,
+              totalDuration = item.totalDuration,
+            ),
+          )
+        }
+        // Kotlin smart-casts 'item' to your domain model Video
+        is Video -> {
+          results.add(
+            FileSystemItem.VideoFile(
+              name = item.displayName,
+              path = item.path,
+              lastModified = item.dateModified,
+              video = item,
+            ),
+          )
+        }
+      }
+    }
+
+    Log.d("FolderListScreen", "Found ${results.size} results for: $query")
+  } catch (e: Exception) {
+    Log.e("FolderListScreen", "Error searching folders and videos", e)
+  }
+  return results
+}

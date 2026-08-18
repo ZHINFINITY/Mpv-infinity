@@ -1,0 +1,231 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.infinity.mpvz.ui.browser.sheets
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
+import app.infinity.mpvz.domain.torrent.isTorrentSource
+import app.infinity.mpvz.domain.torrent.normalizeTorrentSource
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.utils.media.MediaUtils
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PlayLinkSheet(
+  isOpen: Boolean,
+  onDismiss: () -> Unit,
+  onPlayLink: (String) -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  if (!isOpen) return
+
+  var linkInputUrl by remember { mutableStateOf("") }
+  var isLinkInputUrlValid by remember { mutableStateOf(true) }
+  val coroutineScope = rememberCoroutineScope()
+  val streamEntryRepository = koinInject<NetworkStreamEntryRepository>()
+
+  LaunchedEffect(isOpen) {
+    if (isOpen) {
+      linkInputUrl = ""
+      isLinkInputUrlValid = true
+    }
+  }
+
+  val handleDismiss = {
+    onDismiss()
+  }
+
+  val handleConfirm = {
+    val url = linkInputUrl.trim()
+    if (url.isNotBlank() && MediaUtils.isURLValid(url)) {
+      val playableSource = normalizeTorrentSource(url) ?: url
+      coroutineScope.launch {
+        val name = MediaInfoParser.parseStreamTitle(playableSource)
+        if (!isTorrentSource(playableSource)) {
+          try {
+            RecentlyPlayedOps.addRecentlyPlayed(
+              filePath = playableSource,
+              fileName = name,
+              launchSource = "play_link",
+            )
+            streamEntryRepository.saveNormalEntry(
+              canonicalSourceUri = playableSource,
+              fileName = name,
+            )
+          } catch (cancellation: CancellationException) {
+            throw cancellation
+          } catch (_: Exception) {
+            // Playback must still open even if optional history persistence fails.
+          }
+        }
+        onPlayLink(playableSource)
+        onDismiss()
+      }
+    }
+  }
+
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+  ModalBottomSheet(
+    onDismissRequest = handleDismiss,
+    sheetState = sheetState,
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+    modifier = modifier,
+  ) {
+    Column(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)
+          .verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      // Title
+      Text(
+        text =
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.ui_play_link),
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
+
+      // URL Input
+      Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        OutlinedTextField(
+          value = linkInputUrl,
+          onValueChange = { newValue ->
+            linkInputUrl = newValue
+            isLinkInputUrlValid = newValue.isBlank() || MediaUtils.isURLValid(newValue)
+          },
+          modifier = Modifier.fillMaxWidth(),
+          label = {
+            Text(
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.ui_enter_url),
+            )
+          },
+          placeholder = { Text("https://example.com/video.mp4") },
+          singleLine = true,
+          isError = linkInputUrl.isNotBlank() && !isLinkInputUrlValid,
+          trailingIcon = {
+            if (linkInputUrl.isNotBlank()) {
+              ValidationIcon(isValid = isLinkInputUrlValid)
+            }
+          },
+        )
+
+        if (linkInputUrl.isNotBlank() && !isLinkInputUrlValid) {
+          Text(
+            text =
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.ui_unsupported_url_protocol),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+          )
+        }
+      }
+
+      // Buttons
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+      ) {
+        TextButton(onClick = handleDismiss) {
+          Text(
+            text =
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+            fontWeight = FontWeight.Medium,
+          )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Button(
+          onClick = handleConfirm,
+          enabled = linkInputUrl.isNotBlank() && isLinkInputUrlValid,
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.primary,
+            ),
+        ) {
+          Text(
+            text =
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.ui_play),
+            fontWeight = FontWeight.SemiBold,
+          )
+        }
+      }
+
+      Spacer(modifier = Modifier.height(8.dp))
+    }
+  }
+}
+
+@Composable
+private fun ValidationIcon(isValid: Boolean) {
+  if (isValid) {
+    Icon(
+      Icons.RoundedFilled.Check,
+      contentDescription =
+        androidx.compose.ui.res
+          .stringResource(app.infinity.mpvz.R.string.ui_valid_url),
+      tint = MaterialTheme.colorScheme.primary,
+    )
+  } else {
+    Icon(
+      Icons.RoundedFilled.Close,
+      contentDescription =
+        androidx.compose.ui.res
+          .stringResource(app.infinity.mpvz.R.string.ui_invalid_url),
+      tint = MaterialTheme.colorScheme.error,
+    )
+  }
+}

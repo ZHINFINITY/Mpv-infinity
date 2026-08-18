@@ -1,0 +1,498 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.infinity.mpvz.ui.player.controls.components.sheets
+
+import app.infinity.mpvz.ui.player.PlaybackSession
+
+import android.content.res.Configuration
+import android.text.format.DateUtils
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.VideoFormatStatus
+import app.infinity.mpvz.ui.player.VideoFormatStatusRow
+import app.infinity.mpvz.ui.player.anime4k.Anime4KUiState
+import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.theme.spacing
+import org.koin.compose.koinInject
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@Composable
+fun MoreSheet(
+  remainingTime: Int,
+  onStartTimer: (Int) -> Unit,
+  onDismissRequest: () -> Unit,
+  onEnterFiltersPanel: () -> Unit,
+  onEnterLuaScriptsPanel: () -> Unit,
+  onEnterEqualizerSheet: (() -> Unit)? = null,
+  anime4KUiState: Anime4KUiState,
+  onAnime4KModeSelected: (Anime4KManager.Mode) -> Unit,
+  videoFormatStatus: VideoFormatStatus? = null,
+  isMedia3Active: Boolean = false,
+  modifier: Modifier = Modifier,
+) {
+  val advancedPreferences = koinInject<AdvancedPreferences>()
+  val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
+  val showVideoFormatStatus by advancedPreferences.showVideoFormatStatus.collectAsState()
+  val enableLuaScripts by advancedPreferences.enableLuaScripts.collectAsState()
+  val selectedLuaScripts by advancedPreferences.selectedLuaScripts.collectAsState()
+  val mpvConfStorageLocation by advancedPreferences.mpvConfStorageUri.collectAsState()
+  val showActionLabels = LocalConfiguration.current.orientation != Configuration.ORIENTATION_PORTRAIT
+
+  PlayerSheet(
+    onDismissRequest,
+    modifier,
+  ) {
+    Column(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(MaterialTheme.spacing.medium)
+          .verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = stringResource(id = R.string.player_sheets_more_title),
+          style = MaterialTheme.typography.headlineMedium,
+        )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          var isSleepTimerDialogShown by remember { mutableStateOf(false) }
+          TextButton(onClick = { isSleepTimerDialogShown = true }) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+            ) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Timer,
+                contentDescription = stringResource(R.string.timer_title),
+              )
+              if (showActionLabels) {
+                Text(
+                  text =
+                    if (remainingTime == 0) {
+                      stringResource(R.string.timer_title)
+                    } else {
+                      stringResource(
+                        R.string.timer_remaining,
+                        DateUtils.formatElapsedTime(remainingTime.toLong()),
+                      )
+                    },
+                )
+              }
+              if (isSleepTimerDialogShown) {
+                TimePickerDialog(
+                  remainingTime = remainingTime,
+                  onDismissRequest = { isSleepTimerDialogShown = false },
+                  onTimeSelect = onStartTimer,
+                )
+              }
+            }
+          }
+          if (onEnterEqualizerSheet != null) {
+            TextButton(onClick = onEnterEqualizerSheet) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Equalizer,
+                  contentDescription = stringResource(id = R.string.btn_label_equalizer),
+                )
+                if (showActionLabels) {
+                  Text(text = stringResource(id = R.string.btn_label_equalizer))
+                }
+              }
+            }
+          }
+          TextButton(onClick = onEnterFiltersPanel) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+            ) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Tune,
+                contentDescription = stringResource(id = R.string.player_sheets_filters_title),
+              )
+              if (showActionLabels) {
+                Text(text = stringResource(id = R.string.player_sheets_filters_title))
+              }
+            }
+          }
+          TextButton(
+            onClick = onEnterLuaScriptsPanel,
+            enabled = mpvConfStorageLocation.isNotBlank(),
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+            ) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Code,
+                contentDescription = "Scripts",
+                tint =
+                  if (enableLuaScripts && selectedLuaScripts.isNotEmpty()) {
+                    MaterialTheme.colorScheme.primary
+                  } else {
+                    LocalContentColor.current
+                  },
+              )
+              if (showActionLabels) {
+                Text(
+                  text =
+                    if (selectedLuaScripts.isEmpty()) {
+                      "Scripts"
+                    } else {
+                      "Scripts (${selectedLuaScripts.size})"
+                    },
+                  color =
+                    if (enableLuaScripts && selectedLuaScripts.isNotEmpty()) {
+                      MaterialTheme.colorScheme.primary
+                    } else {
+                      LocalContentColor.current
+                    },
+                )
+              }
+            }
+          }
+        }
+      }
+      Text(
+        text = stringResource(R.string.player_sheets_stats_page_title),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+      )
+      LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
+      ) {
+        items(8, key = { it }) { page ->
+          FilterChip(
+            label = {
+              Text(
+                if (page == 7) {
+                  "Console"
+                } else {
+                  stringResource(
+                    if (page == 0) {
+                      R.string.player_sheets_tracks_off
+                    } else {
+                      R.string.player_sheets_stats_page_chip
+                    },
+                    page,
+                  )
+                },
+              )
+            },
+            onClick = {
+              if (isMedia3Active) {
+                // Media3 has no MPV stats script or console. PlayerControls renders the selected
+                // page from Media3PlaybackController.State instead.
+                advancedPreferences.enabledStatisticsPage.set(page)
+              } else {
+                val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
+
+                if (page != 7 && isConsoleOpen) {
+                  PlaybackSession.command("script-message-to", "console", "disable")
+                }
+
+                when (page) {
+                  0, 6 -> {
+                    if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  }
+                  7 -> {
+                    if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                    if (!isConsoleOpen) {
+                      PlaybackSession.command("script-message-to", "console", "enable")
+                    }
+                  }
+                  else -> {
+                    if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {
+                      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                    }
+                    PlaybackSession.command("script-binding", "stats/display-page-$page")
+                  }
+                }
+                advancedPreferences.enabledStatisticsPage.set(page)
+              }
+            },
+            selected = statisticsPage == page,
+            leadingIcon = null,
+          )
+        }
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.player_sheets_video_format_title),
+            style = MaterialTheme.typography.titleSmall,
+          )
+          Text(
+            text = stringResource(R.string.player_sheets_video_format_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+          )
+        }
+        Switch(
+          checked = showVideoFormatStatus,
+          onCheckedChange = { advancedPreferences.showVideoFormatStatus.set(it) },
+        )
+      }
+      if (showVideoFormatStatus) {
+        VideoFormatStatusRow(
+          status = videoFormatStatus,
+          modifier = Modifier.padding(top = 2.dp),
+        )
+      }
+
+      // Standard Anime4K needs legacy gpu or gpu-next with Vulkan.
+      if (anime4KUiState.isAvailable) {
+        Text(
+          text = stringResource(R.string.anime4k_mode_title),
+          style = MaterialTheme.typography.titleMedium,
+          color = MaterialTheme.colorScheme.primary,
+        )
+
+        if (anime4KUiState.isHighResolution && !anime4KUiState.enableIn4k) {
+          Text(
+            text =
+              androidx.compose.ui.res.stringResource(
+                app.infinity.mpvz.R.string.ui_not_available_for_4k_8k_video,
+              ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(bottom = 4.dp),
+          )
+        }
+
+        LazyRow(
+          horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
+        ) {
+          items(Anime4KManager.Mode.entries, key = { it.name }) { mode ->
+            FilterChip(
+              label = { Text(stringResource(mode.titleRes)) },
+              selected = anime4KUiState.selectedMode == mode.name,
+              enabled = anime4KUiState.allowHighRes || mode == Anime4KManager.Mode.OFF,
+              leadingIcon = null,
+              onClick = { onAnime4KModeSelected(mode) },
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+private val sleepTimerPresets = listOf(15, 30, 45, 60)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun TimePickerDialog(
+  onDismissRequest: () -> Unit,
+  onTimeSelect: (Int) -> Unit,
+  modifier: Modifier = Modifier,
+  remainingTime: Int = 0,
+) {
+  Dialog(
+    onDismissRequest = onDismissRequest,
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Surface(
+      shape = AppShapeScale.extraLarge,
+      color = MaterialTheme.colorScheme.surfaceContainerHigh,
+      tonalElevation = 6.dp,
+      modifier =
+        modifier
+          .width(360.dp)
+          .padding(MaterialTheme.spacing.medium),
+    ) {
+      Column(
+        modifier =
+          Modifier
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+      ) {
+        // Header
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Text(
+            text = stringResource(R.string.timer_title), // "Sleep Timer"
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Spacer(Modifier.height(8.dp))
+          Text(
+            text = stringResource(R.string.timer_picker_enter_timer),
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+        }
+
+        val state =
+          rememberTimePickerState(
+            remainingTime / 3600,
+            (remainingTime % 3600) / 60,
+            is24Hour = true,
+          )
+
+        TimeInput(state = state)
+
+        // Quick Presets
+        Column(
+          horizontalAlignment = Alignment.Start,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Text(
+            androidx.compose.ui.res
+              .stringResource(app.infinity.mpvz.R.string.ui_quick_presets),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 8.dp),
+          )
+          FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            sleepTimerPresets.forEach { minutes ->
+              FilterChip(
+                selected = false,
+                onClick = {
+                  onTimeSelect(minutes * 60)
+                  onDismissRequest()
+                },
+                label = { Text(stringResource(R.string.generic_minutes_short, minutes)) },
+                leadingIcon = null,
+              )
+            }
+          }
+        }
+
+        // Actions
+        Row(
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          TextButton(onClick = {
+            onTimeSelect(0)
+            onDismissRequest()
+          }) {
+            Text(stringResource(id = R.string.generic_reset))
+          }
+          Spacer(Modifier.weight(1f))
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            TextButton(onClick = onDismissRequest) {
+              Text(stringResource(id = R.string.generic_cancel))
+            }
+            Button(
+              onClick = {
+                onTimeSelect(state.hour * 3600 + state.minute * 60)
+                onDismissRequest()
+              },
+            ) {
+              Text(stringResource(id = R.string.generic_ok))
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun SectionHeaderWithInfo(
+  title: String,
+  onInfoClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Row(
+    modifier = modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.Start,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(
+      text = title,
+      style = MaterialTheme.typography.titleMedium,
+      color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(modifier = Modifier.width(8.dp))
+    IconButton(onClick = onInfoClick, modifier = Modifier.size(24.dp)) {
+      Icon(
+        imageVector = Icons.RoundedFilled.Info,
+        contentDescription =
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.info),
+        tint = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.size(16.dp),
+      )
+    }
+  }
+}

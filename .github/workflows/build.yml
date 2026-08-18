@@ -197,47 +197,7 @@ jobs:
           name: app-standard-arm64-v8a-debug-${{ env.SHORT_SHA }}
           path: app/build/outputs/apk/standard/debug/app-standard-arm64-v8a-debug*.apk
           if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload armeabi-v7a APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-standard-armeabi-v7a-debug-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/standard/debug/app-standard-armeabi-v7a-debug*.apk
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload universal APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-standard-universal-debug-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/standard/debug/app-standard-universal-debug*.apk
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload x86 APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-standard-x86-debug-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/standard/debug/app-standard-x86-debug*.apk
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload x86_64 APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-standard-x86_64-debug-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/standard/debug/app-standard-x86_64-debug*.apk
-          if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
           compression-level: 0
 
       - name: Upload Fongmi universal APK
@@ -247,7 +207,7 @@ jobs:
           name: app-fongmi-debug-${{ env.SHORT_SHA }}
           path: app/build/outputs/apk/fongmi/debug/app-fongmi-universal-debug*.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
           compression-level: 0
 
       - name: Upload non-Vulkan universal APK
@@ -257,5 +217,5 @@ jobs:
           name: app-no-vulkan-debug-${{ env.SHORT_SHA }}
           path: app/build/outputs/apk/noVulkan/debug/app-noVulkan-universal-debug*.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
           compression-level: 0

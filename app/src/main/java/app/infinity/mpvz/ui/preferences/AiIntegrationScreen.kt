@@ -1,0 +1,1477 @@
+﻿/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.infinity.mpvz.ui.preferences
+
+import android.widget.Toast
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AiPreferences
+import app.infinity.mpvz.preferences.AiProvider
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.repository.ai.AiModelInfo
+import app.infinity.mpvz.repository.ai.AiService
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.PreferenceCard
+import app.infinity.mpvz.ui.preferences.PreferenceDivider
+import app.infinity.mpvz.ui.preferences.PreferenceSectionHeader
+import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.popSafely
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import me.zhanghai.compose.preference.ListPreference
+import me.zhanghai.compose.preference.ProvidePreferenceLocals
+import me.zhanghai.compose.preference.TextFieldPreference
+import org.koin.compose.koinInject
+
+private val allLanguages =
+  mapOf(
+    "en" to "English",
+    "es" to "Spanish",
+    "fr" to "French",
+    "de" to "German",
+    "it" to "Italian",
+    "pt" to "Portuguese",
+    "ru" to "Russian",
+    "zh" to "Chinese",
+    "ja" to "Japanese",
+    "ko" to "Korean",
+    "ar" to "Arabic",
+    "hi" to "Hindi",
+    "bn" to "Bengali",
+    "vi" to "Vietnamese",
+    "te" to "Telugu",
+    "ta" to "Tamil",
+    "ur" to "Urdu",
+    "tr" to "Turkish",
+    "pl" to "Polish",
+    "uk" to "Ukrainian",
+    "nl" to "Dutch",
+    "el" to "Greek",
+    "hu" to "Hungarian",
+    "sv" to "Swedish",
+    "cs" to "Czech",
+    "ro" to "Romanian",
+    "da" to "Danish",
+    "fi" to "Finnish",
+    "no" to "Norwegian",
+    "he" to "Hebrew",
+    "id" to "Indonesian",
+    "th" to "Thai",
+    "ms" to "Malay",
+    "fa" to "Persian",
+    "sk" to "Slovak",
+    "bg" to "Bulgarian",
+    "hr" to "Croatian",
+    "sr" to "Serbian",
+    "sl" to "Slovenian",
+    "et" to "Estonian",
+    "lv" to "Latvian",
+    "lt" to "Lithuanian",
+    "af" to "Afrikaans",
+    "sw" to "Swahili",
+  )
+
+@Serializable
+object AiIntegrationScreen : Screen {
+  @OptIn(ExperimentalMaterial3Api::class)
+  @Composable
+  override fun Content() {
+    val context = LocalContext.current
+    val backstack = LocalBackStack.current
+    val preferences = koinInject<AiPreferences>()
+    val aiService = koinInject<AiService>()
+    val scope = rememberCoroutineScope()
+
+    val enabled by preferences.enabled.collectAsState()
+    val provider by preferences.provider.collectAsState()
+    val openCodeKey by preferences.openCodeApiKey.collectAsState()
+    val groqKey by preferences.groqApiKey.collectAsState()
+    val openaiKey by preferences.openaiApiKey.collectAsState()
+    val anthropicKey by preferences.anthropicApiKey.collectAsState()
+    val openrouterKey by preferences.openrouterApiKey.collectAsState()
+    val togetherKey by preferences.togetherApiKey.collectAsState()
+    val selectedModel by preferences.selectedModelFor(provider).collectAsState()
+    val customPromptEnabled by preferences.customPromptEnabled.collectAsState()
+    val customPrompt by preferences.customPrompt.collectAsState()
+    val customRenamePrompt by preferences.customRenamePrompt.collectAsState()
+    val customSubtitleTranslationPrompt by preferences.customSubtitleTranslationPrompt.collectAsState()
+    val customSubtitleFormatPrompt by preferences.customSubtitleFormatPrompt.collectAsState()
+    val renameWithAi by preferences.renameWithAi.collectAsState()
+    val subtitleFormatWithAi by preferences.subtitleFormatWithAi.collectAsState()
+    val subtitleTranslationEnabled by preferences.subtitleTranslationEnabled.collectAsState()
+    val subtitleTranslationFirstTime by preferences.subtitleTranslationFirstTime.collectAsState()
+    val subtitleGenerationOutputFormat by preferences.subtitleGenerationOutputFormat.collectAsState()
+    val autoTranslateLanguages by preferences.autoTranslateLanguages.collectAsState()
+    val realtimeSubsEnabled by preferences.realtimeSubsEnabled.collectAsState()
+
+    var models by remember { mutableStateOf<List<AiModelInfo>>(emptyList()) }
+    var isLoadingModels by remember { mutableStateOf(false) }
+    var isVerifying by remember { mutableStateOf(false) }
+    var verifyResult by remember { mutableStateOf<String?>(null) }
+    var isVerifyingModel by remember { mutableStateOf(false) }
+    var verifyModelResult by remember { mutableStateOf<String?>(null) }
+    var showApiKey by remember { mutableStateOf(false) }
+    var modelLoadError by remember { mutableStateOf<String?>(null) }
+    var showSubtitleTranslationWarning by remember { mutableStateOf(false) }
+
+    val json = koinInject<Json>()
+
+    fun loadModels() {
+      val requestedProvider = provider
+      scope.launch {
+        isLoadingModels = true
+        modelLoadError = null
+        aiService
+          .fetchModelsForProvider(requestedProvider)
+          .onSuccess { fetchedModels ->
+            if (provider == requestedProvider) models = fetchedModels
+            preferences.availableModelsFor(requestedProvider).set(
+              json.encodeToString(
+                kotlinx.serialization.builtins.ListSerializer(AiModelInfo.serializer()),
+                fetchedModels,
+              ),
+            )
+          }.onFailure { e ->
+            modelLoadError = e.message
+          }
+        isLoadingModels = false
+      }
+    }
+
+    LaunchedEffect(provider) {
+      models = emptyList()
+      val stored = preferences.availableModelsFor(provider).get()
+      if (stored.isNotBlank() && stored != "[]") {
+        try {
+          models =
+            json.decodeFromString(
+              kotlinx.serialization.builtins.ListSerializer(AiModelInfo.serializer()),
+              stored,
+            )
+        } catch (_: Exception) {
+        }
+      }
+      if (models.isEmpty()) {
+        loadModels()
+      }
+    }
+
+    Scaffold(
+      topBar = {
+        TopAppBar(
+          title = {
+            Text(
+              text =
+                androidx.compose.ui.res
+                  .stringResource(app.infinity.mpvz.R.string.pref_section_ai_title),
+              style = MaterialTheme.typography.headlineSmall,
+              fontWeight = FontWeight.ExtraBold,
+              color = MaterialTheme.colorScheme.primary,
+            )
+          },
+          navigationIcon = {
+            if (LocalShowSettingsBackArrow.current) {
+              IconButton(onClick = { backstack.popSafely() }) {
+                Icon(
+                  Icons.RoundedFilled.ArrowBack,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.secondary,
+                )
+              }
+            }
+          },
+        )
+      },
+    ) { padding ->
+      ProvidePreferenceLocals {
+        val (settingsListState, settingsHighlight) =
+          rememberSettingsSearchList(AiIntegrationScreen, MaterialTheme.colorScheme.primary)
+        LazyColumn(
+          state = settingsListState,
+          modifier =
+            Modifier
+              .fillMaxSize()
+              .padding(padding)
+              .then(settingsHighlight),
+        ) {
+          item {
+            PreferenceSectionHeader(
+              title = stringResource(R.string.pref_ai_features_section),
+              modifier = Modifier.settingsSearchTarget(R.string.pref_section_ai_title),
+            )
+          }
+
+          item {
+            PreferenceCard {
+              SwitchPreference(
+                value = enabled,
+                onValueChange = { preferences.enabled.set(it) },
+                title = {
+                  Text(
+                    androidx.compose.ui.res
+                      .stringResource(app.infinity.mpvz.R.string.pref_ai_enabled_title),
+                  )
+                },
+                summary = {
+                  Text(
+                    if (enabled) "AI features are active" else "AI features are disabled",
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+            }
+          }
+
+          if (enabled) {
+            item { PreferenceSectionHeader(title = stringResource(R.string.pref_ai_provider_section)) }
+
+            item {
+              PreferenceCard {
+                val providers = AiProvider.values().toList()
+                ListPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_ai_provider_title),
+                  value = provider,
+                  onValueChange = {
+                    preferences.provider.set(it)
+                  },
+                  values = providers,
+                  valueToText = {
+                    androidx.compose.ui.text
+                      .AnnotatedString(it.displayName)
+                  },
+                  title = {
+                    Text(
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.pref_ai_provider_title),
+                    )
+                  },
+                  summary = {
+                    Text(provider.displayName, color = MaterialTheme.colorScheme.outline)
+                  },
+                )
+              }
+            }
+
+val apiKeyInfo =
+                  @Suppress("REDUNDANT_ELSE_IN_WHEN")
+                  when (provider) {
+                  AiProvider.OPENCODE ->
+                    ApiKeyInfo(
+                      "OpenCode API Key",
+                      "Get your key from opencode.ai/auth",
+                      "sk-...",
+                      openCodeKey,
+                      preferences.openCodeApiKey::set,
+                    )
+                  AiProvider.GROQ ->
+                    ApiKeyInfo(
+                      "Groq API Key",
+                      "Get your key from console.groq.com",
+                      "gsk_...",
+                      groqKey,
+                      preferences.groqApiKey::set,
+                    )
+                  AiProvider.OPENAI ->
+                    ApiKeyInfo(
+                      "OpenAI API Key",
+                      "Get your key from platform.openai.com/api-keys",
+                      "sk-...",
+                      openaiKey,
+                      preferences.openaiApiKey::set,
+                    )
+                  AiProvider.ANTHROPIC ->
+                    ApiKeyInfo(
+                      "Anthropic API Key",
+                      "Get your key from console.anthropic.com",
+                      "sk-ant-...",
+                      anthropicKey,
+                      preferences.anthropicApiKey::set,
+                    )
+                  AiProvider.OPENROUTER ->
+                    ApiKeyInfo(
+                      "OpenRouter API Key",
+                      "Get your key from openrouter.ai/keys",
+                      "sk-or-...",
+                      openrouterKey,
+                      preferences.openrouterApiKey::set,
+                    )
+                  AiProvider.TOGETHER ->
+                    ApiKeyInfo(
+                      "Together API Key",
+                      "Get your key from api.together.xyz/settings/api-keys",
+                      "...",
+                      togetherKey,
+                      preferences.togetherApiKey::set,
+                    )
+                  else -> null
+                }
+
+              if (apiKeyInfo != null) {
+                item {
+                  PreferenceSectionHeader(
+                    title = stringResource(R.string.pref_api_config_section),
+                    modifier = Modifier.settingsSearchTarget(R.string.search_api_key_config_title),
+                  )
+                }
+
+                item {
+                  PreferenceCard {
+                    TextFieldPreference(
+                      value = apiKeyInfo.apiKey,
+                      onValueChange = apiKeyInfo.onChange,
+                      textToValue = { it.trim() },
+                      title = { Text(apiKeyInfo.title) },
+                      summary = {
+                        if (apiKeyInfo.apiKey.isBlank()) {
+                          Text(apiKeyInfo.hint, color = MaterialTheme.colorScheme.error)
+                        } else {
+                          Text(
+                            androidx.compose.ui.res
+                              .stringResource(app.infinity.mpvz.R.string.pref_api_key_saved),
+                            color = MaterialTheme.colorScheme.outline,
+                          )
+                        }
+                      },
+                      textField = { value, onValueChange, _ ->
+                        Column {
+                          Text(stringResource(R.string.pref_paste_api_key, apiKeyInfo.title))
+                          TextField(
+                            value = value,
+                            onValueChange = onValueChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(apiKeyInfo.placeholder) },
+                            singleLine = true,
+                            visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                          )
+                        }
+                      },
+                    )
+
+                    PreferenceDivider()
+
+                    Row(
+                      modifier =
+                        Modifier
+                          .fillMaxWidth()
+                          .padding(horizontal = 16.dp, vertical = 8.dp),
+                      horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                      Button(
+                        onClick = { showApiKey = !showApiKey },
+                        modifier = Modifier.weight(1f),
+                        colors =
+                          ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                          ),
+                        shape = MaterialTheme.shapes.extraLarge,
+                      ) {
+                        Text(
+                          if (showApiKey) {
+                            stringResource(
+                              R.string.pref_hide_key,
+                            )
+                          } else {
+                            stringResource(R.string.pref_show_key)
+                          },
+                        )
+                      }
+
+                      Button(
+                        onClick = {
+                          scope.launch {
+                            isVerifying = true
+                            verifyResult = null
+                            aiService
+                              .verifyKey()
+                              .onSuccess {
+                                verifyResult = it
+                                preferences.lastVerified.set(System.currentTimeMillis())
+                              }.onFailure { e ->
+                                verifyResult = "Verification failed: ${e.message}"
+                              }
+                            isVerifying = false
+                          }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = !isVerifying && apiKeyInfo.apiKey.isNotBlank(),
+                        colors =
+                          ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                          ),
+                        shape = MaterialTheme.shapes.extraLarge,
+                      ) {
+                        if (isVerifying) {
+                          CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                          )
+                        } else {
+                          Text(
+                            androidx.compose.ui.res
+                              .stringResource(app.infinity.mpvz.R.string.pref_verify_key),
+                          )
+                        }
+                      }
+                    }
+
+                    if (verifyResult != null) {
+                      Row(
+                        modifier =
+                          Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                      ) {
+                        val isSuccess = verifyResult!!.contains("successfully") || verifyResult!!.contains("ready")
+                        Icon(
+                          imageVector = if (isSuccess) Icons.RoundedFilled.Check else Icons.RoundedFilled.Warning,
+                          contentDescription = null,
+                          tint = if (isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                          modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(
+                          text = verifyResult!!,
+                          style = MaterialTheme.typography.bodySmall,
+                          color = if (isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        )
+                      }
+                    }
+                  }
+                }
+
+                item {
+                  PreferenceSectionHeader(
+                    title = stringResource(R.string.pref_model_section),
+                    modifier = Modifier.settingsSearchTarget(R.string.search_ai_model_selection_title),
+                  )
+                }
+
+                item {
+                  PreferenceCard {
+                    Row(
+                      modifier =
+                        Modifier
+                          .fillMaxWidth()
+                          .padding(horizontal = 16.dp, vertical = 8.dp),
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                      Text(
+                        text =
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.pref_available_models_header,
+                          ),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                      )
+                      Button(
+                        onClick = { loadModels() },
+                        enabled = !isLoadingModels && apiKeyInfo.apiKey.isNotBlank(),
+                        colors =
+                          ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                          ),
+                        shape = MaterialTheme.shapes.extraLarge,
+                      ) {
+                        if (isLoadingModels) {
+                          CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                          )
+                        } else {
+                          Icon(
+                            imageVector = Icons.RoundedFilled.Refresh,
+                            contentDescription =
+                              androidx.compose.ui.res.stringResource(
+                                app.infinity.mpvz.R.string.ui_refresh,
+                              ),
+                            modifier = Modifier.size(18.dp),
+                          )
+                        }
+                        Spacer(modifier = Modifier.size(4.dp))
+                        Text(
+                          androidx.compose.ui.res
+                            .stringResource(app.infinity.mpvz.R.string.pref_fetch_models),
+                        )
+                      }
+                    }
+
+                    if (modelLoadError != null) {
+                      Text(
+                        text = modelLoadError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                      )
+                    }
+
+                    if (models.isNotEmpty()) {
+                      var showModelDialog by remember { mutableStateOf(false) }
+
+                      val modelDisplayNames = models.associate { it.id to it.displayName }
+
+                      Surface(
+                        onClick = { showModelDialog = true },
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        modifier =
+                          Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                      ) {
+                        Row(
+                          verticalAlignment = Alignment.CenterVertically,
+                          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        ) {
+                          Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                              text =
+                                androidx.compose.ui.res.stringResource(
+                                  app.infinity.mpvz.R.string.pref_model_section,
+                                ),
+                              style = MaterialTheme.typography.labelLarge,
+                              fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                              text =
+                                if (selectedModel.isNotBlank()) {
+                                  modelDisplayNames[selectedModel] ?: selectedModel
+                                } else {
+                                  "Tap to select a model"
+                                },
+                              style = MaterialTheme.typography.bodySmall,
+                              color = MaterialTheme.colorScheme.outline,
+                            )
+                          }
+                          if (selectedModel.isNotBlank()) {
+                            val isFree = models.firstOrNull { it.id == selectedModel }?.isFree == true
+                            if (isFree) {
+                              FreeTag()
+                              Spacer(modifier = Modifier.width(8.dp))
+                            }
+                          }
+                          Icon(
+                            Icons.RoundedFilled.ArrowDropDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                          )
+                        }
+                      }
+
+                      if (showModelDialog) {
+                        ModelSearchDialog(
+                          models = models,
+                          selectedModelId = selectedModel,
+                          onSelect = { preferences.selectedModelFor(provider).set(it) },
+                          onDismiss = { showModelDialog = false },
+                        )
+                      }
+                    } else {
+                      Text(
+                        text = "Tap 'Fetch Models' to load available models from ${provider.displayName}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                      )
+                    }
+
+                    PreferenceDivider()
+
+                    Column(
+                      modifier =
+                        Modifier
+                          .fillMaxWidth()
+                          .padding(horizontal = 16.dp, vertical = 8.dp),
+                      verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                      Text(
+                        text =
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.pref_verify_model_header,
+                          ),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                      )
+
+                      Button(
+                        onClick = {
+                          scope.launch {
+                            isVerifyingModel = true
+                            verifyModelResult = null
+                            aiService
+                              .verifyModel()
+                              .onSuccess { verifyModelResult = it }
+                              .onFailure { e ->
+                                verifyModelResult = "Error: ${e.message}"
+                              }
+                            isVerifyingModel = false
+                          }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isVerifyingModel && selectedModel.isNotBlank(),
+                        colors =
+                          ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiary,
+                          ),
+                        shape = MaterialTheme.shapes.extraLarge,
+                      ) {
+                        if (isVerifyingModel) {
+                          CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onTertiary,
+                          )
+                          Spacer(Modifier.width(8.dp))
+                        }
+                        Text(
+                          androidx.compose.ui.res
+                            .stringResource(app.infinity.mpvz.R.string.pref_check_model_access),
+                        )
+                      }
+
+                      if (verifyModelResult != null) {
+                        val lines = verifyModelResult!!.split("\n")
+                        Surface(
+                          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                          shape = MaterialTheme.shapes.medium,
+                          modifier = Modifier.fillMaxWidth(),
+                        ) {
+                          Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                          ) {
+                            lines.forEach { line ->
+                              val isPositive =
+                                line.startsWith("Available") ||
+                                  line.startsWith("Free") ||
+                                  line.startsWith("API access working")
+                              val isWarning =
+                                line.startsWith("Quota") ||
+                                  line.startsWith("Paid") ||
+                                  line.startsWith("âš ")
+                              Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                              ) {
+                                Icon(
+                                  imageVector =
+                                    when {
+                                      isPositive -> Icons.RoundedFilled.Check
+                                      isWarning -> Icons.RoundedFilled.Warning
+                                      else -> Icons.RoundedFilled.Close
+                                    },
+                                  contentDescription = null,
+                                  modifier = Modifier.size(16.dp),
+                                  tint =
+                                    when {
+                                      isPositive -> MaterialTheme.colorScheme.primary
+                                      isWarning -> MaterialTheme.colorScheme.error
+                                      else -> MaterialTheme.colorScheme.error
+                                    },
+                                )
+                                Text(
+                                  text = line,
+                                  style = MaterialTheme.typography.bodySmall,
+                                )
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
+            item { PreferenceSectionHeader(title = stringResource(R.string.pref_ai_features_subsection)) }
+
+            item {
+              PreferenceCard {
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_ai_rename_title),
+                  value = renameWithAi,
+                  onValueChange = { preferences.renameWithAi.set(it) },
+                  title = {
+                    Text(
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.pref_ai_rename_title),
+                    )
+                  },
+                  summary = {
+                    Text(
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.pref_ai_rename_summary),
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
+
+                PreferenceDivider()
+
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_ai_search_title),
+                  value = subtitleFormatWithAi,
+                  onValueChange = { preferences.subtitleFormatWithAi.set(it) },
+                  title = {
+                    Text(
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.pref_ai_search_title),
+                    )
+                  },
+                  summary = {
+                    Text(
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.pref_ai_search_summary),
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
+              }
+            }
+
+            item {
+              PreferenceSectionHeader(
+                title = stringResource(R.string.pref_stt_section),
+                modifier = Modifier.settingsSearchTarget(R.string.search_stt_title),
+              )
+            }
+
+              item {
+                PreferenceCard {
+                  val sttProviders = listOf(AiProvider.GROQ, AiProvider.OPENAI, AiProvider.OPENROUTER)
+                  val sttProvider by preferences.sttProvider.collectAsState()
+                  val sttModel by preferences.sttModel.collectAsState()
+
+                  SwitchPreference(
+                    value = realtimeSubsEnabled,
+                    onValueChange = { preferences.realtimeSubsEnabled.set(it) },
+                    title = {
+                      Text(
+                        androidx.compose.ui.res
+                          .stringResource(app.infinity.mpvz.R.string.pref_stt_title),
+                      )
+                    },
+                    summary = {
+                      Text(
+                        androidx.compose.ui.res
+                          .stringResource(app.infinity.mpvz.R.string.pref_stt_summary),
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
+
+                  PreferenceDivider()
+
+                  ListPreference(
+                    value = subtitleGenerationOutputFormat,
+                    onValueChange = { preferences.subtitleGenerationOutputFormat.set(it) },
+                    values = listOf("srt", "vtt"),
+                    valueToText = {
+                      androidx.compose.ui.text
+                        .AnnotatedString(it.uppercase())
+                    },
+                    title = {
+                      Text(
+                        androidx.compose.ui.res
+                          .stringResource(app.infinity.mpvz.R.string.pref_stt_output_format_title),
+                      )
+                    },
+                    summary = {
+                      Text(
+                        subtitleGenerationOutputFormat.uppercase(),
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
+
+                  PreferenceDivider()
+
+                  ListPreference(
+                    value = sttProvider,
+                    onValueChange = {
+                      preferences.sttProvider.set(it)
+                      preferences.sttModel.set("")
+                    },
+                    values = sttProviders,
+                    valueToText = {
+                      androidx.compose.ui.text
+                        .AnnotatedString(it.displayName)
+                    },
+                    title = {
+                      Text(
+                        androidx.compose.ui.res
+                          .stringResource(app.infinity.mpvz.R.string.pref_stt_provider_title),
+                      )
+                    },
+                    summary = {
+                      Text(
+                        androidx.compose.ui.res
+                          .stringResource(app.infinity.mpvz.R.string.pref_stt_provider_summary),
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
+
+                  PreferenceDivider()
+
+                  SttModelSelector(
+                    sttProvider = sttProvider,
+                    sttModel = sttModel,
+                    onSelectModel = { preferences.sttModel.set(it) },
+                  )
+
+                  PreferenceDivider()
+
+                  val sttLanguage by preferences.sttLanguage.collectAsState()
+                  ListPreference(
+                    modifier = Modifier.settingsSearchTarget(R.string.pref_translation_section),
+                    value = sttLanguage,
+                    onValueChange = { preferences.sttLanguage.set(it) },
+                    values =
+                      listOf(
+                        "",
+                        "en",
+                        "es",
+                        "fr",
+                        "de",
+                        "hi",
+                        "ja",
+                        "zh",
+                        "ko",
+                        "pt",
+                        "ru",
+                        "ar",
+                        "it",
+                        "nl",
+                        "pl",
+                        "tr",
+                        "vi",
+                        "th",
+                      ),
+                    valueToText = { lang ->
+                      androidx.compose.ui.text.AnnotatedString(
+                        when (lang) {
+                          "" -> "Auto-detect"
+                          "en" -> "English"
+                          "es" -> "Spanish"
+                          "fr" -> "French"
+                          "de" -> "German"
+                          "hi" -> "Hindi"
+                          "ja" -> "Japanese"
+                          "zh" -> "Chinese"
+                          "ko" -> "Korean"
+                          "pt" -> "Portuguese"
+                          "ru" -> "Russian"
+                          "ar" -> "Arabic"
+                          "it" -> "Italian"
+                          "nl" -> "Dutch"
+                          "pl" -> "Polish"
+                          "tr" -> "Turkish"
+                          "vi" -> "Vietnamese"
+                          "th" -> "Thai"
+                          else -> lang
+                        },
+                      )
+                    },
+                    title = {
+                      Text(
+                        androidx.compose.ui.res
+                          .stringResource(app.infinity.mpvz.R.string.pref_audio_language_title),
+                      )
+                    },
+                    summary = {
+                      Text(
+                        if (sttLanguage.isBlank()) "Auto-detect speech language" else sttLanguage.uppercase(),
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
+                }
+              }
+
+              item { PreferenceSectionHeader(title = stringResource(R.string.pref_translation_section)) }
+
+              item {
+                PreferenceCard {
+                  SwitchPreference(
+                    value = subtitleTranslationEnabled,
+                    onValueChange = { enabled ->
+                      preferences.subtitleTranslationEnabled.set(enabled)
+                      if (enabled && subtitleTranslationFirstTime) {
+                        showSubtitleTranslationWarning = true
+                      }
+                    },
+                    title = {
+                      Text(
+                        androidx.compose.ui.res
+                          .stringResource(app.infinity.mpvz.R.string.pref_enable_translation_title),
+                      )
+                    },
+                    summary = {
+                      Text(
+                        androidx.compose.ui.res.stringResource(
+                          app.infinity.mpvz.R.string.pref_enable_translation_summary,
+                        ),
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
+
+                  PreferenceDivider()
+
+                  AutoTranslateLanguageConfig(
+                    languages = autoTranslateLanguages,
+                    onLanguagesChange = { preferences.autoTranslateLanguages.set(it) },
+                  )
+                }
+              }
+
+            item {
+              PreferenceSectionHeader(
+                title = stringResource(R.string.pref_custom_prompt_section),
+                modifier = Modifier.settingsSearchTarget(R.string.search_custom_ai_prompts_title),
+              )
+            }
+
+            item {
+              PreferenceCard {
+                SwitchPreference(
+                  value = customPromptEnabled,
+                  onValueChange = { preferences.customPromptEnabled.set(it) },
+                  title = {
+                    Text(
+                      androidx.compose.ui.res
+                        .stringResource(app.infinity.mpvz.R.string.pref_override_instructions_title),
+                    )
+                  },
+                  summary = {
+                    Text(
+                      if (customPromptEnabled) {
+                        "Custom prompt will be used instead of built-in instructions"
+                      } else {
+                        "Built-in AI instructions will be used"
+                      },
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
+
+                if (customPromptEnabled) {
+                  PreferenceDivider()
+
+                  Column(
+                    modifier =
+                      Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                  ) {
+                    Text(
+                      text =
+                        androidx.compose.ui.res.stringResource(
+                          app.infinity.mpvz.R.string.pref_custom_prompts_header,
+                        ),
+                      style = MaterialTheme.typography.labelLarge,
+                      fontWeight = FontWeight.Bold,
+                    )
+
+                    Text(
+                      text =
+                        androidx.compose.ui.res.stringResource(
+                          app.infinity.mpvz.R.string.pref_custom_prompts_description,
+                        ),
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+
+                    TextField(
+                      value = customRenamePrompt,
+                      onValueChange = { preferences.customRenamePrompt.set(it) },
+                      modifier =
+                        Modifier
+                          .fillMaxWidth()
+                          .height(140.dp),
+                      label = {
+                        Text(
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.pref_custom_rename_prompt_label,
+                          ),
+                        )
+                      },
+                      placeholder = {
+                        Text(
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.ui_instructions_for_ai_file_renaming,
+                          ),
+                        )
+                      },
+                      maxLines = 6,
+                    )
+
+                    TextField(
+                      value = customSubtitleTranslationPrompt,
+                      onValueChange = { preferences.customSubtitleTranslationPrompt.set(it) },
+                      modifier =
+                        Modifier
+                          .fillMaxWidth()
+                          .height(140.dp),
+                      label = {
+                        Text(
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.pref_custom_translation_prompt_label,
+                          ),
+                        )
+                      },
+                      placeholder = {
+                        Text(
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.ui_instructions_for_ai_subtitle_translation,
+                          ),
+                        )
+                      },
+                      maxLines = 6,
+                    )
+
+                    TextField(
+                      value = customSubtitleFormatPrompt,
+                      onValueChange = { preferences.customSubtitleFormatPrompt.set(it) },
+                      modifier =
+                        Modifier
+                          .fillMaxWidth()
+                          .height(140.dp),
+                      label = {
+                        Text(
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.pref_custom_format_prompt_label,
+                          ),
+                        )
+                      },
+                      placeholder = {
+                        Text(
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.ui_instructions_for_formatting_subtitle_search_queries,
+                          ),
+                        )
+                      },
+                      maxLines = 6,
+                    )
+
+                    if (customPrompt.isNotBlank()) {
+                      Text(
+                        text =
+                          androidx.compose.ui.res.stringResource(
+                            app.infinity.mpvz.R.string.pref_legacy_prompt_info,
+                          ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (showSubtitleTranslationWarning) {
+        AlertDialog(
+          onDismissRequest = {
+            showSubtitleTranslationWarning = false
+            preferences.subtitleTranslationFirstTime.set(false)
+          },
+          title = {
+            Text(
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.pref_translation_section),
+            )
+          },
+          text = {
+            Text(
+              androidx.compose.ui.res.stringResource(
+                app.infinity.mpvz.R.string.ui_subtitle_translation_can_be_a_bit_messy,
+              ) +
+                "For best results, use better models and don't rant that subs aren't working properly.",
+            )
+          },
+          confirmButton = {
+            TextButton(onClick = {
+              showSubtitleTranslationWarning = false
+              preferences.subtitleTranslationFirstTime.set(false)
+            }) {
+              Text(
+                androidx.compose.ui.res
+                  .stringResource(app.infinity.mpvz.R.string.got_it),
+              )
+            }
+          },
+        )
+      }
+    }
+  }
+
+  private data class ApiKeyInfo(
+    val title: String,
+    val hint: String,
+    val placeholder: String,
+    val apiKey: String,
+    val onChange: (String) -> Unit,
+  )
+
+  @Composable
+  private fun SttModelSelector(
+    sttProvider: AiProvider,
+    sttModel: String,
+    onSelectModel: (String) -> Unit,
+  ) {
+    val aiService = koinInject<AiService>()
+    val context = LocalContext.current
+    var showDialog by remember { mutableStateOf(false) }
+    var sttModels by remember { mutableStateOf<List<AiModelInfo>>(emptyList()) }
+    var isLoadingStt by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    val modelKey = "${sttProvider.name}_stt"
+    val cachedModels = remember(modelKey) { mutableStateOf<List<AiModelInfo>?>(null) }
+
+    Surface(
+      onClick = {
+        val cached = cachedModels.value
+        if (cached != null) {
+          sttModels = cached
+          showDialog = true
+        } else {
+          isLoadingStt = true
+          scope.launch {
+            aiService
+              .fetchSpeechModelsForProvider(sttProvider)
+              .onSuccess { sttOnly ->
+                cachedModels.value = sttOnly
+                sttModels = sttOnly
+                showDialog = true
+              }.onFailure { e ->
+                Toast
+                  .makeText(
+                    context,
+                    context.getString(
+                      R.string.toast_failed_to_load_models,
+                      e.message ?: context.getString(R.string.generic_unknown_error),
+                    ),
+                    Toast.LENGTH_SHORT,
+                  ).show()
+              }
+            isLoadingStt = false
+          }
+        }
+      },
+      shape = MaterialTheme.shapes.medium,
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text =
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.ui_real_time_model),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+          )
+          Text(
+            text =
+              if (sttModel.isNotBlank()) {
+                sttModel
+              } else if (isLoadingStt) {
+                "Loading..."
+              } else {
+                "Tap to select STT model"
+              },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+          )
+        }
+        if (isLoadingStt) {
+          CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+          Icon(Icons.RoundedFilled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+        }
+      }
+    }
+
+    if (showDialog) {
+      ModelSearchDialog(
+        models = sttModels,
+        selectedModelId = sttModel,
+        onSelect = onSelectModel,
+        onDismiss = { showDialog = false },
+      )
+    }
+  }
+
+  @Composable
+  private fun AutoTranslateLanguageConfig(
+    languages: String,
+    onLanguagesChange: (String) -> Unit,
+  ) {
+    val selectedCodes = remember(languages) { languages.split(",").filter { it.isNotBlank() }.toMutableSet() }
+    var adding by remember { mutableStateOf(false) }
+    var addingSearch by remember { mutableStateOf("") }
+
+    Column(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Text(
+        text =
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.ui_auto_translate_target_languages),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+      )
+      Text(
+        text =
+          androidx.compose.ui.res.stringResource(
+            app.infinity.mpvz.R.string.ui_when_translating_subtitles_if_1_language_is_configured_it_transl,
+          ),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline,
+      )
+
+      if (selectedCodes.isEmpty()) {
+        Text(
+          text =
+            androidx.compose.ui.res
+              .stringResource(app.infinity.mpvz.R.string.ui_no_target_languages_configured),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+        )
+      } else {
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+          modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+          selectedCodes.forEach { code ->
+            val langName = allLanguages[code] ?: code.uppercase()
+            Surface(
+              shape = RoundedCornerShape(20.dp),
+              color = MaterialTheme.colorScheme.primary,
+            ) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+              ) {
+                Text(
+                  text = langName,
+                  style = MaterialTheme.typography.labelSmall,
+                  maxLines = 1,
+                  color = MaterialTheme.colorScheme.onPrimary,
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                  onClick = {
+                    selectedCodes.remove(code)
+                    onLanguagesChange(selectedCodes.joinToString(","))
+                  },
+                  modifier = Modifier.size(20.dp),
+                ) {
+                  Icon(
+                    Icons.RoundedFilled.Close,
+                    contentDescription = "Remove $langName",
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.height(4.dp))
+
+      if (adding) {
+        TextField(
+          value = addingSearch,
+          onValueChange = { addingSearch = it },
+          modifier = Modifier.fillMaxWidth(),
+          placeholder = {
+            Text(
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.ui_search_languages),
+            )
+          },
+          singleLine = true,
+          shape = RoundedCornerShape(12.dp),
+        )
+
+        val filtered =
+          allLanguages
+            .filter { (_, name) ->
+              addingSearch.isBlank() || name.contains(addingSearch, ignoreCase = true)
+            }.toList()
+            .sortedBy { it.second }
+
+        Column(
+          modifier =
+            Modifier
+              .heightIn(max = 200.dp)
+              .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+          filtered.forEach { (code, name) ->
+            Surface(
+              onClick = {
+                selectedCodes.add(code)
+                onLanguagesChange(selectedCodes.joinToString(","))
+                addingSearch = ""
+              },
+              shape = RoundedCornerShape(8.dp),
+              color =
+                if (selectedCodes.contains(
+                    code,
+                  )
+                ) {
+                  MaterialTheme.colorScheme.primary
+                } else {
+                  MaterialTheme.colorScheme.surface
+                },
+            ) {
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              ) {
+                val isSelected = selectedCodes.contains(code)
+                Checkbox(
+                  checked = isSelected,
+                  onCheckedChange = {
+                    if (isSelected) {
+                      selectedCodes.remove(code)
+                    } else {
+                      selectedCodes.add(code)
+                    }
+                    onLanguagesChange(selectedCodes.joinToString(","))
+                  },
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                  text = name,
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                  text = code.uppercase(),
+                  style = MaterialTheme.typography.labelSmall,
+                  color =
+                    if (isSelected) {
+                      MaterialTheme.colorScheme.onPrimary.copy(
+                        alpha = 0.8f,
+                      )
+                    } else {
+                      MaterialTheme.colorScheme.outline
+                    },
+                )
+              }
+            }
+          }
+        }
+      }
+
+      Button(
+        onClick = { adding = !adding },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors =
+          ButtonDefaults.buttonColors(
+            containerColor = if (adding) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = if (adding) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+          ),
+      ) {
+        Icon(
+          imageVector = if (adding) Icons.RoundedFilled.Check else Icons.RoundedFilled.Add,
+          contentDescription = null,
+          modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(if (adding) stringResource(R.string.ui_done) else stringResource(R.string.pref_add_language))
+      }
+    }
+  }
+}

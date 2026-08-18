@@ -1,0 +1,415 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ */
+
+package app.infinity.mpvz.ui.browser.dialogs
+
+import android.widget.Toast
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@Composable
+fun AddToPlaylistDialog(
+  isOpen: Boolean,
+  videos: List<Video>,
+  onDismiss: () -> Unit,
+  onSuccess: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val viewModel: AddToPlaylistViewModel = viewModel()
+  val playlistOptions by viewModel.playlistOptions.collectAsState()
+  val scope = rememberCoroutineScope()
+  var showCreateDialog by remember { mutableStateOf(false) }
+  val context = LocalContext.current
+  val isAudio = remember(videos) { videos.any { it.isAudio } }
+
+  androidx.compose.runtime.LaunchedEffect(isOpen, isAudio) {
+    if (isOpen) {
+      viewModel.loadPlaylists(isAudio = isAudio)
+    }
+  }
+
+  if (!isOpen) return
+
+  if (showCreateDialog) {
+    CreatePlaylistDialog(
+      onDismiss = { showCreateDialog = false },
+      onConfirm = { name ->
+        scope.launch {
+          viewModel.createAndAdd(name, videos)
+          val message =
+            if (isAudio) {
+              if (videos.size == 1) {
+                "Song added to \"$name\""
+              } else {
+                "${videos.size} songs added to \"$name\""
+              }
+            } else {
+              if (videos.size == 1) {
+                "Video added to \"$name\""
+              } else {
+                "${videos.size} videos added to \"$name\""
+              }
+            }
+          Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+          showCreateDialog = false
+          onSuccess()
+          onDismiss()
+        }
+      },
+    )
+    return
+  }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Text(
+        text =
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.ui_add_to_playlist),
+        style = MaterialTheme.typography.headlineMedium,
+        fontWeight = FontWeight.Bold,
+      )
+    },
+    text = {
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+      ) {
+        // Show video / song count
+        Text(
+          text =
+            if (isAudio) {
+              if (videos.size == 1) "Adding 1 song to playlist" else "Adding ${videos.size} songs to playlist"
+            } else {
+              if (videos.size == 1) "Adding 1 video to playlist" else "Adding ${videos.size} videos to playlist"
+            },
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        // Create new playlist button
+        OutlinedButton(
+          onClick = { showCreateDialog = true },
+          modifier = Modifier.fillMaxWidth(),
+          shape = MaterialTheme.shapes.extraLarge,
+        ) {
+          Icon(
+            imageVector = Icons.RoundedFilled.Add,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+          )
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(
+            text =
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.ui_create_new_playlist),
+            fontWeight = FontWeight.Medium,
+          )
+        }
+
+        // Existing playlists
+        if (playlistOptions.isNotEmpty()) {
+          Text(
+            text =
+              androidx.compose.ui.res
+                .stringResource(app.infinity.mpvz.R.string.ui_existing_playlists),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+          )
+
+          LazyColumn(
+            modifier = Modifier.height(300.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(vertical = 4.dp),
+          ) {
+            items(playlistOptions, key = { it.playlist.id }) { option ->
+              PlaylistItemCard(
+                playlist = option.playlist,
+                itemCount = option.itemCount,
+                onClick = {
+                  scope.launch {
+                    viewModel.addToPlaylist(option.playlist.id, videos)
+                    val message =
+                      if (isAudio) {
+                        if (videos.size == 1) {
+                          "Song added to \"${option.playlist.name}\""
+                        } else {
+                          "${videos.size} songs added to \"${option.playlist.name}\""
+                        }
+                      } else {
+                        if (videos.size == 1) {
+                          "Video added to \"${option.playlist.name}\""
+                        } else {
+                          "${videos.size} videos added to \"${option.playlist.name}\""
+                        }
+                      }
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                  }
+                },
+              )
+            }
+          }
+        } else {
+          // Empty state
+          EmptyPlaylistsMessage()
+        }
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = {
+          onSuccess()
+          onDismiss()
+        },
+        colors =
+          ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+          ),
+        shape = MaterialTheme.shapes.extraLarge,
+      ) {
+        Text(
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.ui_done),
+          fontWeight = FontWeight.Bold,
+        )
+      }
+    },
+    dismissButton = {
+      TextButton(
+        onClick = onDismiss,
+        shape = MaterialTheme.shapes.extraLarge,
+      ) {
+        Text(
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+          fontWeight = FontWeight.Medium,
+        )
+      }
+    },
+    containerColor = MaterialTheme.colorScheme.surface,
+    tonalElevation = 6.dp,
+    shape = MaterialTheme.shapes.extraLarge,
+    modifier = modifier,
+  )
+}
+
+@Composable
+private fun PlaylistItemCard(
+  playlist: PlaylistEntity,
+  itemCount: Int,
+  onClick: () -> Unit,
+) {
+  Card(
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .clickable(onClick = onClick),
+    shape = AppShapeScale.medium,
+    colors =
+      CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+      ),
+  ) {
+    Row(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(16.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Icon(
+        imageVector = Icons.RoundedFilled.PlaylistPlay,
+        contentDescription = null,
+        modifier = Modifier.size(40.dp),
+        tint = MaterialTheme.colorScheme.primary,
+      )
+      Spacer(modifier = Modifier.width(12.dp))
+      Column(
+        modifier = Modifier.weight(1f),
+      ) {
+        Text(
+          text = playlist.name,
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+          text = "$itemCount videos • ${formatDate(playlist.updatedAt)}",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun EmptyPlaylistsMessage() {
+  Card(
+    modifier = Modifier.fillMaxWidth(),
+    shape = AppShapeScale.medium,
+    colors =
+      CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+      ),
+  ) {
+    Column(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(24.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Icon(
+        imageVector = Icons.RoundedFilled.PlaylistAdd,
+        contentDescription = null,
+        modifier = Modifier.size(48.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Text(
+        text =
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.ui_no_playlists_yet),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Text(
+        text =
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.ui_create_your_first_playlist_above),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
+  }
+}
+
+@Composable
+private fun CreatePlaylistDialog(
+  onDismiss: () -> Unit,
+  onConfirm: (String) -> Unit,
+) {
+  var playlistName by remember { mutableStateOf("") }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Text(
+        text =
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.ui_create_new_playlist),
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+      )
+    },
+    text = {
+      OutlinedTextField(
+        value = playlistName,
+        onValueChange = { playlistName = it },
+        label = {
+          Text(
+            androidx.compose.ui.res
+              .stringResource(app.infinity.mpvz.R.string.ui_playlist_name),
+          )
+        },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+      )
+    },
+    confirmButton = {
+      Button(
+        onClick = {
+          if (playlistName.isNotBlank()) {
+            onConfirm(playlistName.trim())
+          }
+        },
+        enabled = playlistName.isNotBlank(),
+        shape = MaterialTheme.shapes.extraLarge,
+      ) {
+        Text(
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.ui_create),
+          fontWeight = FontWeight.Bold,
+        )
+      }
+    },
+    dismissButton = {
+      TextButton(
+        onClick = onDismiss,
+        shape = MaterialTheme.shapes.extraLarge,
+      ) {
+        Text(
+          androidx.compose.ui.res
+            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+          fontWeight = FontWeight.Medium,
+        )
+      }
+    },
+    containerColor = MaterialTheme.colorScheme.surface,
+    tonalElevation = 6.dp,
+    shape = MaterialTheme.shapes.extraLarge,
+  )
+}
+
+private fun formatDate(timestamp: Long): String {
+  val sdf = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+  return sdf.format(Date(timestamp))
+}
