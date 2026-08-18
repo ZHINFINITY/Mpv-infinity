@@ -39,6 +39,7 @@ class Media3PlaybackController(
   private val onStateChanged: (State) -> Unit = {},
   private val onError: (PlaybackException) -> Unit = {},
   private val onVideoFrameRendered: () -> Unit = {},
+  private val onEnded: () -> Unit = {},
 ) : Player.Listener, AnalyticsListener {
   data class State(
     val playbackState: Int = Player.STATE_IDLE,
@@ -315,6 +316,12 @@ class Media3PlaybackController(
     player.setPlaybackSpeed(clampedSpeed)
   }
 
+  fun setRepeatMode(mode: Int) {
+    if (mode !in setOf(Player.REPEAT_MODE_OFF, Player.REPEAT_MODE_ONE, Player.REPEAT_MODE_ALL)) return
+    player.repeatMode = mode
+    logInfo("repeat mode=$mode")
+  }
+
   fun selectAudioTrack(trackId: Int): Boolean {
     val selection = media3AudioTrackGroups[trackId] ?: return false
     val (group, trackIndex) = selection
@@ -373,13 +380,17 @@ class Media3PlaybackController(
   }
 
   override fun onPlaybackStateChanged(playbackState: Int) {
-    if (playbackState != lastPlaybackState) {
+    val stateChanged = playbackState != lastPlaybackState
+    if (stateChanged) {
       logInfo(
         "playback state=${playbackStateName(playbackState)} " +
           "isPlaying=${player.isPlaying} positionMs=${player.currentPosition} " +
           "bufferedPositionMs=${player.bufferedPosition}",
       )
       lastPlaybackState = playbackState
+      if (playbackState == Player.STATE_ENDED) {
+        onEnded()
+      }
     }
     publishState()
   }
