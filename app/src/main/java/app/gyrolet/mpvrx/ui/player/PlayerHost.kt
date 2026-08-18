@@ -52,7 +52,7 @@ interface PlayerHost {
 
   fun media3SeekBy(offsetMs: Long): Boolean = false
 
-  fun media3SeekTo(positionMs: Long): Boolean = false
+  fun media3SeekTo(positionMs: Long, fast: Boolean = false): Boolean = false
 
   fun media3SetPlaybackSpeed(speed: Float): Boolean = false
 

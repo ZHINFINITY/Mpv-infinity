@@ -1211,7 +1211,7 @@ fun GestureHandler(
               } else if (media3Active) {
                 // Media3 owns the player exclusively; never route the final gesture through the
                 // legacy MPV preview transaction, which can restore a stale zero position.
-                pendingSeekPosition?.let { viewModel.seekTo(it, fast = false) }
+                pendingSeekPosition?.let { viewModel.seekTo(it, fast = true) }
                 legacySeekPreviewActive = false
               } else {
                 pendingSeekPosition?.let { viewModel.commitLegacySeekPreview(it, mediaDuration) }

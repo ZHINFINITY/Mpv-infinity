@@ -6092,9 +6092,9 @@ class PlayerActivity :
     return true
   }
 
-  override fun media3SeekTo(positionMs: Long): Boolean {
+  override fun media3SeekTo(positionMs: Long, fast: Boolean): Boolean {
     if (!isMedia3Active()) return false
-    media3PlaybackController.seekTo(positionMs)
+    media3PlaybackController.seekTo(positionMs, fast = fast)
     return true
   }
 

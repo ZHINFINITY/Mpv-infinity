@@ -4342,7 +4342,10 @@ class PlayerViewModel : ViewModel(),
   ) {
     if (host.isMedia3Active()) {
       viewModelScope.launch(Dispatchers.Main.immediate) {
-        host.media3SeekTo((position.coerceAtLeast(0.0) * 1000.0).toLong())
+        host.media3SeekTo(
+          (position.coerceAtLeast(0.0) * 1000.0).toLong(),
+          fast = fast,
+        )
       }
       return
     }
