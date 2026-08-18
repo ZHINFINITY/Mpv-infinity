@@ -5254,7 +5254,7 @@ class PlayerActivity :
           }
           withContext(Dispatchers.Main) {
             if (requestGeneration == mediaRequestGeneration) {
-              fileName = item.title.orEmpty().ifBlank { getFileNameFromUri(item.originalUri) }
+              fileName = item.title.orEmpty().ifBlank { getFileNameFromUri(Uri.parse(item.originalUri)) }
               legacyMediaIdentifier = null
               mediaIdentifier = item.stableId
               currentPlayableUri = item.playableUri
