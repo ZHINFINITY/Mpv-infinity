@@ -442,6 +442,10 @@ class PlayerActivity :
   private var media3VideoFrameRendered = false
   private var media3AutoFallbackItemId: String? = null
   private var activePlaybackItem: PlaybackItem? = null
+  // A rotation button tap is authoritative for the current item. Video-aspect callbacks must not
+  // immediately replace a user's manual Vertical/Landscape choice.
+  private var manualOrientationOverride: Int? = null
+  private var manualOrientationOverrideItemId: String? = null
   private var manualEngineOverrideItemId: String? = null
   private var manualEngineOverride: PlaybackEngine? = null
   private var media3VideoWatchdogJob: Job? = null
@@ -1162,33 +1166,14 @@ class PlayerActivity :
       }
     }
 
-    fun waitForLayout(attempt: Int = 0) {
-      if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId != item.stableId) return
-      if (playerView.width > 0 && playerView.height > 0) {
+    // ExoPlayer can prepare before PlayerView receives its final non-zero size. Waiting for up to
+    // 60 layout frames added a visible startup delay on large Matroska files; PlayerView attaches
+    // its surface when the next layout pass completes, while demuxing/decoding can begin now.
+    playerView.post {
+      if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) {
         startPlayback()
-        return
-      }
-      if (attempt == 0 || attempt % 10 == 0) {
-        AppDebugLog.info(
-          TAG,
-          "Media3: waiting for non-zero PlayerView layout attempt=$attempt " +
-            "layout=${playerView.width}x${playerView.height} visibility=${playerView.visibility} " +
-            "attachedToWindow=${playerView.isAttachedToWindow}",
-        )
-      }
-      if (attempt < 60) {
-        playerView.postDelayed({ waitForLayout(attempt + 1) }, 16L)
-      } else {
-        AppDebugLog.error(
-          TAG,
-          "Media3: PlayerView never received a non-zero layout; falling back to MPV " +
-            "layout=${playerView.width}x${playerView.height}",
-        )
-        switchToMpvEngine()
       }
     }
-
-    waitForLayout()
   }
 
   private fun setupAudioPlayerViewObserver() {
@@ -1688,7 +1673,9 @@ class PlayerActivity :
     // applies the exact aspect once Media3 reports dimensions.
     if (
       isDolbyVisionItem(item) &&
-        playerPreferences.orientation.get() == PlayerOrientation.Video
+        playerPreferences.orientation.get() == PlayerOrientation.Video &&
+        !(manualOrientationOverride != null &&
+          (manualOrientationOverrideItemId == null || manualOrientationOverrideItemId == item.stableId))
     ) {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
       AppDebugLog.info(TAG, "Media3: provisional landscape requested for Dolby Vision item=${item.stableId}")
@@ -1739,9 +1726,18 @@ class PlayerActivity :
 
   private fun selectEngineFromDecoderSheet(selectedEngine: PlaybackEngineMode) {
     if (selectedEngine == PlaybackEngineMode.Auto) return
-    val resolvedItem = currentPlaybackItem()
+    // The decoder sheet is rendered above the active player surface. During Media3 ownership MPV's
+    // queue can briefly be empty, so prefer the item that owns the visible Media3 session and then
+    // fall back to the normal PlaybackSession lookup.
+    val resolvedItem =
+      activePlaybackItem?.takeIf { media3ItemId == null || it.stableId == media3ItemId }
+        ?: currentPlaybackItem()
     if (resolvedItem == null) {
-      AppDebugLog.warn(TAG, "Manual engine selection ignored: no active PlaybackSession item")
+      AppDebugLog.warn(
+        TAG,
+        "Manual engine selection ignored: no active item selectedEngine=$selectedEngine " +
+          "media3ItemId=$media3ItemId",
+      )
       return
     }
     manualEngineOverrideItemId = resolvedItem.stableId
@@ -1877,7 +1873,14 @@ class PlayerActivity :
           .distinctUntilChanged()
           .collect { (index, item) ->
             if (item == null || index < 0) return@collect
+            val previousItemId = activePlaybackItem?.stableId
             activePlaybackItem = item
+            if (previousItemId != null && previousItemId != item.stableId &&
+              manualOrientationOverrideItemId != item.stableId
+            ) {
+              manualOrientationOverride = null
+              manualOrientationOverrideItemId = null
+            }
             // A decoder-page selection is authoritative for this item. The queue emits again
             // during the handoff, so automatic synchronization must not immediately switch back.
             if (manualEngineOverrideItemId != item.stableId) {
@@ -5471,6 +5474,13 @@ class PlayerActivity :
    * to the correct orientation, starting with landscape as fallback.
    */
   private fun setOrientation() {
+    val currentItemId = currentPlaybackItem()?.stableId ?: activePlaybackItem?.stableId
+    if (manualOrientationOverride != null &&
+      (manualOrientationOverrideItemId == null || manualOrientationOverrideItemId == currentItemId)
+    ) {
+      requestedOrientation = manualOrientationOverride!!
+      return
+    }
     if (isKnownAudioLaunch(intent) || viewModel.isAudioOnly.value) {
       val audioOrient =
         when (audioPreferences.audioOrientation.get()) {
@@ -6311,7 +6321,13 @@ class PlayerActivity :
   override var hostRequestedOrientation: Int
     get() = requestedOrientation
     set(value) {
+      manualOrientationOverride = value
+      manualOrientationOverrideItemId = currentPlaybackItem()?.stableId ?: activePlaybackItem?.stableId
       requestedOrientation = value
+      AppDebugLog.info(
+        TAG,
+        "Manual orientation override value=$value item=${manualOrientationOverrideItemId ?: "unknown"}",
+      )
     }
 
   // ==================== Playlist Management ====================

@@ -971,6 +971,9 @@ fun GestureHandler(
 
                     if (!gestureStarted && (distDelta > 5f || (panAndZoomEnabled && (midDeltaX > 3f || midDeltaY > 3f)))) {
                       gestureStarted = true
+                      // Pinch zoom is an active player interaction; prevent a queued auto-hide
+                      // coroutine from removing the shared controls during the gesture.
+                      viewModel.showControls()
                       if (pinchToZoomGesture && distDelta > 5f) {
                         viewModel.playerUpdate.update { PlayerUpdates.VideoZoom }
                       }

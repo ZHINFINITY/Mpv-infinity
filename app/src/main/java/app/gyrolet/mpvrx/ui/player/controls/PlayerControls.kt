@@ -260,6 +260,7 @@ fun PlayerControls(
   val seekPreview by viewModel.seekThumbnailPreview.collectAsState()
   val brightness by viewModel.currentBrightness.collectAsState()
   val doubleTapSeekAmount = seekState.amount
+  val currentZoom by viewModel.videoZoom.collectAsState()
   val showDoubleTapOvals by playerPreferences.showDoubleTapOvals.collectAsState()
   val showSeekTime by playerPreferences.showSeekTimeWhileSeeking.collectAsState()
   val showBufferedRange by playerPreferences.showBufferedRange.collectAsState()
@@ -503,6 +504,7 @@ fun PlayerControls(
     paused,
     isSeeking,
     resetControlsTimestamp,
+    currentZoom,
     areControlsLocked,
     isUnlockSliderDragging,
     isAudioOnly,
@@ -643,7 +645,6 @@ fun PlayerControls(
 
           val activity = LocalActivity.current as PlayerActivity
           val aspect by viewModel.videoAspect.collectAsState()
-          val currentZoom by viewModel.videoZoom.collectAsState()
 
           val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
           val playbackQueueState by PlaybackSession.queue.collectAsState()
