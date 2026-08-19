@@ -451,7 +451,7 @@
   <string name="timer_remaining">%s बचा है</string>
   <string name="toast_sleep_timer_ended">स्लीप टाइमर खत्म हो गया</string>
   <string name="volume_slider_absolute_value">%d</string>
-  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-</string>
+  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-infinity</string>
   <string name="swap_the_volume_and_brightness_slider">वॉल्यूम और ब्राइटनेस स्लाइडर बदलें</string>
   <string name="pref_player_display_reduce_player_animation">प्लेयर एनिमेशन कम करें</string>
   <string name="pref_anim_section">एनिमेशन</string>

@@ -1512,7 +1512,7 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="syncplay_player_status">Syncplay: %1$s (%2$d usuarios)</string>
   <!-- Additional synchronized strings -->
   <string name="app_name">Mpv∞</string>
-  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-</string>
+  <string name="github_repo_url">https://github.com/ZHINFINITY/Mpv-infinity</string>
   <string name="hdr_mode_bt2020">BT.2020</string>
   <string name="hdr_mode_bt2100_hlg">BT.2100 HLG</string>
   <string name="hdr_mode_bt2100_pq">BT.2100 PQ</string>

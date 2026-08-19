@@ -23,5 +23,5 @@ Player features
 Privacy and licensing
 Mpv∞ is free and open source under the GNU Affero General Public License, version 3 or later. It contains no advertisements or trackers and requests permissions for media features only.
 
-Project: https://github.com/ZHINFINITY/Mpv-
+Project: https://github.com/ZHINFINITY/Mpv-infinity
 Maintainer: ZHINFINITY

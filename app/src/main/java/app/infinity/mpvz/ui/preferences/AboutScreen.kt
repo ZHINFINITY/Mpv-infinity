@@ -96,7 +96,7 @@ object AboutScreen : Screen {
     val versionName =
       packageInfo.versionName?.substringBefore('-') ?: packageInfo.versionName ?: BuildConfig.VERSION_NAME
     val buildType = BuildConfig.BUILD_TYPE
-    val githubRepoUrl = "https://github.com/ZHINFINITY/Mpv-"
+    val githubRepoUrl = "https://github.com/ZHINFINITY/Mpv-infinity"
     val upiId = "zhjjk001-1@oksbi"
     val settingsScrollState = rememberScrollState()
     val settingsHighlight =
