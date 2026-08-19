@@ -374,7 +374,6 @@ private enum class CoverSwipeDirection {
 @Composable
 fun AudioPlayerControls(
   viewModel: PlayerViewModel,
-  mediaTitle: String?,
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,
   onOpenPanel: (Panels) -> Unit,
@@ -1263,7 +1262,7 @@ fun AudioPlayerControls(
         positionTimerOnClick = {},
         chapters = seekbarChapters,
         skipSegments = persistentListOf(),
-        paused = !isPlaying,
+        paused = paused ?: false,
         seekbarStyle = seekbarStyle,
         loopStart = abLoopA?.toFloat(),
         loopEnd = abLoopB?.toFloat(),
