@@ -1157,7 +1157,7 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible = showPortraitCustomButtons,
+            visible = showPortraitCustomButtons && !isPortrait,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -1296,7 +1296,7 @@ fun PlayerControls(
               controlsShown &&
                 !areControlsLocked &&
                 !areSlidersShown &&
-                (!isPortrait || portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.Center),
+                !isPortrait,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { 0 },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { 0 },
             modifier =
@@ -1595,7 +1595,7 @@ fun PlayerControls(
                   },
                 ).constrainAs(seekbar) {
                   if (isPortrait) {
-                    bottom.linkTo(bottomRightControls.top, spacing.extraLarge)
+                    bottom.linkTo(bottomRightControls.top, 36.dp)
                   } else {
                     bottom.linkTo(parent.bottom, spacing.medium)
                   }
@@ -1679,7 +1679,7 @@ fun PlayerControls(
                 bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
                 isPortrait = isPortrait,
                 applyHorizontalPadding = false,
-                modifier = Modifier.padding(horizontal = if (isPortrait) 4.dp else 0.dp),
+                modifier = Modifier.padding(horizontal = if (isPortrait) 12.dp else 0.dp),
               )
             }
             if (showSeekbarContainer) {
@@ -1688,8 +1688,8 @@ fun PlayerControls(
                   Modifier
                     .fillMaxWidth()
                     .padding(
-                      horizontal = if (isPortrait) 10.dp else 6.dp,
-                      vertical = if (isPortrait) 2.dp else 4.dp,
+                      horizontal = if (isPortrait) 8.dp else 6.dp,
+                      vertical = if (isPortrait) 4.dp else 4.dp,
                     ),
                 shape = RoundedCornerShape(26.dp),
                 hideBackground = hideBackground,

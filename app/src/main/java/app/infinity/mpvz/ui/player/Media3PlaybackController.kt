@@ -551,9 +551,23 @@ class Media3PlaybackController(
 
   fun hasSelectedSubtitle(): Boolean = latestSubtitleTracks.any { it.selected == true }
 
+  /**
+   * Configure Media3's single subtitle renderer. Embedded ASS/Matroska font-size and style data
+   * must not compete with the app's CaptionStyleCompat and pinch-size value; that combination was
+   * producing a second-looking cue layer and visible size artifacts on Native playback.
+   */
+  private fun configureNativeSubtitleView(view: PlayerView? = attachedView) {
+    view?.subtitleView?.apply {
+      setApplyEmbeddedStyles(false)
+      setApplyEmbeddedFontSizes(false)
+      setStyle(nativeSubtitleStyle)
+      setFractionalTextSize((0.0533f * subtitleScale).coerceIn(0.005f, 0.25f))
+    }
+  }
+
   /** Applies the active Native caption style to Media3's actual subtitle renderer. */
   private fun applyNativeSubtitleStyle(view: PlayerView? = attachedView) {
-    view?.subtitleView?.setStyle(nativeSubtitleStyle)
+    configureNativeSubtitleView(view)
   }
 
   /**
@@ -571,9 +585,10 @@ class Media3PlaybackController(
         edgeType,
         edgeColor,
         textColor,
-        backgroundColor,
-        // Keep the cue window transparent. A black window here is what creates the unwanted full
-        // subtitle rectangle behind Native captions.
+        // Native subtitles must remain transparent like the MPV renderer. The preference's
+        // background value is still retained for MPV, but is intentionally not used as a Media3
+        // cue rectangle because it creates the black block reported on device.
+        android.graphics.Color.TRANSPARENT,
         android.graphics.Color.TRANSPARENT,
         null,
       )
@@ -591,8 +606,7 @@ class Media3PlaybackController(
    * unchanged while allowing the existing player pinch gesture to work for Native playback.
    */
   private fun applySubtitleScale(view: PlayerView? = attachedView) {
-    val subtitleView = view?.subtitleView ?: return
-    subtitleView.setFractionalTextSize((0.0533f * subtitleScale).coerceIn(0.005f, 0.25f))
+    configureNativeSubtitleView(view)
   }
 
   fun setSubtitleScale(scale: Float): Boolean {

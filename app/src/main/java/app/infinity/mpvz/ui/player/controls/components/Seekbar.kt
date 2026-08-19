@@ -298,33 +298,8 @@ fun SeekbarWithTimers(
         modifier
           .fillMaxWidth()
           .then(if (applyHorizontalPadding) Modifier.padding(horizontal = MaterialTheme.spacing.large) else Modifier),
-      verticalArrangement = Arrangement.spacedBy(2.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      SeekbarContent(
-        positionProvider = { if (isUserInteracting) userPosition else animatedPosition.value },
-        committedPosition = committedPosition,
-        duration = duration,
-        chapters = chapters,
-        skipSegments = skipSegments,
-        paused = paused,
-        isPortrait = isPortrait,
-        isUserInteracting = isUserInteracting,
-        seekbarStyle = seekbarStyle,
-        useWavySeekbar = useWavySeekbar,
-        loopStart = loopStart,
-        loopEnd = loopEnd,
-        bufferDuration = bufferDuration,
-        onUserInteractionChange = { isUserInteracting = it },
-        onUserPositionChange = { userPosition = it },
-        onValueChangeStarted = onValueChangeStarted,
-        onValueChange = onValueChange,
-        onValueChangeFinished = onValueChangeFinished,
-        scope = scope,
-        animatedPosition = animatedPosition,
-        // Keep the rail compact in portrait so the elapsed/total timer row retains its own space.
-        modifier = Modifier.fillMaxWidth().height(36.dp),
-      )
-
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -350,6 +325,31 @@ fun SeekbarWithTimers(
           },
         )
       }
+
+      SeekbarContent(
+        positionProvider = { if (isUserInteracting) userPosition else animatedPosition.value },
+        committedPosition = committedPosition,
+        duration = duration,
+        chapters = chapters,
+        skipSegments = skipSegments,
+        paused = paused,
+        isPortrait = isPortrait,
+        isUserInteracting = isUserInteracting,
+        seekbarStyle = seekbarStyle,
+        useWavySeekbar = useWavySeekbar,
+        loopStart = loopStart,
+        loopEnd = loopEnd,
+        bufferDuration = bufferDuration,
+        onUserInteractionChange = { isUserInteracting = it },
+        onUserPositionChange = { userPosition = it },
+        onValueChangeStarted = onValueChangeStarted,
+        onValueChange = onValueChange,
+        onValueChangeFinished = onValueChangeFinished,
+        scope = scope,
+        animatedPosition = animatedPosition,
+        // Keep the rail compact and inset in portrait so both endpoint timers remain unobstructed.
+        modifier = Modifier.fillMaxWidth().height(32.dp),
+      )
     }
   } else {
     Row(
