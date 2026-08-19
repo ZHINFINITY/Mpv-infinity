@@ -206,22 +206,31 @@ class Media3PlaybackController(
               else -> stereoMatrix(inputChannels, reverse = true)
             }
           AudioChannels.Stereo -> stereoMatrix(inputChannels, reverse = false)
-          AudioChannels.Auto, AudioChannels.AutoSafe ->
-            if (inputChannels <= 2) {
-              ChannelMixingMatrix(
-                inputChannels,
-                inputChannels,
-                FloatArray(inputChannels * inputChannels) { index ->
-                  if (index / inputChannels == index % inputChannels) 1f else 0f
-                },
-              )
-            } else {
+          AudioChannels.Auto -> identityMatrix(inputChannels)
+          AudioChannels.AutoSafe ->
+            // Preserve the layouts that worked in the earlier Native builds. The device failure
+            // reported for Tangled is specifically the 7.1/eight-channel AudioTrack path, so only
+            // seven- and eight-channel input is downmixed automatically. Downmixing six-channel
+            // DTS/DTS-HD here regressed Wuthering With You even though its Native path previously
+            // reached READY and rendered correctly.
+            if (inputChannels >= 7) {
               stereoMatrix(inputChannels, reverse = false)
+            } else {
+              identityMatrix(inputChannels)
             }
         }
       channelMixingProcessor.putChannelMixingMatrix(matrix)
     }
   }
+
+  private fun identityMatrix(inputChannels: Int): ChannelMixingMatrix =
+    ChannelMixingMatrix(
+      inputChannels,
+      inputChannels,
+      FloatArray(inputChannels * inputChannels) { index ->
+        if (index / inputChannels == index % inputChannels) 1f else 0f
+      },
+    )
 
   private fun stereoMatrix(inputChannels: Int, reverse: Boolean): ChannelMixingMatrix {
     val coefficients = FloatArray(inputChannels * 2)

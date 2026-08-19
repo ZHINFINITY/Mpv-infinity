@@ -2,11 +2,11 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
-## 1.0.5 — Tangled Native 7.1 Handoff Fix
+## 1.0.6 — Native Multichannel Regression Fix
 
-- **Native 7.1 audio compatibility:** Media3 now registers channel-mixing matrices through eight input channels, allowing AutoSafe to downmix Tangled’s 7.1 E-AC-3 track to a supported stereo output instead of failing AudioTrack initialization on devices that cannot open eight-channel output.
-- **Manual engine handoff diagnostics:** Native audio-format logging now records the detected channel count and sample rate, making any remaining device-specific failure distinguishable from a blocked decoder-sheet selection.
-- **Fallback preserved:** If Native still fails after the manual handoff, the existing safe MPV fallback remains active; automatic Dolby Vision retry suppression is unchanged.
+- **Wuthering With You regression fixed:** Native AutoSafe now preserves the six-channel layout used by the previously working DTS/DTS-HD path instead of forcing it through a stereo mixer.
+- **Targeted 7.1 protection:** AutoSafe still downmixes seven- and eight-channel input, which is the narrower compatibility path needed for Tangled’s failing AudioTrack configuration.
+- **Fallback preserved:** If Native genuinely fails on a device, the existing safe MPV fallback remains active and the repository stays on the private test-release track.
 
 ## 1.0.4 — Tangled Fallback and Stability Fix
 
