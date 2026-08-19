@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.4 — Tangled Fallback and Stability Fix
+
+- **Media3-error fallback protection:** Auto mode now records a Native/Media3 playback error as an automatic fallback for the affected item before switching to MPV, preventing the MPV Dolby Vision observer from immediately selecting Native again.
+- **Tangled stability:** This covers the failure path where Media3 initializes but cannot create the required audio renderer for an 8-channel Dolby/TrueHD or E-AC-3 track, while MPV can continue playback.
+- **Detached-callback crash protection:** Delayed player cleanup callbacks no longer call the detached `PlayerActivity` host after an engine transition or Activity teardown. Local cleanup state is still cleared safely.
+- **Manual switching preserved:** The new protection applies to automatic fallback only; explicit decoder-sheet selection of Native or MPV remains available.
+
 ## 1.0.3 — Tangled Dolby Vision Handoff Fix
 
 - **Observer-path fallback protection:** Auto mode now suppresses the MPV Dolby Vision track observer from immediately selecting Native again after the Native watchdog has already fallen back to MPV for the same item.
