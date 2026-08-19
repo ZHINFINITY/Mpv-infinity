@@ -2,6 +2,11 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.2 — Mpv∞ Update Feed Fix
+
+- **Own release feed:** The in-app updater now checks `ZHINFINITY/Mpv-infinity` releases instead of the inherited mpvRx release feed, so it will no longer offer mpvRx versions such as 2.1.0.
+- **Version alignment:** The corrective build is version `1.0.2` and downloads only the compatible Mpv∞ Standard APK from the Mpv∞ release assets.
+
 ## 1.0.1 — Playback Handoff Hotfix
 
 This hotfix release keeps the Standard APK variants and focuses on reliable hybrid playback.
