@@ -214,7 +214,18 @@ class PlayerActivity :
       onError = { error ->
         Log.w(TAG, "Media3 playback error; falling back to MPV", error)
         lifecycleScope.launch(Dispatchers.Main.immediate) {
-          switchToMpvEngine()
+          // Media3 errors are also automatic Native failures. Without recording this state, the
+          // MPV Dolby Vision track observer can immediately select Native again after this handoff.
+          val failedItem = media3ActiveItem ?: currentPlaybackItem()
+          if (failedItem != null && decoderPreferences.playbackEngine.get() == PlaybackEngineMode.Auto) {
+            media3AutoFallbackItemId = failedItem.stableId
+            AppDebugLog.warn(
+              TAG,
+              "Media3 error recorded as automatic fallback item=${failedItem.stableId}; " +
+                "suppressing Native retry",
+            )
+          }
+          switchToMpvEngine(failedItem)
         }
       },
       onVideoFrameRendered = {

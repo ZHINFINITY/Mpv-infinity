@@ -5612,7 +5612,10 @@ class PlayerViewModel : ViewModel(),
 
   fun clearABLoop() {
     _abLoopState.update { it.copy(a = null, b = null) }
-    if (!host.media3ClearABLoop()) {
+    // PlayerObserver can deliver a delayed cleanup callback after PlayerActivity has detached.
+    // Clearing the local state is still safe; skip host/native calls until a new Activity attaches.
+    val attachedHost = hostReference.get() ?: return
+    if (!attachedHost.media3ClearABLoop()) {
       PlaybackSession.setPropertyString("ab-loop-a", "no")
       PlaybackSession.setPropertyString("ab-loop-b", "no")
     }
