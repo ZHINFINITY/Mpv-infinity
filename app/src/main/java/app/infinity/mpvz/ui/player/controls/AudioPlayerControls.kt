@@ -513,15 +513,22 @@ fun AudioPlayerControls(
   }
 
   val retrievedTitle = currentAudioPresentation?.title
+  val fileTitle =
+    mediaPath
+      ?.substringAfterLast('/')
+      ?.substringAfterLast('\\\\')
+      ?.substringBefore('?')
+      ?.takeIf { it.isNotBlank() }
+      ?.stripAudioExtension()
   var lastValidTitle by remember {
     mutableStateOf(
-      (retrievedTitle ?: mediaTitle)
+      (retrievedTitle ?: fileTitle)
         ?.takeIf { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
-        ?.stripAudioExtension() ?: "Audio Track",
+        ?: "Audio Track",
     )
   }
-  LaunchedEffect(mediaTitle, retrievedTitle) {
-    val candidate = retrievedTitle?.takeIf { it.isNotBlank() } ?: mediaTitle
+  LaunchedEffect(mediaPath, retrievedTitle) {
+    val candidate = retrievedTitle?.takeIf { it.isNotBlank() } ?: fileTitle
     if (!candidate.isNullOrBlank() && !candidate.equals("Unknown Title", ignoreCase = true)) {
       lastValidTitle = candidate.stripAudioExtension()
     }

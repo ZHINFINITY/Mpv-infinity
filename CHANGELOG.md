@@ -2,6 +2,15 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.0 — Native Subtitle, Background Playback, and Portrait Control Fixes
+
+- **Native subtitle rendering:** Native subtitles now use one configured Media3 subtitle renderer, preventing duplicate layers and visual artifacts when the size or track changes.
+- **Transparent Native captions:** Native subtitle backgrounds and windows remain transparent instead of showing an unwanted black box. Supported style, border, color, and saved pinch-scale settings are reapplied after track updates.
+- **Native background playback:** The Native player stays alive through the foreground service handoff when background playback is enabled, without incorrectly reading or controlling MPV state.
+- **Music-player metadata and state:** Music playback remains MPV-based, while the music player derives its title from the current audio path or metadata instead of a stale video title.
+- **Portrait controls:** The vertical player now has one transport row, compact icon-only actions, a speed/lock/audio header pill, and timestamps above the seek rail so elapsed and remaining duration stay visible.
+- **Release scope:** This release contains the Standard APK variants only; the repository remains private and upstream MPV/mpvRx attribution is preserved.
+
 ## 1.0.11 — Native Playback and Portrait Controls Fixes
 
 - **Native background playback:** When background playback is enabled, the Media3/Native player remains active as the Activity stops instead of being treated like the MPV-only service handoff.

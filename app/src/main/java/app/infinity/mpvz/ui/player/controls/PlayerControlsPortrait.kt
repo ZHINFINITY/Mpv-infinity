@@ -345,37 +345,6 @@ fun BottomPlayerControlsPortrait(
               playbackSpeed = playbackSpeed,
               buttonSize = 42.dp,
             )
-            when (button) {
-              PlayerButton.SUBTITLES ->
-                Text(
-                  text = stringResource(R.string.btn_label_subtitles),
-                  style = MaterialTheme.typography.labelLarge,
-                  color = Color.White,
-                  maxLines = 1,
-                )
-              PlayerButton.VIDEO_ZOOM ->
-                Text(
-                  text = stringResource(R.string.btn_label_zoom),
-                  style = MaterialTheme.typography.labelLarge,
-                  color = Color.White,
-                  maxLines = 1,
-                )
-              PlayerButton.SCREEN_ROTATION ->
-                Text(
-                  text = stringResource(R.string.btn_label_rotation),
-                  style = MaterialTheme.typography.labelLarge,
-                  color = Color.White,
-                  maxLines = 1,
-                )
-              PlayerButton.MORE_OPTIONS ->
-                Text(
-                  text = stringResource(R.string.btn_label_more),
-                  style = MaterialTheme.typography.labelLarge,
-                  color = Color.White,
-                  maxLines = 1,
-                )
-              else -> Unit
-            }
           }
         }
       }

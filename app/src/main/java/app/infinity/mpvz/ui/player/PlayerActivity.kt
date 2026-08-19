@@ -1527,7 +1527,7 @@ class PlayerActivity :
 
     media3VideoWatchdogJob?.cancel()
     media3VideoWatchdogJob = null
-    media3PlaybackController.release()
+    if (!keepBackgroundPlaybackAlive) media3PlaybackController.release()
     super.onDestroy()
     // The core remains alive throughout Android/ViewModel/window cleanup. Only after super returns
 
@@ -2181,6 +2181,17 @@ class PlayerActivity :
         // control this ExoPlayer instance. Keep the existing Media3 player alive and retain its
         // play/pause state instead of calling viewModel.pause(), which only pauses MPV.
         isBackgroundPlaybackSessionActive = true
+        MediaPlaybackService.nativeBackgroundRequested = true
+        val nativeBackgroundIntent =
+          Intent(this, MediaPlaybackService::class.java).apply {
+            putExtra(MediaPlaybackService.EXTRA_NATIVE_BACKGROUND_PLAYBACK, true)
+            putExtra("media_title", fileName)
+          }
+        runCatching { startForegroundService(nativeBackgroundIntent) }
+          .onFailure { error ->
+            MediaPlaybackService.nativeBackgroundRequested = false
+            Log.e(TAG, "Unable to start Native background keep-alive service", error)
+          }
         AppDebugLog.info(
           TAG,
           "Keeping Native Media3 playback alive while Activity is stopped " +
@@ -2261,7 +2272,8 @@ class PlayerActivity :
       if (!deviceScreenOffOrLocked) {
         // Foreground playback owns the session again after unlock or app return.
         enableVideoAfterBackground()
-        if (MediaPlaybackService.isRunning()) endBackgroundPlayback()
+        if (MediaPlaybackService.isNativeBackgroundPlaybackActive()) endBackgroundPlayback()
+        else if (MediaPlaybackService.isRunning()) endBackgroundPlayback()
         isBackgroundPlaybackSessionActive = false
         // The detached service released focus during the handoff; take it back over so a
         // future focus loss (e.g. a phone call) pauses the now-foreground playback.

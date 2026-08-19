@@ -95,6 +95,10 @@ class MediaPlaybackService :
     const val ACTION_NOTIFICATION_PLAY_PAUSE = "app.infinity.mpvz.action.NOTIFICATION_PLAY_PAUSE"
     const val ACTION_NOTIFICATION_NEXT = "app.infinity.mpvz.action.NOTIFICATION_NEXT"
     const val ACTION_NOTIFICATION_STOP = "app.infinity.mpvz.action.NOTIFICATION_STOP"
+    const val EXTRA_NATIVE_BACKGROUND_PLAYBACK = "native_background_playback"
+
+    @Volatile
+    internal var nativeBackgroundRequested = false
 
     @Volatile
     internal var thumbnail: Bitmap? = null
@@ -117,6 +121,8 @@ class MediaPlaybackService :
     fun isRunning(): Boolean = isServiceRunning && !activityForeground
 
     fun isForegroundActive(): Boolean = activeInstance?.foregroundReady == true
+
+    fun isNativeBackgroundPlaybackActive(): Boolean = activeInstance?.nativeBackgroundPlayback == true
 
     /**
      * True while a PlayerActivity is the active foreground owner of the shared playback session
@@ -231,6 +237,7 @@ class MediaPlaybackService :
   private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var playbackStateSaveJob: Job? = null
   private var mpvAccessReleased = false
+  private var nativeBackgroundPlayback = false
   private var usesAudioBackgroundPlayback = false
   private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
   private var audioFocusRequest: AudioFocusRequest? = null
@@ -315,19 +322,23 @@ class MediaPlaybackService :
     activeInstance = this
     isServiceRunning = true
     mpvAccessReleased = false
+    nativeBackgroundPlayback = nativeBackgroundRequested
+    nativeBackgroundRequested = false
     handingBackToActivity = false
 
     // Ensure notification channel exists before starting foreground service
     createNotificationChannel(this)
 
     setupMediaSession()
-    ContextCompat.registerReceiver(
-      this,
-      noisyReceiver,
-      IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
-      ContextCompat.RECEIVER_NOT_EXPORTED,
-    )
-    noisyReceiverRegistered = true
+    if (!nativeBackgroundPlayback) {
+      ContextCompat.registerReceiver(
+        this,
+        noisyReceiver,
+        IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+        ContextCompat.RECEIVER_NOT_EXPORTED,
+      )
+      noisyReceiverRegistered = true
+    }
 
     serviceScope.launch {
       combine(
@@ -362,6 +373,10 @@ class MediaPlaybackService :
       }
     }
 
+    // Native background mode only needs a foreground process keep-alive. It must not register
+    // MPV observers because Native owns playback independently of PlaybackSession.
+    if (nativeBackgroundPlayback) return
+
     // Only add MPV observer if MPV is initialized
     try {
       PlaybackSession.addObserver(this)
@@ -388,7 +403,38 @@ class MediaPlaybackService :
     flags: Int,
     startId: Int,
   ): Int {
-    Log.d(TAG, "Service starting with startId: $startId")
+    Log.d(TAG, "Service starting with startId: $startId native=$nativeBackgroundPlayback")
+
+    if (nativeBackgroundPlayback) {
+      intent?.getStringExtra("media_title")?.takeIf { it.isNotBlank() }?.let {
+        mediaTitle = FileTypeUtils.stripExtension(it)
+      }
+      intent?.getStringExtra("media_artist")?.let { mediaArtist = it }
+      paused = false
+      if (!notificationsEnabled()) {
+        stopForegroundNotification()
+        stopSelf(startId)
+        return START_NOT_STICKY
+      }
+      runCatching {
+        val type =
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+          } else {
+            0
+          }
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), type)
+        foregroundReady = true
+        // Notification transport actions are intentionally disabled here: they are MPV-specific.
+        // The Native controller remains the sole owner of Media3 playback.
+        mediaSession.isActive = false
+      }.onFailure { error ->
+        Log.e(TAG, "Error starting Native background foreground service", error)
+        stopSelf(startId)
+        return START_NOT_STICKY
+      }
+      return START_STICKY
+    }
 
     if (!PlaybackSession.isInitialized) {
       Log.w(TAG, "Ignoring playback service start without a live playback session")
@@ -569,6 +615,9 @@ class MediaPlaybackService :
   }
 
   fun takeAudioOwnership(): Boolean {
+    // Native Media3 owns audio focus and playback directly; this service is only a process
+    // keep-alive and must never request focus or mutate MPV state in Native mode.
+    if (nativeBackgroundPlayback) return true
     // During a foreground handoff, returning true means "ownership is intentionally not needed".
     // Do not request focus and bounce it back to PlayerActivity; that focus ping-pong is exactly
     // what can turn a notification tap into an unexpected pause.
@@ -607,6 +656,10 @@ class MediaPlaybackService :
   }
 
   private fun restoreDuckedVolume() {
+    if (nativeBackgroundPlayback) {
+      volumeBeforeDuck = null
+      return
+    }
     volumeBeforeDuck?.let { volume -> PlaybackSession.setPropertyDouble("volume", volume) }
     volumeBeforeDuck = null
   }
@@ -793,6 +846,7 @@ class MediaPlaybackService :
   }
 
   private fun togglePlaybackFromNotification() {
+    if (nativeBackgroundPlayback) return
     val shouldPlay = PlaybackSession.getPropertyBoolean("pause") != false
     if (shouldPlay && !PlaybackSession.state.value.surfaceAttached && !takeAudioOwnership()) return
     paused = !shouldPlay
@@ -801,6 +855,11 @@ class MediaPlaybackService :
   }
 
   private fun stopPlaybackAndService() {
+    if (nativeBackgroundPlayback) {
+      stopForegroundNotification()
+      stopSelf()
+      return
+    }
     handingBackToActivity = false
     schedulePlaybackStateSave(force = true)
     torrentStreamingEngine.stopStream()
@@ -819,6 +878,8 @@ class MediaPlaybackService :
   }
 
   private fun stopDetachedPlaybackIfNeeded() {
+    // Native Media3 owns playback outside PlaybackSession; never mutate MPV from this mode.
+    if (nativeBackgroundPlayback) return
     // Never kill the shared PlaybackSession media while an Activity is taking it back over.
     if (handingBackToActivity) return
     if (PlaybackSession.state.value.surfaceAttached) return
@@ -1634,7 +1695,7 @@ class MediaPlaybackService :
     try {
       Log.d(TAG, "Service destroyed")
 
-      releaseMpvAccessBeforeShutdown()
+      if (!nativeBackgroundPlayback) releaseMpvAccessBeforeShutdown()
       foregroundReady = false
       abandonAudioOwnership()
       if (noisyReceiverRegistered) {
@@ -1692,7 +1753,7 @@ class MediaPlaybackService :
 
   override fun onTaskRemoved(rootIntent: Intent?) {
     Log.d(TAG, "Task removed - keeping foreground background playback active")
-    schedulePlaybackStateSave(force = true)
+    if (!nativeBackgroundPlayback) schedulePlaybackStateSave(force = true)
     super.onTaskRemoved(rootIntent)
   }
 }
