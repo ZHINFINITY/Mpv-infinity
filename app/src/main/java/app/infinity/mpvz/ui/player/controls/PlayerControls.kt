@@ -405,11 +405,9 @@ fun PlayerControls(
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
   if (isAudioOnly) {
     val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
-    val activity = LocalActivity.current as? PlayerActivity
-    val mediaTitle =
-      remember(rawMediaTitle, activity) {
-        rawMediaTitle?.takeIf { it.isNotBlank() } ?: activity?.getTitleForControls()
-      }
+    // Music playback remains owned by MPV. Do not fall back to the Activity title here,
+    // because it can still contain the previous video while the new audio track is loading.
+    val mediaTitle = rawMediaTitle?.takeIf { it.isNotBlank() }
 
     val sheetShown by viewModel.sheetShown.collectAsState()
     val subtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
@@ -425,10 +423,6 @@ fun PlayerControls(
         onBackPress = onBackPress,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
-        isMedia3Active = isMedia3Active,
-        media3IsPlaying = media3State.isPlaying,
-        media3PositionMs = media3State.positionMs,
-        media3DurationMs = media3State.durationMs,
       )
 
       PlayerSheets(
