@@ -507,6 +507,12 @@ object PlaybackSession : MPVLib.EventObserver {
       desiredPaused = false
       clearSeekAudioGuardLocked(restoreMute = true)
 
+      // A rapid playlist skip can begin a new load before the previous transition's delayed
+      // restore fires. Release that previous guard now; its callback is token-invalidated by the
+      // clear, and the new load immediately arms a fresh guard. This prevents a burst of skips
+      // from leaving MPV's timeline running while the output remains muted.
+      clearPlaybackTransitionAudioGuardLocked(restoreMute = true)
+
       // Keep replacement/startup audio muted until mpv has restarted cleanly. FILE_LOADED can be
       // followed by saved-position and audio-track restoration; without this guard tiny fragments
       // from the pre-restore timeline can reach AudioTrack and sound like a glitch/warble.
