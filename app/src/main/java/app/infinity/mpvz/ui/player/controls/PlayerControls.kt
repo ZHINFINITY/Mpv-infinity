@@ -1683,7 +1683,8 @@ fun PlayerControls(
                     .fillMaxWidth()
                     .padding(
                       horizontal = if (isPortrait) 8.dp else 6.dp,
-                      vertical = if (isPortrait) 4.dp else 4.dp,
+                      // Keep the portrait card clear of both the timestamp row and the rail.
+                      vertical = if (isPortrait) 8.dp else 4.dp,
                     ),
                 shape = RoundedCornerShape(26.dp),
                 hideBackground = hideBackground,

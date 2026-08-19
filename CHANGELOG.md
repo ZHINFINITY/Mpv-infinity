@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.2 — MPV Audio Recovery and Portrait Seekbar Hotfix
+
+- **Rapid music skips:** MPV now releases any previous transition mute before arming the next load guard, preventing the audio output from remaining muted while the timeline continues after several fast song skips.
+- **Video transition protection:** Each new MPV load still uses its own short transition guard, so the fix does not remove the protection against stale audio during video decoder replacement or engine handoff.
+- **Portrait seekbar spacing:** Increased and equalized the outer portrait seekbar card’s vertical padding, while retaining the separated timestamp row and rail so elapsed and remaining duration stay visible.
+- **Release scope:** This is a Standard APK hotfix for v1.1.1; the repository remains private and upstream MPV/mpvRx attribution is preserved.
+
 ## 1.1.1 — Native Subtitle Rendering Hotfix
 
 - **Native caption style mapping:** Corrected the Media3 `CaptionStyleCompat` argument order so Native subtitles render with visible text, a transparent background/window, and the selected outline instead of black text and a small black cue rectangle.

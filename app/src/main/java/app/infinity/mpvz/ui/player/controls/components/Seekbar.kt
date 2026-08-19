@@ -298,7 +298,9 @@ fun SeekbarWithTimers(
         modifier
           .fillMaxWidth()
           .then(if (applyHorizontalPadding) Modifier.padding(horizontal = MaterialTheme.spacing.large) else Modifier),
-      verticalArrangement = Arrangement.spacedBy(8.dp),
+      // Keep the timestamp row clearly separated from the rail in portrait while
+      // preserving a compact, balanced card.
+      verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
