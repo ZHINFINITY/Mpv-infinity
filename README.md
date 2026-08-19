@@ -396,24 +396,31 @@ git push origin v1.0.1-preview.1
 
 ---
 
-## Acknowledgments
+## Upstream lineage and acknowledgments
 
-- [mpv-android](https://github.com/mpv-android)
-- [mpvExtended](https://github.com/marlboro-advance/mpvEx)
-- [mpvKt](https://github.com/abdallahmehiz/mpvKt)
-- [PixelPlayer](https://github.com/theovilardo/PixelPlayer) 
-- [MpvRex](https://github.com/sfsakhawat999/mpvRex)
-- [Next Player](https://github.com/anilbeesetti/nextplayer)
-- [Gramophone](https://github.com/FoedusProgramme/Gramophone)
-- [hdr-toys](https://github.com/natural-harmonia-gropius/hdr-toys)
-- [AFinity](https://github.com/MakD/AFinity)
-- [**SunnyVishnu3**](https://github.com/SunnyVishnu3) for the `yt-dlp` native integration and SDK 29+ bypass logic.
+Mpv∞ is an independent Android application maintained by **ZHINFINITY**. It is a modified and branded fork/derivative built from the open-source **mpvRx** codebase and related open-source media-player work. Mpv∞ is not affiliated with, sponsored by, or endorsed by the upstream maintainers unless explicitly stated. Upstream copyrights, notices, and contributions remain acknowledged and are not being claimed as Mpv∞-original work.
+
+The primary lineage is **[mpvRx](https://github.com/Riteshp2001/mpvRx)**, which itself builds on earlier Android mpv work including **[mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)** and the **[mpv-android](https://github.com/mpv-android)** ecosystem. Mpv∞ preserves the applicable source notices and AGPL obligations from that lineage.
+
+| Project or contributor | Acknowledgment |
+|---|---|
+| [mpvKt](https://github.com/abdallahmehiz/mpvKt) | Open-source Android mpv-related work acknowledged by the project. |
+| [PixelPlayer](https://github.com/theovilardo/PixelPlayer) | Referenced media-player project and design inspiration. |
+| [MpvRex](https://github.com/sfsakhawat999/mpvRex) | Referenced open-source Android media-player work. |
+| [Next Player](https://github.com/anilbeesetti/nextplayer) | Referenced Android media-player work and Media3 ecosystem ideas. |
+| [Gramophone](https://github.com/FoedusProgramme/Gramophone) | Referenced open-source music-player work. |
+| [hdr-toys](https://github.com/natural-harmonia-gropius/hdr-toys) | HDR-related open-source work acknowledged by the project. |
+| [AFinity](https://github.com/MakD/AFinity) | Referenced open-source Android media work. |
+| [SunnyVishnu3](https://github.com/SunnyVishnu3) | Acknowledged for the `yt-dlp` native integration and SDK 29+ bypass logic. |
+| [Anime4K](https://github.com/bloc97/Anime4K) | Included Anime4K shader assets and their respective notices. |
+
+For the detailed notice and redistribution guidance, see [`UPSTREAM_NOTICES.md`](UPSTREAM_NOTICES.md). Individual source files and bundled assets may contain their own copyright and license notices; those notices remain part of the distributed source tree.
 
 ---
 
 ## License
 
-Distributed under **GNU Affero General Public License v3.0 (AGPL-3.0-or-later)**. See `LICENSE` for more information.
+Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE) and [`UPSTREAM_NOTICES.md`](UPSTREAM_NOTICES.md) for the license and attribution information. Mpv∞-specific code, branding, and modifications are maintained by **ZHINFINITY**, while upstream copyrights remain with their respective holders.
 
 ---
 
