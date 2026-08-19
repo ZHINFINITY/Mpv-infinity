@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.1 — Native Subtitle Rendering Hotfix
+
+- **Native caption style mapping:** Corrected the Media3 `CaptionStyleCompat` argument order so Native subtitles render with visible text, a transparent background/window, and the selected outline instead of black text and a small black cue rectangle.
+- **Subtitle zoom preserved:** The existing Native pinch-scale and track-reapply behavior remains unchanged.
+- **Release scope:** This is a Standard APK hotfix for v1.1.0; MPV subtitle rendering and the MPV-only music path are unchanged.
+
 ## 1.1.0 — Native Subtitle, Background Playback, and Portrait Control Fixes
 
 - **Native subtitle rendering:** Native subtitles now use one configured Media3 subtitle renderer, preventing duplicate layers and visual artifacts when the size or track changes.
