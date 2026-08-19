@@ -173,7 +173,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 private data class AudioPresentationMetadata(
   val artwork: Bitmap?,
+  val title: String?,
   val artist: String?,
+  val album: String?,
+  val mimeType: String?,
+  val bitrate: String?,
+  val sampleRate: String?,
 )
 
 /**
@@ -233,14 +238,27 @@ private object AudioPresentationMetadataCache {
 
             AudioPresentationMetadata(
               artwork = EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever),
+              title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
               artist =
                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
                   ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                   ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
                   ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER),
+              album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
+              mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE),
+              bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE),
+              sampleRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE),
             )
           } catch (_: Exception) {
-            AudioPresentationMetadata(artwork = null, artist = null)
+            AudioPresentationMetadata(
+              artwork = null,
+              title = null,
+              artist = null,
+              album = null,
+              mimeType = null,
+              bitrate = null,
+              sampleRate = null,
+            )
           } finally {
             runCatching { retriever.release() }
           }
@@ -385,6 +403,8 @@ fun AudioPlayerControls(
   val currentPath by PlaybackSession.propString["path"].collectAsState()
   val currentStreamFilename by PlaybackSession.propString["stream-open-filename"].collectAsState()
   val mediaPath = currentPath?.takeIf { it.isNotBlank() } ?: currentStreamFilename
+  val currentAudioPresentation = rememberAudioPresentationMetadata(mediaPath)
+  val albumArtBitmap = currentAudioPresentation?.artwork
 
   val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
   val sampleRate by PlaybackSession.propInt["audio-params/samplerate"].collectAsState()
@@ -392,12 +412,18 @@ fun AudioPlayerControls(
   val bitsPerSample by PlaybackSession.propString["metadata/by-key/BITS_PER_SAMPLE"].collectAsState()
   val bitsPerSampleAlt by PlaybackSession.propString["metadata/by-key/bits_per_sample"].collectAsState()
   val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
-
+  val resolvedAudioCodec =
+    audioCodec?.takeIf { it.isNotBlank() }
+      ?: currentAudioPresentation?.mimeType?.substringAfterLast('/')
+  val resolvedSampleRate = sampleRate ?: currentAudioPresentation?.sampleRate?.toIntOrNull()
   val isLosslessCodecOrExt =
-    remember(audioCodec, mediaPath) {
-      val codec = audioCodec?.lowercase().orEmpty()
+    remember(resolvedAudioCodec, currentAudioPresentation?.mimeType, mediaPath) {
+      val codec = resolvedAudioCodec?.lowercase().orEmpty()
+      val mime = currentAudioPresentation?.mimeType?.lowercase().orEmpty()
       val ext = mediaPath?.fileExtension().orEmpty()
       codec.contains("flac") ||
+        mime.contains("flac") ||
+
         codec.contains("alac") ||
         codec.contains("pcm") ||
         codec.contains("wavpack") ||
@@ -408,8 +434,8 @@ fun AudioPlayerControls(
     }
 
   val isHiRes =
-    remember(sampleRate, isLosslessCodecOrExt) {
-      isLosslessCodecOrExt && (sampleRate ?: 0) >= 88200
+    remember(resolvedSampleRate, isLosslessCodecOrExt) {
+      isLosslessCodecOrExt && (resolvedSampleRate ?: 0) >= 88200
     }
 
   var showLosslessDetails by remember { mutableStateOf(false) }
@@ -419,9 +445,9 @@ fun AudioPlayerControls(
   }
 
   val fullLosslessDetailString =
-    remember(isHiRes, sampleRate, audioFormat, bitsPerSample, bitsPerSampleAlt, audioCodec, isLosslessCodecOrExt) {
+    remember(isHiRes, resolvedSampleRate, audioFormat, bitsPerSample, bitsPerSampleAlt, resolvedAudioCodec, isLosslessCodecOrExt) {
       val baseLabel = if (isHiRes) "HI-RES LOSSLESS" else "LOSSLESS"
-      val sr = sampleRate ?: 0
+      val sr = resolvedSampleRate ?: 0
       val khzStr =
         if (sr > 0) {
           val khz = sr / 1000f
@@ -451,7 +477,7 @@ fun AudioPlayerControls(
           else -> ""
         }
 
-      val codecName = audioCodec?.uppercase().orEmpty()
+      val codecName = resolvedAudioCodec?.uppercase().orEmpty()
       buildString {
         append(baseLabel)
         if (specsStr.isNotBlank()) {
@@ -463,10 +489,8 @@ fun AudioPlayerControls(
       }
     }
 
-  val currentAudioPresentation = rememberAudioPresentationMetadata(mediaPath)
-  val albumArtBitmap = currentAudioPresentation?.artwork
+    fun cleanSongTitle(
 
-  fun cleanSongTitle(
     title: String,
     artist: String?,
   ): String {
@@ -488,14 +512,18 @@ fun AudioPlayerControls(
     return titleWithoutExt
   }
 
+  val retrievedTitle = currentAudioPresentation?.title
   var lastValidTitle by remember {
     mutableStateOf(
-      mediaTitle?.takeIf { it.isNotBlank() }?.stripAudioExtension() ?: "Audio Track",
+      (retrievedTitle ?: mediaTitle)
+        ?.takeIf { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
+        ?.stripAudioExtension() ?: "Audio Track",
     )
   }
-  LaunchedEffect(mediaTitle) {
-    if (!mediaTitle.isNullOrBlank()) {
-      lastValidTitle = mediaTitle.stripAudioExtension()
+  LaunchedEffect(mediaTitle, retrievedTitle) {
+    val candidate = retrievedTitle?.takeIf { it.isNotBlank() } ?: mediaTitle
+    if (!candidate.isNullOrBlank() && !candidate.equals("Unknown Title", ignoreCase = true)) {
+      lastValidTitle = candidate.stripAudioExtension()
     }
   }
 
@@ -510,7 +538,8 @@ fun AudioPlayerControls(
     remember(rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
       sequenceOf(rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
         .filterNotNull()
-        .firstOrNull { it.isNotBlank() } ?: "Unknown Artist"
+        .firstOrNull { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+        ?: "Unknown Artist"
     }
 
   val audioPreferences = koinInject<AudioPreferences>()

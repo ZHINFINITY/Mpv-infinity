@@ -527,13 +527,20 @@ class PlayerViewModel : ViewModel(),
           ?: persistentListOf()
       }.stateIn(viewModelScope, SharingStarted.Lazily, persistentListOf())
 
+  private val audioOnlyLaunchHint = MutableStateFlow(false)
+
+  fun setAudioOnlyLaunchHint(isAudio: Boolean) {
+    audioOnlyLaunchHint.value = isAudio
+  }
+
   val isAudioOnly: StateFlow<Boolean> =
     combine(
       PlaybackSession.propNode["track-list"],
       PlaybackSession.propString["path"],
       PlaybackSession.propString["stream-open-filename"],
       PlaybackSession.state,
-    ) { node, path, streamPath, session ->
+      audioOnlyLaunchHint,
+    ) { node, path, streamPath, session, launchHint ->
       val currentPath = path?.takeIf { it.isNotBlank() } ?: streamPath
       val queuedItem = session.currentItem
       val itemDeclaresAudio =
@@ -562,7 +569,7 @@ class PlayerViewModel : ViewModel(),
           hasRealVideo || isFileVideoExt -> false
           itemDeclaresAudio || isFileAudioExt -> true
           tracks.isNotEmpty() -> tracks.any { it.isAudio }
-          else -> false
+          else -> launchHint
         }
       detectedAudio
     }.distinctUntilChanged()
@@ -863,26 +870,97 @@ class PlayerViewModel : ViewModel(),
     return true
   }
 
+  private data class AudioFileMetadata(
+    val title: String?,
+    val artist: String?,
+    val album: String?,
+    val mimeType: String?,
+    val sampleRate: Int,
+    val bitrate: Int,
+    val channels: Int,
+  )
+
+  private fun readAudioFileMetadata(path: String): AudioFileMetadata? {
+    if (path.isBlank() || path.startsWith("http", ignoreCase = true) || path.startsWith("rtsp", ignoreCase = true)) {
+      return null
+    }
+    val retriever = android.media.MediaMetadataRetriever()
+    val extractor = android.media.MediaExtractor()
+    return runCatching {
+      val uri = android.net.Uri.parse(path)
+      val localPath = path.removePrefix("file://")
+      if (uri.scheme == "content") {
+        retriever.setDataSource(appContext, uri)
+        extractor.setDataSource(appContext, uri, null)
+      } else {
+        retriever.setDataSource(localPath)
+        extractor.setDataSource(localPath)
+      }
+      var mimeType: String? = null
+      var sampleRate = 0
+      var bitrate = 0
+      var channels = 0
+      for (index in 0 until extractor.trackCount) {
+        val format = extractor.getTrackFormat(index)
+        if (format.getString(android.media.MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+          mimeType = format.getString(android.media.MediaFormat.KEY_MIME)
+          sampleRate = runCatching { format.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE) }.getOrDefault(0)
+          bitrate = runCatching { format.getInteger(android.media.MediaFormat.KEY_BIT_RATE) }.getOrDefault(0)
+          channels = runCatching { format.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT) }.getOrDefault(0)
+          break
+        }
+      }
+      AudioFileMetadata(
+        title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE),
+        artist =
+          retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
+            ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST),
+        album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM),
+        mimeType = mimeType ?: retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_MIMETYPE),
+        sampleRate = sampleRate,
+        bitrate = bitrate,
+        channels = channels,
+      )
+    }.getOrNull().also {
+      runCatching { extractor.release() }
+      runCatching { retriever.release() }
+    }
+  }
+
   fun getAudioPropertiesData(): List<app.infinity.mpvz.ui.player.controls.components.sheets.AudioPropertyItem> {
+    val path = PlaybackSession.getPropertyString("path") ?: PlaybackSession.getPropertyString("stream-open-filename") ?: ""
+    val fileMetadata = readAudioFileMetadata(path)
     val title =
-      currentMediaTitle.takeIf { it.isNotBlank() }
-        ?: PlaybackSession.getPropertyString("metadata/by-key/Title")
+      PlaybackSession.getPropertyString("metadata/by-key/Title")
+        ?.takeUnless { it.equals("Unknown Title", ignoreCase = true) }
         ?: PlaybackSession.getPropertyString("media-title")
+          ?.takeUnless { it.equals("Unknown Title", ignoreCase = true) }
+        ?: fileMetadata?.title
+        ?: currentMediaTitle.takeIf { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
         ?: "Unknown Title"
 
     val artist =
-      PlaybackSession.getPropertyString("metadata/by-key/Artist")
-        ?: PlaybackSession.getPropertyString("metadata/by-key/ARTIST")
-        ?: PlaybackSession.getPropertyString("metadata/by-key/album_artist")
+      sequenceOf(
+        PlaybackSession.getPropertyString("metadata/by-key/Artist"),
+        PlaybackSession.getPropertyString("metadata/by-key/ARTIST"),
+        PlaybackSession.getPropertyString("metadata/by-key/album_artist"),
+        fileMetadata?.artist,
+      ).firstOrNull { !it.isNullOrBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
         ?: "Unknown Artist"
 
     val album =
-      PlaybackSession.getPropertyString("metadata/by-key/Album")
-        ?: PlaybackSession.getPropertyString("metadata/by-key/ALBUM")
+      sequenceOf(
+        PlaybackSession.getPropertyString("metadata/by-key/Album"),
+        PlaybackSession.getPropertyString("metadata/by-key/ALBUM"),
+        fileMetadata?.album,
+      ).firstOrNull { !it.isNullOrBlank() && !it.equals("Unknown Album", ignoreCase = true) }
         ?: "Unknown Album"
 
-    val codec = PlaybackSession.getPropertyString("audio-codec-name")?.uppercase() ?: "Unknown"
-    val samplerateInt = PlaybackSession.getPropertyInt("audio-params/samplerate") ?: 0
+    val codec =
+      PlaybackSession.getPropertyString("audio-codec-name")?.takeIf { it.isNotBlank() }?.uppercase()
+        ?: fileMetadata?.mimeType?.substringAfterLast('/')?.uppercase()
+        ?: "Unknown"
+    val samplerateInt = PlaybackSession.getPropertyInt("audio-params/samplerate") ?: fileMetadata?.sampleRate ?: 0
     val sampleRateStr =
       if (samplerateInt >
         0
@@ -892,7 +970,7 @@ class PlayerViewModel : ViewModel(),
         "Unknown"
       }
 
-    val channelsInt = PlaybackSession.getPropertyInt("audio-params/channel-count") ?: 0
+    val channelsInt = PlaybackSession.getPropertyInt("audio-params/channel-count") ?: fileMetadata?.channels ?: 0
     val channelsStr =
       when (channelsInt) {
         1 -> "Mono (1.0)"
@@ -902,10 +980,9 @@ class PlayerViewModel : ViewModel(),
         else -> if (channelsInt > 0) "$channelsInt Channels" else "Unknown"
       }
 
-    val bitrateInt = PlaybackSession.getPropertyInt("audio-bitrate") ?: 0
+    val bitrateInt = PlaybackSession.getPropertyInt("audio-bitrate") ?: fileMetadata?.bitrate ?: 0
     val bitrateStr = if (bitrateInt > 0) "${bitrateInt / 1000} kbps" else "Variable / Unknown"
 
-    val path = PlaybackSession.getPropertyString("path") ?: PlaybackSession.getPropertyString("stream-open-filename") ?: ""
     val fileSizeStr =
       if (path.isNotBlank() && !path.startsWith("content://") && !path.startsWith("http")) {
         runCatching {
@@ -4133,10 +4210,19 @@ class PlayerViewModel : ViewModel(),
     return getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
   }
 
+  private var nativeSubtitleScale = subtitlesPreferences.subScale.get().coerceIn(0.1f, 5.0f)
+
+  /** Returns the active engine’s subtitle scale for the next pinch gesture. */
+  fun subtitleScaleForGesture(): Float {
+    if (host.isMedia3Active()) return nativeSubtitleScale
+    return PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
+  }
+
   /** Applies a shared subtitle scale to the active playback engine. */
   fun setSubtitleScaleForGesture(scale: Float) {
     val clampedScale = scale.coerceIn(0.1f, 5.0f)
     if (host.isMedia3Active()) {
+      nativeSubtitleScale = clampedScale
       host.media3SetSubtitleScale(clampedScale)
     } else {
       PlaybackSession.setPropertyFloat("sub-scale", clampedScale)

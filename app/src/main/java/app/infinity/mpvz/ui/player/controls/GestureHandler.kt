@@ -946,7 +946,7 @@ fun GestureHandler(
 
                   if (pinchToZoomSubtitles && hasActiveSub && isSubtitlePinch) {
                     isSubZoomMode = true
-                    initialSubScale = PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
+                    initialSubScale = viewModel.subtitleScaleForGesture()
                     initialDist = dist
                     lastCalculatedSubScale = initialSubScale
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
