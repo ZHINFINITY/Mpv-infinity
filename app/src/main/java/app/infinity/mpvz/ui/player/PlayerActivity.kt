@@ -1662,6 +1662,17 @@ class PlayerActivity :
 
   private fun shouldUseMedia3(item: PlaybackItem): Boolean {
     if (item.originalUri.startsWith("magnet:", ignoreCase = true)) return false
+    // A failed Native handoff owns the current item until the user explicitly selects Native
+    // again. This prevents queue/state emissions during the handoff from immediately starting a
+    // second Native controller while MPV is already resuming the same file.
+    if (media3AutoFallbackItemId == item.stableId) {
+      AppDebugLog.info(
+        TAG,
+        "Suppressing Native retry after fallback item=${item.stableId} " +
+          "configuredMode=${decoderPreferences.playbackEngine.get().name}",
+      )
+      return false
+    }
     if (manualEngineOverrideItemId == item.stableId) {
       return manualEngineOverride == PlaybackEngine.MEDIA3
     }
