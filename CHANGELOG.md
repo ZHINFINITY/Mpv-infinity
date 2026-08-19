@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## Unreleased — Native Subtitle and Music Player Fixes
+
+- **Native subtitle persistence:** Native subtitle pinch zoom now keeps its scale in the active engine state and reapplies it when Media3 recreates the subtitle renderer or changes tracks.
+- **Correct Native gesture baseline:** Each Native pinch starts from the last Native scale instead of MPV’s unrelated `sub-scale` value, which previously made Native appear to reset to 1.0.
+- **Music-player launch routing:** Direct audio launches are identified before the first MPV track-list event, preventing the first song from briefly opening in the video-player surface.
+- **Audio metadata recovery:** Embedded title, artist, album, artwork, codec, sample rate, bitrate, and channel information are used when transient MPV properties are unavailable, restoring the lossless details view for local files.
+
 ## 1.0.9 — MPV Subtitle Scale Application Fix
 
 - **MPV rendering fix:** Removed the ASS subtitle layout path that reset `sub-scale` to `1.0` whenever subtitle positioning was reapplied.

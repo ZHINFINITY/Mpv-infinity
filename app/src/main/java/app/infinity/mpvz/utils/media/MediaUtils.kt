@@ -184,6 +184,10 @@ object MediaUtils {
       } else {
         uri
       }
+    val isAudio =
+      localPath?.let { File(it).extension.lowercase() in FileTypeUtils.AUDIO_EXTENSIONS }
+        ?: context.contentResolver.getType(playbackUri)?.startsWith("audio/", ignoreCase = true)
+        ?: false
 
     val intent = Intent(Intent.ACTION_VIEW, playbackUri)
     val torrentSource =
@@ -203,6 +207,7 @@ object MediaUtils {
     intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     localPath?.let { intent.putExtra("local_media_path", it) }
+    intent.putExtra("is_audio", isAudio)
     applyPlaybackExtras(
       intent = intent,
       launchSource = launchSource,

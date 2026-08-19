@@ -81,6 +81,9 @@ class Media3PlaybackController(
   private var fastStartActive = false
   private var restoreSeekParametersWhenReady = false
   private var attachedView: PlayerView? = null
+  // SubtitleView may rebuild its cue layout when tracks change. Keep the user scale outside the
+  // view instance so a renderer reset cannot silently restore the default 1.0x size.
+  private var subtitleScale = 1f
   private var lastPlaybackState = Player.STATE_IDLE
   private var latestVideoFormat: Format? = null
   private var latestVideoSize: VideoSize? = null
@@ -249,6 +252,7 @@ class Media3PlaybackController(
     attachedView = view
     view.useController = false
     view.player = player
+    applySubtitleScale(view)
     logInfo(
       "surface attached view=${view.javaClass.simpleName} " +
         "layout=${view.width}x${view.height} visibility=${view.visibility} children=${view.childCount}",
@@ -541,11 +545,16 @@ class Media3PlaybackController(
    * subtitle size is a fraction of the view height; multiplying that baseline keeps 1.0x visually
    * unchanged while allowing the existing player pinch gesture to work for Native playback.
    */
+  private fun applySubtitleScale(view: PlayerView? = attachedView) {
+    val subtitleView = view?.subtitleView ?: return
+    subtitleView.setFractionalTextSize((0.0533f * subtitleScale).coerceIn(0.005f, 0.25f))
+  }
+
   fun setSubtitleScale(scale: Float): Boolean {
-    val subtitleView = attachedView?.subtitleView ?: return false
-    val clampedScale = scale.coerceIn(0.1f, 5.0f)
-    subtitleView.setFractionalTextSize((0.0533f * clampedScale).coerceIn(0.005f, 0.25f))
-    logInfo("subtitle scale=$clampedScale nativeSubtitleView=true")
+    subtitleScale = scale.coerceIn(0.1f, 5.0f)
+    applySubtitleScale()
+    logInfo("subtitle scale=$subtitleScale nativeSubtitleView=${attachedView?.subtitleView != null}")
+    // Retain the value even before the PlayerView is attached; attach() reapplies it later.
     return true
   }
 
@@ -700,6 +709,8 @@ class Media3PlaybackController(
     )
     latestAudioTracks = audioEntries
     latestSubtitleTracks = subtitleEntries
+    // Track changes can rebuild the cue renderer and restore its default text size.
+    applySubtitleScale()
     publishState()
   }
 

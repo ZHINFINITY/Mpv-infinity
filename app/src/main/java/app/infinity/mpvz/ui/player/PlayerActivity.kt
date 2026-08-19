@@ -674,6 +674,9 @@ class PlayerActivity :
     // its StateFlow declarations register native properties during ViewModel initialization.
     viewModel.attachHost(this)
     viewModelHostAttached = true
+    // Seed the audio-only surface before MPV publishes its first track-list event. Without this
+    // hint, the first audio file can briefly render the video-player surface and switch later.
+    viewModel.setAudioOnlyLaunchHint(isKnownAudioLaunch(intent))
     viewModel.onMpvCoreInitialized()
     MediaPlaybackService.createNotificationChannel(this)
     setupAudio()
@@ -5040,6 +5043,7 @@ class PlayerActivity :
     val previousItemWasReady = isReady
 
     setIntent(intent)
+    viewModel.setAudioOnlyLaunchHint(isKnownAudioLaunch(intent))
     mediaRequestGeneration++
     pendingSavedPlaylistSelection = null
     if (isKnownAudioLaunch(intent)) setOrientation()
