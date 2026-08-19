@@ -62,8 +62,6 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew assembleStandardPreview --stacktrace --no-daemon --max-workers=2
-          ./gradlew assembleFongmiPreview --stacktrace --no-daemon --max-workers=2
-          ./gradlew assembleNoVulkanPreview --stacktrace --no-daemon --max-workers=2
 
       - name: Sign and verify preview APKs
         shell: bash
@@ -111,20 +109,6 @@ jobs:
               "standard $abi preview"
           done
 
-          flavor_dir="app/build/outputs/apk/fongmi/preview"
-          test -d "$flavor_dir"
-          sign_apk \
-            "$flavor_dir/app-fongmi-universal-preview-unsigned.apk" \
-            "$flavor_dir/app-fongmi-universal-preview.apk" \
-            "fongmi universal preview"
-
-          flavor_dir="app/build/outputs/apk/noVulkan/preview"
-          test -d "$flavor_dir"
-          sign_apk \
-            "$flavor_dir/app-noVulkan-universal-preview-unsigned.apk" \
-            "$flavor_dir/app-noVulkan-universal-preview.apk" \
-            "non-Vulkan universal preview"
-
       - name: Stage GitHub Pages preview site
         env:
           SITE_BASE_URL: https://ZHINFINITY.github.io/Mpv-
@@ -162,8 +146,6 @@ jobs:
               ("standard", "armeabi-v7a", "armeabi-v7a"),
               ("standard", "x86", "x86"),
               ("standard", "x86_64", "x86_64"),
-              ("fongmi", "universal", "fongmi"),
-              ("noVulkan", "universal", "no-vulkan"),
           ]
           assets = []
 
