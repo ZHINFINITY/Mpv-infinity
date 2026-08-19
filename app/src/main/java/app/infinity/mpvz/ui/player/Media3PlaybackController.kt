@@ -11,6 +11,7 @@ import androidx.media3.common.C
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.PlaybackException
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.Player
@@ -73,6 +74,7 @@ class Media3PlaybackController(
   private val channelMixingProcessor = ChannelMixingAudioProcessor()
   private val nativeAudioEffectsProcessor = NativeAudioEffectsProcessor()
   private var audioChannels = AudioChannels.AutoSafe
+  private var audioPitchCorrection = true
   private val player: ExoPlayer
   private lateinit var normalMediaSourceFactory: DefaultMediaSourceFactory
   private lateinit var fastMediaSourceFactory: DefaultMediaSourceFactory
@@ -163,6 +165,12 @@ class Media3PlaybackController(
     logInfo("native audio processing normalization=$volumeNormalization drc=$drcEnabled")
   }
 
+  fun setAudioPitchCorrection(enabled: Boolean) {
+    audioPitchCorrection = enabled
+    applyPlaybackParameters(player.playbackParameters.speed)
+    logInfo("native audio pitch correction=$enabled speed=${player.playbackParameters.speed}")
+  }
+
   private inner class NativeRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
     override fun buildAudioSink(
       context: Context,
@@ -171,7 +179,9 @@ class Media3PlaybackController(
     ): AudioSink? =
       DefaultAudioSink.Builder(context)
         .setEnableFloatOutput(enableFloatOutput)
-        .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+        // Use Media3's SonicAudioProcessor for speed/pitch correction. The platform AudioOutput
+        // playback-parameter path is device-dependent and can ignore the requested pitch behavior.
+        .setEnableAudioOutputPlaybackParameters(false)
         .setAudioProcessors(arrayOf(channelMixingProcessor, nativeAudioEffectsProcessor))
         .build()
   }
@@ -451,9 +461,15 @@ class Media3PlaybackController(
     maxOf(player.currentPosition.coerceAtLeast(0L), pendingSeekPositionMs ?: 0L)
 
   fun setPlaybackSpeed(speed: Float) {
-    val clampedSpeed = speed.coerceIn(0.1f, 16f)
-    logInfo("playback speed=$clampedSpeed")
-    player.setPlaybackSpeed(clampedSpeed)
+    val clampedSpeed = speed.coerceIn(0.1f, 8f)
+    applyPlaybackParameters(clampedSpeed)
+    logInfo("playback speed=$clampedSpeed pitchCorrection=$audioPitchCorrection")
+  }
+
+  private fun applyPlaybackParameters(speed: Float) {
+    val clampedSpeed = speed.coerceIn(0.1f, 8f)
+    val pitch = if (audioPitchCorrection) 1f else clampedSpeed
+    player.setPlaybackParameters(PlaybackParameters(clampedSpeed, pitch))
   }
 
   fun setRepeatMode(mode: Int) {

@@ -65,6 +65,8 @@ fun PlaybackSpeedSheet(
   onResetPresets: () -> Unit,
   onMakeDefault: (Float) -> Unit,
   onResetDefault: () -> Unit,
+  isMedia3Active: Boolean = false,
+  onMedia3AudioPitchCorrection: ((Boolean) -> Unit)? = null,
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -215,7 +217,11 @@ fun PlaybackSpeedSheet(
           value = pitchCorrection,
           onValueChange = { newValue ->
             audioPreferences.audioPitchCorrection.set(newValue)
-            PlaybackSession.setPropertyBoolean("audio-pitch-correction", newValue)
+            if (isMedia3Active) {
+              onMedia3AudioPitchCorrection?.invoke(newValue)
+            } else {
+              PlaybackSession.setPropertyBoolean("audio-pitch-correction", newValue)
+            }
           },
           title = {
             Text(

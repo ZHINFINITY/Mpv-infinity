@@ -1054,6 +1054,9 @@ class PlayerActivity :
             onMedia3AudioProcessing = { normalization, drc ->
               media3PlaybackController.setAudioProcessing(normalization, drc)
             },
+            onMedia3AudioPitchCorrection = { enabled ->
+              media3PlaybackController.setAudioPitchCorrection(enabled)
+            },
             onDecoderSelected = { decoder ->
               // MPV decoder choices must never wake or switch to MPV while Media3 owns playback.
               // Keep this guard at the Activity boundary in case a stale Compose callback arrives.
@@ -1180,6 +1183,7 @@ class PlayerActivity :
           volumeNormalization = audioPreferences.volumeNormalization.get(),
           drcEnabled = audioPreferences.drcEnabled.get(),
         )
+        media3PlaybackController.setAudioPitchCorrection(audioPreferences.audioPitchCorrection.get())
         media3PlaybackController.play(
           uri = sourceUri,
           title = item.title,
@@ -6302,6 +6306,12 @@ class PlayerActivity :
   override fun media3SetPlaybackSpeed(speed: Float): Boolean {
     if (!isMedia3Active()) return false
     media3PlaybackController.setPlaybackSpeed(speed)
+    return true
+  }
+
+  override fun media3SetAudioPitchCorrection(enabled: Boolean): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.setAudioPitchCorrection(enabled)
     return true
   }
 

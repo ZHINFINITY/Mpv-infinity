@@ -199,6 +199,7 @@ fun PlayerControls(
   },
   onMedia3AudioChannels: (AudioChannels) -> Unit = {},
   onMedia3AudioProcessing: (Boolean, Boolean) -> Unit = { _, _ -> },
+  onMedia3AudioPitchCorrection: (Boolean) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val spacing = MaterialTheme.spacing
@@ -441,6 +442,7 @@ fun PlayerControls(
         onSelectAudio = viewModel::selectAudioTrack,
         onMedia3AudioChannels = onMedia3AudioChannels,
         onMedia3AudioProcessing = onMedia3AudioProcessing,
+        onMedia3AudioPitchCorrection = onMedia3AudioPitchCorrection,
         chapter = chapters.getOrNull(currentChapter ?: 0),
         chapters = chapters.toImmutableList(),
         onSeekToChapter = {
@@ -1978,6 +1980,7 @@ fun PlayerControls(
       onSelectAudio = viewModel::selectAudioTrack,
       onMedia3AudioChannels = onMedia3AudioChannels,
       onMedia3AudioProcessing = onMedia3AudioProcessing,
+      onMedia3AudioPitchCorrection = onMedia3AudioPitchCorrection,
       chapter = chapters.getOrNull(currentChapter ?: 0),
       chapters = chapters.toImmutableList(),
       onSeekToChapter = { index ->
