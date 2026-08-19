@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.3 — Tangled Dolby Vision Handoff Fix
+
+- **Observer-path fallback protection:** Auto mode now suppresses the MPV Dolby Vision track observer from immediately selecting Native again after the Native watchdog has already fallen back to MPV for the same item.
+- **Tangled compatibility:** This specifically fixes Dolby Vision Profile 8.1 / HDR10-compatible files such as Tangled, where Native can initialize and decode but fail to produce usable visible output on some devices.
+- **Manual switching preserved:** The guard applies only to automatic Auto-mode reselection. Choosing Native or MPV manually from the decoder sheet still works.
+
 ## 1.0.2 — Mpv∞ Update Feed Fix
 
 - **Own release feed:** The in-app updater now checks `ZHINFINITY/Mpv-infinity` releases instead of the inherited mpvRx release feed, so it will no longer offer mpvRx versions such as 2.1.0.
