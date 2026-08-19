@@ -202,32 +202,6 @@ jobs:
             fi
           fi
 
-      - name: Upload arm64-v8a APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-standard-arm64-v8a-debug-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/standard/debug/app-standard-arm64-v8a-debug*.apk
-          if-no-files-found: error
-          retention-days: 3
-          compression-level: 0
-
-      - name: Upload Fongmi universal APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'fongmi' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-fongmi-debug-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/fongmi/debug/app-fongmi-universal-debug*.apk
-          if-no-files-found: error
-          retention-days: 3
-          compression-level: 0
-
-      - name: Upload non-Vulkan universal APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'no_vulkan' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-no-vulkan-debug-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/noVulkan/debug/app-noVulkan-universal-debug*.apk
-          if-no-files-found: error
-          retention-days: 3
-          compression-level: 0
+      # Debug APK artifact uploads are intentionally disabled because the private
+      # repository's Actions artifact allowance is currently exhausted/stale.
+      # Stable signed APKs are published by release.yml as GitHub Release assets.
