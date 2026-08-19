@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -48,6 +49,7 @@ import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoAspect
 import app.infinity.mpvz.ui.player.controls.components.ControlsButton
 import app.infinity.mpvz.ui.player.controls.components.ControlsGroup
+import app.infinity.mpvz.ui.player.controls.components.AnimatedPlayPauseIcon
 import app.infinity.mpvz.ui.player.controls.components.PlayerGlassSurface
 import app.infinity.mpvz.ui.theme.controlColor
 import app.infinity.mpvz.ui.theme.spacing
@@ -202,6 +204,7 @@ fun TopPlayerControlsPortrait(
 @Composable
 fun BottomPlayerControlsPortrait(
   buttons: List<PlayerButton>,
+  isPlaying: Boolean,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -229,39 +232,81 @@ fun BottomPlayerControlsPortrait(
       preferredButtons.filter { it in buttons }.ifEmpty { buttons.take(4) }
     }
 
-  FlowRow(
+  PlayerGlassSurface(
     modifier =
       Modifier
         .fillMaxWidth()
-        .padding(
-          start = MaterialTheme.spacing.large,
-          end = MaterialTheme.spacing.large,
-          bottom = MaterialTheme.spacing.medium,
-        ),
-    maxItemsInEachRow = 4,
-    horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
-    verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+        .padding(horizontal = MaterialTheme.spacing.medium),
+    shape = RoundedCornerShape(28.dp),
+    hideBackground = false,
+    contentColor = Color.White,
   ) {
-    compactButtons.forEach { button ->
-      RenderPlayerButton(
-        button = button,
-        chapters = chapters,
-        currentChapter = currentChapter,
-        isPortrait = true,
-        isSpeedNonOne = isSpeedNonOne,
-        currentZoom = currentZoom,
-        aspect = aspect,
-        mediaTitle = mediaTitle,
-        hideBackground = hideBackground,
-        onBackPress = onBackPress,
-        onOpenSheet = onOpenSheet,
-        onOpenPanel = onOpenPanel,
-        viewModel = viewModel,
-        activity = activity,
-        decoder = decoder,
-        playbackSpeed = playbackSpeed,
-        buttonSize = 46.dp,
-      )
+    Column(
+      modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceEvenly,
+      ) {
+        ControlsButton(
+          icon = Icons.RoundedFilled.SkipPrevious,
+          onClick = { if (viewModel.hasPrevious()) viewModel.playPrevious() },
+          title = stringResource(R.string.pref_gesture_media_previous),
+          modifier = Modifier.size(58.dp),
+        )
+        PlayerGlassSurface(
+          modifier = Modifier.size(70.dp).clickable { viewModel.pauseUnpause() },
+          shape = CircleShape,
+          hideBackground = false,
+          contentColor = Color.White,
+        ) {
+          AnimatedPlayPauseIcon(
+            isPlaying = isPlaying,
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            tint = LocalContentColor.current,
+          )
+        }
+        ControlsButton(
+          icon = Icons.RoundedFilled.SkipNext,
+          onClick = { if (viewModel.hasNext()) viewModel.playNext() },
+          title = stringResource(R.string.pref_gesture_media_next),
+          modifier = Modifier.size(58.dp),
+        )
+      }
+
+      FlowRow(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp),
+        maxItemsInEachRow = 4,
+        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+      ) {
+        compactButtons.forEach { button ->
+          RenderPlayerButton(
+            button = button,
+            chapters = chapters,
+            currentChapter = currentChapter,
+            isPortrait = true,
+            isSpeedNonOne = isSpeedNonOne,
+            currentZoom = currentZoom,
+            aspect = aspect,
+            mediaTitle = mediaTitle,
+            hideBackground = hideBackground,
+            onBackPress = onBackPress,
+            onOpenSheet = onOpenSheet,
+            onOpenPanel = onOpenPanel,
+            viewModel = viewModel,
+            activity = activity,
+            decoder = decoder,
+            playbackSpeed = playbackSpeed,
+            buttonSize = 46.dp,
+          )
+        }
+      }
     }
   }
 }
