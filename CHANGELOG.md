@@ -2,7 +2,7 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
-## Unreleased — Native Subtitle and Music Player Fixes
+## 1.0.10 — Native Subtitle and Music Player Fixes
 
 - **Native subtitle persistence:** Native subtitle pinch zoom now keeps its scale in the active engine state and reapplies it when Media3 recreates the subtitle renderer or changes tracks.
 - **Correct Native gesture baseline:** Each Native pinch starts from the last Native scale instead of MPV’s unrelated `sub-scale` value, which previously made Native appear to reset to 1.0.
