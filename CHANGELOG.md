@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.7 — Subtitle Pinch-Zoom Gesture Fix
+
+- **Subtitle pinch zoom:** Pinching directly over visible subtitle text now routes to `sub-scale` instead of being misclassified as video zoom.
+- **Gesture behavior preserved:** Video pinch zoom, pan, subtitle position gestures, and both Native and MPV playback paths remain unchanged outside the corrected subtitle hit test.
+- **Private test release:** This build is for device validation; previous releases remain available and the planned public fresh-start reset is deferred.
+
 ## 1.0.6 — Native Multichannel Regression Fix
 
 - **Wuthering With You regression fixed:** Native AutoSafe now preserves the six-channel layout used by the previously working DTS/DTS-HD path instead of forcing it through a stereo mixer.
