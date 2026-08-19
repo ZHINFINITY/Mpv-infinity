@@ -79,21 +79,33 @@ jobs:
             local unsigned="$1"
             local signed="$2"
             local label="$3"
-            if [[ ! -f "$unsigned" ]]; then
-              echo "Missing expected $label APK: $unsigned"
+            if [[ -f "$unsigned" ]]; then
+              "$apksigner" sign \
+                --ks release.keystore \
+                --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+                --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
+                --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+                --out "$signed" \
+                "$unsigned"
+              rm -f "$unsigned"
+            elif [[ -f "$signed" ]]; then
+              # Gradle may emit an already-signed release APK instead of an
+              # explicit -unsigned APK. Re-sign that file in place.
+              temporary="${signed}.resigned"
+              "$apksigner" sign \
+                --ks release.keystore \
+                --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+                --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
+                --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+                --out "$temporary" \
+                "$signed"
+              mv -f "$temporary" "$signed"
+            else
+              echo "Missing expected $label APK: neither $unsigned nor $signed exists"
               find app/build/outputs/apk -type f -name '*.apk' -print || true
               exit 1
             fi
-
-            "$apksigner" sign \
-              --ks release.keystore \
-              --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
-              --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
-              --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
-              --out "$signed" \
-              "$unsigned"
             "$apksigner" verify --verbose "$signed"
-            rm -f "$unsigned"
           }
 
           release_dir="app/build/outputs/apk/standard/release"
