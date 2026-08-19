@@ -19,8 +19,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-brightgreen.svg" />
   <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" />
-  <img src="https://img.shields.io/github/v/release/ZHINFINITY/Mpv-.svg?logo=github&label=Release&cacheSeconds=3600" />
-  <img src="https://img.shields.io/github/downloads/ZHINFINITY/Mpv-/total?logo=github&cacheSeconds=3600" />
+  <img src="https://img.shields.io/github/v/release/ZHINFINITY/Mpv-infinity.svg?logo=github&label=Release&cacheSeconds=3600" />
+  <img src="https://img.shields.io/github/downloads/ZHINFINITY/Mpv-infinity/total?logo=github&cacheSeconds=3600" />
 </p>
 
 ---
@@ -301,7 +301,7 @@ Actual power use depends on the device, codec, resolution, refresh rate, rendere
 ---
 
 <div align="center">
-  <a href="https://github.com/ZHINFINITY/Mpv-/releases">
+  <a href="https://github.com/ZHINFINITY/Mpv-infinity/releases">
     <img src="https://img.shields.io/badge/Download-Stable_Release-blue?style=for-the-badge&logo=github" alt="Stable Release">
   </a>
   <!-- <a href="https://ZHINFINITY.github.io/Mpv-/">
@@ -313,7 +313,7 @@ Actual power use depends on the device, codec, resolution, refresh rate, rendere
   <i>Note: Previews may be unstable and are intended for testing purposes only.</i>
 </div> -->
 
-If something breaks or feels inconsistent, please report it through the [Issues](https://github.com/ZHINFINITY/Mpv-/issues) page with the app version, device model, engine selected, and relevant logs.
+If something breaks or feels inconsistent, please report it through the [Issues](https://github.com/ZHINFINITY/Mpv-infinity/issues) page with the app version, device model, engine selected, and relevant logs.
 
 ---
 
@@ -419,10 +419,10 @@ Distributed under **GNU Affero General Public License v3.0 (AGPL-3.0-or-later)**
 
 ## Star History
 
-<a href="https://www.star-history.com/#ZHINFINITY/Mpv-&type=date&legend=top-left">
+<a href="https://www.star-history.com/#ZHINFINITY/Mpv-infinity&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
  </picture>
 </a>
