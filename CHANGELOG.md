@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.8 — Shared Subtitle Pinch-Zoom Fix
+
+- **Both engines supported:** Subtitle pinch gestures now detect selected Native subtitle tracks as well as MPV tracks.
+- **Actual Native scaling:** Native pinch updates Media3’s attached `SubtitleView`; MPV continues to receive the existing `sub-scale` property update.
+- **Private test release:** This build supersedes the v1.0.7 gesture-routing test and does not change the planned public fresh-start reset.
+
 ## 1.0.7 — Subtitle Pinch-Zoom Gesture Fix
 
 - **Subtitle pinch zoom:** Pinching directly over visible subtitle text now routes to `sub-scale` instead of being misclassified as video zoom.

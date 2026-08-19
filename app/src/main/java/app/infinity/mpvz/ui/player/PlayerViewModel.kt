@@ -4127,6 +4127,22 @@ class PlayerViewModel : ViewModel(),
       .takeIf { it.isFinite() }
       ?: 0.0
 
+  /** Returns whether the active engine currently has a selected subtitle track. */
+  fun hasActiveSubtitleForGesture(): Boolean {
+    if (host.isMedia3Active()) return host.media3HasSelectedSubtitle()
+    return getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
+  }
+
+  /** Applies a shared subtitle scale to the active playback engine. */
+  fun setSubtitleScaleForGesture(scale: Float) {
+    val clampedScale = scale.coerceIn(0.1f, 5.0f)
+    if (host.isMedia3Active()) {
+      host.media3SetSubtitleScale(clampedScale)
+    } else {
+      PlaybackSession.setPropertyFloat("sub-scale", clampedScale)
+    }
+  }
+
   fun seekBy(offset: Int) {
     if (host.isMedia3Active()) {
       viewModelScope.launch(Dispatchers.Main.immediate) {
