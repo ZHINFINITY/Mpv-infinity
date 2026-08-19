@@ -73,6 +73,12 @@ interface PlayerHost {
 
   fun media3IsSubtitleSelected(trackId: Int): Boolean = false
 
+  /** Applies the shared subtitle scale to the active Native/Media3 SubtitleView. */
+  fun media3SetSubtitleScale(scale: Float): Boolean = false
+
+  /** Returns whether Native/Media3 currently has any subtitle track selected. */
+  fun media3HasSelectedSubtitle(): Boolean = false
+
   fun media3CurrentPositionMs(): Long = 0L
 
   fun media3DurationMs(): Long = 0L

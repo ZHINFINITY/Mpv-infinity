@@ -534,6 +534,21 @@ class Media3PlaybackController(
     return latestSubtitleTracks.any { it.id == trackId && it.selected == true }
   }
 
+  fun hasSelectedSubtitle(): Boolean = latestSubtitleTracks.any { it.selected == true }
+
+  /**
+   * Applies the shared subtitle scale to Media3's actual subtitle renderer. Media3's standard
+   * subtitle size is a fraction of the view height; multiplying that baseline keeps 1.0x visually
+   * unchanged while allowing the existing player pinch gesture to work for Native playback.
+   */
+  fun setSubtitleScale(scale: Float): Boolean {
+    val subtitleView = attachedView?.subtitleView ?: return false
+    val clampedScale = scale.coerceIn(0.1f, 5.0f)
+    subtitleView.setFractionalTextSize((0.0533f * clampedScale).coerceIn(0.005f, 0.25f))
+    logInfo("subtitle scale=$clampedScale nativeSubtitleView=true")
+    return true
+  }
+
   fun currentState(): State = snapshot()
 
   fun release() {

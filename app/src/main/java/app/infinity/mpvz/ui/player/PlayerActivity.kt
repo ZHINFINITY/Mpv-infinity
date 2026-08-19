@@ -6392,6 +6392,16 @@ class PlayerActivity :
     return media3PlaybackController.isSubtitleSelected(trackId)
   }
 
+  override fun media3SetSubtitleScale(scale: Float): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.setSubtitleScale(scale)
+  }
+
+  override fun media3HasSelectedSubtitle(): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.hasSelectedSubtitle()
+  }
+
   override fun media3CurrentPositionMs(): Long {
     if (!isMedia3Active()) return 0L
     return media3PlaybackController.currentState().positionMs

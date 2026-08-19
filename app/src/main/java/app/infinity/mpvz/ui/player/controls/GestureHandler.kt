@@ -933,7 +933,7 @@ fun GestureHandler(
                   currentPanX = viewModel.videoPanX.value
                   currentPanY = viewModel.videoPanY.value
 
-                  val hasActiveSub = getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
+                  val hasActiveSub = viewModel.hasActiveSubtitleForGesture()
                   val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
                   val subtitleScreenY = getSubtitleScreenY(subPos, sw, sh)
                   val isCenterPinchX = midX in (sw * 0.2f)..(sw * 0.8f)
@@ -964,7 +964,7 @@ fun GestureHandler(
                     if (gestureStarted && initialDist > 0f) {
                       val currentSubScale = (initialSubScale * (dist / initialDist)).coerceIn(0.1f, 5.0f)
                       lastCalculatedSubScale = currentSubScale
-                      PlaybackSession.setPropertyFloat("sub-scale", currentSubScale)
+                      viewModel.setSubtitleScaleForGesture(currentSubScale)
                       viewModel.playerUpdate.update { PlayerUpdates.SubtitleZoom(currentSubScale) }
                     }
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
