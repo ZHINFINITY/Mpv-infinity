@@ -31,6 +31,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.mkv.MatroskaExtractor
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 
 /**
@@ -84,6 +85,15 @@ class Media3PlaybackController(
   // SubtitleView may rebuild its cue layout when tracks change. Keep the user scale outside the
   // view instance so a renderer reset cannot silently restore the default 1.0x size.
   private var subtitleScale = 1f
+  private var nativeSubtitleStyle =
+    CaptionStyleCompat(
+      CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+      android.graphics.Color.BLACK,
+      android.graphics.Color.WHITE,
+      android.graphics.Color.TRANSPARENT,
+      android.graphics.Color.TRANSPARENT,
+      null,
+    )
   private var lastPlaybackState = Player.STATE_IDLE
   private var latestVideoFormat: Format? = null
   private var latestVideoSize: VideoSize? = null
@@ -252,6 +262,7 @@ class Media3PlaybackController(
     attachedView = view
     view.useController = false
     view.player = player
+    applyNativeSubtitleStyle(view)
     applySubtitleScale(view)
     logInfo(
       "surface attached view=${view.javaClass.simpleName} " +
@@ -540,6 +551,40 @@ class Media3PlaybackController(
 
   fun hasSelectedSubtitle(): Boolean = latestSubtitleTracks.any { it.selected == true }
 
+  /** Applies the active Native caption style to Media3's actual subtitle renderer. */
+  private fun applyNativeSubtitleStyle(view: PlayerView? = attachedView) {
+    view?.subtitleView?.setStyle(nativeSubtitleStyle)
+  }
+
+  /**
+   * Applies a user-selected Native caption style. Media3 does not expose every MPV subtitle
+   * property, but its CaptionStyleCompat covers the visible text, background, and edge treatment.
+   */
+  fun setSubtitleStyle(
+    textColor: Int,
+    backgroundColor: Int,
+    edgeType: Int,
+    edgeColor: Int,
+  ): Boolean {
+    nativeSubtitleStyle =
+      CaptionStyleCompat(
+        edgeType,
+        edgeColor,
+        textColor,
+        backgroundColor,
+        // Keep the cue window transparent. A black window here is what creates the unwanted full
+        // subtitle rectangle behind Native captions.
+        android.graphics.Color.TRANSPARENT,
+        null,
+      )
+    applyNativeSubtitleStyle()
+    logInfo(
+      "subtitle style text=$textColor background=$backgroundColor edgeType=$edgeType " +
+        "edgeColor=$edgeColor nativeSubtitleView=${attachedView?.subtitleView != null}",
+    )
+    return true
+  }
+
   /**
    * Applies the shared subtitle scale to Media3's actual subtitle renderer. Media3's standard
    * subtitle size is a fraction of the view height; multiplying that baseline keeps 1.0x visually
@@ -709,7 +754,9 @@ class Media3PlaybackController(
     )
     latestAudioTracks = audioEntries
     latestSubtitleTracks = subtitleEntries
-    // Track changes can rebuild the cue renderer and restore its default text size.
+    // Track changes can rebuild the cue renderer and restore its default caption style and text
+    // size. Reapply both after every track rebuild.
+    applyNativeSubtitleStyle()
     applySubtitleScale()
     publishState()
   }

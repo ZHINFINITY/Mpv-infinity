@@ -9,13 +9,9 @@
 
 package app.infinity.mpvz.ui.player.controls
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,7 +21,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -61,7 +56,9 @@ fun TopPlayerControlsPortrait(
   hideBackground: Boolean,
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,
+  onOpenPanel: (Panels) -> Unit,
   viewModel: PlayerViewModel,
+  playbackSpeed: Float = 1f,
   isTranslatingSub: Boolean = false,
   isRealtimeSubsActive: Boolean = false,
   realtimeSubsLanguage: String = "",
@@ -79,9 +76,13 @@ fun TopPlayerControlsPortrait(
         .padding(horizontal = MaterialTheme.spacing.medium),
   ) {
     Row(
+      modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      ControlsGroup(hideBackground = hideBackground) {
+      ControlsGroup(
+        modifier = Modifier.weight(1f),
+        hideBackground = hideBackground,
+      ) {
         ControlsButton(
           icon = Icons.RoundedFilled.ArrowBack,
           onClick = onBackPress,
@@ -90,7 +91,7 @@ fun TopPlayerControlsPortrait(
         )
 
         Column(
-          modifier = Modifier.padding(start = 4.dp),
+          modifier = Modifier.weight(1f).padding(start = 4.dp),
         ) {
           PlayerGlassSurface(
             shape = CircleShape,
@@ -128,6 +129,43 @@ fun TopPlayerControlsPortrait(
                 )
               }
             }
+          }
+        }
+
+        PlayerGlassSurface(
+          shape = RoundedCornerShape(24.dp),
+          hideBackground = hideBackground,
+          contentColor = Color.White,
+          modifier = Modifier.height(45.dp),
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp),
+          ) {
+            Text(
+              text =
+                if (kotlin.math.abs(playbackSpeed - playbackSpeed.toInt()) < 0.001f) {
+                  "${playbackSpeed.toInt()}x"
+                } else {
+                  "%.2fx".format(playbackSpeed)
+                },
+              style = MaterialTheme.typography.labelLarge,
+              color = Color.White,
+              modifier = Modifier.clickable { onOpenSheet(Sheets.PlaybackSpeed) }.padding(horizontal = 6.dp),
+            )
+            ControlsButton(
+              icon = Icons.RoundedFilled.LockOpen,
+              onClick = viewModel::lockControls,
+              color = Color.White,
+              modifier = Modifier.size(38.dp),
+            )
+            ControlsButton(
+              icon = Icons.RoundedFilled.Audiotrack,
+              onClick = { onOpenSheet(Sheets.AudioTracks) },
+              onLongClick = { onOpenPanel(Panels.AudioDelay) },
+              color = Color.White,
+              modifier = Modifier.size(38.dp),
+            )
           }
         }
       }
@@ -200,7 +238,6 @@ fun TopPlayerControlsPortrait(
   }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BottomPlayerControlsPortrait(
   buttons: List<PlayerButton>,
@@ -238,11 +275,11 @@ fun BottomPlayerControlsPortrait(
         .fillMaxWidth()
         .padding(horizontal = MaterialTheme.spacing.medium),
     shape = RoundedCornerShape(28.dp),
-    hideBackground = false,
+    hideBackground = hideBackground,
     contentColor = Color.White,
   ) {
     Column(
-      modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+      modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       Row(
@@ -256,10 +293,10 @@ fun BottomPlayerControlsPortrait(
           title = stringResource(R.string.pref_gesture_media_previous),
           modifier = Modifier.size(58.dp),
         )
-        PlayerGlassSurface(
+          PlayerGlassSurface(
           modifier = Modifier.size(70.dp).clickable { viewModel.pauseUnpause() },
           shape = CircleShape,
-          hideBackground = false,
+          hideBackground = hideBackground,
           contentColor = Color.White,
         ) {
           AnimatedPlayPauseIcon(
@@ -276,35 +313,70 @@ fun BottomPlayerControlsPortrait(
         )
       }
 
-      FlowRow(
+      Row(
         modifier =
           Modifier
             .fillMaxWidth()
-            .padding(top = 10.dp),
-        maxItemsInEachRow = 4,
-        horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+            .padding(top = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.Top,
       ) {
         compactButtons.forEach { button ->
-          RenderPlayerButton(
-            button = button,
-            chapters = chapters,
-            currentChapter = currentChapter,
-            isPortrait = true,
-            isSpeedNonOne = isSpeedNonOne,
-            currentZoom = currentZoom,
-            aspect = aspect,
-            mediaTitle = mediaTitle,
-            hideBackground = hideBackground,
-            onBackPress = onBackPress,
-            onOpenSheet = onOpenSheet,
-            onOpenPanel = onOpenPanel,
-            viewModel = viewModel,
-            activity = activity,
-            decoder = decoder,
-            playbackSpeed = playbackSpeed,
-            buttonSize = 46.dp,
-          )
+          Column(
+            modifier = Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            RenderPlayerButton(
+              button = button,
+              chapters = chapters,
+              currentChapter = currentChapter,
+              isPortrait = true,
+              isSpeedNonOne = isSpeedNonOne,
+              currentZoom = currentZoom,
+              aspect = aspect,
+              mediaTitle = mediaTitle,
+              hideBackground = hideBackground,
+              onBackPress = onBackPress,
+              onOpenSheet = onOpenSheet,
+              onOpenPanel = onOpenPanel,
+              viewModel = viewModel,
+              activity = activity,
+              decoder = decoder,
+              playbackSpeed = playbackSpeed,
+              buttonSize = 42.dp,
+            )
+            when (button) {
+              PlayerButton.SUBTITLES ->
+                Text(
+                  text = stringResource(R.string.btn_label_subtitles),
+                  style = MaterialTheme.typography.labelLarge,
+                  color = Color.White,
+                  maxLines = 1,
+                )
+              PlayerButton.VIDEO_ZOOM ->
+                Text(
+                  text = stringResource(R.string.btn_label_zoom),
+                  style = MaterialTheme.typography.labelLarge,
+                  color = Color.White,
+                  maxLines = 1,
+                )
+              PlayerButton.SCREEN_ROTATION ->
+                Text(
+                  text = stringResource(R.string.btn_label_rotation),
+                  style = MaterialTheme.typography.labelLarge,
+                  color = Color.White,
+                  maxLines = 1,
+                )
+              PlayerButton.MORE_OPTIONS ->
+                Text(
+                  text = stringResource(R.string.btn_label_more),
+                  style = MaterialTheme.typography.labelLarge,
+                  color = Color.White,
+                  maxLines = 1,
+                )
+              else -> Unit
+            }
+          }
         }
       }
     }

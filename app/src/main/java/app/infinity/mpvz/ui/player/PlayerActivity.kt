@@ -2166,6 +2166,29 @@ class PlayerActivity :
         return@runCatching
       }
 
+      val shouldKeepNativePlayingInBackground =
+        playbackEngine == PlaybackEngine.MEDIA3 &&
+          PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnStop(
+            backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),
+            backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
+            isUserFinishing = isUserFinishing,
+            isFinishing = isFinishing,
+            isInPictureInPictureMode = isInPictureInPictureMode,
+            isScreenOffOrLocked = isDeviceScreenOffOrLocked(),
+          )
+      if (shouldKeepNativePlayingInBackground) {
+        // Media3 owns playback in Native mode; the MPV-backed service handoff cannot recreate or
+        // control this ExoPlayer instance. Keep the existing Media3 player alive and retain its
+        // play/pause state instead of calling viewModel.pause(), which only pauses MPV.
+        isBackgroundPlaybackSessionActive = true
+        AppDebugLog.info(
+          TAG,
+          "Keeping Native Media3 playback alive while Activity is stopped " +
+            "positionMs=${media3State.positionMs} isPlaying=${media3State.isPlaying}",
+        )
+        return@runCatching
+      }
+
       if (
         PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnStop(
           backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),
@@ -6399,6 +6422,16 @@ class PlayerActivity :
   override fun media3SetSubtitleScale(scale: Float): Boolean {
     if (!isMedia3Active()) return false
     return media3PlaybackController.setSubtitleScale(scale)
+  }
+
+  override fun media3ApplySubtitleStyle(
+    textColor: Int,
+    backgroundColor: Int,
+    edgeType: Int,
+    edgeColor: Int,
+  ): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.setSubtitleStyle(textColor, backgroundColor, edgeType, edgeColor)
   }
 
   override fun media3HasSelectedSubtitle(): Boolean {

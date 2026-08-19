@@ -298,7 +298,7 @@ fun SeekbarWithTimers(
         modifier
           .fillMaxWidth()
           .then(if (applyHorizontalPadding) Modifier.padding(horizontal = MaterialTheme.spacing.large) else Modifier),
-      verticalArrangement = Arrangement.spacedBy(4.dp),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
       SeekbarContent(
         positionProvider = { if (isUserInteracting) userPosition else animatedPosition.value },
@@ -321,7 +321,8 @@ fun SeekbarWithTimers(
         onValueChangeFinished = onValueChangeFinished,
         scope = scope,
         animatedPosition = animatedPosition,
-        modifier = Modifier.fillMaxWidth().height(44.dp), // Taller for visibility
+        // Keep the rail compact in portrait so the elapsed/total timer row retains its own space.
+        modifier = Modifier.fillMaxWidth().height(36.dp),
       )
 
       Row(
