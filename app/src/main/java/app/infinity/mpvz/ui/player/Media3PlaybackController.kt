@@ -87,11 +87,11 @@ class Media3PlaybackController(
   private var subtitleScale = 1f
   private var nativeSubtitleStyle =
     CaptionStyleCompat(
-      CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-      android.graphics.Color.BLACK,
       android.graphics.Color.WHITE,
       android.graphics.Color.TRANSPARENT,
       android.graphics.Color.TRANSPARENT,
+      CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+      android.graphics.Color.BLACK,
       null,
     )
   private var lastPlaybackState = Player.STATE_IDLE
@@ -582,14 +582,14 @@ class Media3PlaybackController(
   ): Boolean {
     nativeSubtitleStyle =
       CaptionStyleCompat(
-        edgeType,
-        edgeColor,
         textColor,
         // Native subtitles must remain transparent like the MPV renderer. The preference's
         // background value is still retained for MPV, but is intentionally not used as a Media3
         // cue rectangle because it creates the black block reported on device.
         android.graphics.Color.TRANSPARENT,
         android.graphics.Color.TRANSPARENT,
+        edgeType,
+        edgeColor,
         null,
       )
     applyNativeSubtitleStyle()
