@@ -216,16 +216,8 @@ jobs:
           python3 -m json.tool site/latest.json >/dev/null
           find site -maxdepth 2 -type f -printf '%p %k KB\n' | sort
 
-      - name: Upload preview APKs as Actions artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: Mpv∞-preview-r${{ env.COMMIT_COUNT }}
-          path: |
-            site/downloads/*.apk
-            site/latest.json
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
+      # Preview APKs are served from GitHub Pages below instead of consuming
+      # the private repository's Actions artifact storage allowance.
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
