@@ -4229,6 +4229,22 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
+  /** Applies saved subtitle colors and border settings to the active Native renderer. */
+  fun applyNativeSubtitleStyle() {
+    if (!host.isMedia3Active()) return
+    val edgeType =
+      when (subtitlesPreferences.borderStyle.get().value) {
+        "opaque-box", "background-box" -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE
+        else -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+      }
+    host.media3ApplySubtitleStyle(
+      textColor = subtitlesPreferences.textColor.get(),
+      backgroundColor = subtitlesPreferences.backgroundColor.get(),
+      edgeType = edgeType,
+      edgeColor = subtitlesPreferences.borderColor.get(),
+    )
+  }
+
   fun seekBy(offset: Int) {
     if (host.isMedia3Active()) {
       viewModelScope.launch(Dispatchers.Main.immediate) {

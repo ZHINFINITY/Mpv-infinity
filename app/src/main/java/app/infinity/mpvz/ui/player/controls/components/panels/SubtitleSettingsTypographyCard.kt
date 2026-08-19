@@ -201,7 +201,13 @@ fun SubtitleSettingsTypographyCard(
         }
         Spacer(Modifier.weight(1f))
         TextButton(
-          onClick = { resetTypography(preferences) },
+          onClick = {
+            resetTypography(preferences)
+            viewModel.applyNativeSubtitleStyle()
+            viewModel.setSubtitleScaleForGesture(
+              (preferences.fontSize.get() / 55f).coerceIn(0.1f, 5.0f),
+            )
+          },
         ) {
           Row(
             horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
@@ -245,6 +251,9 @@ fun SubtitleSettingsTypographyCard(
           preferences.fontSize.set(it)
           PlaybackSession.setPropertyInt("sub-font-size", it)
           PlaybackSession.setPropertyInt("secondary-sub-font-size", it)
+          if (viewModel.isMedia3ActiveForGesture()) {
+            viewModel.setSubtitleScaleForGesture((it / 55f).coerceIn(0.1f, 5.0f))
+          }
         },
       ) {
         Icon(Icons.RoundedFilled.FormatSize, null)
@@ -258,6 +267,7 @@ fun SubtitleSettingsTypographyCard(
             preferences.borderStyle.set(it)
             PlaybackSession.setPropertyString("sub-border-style", it.value)
             PlaybackSession.setPropertyString("secondary-sub-border-style", it.value)
+            viewModel.applyNativeSubtitleStyle()
           },
           title = { Text(stringResource(R.string.player_sheets_subtitles_border_style)) },
           valueToText = { AnnotatedString(resources.getString(it.titleRes)) },
@@ -274,6 +284,7 @@ fun SubtitleSettingsTypographyCard(
         onChange = {
           preferences.borderSize.set(it)
           PlaybackSession.setPropertyInt("sub-border-size", it)
+          viewModel.applyNativeSubtitleStyle()
           PlaybackSession.setPropertyInt("sub-outline-size", it)
           PlaybackSession.setPropertyInt("secondary-sub-border-size", it)
           PlaybackSession.setPropertyInt("secondary-sub-outline-size", it)

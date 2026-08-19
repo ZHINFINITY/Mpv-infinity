@@ -425,6 +425,10 @@ fun PlayerControls(
         onBackPress = onBackPress,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
+        isMedia3Active = isMedia3Active,
+        media3IsPlaying = media3State.isPlaying,
+        media3PositionMs = media3State.positionMs,
+        media3DurationMs = media3State.durationMs,
       )
 
       PlayerSheets(
@@ -1597,12 +1601,14 @@ fun PlayerControls(
                   },
                 ).constrainAs(seekbar) {
                   if (isPortrait) {
-                    bottom.linkTo(bottomRightControls.top, spacing.large)
+                    bottom.linkTo(bottomRightControls.top, spacing.extraLarge)
                   } else {
                     bottom.linkTo(parent.bottom, spacing.medium)
                   }
-                  start.linkTo(parent.start, spacing.large)
-                  end.linkTo(parent.end, spacing.large)
+                  // Keep the portrait rail inside the video bounds and leave a clear gap for
+                  // the timer row below it; the lower transport panel must never cover duration.
+                  start.linkTo(parent.start, if (isPortrait) spacing.extraLarge else spacing.large)
+                  end.linkTo(parent.end, if (isPortrait) spacing.extraLarge else spacing.large)
                 },
           ) {
             val mpvPosition by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
@@ -1679,7 +1685,7 @@ fun PlayerControls(
                 bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
                 isPortrait = isPortrait,
                 applyHorizontalPadding = false,
-                modifier = Modifier.padding(horizontal = if (isPortrait) 8.dp else 0.dp),
+                modifier = Modifier.padding(horizontal = if (isPortrait) 4.dp else 0.dp),
               )
             }
             if (showSeekbarContainer) {
@@ -1688,8 +1694,8 @@ fun PlayerControls(
                   Modifier
                     .fillMaxWidth()
                     .padding(
-                      horizontal = if (isPortrait) 16.dp else 6.dp,
-                      vertical = if (isPortrait) 6.dp else 4.dp,
+                      horizontal = if (isPortrait) 10.dp else 6.dp,
+                      vertical = if (isPortrait) 2.dp else 4.dp,
                     ),
                 shape = RoundedCornerShape(26.dp),
                 hideBackground = hideBackground,
@@ -1770,7 +1776,9 @@ fun PlayerControls(
                 hideBackground = hideBackground,
                 onBackPress = onBackPress,
                 onOpenSheet = onOpenSheet,
+                onOpenPanel = onOpenPanel,
                 viewModel = viewModel,
+                playbackSpeed = playbackSpeed ?: 1f,
                 isTranslatingSub = showAiIndicators && isTranslatingSub,
                 isRealtimeSubsActive = showRealtimeSubs && isRealtimeSubsActive,
                 realtimeSubsLanguage = realtimeSubsLanguage,

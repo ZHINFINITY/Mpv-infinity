@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.11 — Native Playback and Portrait Controls Fixes
+
+- **Native background playback:** When background playback is enabled, the Media3/Native player remains active as the Activity stops instead of being treated like the MPV-only service handoff.
+- **Native subtitle styling:** Native captions now start with a transparent window and receive supported text, background, and edge settings from the subtitle panel while preserving the saved pinch scale across renderer and track updates.
+- **Music-player synchronization:** The audio controls can use live Native state for play/pause, position, and duration instead of stale MPV properties.
+- **Portrait controls:** The vertical player now uses a compact rounded control card with visible elapsed/remaining time, a centered transport row, labeled Subtitles/Zoom/Rotate/More actions, and a reference-style speed/lock/audio header pill.
+
 ## 1.0.10 — Native Subtitle and Music Player Fixes
 
 - **Native subtitle persistence:** Native subtitle pinch zoom now keeps its scale in the active engine state and reapplies it when Media3 recreates the subtitle renderer or changes tracks.

@@ -121,6 +121,7 @@ fun SubtitleSettingsColorsCard(
           onClick = {
             resetColors(preferences, currentColorType)
             currentColor = getCurrentMPVColor(currentColorType)
+            viewModel.applyNativeSubtitleStyle()
           },
         ) {
           Row(
@@ -141,6 +142,7 @@ fun SubtitleSettingsColorsCard(
           PlaybackSession.setPropertyString(currentColorType.property, hexColor)
           val secondaryProp = currentColorType.property.replace("sub-", "secondary-sub-")
           PlaybackSession.setPropertyString(secondaryProp, hexColor)
+          viewModel.applyNativeSubtitleStyle()
         },
       )
     }
