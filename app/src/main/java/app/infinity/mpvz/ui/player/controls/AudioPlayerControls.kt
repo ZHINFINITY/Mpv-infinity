@@ -378,10 +378,6 @@ fun AudioPlayerControls(
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,
   onOpenPanel: (Panels) -> Unit,
-  isMedia3Active: Boolean = false,
-  media3IsPlaying: Boolean = false,
-  media3PositionMs: Long = 0L,
-  media3DurationMs: Long = 0L,
   modifier: Modifier = Modifier,
 ) {
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
@@ -561,13 +557,8 @@ fun AudioPlayerControls(
       )
     }
 
-  val isPlaying = if (isMedia3Active) media3IsPlaying else paused == false
-  val currentDurSec =
-    if (isMedia3Active) {
-      (media3DurationMs.takeIf { it > 0L }?.div(1000f) ?: 0f)
-    } else {
-      if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
-    }
+  val isPlaying = paused == false
+  val currentDurSec = if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
    val currentVolumePercent by viewModel.currentVolumePercent.collectAsState()
    val volumeScale = currentVolumePercent / 100f
    val visualizerFeatures = rememberAudioVisualizerFeatures(isPlaying, volumeScale)
@@ -1247,12 +1238,7 @@ fun AudioPlayerControls(
     val seekbarView = @Composable {
       val position by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
       val precisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
-      val currentPosSec =
-        if (isMedia3Active) {
-          (media3PositionMs.coerceAtLeast(0L) / 1000f)
-        } else {
-          if (precisePosition > 0f) precisePosition else position?.toFloat() ?: 0f
-        }
+      val currentPosSec = if (precisePosition > 0f) precisePosition else position?.toFloat() ?: 0f
 
       SeekbarWithTimers(
         position = currentPosSec,
