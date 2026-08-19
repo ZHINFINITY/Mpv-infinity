@@ -187,7 +187,10 @@ class Media3PlaybackController(
   }
 
   private fun applyChannelMixingMatrices(channels: AudioChannels) {
-    for (inputChannels in 1..6) {
+    // Tangled and similar UHD remuxes can expose 7.1 audio as eight decoded channels.
+    // Register matrices through 8 channels so Auto/AutoSafe downmixes to stereo instead
+    // of letting AudioTrack attempt an unsupported eight-channel output on OEM devices.
+    for (inputChannels in 1..8) {
       val matrix =
         when (channels) {
           AudioChannels.Mono ->
@@ -717,6 +720,17 @@ class Media3PlaybackController(
     latestVideoFormat = format
     logInfo("video input format changed ${formatDescription(format)}")
     publishState()
+  }
+
+  override fun onAudioInputFormatChanged(
+    eventTime: AnalyticsListener.EventTime,
+    format: Format,
+    decoderReuseEvaluation: DecoderReuseEvaluation?,
+  ) {
+    logInfo(
+      "audio input format changed ${formatDescription(format)} " +
+        "channelCount=${format.channelCount} sampleRate=${format.sampleRate}",
+    )
   }
 
   override fun onVideoSizeChanged(videoSize: VideoSize) {
