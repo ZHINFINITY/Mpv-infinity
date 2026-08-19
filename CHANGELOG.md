@@ -2,7 +2,7 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
-## 2.1.0 — Feature & Experience Release
+## 1.0.0 — Feature & Experience Release
 
 ### 🧲 Native Torrent Streaming & Media Browsing
 - **Built-in Torrent Streaming Engine**: Stream and play `.torrent` files, magnet links, and HTTP torrent URLs directly with background piece caching, sequential download prioritization, and integrated local streaming server.
