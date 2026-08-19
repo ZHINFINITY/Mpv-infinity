@@ -27,25 +27,25 @@
 
 ## Showcase
 
-The screenshots below show the Mpv∞ player surface, the Native engine selector, chapter navigation, the branded About page, and the Live Wallpaper library.
+The screenshots below present the Mpv∞ player surface, video library, About page, Live Wallpaper library, Native engine selector, and chapter navigation.
 
 <div align="center">
-  <img src="docs/showcase/player-glass.jpg" width="92%" alt="Mpv∞ player with translucent controls and seekbar">
+  <img src="docs/showcase/player-glass.jpg" width="90%" alt="Mpv∞ player with translucent controls and seekbar">
 </div>
 
 <br>
 
 <div align="center">
-  <img src="docs/showcase/decoder-native.jpg" width="48%" alt="Mpv∞ Playback engine selector showing MPV and Native">
-  <img src="docs/showcase/chapters.jpg" width="48%" alt="Mpv∞ chapter navigation sheet">
-</div>
-
-<br>
-
-<div align="center">
+  <img src="docs/showcase/video-library.jpg" width="31%" alt="Mpv∞ video library">
   <img src="docs/showcase/about-mpv-infinity.jpg" width="31%" alt="Mpv∞ About page">
   <img src="docs/showcase/live-wallpapers.jpg" width="31%" alt="Mpv∞ Live Wallpaper library">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/player.png" width="31%" alt="Mpv∞ player overview">
+</div>
+
+<br>
+
+<div align="center">
+  <img src="docs/showcase/decoder-native.jpg" width="46%" alt="Mpv∞ Playback engine selector showing MPV and Native">
+  <img src="docs/showcase/chapters.jpg" width="46%" alt="Mpv∞ chapter navigation sheet">
 </div>
 
 ---
