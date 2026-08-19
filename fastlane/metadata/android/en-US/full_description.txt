@@ -1,19 +1,27 @@
-Mpv∞ is a front-end for the versatile media player mpv, built on the libmpv library. It aims to combine the powerful features of mpv with an easier-to-use interface and additional functionality.
+Mpv∞ is a powerful and efficient Android video player built around libmpv, with an additional Native playback engine powered by AndroidX Media3. It combines broad format support, advanced playback controls, and a polished interface without advertisements or trackers.
 
- - Simpler and Easier to Use UI: Designed to make navigation and playback smoother, especially for those who want a straightforward media player experience.
- - Advanced Configuration and Scripting: Offers the full capabilities of mpv's scripting and configuration for users who want to customize their playback.
- - Enhanced Playback Features: Frame-by-frame navigation, sleep timer, speed presets, and better playback history implementation.
- - Picture-in-Picture (PiP): Continue watching videos while using other apps.
- - Multi-Modal Controls: Includes customizable gestures for controlling volume, brightness, and playback, along with keyboard input support.
- - High-Quality Rendering: Hardware and software video decoding with advanced rendering settings.
- - Network Streaming: Play network streams with the "Open URL" function.
- - File Management: Provides basic file operations like copy, move, rename, and delete.
+Playback engines
+- MPV engine: advanced libmpv playback, shaders, scripting, hardware and software decoding, and detailed playback controls.
+- Native engine: AndroidX Media3 playback presented consistently as Native throughout the app.
+- Automatic engine routing: Auto mode can use Native for compatible Dolby Vision items and HLS/DASH streams while keeping ordinary files on MPV.
+- Manual engine switching: choose MPV or Native for the current video from the decoder sheet.
+- Single-engine handoff: the inactive engine is stopped before the selected engine starts, reducing duplicated playback work and battery use.
+- Fallback protection: when Native cannot render a video frame, Mpv∞ falls back to MPV without repeatedly retrying Native for the same item.
+- Additional audio compatibility: Native playback includes the Media3 FFmpeg audio extension where supported by the device.
 
-Mpv∞ aims to enhance the mpv experience by making it more accessible while retaining its flexibility and powerful playback capabilities.
+Player features
+- Frame-by-frame navigation, chapters, A-B looping, custom skip segments, sleep timer, playback speed presets, and picture-in-picture.
+- Gesture controls for seeking, volume, brightness, zoom, subtitle positioning, and subtitle scaling.
+- Multiple audio and subtitle tracks, subtitle styling, online subtitle search, subtitle translation, and subtitle font management.
+- HDR and video rendering controls, Anime4K upscaling, GPU debanding, ambient lighting, screenshots, and output statistics.
+- Customizable portrait and landscape controls, themes, translucent player surfaces, and responsive tablet layouts.
+- Local files, network streams, SMB, FTP, WebDAV, M3U playlists, yt-dlp streaming, torrent playback, and Google Cast.
+- Music library, synchronized lyrics, visualizers, equalizer, audio filters, and background playback.
+- Built-in scripting and configuration editors for Lua, JavaScript, mpv.conf, and input.conf.
+- Thermal-aware shader and Anime4K safeguards plus low-power polling improvements.
 
-This app respects your freedom and privacy:
+Privacy and licensing
+Mpv∞ is free and open source under the GNU Affero General Public License, version 3 or later. It contains no advertisements or trackers and requests permissions for media features only.
 
-* No trackers
-* No advertisements
-* Fully open source
-* No unnecessary permissions
+Project: https://github.com/ZHINFINITY/Mpv-
+Maintainer: ZHINFINITY
