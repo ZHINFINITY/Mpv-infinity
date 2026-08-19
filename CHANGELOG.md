@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.9 — MPV Subtitle Scale Application Fix
+
+- **MPV rendering fix:** Removed the ASS subtitle layout path that reset `sub-scale` to `1.0` whenever subtitle positioning was reapplied.
+- **Actual pinch effect:** MPV now retains the scale written by the pinch gesture or subtitle settings slider instead of showing a changed indicator while rendering the original size.
+- **Native path preserved:** The v1.0.8 Media3 `SubtitleView` scaling bridge remains unchanged.
+- **Private test release:** This build is for device validation; prior releases remain available and the planned public fresh-start reset is deferred.
+
 ## 1.0.8 — Shared Subtitle Pinch-Zoom Fix
 
 - **Both engines supported:** Subtitle pinch gestures now detect selected Native subtitle tracks as well as MPV tracks.

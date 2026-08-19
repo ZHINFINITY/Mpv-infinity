@@ -16,7 +16,6 @@ import kotlin.math.roundToInt
 private const val MIN_SUBTITLE_POSITION = 0
 private const val MAX_SUBTITLE_POSITION = 150
 private const val NATIVE_ASS_POSITION = 100
-private const val NATIVE_ASS_SCALE = 1f
 private const val SECONDARY_SUBTITLE_POSITION_OFFSET = 10
 
 private val subtitlesPreferences by lazy {
@@ -176,9 +175,9 @@ fun applySubtitlePositions(
   val primary = clampSubtitlePosition(primaryPosition)
   val preservePrimaryAssLayout = isPrimarySubtitleAss() && !forceAssOverride
   PlaybackSession.setPropertyInt("sub-pos", if (preservePrimaryAssLayout) NATIVE_ASS_POSITION else primary)
-  if (preservePrimaryAssLayout) {
-    PlaybackSession.setPropertyFloat("sub-scale", NATIVE_ASS_SCALE)
-  }
+  // Preserve the user's live sub-scale value. ASS layout preservation should only
+  // normalize the subtitle position; resetting sub-scale here would undo pinch zoom
+  // and the subtitle settings slider every time the layout is reapplied.
 
   // Retrieve OSD or display dimensions as fallbacks if null
   val width =
