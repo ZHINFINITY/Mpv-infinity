@@ -1925,6 +1925,17 @@ class PlayerActivity :
         viewModel.videoTracks.collect { tracks ->
           if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) return@collect
           val currentItem = PlaybackSession.queue.value.currentItem ?: activePlaybackItem ?: return@collect
+          // The MPV track observer emits Dolby Vision again after a Native watchdog fallback.
+          // Do not let that emission restart Native for the same item; the fallback guard in
+          // shouldUseMedia3() does not cover this direct observer path.
+          if (media3AutoFallbackItemId == currentItem.stableId) {
+            AppDebugLog.info(
+              TAG,
+              "Suppressing automatic Native retry from MPV Dolby Vision track observer " +
+                "item=${currentItem.stableId}",
+            )
+            return@collect
+          }
           if (playbackEngine == PlaybackEngine.MPV && tracks.any(::isDolbyVisionTrack)) {
             AppDebugLog.info(TAG, "Auto engine detected Dolby Vision track; switching to Media3 item=${currentItem.stableId}")
             switchToMedia3Engine(currentItem)
