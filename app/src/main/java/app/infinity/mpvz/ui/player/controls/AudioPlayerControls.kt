@@ -516,7 +516,7 @@ fun AudioPlayerControls(
   val fileTitle =
     mediaPath
       ?.substringAfterLast('/')
-      ?.substringAfterLast('\\\\')
+      ?.substringAfterLast('\\')
       ?.substringBefore('?')
       ?.takeIf { it.isNotBlank() }
       ?.stripAudioExtension()
