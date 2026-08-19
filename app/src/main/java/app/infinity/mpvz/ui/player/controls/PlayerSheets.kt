@@ -25,6 +25,7 @@ import app.infinity.mpvz.preferences.PlaybackEngineMode
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.player.Decoder
 import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.controls.components.sheets.AmbientSheet
@@ -528,7 +529,31 @@ fun PlayerSheets(
     }
 
     Sheets.AudioProperties -> {
-      val properties = remember { viewModel.getAudioPropertiesData() }
+      // The MPV properties may arrive shortly after the sheet is opened. Observe the active
+      // audio session so the panel refreshes instead of keeping an empty first snapshot.
+      val audioPath by PlaybackSession.propString["path"].collectAsState()
+      val audioStreamFilename by PlaybackSession.propString["stream-open-filename"].collectAsState()
+      val audioTitle by PlaybackSession.propString["metadata/by-key/Title"].collectAsState()
+      val audioArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
+      val audioAlbum by PlaybackSession.propString["metadata/by-key/Album"].collectAsState()
+      val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
+      val audioSampleRate by PlaybackSession.propInt["audio-params/samplerate"].collectAsState()
+      val audioChannels by PlaybackSession.propInt["audio-params/channel-count"].collectAsState()
+      val audioBitrate by PlaybackSession.propInt["audio-bitrate"].collectAsState()
+      val properties =
+        remember(
+          audioPath,
+          audioStreamFilename,
+          audioTitle,
+          audioArtist,
+          audioAlbum,
+          audioCodec,
+          audioSampleRate,
+          audioChannels,
+          audioBitrate,
+        ) {
+          viewModel.getAudioPropertiesData()
+        }
       app.infinity.mpvz.ui.player.controls.components.sheets.AudioPropertiesSheet(
         properties = properties,
         onDismissRequest = onDismissRequest,
