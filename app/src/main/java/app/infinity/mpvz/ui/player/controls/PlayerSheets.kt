@@ -64,6 +64,7 @@ fun PlayerSheets(
   onSelectAudio: (TrackNode) -> Unit,
   onMedia3AudioChannels: ((AudioChannels) -> Unit)? = null,
   onMedia3AudioProcessing: ((Boolean, Boolean) -> Unit)? = null,
+  onMedia3AudioPitchCorrection: ((Boolean) -> Unit)? = null,
   // chapters sheet
   chapter: Segment?,
   chapters: ImmutableList<Segment>,
@@ -382,6 +383,8 @@ fun PlayerSheets(
         onResetPresets = onResetSpeedPresets,
         onMakeDefault = onMakeDefaultSpeed,
         onResetDefault = onResetDefaultSpeed,
+        isMedia3Active = isMedia3Active,
+        onMedia3AudioPitchCorrection = onMedia3AudioPitchCorrection,
         onDismissRequest = onDismissRequest,
       )
     }

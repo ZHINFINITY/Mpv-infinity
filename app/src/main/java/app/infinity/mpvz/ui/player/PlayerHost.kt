@@ -57,6 +57,8 @@ interface PlayerHost {
 
   fun media3SetPlaybackSpeed(speed: Float): Boolean = false
 
+  fun media3SetAudioPitchCorrection(enabled: Boolean): Boolean = false
+
   fun media3SetRepeatMode(mode: RepeatMode): Boolean = false
 
   fun media3SetAudioChannels(channels: AudioChannels): Boolean = false
