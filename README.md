@@ -5,13 +5,15 @@
 <h1 align="center">Mpv∞</h1>
 
 <p align="center">
-  <b>Feature-rich, Efficient Powerful Android video player based on libmpv.</b>
+  <b>Powerful and efficient Android video player with Native Media3 and MPV engines.</b>
   <br>
   <i>No ads. No trackers. No noise. Just a serious video player with a calmer surface and a sharper edge.</i>
 </p>
 
 > [!IMPORTANT]
-> **Well Development is now Resumed**
+> **Mpv∞ is actively developed by ZHINFINITY.**
+>
+> The current hotfix release focuses on reliable Native-to-MPV fallback for difficult Dolby Vision files while preserving the existing MPV playback path.
 
 
 <p align="center">
@@ -25,30 +27,48 @@
 
 ## Showcase
 
+The screenshots below show the Mpv∞ player surface, the Native engine selector, chapter navigation, the branded About page, and the Live Wallpaper library.
+
 <div align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/player.png" width="92%">
+  <img src="docs/showcase/player-glass.jpg" width="92%" alt="Mpv∞ player with translucent controls and seekbar">
 </div>
 
 <br>
 
 <div align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/videoscreen.png" width="31%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/pip.png" width="31%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/about.jpg" width="31%">
+  <img src="docs/showcase/decoder-native.jpg" width="48%" alt="Mpv∞ Playback engine selector showing MPV and Native">
+  <img src="docs/showcase/chapters.jpg" width="48%" alt="Mpv∞ chapter navigation sheet">
 </div>
 
 <br>
 
 <div align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/playlistwindow.png" width="48%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/chapters.png" width="48%">
+  <img src="docs/showcase/about-mpv-infinity.jpg" width="31%" alt="Mpv∞ About page">
+  <img src="docs/showcase/live-wallpapers.jpg" width="31%" alt="Mpv∞ Live Wallpaper library">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/player.png" width="31%" alt="Mpv∞ player overview">
 </div>
 
 ---
 
 ## Features
 
-Mpv∞ pushes the mpv-android experience further with deep customization, thermal-aware performance, and unique quality-of-life features. Here's what sets it apart:
+Mpv∞ pushes the libmpv experience further with a second playback path based on AndroidX Media3, deep customization, thermal-aware performance, and practical quality-of-life features.
+
+<details close>
+<summary><b>⚙️ Dual Playback Engines &amp; Reliable Handoff</b></summary>
+
+| Feature | Description |
+|---|---|
+| **MPV engine** | The full libmpv playback path remains available for broad format support, advanced rendering, shaders, scripting, and detailed MPV controls. |
+| **Native engine** | AndroidX Media3 is presented throughout the app as **Native**, with Android platform playback and device-integrated codec handling. |
+| **Automatic routing** | Auto mode can select Native for Dolby Vision items and HLS/DASH streams while keeping ordinary files on MPV. |
+| **Manual per-video switching** | The decoder sheet lets you switch the current item between MPV and Native without changing the global preference. |
+| **Single active engine** | Engine transitions stop the previous player before starting the selected engine, avoiding unnecessary simultaneous playback and battery use. |
+| **Native audio extension** | Media3 playback includes the FFmpeg audio extension for additional audio-format compatibility where the device supports it. |
+| **Fallback protection** | If Native cannot render a video frame, Mpv∞ falls back to MPV and prevents an automatic retry loop for that item. |
+| **Output and decoder information** | Playback statistics and the decoder sheet expose the active engine and available output details when reported by the platform. |
+
+</details>
 
 <details close>
 <summary><b>🎨 Theme & Visual System</b></summary>
@@ -266,19 +286,17 @@ Mpv∞ pushes the mpv-android experience further with deep customization, therma
 
 ---
 
-## 🔋 Battery Optimization guide for Mpv
+## 🔋 Battery Optimization Guide for Mpv∞
 
-First Pro Tip Keep Mpv Conf empty if you are newbie
+For efficient playback, begin with Mpv∞'s default configuration and enable additional rendering features only when you need them. The following choices usually reduce unnecessary GPU and battery work:
 
-- **Use `gpu` not `gpu-next`** — gpu-next is a Vulkan-based renderer that keeps the GPU awake for no reason when playing normal video. The classic `gpu` backend is lighter and uses the OpenGL driver stack, which on most Android devices has better power characteristics.
-- **Disable Vulkan entirely.** Vulkan is great for Video Playback but also Heavy.
-- **Use the `fast` mpv profile.** It's literally built into Mpv∞ use that Mpv Profiles and Set it to Default  or in _mpv.conf_ `profile=fast`
-- **Don't use shaders.** That Anime4K preset you using that's what's eating your battery. Shaders run on the GPU every single frame. If you're watching 24fps content and you have a shader pipeline running, congratulations — you're doing 24 unnecessary GPU compute passes per second for a Minute amount of visible benefit on a phone screen .
-- **Don't use AI-generated configs.** That means you, the person who copied a Reddit config with 200 lines of `scale=ewa_lanczossharp` and `dscale=mitchell` and `cscale=sinc` and a dozen `glsl-shaders` entries. Most  of You have no idea what any of those do. You just made your phone render video like it's preparing for a 4K cinema projection. On a 6-inch screen. Grow some Brains Its your android Phone not some Fuckin.. 4k Television
+- **Use `gpu` for ordinary playback** when you do not need the Vulkan-based `gpu-next` renderer.
+- **Use the built-in `fast` profile** for a lightweight starting point.
+- **Enable Anime4K and other shaders selectively**, because they run on every rendered frame and can increase GPU load.
+- **Check the statistics pages** during long playback to observe battery, thermal, frame, and rendering behavior on your device.
+- **Keep custom mpv.conf settings focused**, since aggressive scaling, debanding, and shader chains can increase startup time, memory use, and power consumption.
 
-**My POV:** mpv's default config with `profile=fast` and the `gpu` backend plays video with negligible battery impact — often **less** than OEM players because mpv doesn't have a billion proprietary DRM modules, analytics SDKs, and ad frameworks burning CPU in the background. The next time your battery drops more than 20-25% watching a 2-hour movie, don't blame mpv. Blame the 14 shaders you blindly copy-pasted.
-
-_Just a Pro tip if your battery consumption stays within 200 mAh and belwo 0.9W ( See Page 6 of Mpv∞ - video player More Settings -> Page6) useage than ur Mpv Conf are Proper for Video watching thats what i have experimented and telling rest all i don't know About in detail technicality's if anyone wanna tell me In depth guide then keep it to yourself i dont wanna listen_
+Actual power use depends on the device, codec, resolution, refresh rate, renderer, and selected shaders. Mpv∞'s thermal-aware safeguards can reduce shader quality when the device is under sustained load.
 
 ---
 
@@ -295,8 +313,7 @@ _Just a Pro tip if your battery consumption stays within 200 mAh and belwo 0.9W 
   <i>Note: Previews may be unstable and are intended for testing purposes only.</i>
 </div> -->
 
-If something breaks, feels off, or deserves another pass, _don't be Dumb and ask for Trash Features which only you require it wll be auto deleted_, 
-report it in the [Issues](https://github.com/ZHINFINITY/Mpv-/issues).
+If something breaks or feels inconsistent, please report it through the [Issues](https://github.com/ZHINFINITY/Mpv-/issues) page with the app version, device model, engine selected, and relevant logs.
 
 ---
 
@@ -366,15 +383,15 @@ To cut a signed GitHub release through Actions, configure these repository secre
 Then bump `versionCode` and `versionName` in `app/build.gradle.kts`, create a tag, and push it:
 
 ```bash
-git tag -a v1.3.1 -m "Release version 1.3.1"
-git push origin v1.3.1
+git tag -a v1.0.1 -m "Release version 1.0.1"
+git push origin v1.0.1
 ```
 
 Preview releases use the same flow with preview tags such as:
 
 ```bash
-git tag -a v1.3.1-preview.1 -m "Preview release"
-git push origin v1.3.1-preview.1
+git tag -a v1.0.1-preview.1 -m "Preview release"
+git push origin v1.0.1-preview.1
 ```
 
 ---

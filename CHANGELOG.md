@@ -2,6 +2,21 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.1 — Playback Handoff Hotfix
+
+This hotfix release keeps the Standard APK variants and focuses on reliable hybrid playback.
+
+### Playback and stability
+- **Native-to-MPV fallback protection:** When Native cannot render a video frame, the watchdog falls back to MPV and records the failed item so automatic queue resynchronization does not immediately select Native again.
+- **No repeated engine oscillation:** The previous engine is stopped before the replacement engine starts, preventing the decoder sheet from reporting conflicting active engines during handoff.
+- **Dolby Vision compatibility path:** Auto mode can select Native for compatible Dolby Vision items, while MPV remains available as the reliable fallback for files that Native cannot render on a particular device.
+- **Standard-only signed release:** The hotfix publishes universal, arm64-v8a, armeabi-v7a, x86, and x86_64 Standard APKs; Fongmi and no-Vulkan release variants are not included.
+
+### Mpv∞ identity and documentation
+- Updated the project presentation to **Mpv∞**, maintained by **ZHINFINITY**.
+- Added the current player, Native engine, decoder, chapter, About, and Live Wallpaper screenshots to the repository showcase.
+- Documented the dual-engine architecture, manual per-video engine switching, Media3 FFmpeg audio extension, decoder/output information, and fallback behavior.
+
 ## 1.0.0 — Feature & Experience Release
 
 ### 🧲 Native Torrent Streaming & Media Browsing
