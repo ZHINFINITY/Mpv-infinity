@@ -937,8 +937,12 @@ fun GestureHandler(
                   val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
                   val subtitleScreenY = getSubtitleScreenY(subPos, sw, sh)
                   val isCenterPinchX = midX in (sw * 0.2f)..(sw * 0.8f)
-                  val (lowerBound, upperBound) = getSubtitleHitboxBounds(sw, sh)
-                  val isSubtitlePinch = isCenterPinchX && (subtitleScreenY - midY) in lowerBound..upperBound
+                  val (_, upperBound) = getSubtitleHitboxBounds(sw, sh)
+                  // The subtitle anchor is usually below the visible subtitle glyphs.
+                  // Compare absolute distance so pinching just below the anchor is not
+                  // misclassified as a video-zoom gesture.
+                  val subtitleDistance = abs(subtitleScreenY - midY)
+                  val isSubtitlePinch = isCenterPinchX && subtitleDistance <= upperBound
 
                   if (pinchToZoomSubtitles && hasActiveSub && isSubtitlePinch) {
                     isSubZoomMode = true
