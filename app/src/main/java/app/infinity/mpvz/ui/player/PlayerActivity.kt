@@ -7339,31 +7339,46 @@ class PlayerActivity :
     val isAudioTarget = isKnownAudioLaunch(intent) || FileTypeUtils.isAudioFile(currentFile)
     val includeAudio = browserPreferences.includeAudioBrowser.get()
     val minimumAudioDurationMs = browserPreferences.minimumAudioDurationSeconds.get() * 1000L
-    val directMediaFiles =
-      parentFolder
-        .listFiles { file ->
-          file.isFile &&
-            !file.name.startsWith(".") &&
+    val isEligibleMediaFile: (File) -> Boolean = { file ->
+      file.isFile &&
+        !file.name.startsWith(".") &&
+        if (isAudioTarget) {
+          FileTypeUtils.isAudioFile(file) &&
             (
-              if (isAudioTarget) {
-                FileTypeUtils.isAudioFile(file) &&
-                  (
-                    minimumAudioDurationMs == 0L ||
-                      FileTypeUtils.getDurationMs(file) >= minimumAudioDurationMs
-                  )
-              } else {
-                FileTypeUtils.isVideoFile(file)
-              }
+              minimumAudioDurationMs == 0L ||
+                FileTypeUtils.getDurationMs(file) >= minimumAudioDurationMs
             )
-        }?.toList()
-        .orEmpty()
+        } else {
+          FileTypeUtils.isVideoFile(file)
+        }
+    }
+    val directMediaFiles = parentFolder.listFiles { file -> isEligibleMediaFile(file) }?.toList().orEmpty()
 
     if (!isVideoListLaunchSource(launchSource)) {
       return naturalSortFiles(directMediaFiles)
     }
 
+    // Keep the immediate season folder as the default. If it has no usable siblings, walk upward
+    // and search descendants so an Anime/Show/Season/Episode layout can still form a queue when
+    // the launch came from a provider that supplied the series-level folder context.
+    var playlistMediaFiles = directMediaFiles
+    if (playlistMediaFiles.size <= 1) {
+      var ancestorFolder: File? = parentFolder
+      while (ancestorFolder != null && playlistMediaFiles.size <= 1) {
+        val recursiveMediaFiles =
+          ancestorFolder
+            .walkTopDown()
+            .filter(isEligibleMediaFile)
+            .toList()
+        if (recursiveMediaFiles.size > playlistMediaFiles.size) {
+          playlistMediaFiles = recursiveMediaFiles
+        }
+        ancestorFolder = ancestorFolder.parentFile
+      }
+    }
+
     val currentFilePath = normalizePlaylistFilePath(currentFile.absolutePath)
-    val fileByPath = directMediaFiles.associateBy { normalizePlaylistFilePath(it.absolutePath) }
+    val fileByPath = playlistMediaFiles.associateBy { normalizePlaylistFilePath(it.absolutePath) }
     val sortedFromLibrary =
       app.infinity.mpvz.repository.MediaFileRepository
         .getVideosInFolder(context, normalizePlaylistFilePath(parentFolder.absolutePath))
@@ -7375,10 +7390,13 @@ class PlayerActivity :
           )
         }.mapNotNull { video -> fileByPath[normalizePlaylistFilePath(video.path)] }
 
-    return if (sortedFromLibrary.any { normalizePlaylistFilePath(it.absolutePath) == currentFilePath }) {
+    return if (
+      sortedFromLibrary.size > 1 &&
+        sortedFromLibrary.any { normalizePlaylistFilePath(it.absolutePath) == currentFilePath }
+    ) {
       sortedFromLibrary
     } else {
-      sortSiblingFilesForVideoList(directMediaFiles)
+      sortSiblingFilesForVideoList(playlistMediaFiles)
     }
   }
 
@@ -7510,7 +7528,7 @@ class PlayerActivity :
 
       val filesUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
       var currentMediaId: Long? = null
-      val relativePath =
+      var relativePath =
         contentResolver
           .query(
             currentUri,
@@ -7526,50 +7544,106 @@ class PlayerActivity :
               ""
             }
           }.orEmpty()
+
+      // Some document-provider URIs expose the MediaStore ID but omit RELATIVE_PATH. Resolve the
+      // same row through MediaStore.Video.Media before giving up on folder discovery.
+      if (relativePath.isBlank()) {
+        val documentId =
+          currentUri.lastPathSegment
+            ?.substringAfterLast(':')
+            ?.toLongOrNull()
+        if (documentId != null) {
+          contentResolver
+            .query(
+              filesUri,
+              arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns._ID),
+              "${MediaStore.MediaColumns._ID}=?",
+              arrayOf(documentId.toString()),
+              null,
+            )?.use { cursor ->
+              if (cursor.moveToFirst()) {
+                currentMediaId = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+                relativePath =
+                  cursor
+                    .getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH))
+                    .orEmpty()
+              }
+            }
+        }
+      }
       if (relativePath.isBlank()) {
         Log.d(TAG, "MediaStore folder queue skipped: no relative path for $currentUri")
         return@runCatching false
       }
+      Log.d(TAG, "MediaStore folder probe: uri=$currentUri relativePath=$relativePath currentId=$currentMediaId")
 
-      val videos = buildList {
-        contentResolver
-          .query(
-            filesUri,
-            arrayOf(
-              MediaStore.MediaColumns._ID,
-              MediaStore.MediaColumns.DISPLAY_NAME,
-              MediaStore.MediaColumns.DATE_MODIFIED,
-              MediaStore.MediaColumns.SIZE,
-              MediaStore.MediaColumns.DURATION,
-              MediaStore.MediaColumns.RELATIVE_PATH,
-            ),
-            "${MediaStore.MediaColumns.RELATIVE_PATH}=?",
-            arrayOf(relativePath),
-            null,
-          )?.use { cursor ->
-            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-            val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
-            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-            val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION)
-            while (cursor.moveToNext()) {
-              val name = cursor.getString(nameColumn).orEmpty()
-              if (name.startsWith(".") || !FileTypeUtils.VIDEO_EXTENSIONS.contains(name.substringAfterLast('.', "").lowercase())) {
-                continue
+      fun queryVideos(selection: String, selectionArgs: Array<String>): List<MediaStoreVideo> =
+        buildList {
+          contentResolver
+            .query(
+              filesUri,
+              arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+                MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DURATION,
+                MediaStore.MediaColumns.RELATIVE_PATH,
+              ),
+              selection,
+              selectionArgs,
+              null,
+            )?.use { cursor ->
+              val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+              val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+              val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+              val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+              val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION)
+              while (cursor.moveToNext()) {
+                val name = cursor.getString(nameColumn).orEmpty()
+                if (
+                  name.startsWith(".") ||
+                    !FileTypeUtils.VIDEO_EXTENSIONS.contains(
+                      name.substringAfterLast('.', "").lowercase(),
+                    )
+                ) {
+                  continue
+                }
+                val id = cursor.getLong(idColumn)
+                add(
+                  MediaStoreVideo(
+                    id = id,
+                    uri = ContentUris.withAppendedId(filesUri, id),
+                    name = name,
+                    dateModified = cursor.getLong(dateColumn),
+                    size = cursor.getLong(sizeColumn),
+                    duration = cursor.getLong(durationColumn),
+                  ),
+                )
               }
-              val id = cursor.getLong(idColumn)
-              add(
-                MediaStoreVideo(
-                  id = id,
-                  uri = ContentUris.withAppendedId(filesUri, id),
-                  name = name,
-                  dateModified = cursor.getLong(dateColumn),
-                  size = cursor.getLong(sizeColumn),
-                  duration = cursor.getLong(durationColumn),
-                ),
-              )
             }
-          }
+        }
+
+      // Prefer the immediate season folder. If it contains only one item, broaden the query to
+      // ancestor folders so layouts such as Anime/Show/Season 1/Episode.mkv can still produce a
+      // usable queue when the user opened the series rather than the season directory.
+      var videos =
+        queryVideos(
+          "${MediaStore.MediaColumns.RELATIVE_PATH}=?",
+          arrayOf(relativePath),
+        )
+      if (videos.size <= 1) {
+        val pathParts = relativePath.trimEnd('/').split('/').filter { it.isNotBlank() }
+        for (partCount in (pathParts.size - 1) downTo 1) {
+          val ancestorPath = pathParts.take(partCount).joinToString("/") + "/"
+          val ancestorVideos =
+            queryVideos(
+              "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+              arrayOf("$ancestorPath%"),
+            )
+          if (ancestorVideos.size > videos.size) videos = ancestorVideos
+          if (videos.size > 1) break
+        }
       }
       if (videos.size <= 1) {
         Log.d(TAG, "MediaStore folder queue skipped: ${videos.size} video(s) in $relativePath")

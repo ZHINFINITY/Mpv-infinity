@@ -13,11 +13,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
@@ -269,7 +270,7 @@ fun BottomPlayerControlsPortrait(
     contentColor = Color.White,
   ) {
     Column(
-      modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+      modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       Row(
@@ -281,12 +282,12 @@ fun BottomPlayerControlsPortrait(
           icon = Icons.RoundedFilled.SkipPrevious,
           onClick = { if (viewModel.hasPrevious()) viewModel.playPrevious() },
           title = stringResource(R.string.pref_gesture_media_previous),
-          modifier = Modifier.size(58.dp),
+          modifier = Modifier.size(54.dp),
         )
-          PlayerGlassSurface(
+        PlayerGlassSurface(
           modifier =
             Modifier
-              .size(70.dp)
+              .size(66.dp)
               .clip(CircleShape)
               .clickable { viewModel.pauseUnpause() },
           shape = CircleShape,
@@ -295,7 +296,7 @@ fun BottomPlayerControlsPortrait(
         ) {
           AnimatedPlayPauseIcon(
             isPlaying = isPlaying,
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             tint = LocalContentColor.current,
           )
         }
@@ -303,50 +304,42 @@ fun BottomPlayerControlsPortrait(
           icon = Icons.RoundedFilled.SkipNext,
           onClick = { if (viewModel.hasNext()) viewModel.playNext() },
           title = stringResource(R.string.pref_gesture_media_next),
-          modifier = Modifier.size(58.dp),
+          modifier = Modifier.size(54.dp),
         )
       }
 
-      // Render the exact saved portrait-bottom configuration in its saved order. The settings
-      // editor can contain more than four buttons, so split the list into stable four-column rows
-      // instead of silently replacing it with a hard-coded subset.
-      buttons.chunked(4).forEach { rowButtons ->
+      // Keep every selected secondary feature, but place it in one compact bottom rail. The rail
+      // scrolls horizontally like mpvRx instead of expanding the portrait panel into a tall grid.
+      if (buttons.isNotEmpty()) {
         Row(
           modifier =
             Modifier
               .fillMaxWidth()
-              .padding(top = 12.dp),
-          horizontalArrangement = Arrangement.SpaceEvenly,
-          verticalAlignment = Alignment.Top,
+              .padding(top = 8.dp)
+              .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          rowButtons.forEach { button ->
-            Column(
-              modifier = Modifier.weight(1f),
-              horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-              RenderPlayerButton(
-                button = button,
-                chapters = chapters,
-                currentChapter = currentChapter,
-                isPortrait = true,
-                isSpeedNonOne = isSpeedNonOne,
-                currentZoom = currentZoom,
-                aspect = aspect,
-                mediaTitle = mediaTitle,
-                hideBackground = hideBackground,
-                onBackPress = onBackPress,
-                onOpenSheet = onOpenSheet,
-                onOpenPanel = onOpenPanel,
-                viewModel = viewModel,
-                activity = activity,
-                decoder = decoder,
-                playbackSpeed = playbackSpeed,
-                buttonSize = 42.dp,
-              )
-            }
-          }
-          repeat(4 - rowButtons.size) {
-            Spacer(modifier = Modifier.weight(1f))
+          buttons.forEach { button ->
+            RenderPlayerButton(
+              button = button,
+              chapters = chapters,
+              currentChapter = currentChapter,
+              isPortrait = true,
+              isSpeedNonOne = isSpeedNonOne,
+              currentZoom = currentZoom,
+              aspect = aspect,
+              mediaTitle = mediaTitle,
+              hideBackground = hideBackground,
+              onBackPress = onBackPress,
+              onOpenSheet = onOpenSheet,
+              onOpenPanel = onOpenPanel,
+              viewModel = viewModel,
+              activity = activity,
+              decoder = decoder,
+              playbackSpeed = playbackSpeed,
+              buttonSize = 40.dp,
+            )
           }
         }
       }
