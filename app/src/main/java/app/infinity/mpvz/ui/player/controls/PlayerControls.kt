@@ -405,9 +405,25 @@ fun PlayerControls(
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
   if (isAudioOnly) {
     val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
+    val rawPath by PlaybackSession.propString["path"].collectAsState()
+    val playbackQueue by PlaybackSession.queue.collectAsState()
+    val activeQueueTitle = playbackQueue.currentItem?.title
+    val activeQueueItemId = playbackQueue.currentItem?.stableId
     val activity = LocalActivity.current as? PlayerActivity
-    val mediaTitle = remember(rawMediaTitle, activity) {
-      rawMediaTitle?.takeIf { it.isNotBlank() } ?: activity?.getTitleForControls()
+    val activityTitle = activity?.getTitleForControls()
+    val pathTitle = rawPath
+      ?.substringAfterLast('/')
+      ?.substringAfterLast('\\')
+      ?.substringBefore('?')
+      ?.takeIf { it.isNotBlank() }
+    // media-title can remain at the previous video value until the new MPV generation emits its
+    // first property update. Prefer the current queue/path identity first; use media-title only as
+    // a fallback so the audio screen cannot inherit the previous video title.
+    val mediaTitle = remember(rawMediaTitle, rawPath, activeQueueTitle, activeQueueItemId, activityTitle) {
+      sequenceOf(activeQueueTitle, pathTitle, activityTitle, rawMediaTitle)
+        .filterNotNull()
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() && !it.equals("Unknown Video", ignoreCase = true) }
     }
 
     val sheetShown by viewModel.sheetShown.collectAsState()

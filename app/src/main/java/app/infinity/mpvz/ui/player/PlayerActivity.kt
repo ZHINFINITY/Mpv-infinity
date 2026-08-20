@@ -355,6 +355,9 @@ class PlayerActivity :
   }
 
   private fun isAudioPlaybackItem(item: PlaybackItem): Boolean {
+    // An explicit audio launch is authoritative even for shared containers such as MKV whose
+    // resolver MIME may be video/* despite the requested track being audio-only.
+    if (isKnownAudioLaunch(intent)) return true
     val mimeType = item.mimeType.orEmpty()
     if (mimeType.startsWith("video/", ignoreCase = true)) return false
     if (mimeType.startsWith("audio/", ignoreCase = true)) return true
@@ -1693,6 +1696,13 @@ class PlayerActivity :
   }
 
   private fun shouldUseMedia3(item: PlaybackItem): Boolean {
+    // Audio-only playback is an MPV contract. This guard must run before the global engine
+    // preference and before Auto/Dolby detection, otherwise a stale video/Media3 state can take
+    // ownership of a song and leave MPV controls pointed at an inactive generation.
+    if (isAudioPlaybackItem(item)) {
+      AppDebugLog.info(TAG, "Forcing MPV for audio item=${item.stableId} title=${item.title.orEmpty()}")
+      return false
+    }
     if (item.originalUri.startsWith("magnet:", ignoreCase = true)) return false
     // A failed Native handoff owns the current item until the user explicitly selects Native
     // again. This prevents queue/state emissions during the handoff from immediately starting a
@@ -1719,6 +1729,13 @@ class PlayerActivity :
   }
 
   private fun switchToMedia3Engine(item: PlaybackItem, force: Boolean = false) {
+    // Keep this defensive guard even though shouldUseMedia3() rejects audio. Manual engine
+    // selection and delayed observers can call this method directly after a queue transition.
+    if (isAudioPlaybackItem(item)) {
+      AppDebugLog.warn(TAG, "Rejected Media3 handoff for audio item=${item.stableId}; restoring MPV")
+      switchToMpvEngine(itemOverride = item, force = true)
+      return
+    }
     activePlaybackItem = item
     media3ActiveItem = item
     if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) {
@@ -1957,6 +1974,9 @@ class PlayerActivity :
         viewModel.videoTracks.collect { tracks ->
           if (decoderPreferences.playbackEngine.get() != PlaybackEngineMode.Auto) return@collect
           val currentItem = PlaybackSession.queue.value.currentItem ?: activePlaybackItem ?: return@collect
+          // Audio has no video-engine route. Stale video-track emissions from the previous item
+          // must never trigger an automatic Media3 handoff for the current song.
+          if (isAudioPlaybackItem(currentItem)) return@collect
           // The MPV track observer emits Dolby Vision again after a Native watchdog fallback.
           // Do not let that emission restart Native for the same item; the fallback guard in
           // shouldUseMedia3() does not cover this direct observer path.

@@ -3784,7 +3784,10 @@ class PlayerViewModel : ViewModel(),
       val wasPaused = PlaybackSession.getPropertyBoolean("pause") ?: PlaybackSession.state.value.paused
       if (wasPaused) {
         val focusGranted = withContext(Dispatchers.Main) { host.requestAudioFocus() }
-        if (!focusGranted) return@launch
+        // MPV remains the authoritative owner for music. Android focus can be temporarily denied
+        // by a stale notification/native session; that must not turn the MPV pause button into a
+        // no-op when audio is already the active item.
+        if (!focusGranted && !isAudioPlaybackActive()) return@launch
         PlaybackSession.setPropertyBoolean("pause", false)
         syncplayManager.updatePlayerState(precisePosition.value.toDouble(), false, doSeek = false)
       } else {
@@ -3817,7 +3820,7 @@ class PlayerViewModel : ViewModel(),
         return@launch
       }
       val focusGranted = withContext(Dispatchers.Main) { host.requestAudioFocus() }
-      if (!focusGranted) return@launch
+      if (!focusGranted && !isAudioPlaybackActive()) return@launch
       PlaybackSession.setPropertyBoolean("pause", false)
       syncplayManager.updatePlayerState(precisePosition.value.toDouble(), false, doSeek = false)
     }

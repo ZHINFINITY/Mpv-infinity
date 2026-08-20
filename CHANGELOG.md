@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.8 — MPV-Only Music Ownership Hotfix
+
+- **MPV-only audio routing:** Audio items are now forced through MPV before any global engine, Media3, or Dolby/Auto decision. Delayed video-track callbacks cannot hand the current song back to Media3.
+- **Shared-container audio:** An explicit audio launch remains MPV-owned even when a shared container such as MKV reports a `video/*` MIME type.
+- **Responsive controls:** MPV pause/resume no longer becomes a no-op because of a temporary Android audio-focus failure, and the current audio generation remains the command target for seeking and timeline updates.
+- **Stale title prevention:** The current audio queue item and path now take precedence over a stale `media-title` left by the previous video.
+- **Release scope:** This is a Standard APK hotfix; music remains MPV-based, the repository remains private, and upstream MPV/mpvRx attribution is preserved.
+
 ## 1.1.7 — MPV Music Player Metadata and Timeline Hotfix
 
 - **Track information:** Audio controls now receive MPV’s live `media-title` and keep the title available during direct audio launches and queue transitions.
