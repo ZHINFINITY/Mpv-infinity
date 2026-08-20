@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.6 — MPV Music Controls Hotfix
+
+- **MPV music controls:** Audio-only transitions now explicitly retain MPV ownership, including audio containers such as MKV, so pause/resume, seek, speed, and track commands are not routed to a stale Native/Media3 player after returning from video playback.
+- **Music timeline and metadata:** Audio loads now refresh MPV position and duration state, update the current title, and preserve the audio hint through queue navigation so the seekbar and song information remain synchronized.
+- **Vertical pause button:** Removed the default rectangular pressed indication from the circular vertical video pause/resume control while preserving its touch behavior and circular shape.
+- **Previous fixes preserved:** Includes the v1.1.5 portrait seekbar redesign and v1.1.4 video-startup crash protection. The repository remains private and only Standard APK variants are released.
+
 ## 1.1.4 — Video Startup Crash Hotfix
 
 - **Video startup crash:** Prevented the MPV state poller and audio-routing check from dereferencing the player host before the Activity has attached it. This fixes the crash when opening a video after the v1.1.3 audio recovery changes.

@@ -343,12 +343,30 @@ class PlayerActivity :
   override fun currentThumbnailSource(): String? = currentPlayableUri
 
   override fun isCurrentMediaKnownAudio(): Boolean {
+    // Explicit audio launches may use a shared container such as MKV; the launch hint must win
+    // over the container extension. Video transitions write is_audio=false before loading.
+    if (isKnownAudioLaunch(intent)) return true
     val extension =
       sequenceOf(fileName, currentPlayableUri)
         .filterNotNull()
         .map { it.fileExtension() }
         .firstOrNull { it in FileTypeUtils.AUDIO_EXTENSIONS || it in FileTypeUtils.VIDEO_EXTENSIONS }
-    if (extension != null) return extension in FileTypeUtils.AUDIO_EXTENSIONS
+    return extension in FileTypeUtils.AUDIO_EXTENSIONS
+  }
+
+  private fun isAudioPlaybackItem(item: PlaybackItem): Boolean {
+    val mimeType = item.mimeType.orEmpty()
+    if (mimeType.startsWith("video/", ignoreCase = true)) return false
+    if (mimeType.startsWith("audio/", ignoreCase = true)) return true
+    val candidates = sequenceOf(item.originalUri, item.playableUri, item.title).filterNotNull().toList()
+    if (candidates.any { candidate ->
+        candidate.substringBefore('?').substringAfterLast('.').lowercase() in
+          FileTypeUtils.AUDIO_EXTENSIONS
+      }) {
+      return true
+    }
+    // Audio-only containers such as MKV need the explicit launch hint because their extension is
+    // also used by video files. A declared video MIME type above always takes precedence.
     return isKnownAudioLaunch(intent)
   }
 
@@ -1994,7 +2012,11 @@ class PlayerActivity :
             mediaIdentifier = item.stableId
             currentPlayableUri = item.playableUri
             isReady = false
-            viewModel.onVideoLoadStarted()
+            if (isAudioPlaybackItem(item)) {
+              viewModel.onAudioLoadStarted()
+            } else {
+              viewModel.onVideoLoadStarted()
+            }
             viewModel.calculateVideoHash(Uri.parse(item.originalUri))
             viewModel.refreshPlaylistItems()
           }
@@ -2587,7 +2609,13 @@ class PlayerActivity :
       }
     setIntent(mediaIntent)
 
-    if (isReady) viewModel.onVideoLoadCompleted() else viewModel.onVideoLoadStarted()
+    if (mediaIntent.getBooleanExtra("is_audio", false)) {
+      viewModel.onAudioLoadStarted()
+    } else if (isReady) {
+      viewModel.onVideoLoadCompleted()
+    } else {
+      viewModel.onVideoLoadStarted()
+    }
     viewModel.refreshPlaylistItems()
     syncBackgroundPlaybackService(updateThumbnail = false)
     return true
@@ -5418,11 +5446,7 @@ class PlayerActivity :
                 headers = requestedHeaders,
                 networkSource = networkSource,
               )
-          val isAudioItem =
-            sourceIntent.type?.startsWith("audio/", ignoreCase = true) == true ||
-              item.mimeType?.startsWith("audio/", ignoreCase = true) == true ||
-              item.playableUri.substringBefore('?').substringAfterLast('.').lowercase() in
-                FileTypeUtils.AUDIO_EXTENSIONS
+          val isAudioItem = isAudioPlaybackItem(item)
           val cookieSource =
             sequenceOf(resolvedPlayableUri, resolvedOriginalUri)
               .firstOrNull { value -> value.startsWith("http://", true) || value.startsWith("https://", true) }
@@ -5439,8 +5463,15 @@ class PlayerActivity :
               currentPlayableUri = item.playableUri
               intent.putExtra("title", fileName)
               intent.putExtra("media_identifier", item.stableId)
+              intent.putExtra("is_audio", isAudioItem)
+              intent.putExtra("media_library_audio", isAudioItem)
               intent.setDataAndType(Uri.parse(item.originalUri), item.mimeType)
-              if (isAudioItem) viewModel.onAudioLoadStarted()
+              viewModel.setMediaTitle(fileName)
+              if (isAudioItem) {
+                viewModel.onAudioLoadStarted()
+              } else {
+                viewModel.onVideoLoadStarted()
+              }
             }
           }
           if (requestedQueueItem == null || isTorrentRequest) PlaybackSession.replaceQueue(listOf(item), 0)
@@ -6713,11 +6744,10 @@ class PlayerActivity :
       }
     }
 
-    // Load the new video
-    // Avoid blocking UI thread while mpv opens network streams (e.g., HLS).
+    // Load the new queue item. The resolved media type is applied inside startMediaLoad so audio
+    // containers such as MKV are not prematurely reset through the video lifecycle.
     isAdvancingAtEof = true
     isReady = false
-    viewModel.onVideoLoadStarted()
 
     startMediaLoad(playableUri)
 

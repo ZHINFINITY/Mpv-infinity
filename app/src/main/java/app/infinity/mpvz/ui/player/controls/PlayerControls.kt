@@ -1427,10 +1427,14 @@ fun PlayerControls(
                         Modifier
                           .size(64.dp)
                           .clip(CircleShape)
-                          .clickable(interaction, ripple(), onClick = {
-                            resetControlsTimestamp = System.currentTimeMillis()
-                            viewModel.pauseUnpause()
-                          })
+                          .clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            onClick = {
+                              resetControlsTimestamp = System.currentTimeMillis()
+                              viewModel.pauseUnpause()
+                            },
+                          )
                           .then(
                             if (hideBackground) {
                               Modifier.background(brush = buttonShadow, shape = CircleShape)
@@ -1529,10 +1533,14 @@ fun PlayerControls(
                       Modifier
                         .size(64.dp)
                         .clip(CircleShape)
-                        .clickable(interaction, ripple(), onClick = {
-                          resetControlsTimestamp = System.currentTimeMillis()
-                          viewModel.pauseUnpause()
-                        })
+                        .clickable(
+                          interactionSource = interaction,
+                          indication = null,
+                          onClick = {
+                            resetControlsTimestamp = System.currentTimeMillis()
+                            viewModel.pauseUnpause()
+                          },
+                        )
                         .then(
                           if (hideBackground) {
                             Modifier.background(brush = buttonShadow, shape = CircleShape)

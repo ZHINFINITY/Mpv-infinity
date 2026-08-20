@@ -1715,6 +1715,8 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun onVideoLoadStarted() {
+    // A video transition must relinquish any audio-only hint left by the previous MPV track.
+    audioOnlyLaunchHint.value = false
     discardLegacySeekPreview()
     hideSeekThumbnailPreview()
     seekThumbnailCache.evictAll()
@@ -1733,6 +1735,9 @@ class PlayerViewModel : ViewModel(),
    * property emission can leave it displaying the previous 00:00/00:01 placeholder.
    */
   fun onAudioLoadStarted() {
+    // Keep MPV as the authoritative owner even for audio-only containers such as MKV. Their
+    // filename extension is a video container, so extension-based detection alone is unreliable.
+    audioOnlyLaunchHint.value = true
     discardLegacySeekPreview()
     _precisePosition.value = 0f
     _preciseDuration.value = 0f
