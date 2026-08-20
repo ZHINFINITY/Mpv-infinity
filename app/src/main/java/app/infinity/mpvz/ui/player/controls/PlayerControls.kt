@@ -404,6 +404,7 @@ fun PlayerControls(
     }
   }
 
+  val sheetShown by viewModel.sheetShown.collectAsState()
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
   if (isAudioOnly) {
     val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
@@ -428,7 +429,6 @@ fun PlayerControls(
         .firstOrNull { it.isNotBlank() && !it.equals("Unknown Video", ignoreCase = true) }
     }
 
-    val sheetShown by viewModel.sheetShown.collectAsState()
     val subtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
     val audioTracks by viewModel.audioTracks.collectAsState(persistentListOf())
     val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
@@ -1994,7 +1994,6 @@ fun PlayerControls(
       }
     }
 
-    val sheetShown by viewModel.sheetShown.collectAsState()
     val subtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
     val audioTracks by viewModel.audioTracks.collectAsState(persistentListOf())
     val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
