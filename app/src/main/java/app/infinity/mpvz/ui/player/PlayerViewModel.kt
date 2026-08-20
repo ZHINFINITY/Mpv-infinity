@@ -1425,10 +1425,14 @@ class PlayerViewModel : ViewModel(),
     //   500 ms – paused
     viewModelScope.launch(playbackStateDispatcher) {
       while (isActive) {
+        if (!_isMpvCoreReady.value) {
+          delay(250L)
+          continue
+        }
         val playbackPhase = PlaybackSession.state.value.phase
         val hasActiveTimeline = playbackPhase == PlaybackPhase.READY || playbackPhase == PlaybackPhase.BACKGROUND
-        val audioTimelineActive = isAudioOnly.value || host.isCurrentMediaKnownAudio()
-        if (!_isMpvCoreReady.value || (!hasActiveTimeline && !audioTimelineActive)) {
+        val audioTimelineActive = isAudioPlaybackActive()
+        if (!hasActiveTimeline && !audioTimelineActive) {
           delay(250L)
           continue
         }
@@ -3735,7 +3739,7 @@ class PlayerViewModel : ViewModel(),
    * video session. Video routing remains unchanged because this returns true only for audio.
    */
   private fun isAudioPlaybackActive(): Boolean =
-    isAudioOnly.value || host.isCurrentMediaKnownAudio()
+    isAudioOnly.value || hostReference.get()?.isCurrentMediaKnownAudio() == true
 
   private fun shouldRoutePlaybackCommandToMedia3(): Boolean =
     host.isMedia3Active() && !isAudioPlaybackActive()

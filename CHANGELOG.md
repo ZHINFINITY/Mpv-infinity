@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.4 — Video Startup Crash Hotfix
+
+- **Video startup crash:** Prevented the MPV state poller and audio-routing check from dereferencing the player host before the Activity has attached it. This fixes the crash when opening a video after the v1.1.3 audio recovery changes.
+- **Music-player behavior preserved:** Audio remains MPV-based, and the v1.1.3 music control/timeline recovery remains included.
+- **Portrait controls preserved:** The v1.1.3 symmetric portrait seekbar-card redesign remains included.
+- **Release scope:** This is a Standard APK corrective hotfix for v1.1.3; the repository remains private and upstream MPV/mpvRx attribution is preserved.
+
 ## 1.1.3 — Portrait Controls and Music Player Recovery Hotfix
 
 - **Symmetric portrait seekbar card:** Rebuilt the vertical seekbar contents around one shared inner inset so both timestamps and the rail sit comfortably inside the same rounded card with balanced corner spacing. The existing glass/player-controls appearance is preserved.
