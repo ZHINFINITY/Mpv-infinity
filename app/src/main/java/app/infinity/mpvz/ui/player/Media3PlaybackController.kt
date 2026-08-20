@@ -625,6 +625,10 @@ class Media3PlaybackController(
       for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
         if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) continue
         val rendererGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
+        // Clear only this text renderer's deprecated override before assigning the current
+        // selection. Clearing all overrides here could disturb explicit audio selections.
+        @Suppress("DEPRECATION")
+        parameters.clearSelectionOverrides(rendererIndex)
         val entry =
           byGroup.entries.firstOrNull { (group, _) ->
             group !in assignedGroups &&
@@ -947,12 +951,37 @@ class Media3PlaybackController(
         .filterNot { cue ->
           cue.text?.toString()?.trim()?.let { text -> assDrawingCommandPattern.matches(text) } == true
         }
+        .map(::makeEmbeddedCueReadable)
     val view = attachedView ?: return
     view.post {
       if (attachedView === view && subtitleCueGeneration == generation) {
         view.subtitleView?.setCues(filteredCues)
       }
     }
+  }
+
+  /**
+   * Keep embedded ASS/SSA window colors, but prevent opaque sign windows from hiding the source
+   * sign underneath. The cue builder preserves the original text, position, anchors, alignment,
+   * size, and vertical writing fields, so this changes readability without moving sign cues.
+   */
+  private fun makeEmbeddedCueReadable(cue: Cue): Cue {
+    if (!cue.windowColorSet) return cue
+    val originalColor = cue.windowColor
+    val originalAlpha = android.graphics.Color.alpha(originalColor)
+    if (originalAlpha == 0) return cue
+    val readableAlpha = originalAlpha.coerceIn(0x66, 0xB8)
+    if (readableAlpha == originalAlpha) return cue
+    return cue
+      .buildUpon()
+      .setWindowColor(
+        android.graphics.Color.argb(
+          readableAlpha,
+          android.graphics.Color.red(originalColor),
+          android.graphics.Color.green(originalColor),
+          android.graphics.Color.blue(originalColor),
+        ),
+      ).build()
   }
 
   private fun clearSubtitleCueBuffers() {

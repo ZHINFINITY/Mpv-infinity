@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.19 — Media3 Subtitle and Nested MKV Playlist Hotfix
+
+- **First-load simultaneous subtitles:** Text-renderer-specific overrides are cleared before each explicit Media3 subtitle assignment, so selecting dialogue and signs works immediately without toggling one track off and on.
+- **Readable sign windows:** Embedded cue windows retain their ASS/SSA positioning while opaque backgrounds are reduced to adaptive semi-transparent colors, keeping signs readable without hiding the source image.
+- **Nested MKV folders:** Folder discovery keeps the immediate season folder as the default and falls back to ancestor/descendant scanning or MediaStore ancestor paths when nested Anime/Show/Season layouts otherwise produce a singleton queue.
+- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.18 fixes are preserved.
+
 ## 1.1.18 — Media3 Subtitle and MKV Playlist Sheet Hotfix
 
 - **Media3 simultaneous subtitles:** Dialogue and sign selections now remain selected across track-change callbacks and are assigned to separate text-renderer slots, so both cue streams can render continuously together.
