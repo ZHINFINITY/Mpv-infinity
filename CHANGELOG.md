@@ -2,6 +2,15 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.16 — Media3 Subtitle, Chapter, Playlist, and Position Hotfix
+
+- **ASS drawing artifact:** Broadened Media3’s ASS drawing-command detection to remove coordinate-only drawing cues such as `m x y l x y` without removing dialogue or sign cues.
+- **Media3 dialogue and signs:** The merged cue list is now filtered after PlayerView’s own cue update, so selected dialogue and sign subtitles remain renderable together.
+- **Media3 chapters:** Matroska Chapter entries are also extracted from track Format metadata, covering files where the global metadata callback does not receive chapters.
+- **MKV folder playlist:** The asynchronous multi-item queue is no longer replaced by a singleton when Media3 starts loading before folder discovery finishes.
+- **Queue position:** Automatic transitions to a different queued item now start at 00:00 instead of inheriting the previous Media3 item’s position.
+- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.15 fixes are preserved.
+
 ## 1.1.15 — Media3 Chapters, Subtitles, and Playlist Hotfix
 
 - **Media3 chapters:** Matroska and other supported Media3 chapter metadata now feeds the existing chapter sheet; files without supported chapter metadata keep the chapter button hidden, while MPV chapter behavior is unchanged.
