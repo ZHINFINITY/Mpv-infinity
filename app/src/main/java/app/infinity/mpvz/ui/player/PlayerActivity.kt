@@ -5418,6 +5418,11 @@ class PlayerActivity :
                 headers = requestedHeaders,
                 networkSource = networkSource,
               )
+          val isAudioItem =
+            sourceIntent.type?.startsWith("audio/", ignoreCase = true) == true ||
+              item.mimeType?.startsWith("audio/", ignoreCase = true) == true ||
+              item.playableUri.substringBefore('?').substringAfterLast('.').lowercase() in
+                FileTypeUtils.AUDIO_EXTENSIONS
           val cookieSource =
             sequenceOf(resolvedPlayableUri, resolvedOriginalUri)
               .firstOrNull { value -> value.startsWith("http://", true) || value.startsWith("https://", true) }
@@ -5435,6 +5440,7 @@ class PlayerActivity :
               intent.putExtra("title", fileName)
               intent.putExtra("media_identifier", item.stableId)
               intent.setDataAndType(Uri.parse(item.originalUri), item.mimeType)
+              if (isAudioItem) viewModel.onAudioLoadStarted()
             }
           }
           if (requestedQueueItem == null || isTorrentRequest) PlaybackSession.replaceQueue(listOf(item), 0)

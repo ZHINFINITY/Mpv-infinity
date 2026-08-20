@@ -1673,7 +1673,7 @@ fun PlayerControls(
                 bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
                 isPortrait = isPortrait,
                 applyHorizontalPadding = false,
-                modifier = Modifier.padding(horizontal = if (isPortrait) 12.dp else 0.dp),
+                modifier = Modifier.fillMaxWidth(),
               )
             }
             if (showSeekbarContainer) {
@@ -1681,16 +1681,18 @@ fun PlayerControls(
                 modifier =
                   Modifier
                     .fillMaxWidth()
-                    .padding(
-                      horizontal = if (isPortrait) 8.dp else 6.dp,
-                      // Keep the portrait card clear of both the timestamp row and the rail.
-                      vertical = if (isPortrait) 8.dp else 4.dp,
-                    ),
+                    .padding(horizontal = if (isPortrait) 8.dp else 6.dp),
                 shape = RoundedCornerShape(26.dp),
                 hideBackground = hideBackground,
                 contentColor = Color.White,
               ) {
-                renderSeekbar()
+                if (isPortrait) {
+                  Box(modifier = Modifier.padding(vertical = 10.dp)) {
+                    renderSeekbar()
+                  }
+                } else {
+                  renderSeekbar()
+                }
               }
             } else {
               renderSeekbar()

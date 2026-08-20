@@ -297,7 +297,15 @@ fun SeekbarWithTimers(
       modifier =
         modifier
           .fillMaxWidth()
-          .then(if (applyHorizontalPadding) Modifier.padding(horizontal = MaterialTheme.spacing.large) else Modifier),
+          .then(
+            if (isPortrait) {
+              Modifier.padding(horizontal = 12.dp)
+            } else if (applyHorizontalPadding) {
+              Modifier.padding(horizontal = MaterialTheme.spacing.large)
+            } else {
+              Modifier
+            },
+          ),
       // Keep the timestamp row clearly separated from the rail in portrait while
       // preserving a compact, balanced card.
       verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -468,10 +476,10 @@ private fun SeekbarContent(
       SeekbarStyle.Standard -> 8.dp
       SeekbarStyle.Wavy -> 8.dp
     }
-  // Keep the visual rail away from the rounded container edge. The transparent
-  // touch target follows the same inset so the thumb and rendered progress stay
-  // aligned instead of appearing to disappear under the border on narrow screens.
-  val trackHorizontalInset = if (isPortrait) 8.dp else 6.dp
+  // Portrait callers provide the card itself; the shared 12.dp inset above keeps
+  // timestamps, the visible rail, skip overlays, and the touch layer on one
+  // coordinate system. Landscape retains its original independent rail inset.
+  val trackHorizontalInset = if (isPortrait) 0.dp else 6.dp
   var latestInteractionPosition by remember { mutableFloatStateOf(currentPos) }
   var interactionStarted by remember { mutableStateOf(false) }
 
