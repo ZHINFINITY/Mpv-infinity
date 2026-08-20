@@ -583,12 +583,25 @@ class PlayerViewModel : ViewModel(),
         tracks.any { it.isAlbumArtwork }
       }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+  // Null means MPV is the active engine; an empty list means Media3 is active but this file
+  // provided no supported chapter metadata. This prevents stale MPV chapters from appearing in a
+  // Media3 session while leaving MPV chapter behavior unchanged.
+  private val media3Chapters =
+    MutableStateFlow<List<dev.vivvvek.seeker.Segment>?>(null)
+
   val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
-    PlaybackSession.propNode["chapter-list"]
-      .map { node ->
-        node?.toObject<List<ChapterNode>>(json)?.map { it.toSegment() }?.toImmutableList()
-          ?: persistentListOf()
-      }.stateIn(viewModelScope, SharingStarted.Lazily, persistentListOf())
+    combine(
+      PlaybackSession.propNode["chapter-list"],
+      media3Chapters,
+    ) { node, media3 ->
+      media3
+        ?: (node?.toObject<List<ChapterNode>>(json)?.map { it.toSegment() }?.toImmutableList()
+          ?: persistentListOf())
+    }.stateIn(viewModelScope, SharingStarted.Lazily, persistentListOf())
+
+  fun setMedia3Chapters(chapters: List<dev.vivvvek.seeker.Segment>?) {
+    media3Chapters.value = chapters?.toImmutableList()
+  }
 
   // Audio player UI state
   val albumArtBounds = MutableStateFlow<android.graphics.Rect?>(null)

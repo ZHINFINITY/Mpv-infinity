@@ -534,6 +534,7 @@ fun PlayerControls(
     isUnlockSliderDragging,
     isAudioOnly,
     doubleTapSeekAmount,
+    sheetShown,
   ) {
     if (
       !isAudioOnly &&
@@ -541,7 +542,8 @@ fun PlayerControls(
         paused == false &&
         !isSeeking &&
         doubleTapSeekAmount == 0 &&
-        !isUnlockSliderDragging
+        !isUnlockSliderDragging &&
+        sheetShown != Sheets.Playlist
     ) {
       // Use 2 second delay when controls are locked, otherwise use user preference
       val delayTime = if (areControlsLocked) 2000L else playerTimeToDisappear.toLong()
