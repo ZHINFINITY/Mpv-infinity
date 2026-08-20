@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.9 — Portrait Pause Button UI Hotfix
+
+- **Circular pressed indication:** Clipped the portrait video pause/resume button’s interaction layer to its circular shape so the blue rectangular pressed overlay no longer appears when pausing or resuming.
+- **Playback behavior preserved:** The pause/resume action, circular control appearance, and MPV music-player implementation are unchanged.
+- **Release scope:** Private repository; Standard APK variants only.
+
 ## 1.1.8 — MPV-Only Music Ownership Hotfix
 
 - **MPV-only audio routing:** Audio items are now forced through MPV before any global engine, Media3, or Dolby/Auto decision. Delayed video-track callbacks cannot hand the current song back to Media3.
