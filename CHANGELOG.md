@@ -2,6 +2,11 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.17 — Media3 Double-Tap Feedback Hotfix
+
+- **Double-tap seek indicator:** Media3 now uses its live position and duration when updating the shared double-tap seek state, so the visible `+10`/`-10` text and chevron indicator appear just as they do with MPV. The actual seek operation remains unchanged for both engines.
+- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.16 fixes are preserved.
+
 ## 1.1.16 — Media3 Subtitle, Chapter, Playlist, and Position Hotfix
 
 - **ASS drawing artifact:** Broadened Media3’s ASS drawing-command detection to remove coordinate-only drawing cues such as `m x y l x y` without removing dialogue or sign cues.

@@ -4669,19 +4669,41 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun leftSeek() {
+    val media3Active = isMedia3ActiveForGesture()
+    val currentPositionSeconds =
+      if (media3Active) {
+        media3GesturePositionSeconds()
+      } else {
+        (pos ?: 0).toDouble()
+      }
     _seekState.update { s ->
-      s.copy(amount = if ((pos ?: 0) > 0) s.amount - doubleTapToSeekDuration else s.amount, isForwards = false)
+      s.copy(
+        amount =
+          if (currentPositionSeconds > 0.0) s.amount - doubleTapToSeekDuration else s.amount,
+        isForwards = false,
+      )
     }
     seekBy(-doubleTapToSeekDuration)
   }
 
   fun rightSeek() {
+    val media3Active = isMedia3ActiveForGesture()
+    val currentPositionSeconds =
+      if (media3Active) {
+        media3GesturePositionSeconds()
+      } else {
+        (pos ?: 0).toDouble()
+      }
+    val durationSeconds =
+      if (media3Active) {
+        media3GestureDurationSeconds()
+      } else {
+        (duration ?: 0).toDouble()
+      }
     _seekState.update { s ->
       s.copy(
         amount =
-          if ((pos ?: 0) <
-            (duration ?: 0)
-          ) {
+          if (currentPositionSeconds < durationSeconds) {
             s.amount + doubleTapToSeekDuration
           } else {
             s.amount
