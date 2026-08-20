@@ -507,8 +507,11 @@ class PlayerActivity :
   private var restoreVideoTrackAfterFileLoad = false
 
   @Volatile private var isAdvancingAtEof = false
-
+  // Queue navigation must start the newly selected item at zero; reopening the same item may resume.
+  @Volatile private var pendingQueueTransitionStartAtZero = false
+  @Volatile private var pendingQueueTransitionItemId: String? = null
   @Volatile private var playWhenFileLoaded = false
+
   private var pendingVideoParamRefreshRequiresShaderReload = false
   private var lastBackgroundThumbnailKey: String? = null
   private var lastBackgroundThumbnail: Bitmap? = null
@@ -1752,12 +1755,23 @@ class PlayerActivity :
         "originalUri=${item.originalUri} title=${item.title.orEmpty().ifBlank { "<untitled>" }} " +
         "configuredMode=${decoderPreferences.playbackEngine.get().name}",
     )
+    val startsAtZero =
+      pendingQueueTransitionStartAtZero &&
+        (pendingQueueTransitionItemId == null || pendingQueueTransitionItemId == item.stableId)
     val resumePositionMs =
-      when (playbackEngine) {
-        PlaybackEngine.MPV ->
-          ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
-        PlaybackEngine.MEDIA3 -> media3PlaybackController.positionForEngineHandoffMs()
+      if (startsAtZero) {
+        0L
+      } else {
+        when (playbackEngine) {
+          PlaybackEngine.MPV ->
+            ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
+          PlaybackEngine.MEDIA3 -> media3PlaybackController.positionForEngineHandoffMs()
+        }
       }
+    if (startsAtZero) {
+      pendingQueueTransitionStartAtZero = false
+      pendingQueueTransitionItemId = null
+    }
     if (playbackEngine == PlaybackEngine.MPV) {
       // Stop libmpv rather than only pausing it. This releases its demuxer/decoder/audio queues so
       // Media3 is the only active engine and the device does not spend battery on a hidden player.
@@ -1908,12 +1922,21 @@ class PlayerActivity :
     )
     // Prefer the controller's requested target because the Compose state callback may lag behind
     // a seek, especially when an unsupported audio switch causes Media3 to fail immediately after it.
+    val startsAtZero =
+      pendingQueueTransitionStartAtZero &&
+        (pendingQueueTransitionItemId == null || pendingQueueTransitionItemId == currentItem?.stableId)
     val resumePositionMs =
-      if (playbackEngine == PlaybackEngine.MEDIA3) {
+      if (startsAtZero) {
+        0L
+      } else if (playbackEngine == PlaybackEngine.MEDIA3) {
         media3PlaybackController.positionForEngineHandoffMs()
       } else {
         ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
       }
+    if (startsAtZero) {
+      pendingQueueTransitionStartAtZero = false
+      pendingQueueTransitionItemId = null
+    }
     playbackEngine = PlaybackEngine.MPV
     media3State = Media3PlaybackController.State()
     media3PreparedItemId = null
@@ -4830,8 +4853,14 @@ class PlayerActivity :
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
         applyDefaultSettings(state)
       }
-
+      if (pendingQueueTransitionStartAtZero &&
+        (pendingQueueTransitionItemId == null || pendingQueueTransitionItemId == mediaIdentifier)
+      ) {
+        pendingQueueTransitionStartAtZero = false
+        pendingQueueTransitionItemId = null
+      }
       state != null
+
     }.onFailure { e ->
       Log.e(TAG, "Error loading playback state", e)
     }.getOrDefault(false)
@@ -4896,7 +4925,8 @@ class PlayerActivity :
     PlaybackSession.setPropertyDouble("video-zoom", state.videoZoom.toDouble())
     viewModel.setVideoZoom(state.videoZoom)
 
-    if (playerPreferences.savePositionOnQuit.get() &&
+    if (!pendingQueueTransitionStartAtZero &&
+      playerPreferences.savePositionOnQuit.get() &&
       state.lastPosition != 0 &&
       !viewModel.isAudioOnly.value &&
       !isCurrentMediaKnownAudio()
@@ -5127,6 +5157,9 @@ class PlayerActivity :
 
     setIntent(intent)
     viewModel.setAudioOnlyLaunchHint(isKnownAudioLaunch(intent))
+    // A direct/new-item intent is not queue navigation, so it may use that item's own saved state.
+    pendingQueueTransitionStartAtZero = false
+    pendingQueueTransitionItemId = null
     mediaRequestGeneration++
     pendingSavedPlaylistSelection = null
     if (isKnownAudioLaunch(intent)) setOrientation()
@@ -6680,6 +6713,11 @@ class PlayerActivity :
       Log.e(TAG, "Invalid playlist index: $index (playlist size: ${playlist.size})")
       return
     }
+
+    // Mark the target before selecting it so the queue observer cannot reuse the old item's
+    // Media3/MPV position during asynchronous engine synchronization.
+    pendingQueueTransitionStartAtZero = true
+    pendingQueueTransitionItemId = PlaybackSession.queue.value.items.getOrNull(index)?.stableId
 
     // Save current video's playback state before switching
     if (saveCurrentPlaybackState && fileName.isNotBlank()) {
