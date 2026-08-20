@@ -519,7 +519,9 @@ fun SubtitleTrackRow(
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
   ) {
-    Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
+    // The whole row owns the toggle action. Leaving the checkbox callback null prevents one
+    // checkbox tap from invoking onToggle twice (row click + checkbox change).
+    Checkbox(checked = isSelected, onCheckedChange = null)
     Text(title, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
 
     if (selectionIndicator != null) {
