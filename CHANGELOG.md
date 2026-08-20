@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.14 — Gesture, Playlist, and Media3 Subtitle Hotfix
+
+- **Media3 hold speed:** Long-press speed gestures now read and restore the live Media3 playback state instead of stale MPV pause and speed properties.
+- **Folder playlist sheet:** Multi-item folder queues are now exposed to the playlist card in both MPV and Media3, including ordinary folders outside the Reels path. The playlist swipe path also keeps controls visible when opening the sheet.
+- **Media3 subtitle sheet refresh:** Selecting or removing a subtitle publishes the updated selection immediately so the open sheet reflects the change without being dismissed and reopened.
+- **ASS drawing artifact:** Media3 filters malformed ASS vector drawing-command cues that were being displayed as numeric text in the video corner, while preserving positioned sign cues.
+- **Release scope:** Unreleased validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.13 fixes are preserved.
+
 ## 1.1.13 — Media3 Subtitle Rendering Hotfix
 
 - **ASS/SSA sign positioning:** Native/Media3 subtitles now honor embedded alignment and position tags while retaining the app’s subtitle scale control, preventing sign subtitles from being stacked, oversized, or misplaced.

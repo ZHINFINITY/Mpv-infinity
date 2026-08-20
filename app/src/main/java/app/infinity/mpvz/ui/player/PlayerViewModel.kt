@@ -4284,6 +4284,22 @@ class PlayerViewModel : ViewModel(),
   /** Returns whether seek gestures should target the Media3 controller rather than libmpv. */
   fun isMedia3ActiveForGesture(): Boolean = host.isMedia3Active()
 
+  /** Returns the active engine's playing state for long-press gestures. */
+  fun isPlayingForGesture(): Boolean =
+    if (host.isMedia3Active()) {
+      host.media3IsPlaying()
+    } else {
+      !(PlaybackSession.getPropertyBoolean("pause") ?: true)
+    }
+
+  /** Returns the active engine's speed so a temporary hold-speed gesture can restore it safely. */
+  fun playbackSpeedForGesture(): Float =
+    if (host.isMedia3Active()) {
+      host.media3PlaybackSpeed().coerceIn(0.1f, 8f)
+    } else {
+      (PlaybackSession.getPropertyFloat("speed") ?: 1f).coerceIn(0.1f, 8f)
+    }
+
   /** Live Media3 position used by gesture seeking; MPV is stopped while Media3 owns playback. */
   fun media3GesturePositionSeconds(): Double =
     (host.media3CurrentPositionMs().coerceAtLeast(0L) / 1000.0).takeIf { it.isFinite() } ?: 0.0
@@ -5315,13 +5331,15 @@ class PlayerViewModel : ViewModel(),
   // ==================== Playlist Management ====================
 
   fun hasPlaylistSupport(): Boolean {
+    val queue = PlaybackSession.queue.value
     val playlistModeEnabled = playerPreferences.playlistMode.get()
-    return playlistModeEnabled && PlaybackSession.queue.value.isExplicitQueue
+    return playlistModeEnabled && queue.items.size > 1 && queue.currentIndex in queue.items.indices
   }
 
+  /** Returns the current position for any multi-item queue, including folder queues. */
   fun getPlaylistInfo(): String? {
     val queue = PlaybackSession.queue.value
-    if (!queue.isExplicitQueue || queue.currentIndex !in queue.items.indices) return null
+    if (queue.items.size <= 1 || queue.currentIndex !in queue.items.indices) return null
     return "${queue.currentIndex + 1}/${queue.items.size}"
   }
 
@@ -5331,7 +5349,7 @@ class PlayerViewModel : ViewModel(),
 
   fun getPlaylistData(): List<app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistItem>? {
     val queue = PlaybackSession.queue.value
-    if (!queue.isExplicitQueue || queue.items.isEmpty()) return null
+    if (queue.items.size <= 1 || queue.currentIndex !in queue.items.indices) return null
 
     // Get current video progress
     val currentPos = pos ?: 0

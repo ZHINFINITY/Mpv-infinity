@@ -57,6 +57,9 @@ interface PlayerHost {
 
   fun media3SetPlaybackSpeed(speed: Float): Boolean = false
 
+  /** Returns the active Media3 playback speed for gesture state restoration. */
+  fun media3PlaybackSpeed(): Float = 1f
+
   fun media3SetAudioPitchCorrection(enabled: Boolean): Boolean = false
 
   fun media3SetRepeatMode(mode: RepeatMode): Boolean = false

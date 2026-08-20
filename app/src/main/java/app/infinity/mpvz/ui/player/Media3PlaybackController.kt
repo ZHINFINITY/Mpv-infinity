@@ -18,6 +18,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
+import androidx.media3.common.text.CueGroup
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.preferences.AudioChannels
 import androidx.media3.common.util.UnstableApi
@@ -82,6 +83,11 @@ class Media3PlaybackController(
   private var fastStartActive = false
   private var restoreSeekParametersWhenReady = false
   private var attachedView: PlayerView? = null
+  private val assDrawingCommandPattern =
+    Regex(
+      """^\\s*(?:(?:m|n|l|b|s|p|c)\\s+-?\\d+(?:\\s+-?\\d+){2,})(?:\\s+(?:m|n|l|b|s|p|c)\\s+-?\\d+(?:\\s+-?\\d+){1,})+\\s*$""",
+      RegexOption.IGNORE_CASE,
+    )
   // SubtitleView may rebuild its cue layout when tracks change. Keep the user scale outside the
   // view instance so a renderer reset cannot silently restore the default 1.0x size.
   private var subtitleScale = 1f
@@ -526,7 +532,11 @@ class Media3PlaybackController(
   fun selectSubtitleTrack(trackId: Int): Boolean {
     val selection = media3SubtitleTrackGroups[trackId] ?: return false
     selectedSubtitleTrackIds += trackId
+    latestSubtitleTracks = latestSubtitleTracks.map { track ->
+      if (track.id == trackId) track.copy(selected = true) else track
+    }
     applySubtitleTrackSelection()
+    publishState()
     val (group, trackIndex) = selection
     logInfo(
       "selecting subtitle track id=$trackId group=${group.id} index=$trackIndex " +
@@ -539,7 +549,11 @@ class Media3PlaybackController(
     val selectedInSnapshot = latestSubtitleTracks.any { it.id == trackId && it.selected == true }
     if (trackId !in selectedSubtitleTrackIds && !selectedInSnapshot) return false
     selectedSubtitleTrackIds -= trackId
+    latestSubtitleTracks = latestSubtitleTracks.map { track ->
+      if (track.id == trackId) track.copy(selected = false) else track
+    }
     applySubtitleTrackSelection()
+    publishState()
     logInfo(
       "unselecting subtitle track id=$trackId " +
         "selectedIds=${selectedSubtitleTrackIds.sorted().joinToString(",")}",
@@ -564,6 +578,8 @@ class Media3PlaybackController(
 
   fun disableSubtitles(): Boolean {
     selectedSubtitleTrackIds.clear()
+    latestSubtitleTracks = latestSubtitleTracks.map { track -> track.copy(selected = false) }
+    publishState()
     logInfo("disabling subtitles")
     player.trackSelectionParameters =
       player.trackSelectionParameters
@@ -801,6 +817,18 @@ class Media3PlaybackController(
     applyNativeSubtitleStyle()
     applySubtitleScale()
     publishState()
+  }
+
+  override fun onCues(cueGroup: CueGroup) {
+    val view = attachedView ?: return
+    val filteredCues = cueGroup.cues.filterNot { cue ->
+      cue.text?.toString()?.trim()?.let { text -> assDrawingCommandPattern.matches(text) } == true
+    }
+    // PlayerView also receives the same cue callback. Post after its listener update so the
+    // filtered list remains in the native SubtitleView without replacing positioned sign cues.
+    view.post {
+      if (attachedView === view) view.subtitleView?.setCues(filteredCues)
+    }
   }
 
   override fun onPlayerError(error: PlaybackException) {
