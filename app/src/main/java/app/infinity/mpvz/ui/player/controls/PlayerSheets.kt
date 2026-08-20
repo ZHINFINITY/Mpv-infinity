@@ -479,10 +479,13 @@ fun PlayerSheets(
 
       val filteredPlaylist =
         remember(playlist, isAudioOnly) {
+          // The sheet can be composed before the IO refresh publishes playlistItems. Use the
+          // already-loaded explicit queue for the first frame, then switch to the refreshed list.
+          val sourcePlaylist = playlist.ifEmpty { viewModel.getPlaylistData().orEmpty() }
           if (isAudioOnly) {
-            playlist.filter { it.isAudio }
+            sourcePlaylist.filter { it.isAudio }
           } else {
-            playlist.filter { !it.isAudio }
+            sourcePlaylist.filter { !it.isAudio }
           }
         }
 

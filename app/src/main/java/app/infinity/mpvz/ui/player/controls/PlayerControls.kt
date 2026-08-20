@@ -381,7 +381,9 @@ fun PlayerControls(
   val onOpenSheet: (Sheets) -> Unit = remember(viewModel) {
     {
       viewModel.sheetShown.update { _ -> it }
-      if (it == Sheets.None) {
+      if (it == Sheets.None || it == Sheets.Playlist) {
+        // The playlist is an in-player Now Playing card. Keep the controls layer visible so the
+        // card is not hidden behind the controls visibility gate.
         viewModel.showControls()
       } else {
         viewModel.hideControls()

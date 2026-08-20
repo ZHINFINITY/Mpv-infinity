@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.12 — Portrait Controls and Media3 Gesture Hotfix
+
+- **Portrait bottom controls:** The vertical player now renders the same saved buttons, membership, and order configured in Edit Portrait Bottom, including added and removed controls.
+- **Media3 hold speed:** The Hold for multi-x speed gesture now routes through the engine-aware playback-speed setter, so the configured speed applies to Media3 and returns to the prior speed after release.
+- **Queue position:** Queued Media3/Native transitions keep the start-at-zero guard through asynchronous state restoration instead of reapplying the previous video’s position.
+- **Folder playlist card:** The folder playlist button opens the existing Now Playing card without triggering the generic control-hide action.
+- **Release scope:** Private repository; Standard APK variants only. MPV behavior and previously working music, pause-button, subtitle, and playback paths are preserved.
+
 ## 1.1.11 — Playlist Card and Portrait Pause Hotfix
 
 - **Folder playlist card:** The portrait top-bar episode pill now opens the existing bottom “Now Playing” card for the videos in the loaded folder, including the item count, thumbnails, current-item highlight, metadata, and reorder handles.
