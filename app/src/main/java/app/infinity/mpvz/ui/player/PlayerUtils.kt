@@ -64,12 +64,14 @@ internal fun Uri.extractLocalPath(): String? {
   return null
 }
 
-internal fun Uri.openContentFd(context: Context): String? =
+internal fun Uri.resolveLocalFilePath(context: Context): String? =
   extractLocalPath()
     ?: tryFileDescriptorPath(context)
     ?: tryMediaStoreQuery(context)
     ?: tryDocumentUriParsing(context)
-    ?: tryFileDescriptorFallback(context)
+
+internal fun Uri.openContentFd(context: Context): String? =
+  resolveLocalFilePath(context) ?: tryFileDescriptorFallback(context)
 
 /**
  * Method 1: Extract real filesystem path from file descriptor.

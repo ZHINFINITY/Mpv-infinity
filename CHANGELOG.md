@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.20 — Media3 Subtitle First-Load and MKV Playlist Hotfix
+
+- **First-load dual subtitles:** A bounded retry of up to four attempts at 120 ms intervals reapplies the explicit renderer-specific subtitle overrides after each track-map update, so selecting dialogue and signs works immediately without toggling one track off and back on.
+- **Sign subtitle readability:** Sign-track cues receive a dark window treatment while preserving their embedded ASS/SSA position and alignment, preventing sign colors from blending with the underlying source sign.
+- **MKV folder playlist:** The season-folder recursive sibling scan now runs for all launch sources, including file-manager launches, not only video-list launches. This fixes Konosuba and similar nested-season-folder playlist-sheet failures.
+- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.19 fixes are preserved.
+
 ## 1.1.19 — Media3 Subtitle and Nested MKV Playlist Hotfix
 
 - **First-load simultaneous subtitles:** Text-renderer-specific overrides are cleared before each explicit Media3 subtitle assignment, so selecting dialogue and signs works immediately without toggling one track off and on.

@@ -779,8 +779,14 @@ class PlayerActivity :
     ) {
       val path = parsePathFromIntent(intent)
       val sourceUri = extractUriFromIntent(intent)
-      if (path != null && File(path).isFile) {
-        generatePlaylistFromFolder(path)
+      val localPath =
+        path?.takeIf { File(it).isFile }
+          ?: sourceUri
+            ?.takeIf { it.scheme == "content" }
+            ?.resolveLocalFilePath(this)
+            ?.takeIf { File(it).isFile }
+      if (localPath != null) {
+        generatePlaylistFromFolder(localPath)
       } else if (sourceUri?.scheme == "content") {
         generatePlaylistFromMediaStore(sourceUri)
       }
@@ -5270,8 +5276,14 @@ class PlayerActivity :
     if (playlist.isEmpty() && playlistId == null && playerPreferences.playlistMode.get()) {
       val path = parsePathFromIntent(intent)
       val sourceUri = extractUriFromIntent(intent)
-      if (path != null && File(path).isFile) {
-        generatePlaylistFromFolder(path)
+      val localPath =
+        path?.takeIf { File(it).isFile }
+          ?: sourceUri
+            ?.takeIf { it.scheme == "content" }
+            ?.resolveLocalFilePath(this)
+            ?.takeIf { File(it).isFile }
+      if (localPath != null) {
+        generatePlaylistFromFolder(localPath)
       } else if (sourceUri?.scheme == "content") {
         generatePlaylistFromMediaStore(sourceUri)
       }
@@ -7283,11 +7295,6 @@ class PlayerActivity :
       ?.let { it != NotificationStyle.None }
       ?: true
 
-  private fun isVideoListLaunchSource(launchSource: String): Boolean =
-    launchSource == "video_list" ||
-      launchSource == "recently_played_button" ||
-      launchSource == "first_video_button"
-
   private fun normalizePlaylistFilePath(path: String): String = path.replace("\\", "/")
 
   private fun naturalSortFiles(files: List<File>): List<File> =
@@ -7354,13 +7361,10 @@ class PlayerActivity :
     }
     val directMediaFiles = parentFolder.listFiles { file -> isEligibleMediaFile(file) }?.toList().orEmpty()
 
-    if (!isVideoListLaunchSource(launchSource)) {
-      return naturalSortFiles(directMediaFiles)
-    }
-
     // Keep the immediate season folder as the default. If it has no usable siblings, walk upward
-    // and search descendants so an Anime/Show/Season/Episode layout can still form a queue when
-    // the launch came from a provider that supplied the series-level folder context.
+    // and search descendants so an Anime/Show/Season/Episode layout can still form a queue for
+    // file-manager and other launches too. The previous launch-source gate returned a singleton
+    // immediately for those launches, preventing nested MKV folders from reaching this fallback.
     var playlistMediaFiles = directMediaFiles
     if (playlistMediaFiles.size <= 1) {
       var ancestorFolder: File? = parentFolder

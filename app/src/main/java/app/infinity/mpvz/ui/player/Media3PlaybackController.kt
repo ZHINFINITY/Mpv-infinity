@@ -87,7 +87,20 @@ class Media3PlaybackController(
   private var audioPitchCorrection = true
   private val trackSelector = DefaultTrackSelector(appContext)
   private val subtitleCuesByRenderer = mutableMapOf<Int, List<Cue>>()
+  private val subtitleTrackIdsByRenderer = mutableMapOf<Int, Set<Int>>()
   private var subtitleCueGeneration = 0L
+  private var subtitleSelectionRetryAttempts = 0
+  private val subtitleSelectionRetry =
+    object : Runnable {
+      override fun run() {
+        if (!preserveSubtitleSelection || selectedSubtitleTrackIds.isEmpty()) return
+        applySubtitleTrackSelection()
+        subtitleSelectionRetryAttempts++
+        if (subtitleSelectionRetryAttempts < 4) {
+          stateTickerHandler.postDelayed(this, 120L)
+        }
+      }
+    }
   private val player: ExoPlayer
   private lateinit var normalMediaSourceFactory: DefaultMediaSourceFactory
   private lateinit var fastMediaSourceFactory: DefaultMediaSourceFactory
@@ -578,6 +591,7 @@ class Media3PlaybackController(
       if (track.id == trackId) track.copy(selected = true) else track
     }
     applySubtitleTrackSelection()
+    scheduleSubtitleSelectionRetry()
     publishState()
     val (group, trackIndex) = selection
     logInfo(
@@ -596,6 +610,7 @@ class Media3PlaybackController(
       if (track.id == trackId) track.copy(selected = false) else track
     }
     applySubtitleTrackSelection()
+    scheduleSubtitleSelectionRetry()
     publishState()
     logInfo(
       "unselecting subtitle track id=$trackId " +
@@ -604,7 +619,15 @@ class Media3PlaybackController(
     return true
   }
 
+  private fun scheduleSubtitleSelectionRetry() {
+    if (!preserveSubtitleSelection || selectedSubtitleTrackIds.isEmpty()) return
+    stateTickerHandler.removeCallbacks(subtitleSelectionRetry)
+    subtitleSelectionRetryAttempts = 0
+    stateTickerHandler.post(subtitleSelectionRetry)
+  }
+
   private fun applySubtitleTrackSelection() {
+    subtitleTrackIdsByRenderer.clear()
     val selectedTracks =
       selectedSubtitleTrackIds.mapNotNull { id ->
         media3SubtitleTrackGroups[id]?.let { id to it }
@@ -648,6 +671,8 @@ class Media3PlaybackController(
           DefaultTrackSelector.SelectionOverride(rendererGroupIndex, *trackIndices.distinct().toIntArray()),
         )
         parameters.setRendererDisabled(rendererIndex, false)
+        subtitleTrackIdsByRenderer[rendererIndex] =
+          selectedTracks.filter { it.second.first == group }.map { it.first }.toSet()
         assignedGroups += group
         rendererCursor++
         if (rendererCursor >= 2 && assignedGroups.size >= byGroup.size) break
@@ -740,8 +765,11 @@ class Media3PlaybackController(
   fun release() {
     logInfo("controller releasing")
     stateTickerHandler.removeCallbacks(stateTicker)
+    stateTickerHandler.removeCallbacks(subtitleSelectionRetry)
+    subtitleSelectionRetryAttempts = 0
     clearABLoop()
     clearSubtitleCueBuffers()
+    subtitleTrackIdsByRenderer.clear()
     preserveSubtitleSelection = false
     attachedView?.player = null
     attachedView = null
@@ -895,7 +923,10 @@ class Media3PlaybackController(
     )
     latestAudioTracks = audioEntries
     latestSubtitleTracks = normalizedSubtitleEntries
-    if (selectedSubtitleTrackIds.isNotEmpty() || preserveSubtitleSelection) applySubtitleTrackSelection()
+    if (selectedSubtitleTrackIds.isNotEmpty() || preserveSubtitleSelection) {
+      applySubtitleTrackSelection()
+      scheduleSubtitleSelectionRetry()
+    }
 
     // Matroska commonly delivers chapters through each track Format.metadata rather than the
     // global Player.Listener.onMetadata callback.
@@ -946,12 +977,15 @@ class Media3PlaybackController(
   private fun postMergedSubtitleCues() {
     val generation = subtitleCueGeneration
     val filteredCues =
-      subtitleCuesByRenderer.values
-        .flatten()
-        .filterNot { cue ->
+      subtitleCuesByRenderer.entries
+        .flatMap { (rendererIndex, cues) ->
+          val signRenderer = isLikelySignRenderer(rendererIndex)
+          cues.map { cue -> cue to signRenderer }
+        }
+        .filterNot { (cue, _) ->
           cue.text?.toString()?.trim()?.let { text -> assDrawingCommandPattern.matches(text) } == true
         }
-        .map(::makeEmbeddedCueReadable)
+        .map { (cue, signRenderer) -> makeEmbeddedCueReadable(cue, signRenderer) }
     val view = attachedView ?: return
     view.post {
       if (attachedView === view && subtitleCueGeneration == generation) {
@@ -965,7 +999,23 @@ class Media3PlaybackController(
    * sign underneath. The cue builder preserves the original text, position, anchors, alignment,
    * size, and vertical writing fields, so this changes readability without moving sign cues.
    */
-  private fun makeEmbeddedCueReadable(cue: Cue): Cue {
+  private fun isLikelySignRenderer(rendererIndex: Int): Boolean {
+    return subtitleTrackIdsByRenderer[rendererIndex].orEmpty().any { trackId ->
+      val title = latestSubtitleTracks.firstOrNull { it.id == trackId }?.title.orEmpty().lowercase()
+      Regex("\\b(signs?|songs?|lyrics?)\\b").containsMatchIn(title)
+    }
+  }
+
+  private fun makeEmbeddedCueReadable(cue: Cue, signRenderer: Boolean = false): Cue {
+    if (signRenderer) {
+      // Sign tracks commonly share coordinates with the original sign/dialogue track. An opaque
+      // dark window prevents the two styled cues from blending their colors while preserving the
+      // embedded ASS/SSA position and alignment.
+      return cue
+        .buildUpon()
+        .setWindowColor(android.graphics.Color.argb(0xE6, 0, 0, 0))
+        .build()
+    }
     if (!cue.windowColorSet) return cue
     val originalColor = cue.windowColor
     val originalAlpha = android.graphics.Color.alpha(originalColor)
@@ -1092,6 +1142,7 @@ class Media3PlaybackController(
     onChaptersChanged(emptyList())
     media3AudioTrackGroups = emptyMap()
     media3SubtitleTrackGroups = emptyMap()
+    subtitleTrackIdsByRenderer.clear()
     clearSubtitleCueBuffers()
     selectedSubtitleTrackIds.clear()
     preserveSubtitleSelection = false
