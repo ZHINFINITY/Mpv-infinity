@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.15 — Media3 Chapters, Subtitles, and Playlist Hotfix
+
+- **Media3 chapters:** Matroska and other supported Media3 chapter metadata now feeds the existing chapter sheet; files without supported chapter metadata keep the chapter button hidden, while MPV chapter behavior is unchanged.
+- **Media3 dialogue and signs:** Removed the controller-side cue replacement that could discard the dialogue stream when dialogue and sign subtitle tracks were selected together; PlayerView now retains Media3’s native merged cue handling.
+- **ASS drawing artifact:** Corrected the raw-string whitespace and numeric-token regex used for ASS drawing-command detection.
+- **Playlist controls:** The playlist sheet no longer triggers the playback auto-hide timer after opening, keeping the folder card and its controls visible while browsing a queue.
+- **Release scope:** Unreleased CI validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.14 fixes are preserved.
+
 ## 1.1.14 — Gesture, Playlist, and Media3 Subtitle Hotfix
 
 - **Media3 hold speed:** Long-press speed gestures now read and restore the live Media3 playback state instead of stale MPV pause and speed properties.

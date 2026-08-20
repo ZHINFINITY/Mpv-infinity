@@ -243,6 +243,13 @@ class PlayerActivity :
           }
         }
       },
+      onChaptersChanged = { chapters ->
+        lifecycleScope.launch(Dispatchers.Main.immediate) {
+          if (playbackEngine == PlaybackEngine.MEDIA3) {
+            viewModel.setMedia3Chapters(chapters)
+          }
+        }
+      },
     )
   }
 
@@ -1778,6 +1785,9 @@ class PlayerActivity :
       AppDebugLog.info(TAG, "MPV stopped for exclusive Media3 playback item=${item.stableId}")
     }
     playbackEngine = PlaybackEngine.MEDIA3
+    // Media3 owns chapter visibility for this session. The controller will replace this empty
+    // state only if the extractor emits supported Chapter metadata.
+    viewModel.setMedia3Chapters(emptyList())
     // Dolby Vision items routed here are known widescreen assets in the current Auto/Media3 path.
     // Request landscape before asynchronous Media3 VideoSize arrives so the activity does not
     // remain portrait during decoder initialization. The normal setOrientation() callback still
@@ -1934,6 +1944,7 @@ class PlayerActivity :
     // Keep the queue-transition guard active until loadVideoPlaybackState() finishes. Clearing it
     // here lets a later asynchronous state callback reapply the previous item's saved position.
     playbackEngine = PlaybackEngine.MPV
+    viewModel.setMedia3Chapters(null)
     media3State = Media3PlaybackController.State()
     media3PreparedItemId = null
     media3ItemId = null

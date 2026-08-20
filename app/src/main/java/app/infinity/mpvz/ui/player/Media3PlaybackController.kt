@@ -11,6 +11,7 @@ import androidx.media3.common.C
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Metadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.PlaybackException
 import androidx.media3.exoplayer.SeekParameters
@@ -31,6 +32,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -49,6 +51,7 @@ class Media3PlaybackController(
   private val onError: (PlaybackException) -> Unit = {},
   private val onVideoFrameRendered: () -> Unit = {},
   private val onEnded: () -> Unit = {},
+  private val onChaptersChanged: (List<dev.vivvvek.seeker.Segment>) -> Unit = {},
 ) : Player.Listener, AnalyticsListener {
   data class State(
     val playbackState: Int = Player.STATE_IDLE,
@@ -85,7 +88,7 @@ class Media3PlaybackController(
   private var attachedView: PlayerView? = null
   private val assDrawingCommandPattern =
     Regex(
-      """^\\s*(?:(?:m|n|l|b|s|p|c)\\s+-?\\d+(?:\\s+-?\\d+){2,})(?:\\s+(?:m|n|l|b|s|p|c)\\s+-?\\d+(?:\\s+-?\\d+){1,})+\\s*$""",
+      """^\s*(?:(?:m|n|l|b|s|p|c)\s+-?\d+(?:\s+-?\d+){2,})(?:\s+(?:m|n|l|b|s|p|c)\s+-?\d+(?:\s+-?\d+){1,})+\s*$""",
       RegexOption.IGNORE_CASE,
     )
   // SubtitleView may rebuild its cue layout when tracks change. Keep the user scale outside the
@@ -105,6 +108,7 @@ class Media3PlaybackController(
   private var latestVideoSize: VideoSize? = null
   private var latestAudioTracks: List<TrackNode> = emptyList()
   private var latestSubtitleTracks: List<TrackNode> = emptyList()
+  private var latestChapters: List<dev.vivvvek.seeker.Segment> = emptyList()
   private var latestVideoDecoderName: String? = null
   private var media3AudioTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
@@ -820,16 +824,42 @@ class Media3PlaybackController(
   }
 
   override fun onCues(cueGroup: CueGroup) {
-    val view = attachedView ?: return
     val filteredCues = cueGroup.cues.filterNot { cue ->
       cue.text?.toString()?.trim()?.let { text -> assDrawingCommandPattern.matches(text) } == true
     }
-    // PlayerView also receives the same cue callback. Post after its listener update so the
-    // filtered list remains in the native SubtitleView without replacing positioned sign cues.
+    // Do not replace PlayerView's native merged cue list for ordinary updates. Only post a
+    // replacement when an ASS drawing-only cue was actually removed; this preserves simultaneous
+    // dialogue and sign tracks while suppressing the numeric drawing artifact.
+    if (filteredCues.size == cueGroup.cues.size) return
+    val view = attachedView ?: return
     view.post {
       if (attachedView === view) view.subtitleView?.setCues(filteredCues)
     }
   }
+
+  override fun onMetadata(metadata: Metadata) {
+    val chapters =
+      (0 until metadata.length()).mapNotNull { index ->
+        val chapter = metadata[index] as? Chapter ?: return@mapNotNull null
+        if (chapter.isHidden()) return@mapNotNull null
+        val startTimeMs = chapter.getStartTimeMs()
+        if (startTimeMs == C.TIME_UNSET || startTimeMs < 0L) return@mapNotNull null
+        val title = chapter.getTitle()?.value?.trim().orEmpty()
+        dev.vivvvek.seeker.Segment(
+          title.ifBlank { "Chapter ${index + 1}" },
+          startTimeMs / 1000f,
+        )
+      }.distinctBy { it.start }
+
+    if (chapters != latestChapters) {
+      latestChapters = chapters
+      onChaptersChanged(chapters)
+      logInfo("chapters changed count=${chapters.size}")
+    }
+  }
+
+  fun getChapters(): List<dev.vivvvek.seeker.Segment> = latestChapters
+
 
   override fun onPlayerError(error: PlaybackException) {
     val cause = error.cause
@@ -901,6 +931,8 @@ class Media3PlaybackController(
     latestVideoDecoderName = null
     latestAudioTracks = emptyList()
     latestSubtitleTracks = emptyList()
+    latestChapters = emptyList()
+    onChaptersChanged(emptyList())
     media3AudioTrackGroups = emptyMap()
     media3SubtitleTrackGroups = emptyMap()
     selectedSubtitleTrackIds.clear()
