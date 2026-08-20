@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -106,7 +107,6 @@ fun TopPlayerControlsPortrait(
                 .clickable(
                   enabled = playlistModeEnabled,
                   onClick = {
-                    clickEvent()
                     onOpenSheet(Sheets.Playlist)
                   },
                 ),
@@ -259,18 +259,6 @@ fun BottomPlayerControlsPortrait(
   viewModel: PlayerViewModel,
   activity: PlayerActivity,
 ) {
-  val compactButtons =
-    remember(buttons) {
-      val preferredButtons =
-        listOf(
-          PlayerButton.SUBTITLES,
-          PlayerButton.VIDEO_ZOOM,
-          PlayerButton.SCREEN_ROTATION,
-          PlayerButton.MORE_OPTIONS,
-        )
-      preferredButtons.filter { it in buttons }.ifEmpty { buttons.take(4) }
-    }
-
   PlayerGlassSurface(
     modifier =
       Modifier
@@ -319,38 +307,46 @@ fun BottomPlayerControlsPortrait(
         )
       }
 
-      Row(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .padding(top = 12.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.Top,
-      ) {
-        compactButtons.forEach { button ->
-          Column(
-            modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.CenterHorizontally,
-          ) {
-            RenderPlayerButton(
-              button = button,
-              chapters = chapters,
-              currentChapter = currentChapter,
-              isPortrait = true,
-              isSpeedNonOne = isSpeedNonOne,
-              currentZoom = currentZoom,
-              aspect = aspect,
-              mediaTitle = mediaTitle,
-              hideBackground = hideBackground,
-              onBackPress = onBackPress,
-              onOpenSheet = onOpenSheet,
-              onOpenPanel = onOpenPanel,
-              viewModel = viewModel,
-              activity = activity,
-              decoder = decoder,
-              playbackSpeed = playbackSpeed,
-              buttonSize = 42.dp,
-            )
+      // Render the exact saved portrait-bottom configuration in its saved order. The settings
+      // editor can contain more than four buttons, so split the list into stable four-column rows
+      // instead of silently replacing it with a hard-coded subset.
+      buttons.chunked(4).forEach { rowButtons ->
+        Row(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .padding(top = 12.dp),
+          horizontalArrangement = Arrangement.SpaceEvenly,
+          verticalAlignment = Alignment.Top,
+        ) {
+          rowButtons.forEach { button ->
+            Column(
+              modifier = Modifier.weight(1f),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              RenderPlayerButton(
+                button = button,
+                chapters = chapters,
+                currentChapter = currentChapter,
+                isPortrait = true,
+                isSpeedNonOne = isSpeedNonOne,
+                currentZoom = currentZoom,
+                aspect = aspect,
+                mediaTitle = mediaTitle,
+                hideBackground = hideBackground,
+                onBackPress = onBackPress,
+                onOpenSheet = onOpenSheet,
+                onOpenPanel = onOpenPanel,
+                viewModel = viewModel,
+                activity = activity,
+                decoder = decoder,
+                playbackSpeed = playbackSpeed,
+                buttonSize = 42.dp,
+              )
+            }
+          }
+          repeat(4 - rowButtons.size) {
+            Spacer(modifier = Modifier.weight(1f))
           }
         }
       }

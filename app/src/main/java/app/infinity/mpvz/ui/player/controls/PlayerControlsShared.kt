@@ -118,7 +118,8 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.VIDEO_TITLE -> {
-      val playlistModeEnabled = viewModel.hasPlaylistSupport()
+      // Keep the folder queue card reachable even when the playlist preference is disabled.
+      val playlistModeEnabled = viewModel.hasPlaylistSupport() || viewModel.getPlaylistInfo() != null
 
       val titleInteractionSource = remember { MutableInteractionSource() }
 
@@ -156,7 +157,6 @@ fun RenderPlayerButton(
                 ),
               enabled = playlistModeEnabled,
               onClick = {
-                clickEvent()
                 onOpenSheet(Sheets.Playlist)
               },
             ),

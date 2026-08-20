@@ -65,7 +65,8 @@ fun TopLeftPlayerControlsLandscape(
   translationStatus: String = "",
   translatingTrackName: String = "",
 ) {
-  val playlistModeEnabled = viewModel.hasPlaylistSupport()
+  // Keep the folder queue card reachable even when the playlist preference is disabled.
+  val playlistModeEnabled = viewModel.hasPlaylistSupport() || viewModel.getPlaylistInfo() != null
   val clickEvent = LocalPlayerButtonsClickEvent.current
 
   Column(
@@ -94,7 +95,6 @@ fun TopLeftPlayerControlsLandscape(
               .clickable(
                 enabled = playlistModeEnabled,
                 onClick = {
-                  clickEvent()
                   onOpenSheet(Sheets.Playlist)
                 },
               ),

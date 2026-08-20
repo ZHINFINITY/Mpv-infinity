@@ -1768,10 +1768,8 @@ class PlayerActivity :
           PlaybackEngine.MEDIA3 -> media3PlaybackController.positionForEngineHandoffMs()
         }
       }
-    if (startsAtZero) {
-      pendingQueueTransitionStartAtZero = false
-      pendingQueueTransitionItemId = null
-    }
+    // Keep the queue-transition guard active until loadVideoPlaybackState() finishes. Clearing it
+    // here lets a later asynchronous state callback reapply the previous item's saved position.
     if (playbackEngine == PlaybackEngine.MPV) {
       // Stop libmpv rather than only pausing it. This releases its demuxer/decoder/audio queues so
       // Media3 is the only active engine and the device does not spend battery on a hidden player.
@@ -1933,10 +1931,8 @@ class PlayerActivity :
       } else {
         ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
       }
-    if (startsAtZero) {
-      pendingQueueTransitionStartAtZero = false
-      pendingQueueTransitionItemId = null
-    }
+    // Keep the queue-transition guard active until loadVideoPlaybackState() finishes. Clearing it
+    // here lets a later asynchronous state callback reapply the previous item's saved position.
     playbackEngine = PlaybackEngine.MPV
     media3State = Media3PlaybackController.State()
     media3PreparedItemId = null
