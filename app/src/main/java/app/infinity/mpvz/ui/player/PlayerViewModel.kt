@@ -3692,10 +3692,20 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
+  fun disableSubtitles() {
+    if (host.isMedia3Active()) {
+      host.media3DisableSubtitles()
+      return
+    }
+    setTrackSelectionId("sid", null)
+    setTrackSelectionId("secondary-sid", null)
+    subtitlesPreferences.autoEnableSubtitles.set(false)
+  }
+
   fun toggleSubtitle(id: Int) {
     if (host.isMedia3Active()) {
       if (host.media3IsSubtitleSelected(id)) {
-        host.media3DisableSubtitles()
+        host.media3UnselectSubtitleTrack(id)
       } else {
         host.media3SelectSubtitleTrack(id)
       }

@@ -69,6 +69,8 @@ interface PlayerHost {
 
   fun media3SelectSubtitleTrack(trackId: Int): Boolean = false
 
+  fun media3UnselectSubtitleTrack(trackId: Int): Boolean = false
+
   fun media3DisableSubtitles(): Boolean = false
 
   fun media3IsSubtitleSelected(trackId: Int): Boolean = false

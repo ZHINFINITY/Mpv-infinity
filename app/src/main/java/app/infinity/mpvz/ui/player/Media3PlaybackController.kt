@@ -102,6 +102,7 @@ class Media3PlaybackController(
   private var latestVideoDecoderName: String? = null
   private var media3AudioTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
+  private val selectedSubtitleTrackIds = mutableSetOf<Int>()
   private var requestedAudioTrackId: Int? = null
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekRequestedAtMs: Long = 0L
@@ -524,41 +525,66 @@ class Media3PlaybackController(
 
   fun selectSubtitleTrack(trackId: Int): Boolean {
     val selection = media3SubtitleTrackGroups[trackId] ?: return false
+    selectedSubtitleTrackIds += trackId
+    applySubtitleTrackSelection()
     val (group, trackIndex) = selection
-    logInfo("selecting subtitle track id=$trackId group=${group.id} index=$trackIndex")
-    player.trackSelectionParameters =
-      player.trackSelectionParameters
-        .buildUpon()
-        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-        .setOverrideForType(TrackSelectionOverride(group, listOf(trackIndex)))
-        .build()
+    logInfo(
+      "selecting subtitle track id=$trackId group=${group.id} index=$trackIndex " +
+        "selectedIds=${selectedSubtitleTrackIds.sorted().joinToString(",")}",
+    )
     return true
   }
 
+  fun unselectSubtitleTrack(trackId: Int): Boolean {
+    val selectedInSnapshot = latestSubtitleTracks.any { it.id == trackId && it.selected == true }
+    if (trackId !in selectedSubtitleTrackIds && !selectedInSnapshot) return false
+    selectedSubtitleTrackIds -= trackId
+    applySubtitleTrackSelection()
+    logInfo(
+      "unselecting subtitle track id=$trackId " +
+        "selectedIds=${selectedSubtitleTrackIds.sorted().joinToString(",")}",
+    )
+    return true
+  }
+
+  private fun applySubtitleTrackSelection() {
+    val builder =
+      player.trackSelectionParameters
+        .buildUpon()
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, selectedSubtitleTrackIds.isEmpty())
+    selectedSubtitleTrackIds
+      .mapNotNull { media3SubtitleTrackGroups[it] }
+      .groupBy({ it.first }, { it.second })
+      .forEach { (group, trackIndices) ->
+        builder.addOverride(TrackSelectionOverride(group, trackIndices.distinct()))
+      }
+    player.trackSelectionParameters = builder.build()
+  }
+
   fun disableSubtitles(): Boolean {
+    selectedSubtitleTrackIds.clear()
     logInfo("disabling subtitles")
     player.trackSelectionParameters =
       player.trackSelectionParameters
         .buildUpon()
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         .build()
     return true
   }
 
-  fun isSubtitleSelected(trackId: Int): Boolean {
-    return latestSubtitleTracks.any { it.id == trackId && it.selected == true }
-  }
+  fun isSubtitleSelected(trackId: Int): Boolean = trackId in selectedSubtitleTrackIds
 
-  fun hasSelectedSubtitle(): Boolean = latestSubtitleTracks.any { it.selected == true }
+  fun hasSelectedSubtitle(): Boolean = selectedSubtitleTrackIds.isNotEmpty()
 
   /**
-   * Configure Media3's single subtitle renderer. Embedded ASS/Matroska font-size and style data
-   * must not compete with the app's CaptionStyleCompat and pinch-size value; that combination was
-   * producing a second-looking cue layer and visible size artifacts on Native playback.
+   * Configure Media3's subtitle renderer. Keep embedded ASS/SSA positioning and alignment so sign
+   * cues honor tags such as \\pos and \\an, while the app still controls the effective font size.
    */
   private fun configureNativeSubtitleView(view: PlayerView? = attachedView) {
     view?.subtitleView?.apply {
-      setApplyEmbeddedStyles(false)
+      setApplyEmbeddedStyles(true)
       setApplyEmbeddedFontSizes(false)
       setStyle(nativeSubtitleStyle)
       setFractionalTextSize((0.0533f * subtitleScale).coerceIn(0.005f, 0.25f))
@@ -748,6 +774,8 @@ class Media3PlaybackController(
     }
     media3AudioTrackGroups = audioSelections
     media3SubtitleTrackGroups = subtitleSelections
+    selectedSubtitleTrackIds.retainAll(subtitleSelections.keys)
+    subtitleEntries.filter { it.selected == true }.forEach { selectedSubtitleTrackIds += it.id }
     latestVideoFormat =
       tracks.groups
         .asSequence()
@@ -847,6 +875,7 @@ class Media3PlaybackController(
     latestSubtitleTracks = emptyList()
     media3AudioTrackGroups = emptyMap()
     media3SubtitleTrackGroups = emptyMap()
+    selectedSubtitleTrackIds.clear()
     requestedAudioTrackId = null
     pendingSeekPositionMs = null
     pendingSeekRequestedAtMs = 0L

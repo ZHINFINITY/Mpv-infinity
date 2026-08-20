@@ -41,7 +41,6 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.SubtitlesSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.VideoZoomSheet
 import app.infinity.mpvz.ui.player.controls.components.sheets.VisualizerStyleSheet
-import app.infinity.mpvz.ui.player.setTrackSelectionId
 import dev.vivvvek.seeker.Segment
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
@@ -194,11 +193,7 @@ fun PlayerSheets(
         aiEnabled = aiEnabled,
         realtimeSubsEnabled = realtimeSubsEnabled,
         subtitlesOff = subtitlesOff,
-        onDisableSubtitles = {
-          setTrackSelectionId("sid", null)
-          setTrackSelectionId("secondary-sid", null)
-          subtitlesPreferences.autoEnableSubtitles.set(false)
-        },
+        onDisableSubtitles = { viewModel.disableSubtitles() },
       )
     }
 
