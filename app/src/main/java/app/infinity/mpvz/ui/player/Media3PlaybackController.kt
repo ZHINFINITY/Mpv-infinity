@@ -31,7 +31,6 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.text.TextRenderer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
-import androidx.media3.common.TrackGroupArray
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
@@ -219,8 +218,8 @@ class Media3PlaybackController(
       // One text renderer can expose only one selected text group. Two renderer slots let the
       // DefaultTrackSelector assign dialogue and signs independently; both outputs are merged by
       // the controller before the existing SubtitleView receives them.
-      out += SlotTextRenderer(0, outputLooper)
-      out += SlotTextRenderer(1, outputLooper)
+      out += TextRenderer(SubtitleTextOutput(0), outputLooper)
+      out += TextRenderer(SubtitleTextOutput(1), outputLooper)
     }
 
     override fun buildAudioSink(
@@ -236,11 +235,6 @@ class Media3PlaybackController(
         .setAudioProcessors(arrayOf(channelMixingProcessor, nativeAudioEffectsProcessor))
         .build()
   }
-
-  private inner class SlotTextRenderer(
-    private val slot: Int,
-    outputLooper: Looper,
-  ) : TextRenderer(SubtitleTextOutput(slot), outputLooper)
 
   private inner class SubtitleTextOutput(
     private val slot: Int,
