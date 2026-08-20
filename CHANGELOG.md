@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.10 — Queue Episode Start Hotfix
+
+- **Next and previous items start at 00:00:** Queue navigation and automatic playlist advancement no longer reuse the prior video’s saved or engine-handoff position.
+- **Same-video resume preserved:** Reopening the same video directly can still restore that video’s own saved position.
+- **Previous fixes preserved:** The working MPV-only music player and circular portrait pause-button indication remain unchanged.
+- **Release scope:** Private repository; Standard APK variants only.
+
 ## 1.1.9 — Portrait Pause Button UI Hotfix
 
 - **Circular pressed indication:** Clipped the portrait video pause/resume button’s interaction layer to its circular shape so the blue rectangular pressed overlay no longer appears when pausing or resuming.
