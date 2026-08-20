@@ -3872,7 +3872,12 @@ class PlayerViewModel : ViewModel(),
   // ==================== UI Control ====================
 
   fun showControls() {
-    if (sheetShown.value != Sheets.None || panelShown.value != Panels.None) return
+    // An empty or still-loading Playlist sheet must not trap the player behind a stale sheet
+    // state. Other sheets and panels retain their modal behavior.
+    if (
+      (sheetShown.value != Sheets.None && sheetShown.value != Sheets.Playlist) ||
+        panelShown.value != Panels.None
+    ) return
     if (!isAudioOnly.value) {
       try {
         if (playerPreferences.showSystemStatusBar.get()) {

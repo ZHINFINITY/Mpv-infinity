@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.18 — Media3 Subtitle and MKV Playlist Sheet Hotfix
+
+- **Media3 simultaneous subtitles:** Dialogue and sign selections now remain selected across track-change callbacks and are assigned to separate text-renderer slots, so both cue streams can render continuously together.
+- **MKV playlist sheet:** The playlist sheet now refreshes from the live queue when asynchronous folder discovery publishes sibling items.
+- **Playlist interaction recovery:** An empty or still-loading Playlist state no longer blocks ordinary screen taps; it self-dismisses if no multi-item queue appears.
+- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.17 fixes are preserved.
+
 ## 1.1.17 — Media3 Double-Tap Feedback Hotfix
 
 - **Double-tap seek indicator:** Media3 now uses its live position and duration when updating the shared double-tap seek state, so the visible `+10`/`-10` text and chevron indicator appear just as they do with MPV. The actual seek operation remains unchanged for both engines.
