@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.7 — MPV Music Player Metadata and Timeline Hotfix
+
+- **Track information:** Audio controls now receive MPV’s live `media-title` and keep the title available during direct audio launches and queue transitions.
+- **Cover art and embedded metadata:** Artwork and presentation metadata no longer become permanently blank when the audio screen appears before MPV emits `FILE_LOADED`; extraction retries after the load phase becomes ready.
+- **Lyrics:** Lyrics lookup waits for a real MPV duration, retries when the loaded audio timeline becomes available, and ignores stale results from a previous track.
+- **Seekbar:** The MPV audio timeline poller now recognizes the audio-load ownership hint, so direct music playback continuously updates position and duration instead of remaining at a placeholder.
+- **Release scope:** This is a Standard APK hotfix; MPV remains the music engine, the repository remains private, and upstream MPV/mpvRx attribution is preserved.
+
 ## 1.1.6 — MPV Music Controls Hotfix
 
 - **MPV music controls:** Audio-only transitions now explicitly retain MPV ownership, including audio containers such as MKV, so pause/resume, seek, speed, and track commands are not routed to a stale Native/Media3 player after returning from video playback.

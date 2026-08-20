@@ -404,6 +404,12 @@ fun PlayerControls(
 
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
   if (isAudioOnly) {
+    val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
+    val activity = LocalActivity.current as? PlayerActivity
+    val mediaTitle = remember(rawMediaTitle, activity) {
+      rawMediaTitle?.takeIf { it.isNotBlank() } ?: activity?.getTitleForControls()
+    }
+
     val sheetShown by viewModel.sheetShown.collectAsState()
     val subtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
     val audioTracks by viewModel.audioTracks.collectAsState(persistentListOf())
@@ -414,6 +420,7 @@ fun PlayerControls(
     Box(modifier = modifier.fillMaxSize()) {
       AudioPlayerControls(
         viewModel = viewModel,
+        mediaTitle = mediaTitle,
         onBackPress = onBackPress,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
