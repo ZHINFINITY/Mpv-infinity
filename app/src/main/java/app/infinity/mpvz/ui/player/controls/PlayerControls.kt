@@ -1687,7 +1687,13 @@ fun PlayerControls(
                 contentColor = Color.White,
               ) {
                 if (isPortrait) {
-                  Box(modifier = Modifier.padding(vertical = 10.dp)) {
+                  // Keep the seekbar group centered in one fixed, symmetric
+                  // bubble. The previous wrap-content box made the top and
+                  // bottom gaps depend on the timer/rail content height.
+                  Box(
+                    modifier = Modifier.fillMaxWidth().height(92.dp),
+                    contentAlignment = Alignment.Center,
+                  ) {
                     renderSeekbar()
                   }
                 } else {
