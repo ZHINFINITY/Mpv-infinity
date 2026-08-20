@@ -65,7 +65,9 @@ fun TopPlayerControlsPortrait(
   translationStatus: String = "",
   translatingTrackName: String = "",
 ) {
-  val playlistModeEnabled = viewModel.hasPlaylistSupport()
+  // Keep the folder episode card reachable even when the playlist preference is disabled.
+  // This condition is local to the portrait top-bar pill; other playlist controls are unchanged.
+  val playlistModeEnabled = viewModel.hasPlaylistSupport() || viewModel.getPlaylistInfo() != null
   val clickEvent = LocalPlayerButtonsClickEvent.current
 
   Column(
@@ -294,7 +296,11 @@ fun BottomPlayerControlsPortrait(
           modifier = Modifier.size(58.dp),
         )
           PlayerGlassSurface(
-          modifier = Modifier.size(70.dp).clickable { viewModel.pauseUnpause() },
+          modifier =
+            Modifier
+              .size(70.dp)
+              .clip(CircleShape)
+              .clickable { viewModel.pauseUnpause() },
           shape = CircleShape,
           hideBackground = hideBackground,
           contentColor = Color.White,
