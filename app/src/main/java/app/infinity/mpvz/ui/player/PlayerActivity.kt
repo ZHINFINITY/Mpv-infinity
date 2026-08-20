@@ -2041,6 +2041,12 @@ class PlayerActivity :
           .collect { (index, item) ->
             if (item == null || index < 0) return@collect
             val previousItemId = activePlaybackItem?.stableId
+            if (previousItemId != null && previousItemId != item.stableId) {
+              // Queue-driven transitions are new selections, not engine handoffs for the same item.
+              // Keep the zero-position guard active until the item’s saved-state load completes.
+              pendingQueueTransitionStartAtZero = true
+              pendingQueueTransitionItemId = item.stableId
+            }
             activePlaybackItem = item
             if (previousItemId != null && previousItemId != item.stableId &&
               manualOrientationOverrideItemId != item.stableId
@@ -5543,7 +5549,11 @@ class PlayerActivity :
               }
             }
           }
-          if (requestedQueueItem == null || isTorrentRequest) PlaybackSession.replaceQueue(listOf(item), 0)
+          // Only collapse to a singleton if the asynchronous folder generator has not already
+          // published a multi-item queue. Torrent requests intentionally remain singleton.
+          if ((requestedQueueItem == null && PlaybackSession.queue.value.items.size <= 1) || isTorrentRequest) {
+            PlaybackSession.replaceQueue(listOf(item), 0)
+          }
           if (shouldUseMedia3(item)) {
             withContext(Dispatchers.Main) {
               if (requestGeneration == mediaRequestGeneration) syncPlaybackEngine(item)
