@@ -6507,6 +6507,11 @@ class PlayerActivity :
     return media3PlaybackController.selectSubtitleTrack(trackId)
   }
 
+  override fun media3UnselectSubtitleTrack(trackId: Int): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.unselectSubtitleTrack(trackId)
+  }
+
   override fun media3DisableSubtitles(): Boolean {
     if (!isMedia3Active()) return false
     return media3PlaybackController.disableSubtitles()

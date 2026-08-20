@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.13 — Media3 Subtitle Rendering Hotfix
+
+- **ASS/SSA sign positioning:** Native/Media3 subtitles now honor embedded alignment and position tags while retaining the app’s subtitle scale control, preventing sign subtitles from being stacked, oversized, or misplaced.
+- **Simultaneous subtitle tracks:** Native/Media3 can keep dialogue and sign tracks selected together, and tapping an active track removes only that track instead of disabling every subtitle.
+- **Subtitle Off action:** The subtitle sheet now disables the active engine correctly; MPV subtitle properties remain unchanged for MPV playback.
+- **Release scope:** Unreleased CI validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.12 fixes are preserved.
+
 ## 1.1.12 — Portrait Controls and Media3 Gesture Hotfix
 
 - **Portrait bottom controls:** The vertical player now renders the same saved buttons, membership, and order configured in Edit Portrait Bottom, including added and removed controls.
