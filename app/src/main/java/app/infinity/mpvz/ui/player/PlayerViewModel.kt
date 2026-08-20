@@ -495,6 +495,7 @@ class PlayerViewModel : ViewModel(),
 
   private val _isMpvCoreReady = MutableStateFlow(false)
   private var mpvStateCollectorsJob: Job? = null
+  private var lyricsLoadJob: Job? = null
 
   // High-precision position and duration for smooth seekbar
   private val _precisePosition = MutableStateFlow(0f)
@@ -645,6 +646,7 @@ class PlayerViewModel : ViewModel(),
   fun loadLyricsForCurrentTrack(forceRefresh: Boolean = false) {
     val path = PlaybackSession.getPropertyString("path") ?: PlaybackSession.getPropertyString("stream-open-filename") ?: return
     if (path.isBlank()) return
+    val generation = PlaybackSession.state.value.generation
 
     val title = currentMediaTitle.takeIf { it.isNotBlank() }
       ?: PlaybackSession.getPropertyString("metadata/by-key/Title")
@@ -656,11 +658,20 @@ class PlayerViewModel : ViewModel(),
       ?: PlaybackSession.getPropertyString("metadata/by-key/album_artist")
       ?: ""
 
-    val duration = PlaybackSession.getPropertyInt("duration") ?: 0
+    val duration =
+      PlaybackSession.getPropertyDouble("duration")
+        ?.takeIf { it.isFinite() && it > 0.0 }
+        ?.roundToInt()
+        ?: PlaybackSession.getPropertyInt("duration")
+        ?: 0
+    // The path property is published before FILE_LOADED. Do not query lyrics with duration=0;
+    // the duration collector below retries as soon as MPV exposes the loaded track timeline.
+    if (duration <= 0) return
 
+    lyricsLoadJob?.cancel()
     lyricsUiState.value = lyricsUiState.value.copy(isLoading = true, errorMessage = null, syncOffsetMs = 0)
 
-    viewModelScope.launch(Dispatchers.IO) {
+    lyricsLoadJob = viewModelScope.launch(Dispatchers.IO) {
       val result = lyricsRepository.loadLyricsForTrack(
         mediaPath = path,
         title = title,
@@ -668,6 +679,10 @@ class PlayerViewModel : ViewModel(),
         durationSeconds = duration,
         forceRefresh = forceRefresh,
       )
+      if (!isActive || PlaybackSession.state.value.generation != generation ||
+        (PlaybackSession.getPropertyString("path") ?: PlaybackSession.getPropertyString("stream-open-filename")) != path) {
+        return@launch
+      }
       val activeIndex = app.infinity.mpvz.utils.media.LyricsUtils.getActiveLineIndex(
         syncedLines = result.activeLyrics?.synced,
         positionMs = (precisePosition.value * 1000).toLong(),
@@ -1498,6 +1513,9 @@ class PlayerViewModel : ViewModel(),
         val dur = PlaybackSession.getPropertyDouble("duration")
         if (dur != null && dur > 0) {
           _preciseDuration.value = dur.toFloat()
+          if (isAudioPlaybackActive()) {
+            loadLyricsForCurrentTrack()
+          }
           mergeSkipSegments()
           checkPendingIntroLookup()
           syncplayManager.updateFileInfo(currentSyncplayFileInfo())
@@ -3744,7 +3762,9 @@ class PlayerViewModel : ViewModel(),
    * video session. Video routing remains unchanged because this returns true only for audio.
    */
   private fun isAudioPlaybackActive(): Boolean =
-    isAudioOnly.value || hostReference.get()?.isCurrentMediaKnownAudio() == true
+    isAudioOnly.value ||
+      audioOnlyLaunchHint.value ||
+      hostReference.get()?.isCurrentMediaKnownAudio() == true
 
   private fun shouldRoutePlaybackCommandToMedia3(): Boolean =
     host.isMedia3Active() && !isAudioPlaybackActive()

@@ -263,19 +263,29 @@ private object AudioPresentationMetadataCache {
             runCatching { retriever.release() }
           }
 
-        synchronized(cache) { cache.put(pathOrUri, loaded) }
+        // Do not permanently cache an empty result. During direct audio launch MPV can expose the
+        // path before FILE_LOADED, while MediaMetadataRetriever still cannot read the stream.
+        // Caching that transient failure would hide artwork and tags for the rest of the session.
+        if (loaded.artwork != null || loaded.title != null || loaded.artist != null ||
+          loaded.album != null || loaded.mimeType != null || loaded.bitrate != null ||
+          loaded.sampleRate != null) {
+          synchronized(cache) { cache.put(pathOrUri, loaded) }
+        }
         loaded
       }
     }
 }
 
 @Composable
-private fun rememberAudioPresentationMetadata(pathOrUri: String?): AudioPresentationMetadata? {
+private fun rememberAudioPresentationMetadata(
+  pathOrUri: String?,
+  refreshKey: Any? = null,
+): AudioPresentationMetadata? {
   val context = LocalContext.current
-  var metadata by remember(pathOrUri) {
+  var metadata by remember(pathOrUri, refreshKey) {
     mutableStateOf(AudioPresentationMetadataCache.peek(pathOrUri))
   }
-  LaunchedEffect(pathOrUri) {
+  LaunchedEffect(pathOrUri, refreshKey) {
     metadata =
       if (pathOrUri.isNullOrBlank()) {
         null
@@ -374,6 +384,7 @@ private enum class CoverSwipeDirection {
 @Composable
 fun AudioPlayerControls(
   viewModel: PlayerViewModel,
+  mediaTitle: String?,
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,
   onOpenPanel: (Panels) -> Unit,
@@ -382,6 +393,7 @@ fun AudioPlayerControls(
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
   val duration by PlaybackSession.propInt["duration"].collectAsState()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
+  val sessionState by PlaybackSession.state.collectAsState()
 
   var showInPlaceLyrics by rememberSaveable { mutableStateOf(false) }
   var wasLyricsActiveBeforeLandscape by rememberSaveable { mutableStateOf(false) }
@@ -402,7 +414,10 @@ fun AudioPlayerControls(
   val currentPath by PlaybackSession.propString["path"].collectAsState()
   val currentStreamFilename by PlaybackSession.propString["stream-open-filename"].collectAsState()
   val mediaPath = currentPath?.takeIf { it.isNotBlank() } ?: currentStreamFilename
-  val currentAudioPresentation = rememberAudioPresentationMetadata(mediaPath)
+  // The path often arrives before FILE_LOADED. Re-run extraction when the session reaches READY or
+  // BACKGROUND so transient early failures cannot leave the current song blank.
+  val metadataRefreshKey = sessionState.generation to sessionState.phase
+  val currentAudioPresentation = rememberAudioPresentationMetadata(mediaPath, metadataRefreshKey)
   val albumArtBitmap = currentAudioPresentation?.artwork
 
   val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
@@ -521,13 +536,14 @@ fun AudioPlayerControls(
       ?.stripAudioExtension()
   var lastValidTitle by remember {
     mutableStateOf(
-      (retrievedTitle ?: fileTitle)
+      (mediaTitle ?: retrievedTitle ?: fileTitle)
         ?.takeIf { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
+        ?.stripAudioExtension()
         ?: "Audio Track",
     )
   }
-  LaunchedEffect(mediaPath, retrievedTitle) {
-    val candidate = retrievedTitle?.takeIf { it.isNotBlank() } ?: fileTitle
+  LaunchedEffect(mediaTitle, mediaPath, retrievedTitle) {
+    val candidate = mediaTitle?.takeIf { it.isNotBlank() } ?: retrievedTitle?.takeIf { it.isNotBlank() } ?: fileTitle
     if (!candidate.isNullOrBlank() && !candidate.equals("Unknown Title", ignoreCase = true)) {
       lastValidTitle = candidate.stripAudioExtension()
     }
