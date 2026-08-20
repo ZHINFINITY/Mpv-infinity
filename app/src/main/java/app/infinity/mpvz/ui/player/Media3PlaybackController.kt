@@ -88,6 +88,7 @@ class Media3PlaybackController(
   private val trackSelector = DefaultTrackSelector(appContext)
   private val subtitleCuesByRenderer = mutableMapOf<Int, List<Cue>>()
   private val subtitleTrackIdsByRenderer = mutableMapOf<Int, Set<Int>>()
+  private val signRendererByIndex = mutableMapOf<Int, Boolean>()
   private var subtitleCueGeneration = 0L
   private var subtitleSelectionRetryAttempts = 0
   private val subtitleSelectionRetry =
@@ -112,6 +113,7 @@ class Media3PlaybackController(
       """^\s*(?:m|n|l|b|s|p|c)\s+-?\d+(?:\s+-?\d+)+(?:\s+(?:m|n|l|b|s|p|c)\s+-?\d+(?:\s+-?\d+)+)*\s*$""",
       RegexOption.IGNORE_CASE,
     )
+  private val signSubtitleTitlePattern = Regex("\\b(signs?|songs?|lyrics?)\\b")
   // SubtitleView may rebuild its cue layout when tracks change. Keep the user scale outside the
   // view instance so a renderer reset cannot silently restore the default 1.0x size.
   private var subtitleScale = 1f
@@ -131,6 +133,7 @@ class Media3PlaybackController(
   private var latestSubtitleTracks: List<TrackNode> = emptyList()
   private var latestChapters: List<dev.vivvvek.seeker.Segment> = emptyList()
   private var latestVideoDecoderName: String? = null
+  private var lastPublishedState: State? = null
   private var media3AudioTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private val selectedSubtitleTrackIds = mutableSetOf<Int>()
@@ -628,6 +631,7 @@ class Media3PlaybackController(
 
   private fun applySubtitleTrackSelection() {
     subtitleTrackIdsByRenderer.clear()
+    signRendererByIndex.clear()
     val selectedTracks =
       selectedSubtitleTrackIds.mapNotNull { id ->
         media3SubtitleTrackGroups[id]?.let { id to it }
@@ -671,8 +675,14 @@ class Media3PlaybackController(
           DefaultTrackSelector.SelectionOverride(rendererGroupIndex, *trackIndices.distinct().toIntArray()),
         )
         parameters.setRendererDisabled(rendererIndex, false)
-        subtitleTrackIdsByRenderer[rendererIndex] =
-          selectedTracks.filter { it.second.first == group }.map { it.first }.toSet()
+        val rendererTrackIds = selectedTracks.filter { it.second.first == group }.map { it.first }.toSet()
+        subtitleTrackIdsByRenderer[rendererIndex] = rendererTrackIds
+        signRendererByIndex[rendererIndex] =
+          rendererTrackIds.any { trackId ->
+            signSubtitleTitlePattern.containsMatchIn(
+              latestSubtitleTracks.firstOrNull { it.id == trackId }?.title.orEmpty(),
+            )
+          }
         assignedGroups += group
         rendererCursor++
         if (rendererCursor >= 2 && assignedGroups.size >= byGroup.size) break
@@ -770,6 +780,7 @@ class Media3PlaybackController(
     clearABLoop()
     clearSubtitleCueBuffers()
     subtitleTrackIdsByRenderer.clear()
+    signRendererByIndex.clear()
     preserveSubtitleSelection = false
     attachedView?.player = null
     attachedView = null
@@ -999,12 +1010,8 @@ class Media3PlaybackController(
    * sign underneath. The cue builder preserves the original text, position, anchors, alignment,
    * size, and vertical writing fields, so this changes readability without moving sign cues.
    */
-  private fun isLikelySignRenderer(rendererIndex: Int): Boolean {
-    return subtitleTrackIdsByRenderer[rendererIndex].orEmpty().any { trackId ->
-      val title = latestSubtitleTracks.firstOrNull { it.id == trackId }?.title.orEmpty().lowercase()
-      Regex("\\b(signs?|songs?|lyrics?)\\b").containsMatchIn(title)
-    }
-  }
+  private fun isLikelySignRenderer(rendererIndex: Int): Boolean =
+    signRendererByIndex[rendererIndex] == true
 
   private fun makeEmbeddedCueReadable(cue: Cue, signRenderer: Boolean = false): Cue {
     if (signRenderer) {
@@ -1133,6 +1140,7 @@ class Media3PlaybackController(
   }
 
   private fun resetMediaMetadata() {
+    lastPublishedState = null
     latestVideoFormat = null
     latestVideoSize = null
     latestVideoDecoderName = null
@@ -1143,6 +1151,7 @@ class Media3PlaybackController(
     media3AudioTrackGroups = emptyMap()
     media3SubtitleTrackGroups = emptyMap()
     subtitleTrackIdsByRenderer.clear()
+    signRendererByIndex.clear()
     clearSubtitleCueBuffers()
     selectedSubtitleTrackIds.clear()
     preserveSubtitleSelection = false
@@ -1169,7 +1178,10 @@ class Media3PlaybackController(
       .build()
 
   private fun publishState() {
-    onStateChanged(snapshot())
+    val state = snapshot()
+    if (state == lastPublishedState) return
+    lastPublishedState = state
+    onStateChanged(state)
   }
 
   private fun snapshot(): State {
