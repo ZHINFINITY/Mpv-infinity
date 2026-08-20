@@ -299,16 +299,19 @@ fun SeekbarWithTimers(
           .fillMaxWidth()
           .then(
             if (isPortrait) {
-              Modifier.padding(horizontal = 12.dp)
+              // Keep the timer row and rail on the same inset guide inside the
+              // rounded portrait card. This is intentionally deeper than the
+              // card edge so the endpoints do not visually touch the bubble.
+              Modifier.padding(horizontal = 16.dp)
             } else if (applyHorizontalPadding) {
               Modifier.padding(horizontal = MaterialTheme.spacing.large)
             } else {
               Modifier
             },
           ),
-      // Keep the timestamp row clearly separated from the rail in portrait while
-      // preserving a compact, balanced card.
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+      // The centered card provides the outer breathing room; this gap only
+      // separates the timer row from the rail itself.
+      verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -357,7 +360,7 @@ fun SeekbarWithTimers(
         onValueChangeFinished = onValueChangeFinished,
         scope = scope,
         animatedPosition = animatedPosition,
-        // Keep the rail compact and inset in portrait so both endpoint timers remain unobstructed.
+        // The rail shares the Column's horizontal inset with both timers.
         modifier = Modifier.fillMaxWidth().height(32.dp),
       )
     }
