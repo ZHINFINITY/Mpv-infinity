@@ -1427,7 +1427,8 @@ class PlayerViewModel : ViewModel(),
       while (isActive) {
         val playbackPhase = PlaybackSession.state.value.phase
         val hasActiveTimeline = playbackPhase == PlaybackPhase.READY || playbackPhase == PlaybackPhase.BACKGROUND
-        if (!_isMpvCoreReady.value || !hasActiveTimeline) {
+        val audioTimelineActive = isAudioOnly.value || host.isCurrentMediaKnownAudio()
+        if (!_isMpvCoreReady.value || (!hasActiveTimeline && !audioTimelineActive)) {
           delay(250L)
           continue
         }
@@ -1440,6 +1441,12 @@ class PlayerViewModel : ViewModel(),
               updateLyricsActiveLine()
             }
             maybeAutoSkipIntro(time)
+          }
+          if (audioTimelineActive) {
+            val currentDuration = PlaybackSession.getPropertyDouble("duration")
+            if (currentDuration != null && currentDuration.isFinite() && currentDuration > 0.0) {
+              _preciseDuration.value = currentDuration.toFloat()
+            }
           }
         }.onFailure { error ->
           if (isActive) {
@@ -1713,6 +1720,36 @@ class PlayerViewModel : ViewModel(),
         loadToken = it.loadToken + 1,
         isWaitingForVideo = true,
       )
+    }
+  }
+
+  /**
+   * Refreshes MPV-owned timeline state for music without changing any video loading state. The
+   * audio screen can remain composed while the user watches video, so relying only on a future
+   * property emission can leave it displaying the previous 00:00/00:01 placeholder.
+   */
+  fun onAudioLoadStarted() {
+    discardLegacySeekPreview()
+    _precisePosition.value = 0f
+    _preciseDuration.value = 0f
+    startMpvStateCollectors()
+    viewModelScope.launch(playbackStateDispatcher) {
+      if (!_isMpvCoreReady.value) return@launch
+      runCatching {
+        val currentPosition = PlaybackSession.getPropertyDouble("time-pos")
+        val currentDuration = PlaybackSession.getPropertyDouble("duration")
+        _paused.value = PlaybackSession.getPropertyBoolean("pause")
+        _pos.value = currentPosition?.toInt()
+        _duration.value = currentDuration?.toInt()
+        if (currentPosition != null && currentPosition.isFinite()) {
+          _precisePosition.value = currentPosition.toFloat().coerceAtLeast(0f)
+        }
+        if (currentDuration != null && currentDuration.isFinite() && currentDuration > 0.0) {
+          _preciseDuration.value = currentDuration.toFloat()
+        }
+      }.onFailure { error ->
+        Log.w(TAG, "Failed to refresh MPV audio timeline", error)
+      }
     }
   }
 
@@ -3692,9 +3729,20 @@ class PlayerViewModel : ViewModel(),
 
   // ==================== Playback Control ====================
 
+  /**
+   * Music is always owned by MPV. This additional media-type check prevents a stale Native
+   * engine flag from routing the audio screen's controls to an inactive Media3 player after a
+   * video session. Video routing remains unchanged because this returns true only for audio.
+   */
+  private fun isAudioPlaybackActive(): Boolean =
+    isAudioOnly.value || host.isCurrentMediaKnownAudio()
+
+  private fun shouldRoutePlaybackCommandToMedia3(): Boolean =
+    host.isMedia3Active() && !isAudioPlaybackActive()
+
   fun pauseUnpause() {
     viewModelScope.launch(playbackStateDispatcher) {
-      if (host.isMedia3Active()) {
+      if (shouldRoutePlaybackCommandToMedia3()) {
         val shouldPlay = withContext(Dispatchers.Main.immediate) { !host.media3IsPlaying() }
         if (shouldPlay) {
           val focusGranted = withContext(Dispatchers.Main.immediate) { host.requestAudioFocus() }
@@ -3720,7 +3768,7 @@ class PlayerViewModel : ViewModel(),
 
   fun pause() {
     viewModelScope.launch(playbackStateDispatcher) {
-      if (host.isMedia3Active()) {
+      if (shouldRoutePlaybackCommandToMedia3()) {
         withContext(Dispatchers.Main.immediate) { host.media3SetPlayWhenReady(false) }
         withContext(Dispatchers.Main.immediate) { host.abandonAudioFocus() }
         return@launch
@@ -3733,7 +3781,7 @@ class PlayerViewModel : ViewModel(),
 
   fun unpause() {
     viewModelScope.launch(playbackStateDispatcher) {
-      if (host.isMedia3Active()) {
+      if (shouldRoutePlaybackCommandToMedia3()) {
         val focusGranted = withContext(Dispatchers.Main.immediate) { host.requestAudioFocus() }
         if (!focusGranted) return@launch
         withContext(Dispatchers.Main.immediate) { host.media3SetPlayWhenReady(true) }
@@ -3747,7 +3795,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun setPlaybackSpeed(speed: Float) {
-    if (host.isMedia3Active()) {
+    if (shouldRoutePlaybackCommandToMedia3()) {
       host.media3SetPlaybackSpeed(speed)
     } else {
       PlaybackSession.setPropertyFloat("speed", speed)
@@ -3755,7 +3803,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun selectAudioTrack(track: TrackNode) {
-    if (host.isMedia3Active()) {
+    if (shouldRoutePlaybackCommandToMedia3()) {
       host.media3SelectAudioTrack(track.id)
     } else {
       if (getTrackSelectionId("aid") == track.id) {
@@ -4246,7 +4294,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun seekBy(offset: Int) {
-    if (host.isMedia3Active()) {
+    if (shouldRoutePlaybackCommandToMedia3()) {
       viewModelScope.launch(Dispatchers.Main.immediate) {
         host.media3SeekBy(offset.toLong() * 1000L)
       }
@@ -4258,10 +4306,11 @@ class PlayerViewModel : ViewModel(),
   /** Starts a full-screen preview transaction without changing the user's pause/mute choices. */
   fun beginLegacySeekPreview() {
     // Legacy preview controls libmpv directly. Media3 owns playback exclusively, so never mute or
-    // pause the stopped MPV instance when the user begins scrubbing a Media3 item.
-    if (host.isMedia3Active()) return
+    // pause the stopped MPV instance when the user begins scrubbing a Native video item.
+    if (shouldRoutePlaybackCommandToMedia3()) return
     val generation = PlaybackSession.state.value.generation
-    if (generation <= 0L || PlaybackSession.getPropertyBoolean("seekable") == false) return
+    if (generation <= 0L) return
+    if (PlaybackSession.getPropertyBoolean("seekable") == false && !isAudioPlaybackActive()) return
 
     val alreadyStarted =
       synchronized(legacySeekPreviewLock) {
@@ -4297,8 +4346,8 @@ class PlayerViewModel : ViewModel(),
     durationSeconds: Double,
   ) {
     // The seekbar keeps its own visual thumb while dragging. The committed position is sent to
-    // Media3 from commitLegacySeekPreview(), so this method must not issue MPV commands.
-    if (host.isMedia3Active()) return
+    // Native from commitLegacySeekPreview(), so this method must not issue MPV commands for video.
+    if (shouldRoutePlaybackCommandToMedia3()) return
     beginLegacySeekPreview()
     val session =
       synchronized(legacySeekPreviewLock) {
@@ -4376,7 +4425,7 @@ class PlayerViewModel : ViewModel(),
     positionSeconds: Double,
     durationSeconds: Double,
   ) {
-    if (host.isMedia3Active()) {
+    if (shouldRoutePlaybackCommandToMedia3()) {
       seekTo(positionSeconds, fast = false)
       return
     }
@@ -4404,7 +4453,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun cancelLegacySeekPreview() {
-    if (host.isMedia3Active()) return
+    if (shouldRoutePlaybackCommandToMedia3()) return
     val detached = detachLegacySeekPreview() ?: return
     val (session, job) = detached
     job?.cancel()
@@ -4458,7 +4507,7 @@ class PlayerViewModel : ViewModel(),
     fast: Boolean,
     forceExact: Boolean,
   ) {
-    if (host.isMedia3Active()) {
+    if (shouldRoutePlaybackCommandToMedia3()) {
       viewModelScope.launch(Dispatchers.Main.immediate) {
         host.media3SeekTo(
           (position.coerceAtLeast(0.0) * 1000.0).toLong(),

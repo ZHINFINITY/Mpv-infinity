@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.3 — Portrait Controls and Music Player Recovery Hotfix
+
+- **Symmetric portrait seekbar card:** Rebuilt the vertical seekbar contents around one shared inner inset so both timestamps and the rail sit comfortably inside the same rounded card with balanced corner spacing. The existing glass/player-controls appearance is preserved.
+- **Music-player recovery after video playback:** Audio commands are routed to MPV whenever the current item is audio, even if a stale Native engine flag remains from the preceding video. Audio timing is refreshed from MPV while the track is active, and audio scrubbing no longer gets rejected by a transient seekability state.
+- **Video behavior preserved:** Native/Media3 routing remains unchanged for video items; this hotfix does not redesign the video engine or add a video surface to the music player.
+- **Release scope:** This is a Standard APK hotfix for v1.1.2; the repository remains private and upstream MPV/mpvRx attribution is preserved.
+
 ## 1.1.2 — MPV Audio Recovery and Portrait Seekbar Hotfix
 
 - **Rapid music skips:** MPV now releases any previous transition mute before arming the next load guard, preventing the audio output from remaining muted while the timeline continues after several fast song skips.
