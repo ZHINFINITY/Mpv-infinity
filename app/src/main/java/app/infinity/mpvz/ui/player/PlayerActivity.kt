@@ -6467,6 +6467,9 @@ class PlayerActivity :
     return true
   }
 
+  override fun media3PlaybackSpeed(): Float =
+    if (isMedia3Active()) media3PlaybackController.currentState().playbackSpeed else 1f
+
   override fun media3SetAudioPitchCorrection(enabled: Boolean): Boolean {
     if (!isMedia3Active()) return false
     media3PlaybackController.setAudioPitchCorrection(enabled)

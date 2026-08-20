@@ -156,8 +156,6 @@ fun GestureHandler(
 
   val panelShown by viewModel.panelShown.collectAsState()
   val allowGesturesInPanels by playerPreferences.allowGesturesInPanels.collectAsState()
-  val paused by PlaybackSession.propBoolean["pause"].collectAsState()
-  val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val controlsShown by viewModel.controlsShown.collectAsState()
   val areControlsLocked by viewModel.areControlsLocked.collectAsState()
   val seekState by viewModel.seekState.collectAsState()
@@ -492,7 +490,7 @@ fun GestureHandler(
             val subtitlePositionGestureSens = 0.08f
 
             // Original speed for long press
-            var originalSpeed = playbackSpeed ?: 1f
+            var originalSpeed = viewModel.playbackSpeedForGesture()
 
             // Track long press separately
             var longPressTriggered = false
@@ -521,12 +519,12 @@ fun GestureHandler(
                           context.getString(R.string.player_move_subtitles_hint),
                         )
                       }
-                    } else if (paused == false && multipleSpeedGesture > 0f) {
+                    } else if (viewModel.isPlayingForGesture() && multipleSpeedGesture > 0f) {
                       longPressTriggered = true
                       isLongPressing = true
                       longPressTriggeredDuringTouch = true
                       haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                      originalSpeed = playbackSpeed ?: 1f
+                      originalSpeed = viewModel.playbackSpeedForGesture()
                       // Ramp speed up incrementally to avoid audio filter stutter
                       val startSpeed = originalSpeed
                       val targetSpeed = nearestHoldSpeedPreset(multipleSpeedGesture)
@@ -579,12 +577,12 @@ fun GestureHandler(
                           enableCenterSwipeUpGesture && startPosition.x in (size.width * 0.35f)..(size.width * 0.65f)
                         if (isCenterTouch && isVerticalDrag) {
                           longPressJob.cancel()
-                          if (deltaY < -20f && viewModel.hasPlaylistSupport()) {
+                          if (deltaY < -20f && viewModel.getPlaylistInfo() != null) {
                             gestureType = "playlist_swipe"
                             viewModel.isPlaylistSwipeActive.value = true
                             viewModel.playlistSwipeOffset.value = deltaY
                             viewModel.sheetShown.update { Sheets.Playlist }
-                            viewModel.hideControls()
+                            viewModel.showControls()
                             viewModel.panelShown.update { Panels.None }
                           } else {
                             return@forEach
@@ -618,7 +616,7 @@ fun GestureHandler(
                       when (gestureType) {
                         "speed_control" -> {
                           dynamicSpeedStartX = currentPosition.x
-                          dynamicSpeedStartValue = PlaybackSession.getPropertyFloat("speed") ?: multipleSpeedGesture
+                          dynamicSpeedStartValue = viewModel.playbackSpeedForGesture()
                         }
                         "vertical" -> {
                           if ((brightnessGesture || volumeGesture) && !isLongPressing) {
@@ -653,7 +651,7 @@ fun GestureHandler(
                         change.consume()
                       }
                       "speed_control" -> {
-                        if (isLongPressing && isDynamicSpeedControlActive && paused == false) {
+                        if (isLongPressing && isDynamicSpeedControlActive && viewModel.isPlayingForGesture()) {
                           change.consume()
 
                           val speedPresets = holdSpeedPresets
@@ -837,7 +835,7 @@ fun GestureHandler(
               isDynamicSpeedControlActive = false
               hasSwipedEnough = false
               // Ramp speed back down incrementally to avoid audio filter stutter
-              val currentSpeed = PlaybackSession.getPropertyFloat("speed") ?: multipleSpeedGesture
+              val currentSpeed = viewModel.playbackSpeedForGesture()
               val targetSpeed = originalSpeed
               val steps = 5
               val stepDelay = 16L

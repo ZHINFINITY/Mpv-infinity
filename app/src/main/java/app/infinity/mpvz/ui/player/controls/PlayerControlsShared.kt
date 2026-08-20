@@ -724,8 +724,8 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.SHUFFLE -> {
-      // Only show shuffle button if there's a playlist (more than one video)
-      if (viewModel.hasPlaylistSupport()) {
+      // Show shuffle for any multi-item playback queue, including ordinary folders.
+      if (viewModel.hasPlaylistSupport() || viewModel.getPlaylistInfo() != null) {
         val shuffleEnabled by viewModel.shuffleEnabled.collectAsState()
         ControlsButton(
           icon = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
