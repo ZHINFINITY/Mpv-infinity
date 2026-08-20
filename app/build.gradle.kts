@@ -23,8 +23,8 @@ android {
     applicationId = "app.infinity.mpvz"
     minSdk = 26
     targetSdk = 36
-    versionCode = 130
-    versionName = "1.1.10"
+    versionCode = 131
+    versionName = "1.1.11"
 
     vectorDrawables {
       useSupportLibrary = true

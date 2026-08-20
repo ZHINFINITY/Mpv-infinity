@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.11 — Playlist Card and Portrait Pause Hotfix
+
+- **Folder playlist card:** The portrait top-bar episode pill now opens the existing bottom “Now Playing” card for the videos in the loaded folder, including the item count, thumbnails, current-item highlight, metadata, and reorder handles.
+- **Playlist button availability:** The episode pill remains tappable for an explicit folder queue even when the general playlist preference is disabled; other playlist controls and playback behavior are unchanged.
+- **Circular pause indication:** Preserved the portrait pause/resume button’s circular clipping so the pressed state does not show a blue rectangular overlay.
+- **Release scope:** Private repository; Standard APK variants only.
+
 ## 1.1.10 — Queue Episode Start Hotfix
 
 - **Next and previous items start at 00:00:** Queue navigation and automatic playlist advancement no longer reuse the prior video’s saved or engine-handoff position.
