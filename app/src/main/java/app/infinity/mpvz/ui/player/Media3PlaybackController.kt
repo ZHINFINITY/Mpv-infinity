@@ -19,13 +19,19 @@ import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
+import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
+import androidx.media3.exoplayer.text.TextOutput
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.preferences.AudioChannels
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.text.TextRenderer
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.common.TrackGroupArray
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.ExoPlayer
@@ -80,6 +86,9 @@ class Media3PlaybackController(
   private val nativeAudioEffectsProcessor = NativeAudioEffectsProcessor()
   private var audioChannels = AudioChannels.AutoSafe
   private var audioPitchCorrection = true
+  private val trackSelector = DefaultTrackSelector(appContext)
+  private val subtitleCuesByRenderer = mutableMapOf<Int, List<Cue>>()
+  private var subtitleCueGeneration = 0L
   private val player: ExoPlayer
   private lateinit var normalMediaSourceFactory: DefaultMediaSourceFactory
   private lateinit var fastMediaSourceFactory: DefaultMediaSourceFactory
@@ -113,6 +122,9 @@ class Media3PlaybackController(
   private var media3AudioTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private var media3SubtitleTrackGroups: Map<Int, Pair<androidx.media3.common.TrackGroup, Int>> = emptyMap()
   private val selectedSubtitleTrackIds = mutableSetOf<Int>()
+  // Once the user changes subtitle selection, do not let Media3's single selected-track
+  // snapshot re-add or remove tracks while the renderer overrides are being applied.
+  private var preserveSubtitleSelection = false
   private var requestedAudioTrackId: Int? = null
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekRequestedAtMs: Long = 0L
@@ -168,6 +180,7 @@ class Media3PlaybackController(
         .setEnableDecoderFallback(true)
     player =
       ExoPlayer.Builder(appContext, renderersFactory)
+        .setTrackSelector(trackSelector)
         .setMediaSourceFactory(normalMediaSourceFactory)
         .build()
         .also {
@@ -196,6 +209,20 @@ class Media3PlaybackController(
   }
 
   private inner class NativeRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
+    override fun buildTextRenderers(
+      context: Context,
+      output: TextOutput,
+      outputLooper: Looper,
+      extensionRendererMode: Int,
+      out: ArrayList<Renderer>,
+    ) {
+      // One text renderer can expose only one selected text group. Two renderer slots let the
+      // DefaultTrackSelector assign dialogue and signs independently; both outputs are merged by
+      // the controller before the existing SubtitleView receives them.
+      out += SlotTextRenderer(0, outputLooper)
+      out += SlotTextRenderer(1, outputLooper)
+    }
+
     override fun buildAudioSink(
       context: Context,
       enableFloatOutput: Boolean,
@@ -208,6 +235,20 @@ class Media3PlaybackController(
         .setEnableAudioOutputPlaybackParameters(false)
         .setAudioProcessors(arrayOf(channelMixingProcessor, nativeAudioEffectsProcessor))
         .build()
+  }
+
+  private inner class SlotTextRenderer(
+    private val slot: Int,
+    outputLooper: Looper,
+  ) : TextRenderer(SubtitleTextOutput(slot), outputLooper)
+
+  private inner class SubtitleTextOutput(
+    private val slot: Int,
+  ) : TextOutput {
+    override fun onCues(cueGroup: CueGroup) {
+      subtitleCuesByRenderer[slot] = cueGroup.cues
+      postMergedSubtitleCues()
+    }
   }
 
   private fun applyChannelMixingMatrices(channels: AudioChannels) {
@@ -470,6 +511,7 @@ class Media3PlaybackController(
 
   fun seekTo(positionMs: Long, fast: Boolean = false) {
     val targetPositionMs = positionMs.coerceAtLeast(0L)
+    clearSubtitleCueBuffers()
     if (restoreSeekableTimelineIfNeeded(targetPositionMs)) return
     pendingSeekPositionMs = targetPositionMs
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
@@ -484,6 +526,7 @@ class Media3PlaybackController(
 
   fun seekBy(offsetMs: Long) {
     val targetPositionMs = (player.currentPosition + offsetMs).coerceAtLeast(0L)
+    clearSubtitleCueBuffers()
     if (restoreSeekableTimelineIfNeeded(targetPositionMs)) return
     pendingSeekPositionMs = targetPositionMs
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
@@ -535,6 +578,7 @@ class Media3PlaybackController(
 
   fun selectSubtitleTrack(trackId: Int): Boolean {
     val selection = media3SubtitleTrackGroups[trackId] ?: return false
+    preserveSubtitleSelection = true
     selectedSubtitleTrackIds += trackId
     latestSubtitleTracks = latestSubtitleTracks.map { track ->
       if (track.id == trackId) track.copy(selected = true) else track
@@ -552,6 +596,7 @@ class Media3PlaybackController(
   fun unselectSubtitleTrack(trackId: Int): Boolean {
     val selectedInSnapshot = latestSubtitleTracks.any { it.id == trackId && it.selected == true }
     if (trackId !in selectedSubtitleTrackIds && !selectedInSnapshot) return false
+    preserveSubtitleSelection = true
     selectedSubtitleTrackIds -= trackId
     latestSubtitleTracks = latestSubtitleTracks.map { track ->
       if (track.id == trackId) track.copy(selected = false) else track
@@ -566,31 +611,60 @@ class Media3PlaybackController(
   }
 
   private fun applySubtitleTrackSelection() {
-    val builder =
-      player.trackSelectionParameters
-        .buildUpon()
-        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, selectedSubtitleTrackIds.isEmpty())
-    selectedSubtitleTrackIds
-      .mapNotNull { media3SubtitleTrackGroups[it] }
-      .groupBy({ it.first }, { it.second })
-      .forEach { (group, trackIndices) ->
-        builder.addOverride(TrackSelectionOverride(group, trackIndices.distinct()))
+    val selectedTracks =
+      selectedSubtitleTrackIds.mapNotNull { id ->
+        media3SubtitleTrackGroups[id]?.let { id to it }
       }
-    player.trackSelectionParameters = builder.build()
+    val parameters =
+      trackSelector
+        .buildUponParameters()
+        // Do not clear audio/video overrides when the subtitle sheet changes selection.
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, selectedTracks.isEmpty())
+    val mappedTrackInfo = trackSelector.currentMappedTrackInfo
+    val assignedGroups = mutableSetOf<androidx.media3.common.TrackGroup>()
+    if (mappedTrackInfo != null && selectedTracks.isNotEmpty()) {
+      // A single Media3 TrackGroup can contain both dialogue and signs. Keep those tracks in one
+      // SelectionOverride instead of assigning the group twice and silently dropping one track.
+      val byGroup = selectedTracks.groupBy({ it.second.first }, { it.second.second })
+      var rendererCursor = 0
+      for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+        if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) continue
+        val rendererGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
+        val entry =
+          byGroup.entries.firstOrNull { (group, _) ->
+            group !in assignedGroups &&
+              (0 until rendererGroups.length).any { rendererGroups[it] == group }
+          }
+        if (entry == null) {
+          parameters.setRendererDisabled(rendererIndex, true)
+          continue
+        }
+        val (group, trackIndices) = entry
+        val rendererGroupIndex =
+          (0 until rendererGroups.length).firstOrNull { rendererGroups[it] == group } ?: continue
+        @Suppress("DEPRECATION")
+        parameters.setSelectionOverride(
+          rendererIndex,
+          rendererGroups,
+          DefaultTrackSelector.SelectionOverride(rendererGroupIndex, *trackIndices.distinct().toIntArray()),
+        )
+        parameters.setRendererDisabled(rendererIndex, false)
+        assignedGroups += group
+        rendererCursor++
+        if (rendererCursor >= 2 && assignedGroups.size >= byGroup.size) break
+      }
+    }
+    trackSelector.setParameters(parameters)
   }
 
   fun disableSubtitles(): Boolean {
+    preserveSubtitleSelection = true
     selectedSubtitleTrackIds.clear()
     latestSubtitleTracks = latestSubtitleTracks.map { track -> track.copy(selected = false) }
     publishState()
     logInfo("disabling subtitles")
-    player.trackSelectionParameters =
-      player.trackSelectionParameters
-        .buildUpon()
-        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-        .build()
+    applySubtitleTrackSelection()
     return true
   }
 
@@ -669,6 +743,8 @@ class Media3PlaybackController(
     logInfo("controller releasing")
     stateTickerHandler.removeCallbacks(stateTicker)
     clearABLoop()
+    clearSubtitleCueBuffers()
+    preserveSubtitleSelection = false
     attachedView?.player = null
     attachedView = null
     player.removeListener(this)
@@ -715,6 +791,7 @@ class Media3PlaybackController(
     newPosition: Player.PositionInfo,
     reason: Int,
   ) {
+    clearSubtitleCueBuffers()
     logInfo(
       "position discontinuity reason=$reason oldPositionMs=${oldPosition.positionMs} " +
         "newPositionMs=${newPosition.positionMs} currentPositionMs=${player.currentPosition} " +
@@ -795,7 +872,11 @@ class Media3PlaybackController(
     media3AudioTrackGroups = audioSelections
     media3SubtitleTrackGroups = subtitleSelections
     selectedSubtitleTrackIds.retainAll(subtitleSelections.keys)
-    subtitleEntries.filter { it.selected == true }.forEach { selectedSubtitleTrackIds += it.id }
+    if (!preserveSubtitleSelection) {
+      subtitleEntries.filter { it.selected == true }.forEach { selectedSubtitleTrackIds += it.id }
+    }
+    val normalizedSubtitleEntries =
+      subtitleEntries.map { track -> track.copy(selected = track.id in selectedSubtitleTrackIds) }
     latestVideoFormat =
       tracks.groups
         .asSequence()
@@ -815,7 +896,8 @@ class Media3PlaybackController(
         "groups=${tracks.groups.size} audioTracks=${audioEntries.size}",
     )
     latestAudioTracks = audioEntries
-    latestSubtitleTracks = subtitleEntries
+    latestSubtitleTracks = normalizedSubtitleEntries
+    if (selectedSubtitleTrackIds.isNotEmpty() || preserveSubtitleSelection) applySubtitleTrackSelection()
 
     // Matroska commonly delivers chapters through each track Format.metadata rather than the
     // global Player.Listener.onMetadata callback.
@@ -854,15 +936,35 @@ class Media3PlaybackController(
       .distinctBy { it.start }
 
   override fun onCues(cueGroup: CueGroup) {
-    val filteredCues = cueGroup.cues.filterNot { cue ->
-      cue.text?.toString()?.trim()?.let { text -> assDrawingCommandPattern.matches(text) } == true
+    // Player.Listener does not identify which text renderer emitted this callback. The custom
+    // renderer outputs below are authoritative; retain this as a fallback for the first callback
+    // during player startup so existing single-track files still render immediately.
+    if (subtitleCuesByRenderer.isEmpty()) {
+      subtitleCuesByRenderer[0] = cueGroup.cues
+      postMergedSubtitleCues()
     }
-    // PlayerView's own listener can update SubtitleView during the same callback. Always post the
-    // filtered merged list so it is applied after that update; dialogue and sign cues are retained.
+  }
+
+  private fun postMergedSubtitleCues() {
+    val generation = subtitleCueGeneration
+    val filteredCues =
+      subtitleCuesByRenderer.values
+        .flatten()
+        .filterNot { cue ->
+          cue.text?.toString()?.trim()?.let { text -> assDrawingCommandPattern.matches(text) } == true
+        }
     val view = attachedView ?: return
     view.post {
-      if (attachedView === view) view.subtitleView?.setCues(filteredCues)
+      if (attachedView === view && subtitleCueGeneration == generation) {
+        view.subtitleView?.setCues(filteredCues)
+      }
     }
+  }
+
+  private fun clearSubtitleCueBuffers() {
+    subtitleCueGeneration++
+    subtitleCuesByRenderer.clear()
+    postMergedSubtitleCues()
   }
 
   override fun onMetadata(metadata: Metadata) {
@@ -967,7 +1069,9 @@ class Media3PlaybackController(
     onChaptersChanged(emptyList())
     media3AudioTrackGroups = emptyMap()
     media3SubtitleTrackGroups = emptyMap()
+    clearSubtitleCueBuffers()
     selectedSubtitleTrackIds.clear()
+    preserveSubtitleSelection = false
     requestedAudioTrackId = null
     pendingSeekPositionMs = null
     pendingSeekRequestedAtMs = 0L

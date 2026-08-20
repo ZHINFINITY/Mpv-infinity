@@ -44,6 +44,7 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.VisualizerStyleShe
 import dev.vivvvek.seeker.Segment
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import androidx.compose.runtime.collectAsState as composeCollectAsState
 
@@ -460,9 +461,10 @@ fun PlayerSheets(
     }
 
     Sheets.Playlist -> {
-      // Refresh playlist items when sheet is shown
-      LaunchedEffect(Unit) {
-        viewModel.refreshPlaylistItems()
+      // Refresh once on open and again whenever the asynchronous folder queue publishes siblings.
+      val queueState by PlaybackSession.queue.collectAsState()
+      LaunchedEffect(queueState.items.size, queueState.currentIndex) {
+        viewModel.refreshPlaylistItems(forceMetadata = true)
       }
 
       // Observe playlist updates
@@ -473,7 +475,7 @@ fun PlayerSheets(
       val playlistSwipeOffset by viewModel.playlistSwipeOffset.collectAsState()
 
       val filteredPlaylist =
-        remember(playlist, isAudioOnly) {
+        remember(playlist, isAudioOnly, queueState.items.size, queueState.currentIndex) {
           // The sheet can be composed before the IO refresh publishes playlistItems. Use the
           // already-loaded explicit queue for the first frame, then switch to the refreshed list.
           val sourcePlaylist = playlist.ifEmpty { viewModel.getPlaylistData().orEmpty() }
@@ -483,6 +485,21 @@ fun PlayerSheets(
             sourcePlaylist.filter { !it.isAudio }
           }
         }
+
+      LaunchedEffect(queueState.items.size, queueState.currentIndex, filteredPlaylist.isEmpty()) {
+        if (filteredPlaylist.isEmpty()) {
+          // A folder queue can take a moment to be discovered. Give it time to publish; if it
+          // remains a singleton, close the empty sheet so the player cannot be left in a blocked
+          // Playlist state where Back is the only way to restore controls.
+          delay(5000L)
+          if (
+            PlaybackSession.queue.value.items.size <= 1 &&
+              viewModel.sheetShown.value == Sheets.Playlist
+          ) {
+            onDismissRequest()
+          }
+        }
+      }
 
       if (filteredPlaylist.isNotEmpty()) {
         val playlistImmutable = filteredPlaylist.toImmutableList()
