@@ -14,6 +14,7 @@ import android.animation.ValueAnimator
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -769,15 +770,19 @@ class PlayerActivity :
       }
     }
 
-    // Only auto-generate playlist from folder if playlist mode is enabled and no playlist_id
+    // Auto-generate a folder queue for playlist-mode launches. When scoped storage leaves us
+    // with only a content:// URI, use MediaStore metadata instead of passing fd:// to File().
     if (playlist.isEmpty() &&
       playlistId == null &&
       playerPreferences.playlistMode.get() &&
       !hasReusableSavedPlaybackSession
     ) {
       val path = parsePathFromIntent(intent)
-      if (path != null) {
+      val sourceUri = extractUriFromIntent(intent)
+      if (path != null && File(path).isFile) {
         generatePlaylistFromFolder(path)
+      } else if (sourceUri?.scheme == "content") {
+        generatePlaylistFromMediaStore(sourceUri)
       }
     }
 
@@ -5254,11 +5259,15 @@ class PlayerActivity :
       }
     }
 
-    // Auto-generate playlist from folder if playlist mode is enabled and no playlist_id
+    // Auto-generate a folder queue for playlist-mode launches. When scoped storage leaves us
+    // with only a content:// URI, use MediaStore metadata instead of passing fd:// to File().
     if (playlist.isEmpty() && playlistId == null && playerPreferences.playlistMode.get()) {
       val path = parsePathFromIntent(intent)
-      if (path != null) {
+      val sourceUri = extractUriFromIntent(intent)
+      if (path != null && File(path).isFile) {
         generatePlaylistFromFolder(path)
+      } else if (sourceUri?.scheme == "content") {
+        generatePlaylistFromMediaStore(sourceUri)
       }
     }
 
@@ -7467,6 +7476,134 @@ class PlayerActivity :
       }
     }
   }
+
+  private fun generatePlaylistFromMediaStore(currentUri: Uri) {
+    val expectedGeneration = mediaRequestGeneration
+    lifecycleScope.launch(Dispatchers.IO) {
+      generatePlaylistFromMediaStoreInternal(currentUri, expectedGeneration)
+    }
+  }
+
+  private suspend fun generatePlaylistFromMediaStoreInternal(
+    currentUri: Uri,
+    expectedGeneration: Long,
+  ): Boolean =
+    runCatching {
+      data class MediaStoreVideo(
+        val id: Long,
+        val uri: Uri,
+        val name: String,
+        val dateModified: Long,
+        val size: Long,
+        val duration: Long,
+      )
+
+      val filesUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+      var currentMediaId: Long? = null
+      val relativePath =
+        contentResolver
+          .query(
+            currentUri,
+            arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns._ID),
+            null,
+            null,
+            null,
+          )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+              currentMediaId = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+              cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)).orEmpty()
+            } else {
+              ""
+            }
+          }.orEmpty()
+      if (relativePath.isBlank()) {
+        Log.d(TAG, "MediaStore folder queue skipped: no relative path for $currentUri")
+        return@runCatching false
+      }
+
+      val videos = buildList {
+        contentResolver
+          .query(
+            filesUri,
+            arrayOf(
+              MediaStore.MediaColumns._ID,
+              MediaStore.MediaColumns.DISPLAY_NAME,
+              MediaStore.MediaColumns.DATE_MODIFIED,
+              MediaStore.MediaColumns.SIZE,
+              MediaStore.MediaColumns.DURATION,
+              MediaStore.MediaColumns.RELATIVE_PATH,
+            ),
+            "${MediaStore.MediaColumns.RELATIVE_PATH}=?",
+            arrayOf(relativePath),
+            null,
+          )?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+            val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+            val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+            val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION)
+            while (cursor.moveToNext()) {
+              val name = cursor.getString(nameColumn).orEmpty()
+              if (name.startsWith(".") || !FileTypeUtils.VIDEO_EXTENSIONS.contains(name.substringAfterLast('.', "").lowercase())) {
+                continue
+              }
+              val id = cursor.getLong(idColumn)
+              add(
+                MediaStoreVideo(
+                  id = id,
+                  uri = ContentUris.withAppendedId(filesUri, id),
+                  name = name,
+                  dateModified = cursor.getLong(dateColumn),
+                  size = cursor.getLong(sizeColumn),
+                  duration = cursor.getLong(durationColumn),
+                ),
+              )
+            }
+          }
+      }
+      if (videos.size <= 1) {
+        Log.d(TAG, "MediaStore folder queue skipped: ${videos.size} video(s) in $relativePath")
+        return@runCatching false
+      }
+
+      val sortedVideos =
+        when (browserPreferences.videoSortType.get()) {
+          VideoSortType.Date -> videos.sortedBy { it.dateModified }
+          VideoSortType.Size -> videos.sortedBy { it.size }
+          VideoSortType.Duration -> videos.sortedBy { it.duration }
+          VideoSortType.Title -> videos.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+        }.let { sorted ->
+          if (browserPreferences.videoSortOrder.get().isAscending) sorted else sorted.reversed()
+        }
+      val resolvedCurrentId =
+        currentMediaId
+          ?: currentUri.lastPathSegment
+            ?.substringAfterLast(':')
+            ?.toLongOrNull()
+      val newIndex = sortedVideos.indexOfFirst { it.id == resolvedCurrentId }
+      if (newIndex < 0 || expectedGeneration != mediaRequestGeneration) return@runCatching false
+
+      withContext(Dispatchers.Main) {
+        if (expectedGeneration != mediaRequestGeneration) return@withContext
+        playlistEntity = null
+        playlistItems = emptyList()
+        isM3uPlaylist = false
+        playlist = sortedVideos.map { it.uri }
+        networkPlaylistHeaders = emptyList()
+        playlistIndex = newIndex
+        val restoredSavedSelection = applyPendingSavedSelection(playlist)
+        if (pendingSavedPlaylistSelection != null) pendingSavedPlaylistSelection = null
+        publishPlaylistToSession()
+        viewModel.refreshPlaylistItems()
+        Log.d(TAG, "MediaStore auto-playlist generated: ${playlist.size} items in $relativePath")
+        if (restoredSavedSelection) {
+          loadPlaylistItemInternal(playlistIndex, saveCurrentPlaybackState = false)
+        }
+      }
+      true
+    }.onFailure { error ->
+      Log.e(TAG, "Failed to generate MediaStore folder playlist", error)
+    }.getOrDefault(false)
 
   private fun generatePlaylistFromFolder(currentPath: String) {
     val expectedGeneration = mediaRequestGeneration
