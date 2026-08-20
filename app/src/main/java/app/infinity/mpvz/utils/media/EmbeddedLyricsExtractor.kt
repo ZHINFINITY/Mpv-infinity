@@ -47,28 +47,30 @@ object EmbeddedLyricsExtractor {
     // 3. Fallback to MediaMetadataRetriever (key 1000 for lyrics)
     runCatching {
       val retriever = MediaMetadataRetriever()
-      val cleanPath = when {
-        mediaPath.startsWith("file://") -> mediaPath.removePrefix("file://")
-        mediaPath.startsWith("content://") -> null
-        else -> mediaPath
-      }
-
-      if (cleanPath != null) {
-        retriever.setDataSource(cleanPath)
-      } else {
-        retriever.setDataSource(context, Uri.parse(mediaPath))
-      }
-
-      // Key 1000 represents METADATA_KEY_LYRICS in MediaMetadataRetriever
-      val rawLyrics = retriever.extractMetadata(1000)
-      retriever.release()
-
-      if (!rawLyrics.isNullOrBlank()) {
-        val parsed = LyricsUtils.parseLyrics(rawLyrics, sourceType = LyricsSourceType.EMBEDDED)
-        if (parsed.isValid()) {
-          Log.d(TAG, "Extracted embedded lyrics via MediaMetadataRetriever")
-          return@withContext parsed
+      try {
+        val cleanPath = when {
+          mediaPath.startsWith("file://") -> mediaPath.removePrefix("file://")
+          mediaPath.startsWith("content://") -> null
+          else -> mediaPath
         }
+
+        if (cleanPath != null) {
+          retriever.setDataSource(cleanPath)
+        } else {
+          retriever.setDataSource(context, Uri.parse(mediaPath))
+        }
+
+        // Key 1000 represents METADATA_KEY_LYRICS in MediaMetadataRetriever
+        val rawLyrics = retriever.extractMetadata(1000)
+        if (!rawLyrics.isNullOrBlank()) {
+          val parsed = LyricsUtils.parseLyrics(rawLyrics, sourceType = LyricsSourceType.EMBEDDED)
+          if (parsed.isValid()) {
+            Log.d(TAG, "Extracted embedded lyrics via MediaMetadataRetriever")
+            return@withContext parsed
+          }
+        }
+      } finally {
+        retriever.release()
       }
     }.onFailure {
       Log.d(TAG, "MediaMetadataRetriever lyrics extraction failed: ${it.message}")

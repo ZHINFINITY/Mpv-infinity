@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.21 — Playback Efficiency and Resource Cleanup (Unreleased CI Candidate)
+
+- **Reduced duplicate UI work:** Media3 state callbacks now suppress identical snapshots while retaining the 250 ms live position updates needed by the seekbar and controls.
+- **Lower subtitle overhead:** Sign-track detection reuses a compiled pattern and cached renderer classification instead of rescanning and lowercasing track titles for every cue batch.
+- **Resource cleanup:** Artwork and embedded-lyrics metadata fallbacks now release `MediaMetadataRetriever` even when data-source or metadata extraction fails.
+- **Quality preservation:** No video/audio resolution, decoder selection, bitrate, subtitle positioning, playback timing, or MPV music-player behavior was reduced or changed by this optimization pass.
+- **Release scope:** Unreleased CI validation candidate; repository remains private, no release tag is created, and all v1.1.20 fixes are preserved.
+
 ## 1.1.20 — Media3 Subtitle First-Load and MKV Playlist Hotfix
 
 - **First-load dual subtitles:** A bounded retry of up to four attempts at 120 ms intervals reapplies the explicit renderer-specific subtitle overrides after each track-map update, so selecting dialogue and signs works immediately without toggling one track off and back on.

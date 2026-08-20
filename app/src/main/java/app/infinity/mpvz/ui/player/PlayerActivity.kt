@@ -6925,14 +6925,16 @@ class PlayerActivity :
                     else -> uriStr
                   }
                 val retriever = android.media.MediaMetadataRetriever()
-                if (cleanPath != null) {
-                  retriever.setDataSource(cleanPath)
-                } else {
-                  retriever.setDataSource(this@PlayerActivity, parsedUri)
+                try {
+                  if (cleanPath != null) {
+                    retriever.setDataSource(cleanPath)
+                  } else {
+                    retriever.setDataSource(this@PlayerActivity, parsedUri)
+                  }
+                  app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
+                } finally {
+                  retriever.release()
                 }
-                val art = app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
-                retriever.release()
-                art
               } else {
                 null
               }
