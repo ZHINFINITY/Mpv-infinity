@@ -5716,6 +5716,10 @@ class PlayerViewModel : ViewModel(),
     host.reorderQueueItem(from, to)
   }
 
+  fun removePlaylistItem(index: Int) {
+    host.removeQueueItem(index)
+  }
+
   /**
    * Refreshes the playlist items to update the currently playing indicator.
    * Called when a new video starts playing to update the playlist UI.

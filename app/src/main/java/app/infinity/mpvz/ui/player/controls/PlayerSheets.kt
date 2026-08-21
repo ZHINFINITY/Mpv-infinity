@@ -519,6 +519,11 @@ fun PlayerSheets(
           onReorder = { from, to ->
             viewModel.reorderPlaylistItem(from, to)
           },
+          onRemove = if (PlaybackSession.queue.value.isTemporaryQueue) {
+            { item -> viewModel.removePlaylistItem(item.index) }
+          } else {
+            null
+          },
           totalCount = totalCount,
           isM3UPlaylist = isM3U,
           playerPreferences = playerPreferences,

@@ -6772,6 +6772,30 @@ class PlayerActivity :
     viewModel.refreshPlaylistItems()
   }
 
+  override fun removeQueueItem(index: Int) {
+    if (!PlaybackSession.queue.value.isTemporaryQueue || isM3uPlaylist) return
+    val oldPlaylistSize = playlist.size
+    if (index !in 0 until oldPlaylistSize || index == playlistIndex) return
+    if (!PlaybackSession.removeQueueItem(index)) return
+
+    playlist = playlist.toMutableList().apply { removeAt(index) }
+    if (networkPlaylistPaths.size == oldPlaylistSize) {
+      networkPlaylistPaths = networkPlaylistPaths.toMutableList().apply { removeAt(index) }
+    }
+    if (networkPlaylistTitles.size == oldPlaylistSize) {
+      networkPlaylistTitles = networkPlaylistTitles.toMutableList().apply { removeAt(index) }
+    }
+    if (networkPlaylistHeaders.size == oldPlaylistSize) {
+      networkPlaylistHeaders = networkPlaylistHeaders.toMutableList().apply { removeAt(index) }
+    }
+    if (playlistItems.isNotEmpty() && index in playlistItems.indices) {
+      playlistItems = playlistItems.toMutableList().apply { removeAt(index) }
+        .mapIndexed { itemIndex, item -> item.copy(index = itemIndex) }
+    }
+    if (index < playlistIndex) playlistIndex -= 1
+    viewModel.refreshPlaylistItems()
+  }
+
   /**
    * Play the next video in the playlist
    */
