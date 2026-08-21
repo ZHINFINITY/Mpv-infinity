@@ -87,7 +87,11 @@ class Media3PlaybackController(
   private var audioPitchCorrection = true
   private val trackSelector = DefaultTrackSelector(appContext)
   private val subtitleCuesByRenderer = mutableMapOf<Int, List<Cue>>()
+  // Selection overrides use global Media3 renderer indexes, while SubtitleTextOutput receives the
+  // stable custom text-renderer slot (0 or 1). Keep both namespaces explicit so the stale-cue guard
+  // does not reject every callback when video/audio renderers precede the text renderers.
   private val subtitleTrackIdsByRenderer = mutableMapOf<Int, Set<Int>>()
+  private val subtitleTrackIdsBySlot = mutableMapOf<Int, Set<Int>>()
   private val signRendererByIndex = mutableMapOf<Int, Boolean>()
   private data class SubtitleTrackKey(
     val groupId: String?,
@@ -269,7 +273,7 @@ class Media3PlaybackController(
     override fun onCues(cueGroup: CueGroup) {
       // A disabled renderer may deliver one final CueGroup after its selection is removed.
       // Accepting that callback would repopulate stale sign cues after the selection clear.
-      if (slot !in subtitleTrackIdsByRenderer) {
+      if (slot !in subtitleTrackIdsBySlot) {
         if (subtitleCuesByRenderer.remove(slot) != null) {
           postMergedSubtitleCues()
         }
@@ -658,6 +662,7 @@ class Media3PlaybackController(
 
   private fun applySubtitleTrackSelection() {
     subtitleTrackIdsByRenderer.clear()
+    subtitleTrackIdsBySlot.clear()
     signRendererByIndex.clear()
     val selectedTracks =
       selectedSubtitleTrackIds
@@ -686,8 +691,10 @@ class Media3PlaybackController(
       // each group into one SelectionOverride instead.
       val tracksByGroup = selectedTracks.groupBy { it.second }
       val assignedGroups = mutableSetOf<androidx.media3.common.TrackGroup>()
+      var textRendererSlot = 0
       for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
         if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) continue
+        val slot = textRendererSlot++
         val rendererGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
         @Suppress("DEPRECATION")
         parameters.clearSelectionOverrides(rendererIndex)
@@ -713,7 +720,8 @@ class Media3PlaybackController(
         parameters.setRendererDisabled(rendererIndex, false)
         val rendererTrackIds = tracksInGroup.map { it.first }.toSet()
         subtitleTrackIdsByRenderer[rendererIndex] = rendererTrackIds
-        signRendererByIndex[rendererIndex] =
+        subtitleTrackIdsBySlot[slot] = rendererTrackIds
+        signRendererByIndex[slot] =
           rendererTrackIds.any { trackId ->
             signSubtitleTitlePattern.containsMatchIn(
               latestSubtitleTracks.firstOrNull { it.id == trackId }?.title.orEmpty(),

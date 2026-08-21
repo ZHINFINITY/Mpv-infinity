@@ -513,6 +513,7 @@ class PlayerActivity :
   private var intentSubtitleJob: Job? = null
   private var mediaLoadJob: Job? = null
   @Volatile private var mediaRequestGeneration = 0L
+  @Volatile private var folderDiscoveryInFlightGeneration: Long? = null
   private var eofAdvanceJob: Job? = null
   // Keep the old video decoder detached until mpv has completed the replacement load.
   // Reattaching it as part of `loadfile` can make the old and new outputs overlap.
@@ -5611,8 +5612,10 @@ class PlayerActivity :
             }
           }
           // Only collapse to a singleton if the asynchronous folder generator has not already
-          // published a multi-item queue. Torrent requests intentionally remain singleton.
-          if ((requestedQueueItem == null && PlaybackSession.queue.value.items.size <= 1) || isTorrentRequest) {
+          // published a multi-item queue or is still discovering the folder. Torrent requests
+          // intentionally remain singleton.
+          val folderDiscoveryPending = folderDiscoveryInFlightGeneration == requestGeneration
+          if (((requestedQueueItem == null && PlaybackSession.queue.value.items.size <= 1) && !folderDiscoveryPending) || isTorrentRequest) {
             PlaybackSession.replaceQueue(listOf(item), 0)
           }
           if (shouldUseMedia3(item)) {
@@ -7577,8 +7580,15 @@ class PlayerActivity :
 
   private fun generatePlaylistFromMediaStore(currentUri: Uri) {
     val expectedGeneration = mediaRequestGeneration
+    folderDiscoveryInFlightGeneration = expectedGeneration
     lifecycleScope.launch(Dispatchers.IO) {
-      generatePlaylistFromMediaStoreInternal(currentUri, expectedGeneration)
+      try {
+        generatePlaylistFromMediaStoreInternal(currentUri, expectedGeneration)
+      } finally {
+        if (folderDiscoveryInFlightGeneration == expectedGeneration) {
+          folderDiscoveryInFlightGeneration = null
+        }
+      }
     }
   }
 
@@ -7812,12 +7822,19 @@ class PlayerActivity :
     val sourceUri =
       (externalContentLaunchUri ?: extractUriFromIntent(intent))
         ?.takeIf { it.scheme == "content" }
+    folderDiscoveryInFlightGeneration = expectedGeneration
 
     lifecycleScope.launch(Dispatchers.IO) {
-      val generated = generatePlaylistFromFolderInternal(currentPath, expectedGeneration)
-      if (!generated && sourceUri != null && expectedGeneration == mediaRequestGeneration) {
-        Log.d(TAG, "Filesystem folder queue unavailable; retrying MediaStore for $sourceUri")
-        generatePlaylistFromMediaStoreInternal(sourceUri, expectedGeneration)
+      try {
+        val generated = generatePlaylistFromFolderInternal(currentPath, expectedGeneration)
+        if (!generated && sourceUri != null && expectedGeneration == mediaRequestGeneration) {
+          Log.d(TAG, "Filesystem folder queue unavailable; retrying MediaStore for $sourceUri")
+          generatePlaylistFromMediaStoreInternal(sourceUri, expectedGeneration)
+        }
+      } finally {
+        if (folderDiscoveryInFlightGeneration == expectedGeneration) {
+          folderDiscoveryInFlightGeneration = null
+        }
       }
     }
   }

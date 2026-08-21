@@ -1453,30 +1453,42 @@ class PlayerViewModel : ViewModel(),
     //   500 ms – paused
     viewModelScope.launch(playbackStateDispatcher) {
       while (isActive) {
-        if (!_isMpvCoreReady.value) {
+        val media3Active = withContext(Dispatchers.Main.immediate) { host.isMedia3Active() }
+        if (!_isMpvCoreReady.value && !media3Active) {
           delay(250L)
           continue
         }
         val playbackPhase = PlaybackSession.state.value.phase
         val hasActiveTimeline = playbackPhase == PlaybackPhase.READY || playbackPhase == PlaybackPhase.BACKGROUND
         val audioTimelineActive = isAudioPlaybackActive()
-        if (!hasActiveTimeline && !audioTimelineActive) {
+        if (!media3Active && !hasActiveTimeline && !audioTimelineActive) {
           delay(250L)
           continue
         }
         runCatching {
-          val time = PlaybackSession.getPropertyDouble("time-pos")
-          if (time != null) {
+          val time =
+            if (media3Active) {
+              (host.media3CurrentPositionMs().coerceAtLeast(0L) / 1000.0)
+            } else {
+              PlaybackSession.getPropertyDouble("time-pos")
+            }
+          if (time != null && time.isFinite()) {
             val posFloat = time.toFloat()
             if (_precisePosition.value != posFloat) {
               _precisePosition.value = posFloat
               updateLyricsActiveLine()
             }
-            maybeAutoSkipIntro(time)
+            val isPlaying = if (media3Active) host.media3IsPlaying() else paused != true
+            maybeAutoSkipIntro(time, isPlaying)
           }
-          if (audioTimelineActive) {
+          if (!media3Active && audioTimelineActive) {
             val currentDuration = PlaybackSession.getPropertyDouble("duration")
             if (currentDuration != null && currentDuration.isFinite() && currentDuration > 0.0) {
+              _preciseDuration.value = currentDuration.toFloat()
+            }
+          } else if (media3Active) {
+            val currentDuration = host.media3DurationMs().takeIf { it > 0L }?.div(1000.0)
+            if (currentDuration != null && currentDuration.isFinite()) {
               _preciseDuration.value = currentDuration.toFloat()
             }
           }
@@ -2855,7 +2867,7 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
-  private fun maybeAutoSkipIntro(positionSeconds: Double) {
+  private fun maybeAutoSkipIntro(positionSeconds: Double, isPlaying: Boolean) {
     val activeSegment =
       skipSegmentsSnapshot.firstOrNull { segment ->
         positionSeconds in segment.startSeconds..segment.endSeconds && (segment.endSeconds - positionSeconds) >= 1.0
@@ -2869,7 +2881,7 @@ class PlayerViewModel : ViewModel(),
       _showSkipChipAuto.value = showChip
     }
 
-    if (paused == true || activeSegment == null) return
+    if (!isPlaying || activeSegment == null) return
     if (skippedSegmentTypes.contains(activeSegment.type)) return
     val autoSkipEnabled =
       when (activeSegment.type) {
@@ -2881,11 +2893,18 @@ class PlayerViewModel : ViewModel(),
       }
     if (!autoSkipEnabled) return
 
+    val seekAccepted =
+      if (host.isMedia3Active()) {
+        host.media3SeekTo((activeSegment.endSeconds * 1000.0).toLong(), fast = true)
+      } else {
+        PlaybackSession.setPropertyDouble("time-pos", activeSegment.endSeconds)
+        true
+      }
+    if (!seekAccepted) return
     skippedSegmentTypes += activeSegment.type
-    PlaybackSession.setPropertyDouble("time-pos", activeSegment.endSeconds)
     syncplayManager.updatePlayerState(
       activeSegment.endSeconds,
-      PlaybackSession.getPropertyBoolean("pause") ?: false,
+      if (host.isMedia3Active()) !host.media3IsPlaying() else (PlaybackSession.getPropertyBoolean("pause") ?: false),
       doSeek = true,
     )
     showToast("${activeSegment.label} (auto)")
@@ -2893,11 +2912,19 @@ class PlayerViewModel : ViewModel(),
 
   fun skipActiveSegment() {
     val segment = _currentSkippableSegment.value ?: return
+    val media3Active = host.isMedia3Active()
+    val seekAccepted =
+      if (media3Active) {
+        host.media3SeekTo((segment.endSeconds * 1000.0).toLong(), fast = true)
+      } else {
+        PlaybackSession.setPropertyDouble("time-pos", segment.endSeconds)
+        true
+      }
+    if (!seekAccepted) return
     skippedSegmentTypes += segment.type
-    PlaybackSession.setPropertyDouble("time-pos", segment.endSeconds)
     syncplayManager.updatePlayerState(
       segment.endSeconds,
-      PlaybackSession.getPropertyBoolean("pause") ?: false,
+      if (media3Active) !host.media3IsPlaying() else (PlaybackSession.getPropertyBoolean("pause") ?: false),
       doSeek = true,
     )
     showToast("${segment.label}")
