@@ -105,6 +105,7 @@ import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.CopyPasteOps
+import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
 import app.infinity.mpvz.utils.sort.SortUtils
@@ -132,8 +133,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   val videos by viewModel.videos.collectAsState()
   val videosWithPlaybackInfo by viewModel.videosWithPlaybackInfo.collectAsState()
   val isLoading by viewModel.isLoading.collectAsState()
-  val recentlyPlayedFilePath by viewModel.recentlyPlayedFilePath.collectAsState()
-
+    val recentlyPlayedFilePath by viewModel.recentlyPlayedFilePath.collectAsState()
   val videoSortType by browserPreferences.videoSortType.collectAsState()
   val videoSortOrder by browserPreferences.videoSortOrder.collectAsState()
   val mediaLayoutMode by browserPreferences.mediaLayoutMode.collectAsState()
@@ -561,6 +561,19 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
             FloatingActionButtonMenuItem(
               onClick = {
                 isFabExpanded.value = false
+                TemporaryPlaybackQueue.start(context)
+              },
+              icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
+              text = {
+                Text(
+                  text = androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_queue),
+                )
+              },
+            )
+
+            FloatingActionButtonMenuItem(
+              onClick = {
+                isFabExpanded.value = false
                 coroutineScope.launch {
                   val recentlyPlayedVideos = RecentlyPlayedOps.getRecentlyPlayed(limit = 1)
                   val lastPlayed = recentlyPlayedVideos.firstOrNull()
@@ -718,6 +731,20 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
           onRenameClick = { renameDialogOpen.value = true },
           onDeleteClick = { deleteDialogOpen.value = true },
           onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
+          onInfoClick = {
+            if (selectionManager.isSingleSelection) {
+              selectionManager.getSelectedItems().firstOrNull()?.let { video ->
+                context.startActivity(
+                  Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java).apply {
+                    action = Intent.ACTION_VIEW
+                    data = video.uri
+                  },
+                )
+                selectionManager.clear()
+              }
+            }
+          },
+          showInfo = selectionManager.isSingleSelection,
           showCopy = true,
           showMove = true,
           showDownscale = selectionManager.getSelectedItems().let { items -> items.isNotEmpty() && items.none { it.isAudio } },

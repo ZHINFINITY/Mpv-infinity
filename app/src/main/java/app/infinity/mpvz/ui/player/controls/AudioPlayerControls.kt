@@ -386,6 +386,7 @@ fun AudioPlayerControls(
   viewModel: PlayerViewModel,
   mediaTitle: String?,
   onBackPress: () -> Unit,
+  onClosePlayer: () -> Unit = onBackPress,
   onOpenSheet: (Sheets) -> Unit,
   onOpenPanel: (Panels) -> Unit,
   modifier: Modifier = Modifier,
@@ -748,7 +749,7 @@ fun AudioPlayerControls(
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
-          onClick = onBackPress,
+          onClick = onClosePlayer,
           modifier = Modifier.align(Alignment.CenterStart),
         ) {
           Icon(

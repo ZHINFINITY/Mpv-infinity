@@ -174,6 +174,8 @@ class Media3PlaybackController(
   private var requestedAudioTrackId: Int? = null
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekRequestedAtMs: Long = 0L
+  private var postSeekResumeWhenBuffered = false
+  private var postSeekResumeDeadlineMs = 0L
   private var lastKnownDurationMs: Long = 0L
   private var loopAPositionMs: Long? = null
   private var loopBPositionMs: Long? = null
@@ -182,6 +184,7 @@ class Media3PlaybackController(
   private val stateTicker = object : Runnable {
     override fun run() {
       if (player.currentMediaItem != null) {
+        maybeResumeAfterPostSeekBuffer()
         publishState()
       }
       stateTickerHandler.postDelayed(this, 250L)
@@ -490,6 +493,11 @@ class Media3PlaybackController(
 
   fun setPlayWhenReady(value: Boolean) {
     logInfo("playWhenReady=$value")
+    if (!value) {
+      // A manual pause must cancel an automatic post-seek resume.
+      postSeekResumeWhenBuffered = false
+      postSeekResumeDeadlineMs = 0L
+    }
     player.playWhenReady = value
   }
 
@@ -499,6 +507,8 @@ class Media3PlaybackController(
     clearABLoop()
     fastStartActive = false
     restoreSeekParametersWhenReady = false
+    postSeekResumeWhenBuffered = false
+    postSeekResumeDeadlineMs = 0L
     player.setSeekParameters(SeekParameters.EXACT)
     player.stop()
     player.clearMediaItems()
@@ -556,7 +566,7 @@ class Media3PlaybackController(
     restoreSeekParametersWhenReady = previousSeekParameters != SeekParameters.CLOSEST_SYNC
     player.setMediaSource(normalMediaSourceFactory.createMediaSource(currentItem), targetPositionMs)
     player.prepare()
-    player.playWhenReady = shouldPlay
+    armPostSeekResumeGate(shouldPlay, "initial nonzero seek")
     if (!restoreSeekParametersWhenReady) {
       player.setSeekParameters(previousSeekParameters)
     }
@@ -574,6 +584,10 @@ class Media3PlaybackController(
     // Gesture seeking should land on the nearest keyframe. Exact seeks can require decoding
     // a long interval from the previous keyframe on 4K HEVC/Dolby Vision files.
     val previousSeekParameters = player.seekParameters
+    val shouldGateResume =
+      (player.playWhenReady || postSeekResumeWhenBuffered) &&
+        kotlin.math.abs(player.currentPosition - targetPositionMs) >= LARGE_BACKWARD_SEEK_RESET_MS
+    armPostSeekResumeGate(shouldGateResume, "large seekTo")
     player.setSeekParameters(if (fast) SeekParameters.CLOSEST_SYNC else SeekParameters.EXACT)
     player.seekTo(targetPositionMs)
     player.setSeekParameters(previousSeekParameters)
@@ -588,6 +602,10 @@ class Media3PlaybackController(
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
     logInfo("seekBy requested offsetMs=$offsetMs targetPositionMs=$targetPositionMs seekMode=closestSync")
     val previousSeekParameters = player.seekParameters
+    val shouldGateResume =
+      (player.playWhenReady || postSeekResumeWhenBuffered) &&
+        kotlin.math.abs(player.currentPosition - targetPositionMs) >= LARGE_BACKWARD_SEEK_RESET_MS
+    armPostSeekResumeGate(shouldGateResume, "large seekBy")
     player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     player.seekTo(targetPositionMs)
     player.setSeekParameters(previousSeekParameters)
@@ -608,7 +626,7 @@ class Media3PlaybackController(
     player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     player.setMediaSource(normalMediaSourceFactory.createMediaSource(currentItem), targetPositionMs)
     player.prepare()
-    player.playWhenReady = shouldPlay
+    armPostSeekResumeGate(shouldPlay, "large backward source rebuild")
     if (!restoreSeekParametersWhenReady) {
       player.setSeekParameters(previousSeekParameters)
     }
@@ -618,6 +636,34 @@ class Media3PlaybackController(
         "resetThresholdMs=$LARGE_BACKWARD_SEEK_RESET_MS wasPlaying=$shouldPlay",
     )
     return true
+  }
+
+  private fun armPostSeekResumeGate(shouldPlay: Boolean, reason: String) {
+    postSeekResumeWhenBuffered = shouldPlay
+    postSeekResumeDeadlineMs =
+      if (shouldPlay) {
+        android.os.SystemClock.elapsedRealtime() + POST_SEEK_RESUME_TIMEOUT_MS
+      } else {
+        0L
+      }
+    if (shouldPlay) {
+      player.playWhenReady = false
+      logInfo("large seek waiting for buffer lead targetMs=$POST_SEEK_BUFFER_LEAD_MS reason=$reason")
+    }
+  }
+
+  private fun maybeResumeAfterPostSeekBuffer() {
+    if (!postSeekResumeWhenBuffered) return
+    val now = android.os.SystemClock.elapsedRealtime()
+    val bufferedLeadMs = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0L)
+    val timedOut = now >= postSeekResumeDeadlineMs
+    if (bufferedLeadMs < POST_SEEK_BUFFER_LEAD_MS && !timedOut) return
+    postSeekResumeWhenBuffered = false
+    postSeekResumeDeadlineMs = 0L
+    if (player.playbackState == Player.STATE_READY) {
+      player.playWhenReady = true
+      logInfo("large seek resumed bufferedLeadMs=$bufferedLeadMs timedOut=$timedOut")
+    }
   }
 
   /** Detach Activity-owned callbacks while allowing an intentional detached Media3 session to play. */
@@ -902,6 +948,7 @@ class Media3PlaybackController(
   }
 
   override fun onPlaybackStateChanged(playbackState: Int) {
+    maybeResumeAfterPostSeekBuffer()
     if (playbackState == Player.STATE_READY && restoreSeekParametersWhenReady) {
       restoreSeekParametersWhenReady = false
       player.setSeekParameters(SeekParameters.EXACT)
@@ -1415,5 +1462,7 @@ class Media3PlaybackController(
   private companion object {
     const val TAG = "MpvInfinity"
     const val LARGE_BACKWARD_SEEK_RESET_MS = 30_000L
+    const val POST_SEEK_BUFFER_LEAD_MS = 8_000L
+    const val POST_SEEK_RESUME_TIMEOUT_MS = 15_000L
   }
 }

@@ -190,6 +190,7 @@ fun <T> playerControlsEnterAnimationSpec(): FiniteAnimationSpec<T> =
 fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
+  onClosePlayer: () -> Unit = onBackPress,
   isMedia3Active: Boolean = false,
   media3State: Media3PlaybackController.State = Media3PlaybackController.State(),
   engineSelection: PlaybackEngineMode = if (isMedia3Active) PlaybackEngineMode.Media3 else PlaybackEngineMode.MPV,
@@ -440,6 +441,7 @@ fun PlayerControls(
         viewModel = viewModel,
         mediaTitle = mediaTitle,
         onBackPress = onBackPress,
+        onClosePlayer = onClosePlayer,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
       )
@@ -1806,7 +1808,7 @@ fun PlayerControls(
               TopPlayerControlsPortrait(
                 mediaTitle = mediaTitle,
                 hideBackground = hideBackground,
-                onBackPress = onBackPress,
+                onBackPress = onClosePlayer,
                 onOpenSheet = onOpenSheet,
                 onOpenPanel = onOpenPanel,
                 viewModel = viewModel,
@@ -1821,7 +1823,7 @@ fun PlayerControls(
               TopLeftPlayerControlsLandscape(
                 mediaTitle = mediaTitle,
                 hideBackground = hideBackground,
-                onBackPress = onBackPress,
+                onBackPress = onClosePlayer,
                 onOpenSheet = onOpenSheet,
                 viewModel = viewModel,
                 isTranslatingSub = showAiIndicators && isTranslatingSub,

@@ -23,6 +23,7 @@ import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.storage.FolderViewScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -123,6 +125,18 @@ class FolderListViewModel(
         MediaFileRepository.invalidateFolderCache()
         loadVideoFolders()
       }
+    }
+
+    // Recalculate folder NEW counts when playback crosses a watched threshold. Debounce frequent
+    // position persistence events so this does not turn into a filesystem query on every tick.
+    viewModelScope.launch(Dispatchers.IO) {
+      PlaybackStateEvents.changes
+        .debounce(250L)
+        .collectLatest {
+          if (_videoFolders.value.isNotEmpty()) {
+            calculateNewVideoCounts(_videoFolders.value, initialDelayMs = 0L)
+          }
+        }
     }
 
     // Filter folders based on blacklist (video vs audio scope)
@@ -241,11 +255,14 @@ class FolderListViewModel(
       emptyList()
     }
 
-  private fun calculateNewVideoCounts(folders: List<VideoFolder>) {
+  private fun calculateNewVideoCounts(
+    folders: List<VideoFolder>,
+    initialDelayMs: Long = 400L,
+  ) {
     newCountJob?.cancel()
     newCountJob =
       viewModelScope.launch(Dispatchers.IO) {
-        delay(400)
+        delay(initialDelayMs)
         try {
           val showLabel = appearancePreferences.showUnplayedOldVideoLabel.get()
           if (!showLabel) {
