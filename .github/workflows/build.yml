@@ -202,6 +202,11 @@ jobs:
             fi
           fi
 
-      # Debug APK artifact uploads are intentionally disabled because the private
-      # repository's Actions artifact allowance is currently exhausted/stale.
-      # Stable signed APKs are published by release.yml as GitHub Release assets.
+      - name: Upload Standard debug APKs
+        if: ${{ env.SELECTED_FLAVOR == 'standard' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'all' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-infinity-standard-debug-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/debug/app-standard-*-debug.apk
+          if-no-files-found: error
+          retention-days: 7
