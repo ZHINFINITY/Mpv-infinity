@@ -1113,6 +1113,7 @@ class PlayerActivity :
           PlayerControls(
             viewModel = viewModel,
             onBackPress = ::handleBackPress,
+            onClosePlayer = ::requestExplicitHardStop,
             isMedia3Active = playbackEngine == PlaybackEngine.MEDIA3,
             media3State = media3State,
             engineSelection =
@@ -2217,6 +2218,11 @@ class PlayerActivity :
       media3PlaybackController.release()
       if (detachedMedia3Controller === media3PlaybackController) detachedMedia3Controller = null
     }.onFailure { e -> Log.e(TAG, "Error during explicit Media3 hard stop", e) }
+    // Explicit X/PiP dismissal must also stop the process-wide native session. The normal finish
+    // handoff intentionally preserves that session for background playback, which is not desired
+    // for an explicit close.
+    runCatching { PlaybackSession.stop(clearQueue = true) }
+      .onFailure { e -> Log.e(TAG, "Error during explicit native hard stop", e) }
     if (!isFinishing) finishAndRemoveTask()
   }
 
@@ -2391,14 +2397,7 @@ class PlayerActivity :
   private fun handlePipDismissed() {
     Log.d(TAG, "PiP dismissed; closing playback instead of continuing in background")
     handledPipDismissal = true
-    isUserFinishing = true
-    isBackgroundPlaybackSessionActive = false
-    pendingBackgroundTransition = false
-    viewModel.pause()
-    endBackgroundPlayback()
-    if (!isFinishing && !isDestroyed) {
-      finish()
-    }
+    requestExplicitHardStop()
   }
 
   fun getCurrentPlayableUriForLookup(): String? = currentPlayableUri ?: intent?.dataString

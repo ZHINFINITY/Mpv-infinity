@@ -61,6 +61,7 @@ fun BrowserBottomBar(
   onRenameClick: () -> Unit,
   onDeleteClick: () -> Unit,
   onAddToPlaylistClick: () -> Unit,
+  onInfoClick: () -> Unit = {},
   modifier: Modifier = Modifier,
   showCopy: Boolean = true,
   showMove: Boolean = true,
@@ -68,6 +69,7 @@ fun BrowserBottomBar(
   showRename: Boolean = true,
   showDelete: Boolean = true,
   showAddToPlaylist: Boolean = true,
+  showInfo: Boolean = false,
 ) {
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -79,6 +81,7 @@ fun BrowserBottomBar(
   var lastShowRename by remember { mutableStateOf(showRename) }
   var lastShowDelete by remember { mutableStateOf(showDelete) }
   var lastShowAddToPlaylist by remember { mutableStateOf(showAddToPlaylist) }
+  var lastShowInfo by remember { mutableStateOf(showInfo) }
 
   if (isSelectionMode) {
     lastShowCopy = showCopy
@@ -87,6 +90,7 @@ fun BrowserBottomBar(
     lastShowRename = showRename
     lastShowDelete = showDelete
     lastShowAddToPlaylist = showAddToPlaylist
+    lastShowInfo = showInfo
   }
 
   val effectiveShowCopy = if (isSelectionMode) showCopy else lastShowCopy
@@ -95,6 +99,7 @@ fun BrowserBottomBar(
   val effectiveShowRename = if (isSelectionMode) showRename else lastShowRename
   val effectiveShowDelete = if (isSelectionMode) showDelete else lastShowDelete
   val effectiveShowAddToPlaylist = if (isSelectionMode) showAddToPlaylist else lastShowAddToPlaylist
+  val effectiveShowInfo = if (isSelectionMode) showInfo else lastShowInfo
 
   AnimatedVisibility(
     visible = isSelectionMode,
@@ -127,6 +132,7 @@ fun BrowserBottomBar(
           effectiveShowDownscale,
           effectiveShowRename,
           effectiveShowAddToPlaylist,
+          effectiveShowInfo,
           effectiveShowDelete,
         ).count { it }
 
@@ -269,6 +275,14 @@ fun BrowserBottomBar(
             onAddToPlaylistClick,
             Icons.RoundedFilled.PlaylistAdd,
             "Add to Playlist",
+            layoutParams.buttonSize,
+            layoutParams.iconSize,
+          )
+          BrowserBottomBarButton(
+            effectiveShowInfo,
+            onInfoClick,
+            Icons.RoundedFilled.Info,
+            "Properties",
             layoutParams.buttonSize,
             layoutParams.iconSize,
           )

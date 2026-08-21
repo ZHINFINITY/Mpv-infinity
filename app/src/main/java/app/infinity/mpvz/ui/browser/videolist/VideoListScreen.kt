@@ -521,6 +521,20 @@ data class VideoListScreen(
             onRenameClick = { renameDialogOpen.value = true },
             onDeleteClick = { deleteDialogOpen.value = true },
             onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
+            onInfoClick = {
+              if (selectionManager.isSingleSelection) {
+                selectionManager.getSelectedItems().firstOrNull()?.let { video ->
+                  context.startActivity(
+                    Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java).apply {
+                      action = Intent.ACTION_VIEW
+                      data = video.uri
+                    },
+                  )
+                  selectionManager.clear()
+                }
+              }
+            },
+            showInfo = selectionManager.isSingleSelection,
             showDownscale = selectionManager.getSelectedItems().let { items -> items.isNotEmpty() && items.none { it.isAudio } },
             showRename = selectionManager.selectedCount > 0,
             modifier =
