@@ -52,23 +52,22 @@ The screenshots below present the Mpv∞ player surface, video library, About pa
 
 ## Features
 
-Mpv∞ pushes the libmpv experience further with a second playback path based on AndroidX Media3, deep customization, thermal-aware performance, and practical quality-of-life features.
+Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Media3 playback engines with customizable controls, advanced video rendering, subtitle tools, audio playback, and practical library features.
 
 <details close>
-<summary><b>⚙️ Dual Playback Engines &amp; Reliable Handoff</b></summary>
+<summary><b>⚙️ Dual Playback Engines: MPV + Media3</b></summary>
 
 | Feature | Description |
 |---|---|
-| **MPV engine** | The full libmpv playback path remains available for broad format support, advanced rendering, shaders, scripting, and detailed MPV controls. |
-| **Native engine** | AndroidX Media3 is presented throughout the app as **Native**, with Android platform playback and device-integrated codec handling. |
-| **Automatic routing** | Auto mode can select Native for Dolby Vision items and HLS/DASH streams while keeping ordinary files on MPV. |
-| **Manual per-video switching** | The decoder sheet lets you switch the current item between MPV and Native without changing the global preference. |
-| **Single active engine** | Engine transitions stop the previous player before starting the selected engine, avoiding unnecessary simultaneous playback and battery use. |
-| **Native audio extension** | Media3 playback includes the FFmpeg audio extension for additional audio-format compatibility where the device supports it. |
-| **Fallback protection** | If Native cannot render a video frame, Mpv∞ falls back to MPV and prevents an automatic retry loop for that item. |
-| **Output and decoder information** | Playback statistics and the decoder sheet expose the active engine and available output details when reported by the platform. |
-| **Media3 subtitle tracks** | Native playback supports selectable dialogue and sign subtitle tracks with layered text rendering. |
-| **Media3 chapters and segments** | Native playback exposes chapter-aware timeline information and skippable media segments. |
+| **MPV playback engine** | Full libmpv playback for broad format support, advanced rendering, shaders, scripting, and detailed MPV controls. |
+| **Media3 playback engine** | AndroidX Media3 playback with platform-integrated video, audio, codec, timeline, and device support. |
+| **Automatic engine routing** | Auto mode can choose Media3 for supported Dolby Vision items and HLS/DASH streams while keeping ordinary files on MPV. |
+| **Per-video engine selection** | Switch the current item between MPV and Media3 from the decoder controls without changing the global preference. |
+| **Engine-aware playback controls** | Seeking, playback position, chapters, segment actions, and subtitle selection are available through the active engine. |
+| **Media3 audio compatibility** | Media3 playback includes the FFmpeg audio extension for additional audio-format compatibility where supported by the device. |
+| **Media3 dual subtitles** | Selectable dialogue and sign subtitle tracks can render together as layered subtitle tracks. |
+| **Media3 chapters and skippable segments** | Media3 exposes chapter-aware timeline information and playable segment actions such as intro, recap, outro, and credits skipping. |
+| **Playback information** | Statistics and decoder controls show the active engine and available output details when reported by the platform. |
 
 </details>
 
@@ -165,7 +164,7 @@ Mpv∞ pushes the libmpv experience further with a second playback path based on
 | **Subtitle Font Manager** | Choose a font directory, reload fonts, clear the cache, and select a default subtitle font |
 | **Speech-to-Subtitle Generation** | Experimental subtitle generation from the active audio using supported cloud or offline Whisper providers |
 | **Explicit Subtitle Off** | Disable subtitles directly without cycling through every available track |
-| **Embedded and external subtitle tracks** | Select subtitle tracks from containers or automatically discovered same-name external subtitle files |
+| **Embedded and External Subtitle Tracks** | Select subtitle tracks from containers or automatically discovered same-name external subtitle files |
 
 </details>
 
@@ -228,7 +227,7 @@ Mpv∞ pushes the libmpv experience further with a second playback path based on
 | **Syncplay Rooms** | Join a Syncplay server room to synchronize pause, resume, seeking, and playback position with other viewers |
 | **Responsive & Dual-Pane Layouts** | Automatic grid sizing plus optional folder/settings dual-pane views on tablets |
 | **Audio Library Mode** | MediaStore and filesystem audio browsing with square artwork, metadata titles, and mixed sibling playlists |
-| **Folder Playlist Sheets** | Open playable video folders as navigable episode or file playlists from the player |
+| **Folder Playlist Sheets** | Open playable folders, including nested series folders, as navigable episode or file playlists from the player |
 | **Safer Folder Deletion** | Media-only folder deletion by default, with an explicit option to delete every contained file |
 | **Settings Search Memory** | Search suggestions and recently used settings queries |
 
