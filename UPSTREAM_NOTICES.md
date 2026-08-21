@@ -24,6 +24,13 @@ Mpv∞ also acknowledges the open-source projects and contributors listed below 
 
 This list is maintained in good faith. Individual source files and bundled assets may contain their own copyright and license notices; those notices remain part of the distributed source tree and must be preserved.
 
+## Media playback and audio attributions
+
+- **AndroidX Media3** — Apache-2.0 Android media playback, UI, audio, and effects libraries used by the Native/Media3 engine: [developer.android.com/jetpack/androidx/releases/media3](https://developer.android.com/jetpack/androidx/releases/media3). The Media3 engine’s multichannel and device-dependent 7.1 audio behavior is implemented through these APIs and the codecs exposed by the Android device.
+- **Jellyfin Media3 FFmpeg Decoder** — GPL-3.0 FFmpeg decoder extension used through `org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1` for additional codec and multichannel audio support, including device-dependent 7.1 playback: [github.com/jellyfin/jellyfin-androidx-media](https://github.com/jellyfin/jellyfin-androidx-media). The package’s corresponding source and license terms must be preserved when redistributing builds that include it.
+
+The **7.1 audio feature itself is Mpv∞ integration and configuration**, not a separate third-party library. Its behavior depends on the Media3 audio pipeline, the Jellyfin FFmpeg decoder where selected, and the codecs supported by the user’s device. No certification or universal device-support claim is implied.
+
 ## Mpv∞ changes
 
 Mpv∞-specific work includes the `app.infinity.mpvz` application identity, Mpv∞ branding, Native AndroidX Media3 integration, automatic and manual MPV/Native engine routing, Dolby Vision fallback handling, shared player controls, Media3 FFmpeg audio support, UI themes and player controls, playback statistics, library and network features, stability fixes, and other changes documented in the repository changelog.
