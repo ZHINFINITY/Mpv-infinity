@@ -6790,7 +6790,7 @@ class PlayerActivity :
     }
     if (playlistItems.isNotEmpty() && index in playlistItems.indices) {
       playlistItems = playlistItems.toMutableList().apply { removeAt(index) }
-        .mapIndexed { itemIndex, item -> item.copy(index = itemIndex) }
+        .mapIndexed { itemIndex, item -> item.copy(position = itemIndex) }
     }
     if (index < playlistIndex) playlistIndex -= 1
     viewModel.refreshPlaylistItems()
