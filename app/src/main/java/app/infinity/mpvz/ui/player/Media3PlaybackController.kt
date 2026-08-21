@@ -27,6 +27,7 @@ import app.infinity.mpvz.preferences.AudioChannels
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.text.TextRenderer
@@ -86,6 +87,21 @@ class Media3PlaybackController(
   private var audioChannels = AudioChannels.AutoSafe
   private var audioPitchCorrection = true
   private val trackSelector = DefaultTrackSelector(appContext)
+  // Media3 1.11 uses a 1-second minimum buffer for local playback. That is too small for
+  // high-bitrate local HEVC/Dolby Vision files: after a large seek the player can resume with
+  // roughly one second of lead, immediately drain it, and repeat the buffering cycle. Keep the
+  // streaming defaults unchanged, but give local playback enough post-seek and rebuffer headroom.
+  private val loadControl =
+    DefaultLoadControl.Builder()
+      .setBufferDurationsMsForLocalPlayback(
+        /* minBufferMs = */ 15_000,
+        /* maxBufferMs = */ 120_000,
+        /* bufferForPlaybackMs = */ 3_000,
+        /* bufferForPlaybackAfterRebufferMs = */ 10_000,
+      )
+      .setPrioritizeTimeOverSizeThresholdsForLocalPlayback(true)
+      .setBackBuffer(10_000, false)
+      .build()
   private val subtitleCuesByRenderer = mutableMapOf<Int, List<Cue>>()
   // Selection overrides use global Media3 renderer indexes, while SubtitleTextOutput receives the
   // stable custom text-renderer slot (0 or 1). Keep both namespaces explicit so the stale-cue guard
@@ -211,13 +227,18 @@ class Media3PlaybackController(
     player =
       ExoPlayer.Builder(appContext, renderersFactory)
         .setTrackSelector(trackSelector)
+        .setLoadControl(loadControl)
         .setMediaSourceFactory(normalMediaSourceFactory)
         .build()
         .also {
           it.addListener(this)
           it.addAnalyticsListener(this)
         }
-    logInfo("controller created decoderFallback=true ffmpegRenderer=platform-first channelMixing=true nativeEffects=true fastLargeMatroska=true")
+    logInfo(
+      "controller created decoderFallback=true ffmpegRenderer=platform-first " +
+        "channelMixing=true nativeEffects=true fastLargeMatroska=true " +
+        "localBufferMs=15000..120000 seekStartMs=3000 rebufferMs=10000",
+    )
   }
 
   fun setAudioChannels(channels: AudioChannels) {
