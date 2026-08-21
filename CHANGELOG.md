@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.26 — Media3 Subtitle Slots, Skip Intro, and Playlist Race Fixes (CI Candidate)
+
+- **Dual subtitle renderer mapping:** The stale-cue guard now distinguishes custom text-renderer slots from global Media3 renderer indexes, restoring valid dialogue and sign cue delivery while still rejecting late callbacks from disabled slots.
+- **Media3 skip intro:** Skip-segment detection now polls Media3 position and duration, and both manual and automatic skip actions seek through the Media3 controller instead of the unavailable MPV `time-pos` property.
+- **Nested playlist race protection:** Folder discovery is marked in flight so asynchronous Media3 loading cannot overwrite a pending multi-item folder queue with a singleton.
+- **Release scope:** CI-only validation candidate; repository remains private, only Standard APK variants are in scope, and v1.1.25 behavior is otherwise preserved.
+
 ## 1.1.25 — Media3 Subtitle Cue Guard and Playlist Discovery Logging
 
 - **Subtitle stale-cue guard:** SubtitleTextOutput callbacks from disabled renderer slots are now rejected; any cached cues for that slot are cleared immediately so a disabled sign track cannot remain visible after deselection.
