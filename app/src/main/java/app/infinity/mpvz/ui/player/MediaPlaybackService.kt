@@ -1792,8 +1792,15 @@ class MediaPlaybackService :
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
-    Log.d(TAG, "Task removed - keeping foreground background playback active")
-    if (!nativeBackgroundPlayback) schedulePlaybackStateSave(force = true)
+    if (nativeBackgroundPlayback) {
+      // Android uses task removal for the system PiP X action. A detached foreground
+      // playback session must not survive that explicit close as background audio.
+      Log.d(TAG, "Task removed from PiP; stopping detached playback")
+      stopPlaybackAndService()
+    } else {
+      Log.d(TAG, "Task removed - saving foreground playback state")
+      schedulePlaybackStateSave(force = true)
+    }
     super.onTaskRemoved(rootIntent)
   }
 }

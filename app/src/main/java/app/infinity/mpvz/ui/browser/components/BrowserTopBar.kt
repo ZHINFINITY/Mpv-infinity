@@ -497,20 +497,6 @@ private fun SelectionTopBar(
         }
       }
 
-      if (onAddToQueue != null) {
-        IconButton(
-          onClick = onAddToQueue,
-          modifier = Modifier.padding(horizontal = 1.dp),
-        ) {
-          Icon(
-            Icons.RoundedFilled.QueueMusic,
-            contentDescription = stringResource(R.string.ui_add_to_queue),
-            modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
-          )
-        }
-      }
-
       // Rename icon
       if (onRename != null) {
         IconButton(

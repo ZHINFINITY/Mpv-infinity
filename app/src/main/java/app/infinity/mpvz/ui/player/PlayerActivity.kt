@@ -36,6 +36,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.MediaStore
@@ -474,6 +475,12 @@ class PlayerActivity :
   private var hardStopRequested = false
   private var wasInPipMode = false
   private var handledPipDismissal = false
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private val pipDismissalStopRunnable = Runnable {
+    if (wasInPipMode && !isInPictureInPictureMode && !isChangingConfigurations && !isFinishing) {
+      handlePipDismissed()
+    }
+  }
   private var pendingBackgroundTransition = false
   private var pendingBackNavigationBackgroundTransition = false
   private var noisyReceiverRegistered = false
@@ -1552,6 +1559,10 @@ class PlayerActivity :
   }
 
   override fun onDestroy() {
+    if (wasInPipMode && !isInPictureInPictureMode && !isChangingConfigurations && !hardStopRequested) {
+      handlePipDismissed()
+    }
+    cancelPendingPipDismissalStop()
     Log.d(TAG, "PlayerActivity onDestroy")
     val playbackWasInitialized = mpvInitialized
     val keepBackgroundPlaybackAlive =
@@ -2317,7 +2328,7 @@ class PlayerActivity :
           alreadyHandled = handledPipDismissal,
         )
       ) {
-        handlePipDismissed()
+        schedulePipDismissalStop()
         return@runCatching
       }
 
@@ -2399,6 +2410,15 @@ class PlayerActivity :
     super.onStop()
   }
 
+  private fun schedulePipDismissalStop() {
+    mainHandler.removeCallbacks(pipDismissalStopRunnable)
+    mainHandler.postDelayed(pipDismissalStopRunnable, 750L)
+  }
+
+  private fun cancelPendingPipDismissalStop() {
+    mainHandler.removeCallbacks(pipDismissalStopRunnable)
+  }
+
   private fun handlePipDismissed() {
     Log.d(TAG, "PiP dismissed; closing playback instead of continuing in background")
     handledPipDismissal = true
@@ -2408,6 +2428,7 @@ class PlayerActivity :
   fun getCurrentPlayableUriForLookup(): String? = currentPlayableUri ?: intent?.dataString
 
   override fun onStart() {
+    cancelPendingPipDismissalStop()
     super.onStart()
     if (!mpvInitialized) return
     MediaPlaybackService.activityForeground = true
@@ -5745,8 +5766,14 @@ class PlayerActivity :
 
     pipHelper.onPictureInPictureModeChanged(isInPictureInPictureMode)
     if (isInPictureInPictureMode) {
+      cancelPendingPipDismissalStop()
       wasInPipMode = true
       handledPipDismissal = false
+    } else if (wasInPipMode) {
+      // Android invokes this transition both when the user expands PiP and when the
+      // system X removes the PiP window. Delay the stop briefly so onStart() can cancel
+      // it for expansion, while the X path still reaches the hard stop.
+      schedulePipDismissalStop()
     }
 
     binding.controls.animate().cancel()
