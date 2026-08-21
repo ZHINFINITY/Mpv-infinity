@@ -67,6 +67,8 @@ Mpv∞ pushes the libmpv experience further with a second playback path based on
 | **Native audio extension** | Media3 playback includes the FFmpeg audio extension for additional audio-format compatibility where the device supports it. |
 | **Fallback protection** | If Native cannot render a video frame, Mpv∞ falls back to MPV and prevents an automatic retry loop for that item. |
 | **Output and decoder information** | Playback statistics and the decoder sheet expose the active engine and available output details when reported by the platform. |
+| **Media3 subtitle tracks** | Native playback supports selectable dialogue and sign subtitle tracks with layered text rendering. |
+| **Media3 chapters and segments** | Native playback exposes chapter-aware timeline information and skippable media segments. |
 
 </details>
 
@@ -163,6 +165,7 @@ Mpv∞ pushes the libmpv experience further with a second playback path based on
 | **Subtitle Font Manager** | Choose a font directory, reload fonts, clear the cache, and select a default subtitle font |
 | **Speech-to-Subtitle Generation** | Experimental subtitle generation from the active audio using supported cloud or offline Whisper providers |
 | **Explicit Subtitle Off** | Disable subtitles directly without cycling through every available track |
+| **Embedded and external subtitle tracks** | Select subtitle tracks from containers or automatically discovered same-name external subtitle files |
 
 </details>
 
@@ -225,6 +228,7 @@ Mpv∞ pushes the libmpv experience further with a second playback path based on
 | **Syncplay Rooms** | Join a Syncplay server room to synchronize pause, resume, seeking, and playback position with other viewers |
 | **Responsive & Dual-Pane Layouts** | Automatic grid sizing plus optional folder/settings dual-pane views on tablets |
 | **Audio Library Mode** | MediaStore and filesystem audio browsing with square artwork, metadata titles, and mixed sibling playlists |
+| **Folder Playlist Sheets** | Open playable video folders as navigable episode or file playlists from the player |
 | **Safer Folder Deletion** | Media-only folder deletion by default, with an explicit option to delete every contained file |
 | **Settings Search Memory** | Search suggestions and recently used settings queries |
 
@@ -266,6 +270,7 @@ Mpv∞ pushes the libmpv experience further with a second playback path based on
 | **Video Compressor** | Built-in FFmpeg-based compression with presets |
 | **12 Video Filter Presets** | Vivid, Cinematic, Dramatic, Ghibli Style, Neon Pop, Deep Black, and more |
 | **Custom Skip Segments** | Intro/outro/recap/credits/preview detection from IntroDB, TIDB, AniSkip, Anime Skip |
+| **One-Tap Segment Skip** | Skip detected intro, outro, recap, credit, and preview segments during playback |
 | **A-B Loop** | In-player looping with visual markers on seekbar |
 | **Frame Navigation** | Frame-by-frame forward/backward with frame number display |
 | **Sleep Timer** | Built-in with quick presets (15/30/45/60 min) |

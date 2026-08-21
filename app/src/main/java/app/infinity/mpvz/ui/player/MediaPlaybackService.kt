@@ -326,8 +326,10 @@ class MediaPlaybackService :
     nativeBackgroundRequested = false
     handingBackToActivity = false
 
-    // Ensure notification channel exists before starting foreground service
+    // Android 16 requires a service started with startForegroundService() to promote itself
+    // promptly. Do this before MediaSession, MPV, preference, or database-backed work.
     createNotificationChannel(this)
+    promoteToForegroundImmediately()
 
     setupMediaSession()
     if (!nativeBackgroundPlayback) {
@@ -391,6 +393,41 @@ class MediaPlaybackService :
       Log.d(TAG, "MPV observer registered")
     } catch (e: Exception) {
       Log.e(TAG, "Error registering MPV observer", e)
+    }
+  }
+
+  /**
+   * Promote the service with a dependency-free notification before any potentially slow
+   * initialization. The full media notification is installed later by onStartCommand().
+   */
+  @SuppressLint("ForegroundServiceType")
+  private fun promoteToForegroundImmediately() {
+    if (foregroundReady) return
+    runCatching {
+      val type =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        } else {
+          0
+        }
+      val startupNotification =
+        NotificationCompat
+          .Builder(this, NOTIFICATION_CHANNEL_ID)
+          .setSmallIcon(R.drawable.ic_launcher_monochrome)
+          .setContentTitle(getString(R.string.player_unknown_video))
+          .setContentText(getString(R.string.notification_playing))
+          .setOngoing(true)
+          .setSilent(true)
+          .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+          .setPriority(NotificationCompat.PRIORITY_LOW)
+          .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+          .build()
+      ServiceCompat.startForeground(this, NOTIFICATION_ID, startupNotification, type)
+      foregroundReady = true
+      Log.d(TAG, "Foreground service promoted immediately")
+    }.onFailure { error ->
+      // Keep the normal onStartCommand() promotion path available for diagnostics/recovery.
+      Log.e(TAG, "Immediate foreground promotion failed", error)
     }
   }
 

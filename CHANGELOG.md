@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.0 — Public Release
+
+- **Foreground media playback:** The playback service promotes itself immediately with a minimal notification before media-session and playback initialization.
+- **Public feature set:** MPV and Media3 playback engines, dual subtitle tracks, chapter-aware playback, folder playlist sheets, skip segments, adaptive controls, HDR and shader pipelines, casting, scripting, audio library mode, and the broader features listed in the README.
+- **Distribution:** Standard APK variants only; no Fongmi or no-Vulkan variants.
+
 ## 1.1.26 — Media3 Subtitle Slots, Skip Intro, and Playlist Race Fixes (CI Candidate)
 
 - **Dual subtitle renderer mapping:** The stale-cue guard now distinguishes custom text-renderer slots from global Media3 renderer indexes, restoring valid dialogue and sign cue delivery while still rejecting late callbacks from disabled slots.
