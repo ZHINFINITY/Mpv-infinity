@@ -115,6 +115,12 @@ interface PlayerHost {
 
   fun isCurrentMediaKnownAudio(): Boolean = false
 
+  /**
+   * Re-run local folder discovery for a standalone file when the playlist sheet is opened.
+   * Hosts without Activity-scoped folder discovery may keep the default no-op behavior.
+   */
+  fun refreshCurrentFolderQueue() {}
+
   fun playQueueItem(index: Int)
 
   fun reorderQueueItem(

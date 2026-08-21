@@ -605,8 +605,12 @@ class Media3PlaybackController(
     latestSubtitleTracks = latestSubtitleTracks.map { track ->
       if (track.id == trackId) track.copy(selected = true) else track
     }
-    applySubtitleTrackSelection()
-    scheduleSubtitleSelectionRetry()
+    // A TextRenderer is not guaranteed to emit an empty CueGroup immediately when its
+    // SelectionOverride changes. Clear the merged output before applying the new selection so a
+    // previously visible sign cannot survive a dialogue-only selection.
+    clearSubtitleCueBuffers()
+    applySubtitleTrackSelection(forceRendererReset = true)
+    stateTickerHandler.postDelayed({ scheduleSubtitleSelectionRetry() }, 80L)
     publishState()
     val (group, trackIndex) = selection
     logInfo(
@@ -625,8 +629,10 @@ class Media3PlaybackController(
     latestSubtitleTracks = latestSubtitleTracks.map { track ->
       if (track.id == trackId) track.copy(selected = false) else track
     }
-    applySubtitleTrackSelection()
-    scheduleSubtitleSelectionRetry()
+    // Media3 may leave the old renderer's last CueGroup visible until another cue arrives.
+    clearSubtitleCueBuffers()
+    applySubtitleTrackSelection(forceRendererReset = true)
+    stateTickerHandler.postDelayed({ scheduleSubtitleSelectionRetry() }, 80L)
     publishState()
     logInfo(
       "unselecting subtitle track id=$trackId " +
@@ -642,7 +648,30 @@ class Media3PlaybackController(
     stateTickerHandler.post(subtitleSelectionRetry)
   }
 
-  private fun applySubtitleTrackSelection() {
+  private fun applySubtitleTrackSelection(forceRendererReset: Boolean = false) {
+    if (forceRendererReset) {
+      // Media3 may retain the last CueGroup while a SelectionOverride is replaced. Disable all
+      // text renderers first, then apply the desired override on a later main-loop turn. This
+      // creates a renderer lifecycle boundary instead of relying only on an optional empty-cue
+      // callback from TextRenderer.
+      val resetParameters =
+        trackSelector
+          .buildUponParameters()
+          .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+          .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      val resetMappedTrackInfo = trackSelector.currentMappedTrackInfo
+      if (resetMappedTrackInfo != null) {
+        for (rendererIndex in 0 until resetMappedTrackInfo.rendererCount) {
+          if (resetMappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) continue
+          @Suppress("DEPRECATION")
+          resetParameters.clearSelectionOverrides(rendererIndex)
+          resetParameters.setRendererDisabled(rendererIndex, true)
+        }
+      }
+      trackSelector.setParameters(resetParameters)
+      stateTickerHandler.postDelayed({ applySubtitleTrackSelection() }, 60L)
+      return
+    }
     subtitleTrackIdsByRenderer.clear()
     signRendererByIndex.clear()
     val selectedTracks =
@@ -726,6 +755,7 @@ class Media3PlaybackController(
     latestSubtitleTracks = latestSubtitleTracks.map { track -> track.copy(selected = false) }
     publishState()
     logInfo("disabling subtitles")
+    clearSubtitleCueBuffers()
     applySubtitleTrackSelection()
     return true
   }
@@ -1033,14 +1063,10 @@ class Media3PlaybackController(
       }
       .distinctBy { it.start }
 
-  override fun onCues(cueGroup: CueGroup) {
-    // Player.Listener does not identify which text renderer emitted this callback. The custom
-    // renderer outputs below are authoritative; retain this as a fallback for the first callback
-    // during player startup so existing single-track files still render immediately.
-    if (subtitleCuesByRenderer.isEmpty()) {
-      subtitleCuesByRenderer[0] = cueGroup.cues
-      postMergedSubtitleCues()
-    }
+  override fun onCues(@Suppress("UNUSED_PARAMETER") cueGroup: CueGroup) {
+    // The two custom TextRenderer instances are the authoritative cue sources because they
+    // preserve renderer identity. Do not copy this renderer-agnostic callback into slot 0: after a
+    // selection change it can reinsert a stale sign CueGroup after the sign track is disabled.
   }
 
   private fun postMergedSubtitleCues() {

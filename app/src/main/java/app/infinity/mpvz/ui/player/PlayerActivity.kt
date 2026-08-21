@@ -275,6 +275,9 @@ class PlayerActivity :
    */
   private var isSecureFolderLaunch = false
 
+  /** Original content/file URI from the current file-manager launch, retained for folder refresh. */
+  private var externalContentLaunchUri: Uri? = null
+
   // ==================== Dependency Injection ====================
 
   /**
@@ -758,6 +761,8 @@ class PlayerActivity :
     val isExternalContentMediaLaunch =
       intent.action == Intent.ACTION_VIEW &&
         intent.data?.scheme in setOf(ContentResolver.SCHEME_CONTENT, ContentResolver.SCHEME_FILE)
+    externalContentLaunchUri =
+      if (isExternalContentMediaLaunch) intent.data else null
     val canReuseSavedPlaybackSession = hasReusableSavedPlaybackSession && !isExternalContentMediaLaunch
 
     // If playlist is empty but playlist_id is provided, load asynchronously from database
@@ -3858,6 +3863,37 @@ class PlayerActivity :
       ?: intent.getStringExtra("filename")?.takeIf { !HttpUtils.isLikelyJunkTitle(it) }
 
   /**
+   * Re-run folder discovery when a standalone file-manager launch still has a singleton queue.
+   * This is triggered by the playlist-sheet action rather than every Compose recomposition.
+   */
+  override fun refreshCurrentFolderQueue() {
+    if (playlist.size > 1) return
+
+    val sourceUri = externalContentLaunchUri ?: extractUriFromIntent(intent)
+    val localPath =
+      parsePathFromIntent(intent)
+        ?.takeIf { File(it).isFile }
+        ?: sourceUri
+          ?.takeIf {
+            it.scheme == ContentResolver.SCHEME_CONTENT || it.scheme == ContentResolver.SCHEME_FILE
+          }
+          ?.let { uri ->
+            if (uri.scheme == ContentResolver.SCHEME_FILE) uri.path else uri.resolveLocalFilePath(this)
+          }
+          ?.takeIf { File(it).isFile }
+
+    Log.d(
+      TAG,
+      "Playlist sheet refresh requested: queueSize=${playlist.size}, sourceUri=$sourceUri, localPath=$localPath",
+    )
+    if (localPath != null) {
+      generatePlaylistFromFolder(localPath)
+    } else if (sourceUri?.scheme == ContentResolver.SCHEME_CONTENT) {
+      generatePlaylistFromMediaStore(sourceUri)
+    }
+  }
+
+  /**
    * Plays a playlist item by index.
    *
    * @param index The index of the playlist item to play
@@ -5282,8 +5318,13 @@ class PlayerActivity :
     // Auto-generate a folder queue for playlist-mode launches. When scoped storage leaves us
     // with only a content:// URI, use MediaStore metadata instead of passing fd:// to File().
     if (playlist.isEmpty() && playlistId == null && playerPreferences.playlistMode.get()) {
+      val isExternalContentMediaLaunch =
+        intent.action == Intent.ACTION_VIEW &&
+          intent.data?.scheme in setOf(ContentResolver.SCHEME_CONTENT, ContentResolver.SCHEME_FILE)
+      externalContentLaunchUri =
+        if (isExternalContentMediaLaunch) intent.data else null
       val path = parsePathFromIntent(intent)
-      val sourceUri = extractUriFromIntent(intent)
+      val sourceUri = externalContentLaunchUri ?: extractUriFromIntent(intent)
       val localPath =
         path?.takeIf { File(it).isFile }
           ?: sourceUri
