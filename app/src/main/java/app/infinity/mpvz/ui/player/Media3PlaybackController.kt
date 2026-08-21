@@ -634,7 +634,9 @@ class Media3PlaybackController(
     signRendererByIndex.clear()
     val selectedTracks =
       selectedSubtitleTrackIds.mapNotNull { id ->
-        media3SubtitleTrackGroups[id]?.let { id to it }
+        media3SubtitleTrackGroups[id]?.let { (group, trackIndex) ->
+          Triple(id, group, trackIndex)
+        }
       }
     val parameters =
       trackSelector
@@ -656,7 +658,7 @@ class Media3PlaybackController(
         @Suppress("DEPRECATION")
         parameters.clearSelectionOverrides(rendererIndex)
         val selectedTrack =
-          selectedTracks.firstOrNull { (group, trackIndex) ->
+          selectedTracks.firstOrNull { (_, group, trackIndex) ->
             val key = group to trackIndex
             key !in assignedTracks &&
               (0 until rendererGroups.length).any { rendererGroups[it] == group }
@@ -665,7 +667,7 @@ class Media3PlaybackController(
           parameters.setRendererDisabled(rendererIndex, true)
           continue
         }
-        val (group, trackIndex) = selectedTrack
+        val (rendererTrackId, group, trackIndex) = selectedTrack
         val rendererGroupIndex =
           (0 until rendererGroups.length).firstOrNull { rendererGroups[it] == group } ?: continue
         @Suppress("DEPRECATION")
@@ -675,8 +677,6 @@ class Media3PlaybackController(
           DefaultTrackSelector.SelectionOverride(rendererGroupIndex, trackIndex),
         )
         parameters.setRendererDisabled(rendererIndex, false)
-        val rendererTrackId =
-          selectedTracks.first { it.second.first == group && it.second.second == trackIndex }.first
         subtitleTrackIdsByRenderer[rendererIndex] = setOf(rendererTrackId)
         signRendererByIndex[rendererIndex] =
           signSubtitleTitlePattern.containsMatchIn(
