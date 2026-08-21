@@ -126,7 +126,6 @@ import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.CopyPasteOps
 import app.infinity.mpvz.utils.media.MediaSearchEngine
 import app.infinity.mpvz.utils.media.MediaUtils
-import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
 import app.infinity.mpvz.utils.permission.PermissionUtils
 import app.infinity.mpvz.utils.sort.SortUtils
@@ -389,6 +388,17 @@ object FolderListScreen : Screen {
         getId = { it.bucketId },
         onDeleteItems = { folders, _ -> deleteFolders(folders) },
         onOperationComplete = { viewModel.refresh() },
+      )
+
+    val searchVideos =
+      remember(searchResults) {
+        searchResults.filterIsInstance<FileSystemItem.VideoFile>().map { it.video }
+      }
+    val searchSelectionManager =
+      rememberSelectionManager(
+        items = searchVideos,
+        getId = { it.id },
+        onDeleteItems = { _, _ -> 0 to 0 },
       )
 
     fun moveSelectedFoldersToSecureFolder() {
@@ -804,17 +814,6 @@ object FolderListScreen : Screen {
               FloatingActionButtonMenuItem(
                 onClick = {
                   isFabExpanded.value = false
-                  TemporaryPlaybackQueue.start(context)
-                },
-                icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
-                text = {
-                  Text(text = stringResource(app.infinity.mpvz.R.string.ui_play_queue))
-                },
-              )
-
-              FloatingActionButtonMenuItem(
-                onClick = {
-                  isFabExpanded.value = false
                   showLinkDialog.value = true
                 },
                 icon = { Icon(Icons.RoundedFilled.Link, contentDescription = null) },
@@ -872,8 +871,13 @@ object FolderListScreen : Screen {
                         }
                       },
                       onVideoClick = { video ->
-                        MediaUtils.playFile(video, context)
+                        if (searchSelectionManager.isInSelectionMode) {
+                          searchSelectionManager.toggle(video)
+                        } else {
+                          MediaUtils.playFile(video, context)
+                        }
                       },
+                      videoSelectionManager = searchSelectionManager,
                       mediaLayoutMode = mediaLayoutMode,
                     )
                   }
@@ -1529,6 +1533,7 @@ private fun SearchResultsContent(
   navigationBarHeight: androidx.compose.ui.unit.Dp,
   onFolderClick: (app.infinity.mpvz.domain.media.model.VideoFolder) -> Unit,
   onVideoClick: (app.infinity.mpvz.domain.media.model.Video) -> Unit,
+  videoSelectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<app.infinity.mpvz.domain.media.model.Video, Long>,
   mediaLayoutMode: app.infinity.mpvz.preferences.MediaLayoutMode,
 ) {
   val folders =
@@ -1591,6 +1596,11 @@ private fun SearchResultsContent(
     }
 
   val isGridMode = mediaLayoutMode == app.infinity.mpvz.preferences.MediaLayoutMode.GRID
+  val context = LocalContext.current
+
+  LaunchedEffect(searchResults) {
+    videoSelectionManager.clear()
+  }
 
   Box(modifier = Modifier.fillMaxSize()) {
     if (isGridMode) {
@@ -1641,9 +1651,9 @@ private fun SearchResultsContent(
             val video = videos[index]
             VideoCard(
               video = video,
-              isSelected = false,
+              isSelected = videoSelectionManager.isSelected(video),
               onClick = { onVideoClick(video) },
-              onLongClick = {},
+              onLongClick = { videoSelectionManager.handleLongClick(video) },
               onThumbClick = { onVideoClick(video) },
               isGridMode = true,
               showSubtitleIndicator = showSubtitleIndicator,
@@ -1689,10 +1699,22 @@ private fun SearchResultsContent(
           val video = videos[index]
           VideoCard(
             video = video,
-            isSelected = false,
-            onClick = { onVideoClick(video) },
-            onLongClick = {},
-            onThumbClick = { onVideoClick(video) },
+            isSelected = videoSelectionManager.isSelected(video),
+            onClick = {
+              if (videoSelectionManager.isInSelectionMode) {
+                videoSelectionManager.toggle(video)
+              } else {
+                onVideoClick(video)
+              }
+            },
+            onLongClick = { videoSelectionManager.handleLongClick(video) },
+            onThumbClick = {
+              if (videoSelectionManager.isInSelectionMode) {
+                videoSelectionManager.toggle(video)
+              } else {
+                onVideoClick(video)
+              }
+            },
             isGridMode = false,
             showSubtitleIndicator = showSubtitleIndicator,
             uiConfig = videoCardUiConfig,
@@ -1700,6 +1722,34 @@ private fun SearchResultsContent(
         }
       }
     }
+
+    BrowserBottomBar(
+      isSelectionMode = videoSelectionManager.isInSelectionMode,
+      onCopyClick = {},
+      onMoveClick = {},
+      onRenameClick = {},
+      onDeleteClick = {},
+      onAddToPlaylistClick = {},
+      onInfoClick = {
+        val selectedVideo = videoSelectionManager.getSelectedItems().firstOrNull()
+        if (selectedVideo != null) {
+          context.startActivity(
+            Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java).apply {
+              action = Intent.ACTION_VIEW
+              data = selectedVideo.uri
+            },
+          )
+          videoSelectionManager.clear()
+        }
+      },
+      showCopy = false,
+      showMove = false,
+      showRename = false,
+      showDelete = false,
+      showAddToPlaylist = false,
+      showInfo = videoSelectionManager.isSingleSelection,
+      modifier = Modifier.align(Alignment.BottomCenter),
+    )
   }
 }
 
