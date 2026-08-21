@@ -939,6 +939,13 @@ private val OPEN_SOURCE_LIBRARIES =
       url = "https://developer.android.com/jetpack/androidx/releases/media3",
     ),
     OpenSourceLibrary(
+      name = "Jellyfin Media3 FFmpeg Decoder",
+      artifact = "org.jellyfin.media3:media3-ffmpeg-decoder",
+      descriptionRes = R.string.oss_jellyfin_media3_ffmpeg_description,
+      license = "GPL-3.0",
+      url = "https://github.com/jellyfin/jellyfin-androidx-media",
+    ),
+    OpenSourceLibrary(
       name = "Jsoup",
       artifact = "org.jsoup:jsoup",
       descriptionRes = R.string.oss_jsoup_description,

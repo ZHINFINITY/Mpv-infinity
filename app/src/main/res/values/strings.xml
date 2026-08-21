@@ -1541,6 +1541,7 @@
   <string name="oss_seeker_description">A customizable seekbar component for Jetpack Compose.</string>
   <string name="oss_sora_editor_description">A powerful, efficient code editor for Android with TextMate highlighting.</string>
   <string name="oss_media3_description">Android media libraries for advanced playback and effects.</string>
+  <string name="oss_jellyfin_media3_ffmpeg_description">Jellyfin&#8217;s GPL-3.0 Media3 FFmpeg decoder for additional codec and multichannel audio support, including device-dependent 7.1 playback.</string>
   <string name="oss_jsoup_description">Java HTML Parser for web scraping and document extraction.</string>
   <string name="oss_androidx_core_ktx_description">Core Kotlin extensions for Android framework APIs.</string>
   <string name="oss_androidx_appcompat_description">Backward-compatible versions of Android framework APIs.</string>
