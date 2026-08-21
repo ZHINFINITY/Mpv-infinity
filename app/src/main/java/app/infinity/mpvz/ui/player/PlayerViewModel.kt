@@ -5673,6 +5673,11 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
+  /** Re-run folder discovery for a standalone launch before refreshing the playlist sheet. */
+  fun refreshCurrentFolderQueue() {
+    host.refreshCurrentFolderQueue()
+  }
+
   fun playPlaylistItem(index: Int) {
     host.playQueueItem(index)
   }

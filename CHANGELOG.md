@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.24 — Media3 Subtitle Cue Reset and Playlist Sheet Refresh (Unreleased CI Candidate)
+
+- **Subtitle deselection cleanup:** Explicit subtitle toggles now clear merged Media3 cue buffers and create a renderer disable boundary before applying the new selection, preventing a disabled sign track from remaining visible.
+- **Playlist sheet refresh:** Opening the playlist sheet now retriggers folder discovery through the Activity’s preserved external URI, including direct and compact-control entry points, so a singleton file-manager launch can materialize its nested MKV sibling queue.
+- **Race reduction:** Folder discovery is triggered from one authoritative sheet-open effect rather than duplicate control callbacks.
+- **Release scope:** Unreleased CI validation candidate; repository remains private, no release is being published yet, and the v1.1.23 fixes are preserved.
+
 ## 1.1.23 — Media3 Dialogue+Sign Same-Group Fix and MKV Playlist Index Fix
 
 - **Dialogue+sign same TrackGroup:** When dialogue and sign tracks share the same Media3 `TrackGroup`, both are now assigned to a single text renderer through a multi-index `SelectionOverride`, allowing both to render simultaneously without the toggle workaround.

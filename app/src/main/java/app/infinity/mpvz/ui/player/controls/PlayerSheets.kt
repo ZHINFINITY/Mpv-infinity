@@ -464,6 +464,11 @@ fun PlayerSheets(
       // Refresh once on open and again whenever the asynchronous folder queue publishes siblings.
       val queueState by PlaybackSession.queue.collectAsState()
       LaunchedEffect(queueState.items.size, queueState.currentIndex) {
+        // Some controls, including gesture and compact portrait variants, update sheetShown
+        // directly instead of passing through PlayerControls.onOpenSheet. Trigger discovery here
+        // as the authoritative sheet-open path so a singleton external launch can materialize its
+        // sibling MKV queue regardless of which playlist control opened the sheet.
+        viewModel.refreshCurrentFolderQueue()
         viewModel.refreshPlaylistItems(forceMetadata = true)
       }
 
