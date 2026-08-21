@@ -44,7 +44,6 @@ internal object PlayerLifecyclePolicy {
     wasInPictureInPictureMode &&
       !isInPictureInPictureMode &&
       !isChangingConfigurations &&
-      !backgroundPlaybackEnabled &&
       !isScreenOffOrLocked &&
       !alreadyHandled
 

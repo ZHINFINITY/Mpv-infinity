@@ -51,6 +51,10 @@ object TemporaryPlaybackQueue {
 
   fun start(context: Context) {
     val queue = PlaybackSession.queue.value
+    if (!queue.isTemporaryQueue) {
+      Toast.makeText(context, R.string.queue_empty, Toast.LENGTH_SHORT).show()
+      return
+    }
     val item = queue.currentItem ?: queue.items.firstOrNull() ?: run {
       Toast.makeText(context, R.string.queue_empty, Toast.LENGTH_SHORT).show()
       return
@@ -59,7 +63,7 @@ object TemporaryPlaybackQueue {
 
     val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(item.originalUri)).apply {
       setClass(context, PlayerActivity::class.java)
-      addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+      addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
       putExtra("internal_launch", true)
       putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)

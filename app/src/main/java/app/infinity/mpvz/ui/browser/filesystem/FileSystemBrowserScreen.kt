@@ -118,6 +118,7 @@ import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.media.CopyPasteOps
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
+import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
 import app.infinity.mpvz.utils.permission.PermissionUtils
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
@@ -748,6 +749,17 @@ fun FileSystemBrowserScreen(path: String? = null) {
                         app.infinity.mpvz.R.string.pref_advanced_enable_recently_played_title,
                       ),
                   )
+                },
+              )
+
+              FloatingActionButtonMenuItem(
+                onClick = {
+                  isFabExpanded.value = false
+                  TemporaryPlaybackQueue.start(context)
+                },
+                icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
+                text = {
+                  Text(text = stringResource(app.infinity.mpvz.R.string.ui_play_queue))
                 },
               )
 

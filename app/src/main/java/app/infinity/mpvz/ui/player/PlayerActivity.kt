@@ -2223,6 +2223,11 @@ class PlayerActivity :
     // for an explicit close.
     runCatching { PlaybackSession.stop(clearQueue = true) }
       .onFailure { e -> Log.e(TAG, "Error during explicit native hard stop", e) }
+    // PiP dismissal must also terminate the service that can keep a detached Media3/native
+    // session alive after the Activity task has been removed.
+    MediaPlaybackService.nativeBackgroundRequested = false
+    runCatching { stopService(Intent(this, MediaPlaybackService::class.java)) }
+      .onFailure { e -> Log.e(TAG, "Error stopping playback service after explicit close", e) }
     if (!isFinishing) finishAndRemoveTask()
   }
 
