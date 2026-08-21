@@ -103,10 +103,12 @@ Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Med
 </details>
 
 <details close>
-<summary><b>📺 HDR & Video Pipeline</b></summary>
+<summary><b>📺 HDR, Codec & Video Pipeline</b></summary>
 
 | Feature | Description |
 |---|---|
+| **Native Dolby Vision & HDR10+** | The Media3 Native engine supports device-dependent Dolby Vision and HDR10+ playback through Android’s available hardware codec stack. |
+| **Device Codec Support** | Uses codecs exposed by the device for compatible video formats, HDR profiles, and hardware-accelerated playback. |
 | **Shader-Based HDR Pipeline** | Powered by [hdr-toys](https://github.com/natural-harmonia-gropius/hdr-toys) — 77 bundled GLSL shaders |
 | **Four HDR Modes** | BT.2100 PQ (HDR10), BT.2100 HLG, BT.2020 gamut mapping, Linear HDR |
 | **SDR-to-HDR Boost** | Boost SDR content into HDR range when using Linear HDR pipeline |
