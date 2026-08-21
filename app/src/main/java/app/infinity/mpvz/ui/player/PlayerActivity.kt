@@ -3831,12 +3831,25 @@ class PlayerActivity :
     item?.userAgent?.takeIf { it.isNotBlank() }
       ?: playlistEntity?.userAgent?.takeIf { it.isNotBlank() }
 
+  private fun configuredMpvHeaders(): Map<String, String> =
+    runCatching {
+      File(filesDir, "mpv.conf")
+        .takeIf { it.isFile }
+        ?.readText()
+        ?.let(PlaybackHttpHeaders::fromMpvConf)
+        .orEmpty()
+    }.onFailure { error ->
+      Log.w(TAG, "Unable to read mpv.conf network headers", error)
+    }.getOrDefault(emptyMap())
+
   private fun buildPlaybackHeaders(
     uri: Uri?,
     vararg sources: Map<String, String>,
   ): Map<String, String> {
     if (!HttpUtils.isNetworkStream(uri)) return emptyMap()
-    var headers = PlaybackHttpHeaders.merge(*sources)
+    // mpv.conf is the user’s default network policy. Explicit per-item/intent headers remain
+    // authoritative, while the URL origin is only a final fallback when no Referer was configured.
+    var headers = PlaybackHttpHeaders.merge(configuredMpvHeaders(), *sources)
     headers = PlaybackHttpHeaders.withDefault(headers, "Referer", HttpUtils.extractRefererDomain(uri))
     headers = PlaybackHttpHeaders.withDefault(headers, "User-Agent", NetworkUserAgent.resolve(this))
     return headers
