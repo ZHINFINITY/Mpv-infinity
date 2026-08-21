@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.23 — Media3 Dialogue+Sign Same-Group Fix and MKV Playlist Index Fix
+
+- **Dialogue+sign same TrackGroup:** When dialogue and sign tracks share the same Media3 `TrackGroup`, both are now assigned to a single text renderer through a multi-index `SelectionOverride`, allowing both to render simultaneously without the toggle workaround.
+- **MKV playlist index fallback:** The current-file lookup now falls back to filename matching when exact normalized-path comparison fails because content-URI and filesystem paths are represented differently.
+- **Stable subtitle identity:** Track-map rebuilds preserve the desired subtitle selection using stable track identity keys rather than volatile synthetic IDs.
+- **External launch session bypass:** File-manager `ACTION_VIEW` launches bypass stale saved playback sessions so fresh folder-queue discovery can run.
+- **Release scope:** CI-only validation candidate; repository remains private, only Standard APK variants are in scope, and all v1.1.22 fixes are preserved.
+
 ## 1.1.22 — Media3 Dialogue and Nested MKV Playlist Hotfix (Unreleased CI Candidate)
 
 - **First-load dialogue subtitles:** Dialogue and sign tracks from the same Media3 `TrackGroup` are now assigned one track index per text-renderer slot instead of being batched onto one renderer. This explicitly activates dialogue when both tracks are selected for the first time.

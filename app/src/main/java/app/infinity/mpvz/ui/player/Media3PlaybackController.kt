@@ -89,6 +89,17 @@ class Media3PlaybackController(
   private val subtitleCuesByRenderer = mutableMapOf<Int, List<Cue>>()
   private val subtitleTrackIdsByRenderer = mutableMapOf<Int, Set<Int>>()
   private val signRendererByIndex = mutableMapOf<Int, Boolean>()
+  private data class SubtitleTrackKey(
+    val groupId: String?,
+    val trackIndex: Int,
+    val trackId: String?,
+    val label: String?,
+    val language: String?,
+    val sampleMimeType: String?,
+  )
+  private var subtitleTrackKeysById: Map<Int, SubtitleTrackKey> = emptyMap()
+  // Stable desired selection survives Media3 track-map rebuilds, even when synthetic UI IDs change.
+  private val desiredSubtitleTrackKeys = linkedSetOf<SubtitleTrackKey>()
   private var subtitleCueGeneration = 0L
   private var subtitleSelectionRetryAttempts = 0
   private val subtitleSelectionRetry =
@@ -590,6 +601,7 @@ class Media3PlaybackController(
     val selection = media3SubtitleTrackGroups[trackId] ?: return false
     preserveSubtitleSelection = true
     selectedSubtitleTrackIds += trackId
+    subtitleTrackKeysById[trackId]?.let { desiredSubtitleTrackKeys += it }
     latestSubtitleTracks = latestSubtitleTracks.map { track ->
       if (track.id == trackId) track.copy(selected = true) else track
     }
@@ -609,6 +621,7 @@ class Media3PlaybackController(
     if (trackId !in selectedSubtitleTrackIds && !selectedInSnapshot) return false
     preserveSubtitleSelection = true
     selectedSubtitleTrackIds -= trackId
+    subtitleTrackKeysById[trackId]?.let { desiredSubtitleTrackKeys -= it }
     latestSubtitleTracks = latestSubtitleTracks.map { track ->
       if (track.id == trackId) track.copy(selected = false) else track
     }
@@ -633,11 +646,18 @@ class Media3PlaybackController(
     subtitleTrackIdsByRenderer.clear()
     signRendererByIndex.clear()
     val selectedTracks =
-      selectedSubtitleTrackIds.mapNotNull { id ->
-        media3SubtitleTrackGroups[id]?.let { (group, trackIndex) ->
-          Triple(id, group, trackIndex)
+      selectedSubtitleTrackIds
+        .mapNotNull { id ->
+          media3SubtitleTrackGroups[id]?.let { (group, trackIndex) ->
+            Triple(id, group, trackIndex)
+          }
         }
-      }
+        .sortedWith(
+          compareBy<Triple<Int, androidx.media3.common.TrackGroup, Int>> { selectedTrack ->
+            val title = latestSubtitleTracks.firstOrNull { it.id == selectedTrack.first }?.title.orEmpty()
+            signSubtitleTitlePattern.containsMatchIn(title)
+          }.thenBy { it.first },
+        )
     val parameters =
       trackSelector
         .buildUponParameters()
@@ -645,45 +665,55 @@ class Media3PlaybackController(
         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, selectedTracks.isEmpty())
     val mappedTrackInfo = trackSelector.currentMappedTrackInfo
-    val assignedTracks = mutableSetOf<Pair<androidx.media3.common.TrackGroup, Int>>()
     if (mappedTrackInfo != null && selectedTracks.isNotEmpty()) {
-      // Media3 can expose dialogue and signs in the same TrackGroup. Assign one selected track
-      // index to each text renderer instead of batching the group indices onto one renderer;
-      // batching lets the selector keep only one stream active on the first combined selection.
+      // A single Media3 TrackGroup can contain both dialogue and sign tracks. TrackGroup
+      // selection is renderer-scoped, so assigning one index to each renderer makes the second
+      // index lose to the first renderer's already-assigned group. Batch all selected indices from
+      // each group into one SelectionOverride instead.
+      val tracksByGroup = selectedTracks.groupBy { it.second }
+      val assignedGroups = mutableSetOf<androidx.media3.common.TrackGroup>()
       for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
         if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) continue
         val rendererGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
-        // Clear only this text renderer's deprecated override before assigning the current
-        // selection. Clearing all overrides here could disturb explicit audio selections.
         @Suppress("DEPRECATION")
         parameters.clearSelectionOverrides(rendererIndex)
-        val selectedTrack =
-          selectedTracks.firstOrNull { (_, group, trackIndex) ->
-            val key = group to trackIndex
-            key !in assignedTracks &&
+        val entry =
+          tracksByGroup.entries.firstOrNull { (group, _) ->
+            group !in assignedGroups &&
               (0 until rendererGroups.length).any { rendererGroups[it] == group }
           }
-        if (selectedTrack == null) {
+        if (entry == null) {
           parameters.setRendererDisabled(rendererIndex, true)
           continue
         }
-        val (rendererTrackId, group, trackIndex) = selectedTrack
+        val (group, tracksInGroup) = entry
         val rendererGroupIndex =
           (0 until rendererGroups.length).firstOrNull { rendererGroups[it] == group } ?: continue
+        val trackIndices = tracksInGroup.map { it.third }.distinct().toIntArray()
         @Suppress("DEPRECATION")
         parameters.setSelectionOverride(
           rendererIndex,
           rendererGroups,
-          DefaultTrackSelector.SelectionOverride(rendererGroupIndex, trackIndex),
+          DefaultTrackSelector.SelectionOverride(rendererGroupIndex, *trackIndices),
         )
         parameters.setRendererDisabled(rendererIndex, false)
-        subtitleTrackIdsByRenderer[rendererIndex] = setOf(rendererTrackId)
+        val rendererTrackIds = tracksInGroup.map { it.first }.toSet()
+        subtitleTrackIdsByRenderer[rendererIndex] = rendererTrackIds
         signRendererByIndex[rendererIndex] =
-          signSubtitleTitlePattern.containsMatchIn(
-            latestSubtitleTracks.firstOrNull { it.id == rendererTrackId }?.title.orEmpty(),
-          )
-        assignedTracks += group to trackIndex
-        if (assignedTracks.size >= selectedTracks.size) break
+          rendererTrackIds.any { trackId ->
+            signSubtitleTitlePattern.containsMatchIn(
+              latestSubtitleTracks.firstOrNull { it.id == trackId }?.title.orEmpty(),
+            )
+          }
+        assignedGroups += group
+        if (assignedGroups.size >= tracksByGroup.size) break
+      }
+    } else if (mappedTrackInfo != null) {
+      for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+        if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) continue
+        @Suppress("DEPRECATION")
+        parameters.clearSelectionOverrides(rendererIndex)
+        parameters.setRendererDisabled(rendererIndex, true)
       }
     }
     trackSelector.setParameters(parameters)
@@ -692,6 +722,7 @@ class Media3PlaybackController(
   fun disableSubtitles(): Boolean {
     preserveSubtitleSelection = true
     selectedSubtitleTrackIds.clear()
+    desiredSubtitleTrackKeys.clear()
     latestSubtitleTracks = latestSubtitleTracks.map { track -> track.copy(selected = false) }
     publishState()
     logInfo("disabling subtitles")
@@ -850,10 +881,13 @@ class Media3PlaybackController(
   override fun onEvents(player: Player, events: Player.Events) = publishState()
 
   override fun onTracksChanged(tracks: Tracks) {
+    val previouslySelectedSubtitleKeys =
+      selectedSubtitleTrackIds.mapNotNull { subtitleTrackKeysById[it] }.toSet()
     val audioEntries = mutableListOf<TrackNode>()
     val audioSelections = mutableMapOf<Int, Pair<androidx.media3.common.TrackGroup, Int>>()
     val subtitleEntries = mutableListOf<TrackNode>()
     val subtitleSelections = mutableMapOf<Int, Pair<androidx.media3.common.TrackGroup, Int>>()
+    val subtitleKeys = mutableMapOf<Int, SubtitleTrackKey>()
     var audioId = 1
     var subtitleId = 10_001
     tracks.groups.forEach { group ->
@@ -888,6 +922,15 @@ class Media3PlaybackController(
             val format = group.getTrackFormat(trackIndex)
             val id = subtitleId++
             subtitleSelections[id] = group.mediaTrackGroup to trackIndex
+            subtitleKeys[id] =
+              SubtitleTrackKey(
+                groupId = group.mediaTrackGroup.id,
+                trackIndex = trackIndex,
+                trackId = format.id,
+                label = format.label,
+                language = format.language,
+                sampleMimeType = format.sampleMimeType,
+              )
             subtitleEntries +=
               TrackNode(
                 id = id,
@@ -906,12 +949,29 @@ class Media3PlaybackController(
     }
     media3AudioTrackGroups = audioSelections
     media3SubtitleTrackGroups = subtitleSelections
-    selectedSubtitleTrackIds.retainAll(subtitleSelections.keys)
+    subtitleTrackKeysById = subtitleKeys
+    if (preserveSubtitleSelection) {
+      // Prefer persistent desired keys. The previous ID-to-key snapshot is only a fallback for
+      // selections created before this stable-key state existed.
+      if (desiredSubtitleTrackKeys.isEmpty()) desiredSubtitleTrackKeys += previouslySelectedSubtitleKeys
+      selectedSubtitleTrackIds.clear()
+      selectedSubtitleTrackIds +=
+        subtitleKeys
+          .filterValues { it in desiredSubtitleTrackKeys }
+          .keys
+    } else {
+      selectedSubtitleTrackIds.retainAll(subtitleSelections.keys)
+    }
     if (!preserveSubtitleSelection) {
-      subtitleEntries.filter { it.selected == true }.forEach { selectedSubtitleTrackIds += it.id }
+      subtitleEntries.filter { it.selected == true }.forEach {
+        selectedSubtitleTrackIds += it.id
+        subtitleKeys[it.id]?.let { key -> desiredSubtitleTrackKeys += key }
+      }
     }
     val normalizedSubtitleEntries =
-      subtitleEntries.map { track -> track.copy(selected = track.id in selectedSubtitleTrackIds) }
+      subtitleEntries.map { track ->
+        track.copy(selected = track.id in selectedSubtitleTrackIds)
+      }
     latestVideoFormat =
       tracks.groups
         .asSequence()
@@ -1153,10 +1213,12 @@ class Media3PlaybackController(
     onChaptersChanged(emptyList())
     media3AudioTrackGroups = emptyMap()
     media3SubtitleTrackGroups = emptyMap()
+    subtitleTrackKeysById = emptyMap()
     subtitleTrackIdsByRenderer.clear()
     signRendererByIndex.clear()
     clearSubtitleCueBuffers()
     selectedSubtitleTrackIds.clear()
+    desiredSubtitleTrackKeys.clear()
     preserveSubtitleSelection = false
     requestedAudioTrackId = null
     pendingSeekPositionMs = null
