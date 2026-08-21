@@ -643,12 +643,11 @@ class Media3PlaybackController(
         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, selectedTracks.isEmpty())
     val mappedTrackInfo = trackSelector.currentMappedTrackInfo
-    val assignedGroups = mutableSetOf<androidx.media3.common.TrackGroup>()
+    val assignedTracks = mutableSetOf<Pair<androidx.media3.common.TrackGroup, Int>>()
     if (mappedTrackInfo != null && selectedTracks.isNotEmpty()) {
-      // A single Media3 TrackGroup can contain both dialogue and signs. Keep those tracks in one
-      // SelectionOverride instead of assigning the group twice and silently dropping one track.
-      val byGroup = selectedTracks.groupBy({ it.second.first }, { it.second.second })
-      var rendererCursor = 0
+      // Media3 can expose dialogue and signs in the same TrackGroup. Assign one selected track
+      // index to each text renderer instead of batching the group indices onto one renderer;
+      // batching lets the selector keep only one stream active on the first combined selection.
       for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
         if (mappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) continue
         val rendererGroups = mappedTrackInfo.getTrackGroups(rendererIndex)
@@ -656,36 +655,35 @@ class Media3PlaybackController(
         // selection. Clearing all overrides here could disturb explicit audio selections.
         @Suppress("DEPRECATION")
         parameters.clearSelectionOverrides(rendererIndex)
-        val entry =
-          byGroup.entries.firstOrNull { (group, _) ->
-            group !in assignedGroups &&
+        val selectedTrack =
+          selectedTracks.firstOrNull { (group, trackIndex) ->
+            val key = group to trackIndex
+            key !in assignedTracks &&
               (0 until rendererGroups.length).any { rendererGroups[it] == group }
           }
-        if (entry == null) {
+        if (selectedTrack == null) {
           parameters.setRendererDisabled(rendererIndex, true)
           continue
         }
-        val (group, trackIndices) = entry
+        val (group, trackIndex) = selectedTrack
         val rendererGroupIndex =
           (0 until rendererGroups.length).firstOrNull { rendererGroups[it] == group } ?: continue
         @Suppress("DEPRECATION")
         parameters.setSelectionOverride(
           rendererIndex,
           rendererGroups,
-          DefaultTrackSelector.SelectionOverride(rendererGroupIndex, *trackIndices.distinct().toIntArray()),
+          DefaultTrackSelector.SelectionOverride(rendererGroupIndex, trackIndex),
         )
         parameters.setRendererDisabled(rendererIndex, false)
-        val rendererTrackIds = selectedTracks.filter { it.second.first == group }.map { it.first }.toSet()
-        subtitleTrackIdsByRenderer[rendererIndex] = rendererTrackIds
+        val rendererTrackId =
+          selectedTracks.first { it.second.first == group && it.second.second == trackIndex }.first
+        subtitleTrackIdsByRenderer[rendererIndex] = setOf(rendererTrackId)
         signRendererByIndex[rendererIndex] =
-          rendererTrackIds.any { trackId ->
-            signSubtitleTitlePattern.containsMatchIn(
-              latestSubtitleTracks.firstOrNull { it.id == trackId }?.title.orEmpty(),
-            )
-          }
-        assignedGroups += group
-        rendererCursor++
-        if (rendererCursor >= 2 && assignedGroups.size >= byGroup.size) break
+          signSubtitleTitlePattern.containsMatchIn(
+            latestSubtitleTracks.firstOrNull { it.id == rendererTrackId }?.title.orEmpty(),
+          )
+        assignedTracks += group to trackIndex
+        if (assignedTracks.size >= selectedTracks.size) break
       }
     }
     trackSelector.setParameters(parameters)
@@ -1015,13 +1013,18 @@ class Media3PlaybackController(
 
   private fun makeEmbeddedCueReadable(cue: Cue, signRenderer: Boolean = false): Cue {
     if (signRenderer) {
-      // Sign tracks commonly share coordinates with the original sign/dialogue track. An opaque
-      // dark window prevents the two styled cues from blending their colors while preserving the
-      // embedded ASS/SSA position and alignment.
-      return cue
-        .buildUpon()
-        .setWindowColor(android.graphics.Color.argb(0xE6, 0, 0, 0))
-        .build()
+      // Sign tracks commonly share coordinates with the source sign. Match MPV's readable look:
+      // keep the embedded position/alignment, use an opaque compact window, and reduce only an
+      // explicitly supplied oversized cue size. Dialogue cues keep their original sizing.
+      val builder =
+        cue
+          .buildUpon()
+          .setWindowColor(android.graphics.Color.BLACK)
+      val originalTextSize = cue.textSize
+      if (originalTextSize > 0f && originalTextSize.isFinite()) {
+        builder.setTextSize((originalTextSize * 0.72f).coerceAtLeast(0.01f), cue.textSizeType)
+      }
+      return builder.build()
     }
     if (!cue.windowColorSet) return cue
     val originalColor = cue.windowColor

@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.22 — Media3 Dialogue and Nested MKV Playlist Hotfix (Unreleased CI Candidate)
+
+- **First-load dialogue subtitles:** Dialogue and sign tracks from the same Media3 `TrackGroup` are now assigned one track index per text-renderer slot instead of being batched onto one renderer. This explicitly activates dialogue when both tracks are selected for the first time.
+- **MPV-like sign readability:** Sign cues retain their embedded ASS/SSA position and alignment while receiving a compact opaque window and conservative cue-size normalization; dialogue sizing is unchanged.
+- **File-manager MKV folders:** MediaStore folder discovery can recover a video row by display name and size when a SAF/content URI omits a numeric ID or `RELATIVE_PATH`, allowing ancestor-folder queue generation for nested season layouts.
+- **Release scope:** Unreleased CI validation candidate; repository remains private, only Standard APK variants are in scope, and v1.1.21 optimizations are preserved.
+
 ## 1.1.21 — Playback Efficiency and Resource Cleanup (Unreleased CI Candidate)
 
 - **Reduced duplicate UI work:** Media3 state callbacks now suppress identical snapshots while retaining the 250 ms live position updates needed by the seekbar and controls.

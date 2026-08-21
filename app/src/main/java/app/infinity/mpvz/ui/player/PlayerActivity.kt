@@ -7534,18 +7534,31 @@ class PlayerActivity :
 
       val filesUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
       var currentMediaId: Long? = null
+      var currentDisplayName = ""
+      var currentSize = 0L
       var relativePath =
         contentResolver
           .query(
             currentUri,
-            arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns._ID),
+            arrayOf(
+              MediaStore.MediaColumns.RELATIVE_PATH,
+              MediaStore.MediaColumns._ID,
+              MediaStore.MediaColumns.DISPLAY_NAME,
+              MediaStore.MediaColumns.SIZE,
+            ),
             null,
             null,
             null,
           )?.use { cursor ->
             if (cursor.moveToFirst()) {
-              currentMediaId = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
-              cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)).orEmpty()
+              val idColumn = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+              val pathColumn = cursor.getColumnIndex(MediaStore.MediaColumns.RELATIVE_PATH)
+              val nameColumn = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+              val sizeColumn = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+              if (idColumn != -1) currentMediaId = cursor.getLong(idColumn)
+              if (nameColumn != -1) currentDisplayName = cursor.getString(nameColumn).orEmpty()
+              if (sizeColumn != -1) currentSize = cursor.getLong(sizeColumn)
+              if (pathColumn != -1) cursor.getString(pathColumn).orEmpty() else ""
             } else {
               ""
             }
@@ -7577,8 +7590,41 @@ class PlayerActivity :
             }
         }
       }
+      // A file manager may provide a document URI whose last segment is a provider-specific token,
+      // not the numeric MediaStore ID. If the URI still exposes the filename, use filename plus
+      // size to resolve the corresponding indexed video row and recover its parent folder.
+      if (relativePath.isBlank() && currentDisplayName.isNotBlank()) {
+        val selection =
+          if (currentSize > 0L) {
+            "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.SIZE}=?"
+          } else {
+            "${MediaStore.MediaColumns.DISPLAY_NAME}=?"
+          }
+        val selectionArgs =
+          if (currentSize > 0L) arrayOf(currentDisplayName, currentSize.toString())
+          else arrayOf(currentDisplayName)
+        contentResolver
+          .query(
+            filesUri,
+            arrayOf(
+              MediaStore.MediaColumns.RELATIVE_PATH,
+              MediaStore.MediaColumns._ID,
+            ),
+            selection,
+            selectionArgs,
+            "${MediaStore.MediaColumns.DATE_MODIFIED} DESC",
+          )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+              currentMediaId = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID))
+              relativePath =
+                cursor
+                  .getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH))
+                  .orEmpty()
+            }
+          }
+      }
       if (relativePath.isBlank()) {
-        Log.d(TAG, "MediaStore folder queue skipped: no relative path for $currentUri")
+        Log.d(TAG, "MediaStore folder queue skipped: no relative path for $currentUri name=$currentDisplayName")
         return@runCatching false
       }
       Log.d(TAG, "MediaStore folder probe: uri=$currentUri relativePath=$relativePath currentId=$currentMediaId")
