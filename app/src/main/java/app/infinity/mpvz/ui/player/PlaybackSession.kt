@@ -381,9 +381,18 @@ object PlaybackSession : MPVLib.EventObserver {
     currentIndex: Int,
     isExplicitQueue: Boolean = false,
     isM3u: Boolean = false,
+    isTemporaryQueue: Boolean = false,
   ) {
     nativeLock.withLock {
-      _queue.value = PlaybackQueueReducer.replace(_queue.value, items, currentIndex, isExplicitQueue, isM3u)
+      _queue.value =
+        PlaybackQueueReducer.replace(
+          _queue.value,
+          items,
+          currentIndex,
+          isExplicitQueue,
+          isM3u,
+          isTemporaryQueue,
+        )
       updateState { it.copy(currentItem = _queue.value.currentItem) }
     }
   }
@@ -398,6 +407,14 @@ object PlaybackSession : MPVLib.EventObserver {
   ): Boolean =
     nativeLock.withLock {
       val next = PlaybackQueueReducer.move(_queue.value, from, to) ?: return@withLock false
+      _queue.value = next
+      updateState { it.copy(currentItem = next.currentItem) }
+      true
+    }
+
+  fun removeQueueItem(index: Int): Boolean =
+    nativeLock.withLock {
+      val next = PlaybackQueueReducer.remove(_queue.value, index) ?: return@withLock false
       _queue.value = next
       updateState { it.copy(currentItem = next.currentItem) }
       true

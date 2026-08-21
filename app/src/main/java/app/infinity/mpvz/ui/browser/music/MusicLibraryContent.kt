@@ -135,6 +135,8 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
+import app.infinity.mpvz.ui.player.PlaybackSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -191,6 +193,7 @@ fun MusicLibraryContent(
   val selectedArtist by musicViewModel.selectedArtist.collectAsState()
   val recentlyPlayedFilePath by musicViewModel.recentlyPlayedFilePath.collectAsState()
   val isPlaybackActive by musicViewModel.isPlaybackActive.collectAsState()
+  val temporaryQueue by PlaybackSession.queue.collectAsState()
 
   val browserPreferences = koinInject<BrowserPreferences>()
   val foldersPreferences = koinInject<app.infinity.mpvz.preferences.FoldersPreferences>()
@@ -443,7 +446,36 @@ fun MusicLibraryContent(
               onRenameClick = null,
               isSingleSelection = activeSelectionManager.isSingleSelection,
               onInfoClick = null,
-              onAddToPlaylistClick = null
+              onAddToPlaylistClick = null,
+              onAddToQueueClick = if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
+                {
+                  val items = activeSelectionManager.getSelectedItems()
+                  val videosToQueue = when (selectedTab) {
+                    MusicTab.SONGS -> (items as List<MusicSong>).map { it.toVideo() }
+                    MusicTab.ALBUMS -> {
+                      val selected = items as List<MusicAlbum>
+                      songs.filter { song -> selected.any { album -> song.albumId == album.id || song.album.equals(album.title, ignoreCase = true) } }.map { it.toVideo() }
+                    }
+                    MusicTab.ARTISTS -> {
+                      val selected = items as List<MusicArtist>
+                      songs.filter { song -> selected.any { artist -> song.artist.equals(artist.name, ignoreCase = true) } }.map { it.toVideo() }
+                    }
+                    else -> emptyList()
+                  }
+                  TemporaryPlaybackQueue.add(context, videosToQueue)
+                  activeSelectionManager.clear()
+                }
+              } else null,
+              additionalActions = {
+                if (temporaryQueue.isTemporaryQueue && temporaryQueue.items.isNotEmpty()) {
+                  IconButton(onClick = { TemporaryPlaybackQueue.start(context) }) {
+                    Icon(
+                      Icons.RoundedFilled.QueueMusic,
+                      contentDescription = stringResource(R.string.ui_play_queue),
+                    )
+                  }
+                }
+              }
             )
           }
         }
@@ -783,6 +815,14 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
+                headlineContent = { Text(stringResource(R.string.ui_add_to_queue)) },
+                leadingContent = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
+                modifier = Modifier.clickable {
+                  TemporaryPlaybackQueue.add(context, listOf(song.toVideo()))
+                  selectedSongForOptions = null
+                }
+              )
+              ListItem(
                 headlineContent = { Text("Add to Playlist") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                 modifier = Modifier.clickable {
@@ -921,6 +961,14 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
+                headlineContent = { Text(stringResource(R.string.ui_add_to_queue)) },
+                leadingContent = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
+                modifier = Modifier.clickable {
+                  TemporaryPlaybackQueue.add(context, albumSongs.map { it.toVideo() })
+                  selectedAlbumForOptions = null
+                }
+              )
+              ListItem(
                 headlineContent = { Text("Add Album to Playlist") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                 modifier = Modifier.clickable {
@@ -983,6 +1031,14 @@ fun MusicLibraryContent(
                   val list = artistSongs
                   selectedArtistForOptions = null
                   musicViewModel.playAllSongs(context, list, shuffle = true)
+                }
+              )
+              ListItem(
+                headlineContent = { Text(stringResource(R.string.ui_add_to_queue)) },
+                leadingContent = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
+                modifier = Modifier.clickable {
+                  TemporaryPlaybackQueue.add(context, artistSongs.map { it.toVideo() })
+                  selectedArtistForOptions = null
                 }
               )
               ListItem(

@@ -112,6 +112,8 @@ import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.CopyPasteOps
 import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
+import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
 import app.infinity.mpvz.utils.sort.SortUtils
 import kotlinx.coroutines.delay
@@ -159,6 +161,7 @@ data class VideoListScreen(
     val lastPlayedInFolderPath by viewModel.lastPlayedInFolderPath.collectAsState()
     val playlistMode by playerPreferences.playlistMode.collectAsState()
     val videosWereDeletedOrMoved by viewModel.videosWereDeletedOrMoved.collectAsState()
+    val temporaryQueue by PlaybackSession.queue.collectAsState()
 
     // Sorting
     val videoSortType by browserPreferences.videoSortType.collectAsState()
@@ -381,6 +384,20 @@ data class VideoListScreen(
             } else {
               null
             },
+          onAddToQueueClick = {
+            TemporaryPlaybackQueue.add(context, selectionManager.getSelectedItems())
+            selectionManager.clear()
+          },
+          additionalActions = {
+            if (temporaryQueue.isTemporaryQueue && temporaryQueue.items.isNotEmpty()) {
+              IconButton(onClick = { TemporaryPlaybackQueue.start(context) }) {
+                Icon(
+                  Icons.RoundedFilled.QueueMusic,
+                  contentDescription = stringResource(R.string.ui_play_queue),
+                )
+              }
+            }
+          },
         )
       },
       floatingActionButton = {

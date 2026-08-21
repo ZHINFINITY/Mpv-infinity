@@ -90,6 +90,7 @@ fun BrowserTopBar(
   onMoveToSecureClick: (() -> Unit)? = null,
   useRemoveIcon: Boolean = false,
   onAddToPlaylistClick: (() -> Unit)? = null,
+  onAddToQueueClick: (() -> Unit)? = null,
   onRestoreClick: (() -> Unit)? = null,
   colors: TopAppBarColors? = null,
   forceHeadlineSmall: Boolean = false,
@@ -115,6 +116,7 @@ fun BrowserTopBar(
       modifier = modifier,
       useRemoveIcon = useRemoveIcon,
       onAddToPlaylist = onAddToPlaylistClick,
+      onAddToQueue = onAddToQueueClick,
       colors = colors,
       additionalActions = additionalActions,
     )
@@ -346,6 +348,7 @@ private fun SelectionTopBar(
   modifier: Modifier = Modifier,
   useRemoveIcon: Boolean = false,
   onAddToPlaylist: (() -> Unit)? = null,
+  onAddToQueue: (() -> Unit)? = null,
   onMoveToSecure: (() -> Unit)? = null,
   onRestore: (() -> Unit)? = null,
   colors: TopAppBarColors? = null,
@@ -489,6 +492,20 @@ private fun SelectionTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_add_to_playlist),
             modifier = Modifier.size(28.dp),
+            tint = MaterialTheme.colorScheme.secondary,
+          )
+        }
+      }
+
+      if (onAddToQueue != null) {
+        IconButton(
+          onClick = onAddToQueue,
+          modifier = Modifier.padding(horizontal = 1.dp),
+        ) {
+          Icon(
+            Icons.RoundedFilled.QueueMusic,
+            contentDescription = stringResource(R.string.ui_add_to_queue),
+            modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.secondary,
           )
         }

@@ -128,6 +128,8 @@ interface PlayerHost {
     to: Int,
   )
 
+  fun removeQueueItem(index: Int) {}
+
   fun hasNextQueueItem(): Boolean
 
   fun hasPreviousQueueItem(): Boolean

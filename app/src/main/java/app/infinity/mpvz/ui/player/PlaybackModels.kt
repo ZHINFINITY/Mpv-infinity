@@ -83,6 +83,7 @@ data class PlaybackQueueState(
   val currentIndex: Int = -1,
   val isExplicitQueue: Boolean = false,
   val isM3u: Boolean = false,
+  val isTemporaryQueue: Boolean = false,
   val repeatMode: RepeatMode = RepeatMode.OFF,
   val shuffleEnabled: Boolean = false,
   val shuffleOrder: List<Int> = emptyList(),
@@ -102,6 +103,7 @@ internal object PlaybackQueueReducer {
     requestedIndex: Int,
     isExplicitQueue: Boolean,
     isM3u: Boolean,
+    isTemporaryQueue: Boolean,
   ): PlaybackQueueState {
     if (items.isEmpty()) {
       return previous.copy(
@@ -109,6 +111,7 @@ internal object PlaybackQueueReducer {
         currentIndex = -1,
         isExplicitQueue = false,
         isM3u = false,
+        isTemporaryQueue = false,
         shuffleOrder = emptyList(),
         shufflePosition = -1,
       )
@@ -121,6 +124,7 @@ internal object PlaybackQueueReducer {
         currentIndex = index,
         isExplicitQueue = isExplicitQueue,
         isM3u = isM3u,
+        isTemporaryQueue = isTemporaryQueue,
       ),
     )
   }
@@ -160,6 +164,19 @@ internal object PlaybackQueueReducer {
       }
 
     return rebuildShuffle(previous.copy(items = reordered, currentIndex = newCurrentIndex))
+  }
+
+  fun remove(
+    previous: PlaybackQueueState,
+    index: Int,
+  ): PlaybackQueueState? {
+    if (index !in previous.items.indices || previous.items.size <= 1 || index == previous.currentIndex) {
+      return null
+    }
+
+    val remaining = previous.items.toMutableList().apply { removeAt(index) }
+    val newCurrentIndex = if (index < previous.currentIndex) previous.currentIndex - 1 else previous.currentIndex
+    return rebuildShuffle(previous.copy(items = remaining, currentIndex = newCurrentIndex))
   }
 
   fun setRepeatMode(

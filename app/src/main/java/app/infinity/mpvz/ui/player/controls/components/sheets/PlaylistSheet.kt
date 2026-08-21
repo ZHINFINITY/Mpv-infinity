@@ -187,6 +187,7 @@ fun PlaylistSheet(
   onDismissRequest: () -> Unit,
   onItemClick: (PlaylistItem) -> Unit,
   onReorder: ((Int, Int) -> Unit)? = null,
+  onRemove: ((PlaylistItem) -> Unit)? = null,
   totalCount: Int = playlist.size,
   isM3UPlaylist: Boolean = false,
   playerPreferences: app.infinity.mpvz.preferences.PlayerPreferences,
@@ -389,6 +390,11 @@ fun PlaylistSheet(
                     dragHandle = {
                       DragHandle(scope = this, isDragging = isDragging)
                     },
+                    removeAction = if (onRemove != null && !item.isPlaying) {
+                      { onRemove(item) }
+                    } else {
+                      null
+                    },
                   )
                 }
               } else {
@@ -399,6 +405,11 @@ fun PlaylistSheet(
                   skipThumbnail = false,
                   accentColor = accentColor,
                   isAudioOnly = isAudioOnly,
+                  removeAction = if (onRemove != null && !item.isPlaying) {
+                    { onRemove(item) }
+                  } else {
+                    null
+                  },
                 )
               }
             }
@@ -481,6 +492,7 @@ fun PlaylistTrackListItem(
   isAudioOnly: Boolean = false,
   modifier: Modifier = Modifier,
   dragHandle: @Composable () -> Unit = {},
+  removeAction: (() -> Unit)? = null,
 ) {
   val isAudioItem = item.isAudio
   val effectiveItem =
@@ -685,6 +697,16 @@ fun PlaylistTrackListItem(
                 ),
             )
           }
+        }
+      }
+
+      if (removeAction != null) {
+        IconButton(onClick = removeAction) {
+          Icon(
+            imageVector = Icons.RoundedFilled.Delete,
+            contentDescription = androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_remove_from_queue),
+            tint = MaterialTheme.colorScheme.error,
+          )
         }
       }
 
