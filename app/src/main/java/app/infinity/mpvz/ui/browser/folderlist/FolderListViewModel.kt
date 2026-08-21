@@ -270,27 +270,26 @@ class FolderListViewModel(
                 // Count new unplayed videos
                 val newCount =
                   videos.count { video ->
-                    // Check if video was modified within threshold days
-                    val videoAge = currentTime - (video.dateModified * 1000)
-                    val isRecent = videoAge <= thresholdMillis
+                    // Keep the folder badge semantics identical to the video-list NEW label.
+                    val videoAge = currentTime - (video.dateModified * 1000L)
+                    val isRecent = thresholdDays == 0 || videoAge <= thresholdMillis
 
-                    // A video counts as "unplayed" until it has been watched to the
-                    // configured threshold. Threshold 0 ("Infinitely") keeps it unplayed.
                     val playbackState = playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.uri.toString()))
                       ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.path))
                       ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri("file://${video.path}"))
-                    val isUnplayed =
-                      if (playbackState != null && video.duration > 0) {
-                        val durationSeconds = video.duration / 1000
-                        val watched = durationSeconds - playbackState.timeRemaining.toLong()
-                        val progressValue =
-                          (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
-                        watchedThreshold <= 0 || progressValue < (watchedThreshold / 100f)
-                      } else {
-                        playbackState == null
-                      }
+                    val isWatched =
+                      playbackState?.hasBeenWatched == true ||
+                        if (playbackState != null && video.duration > 0) {
+                          val durationSeconds = video.duration / 1000
+                          val watched = durationSeconds - playbackState.timeRemaining.toLong()
+                          val progressValue =
+                            (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
+                          watchedThreshold > 0 && progressValue >= (watchedThreshold / 100f)
+                        } else {
+                          false
+                        }
 
-                    isRecent && isUnplayed
+                    isRecent && !isWatched
                   }
 
                 FolderWithNewCount(folder, newCount)
