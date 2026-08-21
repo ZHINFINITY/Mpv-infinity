@@ -1374,6 +1374,6 @@ class Media3PlaybackController(
     }
 
   private companion object {
-    const val TAG = "mpvrx"
+    const val TAG = "MpvInfinity"
   }
 }

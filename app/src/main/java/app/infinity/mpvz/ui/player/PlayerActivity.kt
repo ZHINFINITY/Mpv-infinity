@@ -1194,6 +1194,14 @@ class PlayerActivity :
     return playableUri
   }
 
+  private fun redactedUrlForLog(value: String): String {
+    val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return "<invalid-url>"
+    val parameterNames = uri.queryParameterNames
+    if (parameterNames.isEmpty()) return value
+    val base = uri.buildUpon().clearQuery().build().toString()
+    return "$base?${parameterNames.joinToString("&") { "$it=<redacted>" }}"
+  }
+
   private fun shouldUseFastMedia3Start(item: PlaybackItem): Boolean {
     val sourceUri = media3SourceUri(item)
     val sizeBytes =
@@ -1220,8 +1228,10 @@ class PlayerActivity :
     val sourceUri = media3SourceUri(item)
     AppDebugLog.info(
       TAG,
-      "Media3: source resolved original=${item.originalUri} playable=${item.playableUri} " +
-        "resolved=$sourceUri scheme=${sourceUri.scheme ?: "none"} " +
+      "Media3: source resolved original=${redactedUrlForLog(item.originalUri)} " +
+        "playable=${redactedUrlForLog(item.playableUri)} " +
+        "resolved=${redactedUrlForLog(sourceUri.toString())} " +
+        "scheme=${sourceUri.scheme ?: "none"} " +
         "localExists=${sourceUri.path?.let(::File)?.exists() ?: false}",
     )
 
@@ -1701,7 +1711,7 @@ class PlayerActivity :
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (error: Exception) {
-      AppDebugLog.info(TAG, "Media3: Dolby Vision preflight unavailable source=$source error=${error.message}")
+      AppDebugLog.info(TAG, "Media3: Dolby Vision preflight unavailable source=${redactedUrlForLog(source)} error=${error.message}")
       null
     } finally {
       runCatching { extractor.release() }
@@ -1783,8 +1793,9 @@ class PlayerActivity :
     }
     AppDebugLog.info(
       TAG,
-      "Playback engine selected engine=MEDIA3 uri=${item.playableUri} " +
-        "originalUri=${item.originalUri} title=${item.title.orEmpty().ifBlank { "<untitled>" }} " +
+      "Playback engine selected engine=MEDIA3 uri=${redactedUrlForLog(item.playableUri)} " +
+        "originalUri=${redactedUrlForLog(item.originalUri)} " +
+        "title=${item.title.orEmpty().ifBlank { "<untitled>" }} " +
         "configuredMode=${decoderPreferences.playbackEngine.get().name}",
     )
     val startsAtZero =
@@ -1948,8 +1959,8 @@ class PlayerActivity :
     AppDebugLog.info(
       TAG,
       "Playback engine selected engine=MPV " +
-        "uri=${currentItem?.playableUri.orEmpty()} " +
-        "originalUri=${currentItem?.originalUri.orEmpty()} " +
+        "uri=${redactedUrlForLog(currentItem?.playableUri.orEmpty())} " +
+        "originalUri=${redactedUrlForLog(currentItem?.originalUri.orEmpty())} " +
         "title=${currentItem?.title.orEmpty().ifBlank { "<untitled>" }} " +
         "configuredMode=${decoderPreferences.playbackEngine.get().name}",
     )
@@ -3976,7 +3987,7 @@ class PlayerActivity :
 
     val uri = parsePathFromIntent(intent)
     if (uri == null) {
-      Log.e(TAG, "Unable to resolve playable media URI: ${extractUriFromIntent(intent)}")
+      Log.e(TAG, "Unable to resolve playable media URI: ${redactedUrlForLog(extractUriFromIntent(intent).toString())}")
       viewModel.onVideoLoadCompleted()
       viewModel.showToast(getString(R.string.toast_playback_load_failed))
       return null
@@ -8100,7 +8111,7 @@ class PlayerActivity :
     /**
      * General tag for logging from PlayerActivity.
      */
-    const val TAG = "mpvrx"
+    const val TAG = "MpvInfinity"
 
     const val EXTRA_PREPARED_PLAYBACK_QUEUE = "prepared_playback_queue"
     private const val STATE_PLAYLIST_INDEX = "player_state_playlist_index"
