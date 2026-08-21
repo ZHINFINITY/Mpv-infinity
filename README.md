@@ -407,6 +407,9 @@ git push origin v1.0.1-preview.1
 Mpv∞ is maintained by **ZHINFINITY** and follows the same open-source lineage model as mpvRx: it is an independent modified Android player based on the open-source **[mpvRx](https://github.com/Riteshp2001/mpvRx)** project, with the earlier **[mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)** and **[mpv-android](https://github.com/mpv-android)** projects acknowledged as part of that lineage. Mpv∞-specific branding, Native Media3 integration, engine routing, fallback handling, controls, themes, and other changes are maintained separately. Mpv∞ is not affiliated with or endorsed by the upstream maintainers.
 
 - [mpv-android](https://github.com/mpv-android)
+- [AndroidX Media3](https://developer.android.com/jetpack/androidx/releases/media3) for the Native/Media3 playback, audio, UI, and effects stack (**Apache-2.0**).
+- [Jellyfin Media3 FFmpeg Decoder](https://github.com/jellyfin/jellyfin-androidx-media) through `org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1` for additional codec and multichannel audio support (**GPL-3.0**).
+- **Device-dependent 7.1 audio support** is Mpv∞ integration built on the Media3 audio pipeline, the Jellyfin FFmpeg decoder where selected, and codecs exposed by the user’s Android device; it is not a separate third-party library or a universal device-support guarantee.
 - [mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)
 - [mpvKt](https://github.com/abdallahmehiz/mpvKt)
 - [PixelPlayer](https://github.com/theovilardo/PixelPlayer)
