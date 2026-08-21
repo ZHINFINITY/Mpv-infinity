@@ -267,6 +267,14 @@ class Media3PlaybackController(
     private val slot: Int,
   ) : TextOutput {
     override fun onCues(cueGroup: CueGroup) {
+      // A disabled renderer may deliver one final CueGroup after its selection is removed.
+      // Accepting that callback would repopulate stale sign cues after the selection clear.
+      if (slot !in subtitleTrackIdsByRenderer) {
+        if (subtitleCuesByRenderer.remove(slot) != null) {
+          postMergedSubtitleCues()
+        }
+        return
+      }
       subtitleCuesByRenderer[slot] = cueGroup.cues
       postMergedSubtitleCues()
     }
@@ -609,7 +617,7 @@ class Media3PlaybackController(
     // SelectionOverride changes. Clear the merged output before applying the new selection so a
     // previously visible sign cannot survive a dialogue-only selection.
     clearSubtitleCueBuffers()
-    applySubtitleTrackSelection(forceRendererReset = true)
+    applySubtitleTrackSelection()
     stateTickerHandler.postDelayed({ scheduleSubtitleSelectionRetry() }, 80L)
     publishState()
     val (group, trackIndex) = selection
@@ -631,7 +639,7 @@ class Media3PlaybackController(
     }
     // Media3 may leave the old renderer's last CueGroup visible until another cue arrives.
     clearSubtitleCueBuffers()
-    applySubtitleTrackSelection(forceRendererReset = true)
+    applySubtitleTrackSelection()
     stateTickerHandler.postDelayed({ scheduleSubtitleSelectionRetry() }, 80L)
     publishState()
     logInfo(
@@ -648,30 +656,7 @@ class Media3PlaybackController(
     stateTickerHandler.post(subtitleSelectionRetry)
   }
 
-  private fun applySubtitleTrackSelection(forceRendererReset: Boolean = false) {
-    if (forceRendererReset) {
-      // Media3 may retain the last CueGroup while a SelectionOverride is replaced. Disable all
-      // text renderers first, then apply the desired override on a later main-loop turn. This
-      // creates a renderer lifecycle boundary instead of relying only on an optional empty-cue
-      // callback from TextRenderer.
-      val resetParameters =
-        trackSelector
-          .buildUponParameters()
-          .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-          .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-      val resetMappedTrackInfo = trackSelector.currentMappedTrackInfo
-      if (resetMappedTrackInfo != null) {
-        for (rendererIndex in 0 until resetMappedTrackInfo.rendererCount) {
-          if (resetMappedTrackInfo.getRendererType(rendererIndex) != C.TRACK_TYPE_TEXT) continue
-          @Suppress("DEPRECATION")
-          resetParameters.clearSelectionOverrides(rendererIndex)
-          resetParameters.setRendererDisabled(rendererIndex, true)
-        }
-      }
-      trackSelector.setParameters(resetParameters)
-      stateTickerHandler.postDelayed({ applySubtitleTrackSelection() }, 60L)
-      return
-    }
+  private fun applySubtitleTrackSelection() {
     subtitleTrackIdsByRenderer.clear()
     signRendererByIndex.clear()
     val selectedTracks =

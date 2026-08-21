@@ -2,6 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.1.25 — Media3 Subtitle Cue Guard and Playlist Discovery Logging
+
+- **Subtitle stale-cue guard:** SubtitleTextOutput callbacks from disabled renderer slots are now rejected; any cached cues for that slot are cleared immediately so a disabled sign track cannot remain visible after deselection.
+- **Playlist discovery always runs:** The playlist-sheet refresh no longer skips discovery based on the Activity playlist size; fresh discovery runs on every sheet open for external file-manager launches.
+- **Diagnostic logging:** Added detailed logs to sibling resolution and folder generation to expose which guard aborts discovery for nested MKV folders such as Konosuba.
+- **Release scope:** CI-only validation candidate; repository remains private, only Standard APK variants are in scope, and all v1.1.24 fixes are preserved.
+
 ## 1.1.24 — Media3 Subtitle Cue Reset and Playlist Sheet Refresh (Unreleased CI Candidate)
 
 - **Subtitle deselection cleanup:** Explicit subtitle toggles now clear merged Media3 cue buffers and create a renderer disable boundary before applying the new selection, preventing a disabled sign track from remaining visible.

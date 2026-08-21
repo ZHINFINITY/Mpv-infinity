@@ -3867,8 +3867,8 @@ class PlayerActivity :
    * This is triggered by the playlist-sheet action rather than every Compose recomposition.
    */
   override fun refreshCurrentFolderQueue() {
-    if (playlist.size > 1) return
-
+    // The Activity playlist can be stale or singleton after an external file-manager launch.
+    // Always perform a fresh discovery when the playlist sheet requests it.
     val sourceUri = externalContentLaunchUri ?: extractUriFromIntent(intent)
     val localPath =
       parsePathFromIntent(intent)
@@ -7411,6 +7411,11 @@ class PlayerActivity :
         }
     }
     val directMediaFiles = parentFolder.listFiles { file -> isEligibleMediaFile(file) }?.toList().orEmpty()
+    Log.d(
+      TAG,
+      "resolveAutoPlaylistSiblingFiles: current=${currentFile.absolutePath} parent=${parentFolder.absolutePath} " +
+        "launchSource=$launchSource directFiles=${directMediaFiles.size} isAudioTarget=$isAudioTarget",
+    )
 
     // Keep the immediate season folder as the default. If it has no usable siblings, walk upward
     // and search descendants so an Anime/Show/Season/Episode layout can still form a queue for
@@ -7431,6 +7436,11 @@ class PlayerActivity :
         ancestorFolder = ancestorFolder.parentFile
       }
     }
+    Log.d(
+      TAG,
+      "resolveAutoPlaylistSiblingFiles: playlistMediaFiles=${playlistMediaFiles.size} " +
+        "after ancestor walk current=${currentFile.absolutePath}",
+    )
 
     val currentFilePath = normalizePlaylistFilePath(currentFile.absolutePath)
     val fileByPath = playlistMediaFiles.associateBy { normalizePlaylistFilePath(it.absolutePath) }
@@ -7444,6 +7454,11 @@ class PlayerActivity :
             browserPreferences.videoSortOrder.get(),
           )
         }.mapNotNull { video -> fileByPath[normalizePlaylistFilePath(video.path)] }
+    Log.d(
+      TAG,
+      "resolveAutoPlaylistSiblingFiles: sortedFromLibrary=${sortedFromLibrary.size} " +
+        "currentMatched=${sortedFromLibrary.any { normalizePlaylistFilePath(it.absolutePath) == currentFilePath }}",
+    )
 
     return if (
       sortedFromLibrary.size > 1 &&
@@ -7700,27 +7715,29 @@ class PlayerActivity :
               val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
               val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
               val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DURATION)
-              while (cursor.moveToNext()) {
-                val name = cursor.getString(nameColumn).orEmpty()
-                if (
-                  name.startsWith(".") ||
-                    !FileTypeUtils.VIDEO_EXTENSIONS.contains(
-                      name.substringAfterLast('.', "").lowercase(),
-                    )
-                ) {
-                  continue
-                }
-                val id = cursor.getLong(idColumn)
-                add(
-                  MediaStoreVideo(
-                    id = id,
-                    uri = ContentUris.withAppendedId(filesUri, id),
-                    name = name,
-                    dateModified = cursor.getLong(dateColumn),
-                    size = cursor.getLong(sizeColumn),
-                    duration = cursor.getLong(durationColumn),
-                  ),
-                )
+              if (cursor.moveToFirst()) {
+                do {
+                  val name = cursor.getString(nameColumn).orEmpty()
+                  if (
+                    name.startsWith(".") ||
+                      !FileTypeUtils.VIDEO_EXTENSIONS.contains(
+                        name.substringAfterLast('.', "").lowercase(),
+                      )
+                  ) {
+                    continue
+                  }
+                  val id = cursor.getLong(idColumn)
+                  add(
+                    MediaStoreVideo(
+                      id = id,
+                      uri = ContentUris.withAppendedId(filesUri, id),
+                      name = name,
+                      dateModified = cursor.getLong(dateColumn),
+                      size = cursor.getLong(sizeColumn),
+                      duration = cursor.getLong(durationColumn),
+                    ),
+                  )
+                } while (cursor.moveToNext())
               }
             }
         }
@@ -7792,7 +7809,10 @@ class PlayerActivity :
 
   private fun generatePlaylistFromFolder(currentPath: String) {
     val expectedGeneration = mediaRequestGeneration
-    val sourceUri = extractUriFromIntent(intent)?.takeIf { it.scheme == "content" }
+    val sourceUri =
+      (externalContentLaunchUri ?: extractUriFromIntent(intent))
+        ?.takeIf { it.scheme == "content" }
+
     lifecycleScope.launch(Dispatchers.IO) {
       val generated = generatePlaylistFromFolderInternal(currentPath, expectedGeneration)
       if (!generated && sourceUri != null && expectedGeneration == mediaRequestGeneration) {
@@ -7808,6 +7828,12 @@ class PlayerActivity :
   ): Boolean =
     runCatching {
       val currentFile = File(currentPath)
+      Log.d(
+        TAG,
+        "generatePlaylistFromFolderInternal: start currentPath=$currentPath " +
+          "absolute=${currentFile.absolutePath} expectedGeneration=$expectedGeneration " +
+          "actualGeneration=$mediaRequestGeneration",
+      )
       if (!currentFile.exists()) {
         Log.d(TAG, "Filesystem folder queue skipped: current file missing $currentPath")
         return@runCatching false
@@ -7815,6 +7841,11 @@ class PlayerActivity :
 
       val launchSource = intent.getStringExtra("launch_source") ?: ""
       val siblingFiles = resolveAutoPlaylistSiblingFiles(currentFile, launchSource)
+      Log.d(
+        TAG,
+        "generatePlaylistFromFolderInternal: siblingFiles=${siblingFiles.size} " +
+          "current=${currentFile.absolutePath}",
+      )
       if (siblingFiles.size <= 1) {
         Log.d(TAG, "Filesystem folder queue skipped: ${siblingFiles.size} video(s) for $currentPath")
         return@runCatching false
@@ -7827,6 +7858,11 @@ class PlayerActivity :
           normalizePlaylistFilePath(it.absolutePath) == currentFilePath
         }.takeIf { it >= 0 }
           ?: siblingFiles.indexOfFirst { it.name == currentFileName }
+      Log.d(
+        TAG,
+        "generatePlaylistFromFolderInternal: newIndex=$newIndex " +
+          "currentName=${currentFile.name} candidates=${siblingFiles.joinToString { it.name }}",
+      )
       if (newIndex < 0) {
         Log.d(TAG, "Filesystem folder queue skipped: current file not found in ${siblingFiles.size} candidates")
         return@runCatching false
