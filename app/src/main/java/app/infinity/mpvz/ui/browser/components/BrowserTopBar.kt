@@ -524,7 +524,7 @@ private fun SelectionTopBar(
         ) {
           Icon(
             Icons.RoundedFilled.Info,
-            contentDescription = stringResource(R.string.info),
+            contentDescription = stringResource(R.string.properties),
             modifier = Modifier.size(24.dp),
             tint =
               if (isSingleSelection) {

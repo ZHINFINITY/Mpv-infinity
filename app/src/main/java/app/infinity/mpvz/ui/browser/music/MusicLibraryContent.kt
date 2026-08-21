@@ -32,7 +32,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -87,6 +89,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -118,6 +121,8 @@ import app.infinity.mpvz.ui.browser.NavigationBarState
 import app.infinity.mpvz.ui.browser.cards.PlaylistCard
 import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
 import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
 import app.infinity.mpvz.ui.browser.dialogs.FolderSortDialog
@@ -1199,10 +1204,14 @@ private fun SongsTabContent(
   }
 
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
-  Column(modifier = Modifier.fillMaxSize()) {
+  val listState = rememberLazyListState()
+  val gridState = rememberLazyGridState()
+  val hasEnoughItems = songs.size > 10
+  Box(modifier = Modifier.fillMaxSize()) {
     if (viewMode == MusicViewMode.GRID) {
       LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 145.dp),
+        state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -1221,6 +1230,7 @@ private fun SongsTabContent(
       }
     } else {
       LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
       ) {
@@ -1236,6 +1246,18 @@ private fun SongsTabContent(
           )
         }
       }
+    }
+    if (hasEnoughItems) {
+      ExpressiveScrollBar(
+        listState = listState.takeIf { viewMode == MusicViewMode.LIST },
+        gridState = gridState.takeIf { viewMode == MusicViewMode.GRID },
+        dragLabelProvider = { index -> fastScrollGlyph(songs.getOrNull(index)?.title) },
+        onDragStateChanged = { },
+        modifier = Modifier
+          .align(Alignment.CenterEnd)
+          .padding(end = 2.dp, bottom = navBarHeight + 6.dp)
+          .graphicsLayer { alpha = 1f },
+      )
     }
   }
 }
