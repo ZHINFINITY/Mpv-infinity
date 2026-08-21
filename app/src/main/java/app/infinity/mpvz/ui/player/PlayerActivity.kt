@@ -752,10 +752,16 @@ class PlayerActivity :
       viewModel.refreshPlaylistItems()
     }
     val hasReusableSavedPlaybackSession = hasValidSavedPlaybackSession()
+    // A file manager's standalone ACTION_VIEW must start fresh. Reusing a prior singleton session
+    // can skip folder discovery and leave the playlist sheet with no generated queue.
+    val isExternalContentMediaLaunch =
+      intent.action == Intent.ACTION_VIEW &&
+        intent.data?.scheme in setOf(ContentResolver.SCHEME_CONTENT, ContentResolver.SCHEME_FILE)
+    val canReuseSavedPlaybackSession = hasReusableSavedPlaybackSession && !isExternalContentMediaLaunch
 
     // If playlist is empty but playlist_id is provided, load asynchronously from database
     // Load all items - LazyColumn handles pagination/virtualization efficiently
-    if (playlist.isEmpty() && playlistId != null && !hasReusableSavedPlaybackSession) {
+    if (playlist.isEmpty() && playlistId != null && !canReuseSavedPlaybackSession) {
       lifecycleScope.launch(Dispatchers.IO) {
         val pid = playlistId ?: return@launch
         try {
@@ -775,7 +781,7 @@ class PlayerActivity :
     if (playlist.isEmpty() &&
       playlistId == null &&
       playerPreferences.playlistMode.get() &&
-      !hasReusableSavedPlaybackSession
+      !canReuseSavedPlaybackSession
     ) {
       val path = parsePathFromIntent(intent)
       val sourceUri = extractUriFromIntent(intent)
@@ -804,7 +810,7 @@ class PlayerActivity :
     // the saved-state attachment below has a chance to claim that exact current item.
     if (intent.action != MediaPlaybackService.ACTION_OPEN_PLAYER &&
       !preparedPlaybackQueue &&
-      !hasReusableSavedPlaybackSession
+      !canReuseSavedPlaybackSession
     ) {
       if (playlist.isEmpty()) PlaybackSession.clearQueue() else publishPlaylistToSession()
     }
@@ -813,7 +819,8 @@ class PlayerActivity :
     setHttpHeadersFromExtras(intent.extras)
 
     val attachedToCurrentSession =
-      attachToCurrentPlaybackSessionIfRequested() || attachToSavedPlaybackSessionIfValid()
+      !isExternalContentMediaLaunch &&
+        (attachToCurrentPlaybackSessionIfRequested() || attachToSavedPlaybackSessionIfValid())
     if (!attachedToCurrentSession && !restoredSavedPlaylistItem && playlist.isNotEmpty()) {
       pendingSavedPlaylistSelection = null
     }
@@ -7743,8 +7750,13 @@ class PlayerActivity :
 
   private fun generatePlaylistFromFolder(currentPath: String) {
     val expectedGeneration = mediaRequestGeneration
+    val sourceUri = extractUriFromIntent(intent)?.takeIf { it.scheme == "content" }
     lifecycleScope.launch(Dispatchers.IO) {
-      generatePlaylistFromFolderInternal(currentPath, expectedGeneration)
+      val generated = generatePlaylistFromFolderInternal(currentPath, expectedGeneration)
+      if (!generated && sourceUri != null && expectedGeneration == mediaRequestGeneration) {
+        Log.d(TAG, "Filesystem folder queue unavailable; retrying MediaStore for $sourceUri")
+        generatePlaylistFromMediaStoreInternal(sourceUri, expectedGeneration)
+      }
     }
   }
 
@@ -7754,19 +7766,33 @@ class PlayerActivity :
   ): Boolean =
     runCatching {
       val currentFile = File(currentPath)
-      if (!currentFile.exists()) return@runCatching false
+      if (!currentFile.exists()) {
+        Log.d(TAG, "Filesystem folder queue skipped: current file missing $currentPath")
+        return@runCatching false
+      }
 
       val launchSource = intent.getStringExtra("launch_source") ?: ""
       val siblingFiles = resolveAutoPlaylistSiblingFiles(currentFile, launchSource)
-      if (siblingFiles.size <= 1) return@runCatching false
+      if (siblingFiles.size <= 1) {
+        Log.d(TAG, "Filesystem folder queue skipped: ${siblingFiles.size} video(s) for $currentPath")
+        return@runCatching false
+      }
 
       val currentFilePath = normalizePlaylistFilePath(currentFile.absolutePath)
+      val currentFileName = currentFile.name
       val newIndex =
         siblingFiles.indexOfFirst {
           normalizePlaylistFilePath(it.absolutePath) == currentFilePath
-        }
-      if (newIndex < 0) return@runCatching false
-      if (expectedGeneration != mediaRequestGeneration) return@runCatching false
+        }.takeIf { it >= 0 }
+          ?: siblingFiles.indexOfFirst { it.name == currentFileName }
+      if (newIndex < 0) {
+        Log.d(TAG, "Filesystem folder queue skipped: current file not found in ${siblingFiles.size} candidates")
+        return@runCatching false
+      }
+      if (expectedGeneration != mediaRequestGeneration) {
+        Log.d(TAG, "Filesystem folder queue skipped: stale generation expected=$expectedGeneration actual=$mediaRequestGeneration")
+        return@runCatching false
+      }
 
       withContext(Dispatchers.Main) {
         if (expectedGeneration != mediaRequestGeneration) return@withContext
