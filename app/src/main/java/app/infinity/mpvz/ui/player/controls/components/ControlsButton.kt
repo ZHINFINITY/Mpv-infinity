@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerControlsStyle
 import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.theme.AppTheme
 import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -56,15 +55,9 @@ fun ControlsButton(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
   val playerControlsStyle by appearancePreferences.playerControlsStyle.collectAsState()
-  val appTheme by appearancePreferences.appTheme.collectAsState()
   val glassTheme =
     playerControlsStyle == PlayerControlsStyle.Glass || playerControlsStyle == PlayerControlsStyle.Glossy
-  val playerContentColor =
-    if (appTheme == AppTheme.Monochrome || playerControlsStyle == PlayerControlsStyle.Glossy) {
-      Color.White
-    } else {
-      MaterialTheme.colorScheme.onSurface
-    }
+  val playerContentColor = MaterialTheme.colorScheme.onSurface
   val clickEvent = LocalPlayerButtonsClickEvent.current
   val iconContent: @Composable () -> Unit = {
     Icon(

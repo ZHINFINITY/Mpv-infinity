@@ -20,10 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerControlsStyle
-import app.infinity.mpvz.ui.theme.AppTheme
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 
@@ -42,14 +42,9 @@ fun PlayerGlassSurface(
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val playerControlsStyle by appearancePreferences.playerControlsStyle.collectAsState()
-  val appTheme by appearancePreferences.appTheme.collectAsState()
-  val resolvedContentColor =
-    contentColor
-      ?: if (appTheme == AppTheme.Monochrome || playerControlsStyle == PlayerControlsStyle.Glossy) {
-        Color.White
-      } else {
-        MaterialTheme.colorScheme.onSurface
-      }
+  val isDarkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+  val resolvedContentColor = contentColor ?: MaterialTheme.colorScheme.onSurface
+  val glassTint = if (isDarkSurface) Color.White else Color.Black
 
   if (playerControlsStyle == PlayerControlsStyle.Glass) {
     val decoratedModifier =
@@ -61,8 +56,8 @@ fun PlayerGlassSurface(
             Brush.linearGradient(
               colors =
                 listOf(
-                  Color.White.copy(alpha = 0.16f),
-                  Color.White.copy(alpha = 0.04f),
+                  glassTint.copy(alpha = 0.16f),
+                  glassTint.copy(alpha = 0.04f),
                 ),
             ),
           shape = shape,
@@ -72,7 +67,12 @@ fun PlayerGlassSurface(
     Surface(
       modifier = decoratedModifier,
       shape = shape,
-      color = if (hideBackground) Color.Transparent else Color.Black.copy(alpha = 0.30f),
+      color =
+        if (hideBackground) {
+          Color.Transparent
+        } else {
+          glassTint.copy(alpha = 0.30f)
+        },
       contentColor = resolvedContentColor,
       tonalElevation = 0.dp,
       shadowElevation = 0.dp,
@@ -80,7 +80,7 @@ fun PlayerGlassSurface(
         if (hideBackground) {
           null
         } else {
-          BorderStroke(1.dp, Color.White.copy(alpha = 0.24f))
+          BorderStroke(1.dp, glassTint.copy(alpha = 0.24f))
         },
       content = content,
     )
@@ -94,9 +94,9 @@ fun PlayerGlassSurface(
             Brush.linearGradient(
               colors =
                 listOf(
-                  Color.White.copy(alpha = 0.22f),
-                  Color.White.copy(alpha = 0.08f),
-                  Color.White.copy(alpha = 0.02f),
+                  glassTint.copy(alpha = 0.22f),
+                  glassTint.copy(alpha = 0.08f),
+                  glassTint.copy(alpha = 0.02f),
                 ),
             ),
           shape = shape,
@@ -109,7 +109,12 @@ fun PlayerGlassSurface(
       contentColor = resolvedContentColor,
       tonalElevation = 0.dp,
       shadowElevation = 0.dp,
-      border = if (hideBackground) null else BorderStroke(0.5.dp, Color.White.copy(alpha = 0.18f)),
+      border =
+        if (hideBackground) {
+          null
+        } else {
+          BorderStroke(0.5.dp, glassTint.copy(alpha = 0.18f))
+        },
       content = content,
     )
   } else {
