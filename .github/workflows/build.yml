@@ -202,11 +202,52 @@ jobs:
             fi
           fi
 
-      - name: Upload Standard debug APKs
+      - name: List Standard debug APK variants
+        if: ${{ env.SELECTED_FLAVOR == 'standard' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'all' }}
+        shell: bash
+        run: find app/build/outputs/apk/standard/debug -maxdepth 1 -type f -name 'app-standard-*-debug.apk' -print
+
+      - name: Upload Standard debug universal APK
         if: ${{ env.SELECTED_FLAVOR == 'standard' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'all' }}
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-infinity-standard-debug-${{ env.SHORT_SHA }}
-          path: app/build/outputs/apk/standard/debug/app-standard-*-debug.apk
-          if-no-files-found: error
+          name: mpv-infinity-standard-debug-universal-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/debug/app-standard-universal-debug.apk
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Standard debug arm64-v8a APK
+        if: ${{ env.SELECTED_FLAVOR == 'standard' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'all' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-infinity-standard-debug-arm64-v8a-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/debug/app-standard-arm64-v8a-debug.apk
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Standard debug armeabi-v7a APK
+        if: ${{ env.SELECTED_FLAVOR == 'standard' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'all' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-infinity-standard-debug-armeabi-v7a-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/debug/app-standard-armeabi-v7a-debug.apk
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Standard debug x86 APK
+        if: ${{ env.SELECTED_FLAVOR == 'standard' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'all' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-infinity-standard-debug-x86-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/debug/app-standard-x86-debug.apk
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Standard debug x86_64 APK
+        if: ${{ env.SELECTED_FLAVOR == 'standard' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'all' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-infinity-standard-debug-x86_64-${{ env.SHORT_SHA }}
+          path: app/build/outputs/apk/standard/debug/app-standard-x86_64-debug.apk
+          if-no-files-found: ignore
           retention-days: 7

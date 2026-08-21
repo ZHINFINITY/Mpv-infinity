@@ -53,11 +53,11 @@ import androidx.media3.ui.PlayerView
 @OptIn(UnstableApi::class)
 class Media3PlaybackController(
   context: Context,
-  private val onStateChanged: (State) -> Unit = {},
-  private val onError: (PlaybackException) -> Unit = {},
-  private val onVideoFrameRendered: () -> Unit = {},
-  private val onEnded: () -> Unit = {},
-  private val onChaptersChanged: (List<dev.vivvvek.seeker.Segment>) -> Unit = {},
+  private var onStateChanged: (State) -> Unit = {},
+  private var onError: (PlaybackException) -> Unit = {},
+  private var onVideoFrameRendered: () -> Unit = {},
+  private var onEnded: () -> Unit = {},
+  private var onChaptersChanged: (List<dev.vivvvek.seeker.Segment>) -> Unit = {},
 ) : Player.Listener, AnalyticsListener {
   data class State(
     val playbackState: Int = Player.STATE_IDLE,
@@ -567,6 +567,7 @@ class Media3PlaybackController(
     val targetPositionMs = positionMs.coerceAtLeast(0L)
     clearSubtitleCueBuffers()
     if (restoreSeekableTimelineIfNeeded(targetPositionMs)) return
+    if (rebuildAfterLargeBackwardSeekIfNeeded(targetPositionMs, "seekTo")) return
     pendingSeekPositionMs = targetPositionMs
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
     logInfo("seekTo requested positionMs=$targetPositionMs fast=$fast")
@@ -582,6 +583,7 @@ class Media3PlaybackController(
     val targetPositionMs = (player.currentPosition + offsetMs).coerceAtLeast(0L)
     clearSubtitleCueBuffers()
     if (restoreSeekableTimelineIfNeeded(targetPositionMs)) return
+    if (rebuildAfterLargeBackwardSeekIfNeeded(targetPositionMs, "seekBy offsetMs=$offsetMs")) return
     pendingSeekPositionMs = targetPositionMs
     pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
     logInfo("seekBy requested offsetMs=$offsetMs targetPositionMs=$targetPositionMs seekMode=closestSync")
@@ -589,6 +591,42 @@ class Media3PlaybackController(
     player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     player.seekTo(targetPositionMs)
     player.setSeekParameters(previousSeekParameters)
+  }
+
+  private fun rebuildAfterLargeBackwardSeekIfNeeded(targetPositionMs: Long, reason: String): Boolean {
+    val currentItem = player.currentMediaItem ?: return false
+    val currentPositionMs = player.currentPosition.coerceAtLeast(0L)
+    if (currentPositionMs - targetPositionMs < LARGE_BACKWARD_SEEK_RESET_MS) return false
+
+    val shouldPlay = player.playWhenReady
+    val previousSeekParameters = player.seekParameters
+    pendingSeekPositionMs = targetPositionMs
+    pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
+    fastStartActive = false
+    restoreSeekParametersWhenReady = previousSeekParameters != SeekParameters.EXACT
+    clearSubtitleCueBuffers()
+    player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+    player.setMediaSource(normalMediaSourceFactory.createMediaSource(currentItem), targetPositionMs)
+    player.prepare()
+    player.playWhenReady = shouldPlay
+    if (!restoreSeekParametersWhenReady) {
+      player.setSeekParameters(previousSeekParameters)
+    }
+    logInfo(
+      "large backward seek rebuilt Media3 source reason=$reason " +
+        "fromPositionMs=$currentPositionMs targetPositionMs=$targetPositionMs " +
+        "resetThresholdMs=$LARGE_BACKWARD_SEEK_RESET_MS wasPlaying=$shouldPlay",
+    )
+    return true
+  }
+
+  /** Detach Activity-owned callbacks while allowing an intentional detached Media3 session to play. */
+  fun detachUiCallbacks() {
+    onStateChanged = {}
+    onError = {}
+    onVideoFrameRendered = {}
+    onEnded = {}
+    onChaptersChanged = {}
   }
 
   /** Position to use when handing playback to MPV after a Media3 error. */
@@ -847,6 +885,7 @@ class Media3PlaybackController(
 
   fun release() {
     logInfo("controller releasing")
+    detachUiCallbacks()
     stateTickerHandler.removeCallbacks(stateTicker)
     stateTickerHandler.removeCallbacks(subtitleSelectionRetry)
     subtitleSelectionRetryAttempts = 0
@@ -1375,5 +1414,6 @@ class Media3PlaybackController(
 
   private companion object {
     const val TAG = "MpvInfinity"
+    const val LARGE_BACKWARD_SEEK_RESET_MS = 30_000L
   }
 }

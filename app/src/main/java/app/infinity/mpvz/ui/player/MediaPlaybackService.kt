@@ -893,6 +893,9 @@ class MediaPlaybackService :
 
   private fun stopPlaybackAndService() {
     if (nativeBackgroundPlayback) {
+      PlayerActivity.requestHardStopFromService()
+      runCatching { PlaybackSession.stop(clearQueue = true) }
+        .onFailure { error -> Log.w(TAG, "Unable to clear native background queue on stop", error) }
       stopForegroundNotification()
       stopSelf()
       return

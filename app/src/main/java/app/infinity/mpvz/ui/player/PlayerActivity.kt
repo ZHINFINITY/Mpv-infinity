@@ -148,6 +148,8 @@ import kotlinx.coroutines.yield
 import org.koin.android.ext.android.inject
 import okhttp3.OkHttpClient
 import java.io.File
+import java.lang.ref.WeakReference
+import java.util.Locale
 import java.util.LinkedHashMap
 import kotlin.math.pow
 import kotlin.math.roundToLong
@@ -469,6 +471,7 @@ class PlayerActivity :
   private var isReady = false // Single flag: true when video loaded and ready
   private var isUserFinishing = false
   private var isBackgroundPlaybackSessionActive = false
+  private var hardStopRequested = false
   private var wasInPipMode = false
   private var handledPipDismissal = false
   private var pendingBackgroundTransition = false
@@ -684,6 +687,7 @@ class PlayerActivity :
     }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    activeInstance = WeakReference(this)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     if (redirectUnselectedTorrentToPicker(intent, finishCurrent = true)) return
@@ -1583,7 +1587,11 @@ class PlayerActivity :
       // Otherwise the Activity's focus listener would receive LOSS and pause playback just as
       // the user minimizes into the Mini Player.
       cleanupAudio()
-      if (keepBackgroundPlaybackAlive) MediaPlaybackService.takeAudioOwnershipForDetachedPlayback()
+      if (keepBackgroundPlaybackAlive) {
+        media3PlaybackController.detachUiCallbacks()
+        detachedMedia3Controller = media3PlaybackController
+        MediaPlaybackService.takeAudioOwnershipForDetachedPlayback()
+      }
       cleanupReceivers()
       releaseMediaSession()
       if (!keepBackgroundPlaybackAlive && !torrentPickerHandoff) torrentStreamingEngine.stopStream()
@@ -1593,7 +1601,12 @@ class PlayerActivity :
 
     media3VideoWatchdogJob?.cancel()
     media3VideoWatchdogJob = null
-    if (!keepBackgroundPlaybackAlive) media3PlaybackController.release()
+    media3PlaybackController.detachUiCallbacks()
+    if (!keepBackgroundPlaybackAlive) {
+      media3PlaybackController.release()
+      if (detachedMedia3Controller === media3PlaybackController) detachedMedia3Controller = null
+    }
+    if (activeInstance?.get() === this) activeInstance = null
     super.onDestroy()
     // The core remains alive throughout Android/ViewModel/window cleanup. Only after super returns
 
@@ -2188,6 +2201,23 @@ class PlayerActivity :
     }
 
     super.onPause()
+  }
+
+  private fun requestExplicitHardStop() {
+    if (hardStopRequested) return
+    hardStopRequested = true
+    isUserFinishing = true
+    isBackgroundPlaybackSessionActive = false
+    isInBackgroundPlayback = false
+    pendingBackgroundTransition = false
+    pendingBackNavigationBackgroundTransition = false
+    runCatching {
+      media3PlaybackController.detachUiCallbacks()
+      media3PlaybackController.stop()
+      media3PlaybackController.release()
+      if (detachedMedia3Controller === media3PlaybackController) detachedMedia3Controller = null
+    }.onFailure { e -> Log.e(TAG, "Error during explicit Media3 hard stop", e) }
+    if (!isFinishing) finishAndRemoveTask()
   }
 
   override fun finish() {
@@ -8068,6 +8098,28 @@ class PlayerActivity :
   }
 
   companion object {
+    @Volatile
+    private var activeInstance: WeakReference<PlayerActivity>? = null
+
+    @Volatile
+    private var detachedMedia3Controller: Media3PlaybackController? = null
+
+    /** Stop native Media3 playback when the mini-player/service Stop action is explicit. */
+    fun requestHardStopFromService() {
+      val activity = activeInstance?.get()
+      if (activity != null) {
+        activity.runOnUiThread { activity.requestExplicitHardStop() }
+      } else {
+        detachedMedia3Controller?.let { controller ->
+          detachedMedia3Controller = null
+          runCatching {
+            controller.detachUiCallbacks()
+            controller.release()
+          }
+        }
+      }
+    }
+
     /**
      * Intent action used to return playback result data to the calling activity.
      */
