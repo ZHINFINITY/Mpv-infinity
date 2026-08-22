@@ -458,6 +458,7 @@ class MainActivity : AppCompatActivity() {
   }
 
   override fun onDestroy() {
+    PermissionUtils.clearMediaAccessLauncher(mediaAccessLauncher)
     try {
       super.onDestroy()
     } catch (e: Exception) {

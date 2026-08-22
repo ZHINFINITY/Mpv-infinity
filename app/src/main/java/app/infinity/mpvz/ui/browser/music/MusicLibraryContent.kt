@@ -467,29 +467,10 @@ fun MusicLibraryContent(
                 }
               } else null,
               additionalActions = {
-                if (selectedTab == MusicTab.SONGS) {
-                  IconButton(
-                    onClick = {
-                      if (sortField == MusicSortField.TITLE) {
-                        musicViewModel.toggleSortOrder()
-                      } else {
-                        musicViewModel.setSortField(MusicSortField.TITLE)
-                        musicViewModel.setSortOrder(MusicSortOrder.ASCENDING)
-                      }
-                    }
-                  ) {
-                    Icon(
-                      Icons.RoundedFilled.SortByAlpha,
-                      contentDescription =
-                        if (sortField == MusicSortField.TITLE && sortOrder == MusicSortOrder.DESCENDING) {
-                          "Sort songs by name A-Z"
-                        } else {
-                          "Sort songs by name Z-A"
-                        },
-                    )
-                  }
-                }
-                if (temporaryQueue.isTemporaryQueue && temporaryQueue.items.isNotEmpty()) {
+                // Keep the temporary queue entry point visible even before a queue is populated.
+                // When empty, TemporaryPlaybackQueue.start() gives the user the existing empty-queue
+                // message; when populated, it opens the current mixed audio/video queue.
+                if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
                   IconButton(onClick = { TemporaryPlaybackQueue.start(context) }) {
                     Icon(
                       Icons.RoundedFilled.QueueMusic,
