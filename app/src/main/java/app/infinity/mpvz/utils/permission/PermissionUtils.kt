@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.lang.ref.WeakReference
 
 /**
  * Simplified storage permission utilities with MANAGE_EXTERNAL_STORAGE support.
@@ -49,7 +50,9 @@ import java.io.File
 object PermissionUtils {
   private const val FILE_ACCESS_TAG = "FileAccessRequest"
 
-  private var mediaRequestLauncher: ActivityResultLauncher<IntentSenderRequest>? = null
+  // This launcher belongs to MainActivity. Keep only a weak reference so a destroyed Activity
+  // can be collected after configuration changes or navigation.
+  private var mediaRequestLauncher: WeakReference<ActivityResultLauncher<IntentSenderRequest>>? = null
   private var resultOkCallback: () -> Unit = {}
   private var resultCancelledCallback: () -> Unit = {}
 
@@ -57,7 +60,19 @@ object PermissionUtils {
    * Set the media access launcher from MainActivity.
    */
   fun setMediaAccessLauncher(launcher: ActivityResultLauncher<IntentSenderRequest>) {
-    mediaRequestLauncher = launcher
+    mediaRequestLauncher = WeakReference(launcher)
+  }
+
+  /**
+   * Clear the launcher owned by a destroyed MainActivity. The identity check prevents a stale
+   * Activity from clearing a launcher that belongs to a newer Activity instance.
+   */
+  fun clearMediaAccessLauncher(launcher: ActivityResultLauncher<IntentSenderRequest>) {
+    if (mediaRequestLauncher?.get() === launcher) {
+      mediaRequestLauncher = null
+      resultOkCallback = {}
+      resultCancelledCallback = {}
+    }
   }
 
   /**
@@ -89,7 +104,7 @@ object PermissionUtils {
     return withContext(Dispatchers.Main) {
       suspendCancellableCoroutine { continuation ->
         val launcher =
-          mediaRequestLauncher ?: run {
+          mediaRequestLauncher?.get() ?: run {
             continuation.resumeWith(Result.success(false))
             return@suspendCancellableCoroutine
           }
@@ -111,7 +126,7 @@ object PermissionUtils {
     return withContext(Dispatchers.Main) {
       suspendCancellableCoroutine { continuation ->
         val launcher =
-          mediaRequestLauncher ?: run {
+          mediaRequestLauncher?.get() ?: run {
             continuation.resumeWith(Result.success(false))
             return@suspendCancellableCoroutine
           }
