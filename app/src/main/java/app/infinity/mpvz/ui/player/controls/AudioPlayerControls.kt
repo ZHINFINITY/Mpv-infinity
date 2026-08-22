@@ -790,7 +790,10 @@ fun AudioPlayerControls(
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
-          onClick = onClosePlayer,
+          // Closing the audio UI must use the background-aware handoff path. The explicit
+          // close callback stops playback immediately and is intended for the player’s hard-stop
+          // action, not for dismissing the music screen.
+          onClick = onBackPress,
           modifier = Modifier.align(Alignment.CenterStart),
         ) {
           Icon(
