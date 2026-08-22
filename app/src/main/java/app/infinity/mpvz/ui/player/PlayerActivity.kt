@@ -206,6 +206,7 @@ class PlayerActivity :
       onStateChanged = { state ->
         lifecycleScope.launch(Dispatchers.Main.immediate) {
           media3State = state
+          cachedMedia3State = state
           if (
             playbackEngine == PlaybackEngine.MEDIA3 &&
               state.videoWidth > 0 &&
@@ -492,6 +493,9 @@ class PlayerActivity :
   private var mpvInitialized = false // Track MPV initialization state
   private var playbackEngine by mutableStateOf(PlaybackEngine.MPV)
   private var media3State by mutableStateOf(Media3PlaybackController.State())
+  // Media3 exposes player state on the application thread. Playback polling runs on a worker;
+  // keep the last published snapshot available there instead of touching ExoPlayer off-thread.
+  @Volatile private var cachedMedia3State = Media3PlaybackController.State()
   private var media3ItemId: String? = null
   private var media3PreparedItemId: String? = null
   /** True when MPV was fully stopped so Media3 could exclusively own the current item. */
@@ -1378,10 +1382,16 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         viewModel.isAudioOnly.collect { isAudioOnly ->
           if (isAudioOnly) {
+            // Queue-driven video -> audio transitions do not recreate the Activity. Reapply the
+            // audio window/orientation contract here so the old landscape video state cannot
+            // leave the audio controls clipped or non-interactive.
+            setOrientation()
+            setupWindowFlags()
             viewModel.showControls()
             binding.player.visibility = View.INVISIBLE
+
             try {
-              WindowCompat.setDecorFitsSystemWindows(window, false)
+              WindowCompat.setDecorFitsSystemWindows(window, true)
               windowInsetsController.apply {
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
                 show(WindowInsetsCompat.Type.statusBars())
@@ -1943,6 +1953,7 @@ class PlayerActivity :
       AppDebugLog.info(TAG, "Media3: provisional landscape requested for Dolby Vision item=${item.stableId}")
     }
     media3State = Media3PlaybackController.State()
+    cachedMedia3State = Media3PlaybackController.State()
     media3PreparedItemId = null
     media3ItemId = item.stableId
     media3VideoFrameRendered = false
@@ -2087,6 +2098,7 @@ class PlayerActivity :
     playbackEngine = PlaybackEngine.MPV
     viewModel.setMedia3Chapters(null)
     media3State = Media3PlaybackController.State()
+    cachedMedia3State = Media3PlaybackController.State()
     media3PreparedItemId = null
     media3ItemId = null
     media3ActiveItem = null
@@ -2209,10 +2221,22 @@ class PlayerActivity :
             mediaIdentifier = item.stableId
             currentPlayableUri = item.playableUri
             isReady = false
-            if (isAudioPlaybackItem(item)) {
+            val isAudioItem = isAudioPlaybackItem(item)
+            // Keep Activity and service metadata aligned with the item that is actually active.
+            // The original launch intent may describe the first video in a mixed queue.
+            intent.putExtra("is_audio", isAudioItem)
+            intent.putExtra("media_library_audio", isAudioItem)
+            intent.setDataAndType(Uri.parse(item.originalUri), item.mimeType)
+            viewModel.setAudioOnlyLaunchHint(isAudioItem)
+            if (isAudioItem) {
               viewModel.onAudioLoadStarted()
+              setOrientation()
+              setupWindowFlags()
             } else {
               viewModel.onVideoLoadStarted()
+            }
+            if (serviceBound || mediaPlaybackService != null) {
+              syncBackgroundPlaybackService(updateThumbnail = true)
             }
             viewModel.calculateVideoHash(Uri.parse(item.originalUri))
             viewModel.refreshPlaylistItems()
@@ -4021,6 +4045,10 @@ class PlayerActivity :
     getPlaylistItemByIndex(playlistIndex)?.fileName?.takeIf { it.isNotBlank() } ?: fileName
 
   private fun getPreferredCurrentArtist(): String {
+    currentPlaybackItem()?.artist
+      ?.trim()
+      ?.takeIf { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+      ?.let { return it }
     val propertyKeys =
       listOf(
         "metadata/artist",
@@ -6776,7 +6804,7 @@ class PlayerActivity :
   override fun isMedia3Active(): Boolean = playbackEngine == PlaybackEngine.MEDIA3
 
   override fun media3IsPlaying(): Boolean =
-    playbackEngine == PlaybackEngine.MEDIA3 && media3PlaybackController.currentState().isPlaying
+    playbackEngine == PlaybackEngine.MEDIA3 && cachedMedia3State.isPlaying
 
   override fun media3SetPlayWhenReady(value: Boolean): Boolean {
     if (!isMedia3Active()) return false
@@ -6807,7 +6835,7 @@ class PlayerActivity :
   }
 
   override fun media3PlaybackSpeed(): Float =
-    if (isMedia3Active()) media3PlaybackController.currentState().playbackSpeed else 1f
+    if (isMedia3Active()) cachedMedia3State.playbackSpeed else 1f
 
   override fun media3SetAudioPitchCorrection(enabled: Boolean): Boolean {
     if (!isMedia3Active()) return false
@@ -6886,12 +6914,12 @@ class PlayerActivity :
 
   override fun media3CurrentPositionMs(): Long {
     if (!isMedia3Active()) return 0L
-    return media3PlaybackController.currentState().positionMs
+    return cachedMedia3State.positionMs
   }
 
   override fun media3DurationMs(): Long {
     if (!isMedia3Active()) return 0L
-    return media3PlaybackController.currentState().durationMs
+    return cachedMedia3State.durationMs
   }
 
   override fun media3FrameDurationMs(): Long? {
@@ -7226,7 +7254,12 @@ class PlayerActivity :
       identifier = mediaIdentifier,
     )
     // Mirror playlist state into the service so the notification tap-intent can restore it
-    service.setPlaylistInfo(isAudio = intent.getBooleanExtra("is_audio", false))
+    service.setPlaylistInfo(
+      isAudio =
+        viewModel.isAudioOnly.value ||
+          intent.getBooleanExtra("is_audio", false) ||
+          currentPlaybackItem()?.mimeType?.startsWith("audio/", ignoreCase = true) == true,
+    )
     service.setChapters(viewModel.chapters.value.map { ChapterNode(time = it.start, title = it.name) })
 
     if (!updateThumbnail || thumbnailKey.isBlank()) return

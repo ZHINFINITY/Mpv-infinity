@@ -50,6 +50,7 @@ data class PlaybackItem(
   val networkSource: NetworkPlaybackSource? = null,
   val playlistItemId: Int? = null,
   val artworkUri: String? = null,
+  val artist: String? = null,
 ) {
   companion object {
     fun fromUri(
@@ -61,6 +62,7 @@ data class PlaybackItem(
       networkSource: NetworkPlaybackSource? = null,
       playlistItemId: Int? = null,
       artworkUri: String? = null,
+      artist: String? = null,
     ): PlaybackItem =
       PlaybackItem(
         stableId =
@@ -74,6 +76,7 @@ data class PlaybackItem(
         networkSource = networkSource,
         playlistItemId = playlistItemId,
         artworkUri = artworkUri,
+        artist = artist,
       )
   }
 }
