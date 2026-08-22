@@ -1598,6 +1598,7 @@ class PlayerActivity :
       PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
         backgroundPlaybackEnabled = playbackWasInitialized && isBackgroundPlaybackEnabled(),
         backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
+        audioOnly = viewModel.isAudioOnly.value,
       )
 
 
@@ -2370,6 +2371,7 @@ class PlayerActivity :
             isFinishing = isFinishing,
             isInPictureInPictureMode = isInPictureInPictureMode,
             isScreenOffOrLocked = isDeviceScreenOffOrLocked(),
+            audioOnly = viewModel.isAudioOnly.value,
           )
       if (shouldKeepNativePlayingInBackground) {
         // Media3 owns playback in Native mode; the MPV-backed service handoff cannot recreate or
@@ -2403,9 +2405,15 @@ class PlayerActivity :
           isFinishing = isFinishing,
           isInPictureInPictureMode = isInPictureInPictureMode,
           isScreenOffOrLocked = isDeviceScreenOffOrLocked(),
+          audioOnly = viewModel.isAudioOnly.value,
         )
       ) {
-        if (startBackgroundPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Started) {
+        if (
+          startBackgroundPlayback(
+            allowUserPrompt = false,
+            bindToActivity = !viewModel.isAudioOnly.value,
+          ) == BackgroundPlaybackStartResult.Started
+        ) {
           isBackgroundPlaybackSessionActive = true
           disableVideoForBackground()
         } else {
@@ -3962,6 +3970,32 @@ class PlayerActivity :
   private fun getPreferredCurrentTitle(): String =
     getPlaylistItemByIndex(playlistIndex)?.fileName?.takeIf { it.isNotBlank() } ?: fileName
 
+  private fun getPreferredCurrentArtist(): String {
+    val propertyKeys =
+      listOf(
+        "metadata/artist",
+        "metadata/by-key/artist",
+        "metadata/by-key/Artist",
+        "metadata/by-key/album_artist",
+        "metadata/by-key/albumartist",
+        "metadata/by-key/ALBUMARTIST",
+        "metadata/by-key/performer",
+        "metadata/by-key/PERFORMER",
+        "metadata/by-key/author",
+        "metadata/by-key/composer",
+      )
+    return propertyKeys.firstNotNullOfOrNull { key ->
+      runCatching { PlaybackSession.getPropertyString(key) }.getOrNull()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+    } ?: getPreferredCurrentTitle()
+      .split(" - ", " – ", " — ", limit = 2)
+      .firstOrNull()
+      ?.trim()
+      ?.takeIf { it.length in 1..80 && !it.startsWith("[") }
+      .orEmpty()
+  }
+
   private fun shouldForceCurrentMediaTitle(): Boolean =
     getPlaylistItemByIndex(playlistIndex)?.fileName?.isNotBlank() == true ||
       getExplicitIntentTitle() != null ||
@@ -4436,9 +4470,9 @@ class PlayerActivity :
         }
         viewModel.onVideoLoadCompleted()
         handleFileLoaded(loadGeneration)
-        if (isBackgroundPlaybackEnabled()) {
-          startBackgroundPlayback(allowUserPrompt = false)
-        }
+        // Background service ownership is established by onStop()/Back handoff. Starting or
+        // resyncing it for every foreground FILE_LOADED event makes rapid audio transitions
+        // compete with the live Activity session and can cause stutter.
       }
 
       MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
@@ -6326,7 +6360,10 @@ class PlayerActivity :
    * Responsible for starting and binding to the MediaPlaybackService, which
    * handles background playback.
    */
-  private fun startBackgroundPlayback(allowUserPrompt: Boolean = true): BackgroundPlaybackStartResult {
+  private fun startBackgroundPlayback(
+    allowUserPrompt: Boolean = true,
+    bindToActivity: Boolean = true,
+  ): BackgroundPlaybackStartResult {
     pendingBackgroundPlaybackStart = true
 
     if (!shouldShowPlaybackNotification()) {
@@ -6353,7 +6390,7 @@ class PlayerActivity :
     }
 
     pendingBackgroundPlaybackStart = false
-    return if (startBackgroundPlaybackInternal(bindToActivity = true)) {
+    return if (startBackgroundPlaybackInternal(bindToActivity = bindToActivity)) {
       BackgroundPlaybackStartResult.Started
     } else {
       BackgroundPlaybackStartResult.Blocked
@@ -6379,7 +6416,7 @@ class PlayerActivity :
     MediaPlaybackService.createNotificationChannel(this)
 
     // Get media info before starting service
-    val artist = runCatching { PlaybackSession.getPropertyString("metadata/artist") }.getOrNull() ?: ""
+    val artist = getPreferredCurrentArtist()
 
     // Pass media info via intent extras
     val intent =
@@ -6574,6 +6611,10 @@ class PlayerActivity :
       isBackgroundPlaybackSessionActive = false
       endBackgroundPlayback()
       enableVideoAfterBackground()
+      if (!isFinishing && !isDestroyed && viewModel.paused != true) {
+        requestAudioFocus()
+        if (PlaybackSession.getPropertyBoolean("pause") == true) viewModel.unpause()
+      }
       viewModel.showToast("Audio background playback off")
       return
     }
@@ -7070,13 +7111,12 @@ class PlayerActivity :
   }
 
   private fun syncBackgroundPlaybackService(updateThumbnail: Boolean) {
-    if (mediaPlaybackService == null && isBackgroundPlaybackEnabled() && isReady && fileName.isNotBlank()) {
-      startBackgroundPlayback(allowUserPrompt = false)
-    }
+    // Service ownership is created only by an explicit background handoff. Do not start a
+    // foreground service as a side effect of every queue transition or metadata refresh.
     val service = mediaPlaybackService ?: return
     val rawTitle = getPreferredCurrentTitle().ifBlank { fileName.ifBlank { getString(R.string.player_unknown_video) } }
     val title = FileTypeUtils.stripExtension(rawTitle)
-    val artist = runCatching { PlaybackSession.getPropertyString("metadata/artist") }.getOrNull() ?: ""
+    val artist = getPreferredCurrentArtist()
     val thumbnailKey = buildBackgroundThumbnailKey()
     val cachedThumbnail =
       if (thumbnailKey == lastBackgroundThumbnailKey) {
