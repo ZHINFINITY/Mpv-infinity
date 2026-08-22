@@ -730,6 +730,20 @@ fun FileSystemBrowserScreen(path: String? = null) {
               FloatingActionButtonMenuItem(
                 onClick = {
                   isFabExpanded.value = false
+                  TemporaryPlaybackQueue.start(context)
+                },
+                icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
+                text = {
+                  Text(
+                    text =
+                      androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_queue),
+                  )
+                },
+              )
+
+              FloatingActionButtonMenuItem(
+                onClick = {
+                  isFabExpanded.value = false
                   coroutineScope.launch {
                     val recentlyPlayedVideos =
                       app.infinity.mpvz.utils.history.RecentlyPlayedOps.getRecentlyPlayed(

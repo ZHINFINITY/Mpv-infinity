@@ -620,6 +620,14 @@ fun MusicLibraryContent(
               icon = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
               text = { Text("Shuffle Songs") },
             )
+            FloatingActionButtonMenuItem(
+              onClick = {
+                isFabExpanded.value = false
+                TemporaryPlaybackQueue.start(context)
+              },
+              icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
+              text = { Text(stringResource(R.string.ui_play_queue)) },
+            )
           }
         }
       }
