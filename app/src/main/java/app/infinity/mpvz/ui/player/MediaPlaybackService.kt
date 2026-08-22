@@ -385,6 +385,12 @@ class MediaPlaybackService :
       PlaybackSession.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
       PlaybackSession.observeProperty("media-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("metadata/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/by-key/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/by-key/Artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/by-key/album_artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/by-key/albumartist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/by-key/performer", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/by-key/PERFORMER", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
@@ -526,7 +532,7 @@ class MediaPlaybackService :
     // Fallback: Read current state from MPV if not provided via intent
     if (mediaTitle.isBlank()) {
       mediaTitle = FileTypeUtils.stripExtension(PlaybackSession.getPropertyString("media-title") ?: "")
-      mediaArtist = PlaybackSession.getPropertyString("metadata/artist") ?: ""
+      mediaArtist = readPreferredArtist()
     }
 
     paused = PlaybackSession.getPropertyBoolean("pause") == true
@@ -766,7 +772,7 @@ class MediaPlaybackService :
     notificationIsAudio = resolveNotificationIsAudio(item, notificationIsAudio)
     mediaIdentifier = item.stableId
     mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
-    mediaArtist = ""
+    mediaArtist = artistFromFileName(mediaTitle)
     mediaUri = item.originalUri
     currentPositionSeconds = 0.0
     lastPublishedPositionSeconds = 0.0
@@ -920,11 +926,43 @@ class MediaPlaybackService :
   private fun stopDetachedPlaybackIfNeeded() {
     // Native Media3 owns playback outside PlaybackSession; never mutate MPV from this mode.
     if (nativeBackgroundPlayback) return
-    // Never kill the shared PlaybackSession media while an Activity is taking it back over.
-    if (handingBackToActivity) return
+    // Never kill the shared PlaybackSession media while an Activity is visible or taking it back
+    // over. This is important when the user disables the background-audio preference from the
+    // open music player: the service may be destroyed, but foreground playback remains owned by
+    // the Activity.
+    if (activityForeground || handingBackToActivity) return
     if (PlaybackSession.state.value.surfaceAttached) return
     torrentStreamingEngine.stopStream()
     PlaybackSession.stop(clearQueue = false)
+  }
+
+  private fun artistFromFileName(title: String): String =
+    title
+      .split(" - ", " – ", " — ", limit = 2)
+      .firstOrNull()
+      ?.trim()
+      ?.takeIf { it.length in 1..80 && !it.startsWith("[") }
+      .orEmpty()
+
+  private fun readPreferredArtist(): String {
+    val keys =
+      listOf(
+        "metadata/artist",
+        "metadata/by-key/artist",
+        "metadata/by-key/Artist",
+        "metadata/by-key/album_artist",
+        "metadata/by-key/albumartist",
+        "metadata/by-key/ALBUMARTIST",
+        "metadata/by-key/performer",
+        "metadata/by-key/PERFORMER",
+        "metadata/by-key/author",
+        "metadata/by-key/composer",
+      )
+    return keys.firstNotNullOfOrNull { key ->
+      runCatching { PlaybackSession.getPropertyString(key) }.getOrNull()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+    } ?: artistFromFileName(mediaTitle)
   }
 
   private fun handleDetachedEndOfFile() {
@@ -1489,10 +1527,20 @@ class MediaPlaybackService :
           }
         }
       }
-      "metadata/artist" -> {
+      "metadata/artist",
+      "metadata/by-key/artist",
+      "metadata/by-key/Artist",
+      "metadata/by-key/album_artist",
+      "metadata/by-key/albumartist",
+      "metadata/by-key/performer",
+      "metadata/by-key/PERFORMER",
+      "metadata/by-key/author",
+      "metadata/by-key/composer" -> {
+        val artist = value.trim()
+        if (artist.isBlank()) return
         serviceScope.launch {
-          if (mediaArtist == value) return@launch
-          mediaArtist = value
+          if (mediaArtist == artist) return@launch
+          mediaArtist = artist
           updateMediaSessionMetadata()
           updateNotification()
         }

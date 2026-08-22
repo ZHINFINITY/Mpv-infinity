@@ -35,12 +35,17 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonMenu
 import androidx.compose.material3.FloatingActionButtonMenuItem
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
@@ -477,10 +482,13 @@ object FolderListScreen : Screen {
       )
     }
 
-    // Update NavigationBarState synchronously when selection mode changes
+    // Update NavigationBarState synchronously when either regular or global-search selection mode changes.
+    // Search has its own selection manager, so it must also hide the persistent navigation bar while
+    // the search Properties action bar is visible.
     SideEffect {
       navBarState.updateSelectionState(
-        inSelectionMode = selectionManager.isInSelectionMode,
+        inSelectionMode =
+          selectionManager.isInSelectionMode || searchSelectionManager.isInSelectionMode,
         onlyVideos = true,
       )
     }
@@ -1723,33 +1731,34 @@ private fun SearchResultsContent(
       }
     }
 
-    BrowserBottomBar(
-      isSelectionMode = videoSelectionManager.isInSelectionMode,
-      onCopyClick = {},
-      onMoveClick = {},
-      onRenameClick = {},
-      onDeleteClick = {},
-      onAddToPlaylistClick = {},
-      onInfoClick = {
-        val selectedVideo = videoSelectionManager.getSelectedItems().firstOrNull()
-        if (selectedVideo != null) {
-          context.startActivity(
-            Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java).apply {
-              action = Intent.ACTION_VIEW
-              data = selectedVideo.uri
-            },
-          )
-          videoSelectionManager.clear()
-        }
-      },
-      showCopy = false,
-      showMove = false,
-      showRename = false,
-      showDelete = false,
-      showAddToPlaylist = false,
-      showInfo = videoSelectionManager.isSingleSelection,
-      modifier = Modifier.align(Alignment.BottomCenter),
-    )
+    if (videoSelectionManager.isSingleSelection) {
+      FloatingActionButton(
+        onClick = {
+          val selectedVideo = videoSelectionManager.getSelectedItems().firstOrNull()
+          if (selectedVideo != null) {
+            context.startActivity(
+              Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = selectedVideo.uri
+              },
+            )
+            videoSelectionManager.clear()
+          }
+        },
+        modifier =
+          Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = navigationBarHeight + 20.dp),
+        shape = CircleShape,
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+      ) {
+        Icon(
+          imageVector = Icons.Default.Info,
+          contentDescription = stringResource(R.string.properties),
+        )
+      }
+    }
   }
 }
 

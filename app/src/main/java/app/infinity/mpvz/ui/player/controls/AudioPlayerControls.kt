@@ -558,15 +558,50 @@ fun AudioPlayerControls(
 
   val context = LocalContext.current
   val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
+  val rawArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsState()
   val rawArtistAlt by PlaybackSession.propString["metadata/artist"].collectAsState()
   val rawAlbumArtist by PlaybackSession.propString["metadata/by-key/album_artist"].collectAsState()
+  val rawAlbumArtistAlt by PlaybackSession.propString["metadata/by-key/albumartist"].collectAsState()
   val rawPerformer by PlaybackSession.propString["metadata/by-key/PERFORMER"].collectAsState()
+  val rawPerformerLower by PlaybackSession.propString["metadata/by-key/performer"].collectAsState()
+  val rawAuthor by PlaybackSession.propString["metadata/by-key/author"].collectAsState()
   val retrievedArtist = currentAudioPresentation?.artist
+  val filenameArtist =
+    remember(fileTitle) {
+      fileTitle
+        ?.split(" - ", " – ", " — ", limit = 2)
+        ?.firstOrNull()
+        ?.trim()
+        ?.takeIf { it.length in 1..80 && !it.startsWith("[") }
+    }
 
   val displayArtist =
-    remember(rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
-      sequenceOf(rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
+    remember(
+      rawArtist,
+      rawArtistLower,
+      rawArtistAlt,
+      rawAlbumArtist,
+      rawAlbumArtistAlt,
+      rawPerformer,
+      rawPerformerLower,
+      rawAuthor,
+      retrievedArtist,
+      filenameArtist,
+    ) {
+      sequenceOf(
+          rawArtist,
+          rawArtistLower,
+          rawArtistAlt,
+          rawAlbumArtist,
+          rawAlbumArtistAlt,
+          rawPerformer,
+          rawPerformerLower,
+          rawAuthor,
+          retrievedArtist,
+          filenameArtist,
+        )
         .filterNotNull()
+        .map { it.trim() }
         .firstOrNull { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
         ?: "Unknown Artist"
     }

@@ -31,7 +31,10 @@ internal object PlayerLifecyclePolicy {
   fun shouldKeepBackgroundPlaybackAliveOnDestroy(
     backgroundPlaybackEnabled: Boolean,
     backgroundPlaybackSessionActive: Boolean,
-  ): Boolean = backgroundPlaybackEnabled && backgroundPlaybackSessionActive
+    audioOnly: Boolean = false,
+  ): Boolean =
+    backgroundPlaybackEnabled &&
+      (backgroundPlaybackSessionActive || audioOnly)
 
   fun shouldTreatStopAsPipDismissal(
     wasInPictureInPictureMode: Boolean,
@@ -54,10 +57,10 @@ internal object PlayerLifecyclePolicy {
     isFinishing: Boolean,
     isInPictureInPictureMode: Boolean,
     isScreenOffOrLocked: Boolean,
+    audioOnly: Boolean = false,
   ): Boolean =
     backgroundPlaybackEnabled &&
       !backgroundPlaybackSessionActive &&
-      !isUserFinishing &&
-      !isFinishing &&
+      (audioOnly || (!isUserFinishing && !isFinishing)) &&
       (!isInPictureInPictureMode || isScreenOffOrLocked)
 }
