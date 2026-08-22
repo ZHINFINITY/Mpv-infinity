@@ -932,10 +932,14 @@ fun FileSystemBrowserScreen(path: String? = null) {
         onRenameClick = { renameDialogOpen.value = true },
         onDeleteClick = { deleteDialogOpen = true },
         onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
+        onAddToTemporaryQueueClick = {
+          TemporaryPlaybackQueue.add(context, selectedVideos)
+        },
         showDownscale =
           selectedVideos.isNotEmpty() && selectedVideos.none { it.isAudio } && selectedFolders.isEmpty(),
         showRename = selectionManager.isSingleSelection,
         showAddToPlaylist = !BuildConfig.ENABLE_UPDATE_FEATURE && onlyVideosSelected,
+        showAddToTemporaryQueue = onlyVideosSelected,
         modifier = Modifier.padding(bottom = 0.dp),
       )
     }
