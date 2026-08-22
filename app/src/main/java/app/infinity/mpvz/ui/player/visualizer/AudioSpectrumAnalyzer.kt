@@ -13,6 +13,8 @@ import android.media.audiofx.Visualizer
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
+private const val VISUALIZER_CAPTURE_RATE_MILLIHERTZ = 15_000
+
 /**
  * Audio spectrum analyzer for mpvRx using [android.media.audiofx.Visualizer].
  *
@@ -32,7 +34,6 @@ class AudioSpectrumAnalyzer(
     const val ENERGY_FFT_WEIGHT = 0.65f
     // Keep analysis comfortably below the 60 FPS renderer cadence. The renderer continues to
     // draw smoothly from the latest snapshot while Android's audio-effect callback does less work.
-    const val CAPTURE_RATE_MILLIHERTZ = 15_000
   }
 
   @Synchronized
@@ -307,7 +308,7 @@ class VisualizerManager(
             fft?.let(onFFT)
           }
         },
-        CAPTURE_RATE_MILLIHERTZ,
+        VISUALIZER_CAPTURE_RATE_MILLIHERTZ,
         true,
         true,
       )
