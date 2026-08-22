@@ -591,7 +591,7 @@ class PlayerActivity :
   private var playbackDelayedForAudioFocus = false
   private var volumeBeforeAudioFocusDuck: Double? = null
   private var audioFocusRetryAttempt = 0
-  private val audioFocusRetryRunnable = Runnable {
+  private val audioFocusRetryRunnable: Runnable = Runnable {
     if (isFinishing || isDestroyed || serviceBound || isBackgroundPlaybackSessionActive) return@Runnable
     if (PlaybackSession.state.value.paused) return@Runnable
     if (requestAudioFocus()) {
@@ -1525,7 +1525,7 @@ class PlayerActivity :
   }
 
   private fun scheduleAudioFocusRetry() {
-    if (isFinishing || isDestroyed || serviceBound || isBackgroundPlaybackSessionActive || viewModel.paused) return
+    if (isFinishing || isDestroyed || serviceBound || isBackgroundPlaybackSessionActive == true || viewModel.paused == true) return
     mainHandler.removeCallbacks(audioFocusRetryRunnable)
     audioFocusRetryAttempt = 0
     mainHandler.postDelayed(audioFocusRetryRunnable, AUDIO_FOCUS_RETRY_DELAY_MS)
