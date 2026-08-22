@@ -611,6 +611,23 @@ class Media3PlaybackController(
     player.setSeekParameters(previousSeekParameters)
   }
 
+  /**
+   * Moves by one decoded-frame duration using an exact seek request. Media3 has no native
+   * frame-step command, so this is the closest safe equivalent; playback is paused by the caller.
+   */
+  fun seekFrameBy(offsetMs: Long) {
+    val targetPositionMs = (player.currentPosition + offsetMs).coerceAtLeast(0L)
+    clearSubtitleCueBuffers()
+    if (restoreSeekableTimelineIfNeeded(targetPositionMs)) return
+    pendingSeekPositionMs = targetPositionMs
+    pendingSeekRequestedAtMs = android.os.SystemClock.elapsedRealtime()
+    logInfo("frame seek requested offsetMs=$offsetMs targetPositionMs=$targetPositionMs seekMode=exact")
+    val previousSeekParameters = player.seekParameters
+    player.setSeekParameters(SeekParameters.EXACT)
+    player.seekTo(targetPositionMs)
+    player.setSeekParameters(previousSeekParameters)
+  }
+
   private fun rebuildAfterLargeBackwardSeekIfNeeded(targetPositionMs: Long, reason: String): Boolean {
     val currentItem = player.currentMediaItem ?: return false
     val currentPositionMs = player.currentPosition.coerceAtLeast(0L)

@@ -6774,12 +6774,16 @@ class PlayerActivity :
     return true
   }
 
-  override fun media3SeekBy(offsetMs: Long): Boolean {
+    override fun media3SeekBy(offsetMs: Long): Boolean {
     if (!isMedia3Active()) return false
     media3PlaybackController.seekBy(offsetMs)
     return true
   }
-
+  override fun media3SeekFrameBy(offsetMs: Long): Boolean {
+    if (!isMedia3Active()) return false
+    media3PlaybackController.seekFrameBy(offsetMs)
+    return true
+  }
   override fun media3SeekTo(positionMs: Long, fast: Boolean): Boolean {
     if (!isMedia3Active()) return false
     media3PlaybackController.seekTo(positionMs, fast = fast)
@@ -6883,7 +6887,11 @@ class PlayerActivity :
   override fun media3FrameDurationMs(): Long? {
     if (!isMedia3Active()) return null
     val frameRate = media3PlaybackController.currentState().videoFrameRate
-    return frameRate.takeIf { it > 0f && it.isFinite() }?.let { (1000f / it).roundToLong().coerceIn(1L, 1000L) }
+    // Some Matroska/VFR files omit frame-rate metadata. Keep frame navigation available with the
+    // same conservative fallback used by the stepping command instead of disabling the sheet.
+    return frameRate.takeIf { it > 0f && it.isFinite() }?.let {
+      (1000f / it).roundToLong().coerceIn(1L, 1000L)
+    } ?: 40L
   }
 
   override fun media3LoopA(): Long? =

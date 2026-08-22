@@ -83,7 +83,8 @@ import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.browser.NavigationBarState
-import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackPhase
@@ -263,7 +264,7 @@ private fun MiniPlayerContent(
       }
       .clip(RoundedCornerShape(20.dp))
       .clickable { launchPlayer() },
-    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+    color = liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainerHigh, alpha = 0.72f),
     tonalElevation = 8.dp,
     shadowElevation = 10.dp,
   ) {
