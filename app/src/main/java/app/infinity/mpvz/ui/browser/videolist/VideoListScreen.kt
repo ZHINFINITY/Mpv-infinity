@@ -521,6 +521,9 @@ data class VideoListScreen(
             onRenameClick = { renameDialogOpen.value = true },
             onDeleteClick = { deleteDialogOpen.value = true },
             onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
+            onAddToTemporaryQueueClick = {
+              TemporaryPlaybackQueue.add(context, selectionManager.getSelectedItems())
+            },
             onInfoClick = {
               if (selectionManager.isSingleSelection) {
                 selectionManager.getSelectedItems().firstOrNull()?.let { video ->
@@ -537,6 +540,7 @@ data class VideoListScreen(
             showInfo = selectionManager.isSingleSelection,
             showDownscale = selectionManager.getSelectedItems().let { items -> items.isNotEmpty() && items.none { it.isAudio } },
             showRename = selectionManager.selectedCount > 0,
+            showAddToTemporaryQueue = selectionManager.selectedCount > 0,
             modifier =
               Modifier
                 .align(Alignment.BottomCenter)

@@ -61,6 +61,7 @@ fun BrowserBottomBar(
   onRenameClick: () -> Unit,
   onDeleteClick: () -> Unit,
   onAddToPlaylistClick: () -> Unit,
+  onAddToTemporaryQueueClick: () -> Unit = {},
   onInfoClick: () -> Unit = {},
   modifier: Modifier = Modifier,
   showCopy: Boolean = true,
@@ -69,6 +70,7 @@ fun BrowserBottomBar(
   showRename: Boolean = true,
   showDelete: Boolean = true,
   showAddToPlaylist: Boolean = true,
+  showAddToTemporaryQueue: Boolean = false,
   showInfo: Boolean = false,
 ) {
   val configuration = LocalConfiguration.current
@@ -81,6 +83,7 @@ fun BrowserBottomBar(
   var lastShowRename by remember { mutableStateOf(showRename) }
   var lastShowDelete by remember { mutableStateOf(showDelete) }
   var lastShowAddToPlaylist by remember { mutableStateOf(showAddToPlaylist) }
+  var lastShowAddToTemporaryQueue by remember { mutableStateOf(showAddToTemporaryQueue) }
   var lastShowInfo by remember { mutableStateOf(showInfo) }
 
   if (isSelectionMode) {
@@ -90,6 +93,7 @@ fun BrowserBottomBar(
     lastShowRename = showRename
     lastShowDelete = showDelete
     lastShowAddToPlaylist = showAddToPlaylist
+    lastShowAddToTemporaryQueue = showAddToTemporaryQueue
     lastShowInfo = showInfo
   }
 
@@ -99,6 +103,7 @@ fun BrowserBottomBar(
   val effectiveShowRename = if (isSelectionMode) showRename else lastShowRename
   val effectiveShowDelete = if (isSelectionMode) showDelete else lastShowDelete
   val effectiveShowAddToPlaylist = if (isSelectionMode) showAddToPlaylist else lastShowAddToPlaylist
+  val effectiveShowAddToTemporaryQueue = if (isSelectionMode) showAddToTemporaryQueue else lastShowAddToTemporaryQueue
   val effectiveShowInfo = if (isSelectionMode) showInfo else lastShowInfo
 
   AnimatedVisibility(
@@ -132,6 +137,7 @@ fun BrowserBottomBar(
           effectiveShowDownscale,
           effectiveShowRename,
           effectiveShowAddToPlaylist,
+          effectiveShowAddToTemporaryQueue,
           effectiveShowInfo,
           effectiveShowDelete,
         ).count { it }
@@ -275,6 +281,14 @@ fun BrowserBottomBar(
             onAddToPlaylistClick,
             Icons.RoundedFilled.PlaylistAdd,
             "Add to Playlist",
+            layoutParams.buttonSize,
+            layoutParams.iconSize,
+          )
+          BrowserBottomBarButton(
+            effectiveShowAddToTemporaryQueue,
+            onAddToTemporaryQueueClick,
+            Icons.RoundedFilled.QueueMusic,
+            "Add to temporary queue",
             layoutParams.buttonSize,
             layoutParams.iconSize,
           )

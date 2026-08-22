@@ -1148,11 +1148,29 @@ fun MusicLibraryContent(
               selectedVideosForAddToPlaylist = videosToAdd
             }
           },
+          onAddToTemporaryQueueClick = @Suppress("UNCHECKED_CAST") {
+            val items = activeSelectionManager.getSelectedItems()
+            val videosToQueue = when (selectedTab) {
+              MusicTab.SONGS -> (items as List<MusicSong>).map { it.toVideo() }
+              MusicTab.ALBUMS -> {
+                val selAlbums = items as List<MusicAlbum>
+                songs.filter { s -> selAlbums.any { a -> s.albumId == a.id || s.album.equals(a.title, ignoreCase = true) } }.map { it.toVideo() }
+              }
+              MusicTab.ARTISTS -> {
+                val selArtists = items as List<MusicArtist>
+                songs.filter { s -> selArtists.any { ar -> s.artist.equals(ar.name, ignoreCase = true) } }.map { it.toVideo() }
+              }
+              MusicTab.PLAYLISTS -> emptyList()
+              MusicTab.FOLDERS -> emptyList()
+            }
+            TemporaryPlaybackQueue.add(context, videosToQueue)
+          },
           showCopy = false,
           showMove = false,
           showRename = false,
           showDelete = selectedTab == MusicTab.SONGS || selectedTab == MusicTab.PLAYLISTS,
           showAddToPlaylist = selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS,
+          showAddToTemporaryQueue = selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS,
           modifier = Modifier.align(Alignment.BottomCenter)
         )
     }
