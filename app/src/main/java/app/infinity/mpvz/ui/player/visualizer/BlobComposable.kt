@@ -125,12 +125,18 @@ private fun <T> VisualizerOverlay(
     val analyzer = if (hasRecordPermission && !isSheetOpen) AudioSpectrumAnalyzer(features) else null
     val job =
       scope.launch(Dispatchers.Default) {
+        var nextAnalyzerStartAtNanos = 0L
         while (isActive && analyzer != null) {
           val captureFresh = features.active && features.hasRecentCapture(1_500_000_000L)
-          if (!realAnalyzerActive.get() || !captureFresh) {
-            realAnalyzerActive.set(analyzer.start(0).isSuccess)
+          val now = System.nanoTime()
+          if ((!realAnalyzerActive.get() || !captureFresh) && now >= nextAnalyzerStartAtNanos) {
+            val started = analyzer.start(0).isSuccess
+            realAnalyzerActive.set(started)
+            // A missing capture is often a temporary Android audio-effect condition. Do not
+            // release/recreate Visualizer on every poll; that churn can compete with AudioTrack.
+            nextAnalyzerStartAtNanos = now + if (started) 5_000_000_000L else 1_500_000_000L
           }
-          delay(if (realAnalyzerActive.get()) 1_500L else 400L)
+          delay(if (realAnalyzerActive.get() && captureFresh) 1_500L else 500L)
         }
       }
     onDispose {

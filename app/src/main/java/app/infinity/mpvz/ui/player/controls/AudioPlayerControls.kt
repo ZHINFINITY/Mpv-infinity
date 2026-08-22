@@ -334,12 +334,18 @@ private fun CuboidSpectrumCaptureEffect(
     val analyzer = if (enabled && hasRecordPermission) AudioSpectrumAnalyzer(features) else null
     val job =
       scope.launch(Dispatchers.Default) {
+        var nextAnalyzerStartAtNanos = 0L
         while (isActive && analyzer != null) {
           val captureFresh = features.active && features.hasRecentCapture(1_500_000_000L)
-          if (!analyzerActive.get() || !captureFresh) {
-            analyzerActive.set(analyzer.start(0).isSuccess)
+          val now = System.nanoTime()
+          if ((!analyzerActive.get() || !captureFresh) && now >= nextAnalyzerStartAtNanos) {
+            val started = analyzer.start(0).isSuccess
+            analyzerActive.set(started)
+            // Avoid tearing down and recreating the Android audio effect on every poll. That
+            // churn can compete with AudioTrack and present as intermittent music stutter.
+            nextAnalyzerStartAtNanos = now + if (started) 5_000_000_000L else 1_500_000_000L
           }
-          kotlinx.coroutines.delay(if (analyzerActive.get()) 1_500L else 400L)
+          kotlinx.coroutines.delay(if (analyzerActive.get() && captureFresh) 1_500L else 500L)
         }
       }
     onDispose {
