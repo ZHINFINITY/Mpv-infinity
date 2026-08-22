@@ -30,6 +30,9 @@ class AudioSpectrumAnalyzer(
     const val BEAT_DEBOUNCE_MS = 120L
     const val ENERGY_WAVEFORM_WEIGHT = 0.35f
     const val ENERGY_FFT_WEIGHT = 0.65f
+    // Keep analysis comfortably below the 60 FPS renderer cadence. The renderer continues to
+    // draw smoothly from the latest snapshot while Android's audio-effect callback does less work.
+    const val CAPTURE_RATE_MILLIHERTZ = 15_000
   }
 
   @Synchronized
@@ -304,7 +307,7 @@ class VisualizerManager(
             fft?.let(onFFT)
           }
         },
-        Visualizer.getMaxCaptureRate(),
+        CAPTURE_RATE_MILLIHERTZ,
         true,
         true,
       )

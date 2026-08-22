@@ -590,6 +590,21 @@ class PlayerActivity :
   private var resumeOnAudioFocusGain = false
   private var playbackDelayedForAudioFocus = false
   private var volumeBeforeAudioFocusDuck: Double? = null
+  private var audioFocusRetryAttempt = 0
+  private val audioFocusRetryRunnable = Runnable {
+    if (isFinishing || isDestroyed || serviceBound || isBackgroundPlaybackSessionActive) return@Runnable
+    if (PlaybackSession.state.value.paused) return@Runnable
+    if (requestAudioFocus()) {
+      audioFocusRetryAttempt = 0
+      PlaybackSession.setPropertyBoolean("pause", false)
+      Log.d(TAG, "Audio focus recovered; resumed playback")
+    } else if (audioFocusRetryAttempt < AUDIO_FOCUS_RETRY_MAX_ATTEMPTS) {
+      audioFocusRetryAttempt++
+      mainHandler.postDelayed(audioFocusRetryRunnable, AUDIO_FOCUS_RETRY_DELAY_MS)
+    } else {
+      Log.w(TAG, "Audio focus was not granted after bounded retries")
+    }
+  }
 
   // ==================== Broadcast Receivers ====================
 
@@ -684,11 +699,14 @@ class PlayerActivity :
           val shouldResume = resumeOnAudioFocusGain || playbackDelayedForAudioFocus
           resumeOnAudioFocusGain = false
           playbackDelayedForAudioFocus = false
+          mainHandler.removeCallbacks(audioFocusRetryRunnable)
+          audioFocusRetryAttempt = 0
           if (shouldResume) PlaybackSession.setPropertyBoolean("pause", false)
         }
 
         AudioManager.AUDIOFOCUS_REQUEST_FAILED -> {
           Log.d(TAG, "Audio focus request failed")
+          scheduleAudioFocusRetry()
         }
       }
     }
@@ -1483,6 +1501,8 @@ class PlayerActivity :
         holdsAudioFocus = true
         playbackDelayedForAudioFocus = false
         resumeOnAudioFocusGain = false
+        mainHandler.removeCallbacks(audioFocusRetryRunnable)
+        audioFocusRetryAttempt = 0
         true
       }
 
@@ -1498,9 +1518,17 @@ class PlayerActivity :
         holdsAudioFocus = false
         playbackDelayedForAudioFocus = false
         resumeOnAudioFocusGain = false
+        scheduleAudioFocusRetry()
         false
       }
     }
+  }
+
+  private fun scheduleAudioFocusRetry() {
+    if (isFinishing || isDestroyed || serviceBound || isBackgroundPlaybackSessionActive || viewModel.paused) return
+    mainHandler.removeCallbacks(audioFocusRetryRunnable)
+    audioFocusRetryAttempt = 0
+    mainHandler.postDelayed(audioFocusRetryRunnable, AUDIO_FOCUS_RETRY_DELAY_MS)
   }
 
   override fun currentMediaLookupHint(): String? = currentPlayableUri ?: intent?.dataString
@@ -1563,6 +1591,7 @@ class PlayerActivity :
       handlePipDismissed()
     }
     cancelPendingPipDismissalStop()
+    mainHandler.removeCallbacks(audioFocusRetryRunnable)
     Log.d(TAG, "PlayerActivity onDestroy")
     val playbackWasInitialized = mpvInitialized
     val keepBackgroundPlaybackAlive =
@@ -4562,8 +4591,9 @@ class PlayerActivity :
     }
 
     viewModel.unpause()
-
+    if (!holdsAudioFocus) scheduleAudioFocusRetry()
     lifecycleScope.launch {
+
       withContext(playbackRenderDispatcher) {
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
         player.applyAnime4KShaders()
@@ -8126,6 +8156,14 @@ class PlayerActivity :
       }
       lastVid = -1
     }
+
+    // The SurfaceView can survive task switching without a surfaceChanged callback. Post the
+    // refresh until layout has settled so libmpv receives the actual foreground dimensions.
+    player.post {
+      if (mpvInitialized && !isFinishing && !isDestroyed) {
+        player.refreshSurfaceSize()
+      }
+    }
   }
 
   companion object {
@@ -8170,6 +8208,9 @@ class PlayerActivity :
      * Maximum volume for MPV in percent.
      */
     private const val MAX_MPV_VOLUME = 100
+
+    private const val AUDIO_FOCUS_RETRY_DELAY_MS = 1000L
+    private const val AUDIO_FOCUS_RETRY_MAX_ATTEMPTS = 5
 
     /**
      * Milliseconds-to-seconds conversion factor.

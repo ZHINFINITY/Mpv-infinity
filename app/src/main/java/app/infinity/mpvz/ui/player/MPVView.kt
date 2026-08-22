@@ -99,6 +99,20 @@ class MPVView(
     }
   }
 
+  /**
+   * Re-sends the current view dimensions to libmpv after the Activity returns to the foreground.
+   * Android can keep the Surface alive while its parent is remeasured; in that case no
+   * SurfaceHolder#surfaceChanged callback is emitted and libmpv can retain the old output size.
+   */
+  fun refreshSurfaceSize() {
+    if (!isSurfaceReady || !holder.surface.isValid) return
+    val currentWidth = width
+    val currentHeight = height
+    if (currentWidth > 0 && currentHeight > 0) {
+      PlaybackSession.resizeSurface(currentWidth, currentHeight)
+    }
+  }
+
   private data class RenderBackendSelection(
     val vo: String,
     val gpuApi: String,
