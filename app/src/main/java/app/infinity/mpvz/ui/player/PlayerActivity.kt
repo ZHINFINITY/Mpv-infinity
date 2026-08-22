@@ -816,10 +816,13 @@ class PlayerActivity :
 
     // Auto-generate a folder queue for playlist-mode launches. When scoped storage leaves us
     // with only a content:// URI, use MediaStore metadata instead of passing fd:// to File().
+    // A validated temporary queue is already the user’s complete, editable queue; never replace it
+    // with siblings from the first item’s folder.
     if (playlist.isEmpty() &&
       playlistId == null &&
       playerPreferences.playlistMode.get() &&
-      !canReuseSavedPlaybackSession
+      !canReuseSavedPlaybackSession &&
+      !preparedPlaybackQueue
     ) {
       val path = parsePathFromIntent(intent)
       val sourceUri = extractUriFromIntent(intent)
@@ -4057,6 +4060,11 @@ class PlayerActivity :
    * This is triggered by the playlist-sheet action rather than every Compose recomposition.
    */
   override fun refreshCurrentFolderQueue() {
+    val queueState = PlaybackSession.queue.value
+    if (queueState.isTemporaryQueue) {
+      Log.d(TAG, "Skipping folder queue refresh for temporary queue: ${queueState.items.size} items")
+      return
+    }
     // The Activity playlist can be stale or singleton after an external file-manager launch.
     // Always perform a fresh discovery when the playlist sheet requests it.
     val sourceUri = externalContentLaunchUri ?: extractUriFromIntent(intent)
@@ -5520,7 +5528,9 @@ class PlayerActivity :
 
     // Auto-generate a folder queue for playlist-mode launches. When scoped storage leaves us
     // with only a content:// URI, use MediaStore metadata instead of passing fd:// to File().
-    if (playlist.isEmpty() && playlistId == null && playerPreferences.playlistMode.get()) {
+    // A validated temporary queue is already the user’s complete, editable queue; never replace it
+    // with siblings from the first item’s folder.
+    if (playlist.isEmpty() && playlistId == null && playerPreferences.playlistMode.get() && !preparedPlaybackQueue) {
       val isExternalContentMediaLaunch =
         intent.action == Intent.ACTION_VIEW &&
           intent.data?.scheme in setOf(ContentResolver.SCHEME_CONTENT, ContentResolver.SCHEME_FILE)
