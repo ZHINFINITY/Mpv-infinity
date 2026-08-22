@@ -48,6 +48,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.horizontalScroll
@@ -758,6 +759,8 @@ fun AudioPlayerControls(
     label = "ambient_bottom_color",
   )
 
+  val minimizeSwipeThresholdPx = with(LocalDensity.current) { 96.dp.toPx() }
+
   Box(
     modifier =
       modifier
@@ -794,7 +797,23 @@ fun AudioPlayerControls(
           }
         }
         .windowInsetsPadding(WindowInsets.safeDrawing)
-        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
+        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+        .pointerInput(isLyricsFullscreen, isSheetOpen) {
+          if (isLyricsFullscreen || isSheetOpen) return@pointerInput
+          var downwardDistance = 0f
+          detectVerticalDragGestures(
+            onDragStart = { downwardDistance = 0f },
+            onVerticalDrag = { change, dragAmount ->
+              if (dragAmount > 0f || downwardDistance > 0f) {
+                downwardDistance += dragAmount
+                change.consume()
+              }
+            },
+            onDragEnd = {
+              if (downwardDistance >= minimizeSwipeThresholdPx) onMinimizePlayer()
+            },
+          )
+        },
   ) {
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
@@ -1097,6 +1116,41 @@ fun AudioPlayerControls(
         }
       }
     }
+    }
+
+    val landscapeArtworkMetadataView = @Composable {
+      if (!showVisualizer) {
+        val displayTitle = remember(lastValidTitle, displayArtist) {
+          cleanSongTitle(lastValidTitle, displayArtist)
+        }
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+          Text(
+            text = displayTitle,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+          )
+          Text(
+            text = displayArtist,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+          )
+          val playlistInfo = viewModel.getPlaylistInfo()
+          Text(
+            text = if (playlistInfo != null) "Track $playlistInfo" else "Audio Media",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+          )
+        }
+      }
     }
 
     val trackMetadataView = @Composable {
@@ -1417,7 +1471,10 @@ fun AudioPlayerControls(
 
     val bottomActionRow = @Composable {
       Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .then(if (isPortrait) Modifier else Modifier.height(56.dp)),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         ReactiveIconButton(
@@ -1451,7 +1508,8 @@ fun AudioPlayerControls(
                     MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
                   )
                   .horizontalScroll(rememberScrollState())
-                  .padding(horizontal = 8.dp, vertical = 4.dp),
+                  .padding(horizontal = 8.dp, vertical = 4.dp)
+                  .height(if (isPortrait) 48.dp else 56.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1533,7 +1591,8 @@ fun AudioPlayerControls(
                     MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
                   )
                   .horizontalScroll(rememberScrollState())
-                  .padding(horizontal = 8.dp, vertical = 4.dp),
+                  .padding(horizontal = 8.dp, vertical = 4.dp)
+                  .height(if (isPortrait) 48.dp else 56.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1732,7 +1791,19 @@ fun AudioPlayerControls(
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        centerVisualizerView(Modifier.weight(1f).fillMaxHeight())
+        Column(
+          modifier = Modifier.weight(1f).fillMaxHeight(),
+          horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+          Box(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+          ) {
+            centerVisualizerView(Modifier.fillMaxSize())
+          }
+          Spacer(modifier = Modifier.height(8.dp))
+          landscapeArtworkMetadataView()
+        }
         Column(
           modifier = Modifier.weight(1.2f).fillMaxHeight(),
           verticalArrangement = Arrangement.SpaceBetween,
