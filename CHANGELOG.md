@@ -2,6 +2,19 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.1 — Stable Release
+
+This stable release consolidates the hybrid playback, mixed queue, audio-player, and usability improvements delivered after v1.0.0.
+
+- **Hybrid playback engines:** MPV and Media3 are available for high-quality video and audio playback, with reliable per-item engine handoff and fallback behavior. HDR, Dolby Vision, HDR10+, hardware decoding, shader, chapter, subtitle, casting, scripting, and streaming capabilities remain available according to device and source support.
+- **Temporary mixed-media queue:** Select songs and videos from different folders into an editable, non-persistent queue. The queue can be started from the Quick Play menus, keeps all selected items visible, supports reordering and removal, and advances across audio/video boundaries without replacing the queue with the first item’s folder playlist.
+- **Audio-player recovery:** Video-to-audio queue transitions now restore the audio player’s orientation, controls, metadata, minimize handoff, background playback, and playback notification state instead of retaining the preceding video session state.
+- **Music metadata and artwork:** Artist information is preserved for music added to a temporary queue and used as a fallback when embedded metadata is incomplete. Album-art presentation and landscape metadata placement are improved.
+- **Music-player UI:** Added swipe-down minimization, a cleaner landscape artwork-and-controls layout, visible landscape option controls, improved spacing, and a larger visualizer option target while preserving the existing portrait experience.
+- **Media3 stability:** Position and playback-state polling uses the controller’s published state snapshot, avoiding unsafe cross-thread player access during playback and transitions.
+- **Settings export identity:** New settings exports use the Mpv∞ filename format `mpv_infinity_settings_YYYYMMDD_HHMMSS.xml`; compatibility with existing settings files is retained.
+- **Standard distribution:** Stable assets target the Standard flavor and include universal, arm64-v8a, armeabi-v7a, x86, and x86_64 APKs.
+
 ## 1.0.0 — Public Release
 
 - **Foreground media playback:** The playback service promotes itself immediately with a minimal notification before media-session and playback initialization.
@@ -253,21 +266,6 @@ These notes are written in plain English and focus on what changed for real use.
 
 - **Own release feed:** The in-app updater now checks `ZHINFINITY/Mpv-infinity` releases instead of the inherited mpvRx release feed, so it will no longer offer mpvRx versions such as 2.1.0.
 - **Version alignment:** The corrective build is version `1.0.2` and downloads only the compatible Mpv∞ Standard APK from the Mpv∞ release assets.
-
-## 1.0.1 — Playback Handoff Hotfix
-
-This hotfix release keeps the Standard APK variants and focuses on reliable hybrid playback.
-
-### Playback and stability
-- **Native-to-MPV fallback protection:** When Native cannot render a video frame, the watchdog falls back to MPV and records the failed item so automatic queue resynchronization does not immediately select Native again.
-- **No repeated engine oscillation:** The previous engine is stopped before the replacement engine starts, preventing the decoder sheet from reporting conflicting active engines during handoff.
-- **Dolby Vision compatibility path:** Auto mode can select Native for compatible Dolby Vision items, while MPV remains available as the reliable fallback for files that Native cannot render on a particular device.
-- **Standard-only signed release:** The hotfix publishes universal, arm64-v8a, armeabi-v7a, x86, and x86_64 Standard APKs; Fongmi and no-Vulkan release variants are not included.
-
-### Mpv∞ identity and documentation
-- Updated the project presentation to **Mpv∞**, maintained by **ZHINFINITY**.
-- Added the current player, Native engine, decoder, chapter, About, and Live Wallpaper screenshots to the repository showcase.
-- Documented the dual-engine architecture, manual per-video engine switching, Media3 FFmpeg audio extension, decoder/output information, and fallback behavior.
 
 ## 1.0.0 — Feature & Experience Release
 
