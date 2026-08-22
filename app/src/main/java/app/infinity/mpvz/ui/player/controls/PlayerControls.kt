@@ -191,6 +191,7 @@ fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
   onClosePlayer: () -> Unit = onBackPress,
+  onMinimizeAudioPlayer: () -> Unit = onBackPress,
   isMedia3Active: Boolean = false,
   media3State: Media3PlaybackController.State = Media3PlaybackController.State(),
   engineSelection: PlaybackEngineMode = if (isMedia3Active) PlaybackEngineMode.Media3 else PlaybackEngineMode.MPV,
@@ -442,6 +443,7 @@ fun PlayerControls(
         mediaTitle = mediaTitle,
         onBackPress = onBackPress,
         onClosePlayer = onClosePlayer,
+        onMinimizePlayer = onMinimizeAudioPlayer,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
       )

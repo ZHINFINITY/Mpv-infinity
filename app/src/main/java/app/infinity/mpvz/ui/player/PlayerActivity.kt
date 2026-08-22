@@ -472,6 +472,8 @@ class PlayerActivity :
   private var isReady = false // Single flag: true when video loaded and ready
   private var isUserFinishing = false
   private var isBackgroundPlaybackSessionActive = false
+  /** True only for the audio player’s top-left minimize action. */
+  private var audioMinimizeRequested = false
   private var hardStopRequested = false
   private var wasInPipMode = false
   private var handledPipDismissal = false
@@ -1082,6 +1084,42 @@ class PlayerActivity :
       .start()
   }
 
+  /**
+   * Minimizes the audio player without stopping the current track. This is intentionally separate
+   * from normal Back and the explicit hard-stop action: the top-left audio arrow is a minimize
+   * affordance regardless of the user's background-playback preference.
+   */
+  private fun minimizeAudioPlayer() {
+    if (!viewModel.isAudioOnly.value || fileName.isBlank() || !isReady) {
+      handleBackPress()
+      return
+    }
+
+    when (
+      startBackgroundPlayback(
+        allowUserPrompt = false,
+        bindToActivity = false,
+      )
+    ) {
+      BackgroundPlaybackStartResult.Started -> {
+        audioMinimizeRequested = true
+        isBackgroundPlaybackSessionActive = true
+        isUserFinishing = true
+        MediaPlaybackService.nativeBackgroundRequested = false
+        setActivityMediaSessionActive(false)
+        finish()
+      }
+      BackgroundPlaybackStartResult.PendingPermission,
+      BackgroundPlaybackStartResult.Blocked,
+      -> {
+        // A minimize action must not turn into an accidental hard stop. Keep the Activity open
+        // when the detached service cannot be started (for example, notification permission is
+        // unavailable), so the user can continue playback and correct the permission/settings.
+        viewModel.showToast(getString(R.string.notification_disabled_in_advanced_settings))
+      }
+    }
+  }
+
   private fun handleBackPress() {
     // Dismiss overlays first
     if (viewModel.sheetShown.value != Sheets.None) {
@@ -1139,6 +1177,7 @@ class PlayerActivity :
             viewModel = viewModel,
             onBackPress = ::handleBackPress,
             onClosePlayer = ::requestExplicitHardStop,
+            onMinimizeAudioPlayer = ::minimizeAudioPlayer,
             isMedia3Active = playbackEngine == PlaybackEngine.MEDIA3,
             media3State = media3State,
             engineSelection =
@@ -1599,6 +1638,7 @@ class PlayerActivity :
         backgroundPlaybackEnabled = playbackWasInitialized && isBackgroundPlaybackEnabled(),
         backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
         audioOnly = viewModel.isAudioOnly.value,
+        audioMinimizeRequested = audioMinimizeRequested,
       )
 
 

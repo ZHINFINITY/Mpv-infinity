@@ -393,6 +393,7 @@ fun AudioPlayerControls(
   mediaTitle: String?,
   onBackPress: () -> Unit,
   onClosePlayer: () -> Unit = onBackPress,
+  onMinimizePlayer: () -> Unit = onBackPress,
   onOpenSheet: (Sheets) -> Unit,
   onOpenPanel: (Panels) -> Unit,
   modifier: Modifier = Modifier,
@@ -793,7 +794,7 @@ fun AudioPlayerControls(
           // Closing the audio UI must use the background-aware handoff path. The explicit
           // close callback stops playback immediately and is intended for the player’s hard-stop
           // action, not for dismissing the music screen.
-          onClick = onBackPress,
+          onClick = onMinimizePlayer,
           modifier = Modifier.align(Alignment.CenterStart),
         ) {
           Icon(
