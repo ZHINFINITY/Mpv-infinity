@@ -468,7 +468,9 @@ fun PlayerSheets(
         // directly instead of passing through PlayerControls.onOpenSheet. Trigger discovery here
         // as the authoritative sheet-open path so a singleton external launch can materialize its
         // sibling MKV queue regardless of which playlist control opened the sheet.
-        viewModel.refreshCurrentFolderQueue()
+        if (!queueState.isTemporaryQueue) {
+          viewModel.refreshCurrentFolderQueue()
+        }
         viewModel.refreshPlaylistItems(forceMetadata = true)
       }
 
@@ -480,11 +482,15 @@ fun PlayerSheets(
       val playlistSwipeOffset by viewModel.playlistSwipeOffset.collectAsState()
 
       val filteredPlaylist =
-        remember(playlist, isAudioOnly, queueState.items.size, queueState.currentIndex) {
+        remember(playlist, isAudioOnly, queueState.items.size, queueState.currentIndex, queueState.isTemporaryQueue) {
           // The sheet can be composed before the IO refresh publishes playlistItems. Use the
           // already-loaded explicit queue for the first frame, then switch to the refreshed list.
           val sourcePlaylist = playlist.ifEmpty { viewModel.getPlaylistData().orEmpty() }
-          if (isAudioOnly) {
+          if (queueState.isTemporaryQueue) {
+            // A temporary queue is intentionally mixed-media and must remain fully editable and
+            // visible regardless of whether audio or video is currently active.
+            sourcePlaylist
+          } else if (isAudioOnly) {
             sourcePlaylist.filter { it.isAudio }
           } else {
             sourcePlaylist.filter { !it.isAudio }
