@@ -130,6 +130,7 @@ import app.infinity.mpvz.utils.media.CopyPasteOps
 import app.infinity.mpvz.utils.media.MediaSearchEngine
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
+import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
 import app.infinity.mpvz.utils.permission.PermissionUtils
 import app.infinity.mpvz.utils.sort.SortUtils
 import app.infinity.mpvz.utils.storage.FileTypeUtils
@@ -791,6 +792,20 @@ object FolderListScreen : Screen {
                     text =
                       androidx.compose.ui.res
                         .stringResource(app.infinity.mpvz.R.string.ui_open_file),
+                  )
+                },
+              )
+
+              FloatingActionButtonMenuItem(
+                onClick = {
+                  isFabExpanded.value = false
+                  TemporaryPlaybackQueue.start(context)
+                },
+                icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
+                text = {
+                  Text(
+                    text =
+                      androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_queue),
                   )
                 },
               )

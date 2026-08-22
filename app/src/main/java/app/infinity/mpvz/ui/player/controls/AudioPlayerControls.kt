@@ -665,11 +665,15 @@ fun AudioPlayerControls(
   }
 
   val playlistItems by viewModel.playlistItems.collectAsState()
+  val queueState by PlaybackSession.queue.collectAsState()
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
   val filteredPlaylist =
     remember(playlistItems) {
       playlistItems.filter { it.isAudio }
     }
+  // Keep cover-art swipe navigation audio-only, but never hide queued videos from a temporary
+  // mixed-media queue's Up Next panel.
+  val upNextPlaylist = if (queueState.isTemporaryQueue) playlistItems else filteredPlaylist
 
   val configuration = LocalConfiguration.current
   val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -1711,7 +1715,7 @@ fun AudioPlayerControls(
         ) {
           DualPaneSidePanel(
             viewModel = viewModel,
-            playlist = filteredPlaylist,
+            playlist = upNextPlaylist,
             initialLyricsActive = wasLyricsActiveBeforeLandscape,
           )
         }
@@ -1892,7 +1896,7 @@ private fun UpNextPlaylistContent(
         color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
       ) {
         Text(
-          text = "${displayPlaylist.size} tracks",
+          text = "${displayPlaylist.size} items",
           style = MaterialTheme.typography.labelSmall,
           fontWeight = FontWeight.SemiBold,
           color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -1907,7 +1911,7 @@ private fun UpNextPlaylistContent(
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = "No songs in queue",
+          text = "No items in queue",
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
