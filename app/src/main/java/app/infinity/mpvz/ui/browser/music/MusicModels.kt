@@ -57,7 +57,8 @@ data class MusicArtist(
 
 @Immutable
 enum class MusicSortField(val displayName: String) {
-  TITLE("Title"),
+  // Name is the display/file title used for alphabetical song browsing.
+  TITLE("Name"),
   ARTIST("Artist"),
   ALBUM("Album"),
   DURATION("Duration"),

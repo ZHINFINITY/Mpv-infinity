@@ -467,6 +467,28 @@ fun MusicLibraryContent(
                 }
               } else null,
               additionalActions = {
+                if (selectedTab == MusicTab.SONGS) {
+                  IconButton(
+                    onClick = {
+                      if (sortField == MusicSortField.TITLE) {
+                        musicViewModel.toggleSortOrder()
+                      } else {
+                        musicViewModel.setSortField(MusicSortField.TITLE)
+                        musicViewModel.setSortOrder(MusicSortOrder.ASCENDING)
+                      }
+                    }
+                  ) {
+                    Icon(
+                      Icons.RoundedFilled.SortByAlpha,
+                      contentDescription =
+                        if (sortField == MusicSortField.TITLE && sortOrder == MusicSortOrder.DESCENDING) {
+                          "Sort songs by name A-Z"
+                        } else {
+                          "Sort songs by name Z-A"
+                        },
+                    )
+                  }
+                }
                 if (temporaryQueue.isTemporaryQueue && temporaryQueue.items.isNotEmpty()) {
                   IconButton(onClick = { TemporaryPlaybackQueue.start(context) }) {
                     Icon(

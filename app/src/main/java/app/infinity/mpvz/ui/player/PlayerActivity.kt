@@ -1090,8 +1090,15 @@ class PlayerActivity :
    * affordance regardless of the user's background-playback preference.
    */
   private fun minimizeAudioPlayer() {
-    if (!viewModel.isAudioOnly.value || fileName.isBlank() || !isReady) {
+    if (!viewModel.isAudioOnly.value) {
       handleBackPress()
+      return
+    }
+
+    // A session reopened from the mini-player can still be in BACKGROUND while the Activity is
+    // attaching. Treat that as ready audio instead of routing the arrow through normal Back.
+    if (!isAudioSessionReady()) {
+      viewModel.showToast(getString(R.string.toast_playback_load_failed))
       return
     }
 
@@ -5382,15 +5389,27 @@ class PlayerActivity :
         pendingBackgroundTransition = false
         attachToCurrentPlaybackSessionIfRequested(intent)
         PlaybackSession.markForeground()
-        isReady = PlaybackSession.state.value.phase == PlaybackPhase.READY
-        if (isReady) viewModel.onVideoLoadCompleted()
-        if (isBackgroundPlaybackEnabled()) {
+        val reopenedItem = PlaybackSession.queue.value.currentItem
+        val reopenedAudio =
+          isKnownAudioLaunch(intent) ||
+            viewModel.isAudioOnly.value ||
+            reopenedItem?.let(::isAudioPlaybackItem) == true
+        isReady = PlaybackSession.state.value.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+        if (isReady && !reopenedAudio) viewModel.onVideoLoadCompleted()
+        if (isBackgroundPlaybackEnabled() || reopenedAudio) {
           if (!serviceBound || mediaPlaybackService == null) {
             startBackgroundPlaybackInternal(bindToActivity = true)
           }
           syncBackgroundPlaybackService(updateThumbnail = true)
-        } else {
+        } else if (!reopenedAudio) {
+          // Audio opened from the compact player must keep its existing foreground service alive
+          // regardless of the saved background-playback preference. The arrow is a minimize
+          // action; the preference controls automatic background entry, not this explicit handoff.
           endBackgroundPlayback()
+        } else {
+          MediaPlaybackService.prepareForActivityHandoff()
+          MediaPlaybackService.relinquishMediaSessionToActivity()
+          setActivityMediaSessionActive(true)
         }
         return
       }
@@ -6438,9 +6457,19 @@ class PlayerActivity :
   }
 
   private fun startBackgroundPlaybackInternal(bindToActivity: Boolean): Boolean {
-    if (fileName.isBlank() || !isReady) {
-      Log.w(TAG, "Cannot start background playback: video not ready")
+    val audioReady = isAudioSessionReady()
+    if (fileName.isBlank() || (!isReady && !audioReady)) {
+      Log.w(TAG, "Cannot start background playback: media not ready")
       return false
+    }
+
+    // Reusing the existing foreground service avoids a second startForeground/onStartCommand cycle
+    // when the user repeatedly opens and minimizes the same audio session. That cycle can briefly
+    // steal audio focus and, on some devices, stop the shared native session.
+    if (!bindToActivity && viewModel.isAudioOnly.value && MediaPlaybackService.isForegroundActive()) {
+      setActivityMediaSessionActive(false)
+      Log.d(TAG, "Audio background service already active; reusing it for minimize")
+      return true
     }
 
     // Prevent starting service multiple times
@@ -6488,6 +6517,12 @@ class PlayerActivity :
       Log.e(TAG, "Error starting/binding service", e)
       return false
     }
+  }
+
+  private fun isAudioSessionReady(): Boolean {
+    if (!viewModel.isAudioOnly.value || !PlaybackSession.isInitialized) return false
+    val phase = PlaybackSession.state.value.phase
+    return phase == PlaybackPhase.READY || phase == PlaybackPhase.BACKGROUND
   }
 
   private fun ensureNotificationAccessForPlayback(allowUserPrompt: Boolean): BackgroundPlaybackStartResult {
