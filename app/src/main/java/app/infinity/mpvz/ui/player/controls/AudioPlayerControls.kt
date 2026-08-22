@@ -558,6 +558,7 @@ fun AudioPlayerControls(
   }
 
   val context = LocalContext.current
+  val currentQueueItem by PlaybackSession.queue.collectAsState()
   val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
   val rawArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsState()
   val rawArtistAlt by PlaybackSession.propString["metadata/artist"].collectAsState()
@@ -567,6 +568,7 @@ fun AudioPlayerControls(
   val rawPerformerLower by PlaybackSession.propString["metadata/by-key/performer"].collectAsState()
   val rawAuthor by PlaybackSession.propString["metadata/by-key/author"].collectAsState()
   val retrievedArtist = currentAudioPresentation?.artist
+  val queuedArtist = currentQueueItem.currentItem?.artist
   val filenameArtist =
     remember(fileTitle) {
       fileTitle
@@ -587,6 +589,7 @@ fun AudioPlayerControls(
       rawPerformerLower,
       rawAuthor,
       retrievedArtist,
+      queuedArtist,
       filenameArtist,
     ) {
       sequenceOf(
@@ -599,6 +602,7 @@ fun AudioPlayerControls(
           rawPerformerLower,
           rawAuthor,
           retrievedArtist,
+          queuedArtist,
           filenameArtist,
         )
         .filterNotNull()
@@ -1487,12 +1491,13 @@ fun AudioPlayerControls(
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
                 onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(if (isPortrait) 40.dp else 48.dp),
               ) {
                 Icon(
                   imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
                   contentDescription = null,
                   tint = if (showVisualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.size(if (isPortrait) 24.dp else 28.dp),
                 )
               }
               ReactiveIconButton(
@@ -1568,12 +1573,13 @@ fun AudioPlayerControls(
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
                 onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(if (isPortrait) 40.dp else 48.dp),
               ) {
                 Icon(
                   imageVector = if (showVisualizer) Icons.RoundedFilled.AutoAwesome else Icons.RoundedFilled.Audiotrack,
                   contentDescription = null,
                   tint = if (showVisualizer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.size(if (isPortrait) 24.dp else 28.dp),
                 )
               }
               ReactiveIconButton(
@@ -1737,6 +1743,7 @@ fun AudioPlayerControls(
           trackMetadataView()
           seekbarView()
           playbackControlsRow()
+          Spacer(modifier = Modifier.height(20.dp))
           bottomActionRow()
         }
       }

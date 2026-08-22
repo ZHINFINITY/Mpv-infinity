@@ -86,5 +86,6 @@ object TemporaryPlaybackQueue {
       title = video.title.takeIf { it.isNotBlank() } ?: video.displayName,
       mimeType = video.mimeType.takeIf { it.isNotBlank() },
       artworkUri = null,
+      artist = video.artist,
     )
 }

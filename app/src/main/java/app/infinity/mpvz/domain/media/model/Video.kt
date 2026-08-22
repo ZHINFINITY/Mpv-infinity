@@ -35,4 +35,5 @@ data class Video(
   val hasEmbeddedSubtitles: Boolean = false,
   val subtitleCodec: String = "",
   val isAudio: Boolean = false,
+  val artist: String? = null,
 )
