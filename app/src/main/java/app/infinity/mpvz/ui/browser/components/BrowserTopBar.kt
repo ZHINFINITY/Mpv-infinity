@@ -53,6 +53,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
+import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -195,7 +196,7 @@ private fun NormalTopBar(
           if (MaterialTheme.colorScheme.background == Color.Black) {
             Color.Black
           } else {
-            MaterialTheme.colorScheme.surfaceContainer
+            liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
           },
       ),
     title = {
@@ -363,7 +364,7 @@ private fun SelectionTopBar(
           if (MaterialTheme.colorScheme.background == Color.Black) {
             Color.Black
           } else {
-            MaterialTheme.colorScheme.surfaceContainer
+            liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
           },
       ),
     title = {

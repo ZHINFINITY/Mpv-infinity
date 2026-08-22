@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
+import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
 
 /**
  * A card container for grouping related preferences, mimicking modern Android settings UI.
@@ -46,7 +47,7 @@ fun PreferenceCard(
     shape = MaterialTheme.shapes.extraLargeIncreased,
     colors =
       CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainerLow, alpha = 0.68f),
       ),
     elevation =
       CardDefaults.cardElevation(

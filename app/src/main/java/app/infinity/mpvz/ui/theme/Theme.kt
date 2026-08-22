@@ -136,6 +136,16 @@ class ThemeTransitionState {
  */
 val LocalThemeTransitionState = staticCompositionLocalOf<ThemeTransitionState?> { null }
 
+/** Enables the optional translucent, glass-like treatment for shared app surfaces. */
+val LocalLiquidGlassMode = staticCompositionLocalOf { false }
+
+@Composable
+fun liquidGlassSurfaceColor(
+  color: Color,
+  alpha: Float = 0.74f,
+): Color =
+  if (LocalLiquidGlassMode.current) color.copy(alpha = alpha) else color
+
 @Composable
 fun rememberThemeTransitionState(): ThemeTransitionState = remember { ThemeTransitionState() }
 
@@ -271,6 +281,7 @@ fun MpvrxTheme(
   val darkMode by preferences.darkMode.collectAsState()
   val amoledMode by preferences.amoledMode.collectAsState()
   val appTheme by preferences.appTheme.collectAsState()
+  val liquidGlassMode by preferences.liquidGlassMode.collectAsState()
   val useSystemFont by preferences.useSystemFont.collectAsState()
   val darkTheme = isSystemInDarkTheme()
   val context = LocalContext.current
@@ -312,6 +323,7 @@ fun MpvrxTheme(
   CompositionLocalProvider(
     LocalSpacing provides Spacing(),
     LocalThemeTransitionState provides transitionState,
+    LocalLiquidGlassMode provides liquidGlassMode,
     LocalMotionPolicy provides rememberMotionPolicy(),
     LocalEmphasizedTypography provides AppEmphasizedTypography,
   ) {

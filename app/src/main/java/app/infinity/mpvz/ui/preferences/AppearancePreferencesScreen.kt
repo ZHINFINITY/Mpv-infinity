@@ -281,6 +281,26 @@ object AppearancePreferencesScreen : Screen {
 
                   PreferenceDivider()
 
+                  val liquidGlassMode by preferences.liquidGlassMode.collectAsState()
+                  SwitchPreference(
+                    modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_liquid_glass_title),
+                    value = liquidGlassMode,
+                    onValueChange = preferences.liquidGlassMode::set,
+                    title = {
+                      Text(
+                        text = stringResource(id = R.string.pref_appearance_liquid_glass_title),
+                      )
+                    },
+                    summary = {
+                      Text(
+                        text = stringResource(id = R.string.pref_appearance_liquid_glass_summary),
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
+
+                  PreferenceDivider()
+
                   SwitchPreference(
                     modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_amoled_mode_title),
                     value = amoledMode,

@@ -93,6 +93,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
@@ -421,7 +422,7 @@ private fun TelegramPillNavigationBar(
     Surface(
       modifier = Modifier.fillMaxWidth(),
       shape = CircleShape,
-      color = MaterialTheme.colorScheme.surfaceContainerHigh,
+      color = liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainerHigh),
       tonalElevation = 6.dp,
       shadowElevation = 8.dp,
       border =

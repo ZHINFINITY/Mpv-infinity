@@ -5309,10 +5309,20 @@ class PlayerViewModel : ViewModel(),
                 ?: 40L
             val offsetMs = if (command == "frame-step") frameDurationMs else -frameDurationMs
             withContext(Dispatchers.Main.immediate) {
-              host.media3SeekBy(offsetMs)
-              refreshFrameInfoFromMedia3()
-              showFrameInfoOverlay()
-              resetFrameNavigationTimer()
+              // Media3 has no native frame-step command. Pause first so playback cannot run past
+              // the requested frame while the exact seek is being resolved.
+              if (host.media3IsPlaying()) host.media3SetPlayWhenReady(false)
+              host.media3SeekFrameBy(offsetMs)
+            }
+            // Give the renderer a short opportunity to publish the newly decoded frame before
+            // reading its position for the frame-info overlay.
+            delay(75)
+            withContext(Dispatchers.Main.immediate) {
+              if (host.isMedia3Active()) {
+                refreshFrameInfoFromMedia3()
+                showFrameInfoOverlay()
+                resetFrameNavigationTimer()
+              }
             }
             return@launch
           }
