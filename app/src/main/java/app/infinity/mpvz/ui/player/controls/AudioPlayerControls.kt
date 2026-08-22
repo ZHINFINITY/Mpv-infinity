@@ -1505,11 +1505,11 @@ fun AudioPlayerControls(
                 Modifier
                   .clip(CircleShape)
                   .background(
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (isPortrait) 0.65f else 0.88f),
                   )
                   .horizontalScroll(rememberScrollState())
                   .padding(horizontal = 8.dp, vertical = 4.dp)
-                  .height(if (isPortrait) 48.dp else 56.dp),
+                  .height(if (isPortrait) 48.dp else 60.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1588,11 +1588,11 @@ fun AudioPlayerControls(
                 Modifier
                   .clip(CircleShape)
                   .background(
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (isPortrait) 0.65f else 0.88f),
                   )
                   .horizontalScroll(rememberScrollState())
                   .padding(horizontal = 8.dp, vertical = 4.dp)
-                  .height(if (isPortrait) 48.dp else 56.dp),
+                  .height(if (isPortrait) 48.dp else 60.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -1811,7 +1811,8 @@ fun AudioPlayerControls(
         ) {
           headerBar()
           losslessBadge()
-          trackMetadataView()
+          // In phone landscape the title, artist, and track information are shown below the
+          // artwork on the left. Keeping another metadata block here compresses the option row.
           seekbarView()
           playbackControlsRow()
           Spacer(modifier = Modifier.height(20.dp))
