@@ -116,6 +116,7 @@ import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.HttpUtils
 import app.infinity.mpvz.utils.media.JellyfinSessionReporter
 import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
 import app.infinity.mpvz.utils.media.fileExtension
 import app.infinity.mpvz.utils.media.resolveSeekMode
 import app.infinity.mpvz.utils.media.M3UParseResult
@@ -857,7 +858,12 @@ class PlayerActivity :
       !preparedPlaybackQueue &&
       !canReuseSavedPlaybackSession
     ) {
-      if (playlist.isEmpty()) PlaybackSession.clearQueue() else publishPlaylistToSession()
+      if (playlist.isEmpty()) {
+        TemporaryPlaybackQueue.clear()
+      } else {
+        TemporaryPlaybackQueue.discardSnapshot()
+        publishPlaylistToSession()
+      }
     }
 
     // Set HTTP headers (including referer) BEFORE playing the file
@@ -5535,7 +5541,7 @@ class PlayerActivity :
       networkPlaylistTitles = emptyList()
       networkPlaylistHeaders = emptyList()
       networkPlaylistConnectionId = -1L
-      PlaybackSession.clearQueue()
+      TemporaryPlaybackQueue.clear()
     }
 
     // If playlist is empty but playlist_id is provided, load from database
@@ -7045,7 +7051,11 @@ class PlayerActivity :
         }
       }
 
-    if (!PlaybackSession.moveQueueItem(from, to)) publishPlaylistToSession()
+    if (!PlaybackSession.moveQueueItem(from, to)) {
+      publishPlaylistToSession()
+    } else {
+      TemporaryPlaybackQueue.syncFromSession()
+    }
     viewModel.refreshPlaylistItems()
   }
 
@@ -7070,6 +7080,7 @@ class PlayerActivity :
         .mapIndexed { itemIndex, item -> item.copy(position = itemIndex) }
     }
     if (index < playlistIndex) playlistIndex -= 1
+    TemporaryPlaybackQueue.syncFromSession()
     viewModel.refreshPlaylistItems()
   }
 
@@ -7078,6 +7089,7 @@ class PlayerActivity :
    */
   override fun playNextQueueItem() {
     PlaybackSession.selectNext() ?: return
+    TemporaryPlaybackQueue.syncFromSession()
     loadPlaylistItem(PlaybackSession.queue.value.currentIndex)
   }
 
@@ -7086,6 +7098,7 @@ class PlayerActivity :
    */
   override fun playPreviousQueueItem() {
     PlaybackSession.selectPrevious() ?: return
+    TemporaryPlaybackQueue.syncFromSession()
     loadPlaylistItem(PlaybackSession.queue.value.currentIndex)
   }
 
@@ -7139,6 +7152,7 @@ class PlayerActivity :
     // Update playlist index
     playlistIndex = index
     PlaybackSession.selectQueueItem(index)
+    TemporaryPlaybackQueue.syncFromSession()
     viewModel.calculateVideoHash(uri)
 
     // Extract and set the new file name

@@ -485,7 +485,15 @@ fun PlayerSheets(
         remember(playlist, isAudioOnly, queueState.items.size, queueState.currentIndex, queueState.isTemporaryQueue) {
           // The sheet can be composed before the IO refresh publishes playlistItems. Use the
           // already-loaded explicit queue for the first frame, then switch to the refreshed list.
-          val sourcePlaylist = playlist.ifEmpty { viewModel.getPlaylistData().orEmpty() }
+          val sourcePlaylist =
+            if (queueState.isTemporaryQueue) {
+              // The Activity playlist can still reflect the previous music-only screen after items
+              // are added from another browser surface. Read the process queue directly so mixed
+              // audio/video entries are never hidden by a stale local list.
+              viewModel.getPlaylistData().orEmpty()
+            } else {
+              playlist.ifEmpty { viewModel.getPlaylistData().orEmpty() }
+            }
           if (queueState.isTemporaryQueue) {
             // A temporary queue is intentionally mixed-media and must remain fully editable and
             // visible regardless of whether audio or video is currently active.
