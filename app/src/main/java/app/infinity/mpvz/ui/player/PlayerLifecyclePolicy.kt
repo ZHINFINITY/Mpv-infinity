@@ -32,9 +32,10 @@ internal object PlayerLifecyclePolicy {
     backgroundPlaybackEnabled: Boolean,
     backgroundPlaybackSessionActive: Boolean,
     audioOnly: Boolean = false,
+    audioMinimizeRequested: Boolean = false,
   ): Boolean =
-    backgroundPlaybackEnabled &&
-      (backgroundPlaybackSessionActive || audioOnly)
+    (audioOnly && audioMinimizeRequested && backgroundPlaybackSessionActive) ||
+      (backgroundPlaybackEnabled && (backgroundPlaybackSessionActive || audioOnly))
 
   fun shouldTreatStopAsPipDismissal(
     wasInPictureInPictureMode: Boolean,
