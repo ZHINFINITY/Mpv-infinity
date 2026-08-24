@@ -150,10 +150,21 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
 
   // Resolve artwork while the full player/browser is still visible. The minimized overlay then
   // receives a ready, bounded bitmap instead of decoding during its entrance animation.
+  val currentMediaPath by PlaybackSession.propString["path"].collectAsStateWithLifecycle()
+  val currentStreamFilename by PlaybackSession.propString["stream-open-filename"].collectAsStateWithLifecycle()
   val coverArtPath =
-    currentItem?.originalUri?.takeIf { isAudioOnlyItem && it.isNotBlank() }
-      ?: currentItem?.playableUri?.takeIf { isAudioOnlyItem && it.isNotBlank() }
-  val coverArt = rememberMiniPlayerCoverArt(coverArtPath)
+    if (isAudioOnlyItem) {
+      currentMediaPath?.takeIf { it.isNotBlank() }
+        ?: currentStreamFilename?.takeIf { it.isNotBlank() }
+        ?: currentItem?.originalUri?.takeIf { it.isNotBlank() }
+        ?: currentItem?.playableUri?.takeIf { it.isNotBlank() }
+    } else {
+      null
+    }
+  val coverArt = rememberMiniPlayerCoverArt(
+    pathOrUri = coverArtPath,
+    refreshKey = sessionState.generation to sessionState.phase,
+  )
 
   // Keep the mini player alive while browser selection mode is active. Its outer
   // placement is lifted above the selection actions instead of hiding/overlapping.
@@ -201,6 +212,9 @@ private fun MiniPlayerContent(
   val title = currentItem?.title?.takeIf { it.isNotBlank() }
     ?: rawMediaTitle?.takeIf { it.isNotBlank() }
     ?: "Media Track"
+  val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsStateWithLifecycle()
+  val artist = currentItem?.artist?.takeIf { it.isNotBlank() }
+    ?: rawArtist?.takeIf { it.isNotBlank() }
 
   val isVideoMode = !isAudioOnlyItem && enableVideoMiniPlayer
 
@@ -359,12 +373,13 @@ private fun MiniPlayerContent(
               modifier = Modifier.basicMarquee(),
             )
           }
-          Text(
-            text = if (isPlaying) "Playing Video" else "Paused",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-          )
+            Text(
+              text = artist?.takeIf { it.isNotBlank() } ?: if (isPlaying) "Playing Video" else "Paused",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
         }
 
         // Control Buttons
@@ -474,12 +489,13 @@ private fun MiniPlayerContent(
               modifier = Modifier.basicMarquee(),
             )
           }
-          Text(
-            text = if (isPlaying) "Playing" else "Paused",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-          )
+            Text(
+              text = artist?.takeIf { it.isNotBlank() } ?: if (isPlaying) "Playing" else "Paused",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
         }
 
         Spacer(modifier = Modifier.width(8.dp))
@@ -568,12 +584,15 @@ private object MiniPlayerArtworkCache {
 }
 
 @Composable
-private fun rememberMiniPlayerCoverArt(pathOrUri: String?): Bitmap? {
+private fun rememberMiniPlayerCoverArt(
+  pathOrUri: String?,
+  refreshKey: Any? = null,
+): Bitmap? {
   val context = LocalContext.current
-  var bitmap by remember(pathOrUri) {
+  var bitmap by remember(pathOrUri, refreshKey) {
     mutableStateOf(pathOrUri?.let(MiniPlayerArtworkCache::get))
   }
-  LaunchedEffect(pathOrUri) {
+  LaunchedEffect(pathOrUri, refreshKey) {
     if (pathOrUri.isNullOrBlank()) {
       bitmap = null
       return@LaunchedEffect
@@ -583,14 +602,14 @@ private fun rememberMiniPlayerCoverArt(pathOrUri: String?): Bitmap? {
       return@LaunchedEffect
     }
     runCatching {
-      val cleanPath =
-        when {
-          pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
-          pathOrUri.startsWith("content://") -> null
-          else -> pathOrUri
-        }
-      val retriever = MediaMetadataRetriever()
-      val loaded =
+      val loaded = withContext(Dispatchers.IO) {
+        val cleanPath =
+          when {
+            pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
+            pathOrUri.startsWith("content://") -> null
+            else -> pathOrUri
+          }
+        val retriever = MediaMetadataRetriever()
         try {
           if (cleanPath != null) {
             retriever.setDataSource(cleanPath)
@@ -601,6 +620,7 @@ private fun rememberMiniPlayerCoverArt(pathOrUri: String?): Bitmap? {
         } finally {
           runCatching { retriever.release() }
         }
+      }
       withContext(Dispatchers.Default) { limitMiniPlayerArtwork(loaded) }
     }.onSuccess { loaded ->
       loaded?.let { MiniPlayerArtworkCache.put(pathOrUri, it) }

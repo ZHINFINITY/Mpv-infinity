@@ -5434,6 +5434,16 @@ class PlayerViewModel : ViewModel(),
     return playlistModeEnabled && queue.items.size > 1 && queue.currentIndex in queue.items.indices
   }
 
+  private fun playlistMetadataCacheKey(uri: Uri): String {
+    val resolvedUri =
+      if (uri.scheme == "content") {
+        uri.extractLocalPath()?.let { Uri.fromFile(File(it)) } ?: uri
+      } else {
+        uri
+      }
+    return resolvedUri.toString()
+  }
+
   /** Returns the current position for any multi-item queue, including folder queues. */
   fun getPlaylistInfo(): String? {
     val queue = PlaybackSession.queue.value
@@ -5480,7 +5490,7 @@ class PlayerViewModel : ViewModel(),
       val isCurrentlyPlaying = index == queue.currentIndex
 
       // Try to get from cache first (synchronized access)
-      val cacheKey = resolvedUri.toString()
+      val cacheKey = playlistMetadataCacheKey(uri)
       val (durationStr, resolutionStr) = synchronized(metadataCache) { metadataCache[cacheKey] } ?: ("" to "")
 
       app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistItem(
@@ -5523,13 +5533,17 @@ class PlayerViewModel : ViewModel(),
       return "" to ""
     }
 
-    // Try MediaStore first (much faster - uses cached values)
+    // Try MediaStore first (much faster - uses cached values). Some audio documents can resolve
+    // through the video provider but report a zero duration; only accept a non-empty result so the
+    // retriever fallback can supply the real FLAC/MP3 duration.
     val mediaStoreMetadata = getVideoMetadataFromMediaStore(resolvedUri)
-    if (mediaStoreMetadata != null) {
+    if (mediaStoreMetadata != null &&
+      (mediaStoreMetadata.first.isNotBlank() || mediaStoreMetadata.second.isNotBlank())
+    ) {
       return mediaStoreMetadata
     }
 
-    // Fallback to MediaMetadataRetriever only if MediaStore fails
+    // Fallback to MediaMetadataRetriever when MediaStore has no usable metadata
     val retriever = android.media.MediaMetadataRetriever()
     return try {
       // For file:// URIs, use the path directly (faster)
@@ -5823,16 +5837,16 @@ class PlayerViewModel : ViewModel(),
 
           // Extract metadata for the batch
           batch.forEach { item ->
-            val cacheKey = item.uri.toString()
+            val cacheKey = playlistMetadataCacheKey(item.uri)
 
-            // Skip if already in cache (LruCache is thread-safe)
+            // Skip if already in cache (LruCache is thread-safe). Do not cache a completely empty
+            // result: a transient SAF/provider failure should be retried on the next sheet refresh.
             if (metadataCache.get(cacheKey) == null) {
-              // Extract metadata
-              val (durationStr, resolutionStr) = getVideoMetadata(item.uri)
-
-              // Update cache and track update
-              updateMetadataCache(cacheKey, durationStr to resolutionStr)
-              updates[cacheKey] = durationStr to resolutionStr
+              val metadata = getVideoMetadata(item.uri)
+              if (metadata.first.isNotBlank() || metadata.second.isNotBlank()) {
+                updateMetadataCache(cacheKey, metadata)
+                updates[cacheKey] = metadata
+              }
             }
           }
 

@@ -39,6 +39,7 @@ import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
@@ -539,6 +540,7 @@ class PlayerActivity :
   // intermediate item. Coalescing keeps the queue responsive while preventing decoder/audio-guard
   // churn that can leave the output silent or the UI on an old duration.
   private var pendingQueueNavigationJob: Job? = null
+  private var lastQueueNavigationAtMs = 0L
   @Volatile private var mediaRequestGeneration = 0L
   @Volatile private var folderDiscoveryInFlightGeneration: Long? = null
   private var eofAdvanceJob: Job? = null
@@ -4233,6 +4235,7 @@ class PlayerActivity :
       // An explicit playlist-row tap is authoritative and should bypass the rapid-skip debounce.
       pendingQueueNavigationJob?.cancel()
       pendingQueueNavigationJob = null
+      lastQueueNavigationAtMs = 0L
       loadPlaylistItem(index)
     }
   }
@@ -7271,12 +7274,25 @@ class PlayerActivity :
    * published immediately so controls and notification state remain responsive, while the actual
    * native replacement happens only for the final item in a rapid skip burst.
    */
-  private fun scheduleQueueNavigationLoad(index: Int) {
+  private fun scheduleQueueNavigationLoad(index: Int, selectedItem: PlaybackItem) {
+    val now = SystemClock.elapsedRealtime()
+    val isRapidContinuation =
+      lastQueueNavigationAtMs > 0L && now - lastQueueNavigationAtMs <= 350L
+    lastQueueNavigationAtMs = now
     pendingQueueNavigationJob?.cancel()
+    pendingQueueNavigationJob = null
+
+    if (!isRapidContinuation) {
+      // A single press is an intentional navigation action: start it immediately.
+      loadPlaylistItem(index)
+      return
+    }
+
+    // Only a rapid continuation pauses the current item and enters selection-only mode. The latest
+    // selection is published immediately, while the decoder waits for the burst to settle.
+    publishPendingQueueSelection(selectedItem)
     pendingQueueNavigationJob =
       lifecycleScope.launch {
-        // Keep selection-only navigation responsive while waiting until the user pauses before
-        // replacing the decoder and starting the chosen song.
         delay(350L)
         if (isFinishing || isDestroyed) return@launch
         if (PlaybackSession.queue.value.currentIndex != index) return@launch
@@ -7289,9 +7305,8 @@ class PlayerActivity :
    */
   override fun playNextQueueItem() {
     val selectedItem = PlaybackSession.selectNext() ?: return
-    publishPendingQueueSelection(selectedItem)
     TemporaryPlaybackQueue.syncFromSession()
-    scheduleQueueNavigationLoad(PlaybackSession.queue.value.currentIndex)
+    scheduleQueueNavigationLoad(PlaybackSession.queue.value.currentIndex, selectedItem)
   }
 
   /**
@@ -7299,9 +7314,8 @@ class PlayerActivity :
    */
   override fun playPreviousQueueItem() {
     val selectedItem = PlaybackSession.selectPrevious() ?: return
-    publishPendingQueueSelection(selectedItem)
     TemporaryPlaybackQueue.syncFromSession()
-    scheduleQueueNavigationLoad(PlaybackSession.queue.value.currentIndex)
+    scheduleQueueNavigationLoad(PlaybackSession.queue.value.currentIndex, selectedItem)
   }
 
   private fun publishPendingQueueSelection(item: PlaybackItem) {
