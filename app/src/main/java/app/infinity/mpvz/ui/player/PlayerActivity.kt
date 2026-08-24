@@ -2264,6 +2264,11 @@ class PlayerActivity :
               pendingQueueTransitionItemId = item.stableId
             }
             activePlaybackItem = item
+            // Publish the new identity before engine synchronization. Media3 startup can invoke
+            // lifecycle/save callbacks immediately, so leaving the old mediaIdentifier here can
+            // store the Native position under the previous queue item.
+            legacyMediaIdentifier = null
+            mediaIdentifier = item.stableId
             if (previousItemId != null && previousItemId != item.stableId &&
               manualOrientationOverrideItemId != item.stableId
             ) {
@@ -2285,8 +2290,6 @@ class PlayerActivity :
             networkPlaylistHeaders = queueItems.map(PlaybackItem::headers)
             networkPlaylistConnectionId = item.networkSource?.connectionId ?: -1L
             fileName = item.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(Uri.parse(item.originalUri))
-            legacyMediaIdentifier = null
-            mediaIdentifier = item.stableId
             currentPlayableUri = item.playableUri
             isReady = false
             val isAudioItem = isAudioPlaybackItem(item)
@@ -5165,10 +5168,19 @@ class PlayerActivity :
     mediaTitle: String,
     identifierOverride: String? = null,
   ): PlaybackStateSnapshot? {
-    val identifier = identifierOverride?.takeIf { it.isNotBlank() } ?: mediaIdentifier
+    val media3Active = playbackEngine == PlaybackEngine.MEDIA3
+    // Native saves must use the item that owns the active Media3 controller. During queue startup,
+    // PlaybackSession can briefly still expose the previous item, and mediaIdentifier can still
+    // describe the launch intent. media3ActiveItem is assigned at the handoff boundary and is the
+    // authoritative identity for the visible Native player.
+    val activeItemIdentifier =
+      (media3ActiveItem ?: activePlaybackItem ?: currentPlaybackItem())?.stableId
+        ?.takeIf { it.isNotBlank() }
+    val identifier =
+      identifierOverride?.takeIf { it.isNotBlank() }
+        ?: if (media3Active) activeItemIdentifier ?: mediaIdentifier else mediaIdentifier
     if (identifier.isBlank()) return null
 
-    val media3Active = playbackEngine == PlaybackEngine.MEDIA3
     val currentPositionSeconds =
       if (media3Active) {
         (readMedia3PositionMs() / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()

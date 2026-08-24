@@ -91,6 +91,7 @@ class FolderListViewModel(
   // Track the current scan job to prevent concurrent scans
   private var currentScanJob: Job? = null
   private var newCountJob: Job? = null
+  private var newCountGeneration = 0L
   private var cacheWriteJob: Job? = null
 
     companion object {
@@ -262,6 +263,7 @@ class FolderListViewModel(
     initialDelayMs: Long = 400L,
   ) {
     newCountJob?.cancel()
+    val generation = ++newCountGeneration
     newCountJob =
       viewModelScope.launch(Dispatchers.IO) {
         delay(initialDelayMs)
@@ -269,7 +271,9 @@ class FolderListViewModel(
           val showLabel = appearancePreferences.showUnplayedOldVideoLabel.get()
           if (!showLabel) {
             // If feature is disabled, just return folders with 0 count
-            _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+            if (generation == newCountGeneration) {
+              _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+            }
             return@launch
           }
 
@@ -320,12 +324,16 @@ class FolderListViewModel(
               }
             }
 
-          _foldersWithNewCount.value = foldersWithCounts
+          if (generation == newCountGeneration) {
+            _foldersWithNewCount.value = foldersWithCounts
+          }
         } catch (cancellation: CancellationException) {
           throw cancellation
         } catch (e: Exception) {
           Log.e(TAG, "Error calculating new video counts", e)
-          _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+          if (generation == newCountGeneration) {
+            _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+          }
         }
       }
   }
