@@ -777,7 +777,7 @@ This stable release consolidates the hybrid playback, mixed queue, audio-player,
 - Added Hybrid Skip Markers. The player can now check IntroDB, TIDB, and AniSkip together and use whichever result is found first.
 - Anime4K settings are now easier to use with a collapsible section in Decoder Preferences and also Added Optimization by Sunny Vishnu .
 - Added a setting to show or hide Media Info from Android's share/open-with screen.
-- Added documentation for custom Lua/JS player commands in `MPVRX_CUSTOM_COMMANDS.md`.
+- Added documentation for custom Lua/JS player commands in `MPV_INFINITY_CUSTOM_COMMANDS.md`.
 
 ## 1.3.8
 
