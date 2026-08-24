@@ -2025,13 +2025,12 @@ class PlayerActivity :
         PlaybackIdentity.forUri(item.originalUri),
         PlaybackIdentity.forUri(item.playableUri),
       ).filter { it.isNotBlank() }
-    return identifiers
-      .asSequence()
-      .mapNotNull { identifier ->
-        playbackStateRepository.getVideoDataByTitle(identifier)?.lastPosition?.toLong()
-      }.firstOrNull { it > 0L }
-      ?.times(1000L)
-      ?: 0L
+
+    for (identifier in identifiers) {
+      val lastPositionSeconds = playbackStateRepository.getVideoDataByTitle(identifier)?.lastPosition?.toLong() ?: 0L
+      if (lastPositionSeconds > 0L) return lastPositionSeconds * 1000L
+    }
+    return 0L
   }
 
   private fun selectEngineFromDecoderSheet(selectedEngine: PlaybackEngineMode) {
