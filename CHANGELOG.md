@@ -12,6 +12,10 @@ This stable release consolidates the hybrid playback, mixed queue, audio-player,
 - **Music metadata and artwork:** Artist information is preserved for music added to a temporary queue and used as a fallback when embedded metadata is incomplete. Album-art presentation and landscape metadata placement are improved.
 - **Music-player UI:** Added swipe-down minimization, a cleaner landscape artwork-and-controls layout, visible landscape option controls, improved spacing, and a larger visualizer option target while preserving the existing portrait experience.
 - **Media3 stability:** Position and playback-state polling uses the controller’s published state snapshot, avoiding unsafe cross-thread player access during playback and transitions.
+- **Playback resume:** MPV and Media3 save the active timestamp when the app closes and restore the same video at its saved position when playback is reopened.
+- **Tree View performance:** Duplicate startup refreshes are suppressed, scanner caches are reused when returning to the browser, and ordinary navigation no longer triggers a full storage rescan; explicit refresh remains available for library changes.
+- **Folder watched gesture:** Swipe a video folder to the right to mark its videos as watched and remove the corresponding New indicators and folder count.
+- **Search Properties access:** Long-press a search result to open its Properties/media-information screen directly.
 - **Settings export identity:** New settings exports use the Mpv∞ filename format `mpv_infinity_settings_YYYYMMDD_HHMMSS.xml`; compatibility with existing settings files is retained.
 - **Standard distribution:** Stable assets target the Standard flavor and include universal, arm64-v8a, armeabi-v7a, x86, and x86_64 APKs.
 
