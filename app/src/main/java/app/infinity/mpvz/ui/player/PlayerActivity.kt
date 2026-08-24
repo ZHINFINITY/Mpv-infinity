@@ -7270,10 +7270,15 @@ class PlayerActivity :
       return
     }
 
-    // Mark the target before selecting it so the queue observer cannot reuse the old item's
-    // Media3/MPV position during asynchronous engine synchronization.
-    pendingQueueTransitionStartAtZero = true
-    pendingQueueTransitionItemId = PlaybackSession.queue.value.items.getOrNull(index)?.stableId
+    // Mark only a genuine queue navigation as a zero-start transition. Initial/reopened playlist
+    // loads must still query the item's saved Native timestamp; the old unconditional flag made
+    // every first Media3 launch bypass persisted resume.
+    val targetQueueItemId = PlaybackSession.queue.value.items.getOrNull(index)?.stableId
+    val activeQueueItemId = activePlaybackItem?.stableId
+    val isGenuineQueueNavigation =
+      targetQueueItemId != null && activeQueueItemId != null && targetQueueItemId != activeQueueItemId
+    pendingQueueTransitionStartAtZero = isGenuineQueueNavigation
+    pendingQueueTransitionItemId = targetQueueItemId.takeIf { isGenuineQueueNavigation }
 
     // Save current video's playback state before switching
     if (saveCurrentPlaybackState && fileName.isNotBlank()) {
