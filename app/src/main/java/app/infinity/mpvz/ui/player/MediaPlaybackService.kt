@@ -630,7 +630,7 @@ class MediaPlaybackService :
       // artwork lookup pass clearThumbnail=true so tracks without art still fall back to the icon.
       val artworkChanged =
         if (thumbnail != null) {
-          if (thumbnail === lastThumbnailSource?.get() && this@MediaPlaybackService.thumbnail?.isRecycled == false) {
+          if (thumbnail === lastThumbnailSource?.get() && MediaPlaybackService.thumbnail?.isRecycled == false) {
             false
           } else {
             // Bitmap scaling/copying can touch millions of pixels. Keep it off the service main
