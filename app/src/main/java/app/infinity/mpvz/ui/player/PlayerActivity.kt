@@ -7275,7 +7275,9 @@ class PlayerActivity :
     pendingQueueNavigationJob?.cancel()
     pendingQueueNavigationJob =
       lifecycleScope.launch {
-        delay(100L)
+        // Keep selection-only navigation responsive while waiting until the user pauses before
+        // replacing the decoder and starting the chosen song.
+        delay(350L)
         if (isFinishing || isDestroyed) return@launch
         if (PlaybackSession.queue.value.currentIndex != index) return@launch
         loadPlaylistItem(index)
