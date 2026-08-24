@@ -247,6 +247,7 @@ class MediaPlaybackService :
   // latest requested item and perform one replacement after the short burst settles.
   private var notificationNavigationJob: Job? = null
   private var notificationNavigationPending = false
+  private var lastNotificationNavigationAtMs = 0L
   private var artworkRefreshJob: Job? = null
   private var mpvAccessReleased = false
   private var nativeBackgroundPlayback = false
@@ -769,22 +770,34 @@ class MediaPlaybackService :
   }
 
   private fun scheduleNotificationQueueNavigation(previous: Boolean) {
-    // Select immediately without loading. This lets repeated presses accumulate while the current
-    // song stays paused until the user stops pressing the control.
     val selectedItem =
       if (previous) PlaybackSession.selectPrevious() else PlaybackSession.selectNext()
     if (selectedItem == null) {
       refreshTransportControls()
       return
     }
-    // Pause the current item at the start of a navigation burst. Repeated presses then only change
-    // selection; the decoder is not replaced until the quiet window expires.
+
+    val now = SystemClock.elapsedRealtime()
+    val isRapidContinuation =
+      lastNotificationNavigationAtMs > 0L && now - lastNotificationNavigationAtMs <= 350L
+    lastNotificationNavigationAtMs = now
+    notificationNavigationJob?.cancel()
+    notificationNavigationJob = null
+
+    if (!isRapidContinuation) {
+      // A single notification press is an intentional action and must not wait behind the debounce.
+      notificationNavigationPending = false
+      playSelectedSessionItem()
+      return
+    }
+
+    // Only a rapid continuation pauses the current item and enters selection-only mode. The latest
+    // selected item is published immediately, while decoder replacement waits for quiet time.
     if (!notificationNavigationPending) {
       runCatching { PlaybackSession.setPropertyBoolean("pause", true) }
       notificationNavigationPending = true
     }
     publishPendingQueueItem(selectedItem)
-    notificationNavigationJob?.cancel()
     val selectedItemId = selectedItem.stableId
     notificationNavigationJob =
       serviceScope.launch {
@@ -1945,6 +1958,7 @@ class MediaPlaybackService :
       .onFailure { error -> Log.e(TAG, "Error removing MPV observer", error) }
     notificationNavigationJob?.cancel()
     notificationNavigationJob = null
+    lastNotificationNavigationAtMs = 0L
     artworkRefreshJob?.cancel()
     artworkRefreshJob = null
     runCatching { serviceScope.cancel() }
