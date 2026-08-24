@@ -2,6 +2,21 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.2 — Stable Release
+
+This release consolidates the tested improvements added after v1.0.0 across playback, queues, subtitles, library management, and performance.
+
+- **Dual playback engines:** MPV/libmpv and AndroidX Media3 are available with per-item engine selection, automatic routing for supported Dolby Vision and HLS/DASH sources, safer engine handoff, and fallback behavior.
+- **Reliable playback resume:** MPV and Native/Media3 preserve the active timestamp when the app closes, restore saved positions on reopen, and retain the position across engine changes.
+- **Mixed temporary queue:** Audio-only files and videos can be combined in an editable temporary queue, with quick-play access, reordering, removal, queue persistence across media views, and correct transitions between music and video.
+- **Audio player improvements:** Background playback, notifications, minimization, swipe-down dismissal, orientation recovery, landscape controls, visualizer layout, artwork, artist metadata, and rapid track changes are handled consistently.
+- **Media3 playback tools:** Dual dialogue/sign subtitles, subtitle positioning and styling, chapter navigation, skip-intro and segment actions, frame navigation, improved seeking, larger local buffer headroom, and broader audio compatibility through the FFmpeg extension.
+- **Streaming support:** HTTPS and other supported network sources retain configured request headers, including referrer settings, while cookies and network playback metadata are handled more reliably.
+- **Video and HDR pipeline:** Device-dependent Dolby Vision, HDR10+, hardware decoding, shader rendering, Anime4K upscaling, GPU debanding, ambient visual effects, and adaptive quality controls remain available without lowering the normal playback path.
+- **Library and queue usability:** Tree View cache reuse, reduced duplicate rescans, folder swipe-to-mark-watched, immediate New-indicator updates, nested-folder playlist discovery, search-result Properties access, and improved playlist sheets.
+- **Customization and distribution:** Material 3 themes, translucent player controls, configurable gestures and layouts, subtitle font management, settings export naming, casting, scripting, and Standard APK variants for universal, arm64-v8a, armeabi-v7a, x86, and x86_64.
+- **Performance and stability:** Background polling and statistics backoff, thermal-aware shader and Anime4K budgets, safer Media3 state polling, reduced thumbnail pressure during large-folder scrolling, PiP shutdown cleanup, and improved lifecycle handling.
+
 ## 1.0.1 — Stable Release
 
 This stable release consolidates the hybrid playback, mixed queue, audio-player, and usability improvements delivered after v1.0.0.

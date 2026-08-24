@@ -7,7 +7,7 @@
 <p align="center">
   <b>Powerful and efficient Android video player with Native Media3 and MPV engines.</b>
   <br>
-  <i>No ads. No trackers. No noise. Just a serious video player with a calmer surface and a sharper edge.</i>
+  <i>High-quality playback, thoughtful controls, and a focused media library without distractions.</i>
 </p>
 
 **Mpv∞ (Mpv-infinity) is an ad-free, open-source Android media player for high-quality video and audio playback, combining MPV/libmpv with AndroidX Media3/ExoPlayer engines, dual subtitles, HDR, Dolby Vision, HDR10+, chapters, and customizable playback controls.**
