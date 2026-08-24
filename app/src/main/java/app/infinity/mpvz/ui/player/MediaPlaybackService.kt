@@ -246,6 +246,7 @@ class MediaPlaybackService :
   // Notification next/previous taps can arrive faster than MPV can replace its decoder. Keep the
   // latest requested item and perform one replacement after the short burst settles.
   private var notificationNavigationJob: Job? = null
+  private var notificationNavigationPending = false
   private var artworkRefreshJob: Job? = null
   private var mpvAccessReleased = false
   private var nativeBackgroundPlayback = false
@@ -768,14 +769,21 @@ class MediaPlaybackService :
   }
 
   private fun scheduleNotificationQueueNavigation(previous: Boolean) {
-    // Select immediately without loading. This lets repeated presses accumulate (Next, Next, Next)
-    // while the current song keeps playing until the user stops pressing the control.
+    // Select immediately without loading. This lets repeated presses accumulate while the current
+    // song stays paused until the user stops pressing the control.
     val selectedItem =
       if (previous) PlaybackSession.selectPrevious() else PlaybackSession.selectNext()
     if (selectedItem == null) {
       refreshTransportControls()
       return
     }
+    // Pause the current item at the start of a navigation burst. Repeated presses then only change
+    // selection; the decoder is not replaced until the quiet window expires.
+    if (!notificationNavigationPending) {
+      runCatching { PlaybackSession.setPropertyBoolean("pause", true) }
+      notificationNavigationPending = true
+    }
+    publishPendingQueueItem(selectedItem)
     notificationNavigationJob?.cancel()
     val selectedItemId = selectedItem.stableId
     notificationNavigationJob =
@@ -788,6 +796,7 @@ class MediaPlaybackService :
   }
 
   private fun playSelectedSessionItem(): Boolean {
+    notificationNavigationPending = false
     schedulePlaybackStateSave(force = true)
     val selectedIndex = PlaybackSession.queue.value.currentIndex
     val item = PlaybackSession.playQueueItem(selectedIndex)
@@ -859,6 +868,29 @@ class MediaPlaybackService :
     refreshTransportControls()
   }
 
+  fun publishPendingQueueItem(item: PlaybackItem) {
+    serviceScope.launch {
+      mediaInfoGeneration++
+      artworkRefreshJob?.cancel()
+      notificationIsAudio = resolveNotificationIsAudio(item, notificationIsAudio)
+      mediaIdentifier = item.stableId
+      mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
+      mediaArtist = item.artist.orEmpty().ifBlank { artistFromFileName(mediaTitle) }
+      mediaUri = item.originalUri
+      currentPositionSeconds = 0.0
+      lastPublishedPositionSeconds = 0.0
+      mediaDurationSeconds = 0.0
+      paused = true
+      playbackSpeed = 1.0f
+      chapters = emptyList()
+      currentChapterIndex = -1
+      scheduleArtworkRefresh(item)
+      updateMediaSessionMetadata()
+      updateMediaSessionPlaybackState()
+      updateNotification()
+    }
+  }
+
   private fun scheduleArtworkRefresh(item: PlaybackItem) {
     artworkRefreshJob?.cancel()
     val requestGeneration = mediaInfoGeneration
@@ -905,14 +937,17 @@ class MediaPlaybackService :
   }
 
   private fun applySessionItem(item: PlaybackItem) {
-    // Invalidate older service metadata/artwork jobs before publishing this queue item.
-    mediaInfoGeneration++
-    artworkRefreshJob?.cancel()
     val itemChanged = mediaIdentifier != item.stableId || mediaUri != item.originalUri
+    // Invalidate older service metadata/artwork jobs only for a genuinely new item. A pending
+    // notification selection already published this same item and owns the artwork refresh job.
+    if (itemChanged) {
+      mediaInfoGeneration++
+      artworkRefreshJob?.cancel()
+    }
     notificationIsAudio = resolveNotificationIsAudio(item, notificationIsAudio)
     mediaIdentifier = item.stableId
     mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
-    mediaArtist = artistFromFileName(mediaTitle)
+    mediaArtist = item.artist.orEmpty().ifBlank { artistFromFileName(mediaTitle) }
     mediaUri = item.originalUri
     currentPositionSeconds = 0.0
     lastPublishedPositionSeconds = 0.0
