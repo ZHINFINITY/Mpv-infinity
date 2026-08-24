@@ -26,6 +26,8 @@ import android.graphics.Color
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -45,6 +47,7 @@ import androidx.media.session.MediaButtonReceiver
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.AudioPreferences
@@ -243,6 +246,7 @@ class MediaPlaybackService :
   // Notification next/previous taps can arrive faster than MPV can replace its decoder. Keep the
   // latest requested item and perform one replacement after the short burst settles.
   private var notificationNavigationJob: Job? = null
+  private var artworkRefreshJob: Job? = null
   private var mpvAccessReleased = false
   private var nativeBackgroundPlayback = false
   private var usesAudioBackgroundPlayback = false
@@ -764,17 +768,35 @@ class MediaPlaybackService :
   }
 
   private fun scheduleNotificationQueueNavigation(previous: Boolean) {
+    // Select immediately without loading. This lets repeated presses accumulate (Next, Next, Next)
+    // while the current song keeps playing until the user stops pressing the control.
+    val selectedItem =
+      if (previous) PlaybackSession.selectPrevious() else PlaybackSession.selectNext()
+    if (selectedItem == null) {
+      refreshTransportControls()
+      return
+    }
     notificationNavigationJob?.cancel()
+    val selectedItemId = selectedItem.stableId
     notificationNavigationJob =
       serviceScope.launch {
-        delay(100L)
+        delay(350L)
         if (!foregroundReady || PlaybackSession.state.value.surfaceAttached) return@launch
-        if (previous) {
-          playPreviousFromSession()
-        } else {
-          playNextFromSession()
-        }
+        if (PlaybackSession.queue.value.currentItem?.stableId != selectedItemId) return@launch
+        playSelectedSessionItem()
       }
+  }
+
+  private fun playSelectedSessionItem(): Boolean {
+    schedulePlaybackStateSave(force = true)
+    val selectedIndex = PlaybackSession.queue.value.currentIndex
+    val item = PlaybackSession.playQueueItem(selectedIndex)
+    if (item == null) {
+      refreshTransportControls()
+      return false
+    }
+    applySessionItem(item)
+    return true
   }
 
   private fun playNextFromSession(): Boolean {
@@ -837,7 +859,55 @@ class MediaPlaybackService :
     refreshTransportControls()
   }
 
+  private fun scheduleArtworkRefresh(item: PlaybackItem) {
+    artworkRefreshJob?.cancel()
+    val requestGeneration = mediaInfoGeneration
+    val sourceUri = item.originalUri.takeIf { it.isNotBlank() } ?: return
+    artworkRefreshJob =
+      serviceScope.launch {
+        delay(120L)
+        val artwork =
+          withContext(Dispatchers.IO) {
+            runCatching {
+              val parsedUri = Uri.parse(sourceUri)
+              val cleanPath =
+                when {
+                  parsedUri.scheme == "file" -> parsedUri.path
+                  parsedUri.scheme == "content" -> null
+                  else -> sourceUri
+                }
+              val retriever = MediaMetadataRetriever()
+              try {
+                if (cleanPath != null) {
+                  retriever.setDataSource(cleanPath)
+                } else {
+                  retriever.setDataSource(this@MediaPlaybackService, parsedUri)
+                }
+                EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
+              } finally {
+                runCatching { retriever.release() }
+              }
+            }.getOrNull()
+          }
+        if (requestGeneration != mediaInfoGeneration || mediaIdentifier != item.stableId) {
+          artwork?.takeIf { !it.isRecycled }?.recycle()
+          return@launch
+        }
+        setMediaInfo(
+          title = FileTypeUtils.stripExtension(item.title.orEmpty()),
+          artist = item.artist.orEmpty().ifBlank { artistFromFileName(item.title.orEmpty()) },
+          thumbnail = artwork,
+          uri = item.originalUri,
+          identifier = item.stableId,
+          clearThumbnail = true,
+        )
+      }
+  }
+
   private fun applySessionItem(item: PlaybackItem) {
+    // Invalidate older service metadata/artwork jobs before publishing this queue item.
+    mediaInfoGeneration++
+    artworkRefreshJob?.cancel()
     val itemChanged = mediaIdentifier != item.stableId || mediaUri != item.originalUri
     notificationIsAudio = resolveNotificationIsAudio(item, notificationIsAudio)
     mediaIdentifier = item.stableId
@@ -852,8 +922,7 @@ class MediaPlaybackService :
     if (itemChanged) {
       chapters = emptyList()
       currentChapterIndex = -1
-      replaceOwnedThumbnail(null)
-      refreshNotificationPalette()
+      scheduleArtworkRefresh(item)
     }
     updateMediaSessionMetadata()
     updateMediaSessionPlaybackState()
@@ -1088,15 +1157,15 @@ class MediaPlaybackService :
             }
 
             override fun onSkipToNext() {
-              Log.d(TAG, "onSkipToNext called; selecting next queue item")
+              Log.d(TAG, "onSkipToNext called; waiting for navigation to settle")
               // MediaSession transport actions have fixed semantics. Gesture preferences apply to
               // hardware/custom media-key gestures, not the notification’s explicit Next button.
-              playNextFromSession()
+              scheduleNotificationQueueNavigation(previous = false)
             }
 
             override fun onSkipToPrevious() {
-              Log.d(TAG, "onSkipToPrevious called; selecting previous queue item")
-              playPreviousFromSession()
+              Log.d(TAG, "onSkipToPrevious called; waiting for navigation to settle")
+              scheduleNotificationQueueNavigation(previous = true)
             }
 
             override fun onSkipToQueueItem(id: Long) {
@@ -1841,6 +1910,8 @@ class MediaPlaybackService :
       .onFailure { error -> Log.e(TAG, "Error removing MPV observer", error) }
     notificationNavigationJob?.cancel()
     notificationNavigationJob = null
+    artworkRefreshJob?.cancel()
+    artworkRefreshJob = null
     runCatching { serviceScope.cancel() }
       .onFailure { error -> Log.e(TAG, "Error canceling playback service work", error) }
     if (::mediaSession.isInitialized) {
