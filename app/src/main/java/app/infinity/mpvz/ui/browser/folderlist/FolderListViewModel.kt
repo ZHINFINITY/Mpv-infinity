@@ -382,6 +382,13 @@ class FolderListViewModel(
   fun markFolderWatched(folder: VideoFolder) {
     if (audioOnly) return
 
+    // Remove this folder’s badge immediately. The database write and full recount continue on IO,
+    // but the user should not need to wait for MediaStore queries to see the direct action.
+    _foldersWithNewCount.value =
+      _foldersWithNewCount.value.map { entry ->
+        if (entry.folder.bucketId == folder.bucketId) entry.copy(newVideoCount = 0) else entry
+      }
+
     viewModelScope.launch(Dispatchers.IO) {
       runCatching {
         val videos = MediaFileRepository.getVideosInFolder(getApplication(), folder.bucketId, includeAudioOverride = false)

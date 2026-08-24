@@ -2901,6 +2901,11 @@ class PlayerActivity :
     val sessionState = PlaybackSession.state.value
     val currentItem = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem ?: return false
     if (sessionState.phase !in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return false
+    // A recreated Activity has a new Media3 controller. Attaching the old process session here
+    // would skip the normal persisted-position lookup and leave the new controller at 00:00. Only
+    // attach an existing Media3 session when this Activity already owns its prepared controller
+    // (for example, an ACTION_OPEN_PLAYER intent delivered to the same Activity instance).
+    if (shouldUseMedia3(currentItem) && media3PreparedItemId != currentItem.stableId) return false
 
     val queueState = PlaybackSession.queue.value
     playlist = queueState.items.map { item -> Uri.parse(item.originalUri) }
