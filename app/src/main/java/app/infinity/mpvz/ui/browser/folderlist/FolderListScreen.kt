@@ -15,7 +15,10 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,6 +28,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -79,9 +83,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -141,6 +147,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 import java.io.File
+import kotlin.math.roundToInt
 
 @Serializable
 object FolderListScreen : Screen {
@@ -939,6 +946,9 @@ object FolderListScreen : Screen {
                   onFolderLongClick = { folder ->
                     selectionManager.handleLongClick(folder)
                   },
+                  onMarkFolderWatched = { folder ->
+                    viewModel.markFolderWatched(folder)
+                  },
                   onTogglePin = { folder ->
                     coroutineScope.launch {
                       val updated = foldersPreferences.pinnedFolders.get().toMutableSet()
@@ -1219,6 +1229,81 @@ object FolderListScreen : Screen {
 }
 
 @Composable
+private fun FolderSwipeToMarkWatched(
+  folder: VideoFolder,
+  enabled: Boolean,
+  onMarkWatched: () -> Unit,
+  content: @Composable () -> Unit,
+) {
+  if (!enabled) {
+    content()
+    return
+  }
+
+  val scope = rememberCoroutineScope()
+  val offsetX = remember(folder.bucketId) { Animatable(0f) }
+  val density = androidx.compose.ui.platform.LocalDensity.current
+  val actionWidthPx = with(density) { 112.dp.toPx() }
+
+  Box(modifier = Modifier.fillMaxWidth()) {
+    Row(
+      modifier =
+        Modifier
+          .matchParentSize()
+          .background(
+            color = MaterialTheme.colorScheme.primaryContainer,
+            shape = RoundedCornerShape(16.dp),
+          ).padding(horizontal = 18.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.Start,
+    ) {
+      Icon(
+        imageVector = Icons.RoundedFilled.CheckCircle,
+        contentDescription = "Mark folder watched",
+        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+        modifier = Modifier.size(24.dp),
+      )
+      Text(
+        text = "Watched",
+        color = MaterialTheme.colorScheme.onPrimaryContainer,
+        style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier.padding(start = 8.dp),
+      )
+    }
+
+    Box(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+          .pointerInput(folder.bucketId, actionWidthPx) {
+            detectHorizontalDragGestures(
+              onHorizontalDrag = { change, dragAmount ->
+                change.consume()
+                scope.launch {
+                  offsetX.snapTo((offsetX.value + dragAmount).coerceIn(0f, actionWidthPx))
+                }
+              },
+              onDragEnd = {
+                scope.launch {
+                  if (offsetX.value >= actionWidthPx * 0.7f) {
+                    onMarkWatched()
+                  }
+                  offsetX.animateTo(0f, tween(durationMillis = 180))
+                }
+              },
+              onDragCancel = {
+                scope.launch { offsetX.animateTo(0f, tween(durationMillis = 180)) }
+              },
+            )
+          },
+    ) {
+      content()
+    }
+  }
+}
+
+@Composable
 private fun FolderListContent(
   folders: List<VideoFolder>,
   foldersWithNewCount: List<app.infinity.mpvz.ui.browser.folderlist.FolderWithNewCount>,
@@ -1238,6 +1323,7 @@ private fun FolderListContent(
   onRefresh: suspend () -> Unit,
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
+  onMarkFolderWatched: (VideoFolder) -> Unit,
   onTogglePin: (VideoFolder) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
@@ -1296,6 +1382,7 @@ private fun FolderListContent(
           selectionManager = selectionManager,
           onFolderClick = onFolderClick,
           onFolderLongClick = onFolderLongClick,
+          onMarkFolderWatched = onMarkFolderWatched,
           onTogglePin = onTogglePin,
           selectedFolderBucketId = selectedFolderBucketId,
           audioOnly = audioOnly,
@@ -1313,6 +1400,7 @@ private fun FolderListContent(
           selectionManager = selectionManager,
           onFolderClick = onFolderClick,
           onFolderLongClick = onFolderLongClick,
+          onMarkFolderWatched = onMarkFolderWatched,
           onTogglePin = onTogglePin,
           selectedFolderBucketId = selectedFolderBucketId,
           audioOnly = audioOnly,
@@ -1335,6 +1423,7 @@ private fun GridContent(
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<VideoFolder, String>,
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
+  onMarkFolderWatched: (VideoFolder) -> Unit,
   onTogglePin: (VideoFolder) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
@@ -1391,31 +1480,37 @@ private fun GridContent(
 
         val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
 
-        FolderCard(
+        FolderSwipeToMarkWatched(
           folder = folder,
-          isSelected = selectionManager.isSelected(folder),
-          isRecentlyPlayed = isRecentlyPlayed,
-          onClick = { onFolderClick(folder) },
-          onLongClick = { onFolderLongClick(folder) },
-          onThumbClick =
-            if (tapThumbnailToSelect) {
-              { selectionManager.toggle(folder) }
-            } else {
-              { onFolderClick(folder) }
-            },
-          newVideoCount = newCount,
-          isGridMode = true,
-          isPinned = folder.path in pinnedFolderPaths,
-          onPinClick =
-            if (!selectionManager.isInSelectionMode) {
-              { onTogglePin(folder) }
-            } else {
-              null
-            },
-          isDualPane = isDualPane,
-          isActive = isActive,
-          isAudioOnly = audioOnly,
-        )
+          enabled = !audioOnly,
+          onMarkWatched = { onMarkFolderWatched(folder) },
+        ) {
+          FolderCard(
+            folder = folder,
+            isSelected = selectionManager.isSelected(folder),
+            isRecentlyPlayed = isRecentlyPlayed,
+            onClick = { onFolderClick(folder) },
+            onLongClick = { onFolderLongClick(folder) },
+            onThumbClick =
+              if (tapThumbnailToSelect) {
+                { selectionManager.toggle(folder) }
+              } else {
+                { onFolderClick(folder) }
+              },
+            newVideoCount = newCount,
+            isGridMode = true,
+            isPinned = folder.path in pinnedFolderPaths,
+            onPinClick =
+              if (!selectionManager.isInSelectionMode) {
+                { onTogglePin(folder) }
+              } else {
+                null
+              },
+            isDualPane = isDualPane,
+            isActive = isActive,
+            isAudioOnly = audioOnly,
+          )
+        }
       }
     }
 
@@ -1449,6 +1544,7 @@ private fun ListContent(
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<VideoFolder, String>,
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
+  onMarkFolderWatched: (VideoFolder) -> Unit,
   onTogglePin: (VideoFolder) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
@@ -1481,50 +1577,56 @@ private fun ListContent(
 
         val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
 
-        FolderCard(
+        FolderSwipeToMarkWatched(
           folder = folder,
-          isSelected = selectionManager.isSelected(folder),
-          isRecentlyPlayed = isRecentlyPlayed,
-          onClick = { onFolderClick(folder) },
-          onLongClick = { onFolderLongClick(folder) },
-          onThumbClick =
-            if (tapThumbnailToSelect) {
-              { selectionManager.toggle(folder) }
-            } else {
-              { onFolderClick(folder) }
-            },
-          newVideoCount = newCount,
-          isGridMode = false,
-          isPinned = folder.path in pinnedFolderPaths,
-          onPinClick =
-            if (!selectionManager.isInSelectionMode) {
-              { onTogglePin(folder) }
-            } else {
-              null
-            },
-          customChipContent =
-            if (folder.path in pinnedFolderPaths) {
-              {
-                Text(
-                  androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_pinned),
-                  style = MaterialTheme.typography.labelSmall,
-                  modifier =
-                    Modifier
-                      .background(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        RoundedCornerShape(8.dp),
-                      ).padding(horizontal = 8.dp, vertical = 4.dp),
-                  color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-              }
-            } else {
-              null
-            },
-          isDualPane = isDualPaneActive && selectedFolderBucketId != null,
-          isActive = isActive,
-          isAudioOnly = audioOnly,
-        )
+          enabled = !audioOnly,
+          onMarkWatched = { onMarkFolderWatched(folder) },
+        ) {
+          FolderCard(
+            folder = folder,
+            isSelected = selectionManager.isSelected(folder),
+            isRecentlyPlayed = isRecentlyPlayed,
+            onClick = { onFolderClick(folder) },
+            onLongClick = { onFolderLongClick(folder) },
+            onThumbClick =
+              if (tapThumbnailToSelect) {
+                { selectionManager.toggle(folder) }
+              } else {
+                { onFolderClick(folder) }
+              },
+            newVideoCount = newCount,
+            isGridMode = false,
+            isPinned = folder.path in pinnedFolderPaths,
+            onPinClick =
+              if (!selectionManager.isInSelectionMode) {
+                { onTogglePin(folder) }
+              } else {
+                null
+              },
+            customChipContent =
+              if (folder.path in pinnedFolderPaths) {
+                {
+                  Text(
+                    androidx.compose.ui.res
+                      .stringResource(app.infinity.mpvz.R.string.ui_pinned),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier =
+                      Modifier
+                        .background(
+                          MaterialTheme.colorScheme.primaryContainer,
+                          RoundedCornerShape(8.dp),
+                        ).padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                  )
+                }
+              } else {
+                null
+              },
+            isDualPane = isDualPaneActive && selectedFolderBucketId != null,
+            isActive = isActive,
+            isAudioOnly = audioOnly,
+          )
+        }
       }
     }
 

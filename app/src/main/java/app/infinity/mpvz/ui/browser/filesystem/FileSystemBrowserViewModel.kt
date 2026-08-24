@@ -115,7 +115,8 @@ class FileSystemBrowserViewModel(
   val itemsWereDeletedOrMoved: StateFlow<Boolean> = _itemsWereDeletedOrMoved.asStateFlow()
 
   // Track previous item count per path to detect if folder became empty
-  private val itemCountByPath = mutableMapOf<String, Int>()
+  private var itemCountByPath = mutableMapOf<String, Int>()
+  private var lastHardRefreshElapsedMs = 0L
 
   companion object {
     private const val TAG = "FileSystemBrowserVM"
@@ -215,7 +216,24 @@ class FileSystemBrowserViewModel(
    * Refresh current directory
    * Equivalent to Fossify's refreshFragment() callback
    */
+  /**
+   * Reloads the visible directory without invalidating the storage topology caches or invoking
+   * MediaScanner. Used when returning to the screen; actual media changes still use refresh().
+   */
+  fun refreshVisibleDirectory() {
+    if (_isLoading.value) return
+    Log.d(TAG, "Refreshing visible directory without clearing scanner caches: ${_currentPath.value}")
+    loadCurrentDirectory(forceFileSystemCheck = false)
+  }
+
   override fun refresh() {
+    val now = android.os.SystemClock.elapsedRealtime()
+    if (now - lastHardRefreshElapsedMs < 1_000L) {
+      Log.d(TAG, "Ignoring duplicate hard refresh request")
+      refreshVisibleDirectory()
+      return
+    }
+    lastHardRefreshElapsedMs = now
     Log.d(TAG, "Hard refreshing current directory: ${_currentPath.value}")
 
     // Set loading state
