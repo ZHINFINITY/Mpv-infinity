@@ -555,6 +555,7 @@ class PlayerActivity :
   private var pendingVideoParamRefreshRequiresShaderReload = false
   private var lastBackgroundThumbnailKey: String? = null
   private var lastBackgroundThumbnail: Bitmap? = null
+  private var lastBackgroundThumbnailResolved = false
   private var currentPlayableUri: String? = null // Store current URI for notification re-entry
   private val playbackRenderDispatcher = Dispatchers.Main
   private val mediaLoadDispatcher = Dispatchers.Default.limitedParallelism(1)
@@ -6682,6 +6683,28 @@ class PlayerActivity :
       return true
     }
 
+    // Notification re-entry usually arrives while the existing service is already foreground. Bind
+    // to that instance instead of issuing another startForeground/onStartCommand cycle, which can
+    // briefly contend for audio focus and make the player stutter or restart its artwork path.
+    if (bindToActivity && !serviceBound && MediaPlaybackService.isForegroundActive()) {
+      setActivityMediaSessionActive(false)
+      val existingServiceIntent = Intent(this, MediaPlaybackService::class.java)
+      return try {
+        if (!bindService(existingServiceIntent, serviceConnection, BIND_AUTO_CREATE)) {
+          setActivityMediaSessionActive(true)
+          Log.e(TAG, "Playback service rejected the existing-session bind request")
+          false
+        } else {
+          Log.d(TAG, "Bound to existing foreground playback service")
+          true
+        }
+      } catch (error: Exception) {
+        setActivityMediaSessionActive(true)
+        Log.e(TAG, "Error binding to existing playback service", error)
+        false
+      }
+    }
+
     Log.d(TAG, "Starting background playback for: $fileName")
 
     // Ensure notification channel exists
@@ -7452,6 +7475,9 @@ class PlayerActivity :
     val title = FileTypeUtils.stripExtension(rawTitle)
     val artist = getPreferredCurrentArtist()
     val thumbnailKey = buildBackgroundThumbnailKey()
+    if (thumbnailKey != lastBackgroundThumbnailKey) {
+      lastBackgroundThumbnailResolved = false
+    }
     val cachedThumbnail =
       if (thumbnailKey == lastBackgroundThumbnailKey) {
         lastBackgroundThumbnail
@@ -7476,7 +7502,7 @@ class PlayerActivity :
     service.setChapters(viewModel.chapters.value.map { ChapterNode(time = it.start, title = it.name) })
 
     if (!updateThumbnail || thumbnailKey.isBlank()) return
-    if (thumbnailKey == lastBackgroundThumbnailKey && cachedThumbnail != null) return
+    if (thumbnailKey == lastBackgroundThumbnailKey && (cachedThumbnail != null || lastBackgroundThumbnailResolved)) return
 
     backgroundServiceSyncJob?.cancel()
     backgroundServiceSyncJob =
@@ -7516,12 +7542,14 @@ class PlayerActivity :
 
         lastBackgroundThumbnailKey = thumbnailKey
         lastBackgroundThumbnail = generatedThumbnail
+        lastBackgroundThumbnailResolved = true
         mediaPlaybackService?.setMediaInfo(
           title = title,
           artist = artist,
           thumbnail = generatedThumbnail,
           uri = currentDurableMediaUri(),
           identifier = mediaIdentifier,
+          clearThumbnail = true,
         )
       }
   }

@@ -67,6 +67,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.lang.ref.WeakReference
@@ -90,6 +91,7 @@ class MediaPlaybackService :
     private const val PROGRESS_NOTIFICATION_UPDATE_INTERVAL_MS = 2000L
     private const val MEDIA_NOTIFICATION_UPDATE_INTERVAL_MS = 5000L
     private const val MAX_MEDIA_SESSION_QUEUE_ITEMS = 200
+    private const val MAX_NOTIFICATION_ARTWORK_DIMENSION = 768
     private val DEFAULT_ACCENT_COLOR = Color.rgb(214, 220, 228)
     const val ACTION_OPEN_PLAYER = "app.infinity.mpvz.action.OPEN_PLAYER_FROM_NOTIFICATION"
     const val ACTION_NOTIFICATION_PREVIOUS = "app.infinity.mpvz.action.NOTIFICATION_PREVIOUS"
@@ -237,6 +239,7 @@ class MediaPlaybackService :
   private var lastThumbnailSource: WeakReference<Bitmap>? = null
   private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var playbackStateSaveJob: Job? = null
+  private var mediaInfoGeneration = 0L
   // Notification next/previous taps can arrive faster than MPV can replace its decoder. Keep the
   // latest requested item and perform one replacement after the short burst settles.
   private var notificationNavigationJob: Job? = null
@@ -617,11 +620,36 @@ class MediaPlaybackService :
     thumbnail: Bitmap? = null,
     uri: String? = null,
     identifier: String? = null,
+    clearThumbnail: Boolean = false,
   ) {
     serviceScope.launch {
+      val requestGeneration = ++mediaInfoGeneration
       val resolvedTitle = FileTypeUtils.stripExtension(title)
       val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
-      val artworkChanged = replaceOwnedThumbnail(thumbnail)
+      // Keep existing art while the replacement item is being resolved. Callers that finished an
+      // artwork lookup pass clearThumbnail=true so tracks without art still fall back to the icon.
+      val artworkChanged =
+        if (thumbnail != null) {
+          if (thumbnail === lastThumbnailSource?.get() && this@MediaPlaybackService.thumbnail?.isRecycled == false) {
+            false
+          } else {
+            // Bitmap scaling/copying can touch millions of pixels. Keep it off the service main
+            // thread; only the small ownership swap and notification update return to Main.
+            val preparedThumbnail = withContext(Dispatchers.Default) {
+              prepareNotificationThumbnail(thumbnail)
+            }
+            if (requestGeneration != mediaInfoGeneration) {
+              preparedThumbnail?.takeIf { !it.isRecycled }?.recycle()
+              return@launch
+            }
+            preparedThumbnail?.let { replaceOwnedThumbnail(it, sourceReference = thumbnail) } ?: false
+          }
+        } else if (clearThumbnail) {
+          replaceOwnedThumbnail(null)
+        } else {
+          false
+        }
+      if (requestGeneration != mediaInfoGeneration) return@launch
       val metadataChanged =
         mediaTitle != resolvedTitle ||
           mediaArtist != artist ||
@@ -642,20 +670,44 @@ class MediaPlaybackService :
     }
   }
 
-  private fun replaceOwnedThumbnail(source: Bitmap?): Boolean {
-    if (source == null && thumbnail == null) return false
-    if (source != null && source === lastThumbnailSource?.get() && thumbnail?.isRecycled == false) return false
-    val ownedCopy =
-      source?.let { bitmap ->
-        runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
-      }
+  private fun replaceOwnedThumbnail(
+    ownedThumbnail: Bitmap?,
+    sourceReference: Bitmap? = ownedThumbnail,
+  ): Boolean {
+    if (ownedThumbnail == null && thumbnail == null) return false
+    if (sourceReference != null && sourceReference === lastThumbnailSource?.get() && thumbnail?.isRecycled == false) return false
     val previous = thumbnail
-    lastThumbnailSource = source?.let(::WeakReference)
-    thumbnail = ownedCopy
+    lastThumbnailSource = sourceReference?.let(::WeakReference)
+    thumbnail = ownedThumbnail
     if (lastPaletteThumbnail === previous) lastPaletteThumbnail = null
-    previous?.takeIf { it !== ownedCopy && !it.isRecycled }?.recycle()
-    return previous !== ownedCopy
+    previous?.takeIf { it !== ownedThumbnail && !it.isRecycled }?.recycle()
+    return previous !== ownedThumbnail
   }
+
+  private fun prepareNotificationThumbnail(source: Bitmap): Bitmap? =
+    runCatching {
+      val maxDimension = maxOf(source.width, source.height)
+      val scale =
+        if (maxDimension > MAX_NOTIFICATION_ARTWORK_DIMENSION) {
+          MAX_NOTIFICATION_ARTWORK_DIMENSION.toFloat() / maxDimension.toFloat()
+        } else {
+          1f
+        }
+      val prepared =
+        if (scale < 1f) {
+          Bitmap.createScaledBitmap(
+            source,
+            (source.width * scale).toInt().coerceAtLeast(1),
+            (source.height * scale).toInt().coerceAtLeast(1),
+            true,
+          )
+        } else {
+          source
+        }
+      val copy = prepared.copy(Bitmap.Config.ARGB_8888, false)
+      if (prepared !== source && !prepared.isRecycled) prepared.recycle()
+      copy
+    }.getOrNull()
 
   fun setPlaylistInfo(isAudio: Boolean) {
     notificationIsAudio = isAudio
@@ -1036,13 +1088,15 @@ class MediaPlaybackService :
             }
 
             override fun onSkipToNext() {
-              Log.d(TAG, "onSkipToNext called")
-              handleMediaNextAction()
+              Log.d(TAG, "onSkipToNext called; selecting next queue item")
+              // MediaSession transport actions have fixed semantics. Gesture preferences apply to
+              // hardware/custom media-key gestures, not the notification’s explicit Next button.
+              playNextFromSession()
             }
 
             override fun onSkipToPrevious() {
-              Log.d(TAG, "onSkipToPrevious called")
-              handleMediaPreviousAction()
+              Log.d(TAG, "onSkipToPrevious called; selecting previous queue item")
+              playPreviousFromSession()
             }
 
             override fun onSkipToQueueItem(id: Long) {
