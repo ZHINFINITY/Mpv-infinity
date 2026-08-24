@@ -7288,7 +7288,8 @@ class PlayerActivity :
    * Play the next video in the playlist
    */
   override fun playNextQueueItem() {
-    PlaybackSession.selectNext() ?: return
+    val selectedItem = PlaybackSession.selectNext() ?: return
+    publishPendingQueueSelection(selectedItem)
     TemporaryPlaybackQueue.syncFromSession()
     scheduleQueueNavigationLoad(PlaybackSession.queue.value.currentIndex)
   }
@@ -7297,9 +7298,24 @@ class PlayerActivity :
    * Play the previous video in the playlist
    */
   override fun playPreviousQueueItem() {
-    PlaybackSession.selectPrevious() ?: return
+    val selectedItem = PlaybackSession.selectPrevious() ?: return
+    publishPendingQueueSelection(selectedItem)
     TemporaryPlaybackQueue.syncFromSession()
     scheduleQueueNavigationLoad(PlaybackSession.queue.value.currentIndex)
+  }
+
+  private fun publishPendingQueueSelection(item: PlaybackItem) {
+    // Stop the outgoing audio immediately, but defer decoder replacement until the navigation burst
+    // settles. This prevents the audible tail and AudioTrack underrun during rapid button presses.
+    PlaybackSession.setPropertyBoolean("pause", true)
+    val pendingTitle =
+      FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank {
+        getFileNameFromUri(Uri.parse(item.originalUri)).ifBlank { getString(R.string.player_unknown_video) }
+      }
+    viewModel.setMediaTitle(pendingTitle)
+    updateMediaSessionMetadata(title = pendingTitle, durationMs = 0L)
+    updateMediaSessionPlaybackState(isPlaying = false)
+    mediaPlaybackService?.publishPendingQueueItem(item)
   }
 
   /**
