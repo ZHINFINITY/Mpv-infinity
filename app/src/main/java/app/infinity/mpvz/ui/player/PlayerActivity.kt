@@ -535,6 +535,10 @@ class PlayerActivity :
   private var videoParamRefreshJob: Job? = null
   private var intentSubtitleJob: Job? = null
   private var mediaLoadJob: Job? = null
+  // Rapid media-button/next taps should select the latest queue item, not start one native load per
+  // intermediate item. Coalescing keeps the queue responsive while preventing decoder/audio-guard
+  // churn that can leave the output silent or the UI on an old duration.
+  private var pendingQueueNavigationJob: Job? = null
   @Volatile private var mediaRequestGeneration = 0L
   @Volatile private var folderDiscoveryInFlightGeneration: Long? = null
   private var eofAdvanceJob: Job? = null
@@ -1676,6 +1680,8 @@ class PlayerActivity :
 
     runCatching {
       mediaLoadJob?.cancel()
+      pendingQueueNavigationJob?.cancel()
+      pendingQueueNavigationJob = null
       if (::castPlaybackController.isInitialized) castPlaybackController.release()
       cancelSystemBarsAutoHide()
       if (playbackWasInitialized) saveVideoPlaybackState(fileName, immediate = true)
@@ -1745,6 +1751,8 @@ class PlayerActivity :
     backgroundHandoffJob?.cancel()
     deferredFontSyncJob?.cancel()
     mediaLoadJob?.cancel()
+    pendingQueueNavigationJob?.cancel()
+    pendingQueueNavigationJob = null
     eofAdvanceJob?.cancel()
     resumeAfterUnlockJob?.cancel()
     runCatching { PlaybackSession.removeObserver(playerObserver) }
@@ -4221,6 +4229,9 @@ class PlayerActivity :
    */
   override fun playQueueItem(index: Int) {
     if (index in playlist.indices) {
+      // An explicit playlist-row tap is authoritative and should bypass the rapid-skip debounce.
+      pendingQueueNavigationJob?.cancel()
+      pendingQueueNavigationJob = null
       loadPlaylistItem(index)
     }
   }
@@ -5133,8 +5144,12 @@ class PlayerActivity :
           )
         playbackStateRepository.upsert(playbackState)
         PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
-      }.onFailure { e ->
-        Log.e(TAG, "Error saving playback state", e)
+      } catch (cancellation: CancellationException) {
+        // Replacing a pending save during rapid queue navigation is expected debounce behavior;
+        // do not report it as a playback failure or keep a noisy stack trace in debug logs.
+        throw cancellation
+      } catch (error: Exception) {
+        Log.e(TAG, "Error saving playback state", error)
       }
     }
 
@@ -7229,12 +7244,28 @@ class PlayerActivity :
   }
 
   /**
+   * Schedule the latest queue navigation after a short quiet window. The queue selection is
+   * published immediately so controls and notification state remain responsive, while the actual
+   * native replacement happens only for the final item in a rapid skip burst.
+   */
+  private fun scheduleQueueNavigationLoad(index: Int) {
+    pendingQueueNavigationJob?.cancel()
+    pendingQueueNavigationJob =
+      lifecycleScope.launch {
+        delay(100L)
+        if (isFinishing || isDestroyed) return@launch
+        if (PlaybackSession.queue.value.currentIndex != index) return@launch
+        loadPlaylistItem(index)
+      }
+  }
+
+  /**
    * Play the next video in the playlist
    */
   override fun playNextQueueItem() {
     PlaybackSession.selectNext() ?: return
     TemporaryPlaybackQueue.syncFromSession()
-    loadPlaylistItem(PlaybackSession.queue.value.currentIndex)
+    scheduleQueueNavigationLoad(PlaybackSession.queue.value.currentIndex)
   }
 
   /**
@@ -7243,7 +7274,7 @@ class PlayerActivity :
   override fun playPreviousQueueItem() {
     PlaybackSession.selectPrevious() ?: return
     TemporaryPlaybackQueue.syncFromSession()
-    loadPlaylistItem(PlaybackSession.queue.value.currentIndex)
+    scheduleQueueNavigationLoad(PlaybackSession.queue.value.currentIndex)
   }
 
   /**
@@ -7273,7 +7304,8 @@ class PlayerActivity :
     // Mark only a genuine queue navigation as a zero-start transition. Initial/reopened playlist
     // loads must still query the item's saved Native timestamp; the old unconditional flag made
     // every first Media3 launch bypass persisted resume.
-    val targetQueueItemId = PlaybackSession.queue.value.items.getOrNull(index)?.stableId
+    val targetQueueItem = PlaybackSession.queue.value.items.getOrNull(index)
+    val targetQueueItemId = targetQueueItem?.stableId
     val activeQueueItemId = activePlaybackItem?.stableId
     val isGenuineQueueNavigation =
       targetQueueItemId != null && activeQueueItemId != null && targetQueueItemId != activeQueueItemId
@@ -7284,6 +7316,9 @@ class PlayerActivity :
     if (saveCurrentPlaybackState && fileName.isNotBlank()) {
       saveVideoPlaybackState(fileName)
       reportJellyfinStop()
+    }
+    if (targetQueueItem != null && isAudioPlaybackItem(targetQueueItem)) {
+      viewModel.resetAudioTimelineForTransition()
     }
 
     val uri = playlist[index]
@@ -7380,17 +7415,32 @@ class PlayerActivity :
       viewModel.setMediaTitle(fileName)
     }
 
-    // Update media session metadata
+    // Update media-session metadata only for the item that requested this load. A fixed one-shot
+    // delay could read the outgoing MPV duration, and an older coroutine could overwrite the latest
+    // song after several rapid skips.
+    val metadataItemId = targetQueueItemId ?: mediaIdentifier
     lifecycleScope.launch {
-      kotlinx.coroutines.delay(100) // Wait for MPV to load the file
-      val durationMs = (PlaybackSession.getPropertyDouble("duration")?.times(1000))?.toLong() ?: 0L
-      updateMediaSessionMetadata(
-        title = fileName,
-        durationMs = durationMs,
-      )
-      syncBackgroundPlaybackService(updateThumbnail = true)
-      // Refresh playlist items to update the currently playing indicator
-      viewModel.refreshPlaylistItems()
+      repeat(20) {
+        delay(100L)
+        if (isFinishing || isDestroyed || mediaIdentifier != metadataItemId) return@launch
+        if (currentPlaybackItem()?.stableId != metadataItemId) return@launch
+        val phase = PlaybackSession.state.value.phase
+        if (phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return@repeat
+
+        val durationMs =
+          (PlaybackSession.getPropertyDouble("duration")?.times(1000))
+            ?.toLong()
+            ?.takeIf { it > 0L }
+            ?: 0L
+        updateMediaSessionMetadata(
+          title = fileName,
+          durationMs = durationMs,
+        )
+        syncBackgroundPlaybackService(updateThumbnail = true)
+        // Refresh playlist items to update the currently playing indicator
+        viewModel.refreshPlaylistItems()
+        return@launch
+      }
     }
   }
 

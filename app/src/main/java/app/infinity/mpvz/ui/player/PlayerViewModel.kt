@@ -1533,7 +1533,14 @@ class PlayerViewModel : ViewModel(),
 
     // Update precise duration when the integer duration changes (avoid polling)
     viewModelScope.launch(playbackStateDispatcher) {
-      _duration.collect { _ ->
+      _duration.collect { publishedDurationSeconds ->
+        // A replacement load deliberately publishes null so the controls cannot display the
+        // outgoing song’s duration. Do not synchronously query MPV here: its old property can stay
+        // readable until the asynchronous loadfile command completes.
+        if (publishedDurationSeconds == null) {
+          _preciseDuration.value = 0f
+          return@collect
+        }
         if (!_isMpvCoreReady.value) return@collect
         val dur = PlaybackSession.getPropertyDouble("duration")
         if (dur != null && dur > 0) {
@@ -1770,6 +1777,20 @@ class PlayerViewModel : ViewModel(),
         isWaitingForVideo = true,
       )
     }
+  }
+
+  /**
+   * Clears only the UI timeline cache at a queue transition. MPV properties are cleared by
+   * PlaybackSession.load(); this method avoids re-reading the outgoing duration while the new
+   * audio decoder is preparing.
+   */
+  fun resetAudioTimelineForTransition() {
+    _paused.value = true
+    _pos.value = null
+    _duration.value = null
+    _precisePosition.value = 0f
+    _preciseDuration.value = 0f
+    discardLegacySeekPreview()
   }
 
   /**

@@ -560,6 +560,13 @@ object PlaybackSession : MPVLib.EventObserver {
       // prevents a preceding vid=no from producing "No video or audio streams selected" on
       // video-only files while preserving video suppression for true background/no-Surface loads.
       val loadOptions = if (selectVideoForNewFile) "pause=yes,vid=auto" else "pause=yes"
+      // Clear the outgoing timeline before the replacement command reaches MPV. The native
+      // properties otherwise remain readable for a short window, allowing the audio controls and
+      // notification to show the previous song’s duration while the new decoder is loading.
+      propInt.emit("time-pos", null)
+      propDouble.emit("time-pos", null)
+      propInt.emit("duration", null)
+      propDouble.emit("duration", null)
       MPVLib.command("loadfile", playableUri, "replace", "-1", loadOptions)
       propBoolean.emit("pause", false)
       generation

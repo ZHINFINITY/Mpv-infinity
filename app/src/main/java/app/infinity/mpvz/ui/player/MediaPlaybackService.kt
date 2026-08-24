@@ -63,6 +63,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -236,6 +237,9 @@ class MediaPlaybackService :
   private var lastThumbnailSource: WeakReference<Bitmap>? = null
   private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var playbackStateSaveJob: Job? = null
+  // Notification next/previous taps can arrive faster than MPV can replace its decoder. Keep the
+  // latest requested item and perform one replacement after the short burst settles.
+  private var notificationNavigationJob: Job? = null
   private var mpvAccessReleased = false
   private var nativeBackgroundPlayback = false
   private var usesAudioBackgroundPlayback = false
@@ -490,7 +494,7 @@ class MediaPlaybackService :
     intent?.let {
       when (it.action) {
         ACTION_NOTIFICATION_PREVIOUS -> {
-          playPreviousFromSession()
+          scheduleNotificationQueueNavigation(previous = true)
           if (foregroundReady) return START_NOT_STICKY
         }
         ACTION_NOTIFICATION_PLAY_PAUSE -> {
@@ -498,7 +502,7 @@ class MediaPlaybackService :
           if (foregroundReady) return START_NOT_STICKY
         }
         ACTION_NOTIFICATION_NEXT -> {
-          playNextFromSession()
+          scheduleNotificationQueueNavigation(previous = false)
           if (foregroundReady) return START_NOT_STICKY
         }
         ACTION_NOTIFICATION_STOP -> {
@@ -705,6 +709,20 @@ class MediaPlaybackService :
     }
     volumeBeforeDuck?.let { volume -> PlaybackSession.setPropertyDouble("volume", volume) }
     volumeBeforeDuck = null
+  }
+
+  private fun scheduleNotificationQueueNavigation(previous: Boolean) {
+    notificationNavigationJob?.cancel()
+    notificationNavigationJob =
+      serviceScope.launch {
+        delay(100L)
+        if (!foregroundReady || PlaybackSession.state.value.surfaceAttached) return@launch
+        if (previous) {
+          playPreviousFromSession()
+        } else {
+          playNextFromSession()
+        }
+      }
   }
 
   private fun playNextFromSession(): Boolean {
@@ -1767,6 +1785,8 @@ class MediaPlaybackService :
       .onFailure { error -> Log.e(TAG, "Error saving playback state before MPV shutdown", error) }
     runCatching { PlaybackSession.removeObserver(this) }
       .onFailure { error -> Log.e(TAG, "Error removing MPV observer", error) }
+    notificationNavigationJob?.cancel()
+    notificationNavigationJob = null
     runCatching { serviceScope.cancel() }
       .onFailure { error -> Log.e(TAG, "Error canceling playback service work", error) }
     if (::mediaSession.isInitialized) {
