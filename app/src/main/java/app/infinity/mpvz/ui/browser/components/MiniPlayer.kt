@@ -542,6 +542,8 @@ private fun MiniPlayerContent(
  * Extracts embedded album art for the current track so the mini player can show a
  * square cover instead of a bare icon. Returns null when no artwork is available.
  */
+private const val MAX_MINI_PLAYER_ARTWORK_DIMENSION = 512
+
 @Composable
 private fun rememberMiniPlayerCoverArt(pathOrUri: String?): Bitmap? {
   val context = LocalContext.current
@@ -571,7 +573,7 @@ private fun rememberMiniPlayerCoverArt(pathOrUri: String?): Bitmap? {
           runCatching { retriever.release() }
         }
       }.onSuccess { loaded ->
-        bitmap = loaded
+        bitmap = limitMiniPlayerArtwork(loaded)
       }.onFailure {
         bitmap = null
       }
@@ -579,3 +581,21 @@ private fun rememberMiniPlayerCoverArt(pathOrUri: String?): Bitmap? {
   }
   return bitmap
 }
+
+private fun limitMiniPlayerArtwork(bitmap: Bitmap?): Bitmap? =
+  bitmap?.let { source ->
+    runCatching {
+      val maxDimension = maxOf(source.width, source.height)
+      if (maxDimension <= MAX_MINI_PLAYER_ARTWORK_DIMENSION) return@runCatching source
+      val scale = MAX_MINI_PLAYER_ARTWORK_DIMENSION.toFloat() / maxDimension.toFloat()
+      val scaled =
+        Bitmap.createScaledBitmap(
+          source,
+          (source.width * scale).toInt().coerceAtLeast(1),
+          (source.height * scale).toInt().coerceAtLeast(1),
+          true,
+        )
+      if (!source.isRecycled) source.recycle()
+      scaled
+    }.getOrNull()
+  }
