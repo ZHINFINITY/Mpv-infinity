@@ -19,10 +19,9 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -154,8 +153,10 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
 
   AnimatedVisibility(
     visible = isMediaActive,
-    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+    // Keep the established slide motion but avoid compositing a second full-size alpha layer while
+    // the browser and service handoff are settling.
+    enter = slideInVertically(animationSpec = tween(180), initialOffsetY = { it }),
+    exit = slideOutVertically(animationSpec = tween(150), targetOffsetY = { it }),
     modifier = modifier,
   ) {
     MiniPlayerContent(

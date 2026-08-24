@@ -593,7 +593,12 @@ fun AudioPlayerControls(
       queuedArtist,
       filenameArtist,
     ) {
-      sequenceOf(
+        // Queue metadata identifies the selected item immediately, while MPV metadata can still
+        // belong to the outgoing file for a short interval during loadfile replacement.
+        sequenceOf(
+          queuedArtist,
+          retrievedArtist,
+          filenameArtist,
           rawArtist,
           rawArtistLower,
           rawArtistAlt,
@@ -602,9 +607,6 @@ fun AudioPlayerControls(
           rawPerformer,
           rawPerformerLower,
           rawAuthor,
-          retrievedArtist,
-          queuedArtist,
-          filenameArtist,
         )
         .filterNotNull()
         .map { it.trim() }
