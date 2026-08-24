@@ -1977,30 +1977,61 @@ class PlayerActivity :
     )
     // MPV has already been stopped above; keep the native core initialized but idle for fast
     // switching back. Only the active Media3 controller owns this item now.
-    startMedia3PlaybackWhenReady(item, resumePositionMs) {
-      // Dolby Vision routing must not leave the user with audio and a permanently blank video
-      // surface. Some profiles are accepted by Media3’s audio pipeline but never produce a
-      // rendered video frame on a particular device decoder. Give the renderer time to initialize,
-      // then return to MPV, which is known to render this device’s file correctly.
-      if (isDolbyVisionItem(item)) {
-        media3VideoWatchdogJob = lifecycleScope.launch {
-          delay(10_000L)
-          if (
-            playbackEngine == PlaybackEngine.MEDIA3 &&
-              media3ItemId == item.stableId &&
-              !media3VideoFrameRendered
-          ) {
-            media3AutoFallbackItemId = item.stableId
-            AppDebugLog.warn(
-              TAG,
-              "Media3 produced no video frame after watchdog; falling back to MPV " +
-                "and suppressing Media3 retry for item=${item.stableId}",
-            )
-            switchToMpvEngine()
+    fun startMedia3(positionMs: Long) {
+      startMedia3PlaybackWhenReady(item, positionMs) {
+        // Dolby Vision routing must not leave the user with audio and a permanently blank video
+        // surface. Some profiles are accepted by Media3’s audio pipeline but never produce a
+        // rendered video frame on a particular device decoder. Give the renderer time to initialize,
+        // then return to MPV, which is known to render this device’s file correctly.
+        if (isDolbyVisionItem(item)) {
+          media3VideoWatchdogJob = lifecycleScope.launch {
+            delay(10_000L)
+            if (
+              playbackEngine == PlaybackEngine.MEDIA3 &&
+                media3ItemId == item.stableId &&
+                !media3VideoFrameRendered
+            ) {
+              media3AutoFallbackItemId = item.stableId
+              AppDebugLog.warn(
+                TAG,
+                "Media3 produced no video frame after watchdog; falling back to MPV " +
+                  "and suppressing Media3 retry for item=${item.stableId}",
+              )
+              switchToMpvEngine()
+            }
           }
         }
       }
     }
+
+    if (startsAtZero || resumePositionMs > 0L || !playerPreferences.savePositionOnQuit.get()) {
+      startMedia3(resumePositionMs)
+    } else {
+      lifecycleScope.launch(Dispatchers.IO) {
+        val savedPositionMs = persistedPlaybackPositionMs(item)
+        withContext(Dispatchers.Main.immediate) {
+          if (playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) {
+            startMedia3(savedPositionMs)
+          }
+        }
+      }
+    }
+  }
+
+  private suspend fun persistedPlaybackPositionMs(item: PlaybackItem): Long {
+    val identifiers =
+      linkedSetOf(
+        item.stableId,
+        PlaybackIdentity.forUri(item.originalUri),
+        PlaybackIdentity.forUri(item.playableUri),
+      ).filter { it.isNotBlank() }
+    return identifiers
+      .asSequence()
+      .mapNotNull { identifier ->
+        playbackStateRepository.getVideoDataByTitle(identifier)?.lastPosition?.toLong()
+      }.firstOrNull { it > 0L }
+      ?.times(1000L)
+      ?: 0L
   }
 
   private fun selectEngineFromDecoderSheet(selectedEngine: PlaybackEngineMode) {
@@ -5084,11 +5115,25 @@ class PlayerActivity :
   private fun capturePlaybackStateSnapshot(mediaTitle: String): PlaybackStateSnapshot? {
     if (mediaIdentifier.isBlank()) return null
 
+    val media3Active = playbackEngine == PlaybackEngine.MEDIA3
+    val currentPositionSeconds =
+      if (media3Active) {
+        (readMedia3PositionMs() / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+      } else {
+        readMpvIntSeconds("time-pos", viewModel.pos ?: 0)
+      }
+    val durationSeconds =
+      if (media3Active) {
+        (readMedia3DurationMs() / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+      } else {
+        readMpvIntSeconds("duration", viewModel.duration ?: 0)
+      }
+
     return PlaybackStateSnapshot(
       mediaIdentifier = mediaIdentifier,
       mediaTitle = mediaTitle,
-      currentPosition = readMpvIntSeconds("time-pos", viewModel.pos ?: 0),
-      duration = readMpvIntSeconds("duration", viewModel.duration ?: 0),
+      currentPosition = currentPositionSeconds,
+      duration = durationSeconds,
       playbackSpeed = PlaybackSession.getPropertyDouble("speed") ?: DEFAULT_PLAYBACK_SPEED,
       videoZoom = PlaybackSession.getPropertyDouble("video-zoom")?.toFloat() ?: viewModel.videoZoom.value,
       sid = player.sid,
@@ -5110,6 +5155,23 @@ class PlayerActivity :
         ?: PlaybackSession.getPropertyInt(property)
         ?: fallback
     }.getOrDefault(fallback)
+
+  private fun readMedia3PositionMs(): Long {
+    val livePositionMs =
+      runCatching { media3PlaybackController.positionForEngineHandoffMs() }
+        .getOrDefault(0L)
+        .coerceAtLeast(0L)
+    val cachedPositionMs = cachedMedia3State.positionMs.coerceAtLeast(0L)
+    return if (livePositionMs > 0L || cachedPositionMs <= 0L) livePositionMs else cachedPositionMs
+  }
+
+  private fun readMedia3DurationMs(): Long {
+    val liveDurationMs = runCatching { media3PlaybackController.currentState().durationMs }
+      .getOrDefault(0L)
+      .coerceAtLeast(0L)
+    val cachedDurationMs = cachedMedia3State.durationMs.coerceAtLeast(0L)
+    return maxOf(liveDurationMs, cachedDurationMs)
+  }
 
   /**
    * Loads and applies saved playback state from the database.
@@ -5232,7 +5294,15 @@ class PlayerActivity :
       !viewModel.isAudioOnly.value &&
       !isCurrentMediaKnownAudio()
     ) {
-      PlaybackSession.setPropertyInt("time-pos", state.lastPosition)
+      if (playbackEngine == PlaybackEngine.MEDIA3 && cachedMedia3State.playbackState != Player.STATE_IDLE) {
+        withContext(Dispatchers.Main.immediate) {
+          if (playbackEngine == PlaybackEngine.MEDIA3) {
+            media3PlaybackController.seekTo(state.lastPosition * 1000L, fast = false)
+          }
+        }
+      } else {
+        PlaybackSession.setPropertyInt("time-pos", state.lastPosition)
+      }
     }
   }
 

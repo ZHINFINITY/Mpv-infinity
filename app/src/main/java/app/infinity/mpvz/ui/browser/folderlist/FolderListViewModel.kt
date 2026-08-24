@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.domain.media.model.VideoFolder
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -367,6 +368,57 @@ class FolderListViewModel(
    */
   fun recalculateNewVideoCounts() {
     calculateNewVideoCounts(_videoFolders.value)
+  }
+
+  /**
+   * Marks every direct video in a folder as watched. This is intentionally a batch operation so
+   * the folder New badge and each video's New label use the same persistent playback-state source.
+   */
+  fun markFolderWatched(folder: VideoFolder) {
+    if (audioOnly) return
+
+    viewModelScope.launch(Dispatchers.IO) {
+      runCatching {
+        val videos = MediaFileRepository.getVideosInFolder(getApplication(), folder.bucketId, includeAudioOverride = false)
+        val existingStates = playbackStateRepository.getAllPlaybackStates().associateBy { it.mediaTitle }
+
+        videos.forEach { video ->
+          val identifiers =
+            linkedSetOf(
+              PlaybackIdentity.forUri(video.uri.toString()),
+              PlaybackIdentity.forUri(video.path),
+              PlaybackIdentity.forUri("file://${video.path}"),
+            )
+          val canonicalIdentifier = PlaybackIdentity.forUri(video.uri.toString())
+          val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+          val existing = identifiers.firstNotNullOfOrNull { existingStates[it] }
+          val state =
+            (existing ?: PlaybackStateEntity(
+              mediaTitle = canonicalIdentifier,
+              lastPosition = 0,
+              playbackSpeed = 1.0,
+              sid = -1,
+              subDelay = 0,
+              subSpeed = 1.0,
+              aid = -1,
+              audioDelay = 0,
+              timeRemaining = durationSeconds,
+            )).copy(
+              mediaTitle = canonicalIdentifier,
+              lastPosition = 0,
+              timeRemaining = 0,
+              hasBeenWatched = true,
+            )
+          playbackStateRepository.upsert(state)
+          PlaybackStateEvents.notifyChanged(canonicalIdentifier)
+        }
+
+        // Recalculate the folder badge after the batch writes complete.
+        calculateNewVideoCounts(_videoFolders.value, initialDelayMs = 0L)
+      }.onFailure { error ->
+        Log.e(TAG, "Failed to mark folder watched: ${folder.path}", error)
+      }
+    }
   }
 
   suspend fun renameFolder(

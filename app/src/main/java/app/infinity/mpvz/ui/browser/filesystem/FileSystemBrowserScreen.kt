@@ -172,9 +172,9 @@ fun FileSystemBrowserScreen(path: String? = null) {
   val appearancePreferences = koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
-  val playerPreferences = koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
+    val playerPreferences = koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
   val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-
+  var hasHandledInitialResume by rememberSaveable { mutableStateOf(false) }
   // ViewModel - use path parameter if provided, otherwise show roots
   val viewModel: FileSystemBrowserViewModel =
     viewModel(
@@ -415,7 +415,13 @@ fun FileSystemBrowserScreen(path: String? = null) {
     val observer =
       LifecycleEventObserver { _, event ->
         if (event == Lifecycle.Event.ON_RESUME) {
-          viewModel.refresh()
+          // The ViewModel already loads the initial directory. Avoid a second startup refresh;
+          // later returns reuse the scanner cache instead of rescanning all storage.
+          if (hasHandledInitialResume) {
+            viewModel.refreshVisibleDirectory()
+          } else {
+            hasHandledInitialResume = true
+          }
         }
       }
     lifecycleOwner.lifecycle.addObserver(observer)
