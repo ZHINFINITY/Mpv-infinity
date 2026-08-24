@@ -2389,6 +2389,11 @@ class PlayerActivity :
 
   private fun requestExplicitHardStop() {
     if (hardStopRequested) return
+    // The explicit player/PiP X action stops Media3 before onDestroy can reliably observe it.
+    // Capture the live controller position first so this close path cannot discard the timestamp.
+    if (hasPlaybackSessionToPersist()) {
+      saveVideoPlaybackState(fileName, immediate = true)
+    }
     hardStopRequested = true
     isUserFinishing = true
     isBackgroundPlaybackSessionActive = false
@@ -2474,6 +2479,11 @@ class PlayerActivity :
   override fun onStop() {
     MediaPlaybackService.activityForeground = false
     runCatching {
+      // onStop is the last reliable foreground callback before background ownership or task
+      // removal can stop Media3. Save here as a second shutdown boundary, before any handoff.
+      if (hasPlaybackSessionToPersist()) {
+        saveVideoPlaybackState(fileName, immediate = true)
+      }
       pipHelper.onStop()
       if (!mpvInitialized) return@runCatching
 

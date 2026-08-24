@@ -26,6 +26,7 @@ import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.storage.FolderViewScanner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -311,6 +312,8 @@ class FolderListViewModel(
                   }
 
                 FolderWithNewCount(folder, newCount)
+              } catch (cancellation: CancellationException) {
+                throw cancellation
               } catch (e: Exception) {
                 Log.e(TAG, "Error counting new videos for folder ${folder.name}", e)
                 FolderWithNewCount(folder, 0)
@@ -318,6 +321,8 @@ class FolderListViewModel(
             }
 
           _foldersWithNewCount.value = foldersWithCounts
+        } catch (cancellation: CancellationException) {
+          throw cancellation
         } catch (e: Exception) {
           Log.e(TAG, "Error calculating new video counts", e)
           _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
@@ -410,9 +415,12 @@ class FolderListViewModel(
               hasBeenWatched = true,
             )
           playbackStateRepository.upsert(state)
-          PlaybackStateEvents.notifyChanged(canonicalIdentifier)
         }
 
+        // One event is sufficient after the batch. Emitting once avoids a burst of recount jobs
+        // whose cancellation used to make unrelated folders temporarily appear to have zero new
+        // videos.
+        PlaybackStateEvents.notifyChanged(folder.path)
         // Recalculate the folder badge after the batch writes complete.
         calculateNewVideoCounts(_videoFolders.value, initialDelayMs = 0L)
       }.onFailure { error ->
