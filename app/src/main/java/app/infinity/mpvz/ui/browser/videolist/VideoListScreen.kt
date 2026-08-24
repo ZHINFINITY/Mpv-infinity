@@ -1002,6 +1002,19 @@ internal fun VideoListContent(
             initialFirstVisibleItemIndex = initialScrollIndex,
           )
         var isScrollbarDragging by remember { mutableStateOf(false) }
+        var isVideoListScrolling by remember { mutableStateOf(false) }
+
+        LaunchedEffect(mediaLayoutMode, listState, gridState) {
+          snapshotFlow {
+            if (mediaLayoutMode == MediaLayoutMode.GRID) {
+              gridState.isScrollInProgress
+            } else {
+              listState.isScrollInProgress
+            }
+          }.distinctUntilChanged().collectLatest { scrolling ->
+            isVideoListScrolling = scrolling
+          }
+        }
 
         val latestVideosWithInfo by rememberUpdatedState(videosWithInfo)
         val thumbnailListKey =
@@ -1036,10 +1049,11 @@ internal fun VideoListContent(
           thumbnailListKey,
           videoGridColumns,
           isScrollbarDragging,
+          isVideoListScrolling,
         ) {
           val generationId = "$folderId:${mediaLayoutMode.name}"
-          if (!showVideoThumbnails || latestVideosWithInfo.isEmpty() || isScrollbarDragging) {
-            if (isScrollbarDragging) {
+          if (!showVideoThumbnails || latestVideosWithInfo.isEmpty() || isScrollbarDragging || isVideoListScrolling) {
+            if (isScrollbarDragging || isVideoListScrolling) {
               thumbnailRepository.cancelFolderThumbnailGeneration(generationId)
             }
             return@LaunchedEffect
@@ -1181,7 +1195,7 @@ internal fun VideoListContent(
                       thumbnailHeightPx = thumbHeightPx,
                       showSubtitleIndicator = showSubtitleIndicator,
                       allowThumbnailGeneration = false,
-                      allowThumbnailLoading = !isScrollbarDragging,
+                      allowThumbnailLoading = !isScrollbarDragging && !isVideoListScrolling,
                       uiConfig = videoCardUiConfig,
                     )
                   }
@@ -1253,7 +1267,7 @@ internal fun VideoListContent(
                       isGridMode = false,
                       showSubtitleIndicator = showSubtitleIndicator,
                       allowThumbnailGeneration = false,
-                      allowThumbnailLoading = !isScrollbarDragging,
+                      allowThumbnailLoading = !isScrollbarDragging && !isVideoListScrolling,
                       uiConfig = videoCardUiConfig,
                       thumbnailWidthPx = if (isAudio) with(density) { musicCoverArtSize.dp.roundToPx() } else null,
                       thumbnailHeightPx = if (isAudio) with(density) { musicCoverArtSize.dp.roundToPx() } else null,

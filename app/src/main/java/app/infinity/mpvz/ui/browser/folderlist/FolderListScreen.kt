@@ -1244,31 +1244,42 @@ private fun FolderSwipeToMarkWatched(
   val offsetX = remember(folder.bucketId) { Animatable(0f) }
   val density = androidx.compose.ui.platform.LocalDensity.current
   val actionWidthPx = with(density) { 112.dp.toPx() }
+  val shape = RoundedCornerShape(24.dp)
 
-  Box(modifier = Modifier.fillMaxWidth()) {
-    Row(
-      modifier =
-        Modifier
-          .matchParentSize()
-          .background(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shape = RoundedCornerShape(16.dp),
-          ).padding(horizontal = 18.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.Start,
-    ) {
-      Icon(
-        imageVector = Icons.RoundedFilled.CheckCircle,
-        contentDescription = "Mark folder watched",
-        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = Modifier.size(24.dp),
-      )
-      Text(
-        text = "Watched",
-        color = MaterialTheme.colorScheme.onPrimaryContainer,
-        style = MaterialTheme.typography.labelLarge,
-        modifier = Modifier.padding(start = 8.dp),
-      )
+  Box(
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .padding(vertical = 3.dp)
+        .clip(shape)
+        .background(MaterialTheme.colorScheme.surface),
+  ) {
+    if (offsetX.value > 0f) {
+      Box(
+        modifier = Modifier.matchParentSize(),
+        contentAlignment = Alignment.CenterStart,
+      ) {
+        Box(
+          modifier =
+            Modifier
+              .width(96.dp)
+              .fillMaxHeight()
+              .padding(8.dp)
+              .clip(RoundedCornerShape(28.dp))
+              .background(MaterialTheme.colorScheme.primaryContainer)
+              .graphicsLayer {
+                alpha = (offsetX.value / actionWidthPx).coerceIn(0.3f, 1f)
+              },
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            imageVector = Icons.RoundedFilled.CheckCircle,
+            contentDescription = "Mark folder watched",
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(28.dp),
+          )
+        }
+      }
     }
 
     Box(
@@ -1276,8 +1287,10 @@ private fun FolderSwipeToMarkWatched(
         Modifier
           .fillMaxWidth()
           .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+          .background(MaterialTheme.colorScheme.surface)
           .pointerInput(folder.bucketId, actionWidthPx) {
             detectHorizontalDragGestures(
+              onDragStart = { scope.launch { offsetX.stop() } },
               onHorizontalDrag = { change, dragAmount ->
                 change.consume()
                 scope.launch {
