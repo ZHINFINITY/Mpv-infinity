@@ -308,12 +308,10 @@ class MPVView(
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
 
-    advancedPreferences.enabledStatisticsPage.get().let {
-      if (it in 1..5) {
-        PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-        PlaybackSession.command("script-binding", "stats/display-page-$it")
-      }
-    }
+    // Do not restore the MPV stats OSD during player initialization. The persisted page is a UI
+    // preference for the More sheet; restoring it here briefly exposes page 4 (Active Key Bindings)
+    // over the library while a newly selected song is loading. Statistics can still be opened
+    // explicitly from MoreSheet when the user requests them.
   }
 
   fun applyOsdSafeAreaMargins(insets: WindowInsetsCompat? = null) {
