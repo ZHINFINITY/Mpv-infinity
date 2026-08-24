@@ -82,6 +82,14 @@ internal object PlaybackStatePersistence {
       return oldState?.lastPosition ?: 0
     }
 
+    // During Media3 prepare and engine handoff, duration can temporarily be unknown (0). Treat
+    // that sample as valid position data instead of comparing against duration - 1, which turns
+    // every such save into zero and can overwrite a previously persisted resume point. The
+    // completion reset remains unchanged when a real duration is available.
+    if (duration <= 0) {
+      return currentPosition.takeIf { it > 0 } ?: oldState?.lastPosition ?: 0
+    }
+
     return if (currentPosition < duration - 1) currentPosition else 0
   }
 
