@@ -5127,7 +5127,7 @@ class PlayerActivity :
     savePlaybackStateJob?.cancel()
 
     val saveBlock: suspend kotlinx.coroutines.CoroutineScope.() -> Unit = {
-      runCatching {
+      try {
         if (!immediate) {
           delay(250)
         }
