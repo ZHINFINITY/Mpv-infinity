@@ -131,7 +131,7 @@ import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -514,6 +514,8 @@ class PlayerActivity :
   private var manualEngineOverride: PlaybackEngine? = null
   private var media3VideoWatchdogJob: Job? = null
   private var media3Attached = false
+  private fun hasPlaybackSessionToPersist(): Boolean =
+    mpvInitialized || media3ItemId != null || media3PreparedItemId != null
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
   private var savePlaybackStateJob: Job? = null // Track ongoing save job
@@ -1658,7 +1660,7 @@ class PlayerActivity :
     cancelPendingPipDismissalStop()
     mainHandler.removeCallbacks(audioFocusRetryRunnable)
     Log.d(TAG, "PlayerActivity onDestroy")
-    val playbackWasInitialized = mpvInitialized
+    val playbackWasInitialized = hasPlaybackSessionToPersist()
     val keepBackgroundPlaybackAlive =
       PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
         backgroundPlaybackEnabled = playbackWasInitialized && isBackgroundPlaybackEnabled(),
@@ -1932,6 +1934,20 @@ class PlayerActivity :
           PlaybackEngine.MEDIA3 -> media3PlaybackController.positionForEngineHandoffMs()
         }
       }
+    // Persist the outgoing MPV position before stopping libmpv. The handoff can otherwise expose
+    // a transient zero/unknown snapshot to onPause or the next engine callback.
+    if (
+      playbackEngine == PlaybackEngine.MPV &&
+        isReady &&
+        currentPlaybackItem()?.stableId == item.stableId
+    ) {
+      saveVideoPlaybackState(
+        mediaTitle = item.title?.takeIf { it.isNotBlank() } ?: fileName,
+        immediate = true,
+        identifierOverride = item.stableId,
+      )
+    }
+
     // Keep the queue-transition guard active until loadVideoPlaybackState() finishes. Clearing it
     // here lets a later asynchronous state callback reapply the previous item's saved position.
     if (playbackEngine == PlaybackEngine.MPV) {
@@ -2108,6 +2124,22 @@ class PlayerActivity :
       binding.player.visibility = View.VISIBLE
       return
     }
+    // Persist the outgoing Media3 position before clearing its controller state. This is needed
+    // for an engine switch followed immediately by app close, where the lifecycle callback may
+    // observe the newly created MPV session rather than the Media3 session that was playing.
+    if (
+      playbackEngine == PlaybackEngine.MEDIA3 &&
+        currentItem != null &&
+        media3ItemId == currentItem.stableId &&
+        media3PreparedItemId == currentItem.stableId
+    ) {
+      saveVideoPlaybackState(
+        mediaTitle = currentItem.title?.takeIf { it.isNotBlank() } ?: fileName,
+        immediate = true,
+        identifierOverride = currentItem.stableId,
+      )
+    }
+
     AppDebugLog.info(
       TAG,
       "Playback engine selected engine=MPV " +
@@ -2335,7 +2367,7 @@ class PlayerActivity :
   }
 
   override fun onPause() {
-    if (!mpvInitialized) {
+    if (!hasPlaybackSessionToPersist()) {
       super.onPause()
       return
     }
@@ -5046,12 +5078,12 @@ class PlayerActivity :
    *
    * @param mediaTitle The title of the media being played
    */
-  @OptIn(DelicateCoroutinesApi::class)
   private fun saveVideoPlaybackState(
     mediaTitle: String,
     immediate: Boolean = false,
+    identifierOverride: String? = null,
   ) {
-    val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return
+    val snapshot = capturePlaybackStateSnapshot(mediaTitle, identifierOverride) ?: return
 
     // Cancel any previous pending save operation
     savePlaybackStateJob?.cancel()
@@ -5080,7 +5112,10 @@ class PlayerActivity :
     }
 
     if (immediate) {
-      lifecycleScope.launch(Dispatchers.IO + kotlinx.coroutines.NonCancellable, block = saveBlock)
+      // Activity lifecycle scopes can be cancelled as the window is destroyed. Complete the small
+      // Room write before returning from onPause/onDestroy so process death cannot drop the final
+      // timestamp. This follows the service's existing blocking-save path.
+      runBlocking(Dispatchers.IO) { saveBlock() }
     } else {
       // Launch new save job and track it
       savePlaybackStateJob = lifecycleScope.launch(Dispatchers.IO, block = saveBlock)
@@ -5111,8 +5146,12 @@ class PlayerActivity :
     }
   }
 
-  private fun capturePlaybackStateSnapshot(mediaTitle: String): PlaybackStateSnapshot? {
-    if (mediaIdentifier.isBlank()) return null
+  private fun capturePlaybackStateSnapshot(
+    mediaTitle: String,
+    identifierOverride: String? = null,
+  ): PlaybackStateSnapshot? {
+    val identifier = identifierOverride?.takeIf { it.isNotBlank() } ?: mediaIdentifier
+    if (identifier.isBlank()) return null
 
     val media3Active = playbackEngine == PlaybackEngine.MEDIA3
     val currentPositionSeconds =
@@ -5129,7 +5168,7 @@ class PlayerActivity :
       }
 
     return PlaybackStateSnapshot(
-      mediaIdentifier = mediaIdentifier,
+      mediaIdentifier = identifier,
       mediaTitle = mediaTitle,
       currentPosition = currentPositionSeconds,
       duration = durationSeconds,
