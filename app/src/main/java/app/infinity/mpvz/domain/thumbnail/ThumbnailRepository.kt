@@ -79,7 +79,9 @@ class ThumbnailRepository(
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
   private val networkGenerationSemaphore = Semaphore(1)
-  private val maxFolderBatchSize = 48
+  // Keep folder prefetch bounded so thumbnail extraction cannot compete with list scrolling on
+  // large folders. Visible cards still load their cached thumbnails independently.
+  private val maxFolderBatchSize = 24
 
   private data class FolderState(
     val signature: String,
@@ -998,9 +1000,8 @@ class ThumbnailRepository(
     val processorCount = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
     return when {
       activityManager?.isLowRamDevice == true || processorCount <= 2 -> 1
-      processorCount <= 4 -> 2
-      processorCount <= 6 -> 3
-      else -> 4
+      processorCount <= 4 -> 1
+      else -> 2
     }
   }
 

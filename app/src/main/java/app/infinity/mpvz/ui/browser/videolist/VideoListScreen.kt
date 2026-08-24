@@ -1307,8 +1307,8 @@ private fun visibleVideoWindow(
   if (itemCount <= 0) return emptyList()
 
   val safeColumns = columns.coerceAtLeast(1)
-  val prefetchBefore = safeColumns * 2
-  val prefetchAfter = safeColumns * 6
+  val prefetchBefore = safeColumns
+  val prefetchAfter = safeColumns * 3
   val visibleStart = firstVisibleIndex.coerceIn(0, itemCount - 1)
   val visibleEnd = lastVisibleIndex.coerceIn(visibleStart, itemCount - 1)
   val beforeStart = (visibleStart - prefetchBefore).coerceAtLeast(0)
@@ -1321,4 +1321,4 @@ private fun visibleVideoWindow(
   }
 }
 
-private const val THUMBNAIL_SCROLL_SETTLE_MILLIS = 100L
+private const val THUMBNAIL_SCROLL_SETTLE_MILLIS = 250L

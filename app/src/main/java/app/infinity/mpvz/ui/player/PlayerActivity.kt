@@ -208,6 +208,9 @@ class PlayerActivity :
         lifecycleScope.launch(Dispatchers.Main.immediate) {
           media3State = state
           cachedMedia3State = state
+          if (state.positionMs > 0L && media3ItemId != null) {
+            lastKnownMedia3PositionMs = state.positionMs
+          }
           if (
             playbackEngine == PlaybackEngine.MEDIA3 &&
               state.videoWidth > 0 &&
@@ -497,6 +500,7 @@ class PlayerActivity :
   // Media3 exposes player state on the application thread. Playback polling runs on a worker;
   // keep the last published snapshot available there instead of touching ExoPlayer off-thread.
   @Volatile private var cachedMedia3State = Media3PlaybackController.State()
+  @Volatile private var lastKnownMedia3PositionMs = 0L
   private var media3ItemId: String? = null
   private var media3PreparedItemId: String? = null
   /** True when MPV was fully stopped so Media3 could exclusively own the current item. */
@@ -1930,7 +1934,10 @@ class PlayerActivity :
       } else {
         when (playbackEngine) {
           PlaybackEngine.MPV ->
-            ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
+            maxOf(
+              ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong().coerceAtLeast(0L),
+              (viewModel.pos ?: 0).toLong().coerceAtLeast(0L) * 1000L,
+            )
           PlaybackEngine.MEDIA3 -> media3PlaybackController.positionForEngineHandoffMs()
         }
       }
@@ -1938,7 +1945,7 @@ class PlayerActivity :
     // a transient zero/unknown snapshot to onPause or the next engine callback.
     if (
       playbackEngine == PlaybackEngine.MPV &&
-        isReady &&
+        resumePositionMs > 0L &&
         currentPlaybackItem()?.stableId == item.stableId
     ) {
       saveVideoPlaybackState(
@@ -1976,6 +1983,7 @@ class PlayerActivity :
     }
     media3State = Media3PlaybackController.State()
     cachedMedia3State = Media3PlaybackController.State()
+    lastKnownMedia3PositionMs = 0L
     media3PreparedItemId = null
     media3ItemId = item.stableId
     media3VideoFrameRendered = false
@@ -2167,6 +2175,7 @@ class PlayerActivity :
     viewModel.setMedia3Chapters(null)
     media3State = Media3PlaybackController.State()
     cachedMedia3State = Media3PlaybackController.State()
+    lastKnownMedia3PositionMs = 0L
     media3PreparedItemId = null
     media3ItemId = null
     media3ActiveItem = null
@@ -5227,7 +5236,7 @@ class PlayerActivity :
         .getOrDefault(0L)
         .coerceAtLeast(0L)
     val cachedPositionMs = cachedMedia3State.positionMs.coerceAtLeast(0L)
-    return if (livePositionMs > 0L || cachedPositionMs <= 0L) livePositionMs else cachedPositionMs
+    return maxOf(livePositionMs, cachedPositionMs, lastKnownMedia3PositionMs.coerceAtLeast(0L))
   }
 
   private fun readMedia3DurationMs(): Long {

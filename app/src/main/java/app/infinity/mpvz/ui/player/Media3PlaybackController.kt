@@ -94,13 +94,13 @@ class Media3PlaybackController(
   private val loadControl =
     DefaultLoadControl.Builder()
       .setBufferDurationsMsForLocalPlayback(
-        /* minBufferMs = */ 15_000,
-        /* maxBufferMs = */ 120_000,
-        /* bufferForPlaybackMs = */ 3_000,
-        /* bufferForPlaybackAfterRebufferMs = */ 10_000,
+        /* minBufferMs = */ 30_000,
+        /* maxBufferMs = */ 180_000,
+        /* bufferForPlaybackMs = */ 1_500,
+        /* bufferForPlaybackAfterRebufferMs = */ 5_000,
       )
       .setPrioritizeTimeOverSizeThresholdsForLocalPlayback(true)
-      .setBackBuffer(10_000, false)
+      .setBackBuffer(15_000, false)
       .build()
   private val subtitleCuesByRenderer = mutableMapOf<Int, List<Cue>>()
   // Selection overrides use global Media3 renderer indexes, while SubtitleTextOutput receives the
@@ -240,7 +240,7 @@ class Media3PlaybackController(
     logInfo(
       "controller created decoderFallback=true ffmpegRenderer=platform-first " +
         "channelMixing=true nativeEffects=true fastLargeMatroska=true " +
-        "localBufferMs=15000..120000 seekStartMs=3000 rebufferMs=10000",
+        "localBufferMs=30000..180000 seekStartMs=1500 rebufferMs=5000 postSeekLeadMs=5000",
     )
   }
 
@@ -1479,7 +1479,7 @@ class Media3PlaybackController(
   private companion object {
     const val TAG = "MpvInfinity"
     const val LARGE_BACKWARD_SEEK_RESET_MS = 30_000L
-    const val POST_SEEK_BUFFER_LEAD_MS = 8_000L
-    const val POST_SEEK_RESUME_TIMEOUT_MS = 15_000L
+    const val POST_SEEK_BUFFER_LEAD_MS = 5_000L
+    const val POST_SEEK_RESUME_TIMEOUT_MS = 8_000L
   }
 }
