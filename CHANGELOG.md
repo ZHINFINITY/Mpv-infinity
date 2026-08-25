@@ -2,7 +2,7 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
-## 1.0.2 Hotfix — Public Hotfix Release
+## 1.0.3 — Public Hotfix Release
 
 This hotfix keeps the tested v1.0.2 feature set and corrects the remaining branding, subtitle, notification, crash-diagnostics, and music-player issues.
 
