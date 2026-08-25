@@ -436,7 +436,7 @@ Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.
 
 ## Star History
 
-<a href="https://www.star-history.com/#ZHINFINITY/Mpv-infinity&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=ZHINFINITY%2FMpv-infinity&type=date&legend=top-left">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&theme=dark&legend=top-left" />
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
