@@ -629,6 +629,12 @@ class MediaPlaybackService :
     clearThumbnail: Boolean = false,
   ) {
     serviceScope.launch {
+      val requestedIdentifier = identifier?.takeIf { it.isNotBlank() }
+      val selectedIdentifier = PlaybackSession.queue.value.currentItem?.stableId
+      if (requestedIdentifier != null && selectedIdentifier != null && requestedIdentifier != selectedIdentifier) {
+        Log.d(TAG, "Ignoring stale service metadata identifier=$requestedIdentifier selected=$selectedIdentifier")
+        return@launch
+      }
       val requestGeneration = ++mediaInfoGeneration
       val resolvedTitle = FileTypeUtils.stripExtension(title)
       val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
@@ -883,6 +889,10 @@ class MediaPlaybackService :
 
   fun publishPendingQueueItem(item: PlaybackItem) {
     serviceScope.launch {
+      if (PlaybackSession.queue.value.currentItem?.stableId != item.stableId) {
+        Log.d(TAG, "Ignoring stale pending queue item=${item.stableId}")
+        return@launch
+      }
       mediaInfoGeneration++
       artworkRefreshJob?.cancel()
       notificationIsAudio = resolveNotificationIsAudio(item, notificationIsAudio)
@@ -934,13 +944,20 @@ class MediaPlaybackService :
               }
             }.getOrNull()
           }
-        if (requestGeneration != mediaInfoGeneration || mediaIdentifier != item.stableId) {
+        if (
+          requestGeneration != mediaInfoGeneration ||
+            mediaIdentifier != item.stableId ||
+            PlaybackSession.queue.value.currentItem?.stableId != item.stableId
+        ) {
           artwork?.takeIf { !it.isRecycled }?.recycle()
           return@launch
         }
+        // Keep the metadata currently published for this item. The Activity may have resolved
+        // an embedded title/artist after the pending queue selection; reusing item.title here
+        // would put the old filename or track number back into the notification.
         setMediaInfo(
-          title = FileTypeUtils.stripExtension(item.title.orEmpty()),
-          artist = item.artist.orEmpty().ifBlank { artistFromFileName(item.title.orEmpty()) },
+          title = mediaTitle.ifBlank { FileTypeUtils.stripExtension(item.title.orEmpty()) },
+          artist = mediaArtist.ifBlank { item.artist.orEmpty().ifBlank { artistFromFileName(item.title.orEmpty()) } },
           thumbnail = artwork,
           uri = item.originalUri,
           identifier = item.stableId,

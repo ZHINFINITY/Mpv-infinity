@@ -158,6 +158,7 @@ fun SubtitleSettingsTypographyCard(
             preferences.bold.set(it)
             PlaybackSession.setPropertyBoolean("sub-bold", it)
             PlaybackSession.setPropertyBoolean("secondary-sub-bold", it)
+            viewModel.applyNativeSubtitleStyle()
           },
         ) {
           Icon(
@@ -172,6 +173,7 @@ fun SubtitleSettingsTypographyCard(
             preferences.italic.set(it)
             PlaybackSession.setPropertyBoolean("sub-italic", it)
             PlaybackSession.setPropertyBoolean("secondary-sub-italic", it)
+            viewModel.applyNativeSubtitleStyle()
           },
         ) {
           Icon(
@@ -194,6 +196,7 @@ fun SubtitleSettingsTypographyCard(
                 PlaybackSession.setPropertyString("sub-justify", SubtitleJustification.Auto.value)
                 PlaybackSession.setPropertyString("secondary-sub-justify", SubtitleJustification.Auto.value)
               }
+              viewModel.applyNativeSubtitleStyle()
             },
           ) {
             Icon(justification.icon, null)
@@ -237,6 +240,7 @@ fun SubtitleSettingsTypographyCard(
             preferences.font.set(actualFont)
             PlaybackSession.setPropertyString("sub-font", actualFont)
             PlaybackSession.setPropertyString("secondary-sub-font", actualFont)
+            viewModel.applyNativeSubtitleStyle()
           },
           leadingIcon = fontsLoadingIndicator,
         )
@@ -251,6 +255,7 @@ fun SubtitleSettingsTypographyCard(
           preferences.fontSize.set(it)
           PlaybackSession.setPropertyInt("sub-font-size", it)
           PlaybackSession.setPropertyInt("secondary-sub-font-size", it)
+          viewModel.applyNativeSubtitleStyle()
           if (viewModel.isMedia3ActiveForGesture()) {
             viewModel.setSubtitleScaleForGesture((it / 55f).coerceIn(0.1f, 5.0f))
           }

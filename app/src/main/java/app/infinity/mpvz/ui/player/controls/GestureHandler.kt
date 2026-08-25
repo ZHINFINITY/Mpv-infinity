@@ -1046,7 +1046,7 @@ fun GestureHandler(
             val startPosition = down.position
             val startTime = System.currentTimeMillis()
 
-            val hasActiveSubtitle = getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
+            val hasActiveSubtitle = viewModel.hasActiveSubtitleForGesture()
             val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
             val subtitleScreenY = getSubtitleScreenY(subPos, size.width.toFloat(), size.height.toFloat())
 

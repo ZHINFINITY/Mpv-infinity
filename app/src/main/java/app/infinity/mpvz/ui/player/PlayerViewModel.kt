@@ -4421,6 +4421,10 @@ class PlayerViewModel : ViewModel(),
       backgroundColor = subtitlesPreferences.backgroundColor.get(),
       edgeType = edgeType,
       edgeColor = subtitlesPreferences.borderColor.get(),
+      applyEmbeddedStyles = !subtitlesPreferences.overrideAssSubs.get(),
+      fontFamily = subtitlesPreferences.font.get(),
+      bold = subtitlesPreferences.bold.get(),
+      italic = subtitlesPreferences.italic.get(),
     )
   }
 
