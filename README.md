@@ -431,11 +431,3 @@ For the detailed notice and redistribution guidance, see [`UPSTREAM_NOTICES.md`]
 ## License
 
 Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE) and [`UPSTREAM_NOTICES.md`](UPSTREAM_NOTICES.md) for the license and attribution information. Mpv∞-specific code, branding, and modifications are maintained by **ZHINFINITY**, while upstream copyrights remain with their respective holders.
-
----
-
-## Star History
-
-> GitHub now restricts public stargazer data to repository administrators and collaborators. The interactive chart can still be viewed by the repository owner or a collaborator after adding a properly scoped GitHub access token locally in Star History. Do not add a token to this repository.
->
-> [Open the Mpv∞ Star History chart](https://www.star-history.com/?repos=ZHINFINITY%2FMpv-infinity&type=date&legend=top-left) · [Star History access-token instructions](https://www.star-history.com/blog/how-to-use-github-star-history#how-to-add-your-github-access-token)
