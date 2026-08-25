@@ -900,12 +900,12 @@ class Media3PlaybackController(
       pivotY = height.toFloat()
       scaleX = subtitleScale
       scaleY = subtitleScale
-      // MPV's sub-pos uses 100 as the normal bottom position. Media3 exposes the equivalent
-      // bottom padding as a fraction, so map the shared 0..150 preference into a conservative
-      // readable range without allowing text outside the display.
-      setBottomPaddingFraction(
-        (((100 - subtitlePosition).coerceAtLeast(0)) / 100f).coerceIn(0f, 0.8f),
-      )
+      // Apply position as a renderer translation as well as bottom padding. This works for PGS
+      // bitmap cues, whose internal cue geometry cannot be restyled like text cues.
+      translationY = ((subtitlePosition - 100) / 100f * height * 0.5f).coerceIn(-height * 0.5f, height * 0.5f)
+      // Use the renderer translation as the single position source. A zero bottom-padding value
+      // avoids double-applying the preference and keeps PGS bitmap cues aligned with text cues.
+      setBottomPaddingFraction(0f)
     }
   }
 
@@ -923,6 +923,7 @@ class Media3PlaybackController(
     backgroundColor: Int,
     edgeType: Int,
     edgeColor: Int,
+    shadowColor: Int = android.graphics.Color.BLACK,
     applyEmbeddedStyles: Boolean = true,
     fontFamily: String? = null,
     bold: Boolean = false,
@@ -943,7 +944,7 @@ class Media3PlaybackController(
         backgroundColor,
         android.graphics.Color.TRANSPARENT,
         edgeType,
-        edgeColor,
+        if (edgeType == CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW) shadowColor else edgeColor,
         typeface,
       )
     applyNativeSubtitleStyle()
@@ -1235,7 +1236,14 @@ class Media3PlaybackController(
     val view = attachedView ?: return
     view.post {
       if (attachedView === view && subtitleCueGeneration == generation) {
-        view.subtitleView?.setCues(filteredCues)
+        runCatching { view.subtitleView?.setCues(filteredCues) }
+          .onFailure { error ->
+            AppDebugLog.error(
+              TAG,
+              "Media3 subtitle cue render failed; keeping playback alive: ${error.message}",
+              error,
+            )
+          }
       }
     }
   }
@@ -1320,7 +1328,11 @@ class Media3PlaybackController(
     AppDebugLog.error(
       TAG,
       "Media3: player error code=${error.errorCode} name=${error.errorCodeName} " +
-        "message=${error.message.orEmpty()} cause=${cause?.javaClass?.name}: ${cause?.message}",
+        "message=${error.message.orEmpty()} cause=${cause?.javaClass?.name}: ${cause?.message} " +
+        "video=${latestVideoFormat?.sampleMimeType}/${latestVideoFormat?.width}x${latestVideoFormat?.height} " +
+        "size=${latestVideoSize?.width}x${latestVideoSize?.height} " +
+        "audio=${latestAudioTracks.joinToString { it.codec.orEmpty() }} " +
+        "subs=${latestSubtitleTracks.joinToString { it.codec.orEmpty() }}",
       error,
     )
     onError(error)

@@ -4411,9 +4411,13 @@ class PlayerViewModel : ViewModel(),
   /** Applies saved subtitle colors and border settings to the active Native renderer. */
   fun applyNativeSubtitleStyle() {
     if (!host.isMedia3Active()) return
+    val borderStyle = subtitlesPreferences.borderStyle.get()
+    val shadowOffset = subtitlesPreferences.shadowOffset.get()
     val edgeType =
-      when (subtitlesPreferences.borderStyle.get().value) {
-        "opaque-box", "background-box" -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE
+      when {
+        borderStyle.value == "opaque-box" || borderStyle.value == "background-box" ->
+          androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE
+        shadowOffset != 0 -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
         else -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
       }
     host.media3ApplySubtitleStyle(
@@ -4421,6 +4425,7 @@ class PlayerViewModel : ViewModel(),
       backgroundColor = subtitlesPreferences.backgroundColor.get(),
       edgeType = edgeType,
       edgeColor = subtitlesPreferences.borderColor.get(),
+      shadowColor = subtitlesPreferences.shadowColor.get(),
       applyEmbeddedStyles = !subtitlesPreferences.overrideAssSubs.get(),
       fontFamily = subtitlesPreferences.font.get(),
       bold = subtitlesPreferences.bold.get(),

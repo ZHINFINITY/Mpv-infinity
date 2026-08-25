@@ -92,6 +92,7 @@ interface PlayerHost {
     backgroundColor: Int,
     edgeType: Int,
     edgeColor: Int,
+    shadowColor: Int = android.graphics.Color.BLACK,
     applyEmbeddedStyles: Boolean = true,
     fontFamily: String? = null,
     bold: Boolean = false,
