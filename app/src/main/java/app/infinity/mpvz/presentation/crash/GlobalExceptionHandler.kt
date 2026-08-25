@@ -11,6 +11,10 @@ package app.infinity.mpvz.presentation.crash
 
 import android.content.Context
 import android.content.Intent
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.system.exitProcess
 
 class GlobalExceptionHandler(
@@ -21,10 +25,21 @@ class GlobalExceptionHandler(
     t: Thread,
     e: Throwable,
   ) {
+    val crashDetails = buildString {
+      appendLine("Timestamp: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())}")
+      appendLine("Thread: ${t.name}")
+      appendLine("Process: ${context.packageName}")
+      appendLine()
+      appendLine(e.stackTraceToString())
+    }
+    runCatching {
+      val crashDirectory = context.getExternalFilesDir("crash") ?: context.filesDir
+      File(crashDirectory, "last-crash.txt").writeText(crashDetails)
+    }
     val intent = Intent(context, activity)
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK)
-    intent.putExtra("exception", e.stackTraceToString())
+    intent.putExtra("exception", crashDetails)
     context.startActivity(intent)
     exitProcess(0)
   }

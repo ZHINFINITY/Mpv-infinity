@@ -309,6 +309,7 @@ fun SubtitleSettingsTypographyCard(
           preferences.shadowOffset.set(it)
           PlaybackSession.setPropertyInt("sub-shadow-offset", it)
           PlaybackSession.setPropertyInt("secondary-sub-shadow-offset", it)
+          viewModel.applyNativeSubtitleStyle()
         },
         min = -20,
         max = 20,
