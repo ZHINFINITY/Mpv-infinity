@@ -43,11 +43,16 @@ jobs:
             version_tag="${{ inputs.tag_name }}"
           fi
 
-          if [[ ! "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid stable release tag: $version_tag"
+          if [[ ! "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$version_tag" != "v1.0.2-hotfix" ]]; then
+            echo "Invalid release tag: $version_tag"
             exit 1
           fi
           echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
+          if [[ "$version_tag" == "v1.0.2-hotfix" ]]; then
+            echo "RELEASE_NAME=Mpv∞ v1.0.2 Hotfix" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_NAME=Mpv∞ $version_tag" >> "$GITHUB_ENV"
+          fi
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
@@ -163,7 +168,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION_TAG }}
-          name: Mpv∞ ${{ env.VERSION_TAG }}
+          name: ${{ env.RELEASE_NAME }}
           body_path: release-notes.md
           generate_release_notes: true
           draft: false

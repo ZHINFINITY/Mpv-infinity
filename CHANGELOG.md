@@ -2,6 +2,15 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.2 Hotfix — Public Hotfix Release
+
+This hotfix keeps the tested v1.0.2 feature set and corrects the remaining branding, subtitle, notification, crash-diagnostics, and music-player issues.
+
+- **Permission-dialog identity:** Replaced the inherited MpvRx repository link with the official Mpv∞ repository at https://github.com/ZHINFINITY/Mpv-infinity.
+- **Media3 subtitles:** Improved subtitle position and scale handling for text and PGS bitmap cues, applied color/background/outline/drop-shadow settings to supported text subtitles, and refreshed settings when the Native renderer attaches.
+- **Crash diagnostics:** Subtitle cue rendering is guarded, Media3 errors include codec and track context, and uncaught crashes are saved to the app-specific crash log before the crash screen opens.
+- **Music playback:** Rapid-navigation notification metadata and artwork are synchronized to the final selected track, while music-player artwork resolution and entrance/minimize transitions are smoother.
+
 ## 1.0.2 — Stable Release
 
 This release consolidates the tested improvements added after v1.0.0 across playback, queues, subtitles, library management, and performance.
