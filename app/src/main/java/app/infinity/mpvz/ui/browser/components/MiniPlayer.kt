@@ -200,6 +200,9 @@ private fun MiniPlayerContent(
   val currentItem = sessionState.currentItem
   val paused by PlaybackSession.propBoolean["pause"].collectAsStateWithLifecycle()
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
+  val rawTagTitle by PlaybackSession.propString["metadata/by-key/Title"].collectAsStateWithLifecycle()
+  val rawTagTitleLower by PlaybackSession.propString["metadata/by-key/title"].collectAsStateWithLifecycle()
+  val rawTagTitleUpper by PlaybackSession.propString["metadata/by-key/TITLE"].collectAsStateWithLifecycle()
   val duration by PlaybackSession.propInt["duration"].collectAsStateWithLifecycle()
   val positionState = PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
   val videoAspectRaw by PlaybackSession.propDouble["video-params/aspect"].collectAsStateWithLifecycle()
@@ -209,12 +212,18 @@ private fun MiniPlayerContent(
   val isPlaying = paused == false
   // Queue selection is updated before playback during rapid navigation. Prefer it over MPV’s
   // outgoing media-title so the minimized player does not show the previous song while settling.
-  val title = currentItem?.title?.takeIf { it.isNotBlank() }
-    ?: rawMediaTitle?.takeIf { it.isNotBlank() }
+  val title = sequenceOf(rawTagTitle, rawTagTitleLower, rawTagTitleUpper, currentItem?.title, rawMediaTitle)
+    .filterNotNull()
+    .map { it.trim() }
+    .firstOrNull { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
     ?: "Media Track"
   val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsStateWithLifecycle()
-  val artist = currentItem?.artist?.takeIf { it.isNotBlank() }
-    ?: rawArtist?.takeIf { it.isNotBlank() }
+  val rawArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsStateWithLifecycle()
+  val rawAlbumArtist by PlaybackSession.propString["metadata/by-key/album_artist"].collectAsStateWithLifecycle()
+  val artist = sequenceOf(currentItem?.artist, rawArtist, rawArtistLower, rawAlbumArtist)
+    .filterNotNull()
+    .map { it.trim() }
+    .firstOrNull { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
 
   val isVideoMode = !isAudioOnlyItem && enableVideoMiniPlayer
 

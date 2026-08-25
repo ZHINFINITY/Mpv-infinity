@@ -84,6 +84,9 @@ interface PlayerHost {
   /** Applies the shared subtitle scale to the active Native/Media3 SubtitleView. */
   fun media3SetSubtitleScale(scale: Float): Boolean = false
 
+  /** Applies the shared subtitle position to the active Native/Media3 SubtitleView. */
+  fun media3SetSubtitlePosition(position: Int): Boolean = false
+
   fun media3ApplySubtitleStyle(
     textColor: Int,
     backgroundColor: Int,

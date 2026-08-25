@@ -535,6 +535,9 @@ fun AudioPlayerControls(
     return titleWithoutExt
   }
 
+  val rawTitle by PlaybackSession.propString["metadata/by-key/Title"].collectAsState()
+  val rawTitleLower by PlaybackSession.propString["metadata/by-key/title"].collectAsState()
+  val rawTitleUpper by PlaybackSession.propString["metadata/by-key/TITLE"].collectAsState()
   val retrievedTitle = currentAudioPresentation?.title
   val fileTitle =
     mediaPath
@@ -543,17 +546,24 @@ fun AudioPlayerControls(
       ?.substringBefore('?')
       ?.takeIf { it.isNotBlank() }
       ?.stripAudioExtension()
+  // MPV's media-title can be a queue label or track number (for example, "023") while the
+  // embedded tag already contains the actual song title. Prefer the retriever result whenever it
+  // is available, then fall back to the file name and finally the queue label.
+  val resolvedTitleCandidate =
+    sequenceOf(rawTitle, rawTitleLower, rawTitleUpper, retrievedTitle, fileTitle, mediaTitle)
+      .filterNotNull()
+      .map { it.trim() }
+      .firstOrNull { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
   var lastValidTitle by remember {
-    mutableStateOf(
-      (mediaTitle ?: retrievedTitle ?: fileTitle)
-        ?.takeIf { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
-        ?.stripAudioExtension()
-        ?: "Audio Track",
-    )
+    mutableStateOf(resolvedTitleCandidate?.stripAudioExtension() ?: "Audio Track")
   }
-  LaunchedEffect(mediaTitle, mediaPath, retrievedTitle) {
-    val candidate = mediaTitle?.takeIf { it.isNotBlank() } ?: retrievedTitle?.takeIf { it.isNotBlank() } ?: fileTitle
-    if (!candidate.isNullOrBlank() && !candidate.equals("Unknown Title", ignoreCase = true)) {
+  LaunchedEffect(mediaTitle, mediaPath, retrievedTitle, fileTitle, rawTitle, rawTitleLower, rawTitleUpper) {
+    val candidate =
+      sequenceOf(rawTitle, rawTitleLower, rawTitleUpper, retrievedTitle, fileTitle, mediaTitle)
+        .filterNotNull()
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
+    if (!candidate.isNullOrBlank()) {
       lastValidTitle = candidate.stripAudioExtension()
     }
   }

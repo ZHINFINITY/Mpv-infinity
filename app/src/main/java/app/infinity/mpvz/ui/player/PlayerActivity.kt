@@ -1275,6 +1275,7 @@ class PlayerActivity :
               VideoAspect.Crop -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
               VideoAspect.Stretch -> AspectRatioFrameLayout.RESIZE_MODE_FILL
             }
+          binding.media3Player.setSubtitleSafeForCrop(transform.aspect == VideoAspect.Crop)
         }
       }
     }
@@ -1352,6 +1353,11 @@ class PlayerActivity :
         media3PlaybackController.attach(playerView)
         media3Attached = true
       }
+      // Reapply saved Native subtitle preferences after every PlayerView attachment. PlayerView
+      // initializes its SubtitleView with system defaults, which otherwise makes the settings sheet
+      // appear ineffective until a later renderer rebuild.
+      media3PlaybackController.setSubtitleScale(subtitlesPreferences.subScale.get())
+      media3PlaybackController.setSubtitlePosition(subtitlesPreferences.subPos.get())
       runCatching {
         media3PlaybackController.setRepeatMode(
           when (viewModel.repeatMode.value) {
@@ -7083,12 +7089,16 @@ class PlayerActivity :
     return media3PlaybackController.isSubtitleSelected(trackId)
   }
 
-  override fun media3SetSubtitleScale(scale: Float): Boolean {
+    override fun media3SetSubtitleScale(scale: Float): Boolean {
     if (!isMedia3Active()) return false
     return media3PlaybackController.setSubtitleScale(scale)
   }
-
+  override fun media3SetSubtitlePosition(position: Int): Boolean {
+    if (!isMedia3Active()) return false
+    return media3PlaybackController.setSubtitlePosition(position)
+  }
   override fun media3ApplySubtitleStyle(
+
     textColor: Int,
     backgroundColor: Int,
     edgeType: Int,
