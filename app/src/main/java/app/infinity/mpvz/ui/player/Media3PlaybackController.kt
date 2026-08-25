@@ -892,7 +892,14 @@ class Media3PlaybackController(
       setApplyEmbeddedStyles(nativeSubtitleApplyEmbeddedStyles)
       setApplyEmbeddedFontSizes(false)
       setStyle(nativeSubtitleStyle)
-      setFractionalTextSize((0.0533f * subtitleScale).coerceIn(0.005f, 0.25f))
+      // SubtitleView's fractional text size does not resize bitmap cues such as Tangled's PGS
+      // subtitles. Scale the complete renderer so both text and bitmap cues respond to the same
+      // app setting and pinch gesture.
+      setFractionalTextSize(0.0533f.coerceIn(0.005f, 0.25f))
+      pivotX = width / 2f
+      pivotY = height.toFloat()
+      scaleX = subtitleScale
+      scaleY = subtitleScale
       // MPV's sub-pos uses 100 as the normal bottom position. Media3 exposes the equivalent
       // bottom padding as a fraction, so map the shared 0..150 preference into a conservative
       // readable range without allowing text outside the display.
@@ -933,10 +940,7 @@ class Media3PlaybackController(
     nativeSubtitleStyle =
       CaptionStyleCompat(
         textColor,
-        // Native subtitles must remain transparent like the MPV renderer. The preference's
-        // background value is still retained for MPV, but is intentionally not used as a Media3
-        // cue rectangle because it creates the black block reported on device.
-        android.graphics.Color.TRANSPARENT,
+        backgroundColor,
         android.graphics.Color.TRANSPARENT,
         edgeType,
         edgeColor,

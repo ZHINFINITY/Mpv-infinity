@@ -895,6 +895,8 @@ class MediaPlaybackService :
       }
       mediaInfoGeneration++
       artworkRefreshJob?.cancel()
+      // Do not keep showing the outgoing song’s cover while the final rapid selection settles.
+      replaceOwnedThumbnail(null)
       notificationIsAudio = resolveNotificationIsAudio(item, notificationIsAudio)
       mediaIdentifier = item.stableId
       mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
@@ -1726,6 +1728,9 @@ class MediaPlaybackService :
       "media-title" -> {
         if (value.isNotBlank()) {
           serviceScope.launch {
+            if (notificationNavigationPending || PlaybackSession.state.value.phase in setOf(PlaybackPhase.LOADING, PlaybackPhase.INITIALIZING)) {
+              return@launch
+            }
             if (mediaTitle == value) return@launch
             mediaTitle = value
             updateMediaSessionMetadata()
@@ -1745,6 +1750,9 @@ class MediaPlaybackService :
         val artist = value.trim()
         if (artist.isBlank()) return
         serviceScope.launch {
+          if (notificationNavigationPending || PlaybackSession.state.value.phase in setOf(PlaybackPhase.LOADING, PlaybackPhase.INITIALIZING)) {
+            return@launch
+          }
           if (mediaArtist == artist) return@launch
           mediaArtist = artist
           updateMediaSessionMetadata()

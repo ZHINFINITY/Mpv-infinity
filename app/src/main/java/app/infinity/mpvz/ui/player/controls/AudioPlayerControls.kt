@@ -1719,8 +1719,8 @@ fun AudioPlayerControls(
       ) {
         androidx.compose.animation.AnimatedVisibility(
           visible = !isLyricsFullscreen,
-          enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
-          exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
+          enter = fadeIn(animationSpec = tween(150)),
+          exit = fadeOut(animationSpec = tween(100)),
         ) {
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
             headerBar()
@@ -1734,8 +1734,8 @@ fun AudioPlayerControls(
 
         androidx.compose.animation.AnimatedVisibility(
           visible = !isLyricsFullscreen,
-          enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
-          exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
+          enter = fadeIn(animationSpec = tween(150)),
+          exit = fadeOut(animationSpec = tween(100)),
         ) {
           Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(modifier = Modifier.height(16.dp))

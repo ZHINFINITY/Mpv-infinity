@@ -154,10 +154,12 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
   val currentStreamFilename by PlaybackSession.propString["stream-open-filename"].collectAsStateWithLifecycle()
   val coverArtPath =
     if (isAudioOnlyItem) {
-      currentMediaPath?.takeIf { it.isNotBlank() }
-        ?: currentStreamFilename?.takeIf { it.isNotBlank() }
-        ?: currentItem?.originalUri?.takeIf { it.isNotBlank() }
+      // During rapid navigation MPV's path can still describe the outgoing song while the queue
+      // already points at the selected item. Resolve art from that selected URI first.
+      currentItem?.originalUri?.takeIf { it.isNotBlank() }
         ?: currentItem?.playableUri?.takeIf { it.isNotBlank() }
+        ?: currentMediaPath?.takeIf { it.isNotBlank() }
+        ?: currentStreamFilename?.takeIf { it.isNotBlank() }
     } else {
       null
     }
@@ -176,8 +178,8 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
     visible = isMediaActive,
     // Keep the established slide motion but avoid compositing a second full-size alpha layer while
     // the browser and service handoff are settling.
-    enter = slideInVertically(animationSpec = tween(180), initialOffsetY = { it }),
-    exit = slideOutVertically(animationSpec = tween(150), targetOffsetY = { it }),
+    enter = slideInVertically(animationSpec = tween(120), initialOffsetY = { it }),
+    exit = slideOutVertically(animationSpec = tween(100), targetOffsetY = { it }),
     modifier = modifier,
   ) {
     MiniPlayerContent(
