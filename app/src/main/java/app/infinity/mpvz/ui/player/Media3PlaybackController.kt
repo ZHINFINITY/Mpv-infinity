@@ -148,6 +148,7 @@ class Media3PlaybackController(
   // SubtitleView may rebuild its cue layout when tracks change. Keep the user scale outside the
   // view instance so a renderer reset cannot silently restore the default 1.0x size.
   private var subtitleScale = 1f
+  private var subtitlePosition = 100
   private var nativeSubtitleStyle =
     CaptionStyleCompat(
       android.graphics.Color.WHITE,
@@ -889,6 +890,12 @@ class Media3PlaybackController(
       setApplyEmbeddedFontSizes(false)
       setStyle(nativeSubtitleStyle)
       setFractionalTextSize((0.0533f * subtitleScale).coerceIn(0.005f, 0.25f))
+      // MPV's sub-pos uses 100 as the normal bottom position. Media3 exposes the equivalent
+      // bottom padding as a fraction, so map the shared 0..150 preference into a conservative
+      // readable range without allowing text outside the display.
+      setBottomPaddingFraction(
+        (((100 - subtitlePosition).coerceAtLeast(0)) / 100f).coerceIn(0f, 0.8f),
+      )
     }
   }
 
@@ -941,6 +948,13 @@ class Media3PlaybackController(
     applySubtitleScale()
     logInfo("subtitle scale=$subtitleScale nativeSubtitleView=${attachedView?.subtitleView != null}")
     // Retain the value even before the PlayerView is attached; attach() reapplies it later.
+    return true
+  }
+
+  fun setSubtitlePosition(position: Int): Boolean {
+    subtitlePosition = position.coerceIn(0, 150)
+    applyNativeSubtitleStyle()
+    logInfo("subtitle position=$subtitlePosition nativeSubtitleView=${attachedView?.subtitleView != null}")
     return true
   }
 

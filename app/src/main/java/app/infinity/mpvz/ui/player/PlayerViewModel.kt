@@ -4401,6 +4401,13 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
+  /** Applies the shared subtitle position to the active Native renderer. */
+  fun setNativeSubtitlePosition(position: Int) {
+    if (host.isMedia3Active()) {
+      host.media3SetSubtitlePosition(position.coerceIn(0, 150))
+    }
+  }
+
   /** Applies saved subtitle colors and border settings to the active Native renderer. */
   fun applyNativeSubtitleStyle() {
     if (!host.isMedia3Active()) return

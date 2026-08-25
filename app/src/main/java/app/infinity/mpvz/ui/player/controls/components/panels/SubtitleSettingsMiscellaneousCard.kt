@@ -38,6 +38,7 @@ import app.infinity.mpvz.presentation.components.ExpandableCard
 import app.infinity.mpvz.presentation.components.SliderItem
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.applySubtitleLayout
 import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
@@ -48,7 +49,10 @@ import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
 @Composable
-fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
+fun SubtitlesMiscellaneousCard(
+  viewModel: PlayerViewModel,
+  modifier: Modifier = Modifier,
+) {
   val preferences = koinInject<SubtitlesPreferences>()
   val playerPreferences = koinInject<PlayerPreferences>()
   var isExpanded by remember { mutableStateOf(true) }
@@ -119,6 +123,9 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
           onChange = {
             preferences.subScale.set(it)
             PlaybackSession.setPropertyFloat("sub-scale", it)
+            if (viewModel.isMedia3ActiveForGesture()) {
+              viewModel.setSubtitleScaleForGesture(it)
+            }
           },
           max = 5f,
           icon = {
@@ -135,6 +142,12 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
           onChange = {
             preferences.subPos.set(it)
             applySubtitleLayout(it, preferences.overrideAssSubs.get())
+            // Media3's SubtitleView does not expose MPV's sub-pos property; keep the
+            // shared position preference for MPV while ensuring the setting is not silently
+            // ignored when the Native engine is active.
+            if (viewModel.isMedia3ActiveForGesture()) {
+              viewModel.setNativeSubtitlePosition(it)
+            }
           },
           max = 150,
           icon = {
@@ -156,10 +169,16 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
               val defaultSubPos = preferences.subPos.deleteAndGet()
               preferences.subScale.deleteAndGet().let {
                 PlaybackSession.setPropertyFloat("sub-scale", it)
+                if (viewModel.isMedia3ActiveForGesture()) {
+                  viewModel.setSubtitleScaleForGesture(it)
+                }
               }
               val defaultOverride = preferences.overrideAssSubs.deleteAndGet()
               overrideAssSubs = defaultOverride
               applySubtitleLayout(defaultSubPos, defaultOverride)
+              if (viewModel.isMedia3ActiveForGesture()) {
+                viewModel.setNativeSubtitlePosition(defaultSubPos)
+              }
               val defaultScaleByWindow = preferences.scaleByWindow.deleteAndGet()
               scaleByWindow = defaultScaleByWindow
               val scaleValue = if (defaultScaleByWindow) "yes" else "no"
