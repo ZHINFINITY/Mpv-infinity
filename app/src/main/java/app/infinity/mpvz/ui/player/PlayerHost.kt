@@ -92,6 +92,10 @@ interface PlayerHost {
     backgroundColor: Int,
     edgeType: Int,
     edgeColor: Int,
+    applyEmbeddedStyles: Boolean = true,
+    fontFamily: String? = null,
+    bold: Boolean = false,
+    italic: Boolean = false,
   ): Boolean = false
 
   /** Returns whether Native/Media3 currently has any subtitle track selected. */

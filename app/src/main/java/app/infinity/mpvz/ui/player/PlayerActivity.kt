@@ -1358,6 +1358,7 @@ class PlayerActivity :
       // appear ineffective until a later renderer rebuild.
       media3PlaybackController.setSubtitleScale(subtitlesPreferences.subScale.get())
       media3PlaybackController.setSubtitlePosition(subtitlesPreferences.subPos.get())
+      viewModel.applyNativeSubtitleStyle()
       runCatching {
         media3PlaybackController.setRepeatMode(
           when (viewModel.repeatMode.value) {
@@ -4153,8 +4154,21 @@ class PlayerActivity :
     }
   }
 
-  private fun getPreferredCurrentTitle(): String =
-    getPlaylistItemByIndex(playlistIndex)?.fileName?.takeIf { it.isNotBlank() } ?: fileName
+  private fun getPreferredCurrentTitle(): String {
+    val metadataTitleKeys = listOf(
+      "metadata/by-key/Title",
+      "metadata/by-key/title",
+      "metadata/by-key/TITLE",
+    )
+    val embeddedTitle = metadataTitleKeys.firstNotNullOfOrNull { key ->
+      runCatching { PlaybackSession.getPropertyString(key) }.getOrNull()
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
+    }
+    return embeddedTitle
+      ?: getPlaylistItemByIndex(playlistIndex)?.fileName?.takeIf { it.isNotBlank() }
+      ?: fileName
+  }
 
   private fun getPreferredCurrentArtist(): String {
     currentPlaybackItem()?.artist
@@ -6558,19 +6572,23 @@ class PlayerActivity :
   private fun updateMediaSessionMetadata(
     title: String,
     durationMs: Long,
+    artist: String? = null,
   ) {
     if (!mediaSessionInitialized) return
     if (Looper.myLooper() != Looper.getMainLooper()) {
-      runOnUiThread { updateMediaSessionMetadata(title, durationMs) }
+      runOnUiThread { updateMediaSessionMetadata(title, durationMs, artist) }
       return
     }
     runCatching {
-      val metadata =
+      val metadataBuilder =
         MediaMetadata
           .Builder()
           .putString(MediaMetadata.METADATA_KEY_TITLE, title)
           .putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs)
-          .build()
+      artist?.takeIf { it.isNotBlank() }?.let {
+        metadataBuilder.putString(MediaMetadata.METADATA_KEY_ARTIST, it)
+      }
+      val metadata = metadataBuilder.build()
       mediaSession.setMetadata(metadata)
     }.onFailure { e -> Log.e(TAG, "Error updating metadata", e) }
   }
@@ -7098,14 +7116,26 @@ class PlayerActivity :
     return media3PlaybackController.setSubtitlePosition(position)
   }
   override fun media3ApplySubtitleStyle(
-
     textColor: Int,
     backgroundColor: Int,
     edgeType: Int,
     edgeColor: Int,
+    applyEmbeddedStyles: Boolean,
+    fontFamily: String?,
+    bold: Boolean,
+    italic: Boolean,
   ): Boolean {
     if (!isMedia3Active()) return false
-    return media3PlaybackController.setSubtitleStyle(textColor, backgroundColor, edgeType, edgeColor)
+    return media3PlaybackController.setSubtitleStyle(
+      textColor = textColor,
+      backgroundColor = backgroundColor,
+      edgeType = edgeType,
+      edgeColor = edgeColor,
+      applyEmbeddedStyles = applyEmbeddedStyles,
+      fontFamily = fontFamily,
+      bold = bold,
+      italic = italic,
+    )
   }
 
   override fun media3HasSelectedSubtitle(): Boolean {
@@ -7337,7 +7367,11 @@ class PlayerActivity :
         getFileNameFromUri(Uri.parse(item.originalUri)).ifBlank { getString(R.string.player_unknown_video) }
       }
     viewModel.setMediaTitle(pendingTitle)
-    updateMediaSessionMetadata(title = pendingTitle, durationMs = 0L)
+    updateMediaSessionMetadata(
+      title = pendingTitle,
+      artist = selectedItem.artist.orEmpty().ifBlank { getPreferredCurrentArtist() },
+      durationMs = 0L,
+    )
     updateMediaSessionPlaybackState(isPlaying = false)
     mediaPlaybackService?.publishPendingQueueItem(item)
   }
@@ -7498,7 +7532,8 @@ class PlayerActivity :
             ?.takeIf { it > 0L }
             ?: 0L
         updateMediaSessionMetadata(
-          title = fileName,
+          title = getPreferredCurrentTitle(),
+          artist = getPreferredCurrentArtist(),
           durationMs = durationMs,
         )
         syncBackgroundPlaybackService(updateThumbnail = true)

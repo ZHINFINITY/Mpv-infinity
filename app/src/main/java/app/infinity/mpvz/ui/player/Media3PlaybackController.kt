@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.player
 
 import android.content.Context
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -149,6 +150,7 @@ class Media3PlaybackController(
   // view instance so a renderer reset cannot silently restore the default 1.0x size.
   private var subtitleScale = 1f
   private var subtitlePosition = 100
+  private var nativeSubtitleApplyEmbeddedStyles = true
   private var nativeSubtitleStyle =
     CaptionStyleCompat(
       android.graphics.Color.WHITE,
@@ -878,7 +880,8 @@ class Media3PlaybackController(
 
   fun isSubtitleSelected(trackId: Int): Boolean = trackId in selectedSubtitleTrackIds
 
-  fun hasSelectedSubtitle(): Boolean = selectedSubtitleTrackIds.isNotEmpty()
+  fun hasSelectedSubtitle(): Boolean =
+    selectedSubtitleTrackIds.isNotEmpty() || latestSubtitleTracks.any { it.selected == true }
 
   /**
    * Configure Media3's subtitle renderer. Keep embedded ASS/SSA positioning and alignment so sign
@@ -886,7 +889,7 @@ class Media3PlaybackController(
    */
   private fun configureNativeSubtitleView(view: PlayerView? = attachedView) {
     view?.subtitleView?.apply {
-      setApplyEmbeddedStyles(true)
+      setApplyEmbeddedStyles(nativeSubtitleApplyEmbeddedStyles)
       setApplyEmbeddedFontSizes(false)
       setStyle(nativeSubtitleStyle)
       setFractionalTextSize((0.0533f * subtitleScale).coerceIn(0.005f, 0.25f))
@@ -913,7 +916,20 @@ class Media3PlaybackController(
     backgroundColor: Int,
     edgeType: Int,
     edgeColor: Int,
+    applyEmbeddedStyles: Boolean = true,
+    fontFamily: String? = null,
+    bold: Boolean = false,
+    italic: Boolean = false,
   ): Boolean {
+    nativeSubtitleApplyEmbeddedStyles = applyEmbeddedStyles
+    val typefaceStyle =
+      when {
+        bold && italic -> Typeface.BOLD_ITALIC
+        bold -> Typeface.BOLD
+        italic -> Typeface.ITALIC
+        else -> Typeface.NORMAL
+      }
+    val typeface = Typeface.create(fontFamily?.takeIf { it.isNotBlank() }, typefaceStyle)
     nativeSubtitleStyle =
       CaptionStyleCompat(
         textColor,
@@ -924,7 +940,7 @@ class Media3PlaybackController(
         android.graphics.Color.TRANSPARENT,
         edgeType,
         edgeColor,
-        null,
+        typeface,
       )
     applyNativeSubtitleStyle()
     logInfo(

@@ -82,6 +82,7 @@ fun SubtitlesMiscellaneousCard(
             overrideAssSubs = it
             preferences.overrideAssSubs.set(it)
             applySubtitleLayout(PlaybackSession.getPropertyInt("sub-pos") ?: preferences.subPos.get(), it)
+            viewModel.applyNativeSubtitleStyle()
           },
           { Text(stringResource(R.string.player_sheets_sub_override_ass)) },
         )
@@ -96,6 +97,7 @@ fun SubtitlesMiscellaneousCard(
             val value = if (it) "yes" else "no"
             PlaybackSession.setPropertyString("sub-scale-by-window", value)
             PlaybackSession.setPropertyString("sub-use-margins", value)
+            viewModel.applyNativeSubtitleStyle()
           },
           { Text(stringResource(R.string.player_sheets_sub_scale_by_window)) },
           summary = { Text(stringResource(R.string.player_sheets_sub_scale_by_window_summary)) },
@@ -110,6 +112,7 @@ fun SubtitlesMiscellaneousCard(
             preferences.blendSubtitlesWithVideo.set(it)
             val blendMode = if (it && playerPreferences.isAmbientEnabled.get()) "video" else "no"
             PlaybackSession.setPropertyString("blend-subtitles", blendMode)
+            viewModel.applyNativeSubtitleStyle()
           },
           { Text(stringResource(R.string.player_sheets_sub_blend_with_video)) },
           summary = { Text(stringResource(R.string.player_sheets_sub_blend_with_video_summary)) },
@@ -188,6 +191,7 @@ fun SubtitlesMiscellaneousCard(
               blendSubtitlesWithVideo = defaultBlendSubtitles
               val blendMode = if (defaultBlendSubtitles && playerPreferences.isAmbientEnabled.get()) "video" else "no"
               PlaybackSession.setPropertyString("blend-subtitles", blendMode)
+              viewModel.applyNativeSubtitleStyle()
             },
           ) {
             Row {
