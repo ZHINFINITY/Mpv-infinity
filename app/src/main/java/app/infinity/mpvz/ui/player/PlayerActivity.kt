@@ -2638,6 +2638,30 @@ class PlayerActivity :
     mainHandler.removeCallbacks(pipDismissalStopRunnable)
   }
 
+  /**
+   * PiP can replace the underlying SurfaceView while keeping the same Activity and ExoPlayer
+   * alive. Rebind only the view in that case; reloading the item here resets position and can race
+   * the surface/codec handoff on Android 16 devices.
+   */
+  private fun restoreMedia3SurfaceAfterPipReturn() {
+    if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId == null) return
+    val currentState = media3PlaybackController.currentState()
+    AppDebugLog.info(
+      TAG,
+      "PiP return: restoring Media3 surface item=$media3ItemId prepared=$media3PreparedItemId " +
+        "attached=$media3Attached positionMs=${currentState.positionMs} " +
+        "playbackState=${currentState.playbackState} view=${binding.media3Player.width}x${binding.media3Player.height}",
+    )
+    binding.player.visibility = View.GONE
+    binding.media3Player.visibility = View.VISIBLE
+    runCatching {
+      media3PlaybackController.reattach(binding.media3Player)
+      media3Attached = true
+    }.onFailure { error ->
+      AppDebugLog.error(TAG, "PiP return: Media3 surface reattach failed", error)
+    }
+  }
+
   private fun handlePipDismissed() {
     Log.d(TAG, "PiP dismissed; closing playback instead of continuing in background")
     handledPipDismissal = true
@@ -3693,6 +3717,20 @@ class PlayerActivity :
     }
 
   override fun onResume() {
+    // A normal PiP expansion may not deliver onStart after the false PiP callback on every OEM.
+    // Treat onResume as the definitive proof that the PiP window was expanded, canceling the
+    // delayed dismissal before it can stop/release the active Media3 session.
+    if (wasInPipMode && !isInPictureInPictureMode && !hardStopRequested) {
+      cancelPendingPipDismissalStop()
+      AppDebugLog.info(
+        TAG,
+        "PiP return confirmed in onResume; preserving Media3 session item=$media3ItemId " +
+          "prepared=$media3PreparedItemId positionMs=${media3PlaybackController.currentState().positionMs}",
+      )
+      restoreMedia3SurfaceAfterPipReturn()
+      wasInPipMode = false
+      handledPipDismissal = false
+    }
     super.onResume()
     if (!mpvInitialized) return
     if (!isDeviceScreenOffOrLocked()) enableVideoAfterBackground()
@@ -6119,10 +6157,21 @@ class PlayerActivity :
       cancelPendingPipDismissalStop()
       wasInPipMode = true
       handledPipDismissal = false
+      AppDebugLog.info(
+        TAG,
+        "PiP entered item=$media3ItemId prepared=$media3PreparedItemId " +
+          "positionMs=${media3PlaybackController.currentState().positionMs}",
+      )
     } else if (wasInPipMode) {
       // Android invokes this transition both when the user expands PiP and when the
-      // system X removes the PiP window. Delay the stop briefly so onStart() can cancel
-      // it for expansion, while the X path still reaches the hard stop.
+      // system X removes the PiP window. Keep the delayed X-stop fallback, but restore the
+      // existing Media3 surface immediately; onStart/onResume cancel the fallback for expansion.
+      AppDebugLog.info(
+        TAG,
+        "PiP exited callback item=$media3ItemId prepared=$media3PreparedItemId " +
+          "attached=$media3Attached positionMs=${media3PlaybackController.currentState().positionMs}",
+      )
+      restoreMedia3SurfaceAfterPipReturn()
       schedulePipDismissalStop()
     }
 

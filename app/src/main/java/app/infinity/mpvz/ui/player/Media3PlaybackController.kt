@@ -382,6 +382,19 @@ class Media3PlaybackController(
     )
   }
 
+  /**
+   * Rebinds the existing player to the same PlayerView after a PiP/window-surface transition.
+   * This intentionally does not stop, clear, prepare, or seek the player.
+   */
+  fun reattach(view: PlayerView) {
+    if (attachedView === view) {
+      view.player = null
+      attachedView = null
+    }
+    attach(view)
+    logInfo("surface reattached after window transition layout=${view.width}x${view.height}")
+  }
+
   fun play(
     uri: Uri,
     title: String? = null,
