@@ -7369,7 +7369,7 @@ class PlayerActivity :
     viewModel.setMediaTitle(pendingTitle)
     updateMediaSessionMetadata(
       title = pendingTitle,
-      artist = selectedItem.artist.orEmpty().ifBlank { getPreferredCurrentArtist() },
+      artist = targetQueueItem?.artist.orEmpty().ifBlank { getPreferredCurrentArtist() },
       durationMs = 0L,
     )
     updateMediaSessionPlaybackState(isPlaying = false)
