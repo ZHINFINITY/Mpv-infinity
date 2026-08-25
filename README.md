@@ -436,10 +436,6 @@ Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=ZHINFINITY%2FMpv-infinity&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
- </picture>
-</a>
+> GitHub now restricts public stargazer data to repository administrators and collaborators. The interactive chart can still be viewed by the repository owner or a collaborator after adding a properly scoped GitHub access token locally in Star History. Do not add a token to this repository.
+>
+> [Open the Mpv∞ Star History chart](https://www.star-history.com/?repos=ZHINFINITY%2FMpv-infinity&type=date&legend=top-left) · [Star History access-token instructions](https://www.star-history.com/blog/how-to-use-github-star-history#how-to-add-your-github-access-token)
