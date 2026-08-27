@@ -9,9 +9,11 @@
 
 package app.infinity.mpvz.domain.thumbnail
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
 import java.io.File
 
@@ -58,6 +60,15 @@ object EmbeddedArtworkCandidates {
 }
 
 internal object EmbeddedArtworkResolver {
+  fun decodeArtworkUri(context: Context, artworkUri: String?): Bitmap? =
+    artworkUri
+      ?.takeIf { it.isNotBlank() }
+      ?.let { rawUri ->
+        runCatching {
+          context.contentResolver.openInputStream(Uri.parse(rawUri))?.use(BitmapFactory::decodeStream)
+        }.getOrNull()
+      }
+
   fun decodeEmbeddedArtwork(
     videoPath: String?,
     retriever: MediaMetadataRetriever,
