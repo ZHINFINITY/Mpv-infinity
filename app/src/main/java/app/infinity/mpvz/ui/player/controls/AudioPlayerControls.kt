@@ -10,11 +10,13 @@
 package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.presentation.components.RemoteImage
 
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.LruCache
@@ -301,6 +303,29 @@ private fun rememberAudioPresentationMetadata(
 private fun rememberAudioAlbumArt(pathOrUri: String?): Bitmap? =
   rememberAudioPresentationMetadata(pathOrUri)?.artwork
 
+@Composable
+private fun rememberArtworkUriBitmap(artworkUri: String?): Bitmap? {
+  val context = LocalContext.current
+  var bitmap by remember(artworkUri) { mutableStateOf<Bitmap?>(null) }
+  LaunchedEffect(artworkUri) {
+    bitmap =
+      if (artworkUri.isNullOrBlank()) {
+        null
+      } else {
+        withContext(Dispatchers.IO) {
+          runCatching {
+            val uri = Uri.parse(artworkUri)
+            when (uri.scheme?.lowercase(Locale.ROOT)) {
+              "content", "file" -> context.contentResolver.openInputStream(uri)?.use { stream -> BitmapFactory.decodeStream(stream) }
+              else -> null
+            }
+          }.getOrNull()
+        }
+      }
+  }
+  return bitmap
+}
+
 /**
  * Cuboid is a Compose Canvas and does not pass through the GLSurfaceView VisualizerOverlay, so it
  * needs the same scoped Android spectrum capture explicitly. The capture exists only while Cuboid
@@ -358,12 +383,26 @@ private fun CuboidSpectrumCaptureEffect(
 }
 
 @Composable
-private fun CoverArtCardImage(bitmap: Bitmap?) {
+private fun CoverArtCardImage(
+  bitmap: Bitmap?,
+  artworkUri: String? = null,
+  contentDescription: String? = null,
+) {
   val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
   if (imageBitmap != null) {
     Image(
       bitmap = imageBitmap,
       contentDescription = null,
+      contentScale = ContentScale.Crop,
+      modifier = Modifier.fillMaxSize(),
+    )
+  } else if (
+    !artworkUri.isNullOrBlank() &&
+      (artworkUri.startsWith("http://", ignoreCase = true) || artworkUri.startsWith("https://", ignoreCase = true))
+  ) {
+    RemoteImage(
+      url = artworkUri,
+      contentDescription = contentDescription,
       contentScale = ContentScale.Crop,
       modifier = Modifier.fillMaxSize(),
     )
@@ -423,11 +462,17 @@ fun AudioPlayerControls(
   val currentPath by PlaybackSession.propString["path"].collectAsState()
   val currentStreamFilename by PlaybackSession.propString["stream-open-filename"].collectAsState()
   val mediaPath = currentPath?.takeIf { it.isNotBlank() } ?: currentStreamFilename
+  val currentQueueState by PlaybackSession.queue.collectAsState()
+  val currentQueueItem = currentQueueState.currentItem
+  val queuedArtworkBitmap = rememberArtworkUriBitmap(currentQueueItem?.artworkUri)
   // The path often arrives before FILE_LOADED. Re-run extraction when the session reaches READY or
   // BACKGROUND so transient early failures cannot leave the current song blank.
   val metadataRefreshKey = sessionState.generation to sessionState.phase
   val currentAudioPresentation = rememberAudioPresentationMetadata(mediaPath, metadataRefreshKey)
-  val albumArtBitmap = currentAudioPresentation?.artwork
+  // Prefer embedded artwork when the retriever can read it; otherwise use the MediaStore artwork URI
+  // carried by the selected queue item. The notification already proves that artwork exists for
+  // these files, so the in-app surface must consume the same queue-level fallback.
+  val albumArtBitmap = currentAudioPresentation?.artwork ?: queuedArtworkBitmap
 
   val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
   val sampleRate by PlaybackSession.propInt["audio-params/samplerate"].collectAsState()
@@ -549,17 +594,18 @@ fun AudioPlayerControls(
   // MPV's media-title can be a queue label or track number (for example, "023") while the
   // embedded tag already contains the actual song title. Prefer the retriever result whenever it
   // is available, then fall back to the file name and finally the queue label.
+  val queuedTitle = currentQueueItem?.title
   val resolvedTitleCandidate =
-    sequenceOf(rawTitle, rawTitleLower, rawTitleUpper, retrievedTitle, fileTitle, mediaTitle)
+    sequenceOf(queuedTitle, retrievedTitle, rawTitle, rawTitleLower, rawTitleUpper, fileTitle, mediaTitle)
       .filterNotNull()
       .map { it.trim() }
       .firstOrNull { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
   var lastValidTitle by remember {
     mutableStateOf(resolvedTitleCandidate?.stripAudioExtension() ?: "Audio Track")
   }
-  LaunchedEffect(mediaTitle, mediaPath, retrievedTitle, fileTitle, rawTitle, rawTitleLower, rawTitleUpper) {
+  LaunchedEffect(queuedTitle, mediaTitle, mediaPath, retrievedTitle, fileTitle, rawTitle, rawTitleLower, rawTitleUpper) {
     val candidate =
-      sequenceOf(rawTitle, rawTitleLower, rawTitleUpper, retrievedTitle, fileTitle, mediaTitle)
+      sequenceOf(queuedTitle, retrievedTitle, rawTitle, rawTitleLower, rawTitleUpper, fileTitle, mediaTitle)
         .filterNotNull()
         .map { it.trim() }
         .firstOrNull { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
@@ -569,7 +615,6 @@ fun AudioPlayerControls(
   }
 
   val context = LocalContext.current
-  val currentQueueItem by PlaybackSession.queue.collectAsState()
   val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
   val rawArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsState()
   val rawArtistAlt by PlaybackSession.propString["metadata/artist"].collectAsState()
@@ -620,7 +665,11 @@ fun AudioPlayerControls(
         )
         .filterNotNull()
         .map { it.trim() }
-        .firstOrNull { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+        .firstOrNull {
+          it.isNotBlank() &&
+            !it.equals("Unknown Artist", ignoreCase = true) &&
+            !it.matches(Regex("\\d{1,3}"))
+        }
         ?: "Unknown Artist"
     }
 
@@ -1094,7 +1143,11 @@ fun AudioPlayerControls(
                   shape = coverShape,
                   color = Color.Transparent,
                 ) {
-                  CoverArtCardImage(bitmap = prevCoverBitmap)
+                  CoverArtCardImage(
+                    bitmap = prevCoverBitmap,
+                    artworkUri = prevItem?.tvgLogo,
+                    contentDescription = prevItem?.title,
+                  )
                 }
               }
 
@@ -1108,7 +1161,11 @@ fun AudioPlayerControls(
                   shape = coverShape,
                   color = Color.Transparent,
                 ) {
-                  CoverArtCardImage(bitmap = nextCoverBitmap)
+                  CoverArtCardImage(
+                    bitmap = nextCoverBitmap,
+                    artworkUri = nextItem?.tvgLogo,
+                    contentDescription = nextItem?.title,
+                  )
                 }
               }
 
@@ -1121,7 +1178,11 @@ fun AudioPlayerControls(
                 shape = coverShape,
                 color = Color.Transparent,
               ) {
-                CoverArtCardImage(bitmap = activeCoverOverride ?: albumArtBitmap)
+                CoverArtCardImage(
+                  bitmap = activeCoverOverride ?: albumArtBitmap,
+                  artworkUri = currentQueueItem?.artworkUri,
+                  contentDescription = queuedTitle,
+                )
               }
             }
           }
