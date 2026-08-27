@@ -84,6 +84,7 @@ import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
+import app.infinity.mpvz.ui.browser.jellyfin.JellyfinScreen
 import app.infinity.mpvz.ui.browser.medialibrary.MediaLibraryContent
 import app.infinity.mpvz.ui.browser.music.MusicLibraryContent
 import app.infinity.mpvz.ui.browser.networkstreaming.NetworkStreamingScreen
@@ -106,6 +107,7 @@ object MainScreen : Screen {
     RECENTS,
     PLAYLISTS,
     NETWORK,
+    JELLYFIN,
   }
 
   // Use a companion object to store state more persistently
@@ -170,6 +172,7 @@ object MainScreen : Screen {
     val visibleTabs =
       remember(
         showHomeTab,
+        showMusicTab,
         showRecentsTab,
         showPlaylistsTab,
         showNetworkTab,
@@ -180,6 +183,7 @@ object MainScreen : Screen {
         if (showRecentsTab) add(MainTab.RECENTS)
         if (showPlaylistsTab) add(MainTab.PLAYLISTS)
         if (showNetworkTab) add(MainTab.NETWORK)
+        add(MainTab.JELLYFIN)
       }
       }
 
@@ -333,6 +337,7 @@ object MainScreen : Screen {
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
+                MainTab.JELLYFIN -> JellyfinScreen()
               }
             }
           }
@@ -540,6 +545,13 @@ private fun TelegramPillNavigationBar(
                         tint = contentColor,
                         modifier = Modifier.size(22.dp),
                       )
+                    MainScreen.MainTab.JELLYFIN ->
+                      Icon(
+                        Icons.RoundedFilled.BringYourOwnIp,
+                        contentDescription = "Jellyfin",
+                        tint = contentColor,
+                        modifier = Modifier.size(22.dp),
+                      )
                   }
                 }
                 Spacer(modifier = Modifier.height(3.dp))
@@ -551,6 +563,7 @@ private fun TelegramPillNavigationBar(
                         MainScreen.MainTab.RECENTS -> "Recents"
                         MainScreen.MainTab.PLAYLISTS -> "Playlists"
                         MainScreen.MainTab.NETWORK -> "Network"
+                        MainScreen.MainTab.JELLYFIN -> "Jellyfin"
                       },
                   style = MaterialTheme.typography.labelSmall,
                   fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,

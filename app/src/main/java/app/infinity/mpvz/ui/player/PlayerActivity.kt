@@ -794,8 +794,10 @@ class PlayerActivity :
         intent.getParcelableArrayListExtra("playlist") ?: emptyList()
       }
 
+    val installedPreparedPlaybackQueue = installPreparedPlaybackQueue(intent)
     val preparedPlaybackQueue =
-      playlist.isEmpty() && restorePreparedPlaybackQueue(intent)
+      playlist.isEmpty() &&
+        (installedPreparedPlaybackQueue || restorePreparedPlaybackQueue(intent))
 
     var restoredSavedPlaylistItem = false
     if (playlist.isNotEmpty()) {
@@ -3014,6 +3016,32 @@ class PlayerActivity :
     viewModel.refreshPlaylistItems()
     syncBackgroundPlaybackService(updateThumbnail = false)
     return true
+  }
+
+  /** Installs the exact metadata-rich queue staged by an internal browser launch. */
+  private fun installPreparedPlaybackQueue(sourceIntent: Intent): Boolean {
+    if (!sourceIntent.getBooleanExtra(EXTRA_PREPARED_PLAYBACK_QUEUE, false) ||
+      !sourceIntent.getBooleanExtra("internal_launch", false)
+    ) {
+      return false
+    }
+
+    val token = sourceIntent.getLongExtra(EXTRA_PREPARED_PLAYBACK_TOKEN, 0L)
+    return when (val result = PreparedPlaybackLaunchStore.consume(token)) {
+      is PreparedPlaybackLaunchResult.Accepted -> {
+        val launch = result.launch
+        PlaybackSession.replaceQueue(
+          items = launch.items,
+          currentIndex = launch.currentIndex,
+          isExplicitQueue = launch.isExplicitQueue,
+          isM3u = launch.isM3u,
+        )
+        true
+      }
+      PreparedPlaybackLaunchResult.Missing,
+      PreparedPlaybackLaunchResult.Stale,
+      -> false
+    }
   }
 
   /** Restores a process-local queue prepared by an internal browser without Binder-sized arrays. */
@@ -5726,8 +5754,10 @@ class PlayerActivity :
         intent.getParcelableArrayListExtra("playlist") ?: emptyList()
       }
 
+    val installedPreparedPlaybackQueue = installPreparedPlaybackQueue(intent)
     val preparedPlaybackQueue =
-      playlistFromIntent.isEmpty() && restorePreparedPlaybackQueue(intent)
+      playlistFromIntent.isEmpty() &&
+        (installedPreparedPlaybackQueue || restorePreparedPlaybackQueue(intent))
 
     if (preparedPlaybackQueue) {
       viewModel.refreshPlaylistItems()
@@ -8773,6 +8803,7 @@ class PlayerActivity :
     const val TAG = "MpvInfinity"
 
     const val EXTRA_PREPARED_PLAYBACK_QUEUE = "prepared_playback_queue"
+    const val EXTRA_PREPARED_PLAYBACK_TOKEN = "prepared_playback_token"
     private const val STATE_PLAYLIST_INDEX = "player_state_playlist_index"
     private const val STATE_PLAYLIST_STABLE_ID = "player_state_playlist_stable_id"
     private const val STATE_PLAYLIST_ORIGINAL_URI = "player_state_playlist_original_uri"
