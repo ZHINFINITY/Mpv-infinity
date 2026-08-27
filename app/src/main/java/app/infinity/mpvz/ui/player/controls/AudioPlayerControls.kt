@@ -16,7 +16,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.LruCache
@@ -209,52 +208,76 @@ private object AudioPresentationMetadataCache {
         )
     }
 
-  fun peek(pathOrUri: String?): AudioPresentationMetadata? {
+  private fun cacheKey(pathOrUri: String, artworkUri: String?): String =
+    "$pathOrUri\u0000${artworkUri.orEmpty()}"
+
+  fun peek(pathOrUri: String?, artworkUri: String?): AudioPresentationMetadata? {
     if (pathOrUri.isNullOrBlank()) return null
-    return synchronized(cache) { cache.get(pathOrUri) }
+    return synchronized(cache) { cache.get(cacheKey(pathOrUri, artworkUri)) }
   }
 
   suspend fun resolve(
     context: android.content.Context,
     pathOrUri: String,
+    artworkUri: String?,
   ): AudioPresentationMetadata =
     withContext(Dispatchers.IO) {
-      synchronized(cache) { cache.get(pathOrUri) }?.let { return@withContext it }
+      val key = cacheKey(pathOrUri, artworkUri)
+      synchronized(cache) { cache.get(key) }?.let { return@withContext it }
 
       loadMutex.withLock {
-        synchronized(cache) { cache.get(pathOrUri) }?.let { return@withLock it }
+        synchronized(cache) { cache.get(key) }?.let { return@withLock it }
 
         val cleanPath =
           when {
-            pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
+            pathOrUri.startsWith("file://") -> Uri.parse(pathOrUri).path ?: pathOrUri.removePrefix("file://")
             pathOrUri.startsWith("content://") -> null
             else -> pathOrUri
           }
-        val retriever = MediaMetadataRetriever()
+        val explicitArtwork = EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+        val isNetworkStream = pathOrUri.startsWith("http://", ignoreCase = true) ||
+          pathOrUri.startsWith("https://", ignoreCase = true)
+        val retriever = if (!isNetworkStream) MediaMetadataRetriever() else null
         val loaded =
           try {
-            if (cleanPath != null) {
-              retriever.setDataSource(cleanPath)
-            } else {
-              retriever.setDataSource(context, Uri.parse(pathOrUri))
+            if (retriever != null) {
+              if (cleanPath != null && java.io.File(cleanPath).canRead()) {
+                retriever.setDataSource(cleanPath)
+              } else if (pathOrUri.startsWith("content://")) {
+                val uri = Uri.parse(pathOrUri)
+                try {
+                  context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    retriever.setDataSource(pfd.fileDescriptor)
+                  }
+                } catch (_: Exception) {
+                  retriever.setDataSource(context, uri)
+                }
+              } else {
+                retriever.setDataSource(context, Uri.parse(pathOrUri))
+              }
             }
 
             AudioPresentationMetadata(
-              artwork = EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever),
-              title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
-              artist =
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                  ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
-                  ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
-                  ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER),
-              album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
-              mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE),
-              bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE),
-              sampleRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE),
+              artwork = explicitArtwork ?: retriever?.let {
+                EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath ?: pathOrUri, it)
+              },
+              title = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE),
+              artist = retriever?.let {
+                it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                  ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
+                  ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
+                  ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER)
+              },
+              album = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM),
+              mimeType = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE),
+              bitrate = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE),
+              sampleRate = retriever?.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE),
             )
           } catch (_: Exception) {
             AudioPresentationMetadata(
-              artwork = null,
+              artwork = explicitArtwork ?: if (cleanPath != null && !isNetworkStream) {
+                EmbeddedArtworkResolver.decodeSidecar(cleanPath)
+              } else null,
               title = null,
               artist = null,
               album = null,
@@ -263,17 +286,13 @@ private object AudioPresentationMetadataCache {
               sampleRate = null,
             )
           } finally {
-            runCatching { retriever.release() }
+            runCatching { retriever?.release() }
           }
 
-        // Do not permanently cache an empty result. During direct audio launch MPV can expose the
-        // path before FILE_LOADED, while MediaMetadataRetriever still cannot read the stream.
-        // Caching that transient failure would hide artwork and tags for the rest of the session.
-        if (loaded.artwork != null || loaded.title != null || loaded.artist != null ||
-          loaded.album != null || loaded.mimeType != null || loaded.bitrate != null ||
-          loaded.sampleRate != null) {
-          synchronized(cache) { cache.put(pathOrUri, loaded) }
-        }
+        // Cache the result under both the media identity and explicit artwork identity. The queue
+        // artwork URI is authoritative for library art even when the media retriever has no embedded
+        // picture, and the generation/artwork key prevents an older item from reusing that result.
+        synchronized(cache) { cache.put(key, loaded) }
         loaded
       }
     }
@@ -282,49 +301,29 @@ private object AudioPresentationMetadataCache {
 @Composable
 private fun rememberAudioPresentationMetadata(
   pathOrUri: String?,
+  artworkUri: String? = null,
   refreshKey: Any? = null,
 ): AudioPresentationMetadata? {
   val context = LocalContext.current
-  var metadata by remember(pathOrUri, refreshKey) {
-    mutableStateOf(AudioPresentationMetadataCache.peek(pathOrUri))
+  var metadata by remember(pathOrUri, artworkUri, refreshKey) {
+    mutableStateOf(AudioPresentationMetadataCache.peek(pathOrUri, artworkUri))
   }
-  LaunchedEffect(pathOrUri, refreshKey) {
+  LaunchedEffect(pathOrUri, artworkUri, refreshKey) {
     metadata =
       if (pathOrUri.isNullOrBlank()) {
         null
       } else {
-        AudioPresentationMetadataCache.resolve(context, pathOrUri)
+        AudioPresentationMetadataCache.resolve(context, pathOrUri, artworkUri)
       }
   }
   return metadata
 }
 
 @Composable
-private fun rememberAudioAlbumArt(pathOrUri: String?): Bitmap? =
-  rememberAudioPresentationMetadata(pathOrUri)?.artwork
-
-@Composable
-private fun rememberArtworkUriBitmap(artworkUri: String?): Bitmap? {
-  val context = LocalContext.current
-  var bitmap by remember(artworkUri) { mutableStateOf<Bitmap?>(null) }
-  LaunchedEffect(artworkUri) {
-    bitmap =
-      if (artworkUri.isNullOrBlank()) {
-        null
-      } else {
-        withContext(Dispatchers.IO) {
-          runCatching {
-            val uri = Uri.parse(artworkUri)
-            when (uri.scheme?.lowercase(Locale.ROOT)) {
-              "content", "file" -> context.contentResolver.openInputStream(uri)?.use { stream -> BitmapFactory.decodeStream(stream) }
-              else -> null
-            }
-          }.getOrNull()
-        }
-      }
-  }
-  return bitmap
-}
+private fun rememberAudioAlbumArt(
+  pathOrUri: String?,
+  artworkUri: String? = null,
+): Bitmap? = rememberAudioPresentationMetadata(pathOrUri, artworkUri)?.artwork
 
 /**
  * Cuboid is a Compose Canvas and does not pass through the GLSurfaceView VisualizerOverlay, so it
@@ -464,15 +463,19 @@ fun AudioPlayerControls(
   val mediaPath = currentPath?.takeIf { it.isNotBlank() } ?: currentStreamFilename
   val currentQueueState by PlaybackSession.queue.collectAsState()
   val currentQueueItem = currentQueueState.currentItem
-  val queuedArtworkBitmap = rememberArtworkUriBitmap(currentQueueItem?.artworkUri)
   // The path often arrives before FILE_LOADED. Re-run extraction when the session reaches READY or
   // BACKGROUND so transient early failures cannot leave the current song blank.
   val metadataRefreshKey = sessionState.generation to sessionState.phase
-  val currentAudioPresentation = rememberAudioPresentationMetadata(mediaPath, metadataRefreshKey)
+  val currentAudioPresentation =
+    rememberAudioPresentationMetadata(
+      pathOrUri = mediaPath,
+      artworkUri = currentQueueItem?.artworkUri,
+      refreshKey = metadataRefreshKey,
+    )
   // Prefer embedded artwork when the retriever can read it; otherwise use the MediaStore artwork URI
   // carried by the selected queue item. The notification already proves that artwork exists for
   // these files, so the in-app surface must consume the same queue-level fallback.
-  val albumArtBitmap = currentAudioPresentation?.artwork ?: queuedArtworkBitmap
+  val albumArtBitmap = currentAudioPresentation?.artwork
 
   val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
   val sampleRate by PlaybackSession.propInt["audio-params/samplerate"].collectAsState()
@@ -624,7 +627,7 @@ fun AudioPlayerControls(
   val rawPerformerLower by PlaybackSession.propString["metadata/by-key/performer"].collectAsState()
   val rawAuthor by PlaybackSession.propString["metadata/by-key/author"].collectAsState()
   val retrievedArtist = currentAudioPresentation?.artist
-  val queuedArtist = currentQueueItem.currentItem?.artist
+  val queuedArtist = currentQueueItem?.artist
   val filenameArtist =
     remember(fileTitle) {
       fileTitle
@@ -972,8 +975,14 @@ fun AudioPlayerControls(
       if (idx > 0) filteredPlaylist[idx - 1] else null
     }
 
-    val nextCoverBitmap = rememberAudioAlbumArt(nextItem?.let { it.path.ifBlank { it.uri.toString() } })
-    val prevCoverBitmap = rememberAudioAlbumArt(prevItem?.let { it.path.ifBlank { it.uri.toString() } })
+    val nextCoverBitmap = rememberAudioAlbumArt(
+      nextItem?.let { it.path.ifBlank { it.uri.toString() } },
+      nextItem?.tvgLogo,
+    )
+    val prevCoverBitmap = rememberAudioAlbumArt(
+      prevItem?.let { it.path.ifBlank { it.uri.toString() } },
+      prevItem?.tvgLogo,
+    )
 
     @OptIn(ExperimentalFoundationApi::class)
     val centerVisualizerView = @Composable { visualizerModifier: Modifier ->
