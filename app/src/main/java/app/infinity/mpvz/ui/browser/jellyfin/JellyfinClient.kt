@@ -172,6 +172,8 @@ internal class JellyfinClient(
     session: JellyfinSession,
     parentId: String? = null,
     limit: Int = 200,
+    sortBy: String = "SortName",
+    sortOrder: String = "Ascending",
   ): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
     runCatching {
       val fields = "PrimaryImageAspectRatio,MediaSources,RunTimeTicks,Album,AlbumArtist,Artists,ImageTags,Type,SeriesName,IndexNumber,ParentIndexNumber"
@@ -179,7 +181,7 @@ internal class JellyfinClient(
       val url =
         "${session.serverUrl}/Users/${session.userId}/Items" +
           "?IncludeItemTypes=Audio,Movie,Episode&Recursive=true&Fields=$fields&StartIndex=0&Limit=$limit" +
-          "&SortBy=SortName&SortOrder=Ascending$parent"
+          "&SortBy=${Uri.encode(sortBy)}&SortOrder=${Uri.encode(sortOrder)}$parent"
       val request = Request.Builder()
         .url(url)
         .addJellyfinHeaders(session.accessToken)

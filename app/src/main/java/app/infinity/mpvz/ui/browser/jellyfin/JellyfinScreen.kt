@@ -95,10 +95,31 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
       )
     }
     if (error == null) {
-      jellyfin.loadMedia(sessionToLoad, parentId = libraryId).fold(
-        onSuccess = { tracks = it },
-        onFailure = { error = it.message ?: "Unable to load Jellyfin media" },
-      )
+      if (libraryId == null && libraries.isNotEmpty()) {
+        // Jellyfin's root /Items endpoint often returns only top-level library nodes.
+        // Query each library so Home contains real movies, episodes, and music.
+        val results = libraries.map { library ->
+          jellyfin.loadMedia(
+            session = sessionToLoad,
+            parentId = library.id,
+            limit = 100,
+            sortBy = "DateCreated",
+            sortOrder = "Descending",
+          )
+        }
+        val loaded = results.mapNotNull { it.getOrNull() }.flatten().distinctBy { it.id }
+        if (loaded.isEmpty() && results.all { it.isFailure }) {
+          error = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
+            ?: "Unable to load Jellyfin media"
+        } else {
+          tracks = loaded
+        }
+      } else {
+        jellyfin.loadMedia(sessionToLoad, parentId = libraryId).fold(
+          onSuccess = { tracks = it },
+          onFailure = { error = it.message ?: "Unable to load Jellyfin media" },
+        )
+      }
     }
     isLoading = false
   }
