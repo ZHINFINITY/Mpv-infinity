@@ -349,6 +349,14 @@ class JellyfinViewModel(
     playItem(context, track)
   }
 
+  fun openDetail(track: JellyfinTrack) {
+    _uiState.update { it.copy(detailItem = track) }
+  }
+
+  fun closeDetail() {
+    _uiState.update { it.copy(detailItem = null) }
+  }
+
   companion object {
     fun factory(application: Application): ViewModelProvider.Factory {
       return object : ViewModelProvider.Factory {

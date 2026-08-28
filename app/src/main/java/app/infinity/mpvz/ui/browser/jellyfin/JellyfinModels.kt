@@ -33,6 +33,12 @@ data class JellyfinTrack(
   val artworkUrl: String?,
   val streamUrl: String?,
   val mediaType: String = "Audio",
+  val overview: String = "",
+  val productionYear: Int? = null,
+  val communityRating: Double? = null,
+  val genres: List<String> = emptyList(),
+  val qualityLabel: String? = null,
+  val trailerUrl: String? = null,
 ) {
   val isVideo: Boolean
     get() = mediaType.equals("Movie", ignoreCase = true) ||
