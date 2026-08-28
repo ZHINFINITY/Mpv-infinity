@@ -6,21 +6,14 @@ package app.infinity.mpvz.ui.browser.jellyfin
 
 import android.content.Context
 import android.content.Intent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,31 +25,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -65,14 +42,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,14 +61,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.presentation.components.RemoteImage
-import app.infinity.mpvz.ui.player.PlayerActivity
-import kotlinx.coroutines.launch
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 import okhttp3.OkHttpClient
-import org.koin.compose.koinInject
-import kotlin.math.roundToInt
-
-// ─── Color constants ────────────────────────────────────────────────
-private val StarYellow = Color(0xFFFFC107)
 
 // ─── Main JellyfinScreen ────────────────────────────────────────────
 @Composable
@@ -148,7 +118,7 @@ private fun JellyfinLoginContent(
     ) {
       Box(contentAlignment = Alignment.Center) {
         Icon(
-          imageVector = Icons.Filled.Add,
+          imageVector = Icons.RoundedFilled.Add,
           contentDescription = null,
           tint = MaterialTheme.colorScheme.onPrimaryContainer,
           modifier = Modifier.size(40.dp),
@@ -274,25 +244,31 @@ private fun JellyfinHomeContent(
           }
         },
         navigationIcon = {
-          if (uiState.openLibrary != null) {
+          if (uiState.openLibrary != null && !showSearch) {
             IconButton(onClick = {
               viewModel.setSearchQuery("")
               viewModel.loadLibrary(uiState.openLibrary!!.id)
             }) {
-              Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+              Icon(
+                imageVector = Icons.RoundedFilled.ArrowBack,
+                contentDescription = "Back",
+              )
             }
           }
         },
         actions = {
           IconButton(onClick = { showSearch = !showSearch }) {
             Icon(
-              if (showSearch) Icons.Filled.Close else Icons.Filled.Search,
+              imageVector = if (showSearch) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search,
               contentDescription = "Search",
             )
           }
           Box {
             IconButton(onClick = { showSortMenu = true }) {
-              Icon(Icons.Filled.Sort, contentDescription = "Sort")
+              Icon(
+                imageVector = Icons.RoundedFilled.Tune,
+                contentDescription = "Sort",
+              )
             }
             DropdownMenu(
               expanded = showSortMenu,
@@ -309,13 +285,13 @@ private fun JellyfinHomeContent(
               }
               DropdownMenuItem(
                 text = { Text("Reverse order") },
-                  onClick = {
-                    val newOrder = if (uiState.sortOrder == JellyfinSortOrder.ASCENDING)
-                      JellyfinSortOrder.DESCENDING else JellyfinSortOrder.ASCENDING
-                    viewModel.setSort(uiState.sortBy, newOrder)
-                    showSortMenu = false
-                  },
-                )
+                onClick = {
+                  val newOrder = if (uiState.sortOrder == JellyfinSortOrder.ASCENDING)
+                    JellyfinSortOrder.DESCENDING else JellyfinSortOrder.ASCENDING
+                  viewModel.setSort(uiState.sortBy, newOrder)
+                  showSortMenu = false
+                },
+              )
             }
           }
           TextButton(onClick = { viewModel.logout() }) {
@@ -343,13 +319,12 @@ private fun JellyfinHomeContent(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
           Text(uiState.error!!, color = MaterialTheme.colorScheme.error)
           Spacer(modifier = Modifier.height(12.dp))
-          Button(onClick = { uiState.session?.let { /* retry */ } }) {
+          Button(onClick = { /* retry */ }) {
             Text("Retry")
           }
         }
       }
     } else if (uiState.openLibrary != null && uiState.currentItems.isNotEmpty()) {
-      // Library browsing mode
       LibraryGrid(
         items = uiState.currentItems,
         viewModel = viewModel,
@@ -357,7 +332,6 @@ private fun JellyfinHomeContent(
         modifier = Modifier.padding(padding),
       )
     } else if (uiState.searchQuery.isNotBlank()) {
-      // Search results mode
       LibraryGrid(
         items = uiState.currentItems,
         viewModel = viewModel,
@@ -365,7 +339,6 @@ private fun JellyfinHomeContent(
         modifier = Modifier.padding(padding),
       )
     } else {
-      // Home dashboard
       HomeDashboard(
         uiState = uiState,
         viewModel = viewModel,
@@ -388,7 +361,6 @@ private fun HomeDashboard(
     modifier = modifier.fillMaxSize(),
     contentPadding = PaddingValues(bottom = 16.dp),
   ) {
-    // Libraries section
     if (uiState.libraries.isNotEmpty()) {
       item(key = "libraries_header") {
         Text(
@@ -413,7 +385,6 @@ private fun HomeDashboard(
       }
     }
 
-    // Hero banner
     if (uiState.heroItems.isNotEmpty()) {
       item(key = "hero") {
         HeroBanner(
@@ -423,7 +394,6 @@ private fun HomeDashboard(
       }
     }
 
-    // Latest Movies rail
     if (uiState.latestMovies.isNotEmpty()) {
       item(key = "movies_header") {
         Text(
@@ -441,7 +411,6 @@ private fun HomeDashboard(
       }
     }
 
-    // Latest Episodes rail
     if (uiState.latestShows.isNotEmpty()) {
       item(key = "shows_header") {
         Text(
@@ -459,7 +428,6 @@ private fun HomeDashboard(
       }
     }
 
-    // Latest Music rail
     if (uiState.latestMusic.isNotEmpty()) {
       item(key = "music_header") {
         Text(
@@ -498,16 +466,13 @@ private fun LibraryGrid(
         onClick = { viewModel.playItem(context, track) },
       )
     }
-    item {
-      if (items.isEmpty()) {
+    if (items.isEmpty()) {
+      item {
         Box(
           modifier = Modifier.fillMaxWidth().padding(32.dp),
           contentAlignment = Alignment.Center,
         ) {
-          Text(
-            "No items found",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
+          Text("No items found", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
       }
     }
@@ -590,7 +555,6 @@ private fun HeroBanner(
         overflow = TextOverflow.Ellipsis,
       )
     }
-    // Dot indicators
     if (items.size > 1) {
       Row(
         modifier = Modifier
@@ -614,7 +578,7 @@ private fun HeroBanner(
   }
 }
 
-// ─── Content Rail (Horizontal scrollable row) ───────────────────────
+// ─── Content Rail ───────────────────────────────────────────────────
 @Composable
 private fun ContentRail(
   items: List<JellyfinTrack>,
@@ -660,7 +624,6 @@ private fun JellyfinPosterCard(
           contentScale = ContentScale.Crop,
         )
       }
-      // Media type badge
       Surface(
         modifier = Modifier
           .align(Alignment.BottomStart)
