@@ -147,10 +147,10 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
         isLoading = false
         return@launch
       }
-      val authentication = when (loginMode) {
+      val authentication: Result<JellyfinSession> = when (loginMode) {
         JellyfinLoginMode.PASSWORD -> JellyfinClient(client, context).authenticate(serverUrl, username, password)
         JellyfinLoginMode.API_TOKEN -> JellyfinClient(client, context).authenticateWithToken(serverUrl, apiToken)
-        JellyfinLoginMode.QUICK_CONNECT -> check(false) { "Quick Connect handled before password authentication" }
+        JellyfinLoginMode.QUICK_CONNECT -> kotlin.error("Quick Connect handled before password authentication")
       }
       authentication.fold(
         onSuccess = { authenticated ->
