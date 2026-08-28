@@ -362,6 +362,7 @@ private fun JellyfinHomeContent(
   var isSearching by remember { mutableStateOf(false) }
   var isSortDialogOpen by remember { mutableStateOf(false) }
   var isMoreMenuOpen by remember { mutableStateOf(false) }
+  var isServerMenuOpen by remember { mutableStateOf(false) }
   var isSeerrInfoOpen by remember { mutableStateOf(false) }
 
   BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
@@ -396,7 +397,8 @@ private fun JellyfinHomeContent(
   Column(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .background(MaterialTheme.colorScheme.background)
+      .statusBarsPadding(),
   ) {
     // Top Bar
     Column(
@@ -483,6 +485,25 @@ private fun JellyfinHomeContent(
             IconButton(onClick = { isSearching = true }) {
               Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
             }
+            Box {
+              IconButton(onClick = { isServerMenuOpen = true }) {
+                Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = "Active Jellyfin server")
+              }
+              DropdownMenu(expanded = isServerMenuOpen, onDismissRequest = { isServerMenuOpen = false }) {
+                Text("Active server", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                uiState.servers.forEach { server ->
+                  DropdownMenuItem(
+                    text = { Text(if (server.id == uiState.activeServer?.id) "✓ ${server.name}" else server.name) },
+                    onClick = { isServerMenuOpen = false; viewModel.switchServer(server) },
+                  )
+                }
+                DropdownMenuItem(
+                  text = { Text("Manage servers") },
+                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = null) },
+                  onClick = { isServerMenuOpen = false; isMoreMenuOpen = true },
+                )
+              }
+            }
             if (uiState.openLibrary != null) {
               Box {
                 var showSortMenu by remember { mutableStateOf(false) }
@@ -518,7 +539,7 @@ private fun JellyfinHomeContent(
                 DropdownMenuItem(
                   text = { Text("Manage servers") },
                   leadingIcon = { Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = null) },
-                  onClick = { isMoreMenuOpen = false },
+                  onClick = { isMoreMenuOpen = false; isServerMenuOpen = true },
                 )
                 DropdownMenuItem(
                   text = { Text("Seerr requests") },
@@ -662,6 +683,21 @@ private fun JellyfinDetailPage(
               }
             }
           }
+          val runtime = mediaItem.durationMs.takeIf { it > 0 }?.let { duration ->
+            val totalMinutes = duration / 60_000L
+            "${totalMinutes / 60}h ${totalMinutes % 60}m"
+          }
+          if (mediaItem.studio != null || runtime != null) {
+            Text("Technical Details", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+              mediaItem.studio?.let { studio ->
+                Column { Text("Studio", color = MaterialTheme.colorScheme.onSurfaceVariant); Text(studio, fontWeight = FontWeight.Medium) }
+              }
+              runtime?.let { length ->
+                Column(horizontalAlignment = Alignment.End) { Text("Length", color = MaterialTheme.colorScheme.onSurfaceVariant); Text(length, fontWeight = FontWeight.Medium) }
+              }
+            }
+          }
           if (mediaItem.overview.isNotBlank()) {
             Text("Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(mediaItem.overview, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -708,7 +744,7 @@ private fun HomeDashboard(
         JellyfinHeroBanner(
           items = uiState.heroItems,
           session = uiState.session!!,
-          onPlay = { viewModel.playItem(context, it) },
+          onPlay = { if (it.isPlayable) viewModel.playItem(context, it) else viewModel.openDetail(it) },
           onDetails = { viewModel.openDetail(it) },
         )
       }

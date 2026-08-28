@@ -39,10 +39,13 @@ data class JellyfinTrack(
   val genres: List<String> = emptyList(),
   val qualityLabel: String? = null,
   val trailerUrl: String? = null,
+  val studio: String? = null,
 ) {
   val isVideo: Boolean
     get() = mediaType.equals("Movie", ignoreCase = true) ||
-      mediaType.equals("Episode", ignoreCase = true)
+      mediaType.equals("Episode", ignoreCase = true) ||
+      mediaType.equals("Series", ignoreCase = true) ||
+      mediaType.equals("Season", ignoreCase = true)
 
   val isPlayable: Boolean
     get() = !streamUrl.isNullOrBlank()

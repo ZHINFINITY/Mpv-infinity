@@ -173,7 +173,7 @@ class JellyfinClient(
       val url = "${session.serverUrl}/Users/${session.userId}/Items" +
         "?ParentId=$parentId&Limit=$limit&StartIndex=$startIndex" +
         "&SortBy=$sortBy&SortOrder=$sortOrder&Recursive=true" +
-        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating" +
+        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating,Genres,Studios,RemoteTrailers,ProviderIds" +
         "&api_key=$encodedToken"
       val request = Request.Builder()
         .url(url)
@@ -293,6 +293,7 @@ class JellyfinClient(
       }
     } else null
     val trailer = obj["RemoteTrailers"]?.jsonArray?.firstOrNull()?.jsonObject?.get("Url")?.jsonPrimitive?.contentOrNull
+    val studio = obj["Studios"]?.jsonArray?.firstOrNull()?.jsonObject?.get("Name")?.jsonPrimitive?.contentOrNull
     return JellyfinTrack(
       id = id,
       title = name,
@@ -308,6 +309,7 @@ class JellyfinClient(
       genres = genres,
       qualityLabel = quality,
       trailerUrl = trailer,
+      studio = studio,
     )
   }
 
