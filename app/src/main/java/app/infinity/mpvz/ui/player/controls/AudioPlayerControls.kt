@@ -244,13 +244,16 @@ private object AudioPresentationMetadataCache {
               if (cleanPath != null && java.io.File(cleanPath).canRead()) {
                 retriever.setDataSource(cleanPath)
               } else if (pathOrUri.startsWith("content://")) {
+                // Use the provider-aware overload first. It preserves embedded artwork and
+                // metadata on MediaStore WAV files; the raw file-descriptor overload can lose
+                // container-level pictures on some Android media providers.
                 val uri = Uri.parse(pathOrUri)
                 try {
+                  retriever.setDataSource(context, uri)
+                } catch (_: Exception) {
                   context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                     retriever.setDataSource(pfd.fileDescriptor)
                   }
-                } catch (_: Exception) {
-                  retriever.setDataSource(context, uri)
                 }
               } else {
                 retriever.setDataSource(context, Uri.parse(pathOrUri))
