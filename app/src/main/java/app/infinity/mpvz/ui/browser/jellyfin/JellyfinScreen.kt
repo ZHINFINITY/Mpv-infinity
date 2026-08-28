@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +22,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -35,12 +39,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.player.PlaybackItem
@@ -60,9 +65,30 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
   var username by remember { mutableStateOf(prefs.getString("username", "") ?: "") }
   var password by remember { mutableStateOf("") }
   var session by remember { mutableStateOf<JellyfinSession?>(null) }
+  var libraries by remember { mutableStateOf<List<JellyfinCollection>>(emptyList()) }
+  var selectedLibraryId by remember { mutableStateOf<String?>(null) }
   var tracks by remember { mutableStateOf<List<JellyfinTrack>>(emptyList()) }
   var isLoading by remember { mutableStateOf(false) }
   var error by remember { mutableStateOf<String?>(null) }
+
+  suspend fun loadServer(sessionToLoad: JellyfinSession, libraryId: String? = selectedLibraryId) {
+    isLoading = true
+    error = null
+    val jellyfin = JellyfinClient(client, context)
+    if (libraries.isEmpty()) {
+      jellyfin.loadLibraries(sessionToLoad).fold(
+        onSuccess = { libraries = it },
+        onFailure = { error = it.message ?: "Unable to load Jellyfin libraries" },
+      )
+    }
+    if (error == null) {
+      jellyfin.loadMedia(sessionToLoad, parentId = libraryId).fold(
+        onSuccess = { tracks = it },
+        onFailure = { error = it.message ?: "Unable to load Jellyfin media" },
+      )
+    }
+    isLoading = false
+  }
 
   LaunchedEffect(Unit) {
     val savedUrl = prefs.getString("server_url", "").orEmpty()
@@ -71,13 +97,7 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
     if (savedUrl.isNotBlank() && savedToken.isNotBlank() && savedUserId.isNotBlank()) {
       val savedSession = JellyfinSession(savedUrl, savedUserId, savedToken)
       session = savedSession
-      isLoading = true
-              JellyfinClient(client, context).loadMedia(savedSession).fold(
-          onSuccess = { tracks = it; error = null },
-          onFailure = { error = it.message ?: "Unable to load Jellyfin media" },
-        )
-
-      isLoading = false
+      loadServer(savedSession, null)
     }
   }
 
@@ -94,11 +114,10 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
             .putString("user_id", authenticated.userId)
             .apply()
           session = authenticated
+          libraries = emptyList()
+          selectedLibraryId = null
           password = ""
-          JellyfinClient(client, context).loadMedia(authenticated).fold(
-            onSuccess = { tracks = it },
-            onFailure = { error = it.message ?: "Unable to load Jellyfin media" },
-          )
+          loadServer(authenticated, null)
         },
         onFailure = { error = it.message ?: "Jellyfin login failed" },
       )
@@ -120,15 +139,26 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
       modifier = modifier,
     )
   } else {
-    JellyfinLibrary(
+    JellyfinConnectedContent(
+      serverUrl = session!!.serverUrl,
+      libraries = libraries,
+      selectedLibraryId = selectedLibraryId,
       tracks = tracks,
       isLoading = isLoading,
       error = error,
+      onLibrarySelected = { libraryId ->
+        selectedLibraryId = libraryId
+        scope.launch { loadServer(session!!, libraryId) }
+      },
+      onRefresh = { scope.launch { loadServer(session!!, selectedLibraryId) } },
       onTrackClick = { index -> playJellyfinTracks(context, tracks, index) },
       onLogout = {
-        prefs.edit().remove("access_token").remove("user_id").apply()
+        prefs.edit().remove("server_url").remove("username").remove("access_token").remove("user_id").apply()
         session = null
+        libraries = emptyList()
         tracks = emptyList()
+        selectedLibraryId = null
+        error = null
       },
       modifier = modifier,
     )
@@ -156,9 +186,23 @@ private fun JellyfinLoginForm(
     Spacer(Modifier.height(8.dp))
     Text("Connect to your personal Jellyfin server.", color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(20.dp))
-    OutlinedTextField(serverUrl, onServerUrlChange, Modifier.fillMaxWidth(), label = { Text("Server URL") }, singleLine = true)
+    OutlinedTextField(
+      value = serverUrl,
+      onValueChange = onServerUrlChange,
+      modifier = Modifier.fillMaxWidth(),
+      label = { Text("Server address") },
+      placeholder = { Text("jellyfin.example.com") },
+      supportingText = { Text("https:// is optional") },
+      singleLine = true,
+    )
     Spacer(Modifier.height(10.dp))
-    OutlinedTextField(username, onUsernameChange, Modifier.fillMaxWidth(), label = { Text("Username") }, singleLine = true)
+    OutlinedTextField(
+      value = username,
+      onValueChange = onUsernameChange,
+      modifier = Modifier.fillMaxWidth(),
+      label = { Text("Username") },
+      singleLine = true,
+    )
     Spacer(Modifier.height(10.dp))
     OutlinedTextField(
       value = password,
@@ -173,71 +217,157 @@ private fun JellyfinLoginForm(
       Text(error, color = MaterialTheme.colorScheme.error)
     }
     Spacer(Modifier.height(16.dp))
-    Button(onClick = onLogin, enabled = !isLoading && serverUrl.isNotBlank() && username.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+    Button(
+      onClick = onLogin,
+      enabled = !isLoading && serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank(),
+      modifier = Modifier.fillMaxWidth(),
+    ) {
       if (isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Text("Connect")
     }
   }
 }
 
 @Composable
-private fun JellyfinLibrary(
+private fun JellyfinConnectedContent(
+  serverUrl: String,
+  libraries: List<JellyfinCollection>,
+  selectedLibraryId: String?,
   tracks: List<JellyfinTrack>,
   isLoading: Boolean,
   error: String?,
+  onLibrarySelected: (String?) -> Unit,
+  onRefresh: () -> Unit,
   onTrackClick: (Int) -> Unit,
   onLogout: () -> Unit,
   modifier: Modifier,
 ) {
+  val selectedLibrary = libraries.firstOrNull { it.id == selectedLibraryId }
   Column(modifier = modifier.fillMaxSize()) {
     Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Text("Jellyfin media", style = MaterialTheme.typography.titleLarge)
-      Text("Disconnect", modifier = Modifier.clickable(onClick = onLogout), color = MaterialTheme.colorScheme.primary)
+      Column(Modifier.weight(1f)) {
+        Text(selectedLibrary?.name ?: "Jellyfin", style = MaterialTheme.typography.titleLarge)
+        Text(
+          serverUrl.removePrefix("https://").removePrefix("http://"),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          style = MaterialTheme.typography.bodySmall,
+        )
+      }
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Refresh", modifier = Modifier.clickable(onClick = onRefresh), color = MaterialTheme.colorScheme.primary)
+        Text("Disconnect", modifier = Modifier.clickable(onClick = onLogout), color = MaterialTheme.colorScheme.primary)
+      }
     }
+
+    if (libraries.isNotEmpty()) {
+      LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        item {
+          FilterChip(
+            selected = selectedLibraryId == null,
+            onClick = { onLibrarySelected(null) },
+            label = { Text("Home") },
+          )
+        }
+        items(libraries, key = { it.id }) { library ->
+          FilterChip(
+            selected = selectedLibraryId == library.id,
+            onClick = { onLibrarySelected(library.id) },
+            label = { Text(library.name) },
+          )
+        }
+      }
+    }
+
+    Spacer(Modifier.height(8.dp))
     if (isLoading) {
       Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     } else if (!error.isNullOrBlank()) {
-      Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) { Text(error, color = MaterialTheme.colorScheme.error) }
+      Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+      ) {
+        Text(error, color = MaterialTheme.colorScheme.error)
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onRefresh) { Text("Try again") }
+      }
     } else if (tracks.isEmpty()) {
-      Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) { Text("No playable media found on this Jellyfin server.") }
+      Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Text("No playable media found in this Jellyfin view.")
+      }
     } else {
-      LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), modifier = Modifier.fillMaxSize()) {
+      LazyColumn(
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize(),
+      ) {
+        item {
+          Text(
+            if (selectedLibrary == null) "Latest media" else selectedLibrary.name,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+          )
+        }
         itemsIndexed(tracks, key = { _, track -> track.id }) { index, track ->
-          Row(
-            modifier = Modifier.fillMaxWidth().clickable { onTrackClick(index) }.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Box(
-              modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
-            ) {
-              if (track.artworkUrl != null) {
-                RemoteImage(
-                  url = track.artworkUrl,
-                  contentDescription = track.title,
-                  modifier = Modifier.fillMaxSize(),
-                  contentScale = ContentScale.Crop,
-                )
-              }
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-              Text(track.title, maxLines = 1)
-              val kind = if (track.isVideo) track.mediaType else "Audio"
-              Text("$kind · ${track.artist} · ${track.album}", maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-          }
+          JellyfinMediaCard(track = track, onClick = { onTrackClick(index) })
         }
       }
     }
   }
 }
 
+@Composable
+private fun JellyfinMediaCard(track: JellyfinTrack, onClick: () -> Unit) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(RoundedCornerShape(14.dp))
+      .background(MaterialTheme.colorScheme.surfaceContainer)
+      .clickable(onClick = onClick)
+      .padding(10.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Box(
+      modifier = Modifier.size(if (track.isVideo) 84.dp else 64.dp)
+        .clip(RoundedCornerShape(10.dp))
+        .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+      track.artworkUrl?.let { artwork ->
+        RemoteImage(
+          url = artwork,
+          contentDescription = track.title,
+          modifier = Modifier.fillMaxSize(),
+          contentScale = ContentScale.Crop,
+        )
+      }
+    }
+    Spacer(Modifier.width(12.dp))
+    Column(Modifier.weight(1f)) {
+      Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+      Text(
+        if (track.isVideo) "${track.mediaType} · ${track.album}" else "${track.artist} · ${track.album}",
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
+      )
+    }
+  }
+}
+
 private fun playJellyfinTracks(context: Context, tracks: List<JellyfinTrack>, index: Int) {
-  if (tracks.isEmpty()) return
-  val queue = tracks.filter { it.isPlayable }.map { track ->
+  val playableTracks = tracks.filter { it.isPlayable }
+  if (playableTracks.isEmpty()) return
+  val safeIndex = index.coerceIn(playableTracks.indices)
+  val queue = playableTracks.map { track ->
     PlaybackItem.fromUri(
       uri = track.streamUrl!!,
       title = track.title,
@@ -246,9 +376,7 @@ private fun playJellyfinTracks(context: Context, tracks: List<JellyfinTrack>, in
       artworkUri = track.artworkUrl,
     )
   }
-  val safeIndex = index.coerceIn(queue.indices)
   val token = PreparedPlaybackLaunchStore.stage(queue, safeIndex, isExplicitQueue = true)
-  val playableTracks = tracks.filter { it.isPlayable }
   val first = playableTracks[safeIndex]
   val firstUri = first.uri ?: return
   val isAudio = !first.isVideo
@@ -259,7 +387,7 @@ private fun playJellyfinTracks(context: Context, tracks: List<JellyfinTrack>, in
     putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
     putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, token)
     putExtra("playlist_index", safeIndex)
-    putExtra("launch_source", "jellyfin_music")
+    putExtra("launch_source", "jellyfin")
     putExtra("media_library_audio", isAudio)
     putExtra("is_audio", isAudio)
     putExtra("title", first.title)

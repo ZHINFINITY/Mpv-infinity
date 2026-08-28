@@ -12,6 +12,12 @@ internal data class JellyfinSession(
   val accessToken: String,
 )
 
+internal data class JellyfinCollection(
+  val id: String,
+  val name: String,
+  val collectionType: String?,
+)
+
 internal data class JellyfinTrack(
   val id: String,
   val title: String,

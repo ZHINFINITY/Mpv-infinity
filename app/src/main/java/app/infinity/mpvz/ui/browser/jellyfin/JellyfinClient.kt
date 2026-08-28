@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -68,29 +69,56 @@ internal class JellyfinClient(
     Result.failure(lastError)
   }
 
-  suspend fun loadMedia(session: JellyfinSession, limit: Int = 200): Result<List<JellyfinTrack>> =
+  suspend fun loadLibraries(session: JellyfinSession): Result<List<JellyfinCollection>> =
     withContext(Dispatchers.IO) {
       runCatching {
-        val fields = "PrimaryImageAspectRatio,MediaSources,RunTimeTicks,Album,AlbumArtist,Artists,ImageTags,Type,SeriesName,IndexNumber,ParentIndexNumber"
-        val url =
-          "${session.serverUrl}/Users/${session.userId}/Items" +
-            "?IncludeItemTypes=Audio,Movie,Episode&Recursive=true&Fields=$fields&StartIndex=0&Limit=$limit" +
-            "&SortBy=SortName&SortOrder=Ascending"
+        val url = "${session.serverUrl}/Users/${session.userId}/Views"
         val request = Request.Builder()
           .url(url)
           .addJellyfinHeaders(session.accessToken)
           .build()
-
         httpClient.newCall(request).execute().use { response ->
           if (!response.isSuccessful) {
-            throw IOException("Jellyfin library request failed: HTTP ${response.code}")
+            throw IOException("Jellyfin libraries request failed: HTTP ${response.code}")
           }
           val root = json.parseToJsonElement(response.body.string()).jsonObject
-          val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
-          items.mapNotNull { parseTrack(it.jsonObject, session) }
+          (root["Items"]?.jsonArray ?: JsonArray(emptyList())).mapNotNull { item ->
+            val obj = item.jsonObject
+            val id = obj["Id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val name = obj["Name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            JellyfinCollection(id, name, obj["CollectionType"]?.jsonPrimitive?.contentOrNull)
+          }
         }
       }
     }
+
+  suspend fun loadMedia(
+    session: JellyfinSession,
+    parentId: String? = null,
+    limit: Int = 200,
+  ): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
+    runCatching {
+      val fields = "PrimaryImageAspectRatio,MediaSources,RunTimeTicks,Album,AlbumArtist,Artists,ImageTags,Type,SeriesName,IndexNumber,ParentIndexNumber"
+      val parent = parentId?.let { "&ParentId=${Uri.encode(it)}" }.orEmpty()
+      val url =
+        "${session.serverUrl}/Users/${session.userId}/Items" +
+          "?IncludeItemTypes=Audio,Movie,Episode&Recursive=true&Fields=$fields&StartIndex=0&Limit=$limit" +
+          "&SortBy=SortName&SortOrder=Ascending$parent"
+      val request = Request.Builder()
+        .url(url)
+        .addJellyfinHeaders(session.accessToken)
+        .build()
+
+      httpClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) {
+          throw IOException("Jellyfin library request failed: HTTP ${response.code}")
+        }
+        val root = json.parseToJsonElement(response.body.string()).jsonObject
+        val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
+        items.mapNotNull { parseTrack(it.jsonObject, session) }
+      }
+    }
+  }
 
   private fun parseTrack(obj: JsonObject, session: JellyfinSession): JellyfinTrack? {
     val id = obj["Id"]?.jsonPrimitive?.content ?: return null
