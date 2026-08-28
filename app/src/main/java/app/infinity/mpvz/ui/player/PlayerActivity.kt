@@ -2338,8 +2338,14 @@ class PlayerActivity :
             if (serviceBound || mediaPlaybackService != null) {
               syncBackgroundPlaybackService(updateThumbnail = true)
             }
-            viewModel.calculateVideoHash(Uri.parse(item.originalUri))
-            viewModel.refreshPlaylistItems()
+            // Audio navigation does not need the video hash or a database playlist refresh on every
+            // tap. Those background/UI updates were repeated during rapid skips and competed with
+            // MPV’s AudioTrack replacement, contributing to underruns. The final item refreshes
+            // after it becomes ready in loadPlaylistItemInternal().
+            if (!isAudioItem) {
+              viewModel.calculateVideoHash(Uri.parse(item.originalUri))
+              viewModel.refreshPlaylistItems()
+            }
           }
       }
     }
@@ -4747,7 +4753,9 @@ class PlayerActivity :
         if (playWhenFileLoaded) {
           playWhenFileLoaded = false
         }
-        viewModel.onVideoLoadCompleted()
+        if (PlaybackSession.queue.value.currentItem?.let(::isAudioPlaybackItem) != true) {
+          viewModel.onVideoLoadCompleted()
+        }
         handleFileLoaded(loadGeneration)
         // Background service ownership is established by onStop()/Back handoff. Starting or
         // resyncing it for every foreground FILE_LOADED event makes rapid audio transitions
@@ -4760,7 +4768,9 @@ class PlayerActivity :
         if (!isReady) {
           isReady = true
         }
-        viewModel.onVideoLoadCompleted()
+        if (PlaybackSession.queue.value.currentItem?.let(::isAudioPlaybackItem) != true) {
+          viewModel.onVideoLoadCompleted()
+        }
       }
     }
   }
@@ -4804,7 +4814,14 @@ class PlayerActivity :
     val loadedIntent = Intent(intent)
     val loadedPlaylistIndex = playlistIndex
     val loadedPlaylist = playlist.toList()
-    currentUri?.let { viewModel.calculateVideoHash(it) }
+    val loadedQueueItem = PlaybackSession.queue.value.currentItem
+    val isAudioLoad =
+      loadedQueueItem?.let(::isAudioPlaybackItem) == true ||
+        loadedIntent.getBooleanExtra("is_audio", false) ||
+        loadedIntent.getBooleanExtra("media_library_audio", false)
+    if (!isAudioLoad) {
+      currentUri?.let { viewModel.calculateVideoHash(it) }
+    }
 
     reportJellyfinStop()
     currentUri?.toString()?.let { url ->
@@ -4813,11 +4830,13 @@ class PlayerActivity :
       startJellyfinProgressLoop()
     }
 
-    // Reset AB loop values when video changes
-    viewModel.clearABLoop()
+    if (!isAudioLoad) {
+      // Reset AB loop values when video changes
+      viewModel.clearABLoop()
 
-    // Drop the old ambient shader file, but keep the user's ambient preference/style.
-    viewModel.prepareAmbientForNewVideo()
+      // Drop the old ambient shader file, but keep the user's ambient preference/style.
+      viewModel.prepareAmbientForNewVideo()
+    }
 
     setIntentExtras(intent.extras)
 
@@ -4831,16 +4850,18 @@ class PlayerActivity :
         )
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
 
-      // Apply track selection logic (defaults only apply when no saved state)
-      trackSelector.onFileLoaded(hasState)
+      if (!isAudioLoad) {
+        // Apply track selection logic (defaults only apply when no saved state)
+        trackSelector.onFileLoaded(hasState)
 
-      // Apply default zoom only if there's no saved state
-      if (!hasState) {
-        withContext(Dispatchers.Main) {
-          if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
-          val zoomPreference = playerPreferences.defaultVideoZoom.get()
-          PlaybackSession.setPropertyDouble("video-zoom", zoomPreference.toDouble())
-          viewModel.setVideoZoom(zoomPreference)
+        // Apply default zoom only if there's no saved state
+        if (!hasState) {
+          withContext(Dispatchers.Main) {
+            if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
+            val zoomPreference = playerPreferences.defaultVideoZoom.get()
+            PlaybackSession.setPropertyDouble("video-zoom", zoomPreference.toDouble())
+            viewModel.setVideoZoom(zoomPreference)
+          }
         }
       }
     }
@@ -4865,37 +4886,34 @@ class PlayerActivity :
       }
     }
 
-    // Only set orientation immediately if NOT in Video mode
-    // For Video mode, wait for video-params/aspect to become available
-    if (playerPreferences.orientation.get() != PlayerOrientation.Video) {
-      setOrientation()
-    } else {
-      // For Video mode, try to set orientation after a short delay to ensure
-      // video dimensions are available
-      lifecycleScope.launch {
-        kotlinx.coroutines.delay(100)
-        if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
-          val aspect = player.getVideoOutAspect()
-          Log.d(TAG, "handleFileLoaded - Video mode, aspect after delay: $aspect")
-          if (aspect != null && aspect > 0) {
-            setOrientation()
+    if (!isAudioLoad) {
+      // Only set orientation immediately if NOT in Video mode
+      // For Video mode, wait for video-params/aspect to become available
+      if (playerPreferences.orientation.get() != PlayerOrientation.Video) {
+        setOrientation()
+      } else {
+        lifecycleScope.launch {
+          kotlinx.coroutines.delay(100)
+          if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
+            val aspect = player.getVideoOutAspect()
+            Log.d(TAG, "handleFileLoaded - Video mode, aspect after delay: $aspect")
+            if (aspect != null && aspect > 0) setOrientation()
           }
         }
       }
-    }
 
-    // Audio track information becomes available only after FILE_LOADED. Re-apply
-    // orientation once the track list settles so album art is not treated as video.
-    lifecycleScope.launch {
-      delay(100)
-      if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
-        setOrientation()
+      // Audio track information is not needed for a true audio-only load.
+      lifecycleScope.launch {
+        delay(100)
+        if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
+          setOrientation()
+        }
       }
-    }
 
-    applySubtitlePreferences()
-    applyVideoFilterPreferences()
-    viewModel.restoreSavedVideoAspect(showUpdate = false)
+      applySubtitlePreferences()
+      applyVideoFilterPreferences()
+      viewModel.restoreSavedVideoAspect(showUpdate = false)
+    }
 
     if (shouldForceCurrentMediaTitle()) {
       val preferredTitle = getPreferredCurrentTitle()
@@ -4905,16 +4923,18 @@ class PlayerActivity :
 
     viewModel.unpause()
     if (!holdsAudioFocus) scheduleAudioFocusRetry()
-    lifecycleScope.launch {
-
-      withContext(playbackRenderDispatcher) {
-        if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
-        player.applyAnime4KShaders()
-        viewModel.restartHdrScreenOutputAndAmbientIfActive()
+    if (!isAudioLoad) {
+      lifecycleScope.launch {
+        withContext(playbackRenderDispatcher) {
+          if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
+          player.applyAnime4KShaders()
+          viewModel.restartHdrScreenOutputAndAmbientIfActive()
+        }
       }
     }
 
     if (
+      !isAudioLoad &&
       subtitlesPreferences.autoEnableSubtitles.get() &&
       subtitlesPreferences.autoloadMatchingSubtitles.get()
     ) {
@@ -4947,7 +4967,8 @@ class PlayerActivity :
     }
 
     updateMediaSessionMetadata(
-      title = fileName,
+      title = getPreferredCurrentTitle().ifBlank { fileName },
+      artist = getPreferredCurrentArtist(),
       durationMs = (PlaybackSession.getPropertyDouble("duration")?.times(1000))?.toLong() ?: 0L,
     )
     updateMediaSessionPlaybackState(isPlaying = true)
@@ -7517,7 +7538,9 @@ class PlayerActivity :
     playlistIndex = index
     PlaybackSession.selectQueueItem(index)
     TemporaryPlaybackQueue.syncFromSession()
-    viewModel.calculateVideoHash(uri)
+    if (targetQueueItem == null || !isAudioPlaybackItem(targetQueueItem)) {
+      viewModel.calculateVideoHash(uri)
+    }
 
     // Extract and set the new file name
     fileName = getPlaylistItemByIndex(index)?.fileName?.takeIf { it.isNotBlank() }
