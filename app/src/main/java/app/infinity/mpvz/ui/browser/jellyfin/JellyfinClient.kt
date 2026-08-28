@@ -270,6 +270,29 @@ class JellyfinClient(
           "${session.serverUrl}/Videos/$id/stream?static=true&api_key=$encodedToken"
         else -> null
       }
+    val overview = obj["Overview"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val year = obj["ProductionYear"]?.jsonPrimitive?.intOrNull
+    val rating = obj["CommunityRating"]?.jsonPrimitive?.doubleOrNull
+    val genres = obj["Genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
+    val videoStream = obj["MediaStreams"]?.jsonArray?.firstOrNull {
+      it.jsonObject["Type"]?.jsonPrimitive?.contentOrNull.equals("Video", ignoreCase = true)
+    }?.jsonObject
+    val width = videoStream?.get("Width")?.jsonPrimitive?.intOrNull ?: 0
+    val height = videoStream?.get("Height")?.jsonPrimitive?.intOrNull ?: 0
+    val range = videoStream?.get("VideoRange")?.jsonPrimitive?.contentOrNull.orEmpty()
+    val quality = if (mediaType.equals("Movie", ignoreCase = true) || mediaType.equals("Episode", ignoreCase = true)) {
+      buildString {
+        append(when {
+          height >= 2160 || width >= 3800 -> "4K"
+          height >= 1440 || width >= 2500 -> "1440p"
+          height >= 1080 || width >= 1900 -> "1080p"
+          height >= 720 || width >= 1200 -> "720p"
+          else -> "SD"
+        })
+        if (range.contains("HDR", ignoreCase = true)) append(" HDR")
+      }
+    } else null
+    val trailer = obj["RemoteTrailers"]?.jsonArray?.firstOrNull()?.jsonObject?.get("Url")?.jsonPrimitive?.contentOrNull
     return JellyfinTrack(
       id = id,
       title = name,
@@ -279,6 +302,12 @@ class JellyfinClient(
       artworkUrl = artwork,
       streamUrl = stream,
       mediaType = mediaType,
+      overview = overview,
+      productionYear = year,
+      communityRating = rating,
+      genres = genres,
+      qualityLabel = quality,
+      trailerUrl = trailer,
     )
   }
 

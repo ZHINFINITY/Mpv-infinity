@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -363,6 +365,7 @@ private fun JellyfinHomeContent(
 
   BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
     when {
+      uiState.detailItem != null -> viewModel.closeDetail()
       isSearching -> {
         isSearching = false
         viewModel.setSearchQuery("")
@@ -370,6 +373,21 @@ private fun JellyfinHomeContent(
       }
       else -> viewModel.navigateBack()
     }
+  }
+
+  if (uiState.detailItem != null) {
+    JellyfinDetailPage(
+      item = uiState.detailItem,
+      session = uiState.session!!,
+      similarItems = uiState.detailSimilarItems,
+      onBack = { viewModel.closeDetail() },
+      onPlay = { viewModel.playItem(context, uiState.detailItem) },
+      onOpenTrailer = { url ->
+        context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+      },
+      onSimilarClick = { viewModel.openDetail(it) },
+    )
+    return
   }
 
   val headerBg = if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
@@ -575,6 +593,103 @@ private fun JellyfinHomeContent(
   }
 }
 
+@Composable
+private fun JellyfinDetailPage(
+  mediaItem: JellyfinTrack,
+  session: JellyfinSession,
+  similarItems: List<JellyfinTrack>,
+  onBack: () -> Unit,
+  onPlay: () -> Unit,
+  onOpenTrailer: (String) -> Unit,
+  onSimilarClick: (JellyfinTrack) -> Unit,
+) {
+  val imageUrl = mediaItem.artworkUrl ?: "${session.serverUrl}/Items/${mediaItem.id}/Images/Primary?maxWidth=900&quality=90&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background)
+      .statusBarsPadding(),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      IconButton(onClick = onBack) { Icon(imageVector = Icons.RoundedFilled.ArrowBack, contentDescription = "Back") }
+      Text(mediaItem.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    LazyColumn(
+      modifier = Modifier.fillMaxSize(),
+      contentPadding = PaddingValues(bottom = 24.dp),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      item {
+        Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
+          RemoteImage(url = imageUrl, contentDescription = mediaItem.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+          Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
+          Column(modifier = Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+              Text(if (mediaItem.isVideo) "MOVIE" else "AUDIO", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(mediaItem.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
+          }
+        }
+      }
+      item {
+        Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            mediaItem.communityRating?.let { rating -> DetailBadge("★ ${String.format(java.util.Locale.US, "%.1f", rating)}") }
+            mediaItem.productionYear?.let { DetailBadge(it.toString()) }
+            mediaItem.qualityLabel?.let { DetailBadge(it) }
+          }
+          if (mediaItem.genres.isNotEmpty()) {
+            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              mediaItem.genres.take(6).forEach { genre -> DetailBadge(genre) }
+            }
+          }
+          Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = onPlay, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
+              Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = null)
+              Spacer(modifier = Modifier.width(8.dp))
+              Text("Play ${if (mediaItem.isVideo) "Movie" else "Track"}")
+            }
+            mediaItem.trailerUrl?.let { trailer ->
+              FilledTonalButton(onClick = { onOpenTrailer(trailer) }, shape = RoundedCornerShape(16.dp)) {
+                Icon(imageVector = Icons.RoundedFilled.PlayCircle, contentDescription = "Trailer")
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Trailer")
+              }
+            }
+          }
+          if (mediaItem.overview.isNotBlank()) {
+            Text("Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(mediaItem.overview, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        }
+      }
+      if (similarItems.isNotEmpty()) {
+        item {
+          Text("More Like This", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp))
+        }
+        item {
+          LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(similarItems.take(10), key = { it.id }) { similar ->
+              PosterCard(track = similar, session = session, onClick = { onSimilarClick(similar) })
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun DetailBadge(text: String) {
+  Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+    Text(text, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelLarge)
+  }
+}
+
 // ─── Home Dashboard ─────────────────────────────────────────────────
 @Composable
 private fun HomeDashboard(
@@ -593,7 +708,7 @@ private fun HomeDashboard(
           items = uiState.heroItems,
           session = uiState.session!!,
           onPlay = { viewModel.playItem(context, it) },
-          onDetails = { /* TODO: detail sheet */ },
+          onDetails = { viewModel.openDetail(it) },
         )
       }
     }
@@ -632,6 +747,7 @@ private fun HomeDashboard(
           items = uiState.latestMovies,
           session = uiState.session!!,
           onItemPlay = { viewModel.playItem(context, it) },
+          onItemDetails = { viewModel.openDetail(it) },
         )
       }
     }
@@ -646,6 +762,7 @@ private fun HomeDashboard(
           items = uiState.latestShows,
           session = uiState.session!!,
           onItemPlay = { viewModel.playItem(context, it) },
+          onItemDetails = { viewModel.openDetail(it) },
         )
       }
     }
@@ -675,40 +792,45 @@ private fun LibraryContent(
 ) {
   if (uiState.openLibrary?.isMusic == true) {
     MusicContent(uiState = uiState, viewModel = viewModel, context = context)
-  } else {
-    if (uiState.currentItems.isEmpty() && !uiState.isLoading) {
-      Box(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        contentAlignment = Alignment.Center,
+    return
+  }
+  var selectedGenre by remember(uiState.selectedLibraryId) { mutableStateOf<String?>(null) }
+  val genres = remember(uiState.currentItems) {
+    uiState.currentItems.flatMap { it.genres }.distinct().sorted()
+  }
+  val visibleItems = if (selectedGenre == null) uiState.currentItems else uiState.currentItems.filter { selectedGenre in it.genres }
+  Column(modifier = Modifier.fillMaxSize()) {
+    if (genres.isNotEmpty()) {
+      Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
+        FilterChip(selected = selectedGenre == null, onClick = { selectedGenre = null }, label = { Text("All") })
+        genres.forEach { genre ->
+          FilterChip(selected = selectedGenre == genre, onClick = { selectedGenre = genre }, label = { Text(genre) })
+        }
+      }
+    }
+    if (visibleItems.isEmpty() && !uiState.isLoading) {
+      Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
           Icon(imageVector = Icons.RoundedFilled.Movie, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(48.dp))
           Spacer(modifier = Modifier.height(12.dp))
-          Text(
-            text = if (uiState.searchQuery.isNotBlank()) "No results found" else "No media found",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-          )
+          Text(text = if (uiState.searchQuery.isNotBlank()) "No results found" else "No media found", color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
       }
     } else {
-      LazyColumn(
+      LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
-        items(uiState.currentItems, key = { it.id }) { track ->
-          ListItemCard(
-            track = track,
-            session = uiState.session!!,
-            onClick = { viewModel.playItem(context, track) },
-          )
+        androidx.compose.foundation.lazy.grid.items(visibleItems, key = { it.id }) { track ->
+          PosterCard(track = track, session = uiState.session!!, onClick = { if (track.isVideo) viewModel.openDetail(track) else viewModel.playItem(context, track) }, cardWidth = 0.dp)
         }
         if (uiState.isLoadingMore) {
-          item {
-            Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-              CircularProgressIndicator()
-            }
-          }
+          item { Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         }
       }
     }
@@ -998,6 +1120,7 @@ private fun HorizontalSection(
   items: List<JellyfinTrack>,
   session: JellyfinSession,
   onItemPlay: (JellyfinTrack) -> Unit,
+  onItemDetails: (JellyfinTrack) -> Unit = onItemPlay,
 ) {
   if (items.isEmpty()) return
   LazyRow(
@@ -1005,7 +1128,7 @@ private fun HorizontalSection(
     contentPadding = PaddingValues(horizontal = 16.dp),
   ) {
     items(items, key = { it.id }) { item ->
-      PosterCard(track = item, session = session, onClick = { onItemPlay(item) })
+      PosterCard(track = item, session = session, onClick = { onItemDetails(item) })
     }
   }
 }
@@ -1018,13 +1141,12 @@ private fun PosterCard(
   onClick: () -> Unit,
   cardWidth: androidx.compose.ui.unit.Dp = 136.dp,
 ) {
-  val imageUrl = remember(session.serverUrl, track.id, session.accessToken) {
-    "${session.serverUrl}/Items/${track.id}/Images/Primary?maxWidth=400&quality=90&api_key=${session.accessToken}"
+  val imageUrl = remember(session.serverUrl, track.id, session.accessToken, track.artworkUrl) {
+    track.artworkUrl ?: "${session.serverUrl}/Items/${track.id}/Images/Primary?maxWidth=600&quality=90&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
   }
-
   Column(
     modifier = Modifier
-      .width(cardWidth)
+      .then(if (cardWidth == 0.dp) Modifier.fillMaxWidth() else Modifier.width(cardWidth))
       .clip(RoundedCornerShape(8.dp))
       .clickable(onClick = onClick),
   ) {
@@ -1041,6 +1163,21 @@ private fun PosterCard(
         contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxSize(),
       )
+      track.qualityLabel?.let { quality ->
+        Surface(
+          modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
+          shape = RoundedCornerShape(6.dp),
+          color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f),
+        ) {
+          Text(
+            text = quality,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+          )
+        }
+      }
     }
     Column(
       modifier = Modifier
