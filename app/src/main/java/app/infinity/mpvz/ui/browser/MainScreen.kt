@@ -164,6 +164,7 @@ object MainScreen : Screen {
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
     val showPlaylistsTab by appearancePreferences.showPlaylistsTab.collectAsState()
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
+    val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val hideNavigationBar = NavigationBarState.shouldHideNavigationBar
     val isPermissionDenied = NavigationBarState.isPermissionDenied
     val isDualPaneFolderSelected = NavigationBarState.isDualPaneFolderSelected
@@ -176,6 +177,7 @@ object MainScreen : Screen {
         showRecentsTab,
         showPlaylistsTab,
         showNetworkTab,
+        showJellyfinTab,
       ) {
       buildList {
         if (showHomeTab) add(MainTab.HOME)
@@ -183,7 +185,7 @@ object MainScreen : Screen {
         if (showRecentsTab) add(MainTab.RECENTS)
         if (showPlaylistsTab) add(MainTab.PLAYLISTS)
         if (showNetworkTab) add(MainTab.NETWORK)
-        add(MainTab.JELLYFIN)
+        if (showJellyfinTab) add(MainTab.JELLYFIN)
       }
       }
 

@@ -60,6 +60,8 @@
   <string name="pref_nav_playlists_summary">Show or hide Playlists in the bottom navigation bar</string>
   <string name="pref_nav_network_title">Show Network tab</string>
   <string name="pref_nav_network_summary">Show or hide Network in the bottom navigation bar</string>
+  <string name="pref_nav_jellyfin_title">Show Jellyfin tab</string>
+  <string name="pref_nav_jellyfin_summary">Show or hide Jellyfin in the bottom navigation bar</string>
   <string name="pref_quick_play_fab_title">Quick Play FAB</string>
   <string name="pref_quick_play_fab_summary">Show the quick play floating action button in browser screens</string>
   <string name="pref_quick_play_fab_direct_title">Direct Quick Play</string>

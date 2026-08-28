@@ -178,6 +178,8 @@ internal class JellyfinClient(
     val auth = authHeader(token)
     header("X-Emby-Authorization", auth)
     header("Authorization", auth)
+    header("Accept", "application/json")
+    header("User-Agent", "mpvRx/${BuildConfig.VERSION_NAME.ifBlank { "1.0.3-debug" }}")
     if (!token.isNullOrBlank()) {
       header("X-Emby-Token", token)
       header("X-MediaBrowser-Token", token)
