@@ -69,6 +69,82 @@ internal class JellyfinClient(
     Result.failure(lastError)
   }
 
+  suspend fun authenticateWithToken(serverUrl: String, token: String): Result<JellyfinSession> =
+    withContext(Dispatchers.IO) {
+      runCatching {
+        require(token.isNotBlank()) { "Enter a Jellyfin API token" }
+        val candidate = normalizeUrlCandidates(serverUrl).first()
+        val request = Request.Builder()
+          .url("$candidate/Users/Me")
+          .addJellyfinHeaders(token.trim())
+          .get()
+          .build()
+        httpClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) throw IOException("Jellyfin token login failed: HTTP ${response.code}")
+          val user = json.parseToJsonElement(response.body.string()).jsonObject
+          val userId = user["Id"]?.jsonPrimitive?.content ?: throw IOException("Jellyfin response did not include a user ID")
+          JellyfinSession(candidate, userId, token.trim())
+        }
+      }
+    }
+
+  suspend fun initiateQuickConnect(serverUrl: String): Result<JellyfinQuickConnectState> =
+    withContext(Dispatchers.IO) {
+      runCatching {
+        val candidate = normalizeUrlCandidates(serverUrl).first()
+        val request = Request.Builder()
+          .url("$candidate/QuickConnect/Initiate")
+          .addJellyfinHeaders()
+          .post("".toRequestBody("application/json".toMediaType()))
+          .build()
+        httpClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) throw IOException("Quick Connect initiation failed: HTTP ${response.code}")
+          val body = json.parseToJsonElement(response.body.string()).jsonObject
+          JellyfinQuickConnectState(
+            serverUrl = candidate,
+            secret = body["Secret"]?.jsonPrimitive?.content ?: throw IOException("Quick Connect response did not include a secret"),
+            code = body["Code"]?.jsonPrimitive?.content ?: throw IOException("Quick Connect response did not include a code"),
+          )
+        }
+      }
+    }
+
+  suspend fun isQuickConnectAuthenticated(state: JellyfinQuickConnectState): Result<Boolean> =
+    withContext(Dispatchers.IO) {
+      runCatching {
+        val request = Request.Builder()
+          .url("${state.serverUrl}/QuickConnect/Connect?Secret=${URLEncoder.encode(state.secret, Charsets.UTF_8.name())}")
+          .addJellyfinHeaders()
+          .get()
+          .build()
+        httpClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) throw IOException("Quick Connect polling failed: HTTP ${response.code}")
+          json.parseToJsonElement(response.body.string()).jsonObject["Authenticated"]?.jsonPrimitive?.content?.toBoolean() == true
+        }
+      }
+    }
+
+  suspend fun authenticateWithQuickConnect(state: JellyfinQuickConnectState): Result<JellyfinSession> =
+    withContext(Dispatchers.IO) {
+      runCatching {
+        val request = Request.Builder()
+          .url("${state.serverUrl}/Users/AuthenticateWithQuickConnect?secret=${URLEncoder.encode(state.secret, Charsets.UTF_8.name())}")
+          .addJellyfinHeaders()
+          .post("".toRequestBody("application/json".toMediaType()))
+          .build()
+        httpClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) throw IOException("Quick Connect authentication failed: HTTP ${response.code}")
+          val body = json.parseToJsonElement(response.body.string()).jsonObject
+          val user = body["User"]?.jsonObject ?: throw IOException("Quick Connect response did not include a user")
+          JellyfinSession(
+            serverUrl = state.serverUrl,
+            userId = user["Id"]?.jsonPrimitive?.content ?: throw IOException("Quick Connect response did not include a user ID"),
+            accessToken = body["AccessToken"]?.jsonPrimitive?.content ?: throw IOException("Quick Connect response did not include an access token"),
+          )
+        }
+      }
+    }
+
   suspend fun loadLibraries(session: JellyfinSession): Result<List<JellyfinCollection>> =
     withContext(Dispatchers.IO) {
       runCatching {

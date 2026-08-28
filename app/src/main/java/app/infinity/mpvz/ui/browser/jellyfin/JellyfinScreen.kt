@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -51,25 +52,34 @@ import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import okhttp3.OkHttpClient
+
+private enum class JellyfinLoginMode { PASSWORD, API_TOKEN, QUICK_CONNECT }
 
 @Composable
 fun JellyfinScreen(modifier: Modifier = Modifier) {
   val context = LocalContext.current
   val client = koinInject<OkHttpClient>()
   val prefs = remember { context.getSharedPreferences("jellyfin_debug", Context.MODE_PRIVATE) }
+  val profileStore = remember { JellyfinProfileStore(context) }
   val scope = rememberCoroutineScope()
   var serverUrl by remember { mutableStateOf(prefs.getString("server_url", "") ?: "") }
   var username by remember { mutableStateOf(prefs.getString("username", "") ?: "") }
+  var profileName by remember { mutableStateOf("") }
+  var profiles by remember { mutableStateOf(profileStore.getAll()) }
   var password by remember { mutableStateOf("") }
+  var apiToken by remember { mutableStateOf("") }
+  var loginMode by remember { mutableStateOf(JellyfinLoginMode.PASSWORD) }
   var session by remember { mutableStateOf<JellyfinSession?>(null) }
   var libraries by remember { mutableStateOf<List<JellyfinCollection>>(emptyList()) }
   var selectedLibraryId by remember { mutableStateOf<String?>(null) }
   var tracks by remember { mutableStateOf<List<JellyfinTrack>>(emptyList()) }
   var isLoading by remember { mutableStateOf(false) }
   var error by remember { mutableStateOf<String?>(null) }
+  var quickConnect by remember { mutableStateOf<JellyfinQuickConnectState?>(null) }
 
   suspend fun loadServer(sessionToLoad: JellyfinSession, libraryId: String? = selectedLibraryId) {
     isLoading = true
@@ -101,12 +111,59 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
     }
   }
 
+  LaunchedEffect(quickConnect) {
+    val pending = quickConnect ?: return@LaunchedEffect
+    val jellyfin = JellyfinClient(client, context)
+    while (true) {
+      delay(5_000)
+      val authorized = jellyfin.isQuickConnectAuthenticated(pending).getOrDefault(false)
+      if (authorized) {
+        jellyfin.authenticateWithQuickConnect(pending).onSuccess { authenticated ->
+          prefs.edit()
+            .putString("server_url", authenticated.serverUrl)
+            .putString("access_token", authenticated.accessToken)
+            .putString("user_id", authenticated.userId)
+            .apply()
+          quickConnect = null
+          session = authenticated
+          libraries = emptyList()
+          selectedLibraryId = null
+          loadServer(authenticated, null)
+        }.onFailure { error = it.message ?: "Quick Connect authentication failed" }
+        break
+      }
+    }
+  }
+
   fun login() {
     scope.launch {
       isLoading = true
       error = null
-      JellyfinClient(client, context).authenticate(serverUrl, username, password).fold(
+      if (loginMode == JellyfinLoginMode.QUICK_CONNECT) {
+        JellyfinClient(client, context).initiateQuickConnect(serverUrl).fold(
+          onSuccess = { quickConnect = it },
+          onFailure = { error = it.message ?: "Quick Connect is unavailable on this server" },
+        )
+        isLoading = false
+        return@launch
+      }
+      val authentication = when (loginMode) {
+        JellyfinLoginMode.PASSWORD -> JellyfinClient(client, context).authenticate(serverUrl, username, password)
+        JellyfinLoginMode.API_TOKEN -> JellyfinClient(client, context).authenticateWithToken(serverUrl, apiToken)
+        JellyfinLoginMode.QUICK_CONNECT -> check(false) { "Quick Connect handled before password authentication" }
+      }
+      authentication.fold(
         onSuccess = { authenticated ->
+          profileStore.upsert(
+            JellyfinProfile(
+              name = profileName.trim().ifBlank { username.trim().ifBlank { "Jellyfin server" } },
+              serverUrl = authenticated.serverUrl,
+              username = username,
+              userId = authenticated.userId,
+              accessToken = authenticated.accessToken,
+            ),
+          )
+          profiles = profileStore.getAll()
           prefs.edit()
             .putString("server_url", authenticated.serverUrl)
             .putString("username", username)
@@ -126,15 +183,33 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
   }
 
   if (session == null) {
-    JellyfinLoginForm(
+          JellyfinLoginForm(
+      profiles = profiles,
+      profileName = profileName,
       serverUrl = serverUrl,
       username = username,
       password = password,
+      apiToken = apiToken,
+      loginMode = loginMode,
+
       isLoading = isLoading,
       error = error,
+      onProfileNameChange = { profileName = it },
+      onProfileSelected = { profile ->
+        profileName = profile.name
+        serverUrl = profile.serverUrl
+        username = profile.username
+        session = JellyfinSession(profile.serverUrl, profile.userId, profile.accessToken)
+        libraries = emptyList()
+        selectedLibraryId = null
+        scope.launch { loadServer(session!!, null) }
+      },
       onServerUrlChange = { serverUrl = it },
       onUsernameChange = { username = it },
       onPasswordChange = { password = it },
+      onApiTokenChange = { apiToken = it },
+      quickConnect = quickConnect,
+      onLoginModeChange = { loginMode = it },
       onLogin = ::login,
       modifier = modifier,
     )
@@ -167,25 +242,85 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
 
 @Composable
 private fun JellyfinLoginForm(
+  profiles: List<JellyfinProfile>,
+  profileName: String,
   serverUrl: String,
   username: String,
   password: String,
+  apiToken: String,
+  loginMode: JellyfinLoginMode,
+  quickConnect: JellyfinQuickConnectState?,
   isLoading: Boolean,
   error: String?,
+  onProfileNameChange: (String) -> Unit,
+  onProfileSelected: (JellyfinProfile) -> Unit,
   onServerUrlChange: (String) -> Unit,
   onUsernameChange: (String) -> Unit,
   onPasswordChange: (String) -> Unit,
+  onApiTokenChange: (String) -> Unit,
+  onLoginModeChange: (JellyfinLoginMode) -> Unit,
   onLogin: () -> Unit,
   modifier: Modifier,
 ) {
   Column(
-    modifier = modifier.fillMaxSize().padding(20.dp),
+    modifier = modifier.fillMaxSize().statusBarsPadding().padding(20.dp),
     verticalArrangement = Arrangement.Center,
   ) {
     Text("Jellyfin", style = MaterialTheme.typography.headlineMedium)
     Spacer(Modifier.height(8.dp))
     Text("Connect to your personal Jellyfin server.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Spacer(Modifier.height(20.dp))
+    if (profiles.isNotEmpty()) {
+      Spacer(Modifier.height(14.dp))
+      Text("Saved servers", style = MaterialTheme.typography.labelLarge)
+      Row(
+        modifier = Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        profiles.forEach { profile ->
+          FilterChip(
+            selected = false,
+            onClick = { onProfileSelected(profile) },
+            label = { Text(profile.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+          )
+        }
+      }
+    }
+    Spacer(Modifier.height(16.dp))
+    OutlinedTextField(
+      value = profileName,
+      onValueChange = onProfileNameChange,
+      modifier = Modifier.fillMaxWidth(),
+      label = { Text("Profile name") },
+      singleLine = true,
+    )
+    Spacer(Modifier.height(10.dp))
+    Row(
+      modifier = Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      FilterChip(
+        selected = loginMode == JellyfinLoginMode.PASSWORD,
+        onClick = { onLoginModeChange(JellyfinLoginMode.PASSWORD) },
+        label = { Text("Password") },
+      )
+      FilterChip(
+        selected = loginMode == JellyfinLoginMode.API_TOKEN,
+        onClick = { onLoginModeChange(JellyfinLoginMode.API_TOKEN) },
+        label = { Text("API token") },
+      )
+      FilterChip(
+        selected = loginMode == JellyfinLoginMode.QUICK_CONNECT,
+        onClick = { onLoginModeChange(JellyfinLoginMode.QUICK_CONNECT) },
+          label = { Text("Quick Connect") },
+      )
+    }
+    if (quickConnect != null) {
+      Spacer(Modifier.height(12.dp))
+      Text("Enter this code in Jellyfin Quick Connect", style = MaterialTheme.typography.labelLarge)
+      Text(quickConnect.code, style = MaterialTheme.typography.displaySmall)
+      Text("Waiting for approval…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Spacer(Modifier.height(12.dp))
     OutlinedTextField(
       value = serverUrl,
       onValueChange = onServerUrlChange,
@@ -203,15 +338,33 @@ private fun JellyfinLoginForm(
       label = { Text("Username") },
       singleLine = true,
     )
-    Spacer(Modifier.height(10.dp))
-    OutlinedTextField(
-      value = password,
-      onValueChange = onPasswordChange,
-      modifier = Modifier.fillMaxWidth(),
-      label = { Text("Password") },
-      singleLine = true,
-      visualTransformation = PasswordVisualTransformation(),
-    )
+    if (loginMode == JellyfinLoginMode.PASSWORD) {
+      Spacer(Modifier.height(10.dp))
+      OutlinedTextField(
+        value = password,
+        onValueChange = onPasswordChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Password") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+      )
+    } else if (loginMode == JellyfinLoginMode.API_TOKEN) {
+      Spacer(Modifier.height(10.dp))
+      OutlinedTextField(
+        value = apiToken,
+        onValueChange = onApiTokenChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text("Jellyfin API token") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+      )
+    } else {
+      Spacer(Modifier.height(10.dp))
+      Text(
+        "Quick Connect will display a temporary code that you approve from an already signed-in Jellyfin client.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
     if (!error.isNullOrBlank()) {
       Spacer(Modifier.height(10.dp))
       Text(error, color = MaterialTheme.colorScheme.error)
@@ -219,7 +372,11 @@ private fun JellyfinLoginForm(
     Spacer(Modifier.height(16.dp))
     Button(
       onClick = onLogin,
-      enabled = !isLoading && serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank(),
+      enabled = !isLoading && serverUrl.isNotBlank() && when (loginMode) {
+        JellyfinLoginMode.PASSWORD -> username.isNotBlank() && password.isNotBlank()
+        JellyfinLoginMode.API_TOKEN -> apiToken.isNotBlank()
+        JellyfinLoginMode.QUICK_CONNECT -> quickConnect == null
+      },
       modifier = Modifier.fillMaxWidth(),
     ) {
       if (isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp)) else Text("Connect")
@@ -242,7 +399,7 @@ private fun JellyfinConnectedContent(
   modifier: Modifier,
 ) {
   val selectedLibrary = libraries.firstOrNull { it.id == selectedLibraryId }
-  Column(modifier = modifier.fillMaxSize()) {
+  Column(modifier = modifier.fillMaxSize().statusBarsPadding()) {
     Row(
       modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
       horizontalArrangement = Arrangement.SpaceBetween,

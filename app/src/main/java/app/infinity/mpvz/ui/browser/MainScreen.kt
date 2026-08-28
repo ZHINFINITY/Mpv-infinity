@@ -549,7 +549,7 @@ private fun TelegramPillNavigationBar(
                       )
                     MainScreen.MainTab.JELLYFIN ->
                       Icon(
-                        Icons.RoundedFilled.BringYourOwnIp,
+                        Icons.RoundedFilled.VideoLibrary,
                         contentDescription = "Jellyfin",
                         tint = contentColor,
                         modifier = Modifier.size(22.dp),

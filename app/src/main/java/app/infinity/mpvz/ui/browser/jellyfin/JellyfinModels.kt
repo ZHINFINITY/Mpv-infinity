@@ -12,6 +12,12 @@ internal data class JellyfinSession(
   val accessToken: String,
 )
 
+internal data class JellyfinQuickConnectState(
+  val serverUrl: String,
+  val secret: String,
+  val code: String,
+)
+
 internal data class JellyfinCollection(
   val id: String,
   val name: String,
