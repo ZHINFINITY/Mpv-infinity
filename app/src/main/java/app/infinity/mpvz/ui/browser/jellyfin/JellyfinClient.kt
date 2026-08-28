@@ -32,6 +32,53 @@ internal class JellyfinClient(
 ) {
   private val json = Json { ignoreUnknownKeys = true }
 
+  companion object {
+    fun normalizeUrl(raw: String): String = normalizeUrlCandidates(raw).first()
+
+    fun normalizeUrlCandidates(raw: String): List<String> {
+      val trimmed = raw.trim().removeSuffix("/")
+      require(trimmed.isNotBlank()) { "Enter a Jellyfin server URL" }
+      if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+        require(!Uri.parse(trimmed).host.isNullOrBlank()) {
+          "Enter a valid Jellyfin server address, for example jellyfin.example.com"
+        }
+        return listOf(trimmed)
+      }
+      val clean = trimmed.removePrefix("//")
+      val host = clean.substringBefore('/').substringBeforeLast(':')
+      val port = clean.substringAfterLast(":", "").substringBefore('/').toIntOrNull()
+      val local = host.equals("localhost", ignoreCase = true) ||
+        host == "127.0.0.1" ||
+        host.startsWith("192.168.") ||
+        host.startsWith("10.") ||
+        (host.startsWith("172.") && host.substringAfter("172.").substringBefore('.').toIntOrNull() in 16..31) ||
+        host.endsWith(".local", ignoreCase = true) ||
+        host.endsWith(".lan", ignoreCase = true)
+      val candidates = if (local || port == 80 || port == 8096) {
+        listOf("http://$clean", "https://$clean")
+      } else {
+        listOf("https://$clean", "http://$clean")
+      }
+      require(!Uri.parse(candidates.first()).host.isNullOrBlank()) {
+        "Enter a valid Jellyfin server address, for example jellyfin.example.com"
+      }
+      return candidates
+    }
+  }
+
+  fun getStreamUrl(session: JellyfinSession, itemId: String): String {
+    val base = normalizeUrl(session.serverUrl)
+    val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+    return "$base/Videos/$itemId/stream?static=true&api_key=$encodedToken"
+  }
+
+  fun getImageUrl(session: JellyfinSession, itemId: String, imageTag: String? = null, maxWidth: Int = 600): String {
+    val base = normalizeUrl(session.serverUrl)
+    val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+    val tagParam = if (!imageTag.isNullOrBlank()) "&tag=$imageTag" else ""
+    return "$base/Items/$itemId/Images/Primary?maxWidth=$maxWidth&quality=90$tagParam&api_key=$encodedToken"
+  }
+
   suspend fun authenticate(
     rawServerUrl: String,
     username: String,
@@ -88,81 +135,26 @@ internal class JellyfinClient(
       }
     }
 
-  suspend fun initiateQuickConnect(serverUrl: String): Result<JellyfinQuickConnectState> =
-    withContext(Dispatchers.IO) {
-      runCatching {
-        val candidate = normalizeUrlCandidates(serverUrl).first()
-        val request = Request.Builder()
-          .url("$candidate/QuickConnect/Initiate")
-          .addJellyfinHeaders()
-          .post("".toRequestBody("application/json".toMediaType()))
-          .build()
-        httpClient.newCall(request).execute().use { response ->
-          if (!response.isSuccessful) throw IOException("Quick Connect initiation failed: HTTP ${response.code}")
-          val body = json.parseToJsonElement(response.body.string()).jsonObject
-          JellyfinQuickConnectState(
-            serverUrl = candidate,
-            secret = body["Secret"]?.jsonPrimitive?.content ?: throw IOException("Quick Connect response did not include a secret"),
-            code = body["Code"]?.jsonPrimitive?.content ?: throw IOException("Quick Connect response did not include a code"),
-          )
-        }
-      }
-    }
-
-  suspend fun isQuickConnectAuthenticated(state: JellyfinQuickConnectState): Result<Boolean> =
-    withContext(Dispatchers.IO) {
-      runCatching {
-        val request = Request.Builder()
-          .url("${state.serverUrl}/QuickConnect/Connect?Secret=${URLEncoder.encode(state.secret, Charsets.UTF_8.name())}")
-          .addJellyfinHeaders()
-          .get()
-          .build()
-        httpClient.newCall(request).execute().use { response ->
-          if (!response.isSuccessful) throw IOException("Quick Connect polling failed: HTTP ${response.code}")
-          json.parseToJsonElement(response.body.string()).jsonObject["Authenticated"]?.jsonPrimitive?.content?.toBoolean() == true
-        }
-      }
-    }
-
-  suspend fun authenticateWithQuickConnect(state: JellyfinQuickConnectState): Result<JellyfinSession> =
-    withContext(Dispatchers.IO) {
-      runCatching {
-        val request = Request.Builder()
-          .url("${state.serverUrl}/Users/AuthenticateWithQuickConnect?secret=${URLEncoder.encode(state.secret, Charsets.UTF_8.name())}")
-          .addJellyfinHeaders()
-          .post("".toRequestBody("application/json".toMediaType()))
-          .build()
-        httpClient.newCall(request).execute().use { response ->
-          if (!response.isSuccessful) throw IOException("Quick Connect authentication failed: HTTP ${response.code}")
-          val body = json.parseToJsonElement(response.body.string()).jsonObject
-          val user = body["User"]?.jsonObject ?: throw IOException("Quick Connect response did not include a user")
-          JellyfinSession(
-            serverUrl = state.serverUrl,
-            userId = user["Id"]?.jsonPrimitive?.content ?: throw IOException("Quick Connect response did not include a user ID"),
-            accessToken = body["AccessToken"]?.jsonPrimitive?.content ?: throw IOException("Quick Connect response did not include an access token"),
-          )
-        }
-      }
-    }
-
   suspend fun loadLibraries(session: JellyfinSession): Result<List<JellyfinCollection>> =
     withContext(Dispatchers.IO) {
       runCatching {
-        val url = "${session.serverUrl}/Users/${session.userId}/Views"
+        val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+        val url = "${session.serverUrl}/Users/${session.userId}/Views?api_key=$encodedToken"
         val request = Request.Builder()
           .url(url)
           .addJellyfinHeaders(session.accessToken)
+          .get()
           .build()
         httpClient.newCall(request).execute().use { response ->
-          if (!response.isSuccessful) {
-            throw IOException("Jellyfin libraries request failed: HTTP ${response.code}")
-          }
+          if (!response.isSuccessful) throw IOException("Failed to load Jellyfin libraries: HTTP ${response.code}")
           val root = json.parseToJsonElement(response.body.string()).jsonObject
-          (root["Items"]?.jsonArray ?: JsonArray(emptyList())).mapNotNull { item ->
-            val obj = item.jsonObject
+          val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
+          items.mapNotNull { element ->
+            val obj = element.jsonObject
             val id = obj["Id"]?.jsonPrimitive?.content ?: return@mapNotNull null
-            val name = obj["Name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            JellyfinCollection(id, name, obj["CollectionType"]?.jsonPrimitive?.contentOrNull)
+            val name = obj["Name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val collectionType = obj["CollectionType"]?.jsonPrimitive?.contentOrNull
+            JellyfinCollection(id = id, name = name, collectionType = collectionType)
           }
         }
       }
@@ -170,30 +162,85 @@ internal class JellyfinClient(
 
   suspend fun loadMedia(
     session: JellyfinSession,
-    parentId: String? = null,
-    limit: Int = 200,
-    sortBy: String = "SortName",
-    sortOrder: String = "Ascending",
+    parentId: String,
+    limit: Int = 50,
+    startIndex: Int = 0,
+    sortBy: String = "DateCreated",
+    sortOrder: String = "Descending",
   ): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
     runCatching {
-      val fields = "PrimaryImageAspectRatio,MediaSources,RunTimeTicks,Album,AlbumArtist,Artists,ImageTags,Type,SeriesName,IndexNumber,ParentIndexNumber"
-      val parent = parentId?.let { "&ParentId=${Uri.encode(it)}" }.orEmpty()
-      val url =
-        "${session.serverUrl}/Users/${session.userId}/Items" +
-          "?IncludeItemTypes=Audio,Movie,Episode&Recursive=true&Fields=$fields&StartIndex=0&Limit=$limit" +
-          "&SortBy=${Uri.encode(sortBy)}&SortOrder=${Uri.encode(sortOrder)}$parent"
+      val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+      val url = "${session.serverUrl}/Users/${session.userId}/Items" +
+        "?ParentId=$parentId&Limit=$limit&StartIndex=$startIndex" +
+        "&SortBy=$sortBy&SortOrder=$sortOrder&Recursive=true" +
+        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating" +
+        "&api_key=$encodedToken"
       val request = Request.Builder()
         .url(url)
         .addJellyfinHeaders(session.accessToken)
+        .get()
         .build()
-
       httpClient.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) {
-          throw IOException("Jellyfin library request failed: HTTP ${response.code}")
-        }
+        if (!response.isSuccessful) throw IOException("Failed to load Jellyfin media: HTTP ${response.code}")
         val root = json.parseToJsonElement(response.body.string()).jsonObject
         val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
         items.mapNotNull { parseTrack(it.jsonObject, session) }
+      }
+    }
+  }
+
+  suspend fun search(
+    session: JellyfinSession,
+    query: String,
+    limit: Int = 50,
+  ): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
+    runCatching {
+      val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+      val encodedQuery = URLEncoder.encode(query, Charsets.UTF_8.name())
+      val url = "${session.serverUrl}/Search/Hints" +
+        "?SearchTerm=$encodedQuery&Limit=$limit" +
+        "&IncludePeople=false&IncludeMedia=false&IncludeGenres=false&IncludeStudios=false" +
+        "&api_key=$encodedToken"
+      val request = Request.Builder()
+        .url(url)
+        .addJellyfinHeaders(session.accessToken)
+        .get()
+        .build()
+      httpClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw IOException("Search failed: HTTP ${response.code}")
+        val root = json.parseToJsonElement(response.body.string()).jsonObject
+        val items = root["SearchHints"]?.jsonArray ?: JsonArray(emptyList())
+        items.mapNotNull { element ->
+          val obj = element.jsonObject
+          val id = obj["Id"]?.jsonPrimitive?.content ?: return@mapNotNull null
+          val name = obj["Name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+          val type = obj["Type"]?.jsonPrimitive?.content ?: "Audio"
+          val seriesName = obj["SeriesName"]?.jsonPrimitive?.contentOrNull
+          val artist = obj["Artist"]?.jsonPrimitive?.contentOrNull ?: seriesName ?: "Unknown"
+          val album = obj["Album"]?.jsonPrimitive?.contentOrNull ?: type
+          val ticks = obj["RunTimeTicks"]?.jsonPrimitive?.longOrNull ?: 0L
+          val tag = obj["ImageTags"]?.jsonObject?.get("Primary")?.jsonPrimitive?.content
+          val artwork = tag?.let {
+            "${session.serverUrl}/Items/$id/Images/Primary?maxWidth=600&quality=90&tag=$it&api_key=$encodedToken"
+          }
+          val stream = when {
+            type.equals("Audio", ignoreCase = true) ->
+              "${session.serverUrl}/Audio/$id/stream?static=true&api_key=$encodedToken"
+            type.equals("Movie", ignoreCase = true) || type.equals("Episode", ignoreCase = true) ->
+              "${session.serverUrl}/Videos/$id/stream?static=true&api_key=$encodedToken"
+            else -> null
+          }
+          JellyfinTrack(
+            id = id,
+            title = name,
+            artist = artist,
+            album = album,
+            durationMs = ticks / 10_000L,
+            artworkUrl = artwork,
+            streamUrl = stream,
+            mediaType = type,
+          )
+        }
       }
     }
   }
@@ -235,39 +282,6 @@ internal class JellyfinClient(
     )
   }
 
-  private fun normalizeUrlCandidates(raw: String): List<String> {
-    val trimmed = raw.trim().removeSuffix("/")
-    require(trimmed.isNotBlank()) { "Enter a Jellyfin server URL" }
-    if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
-      require(!Uri.parse(trimmed).host.isNullOrBlank()) {
-        "Enter a valid Jellyfin server address, for example jellyfin.example.com"
-      }
-      return listOf(trimmed)
-    }
-
-    val clean = trimmed.removePrefix("//")
-    val host = clean.substringBefore('/').substringBeforeLast(':')
-    val port = clean.substringAfterLast(":", "").substringBefore('/').toIntOrNull()
-    val local = host.equals("localhost", ignoreCase = true) ||
-      host == "127.0.0.1" ||
-      host.startsWith("192.168.") ||
-      host.startsWith("10.") ||
-      (host.startsWith("172.") && host.substringAfter("172.").substringBefore('.').toIntOrNull() in 16..31) ||
-      host.endsWith(".local", ignoreCase = true) ||
-      host.endsWith(".lan", ignoreCase = true)
-    val candidates = if (local || port == 80 || port == 8096) {
-      listOf("http://$clean", "https://$clean")
-    } else {
-      listOf("https://$clean", "http://$clean")
-    }
-    require(!Uri.parse(candidates.first()).host.isNullOrBlank()) {
-      "Enter a valid Jellyfin server address, for example jellyfin.example.com"
-    }
-    return candidates
-  }
-
-  private fun normalizeUrl(raw: String): String = normalizeUrlCandidates(raw).first()
-
   private fun authHeader(token: String? = null): String {
     val model = Build.MODEL.orEmpty()
     val manufacturer = Build.MANUFACTURER.orEmpty()
@@ -304,7 +318,4 @@ internal class JellyfinClient(
 
   private fun jsonString(value: String): String =
     Json.encodeToString(kotlinx.serialization.json.JsonPrimitive(value))
-
-  private companion object {
-  }
 }
