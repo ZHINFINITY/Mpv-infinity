@@ -98,6 +98,7 @@ import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Serializable
 object MainScreen : Screen {
@@ -339,7 +340,14 @@ object MainScreen : Screen {
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
-                MainTab.JELLYFIN -> JellyfinScreen()
+                MainTab.JELLYFIN -> {
+                  val viewModel: app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel = viewModel()
+                  val httpClient = koinInject<okhttp3.OkHttpClient>()
+                  JellyfinScreen(
+                    viewModel = viewModel,
+                    httpClient = httpClient,
+                  )
+                }
               }
             }
           }
