@@ -26,7 +26,7 @@ import java.io.IOException
 import java.net.URLEncoder
 import java.util.UUID
 
-internal class JellyfinClient(
+class JellyfinClient(
   private val httpClient: OkHttpClient,
   private val context: Context,
 ) {
