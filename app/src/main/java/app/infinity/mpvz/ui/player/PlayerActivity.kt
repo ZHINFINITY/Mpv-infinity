@@ -7928,7 +7928,8 @@ class PlayerActivity :
   }
 
   private fun isJellyfinLaunch(): Boolean =
-    intent.getStringExtra("launch_source").equals("jellyfin", ignoreCase = true)
+    intent.getStringExtra("launch_source").equals("jellyfin", ignoreCase = true) ||
+      jellyfinSessionReporter != null
 
   /** Generates one collision-resistant identifier without including network credentials. */
   private fun getMediaIdentifier(
