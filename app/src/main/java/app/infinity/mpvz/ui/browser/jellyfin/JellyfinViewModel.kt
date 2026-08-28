@@ -39,11 +39,8 @@ class JellyfinViewModel(
   fun setHttpClient(client: OkHttpClient) {
     httpClient = client
     val session = _uiState.value.session
-    if (session != null && httpClient != null && _uiState.value.libraries.isEmpty()) {
+    if (session != null && _uiState.value.libraries.isEmpty()) {
       viewModelScope.launch { loadHome(session) }
-    }
-    // original:
-      loadHome(session)
     }
   }
 

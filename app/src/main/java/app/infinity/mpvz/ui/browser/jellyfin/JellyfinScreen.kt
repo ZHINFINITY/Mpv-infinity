@@ -665,20 +665,14 @@ private fun JellyfinHeroBanner(
 ) {
   if (items.isEmpty()) return
 
-  val pageCount = if (items.size > 1) Int.MAX_VALUE else items.size
-  val initialPage = remember(items) {
-    if (items.size > 1) {
-      val middle = Int.MAX_VALUE / 2
-      middle - (middle % items.size)
-    } else 0
-  }
-  val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pageCount })
+  val pagerState = rememberPagerState(pageCount = { items.size })
 
   LaunchedEffect(pagerState.settledPage, items.size) {
     if (items.size > 1) {
       delay(5000L)
       if (!pagerState.isScrollInProgress) {
-        pagerState.animateScrollToPage(pagerState.currentPage + 1, animationSpec = tween(800))
+        val nextPage = (pagerState.currentPage + 1) % items.size
+        pagerState.animateScrollToPage(nextPage, animationSpec = tween(800))
       }
     }
   }
@@ -687,11 +681,10 @@ private fun JellyfinHeroBanner(
     modifier = Modifier
       .fillMaxWidth()
       .height(360.dp)
-      .padding(horizontal = 16.dp)
       .clip(RoundedCornerShape(20.dp)),
   ) {
     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-      val item = items[page % items.size]
+      val item = items[page]
       val artworkUrl = remember(session.serverUrl, item.id, session.accessToken) {
         "${session.serverUrl}/Items/${item.id}/Images/Backdrop?maxWidth=1280&quality=80&api_key=${session.accessToken}"
       }
