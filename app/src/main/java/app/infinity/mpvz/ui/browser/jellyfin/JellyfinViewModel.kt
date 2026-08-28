@@ -159,6 +159,15 @@ class JellyfinViewModel(
     }
   }
 
+  fun switchServer(profile: JellyfinServerProfile) {
+    val session = JellyfinSession(profile.serverUrl, profile.userId, profile.accessToken)
+    _uiState.update {
+      it.copy(session = session, activeServer = profile, currentItems = emptyList(), libraries = emptyList(), openLibrary = null, selectedLibraryId = null, error = null)
+    }
+    saveSession(session, profile.username.ifBlank { profile.name })
+    viewModelScope.launch { loadHome(session) }
+  }
+
   fun logout() {
     _uiState.update { JellyfinUiState() }
     prefs.edit().clear().apply()
@@ -190,9 +199,12 @@ class JellyfinViewModel(
           val audio = allItems.filter { !it.isVideo }
           _uiState.update { state ->
             state.copy(
-              heroItems = videos.take(5),
-              latestMovies = videos.filter { it.mediaType == "Movie" }.take(20),
-              latestShows = videos.filter { it.mediaType == "Episode" }.take(20),
+              heroItems = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) || it.mediaType.equals("Series", ignoreCase = true) }.take(5),
+              latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
+              latestShows = videos.filter { it.mediaType.equals("Series", ignoreCase = true) }.ifEmpty {
+                videos.filter { it.mediaType.equals("Episode", ignoreCase = true) }
+                  .distinctBy { it.album.ifBlank { it.title.substringBefore(" - ") } }
+              }.take(20),
               latestMusic = audio.take(20),
               currentItems = allItems,
               isLoading = false,
