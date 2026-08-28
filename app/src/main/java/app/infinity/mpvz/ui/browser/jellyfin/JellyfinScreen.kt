@@ -113,6 +113,7 @@ private fun JellyfinLoginContent(
   viewModel: JellyfinViewModel,
 ) {
   var serverUrl by remember { mutableStateOf("") }
+  var serverName by remember { mutableStateOf("") }
   var username by remember { mutableStateOf("") }
   var password by remember { mutableStateOf("") }
   var useToken by remember { mutableStateOf(false) }
@@ -120,91 +121,190 @@ private fun JellyfinLoginContent(
   Column(
     modifier = Modifier
       .fillMaxSize()
-      .padding(32.dp),
+      .background(MaterialTheme.colorScheme.background)
+      .padding(horizontal = 20.dp, vertical = 18.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
   ) {
-    Surface(
-      shape = CircleShape,
-      color = MaterialTheme.colorScheme.primaryContainer,
-      modifier = Modifier.size(80.dp),
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Box(contentAlignment = Alignment.Center) {
-        Icon(
-          imageVector = Icons.RoundedFilled.PlayArrow,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.onPrimaryContainer,
-          modifier = Modifier.size(40.dp),
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = "Jellyfin",
+          style = MaterialTheme.typography.headlineSmall,
+          fontWeight = FontWeight.Bold,
+        )
+        Text(
+          text = "Add a server connection",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
-    }
-    Spacer(modifier = Modifier.height(16.dp))
-    Text(
-      text = "Connect to Jellyfin",
-      style = MaterialTheme.typography.titleLarge,
-      fontWeight = FontWeight.Bold,
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-      text = "Stream your media library directly with hardware acceleration.",
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      textAlign = TextAlign.Center,
-    )
-    Spacer(modifier = Modifier.height(24.dp))
-
-    OutlinedTextField(
-      value = serverUrl,
-      onValueChange = { serverUrl = it },
-      label = { Text("Server URL") },
-      placeholder = { Text("http://192.168.1.100:8096") },
-      modifier = Modifier.fillMaxWidth(),
-      singleLine = true,
-    )
-    Spacer(modifier = Modifier.height(12.dp))
-    OutlinedTextField(
-      value = username,
-      onValueChange = { username = it },
-      label = { Text(if (useToken) "Token Label" else "Username") },
-      modifier = Modifier.fillMaxWidth(),
-      singleLine = true,
-    )
-    Spacer(modifier = Modifier.height(12.dp))
-    OutlinedTextField(
-      value = password,
-      onValueChange = { password = it },
-      label = { Text(if (useToken) "API Token" else "Password") },
-      visualTransformation = PasswordVisualTransformation(),
-      modifier = Modifier.fillMaxWidth(),
-      singleLine = true,
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    TextButton(onClick = { useToken = !useToken }) {
-      Text(if (useToken) "Use password instead" else "Use API token instead")
-    }
-    Spacer(modifier = Modifier.height(16.dp))
-
-    if (uiState.isAuthenticating) {
-      CircularProgressIndicator(modifier = Modifier.size(36.dp))
-    } else {
-      Button(
-        onClick = {
-          if (useToken) viewModel.loginWithToken(serverUrl, username, password) { }
-          else viewModel.login(serverUrl, username, password) { }
-        },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank(),
+      Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.size(52.dp),
       ) {
-        Text(if (useToken) "Connect with Token" else "Sign In")
+        Box(contentAlignment = Alignment.Center) {
+          Icon(
+            imageVector = Icons.RoundedFilled.BringYourOwnIp,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(28.dp),
+          )
+        }
       }
     }
 
-    uiState.authError?.let { error ->
-      Spacer(modifier = Modifier.height(12.dp))
-      Text(text = error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+    if (uiState.servers.isNotEmpty()) {
+      Spacer(modifier = Modifier.height(18.dp))
+      Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+          text = "Saved servers",
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          uiState.servers.forEach { profile ->
+            FilterChip(
+              selected = profile.id == uiState.activeServer?.id,
+              onClick = { serverUrl = profile.serverUrl; serverName = profile.name; username = profile.username },
+              label = { Text(profile.name.ifBlank { profile.serverUrl }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+              leadingIcon = { Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = null) },
+            )
+          }
+        }
+      }
+    }
+
+    Spacer(modifier = Modifier.height(18.dp))
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(28.dp),
+      color = MaterialTheme.colorScheme.surfaceContainer,
+      tonalElevation = 3.dp,
+    ) {
+      Column(
+        modifier = Modifier.padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Text("Connection details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(
+          value = serverUrl,
+          onValueChange = { serverUrl = it },
+          label = { Text("Server address") },
+          placeholder = { Text("jellyfin.example.com:8096") },
+          leadingIcon = { Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = null) },
+          supportingText = { Text("HTTPS is tried first; http:// is also supported") },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          shape = RoundedCornerShape(16.dp),
+        )
+        OutlinedTextField(
+          value = serverName,
+          onValueChange = { serverName = it },
+          label = { Text("Profile name") },
+          placeholder = { Text("Home server") },
+          leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Edit, contentDescription = null) },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          shape = RoundedCornerShape(16.dp),
+        )
+        Text("Sign-in method", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(
+            selected = !useToken,
+            onClick = { useToken = false },
+            label = { Text("Credentials") },
+            leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Person, contentDescription = null) },
+          )
+          FilterChip(
+            selected = useToken,
+            onClick = { useToken = true },
+            label = { Text("API token") },
+            leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Security, contentDescription = null) },
+          )
+          FilterChip(
+            selected = false,
+            onClick = { },
+            enabled = false,
+            label = { Text("Quick Connect") },
+          )
+        }
+        if (useToken) {
+          OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("API token") },
+            placeholder = { Text("Dashboard → API Keys") },
+            leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Security, contentDescription = null) },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+          )
+          OutlinedTextField(
+            value = username,
+            onValueChange = { username = it },
+            label = { Text("Profile user label") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+          )
+        } else {
+          OutlinedTextField(
+            value = username,
+            onValueChange = { username = it },
+            label = { Text("Username") },
+            leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Person, contentDescription = null) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+          )
+          OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Password") },
+            leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Lock, contentDescription = null) },
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+          )
+        }
+        if (uiState.isAuthenticating) {
+          CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+        } else {
+          Button(
+            onClick = {
+              if (useToken) viewModel.loginWithToken(serverUrl, username, password) { }
+              else viewModel.login(serverUrl, username, password) { }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = serverUrl.isNotBlank() && password.isNotBlank() && (useToken || username.isNotBlank()),
+            shape = RoundedCornerShape(18.dp),
+          ) {
+            Icon(imageVector = Icons.RoundedFilled.Link, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(if (useToken) "Connect with API token" else "Connect to server")
+          }
+        }
+        uiState.authError?.let { error ->
+          Text(text = error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+      }
     }
   }
 }
+
 
 // ─── Home Content ───────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
