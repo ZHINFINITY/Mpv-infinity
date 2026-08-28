@@ -30,6 +30,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -48,6 +50,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Refresh
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlayerActivity
@@ -415,9 +420,13 @@ private fun JellyfinConnectedContent(
           style = MaterialTheme.typography.bodySmall,
         )
       }
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("Refresh", modifier = Modifier.clickable(onClick = onRefresh), color = MaterialTheme.colorScheme.primary)
-        Text("Disconnect", modifier = Modifier.clickable(onClick = onLogout), color = MaterialTheme.colorScheme.primary)
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onRefresh, enabled = !isLoading) {
+          Icon(Icons.Filled.Refresh, contentDescription = "Refresh Jellyfin library")
+        }
+        IconButton(onClick = onLogout) {
+          Icon(Icons.Filled.LinkOff, contentDescription = "Disconnect Jellyfin server")
+        }
       }
     }
 
@@ -461,23 +470,93 @@ private fun JellyfinConnectedContent(
         Text("No playable media found in this Jellyfin view.")
       }
     } else {
+      val rails = tracks
+        .filter { it.isPlayable }
+        .groupBy { track ->
+          when {
+            track.mediaType.equals("Movie", ignoreCase = true) -> "Latest Movies"
+            track.mediaType.equals("Episode", ignoreCase = true) -> "TV Shows"
+            else -> "Music"
+          }
+        }
       LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
         modifier = Modifier.fillMaxSize(),
       ) {
-        item {
-          Text(
-            if (selectedLibrary == null) "Latest media" else selectedLibrary.name,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
-          )
-        }
-        itemsIndexed(tracks, key = { _, track -> track.id }) { index, track ->
-          JellyfinMediaCard(track = track, onClick = { onTrackClick(index) })
+        rails.forEach { (title, railTracks) ->
+          item(key = title) {
+            JellyfinMediaRail(
+              title = title,
+              tracks = railTracks,
+              allTracks = tracks,
+              onTrackClick = onTrackClick,
+            )
+          }
         }
       }
     }
+  }
+}
+
+@Composable
+private fun JellyfinMediaRail(
+  title: String,
+  tracks: List<JellyfinTrack>,
+  allTracks: List<JellyfinTrack>,
+  onTrackClick: (Int) -> Unit,
+) {
+  Column {
+    Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 10.dp))
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      items(tracks, key = { it.id }) { track ->
+        val index = allTracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+        JellyfinPosterCard(track = track, onClick = { onTrackClick(index) })
+      }
+    }
+  }
+}
+
+@Composable
+private fun JellyfinPosterCard(track: JellyfinTrack, onClick: () -> Unit) {
+  Column(
+    modifier = Modifier.width(if (track.isVideo) 142.dp else 156.dp)
+      .clip(RoundedCornerShape(14.dp))
+      .clickable(onClick = onClick),
+  ) {
+    Box(
+      modifier = Modifier.fillMaxWidth()
+        .height(if (track.isVideo) 202.dp else 156.dp)
+        .clip(RoundedCornerShape(14.dp))
+        .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+      track.artworkUrl?.let { artwork ->
+        RemoteImage(
+          url = artwork,
+          contentDescription = track.title,
+          modifier = Modifier.fillMaxSize(),
+          contentScale = ContentScale.Crop,
+        )
+      }
+      Text(
+        text = if (track.isVideo) track.mediaType else "AUDIO",
+        modifier = Modifier.align(Alignment.BottomStart)
+          .padding(8.dp)
+          .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.72f), RoundedCornerShape(6.dp))
+          .padding(horizontal = 7.dp, vertical = 3.dp),
+        color = MaterialTheme.colorScheme.onPrimary,
+        style = MaterialTheme.typography.labelSmall,
+      )
+    }
+    Spacer(Modifier.height(7.dp))
+    Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+    Text(
+      if (track.isVideo) track.album else track.artist,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      style = MaterialTheme.typography.bodySmall,
+    )
   }
 }
 
