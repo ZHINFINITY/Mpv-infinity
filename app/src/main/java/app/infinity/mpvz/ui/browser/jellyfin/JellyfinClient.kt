@@ -271,14 +271,14 @@ class JellyfinClient(
         else -> null
       }
     val overview = obj["Overview"]?.jsonPrimitive?.contentOrNull.orEmpty()
-    val year = obj["ProductionYear"]?.jsonPrimitive?.intOrNull
-    val rating = obj["CommunityRating"]?.jsonPrimitive?.doubleOrNull
+    val year = obj["ProductionYear"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    val rating = obj["CommunityRating"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
     val genres = obj["Genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
     val videoStream = obj["MediaStreams"]?.jsonArray?.firstOrNull {
       it.jsonObject["Type"]?.jsonPrimitive?.contentOrNull.equals("Video", ignoreCase = true)
     }?.jsonObject
-    val width = videoStream?.get("Width")?.jsonPrimitive?.intOrNull ?: 0
-    val height = videoStream?.get("Height")?.jsonPrimitive?.intOrNull ?: 0
+    val width = videoStream?.get("Width")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+    val height = videoStream?.get("Height")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
     val range = videoStream?.get("VideoRange")?.jsonPrimitive?.contentOrNull.orEmpty()
     val quality = if (mediaType.equals("Movie", ignoreCase = true) || mediaType.equals("Episode", ignoreCase = true)) {
       buildString {

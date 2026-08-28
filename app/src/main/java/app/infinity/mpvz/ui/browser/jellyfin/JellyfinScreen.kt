@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -377,11 +378,11 @@ private fun JellyfinHomeContent(
 
   if (uiState.detailItem != null) {
     JellyfinDetailPage(
-      item = uiState.detailItem,
+      mediaItem = uiState.detailItem,
       session = uiState.session!!,
       similarItems = uiState.detailSimilarItems,
       onBack = { viewModel.closeDetail() },
-      onPlay = { viewModel.playItem(context, uiState.detailItem) },
+      onPlay = { viewModel.playItem(context, uiState.detailItem!!) },
       onOpenTrailer = { url ->
         context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
       },
@@ -826,7 +827,7 @@ private fun LibraryContent(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
-        androidx.compose.foundation.lazy.grid.items(visibleItems, key = { it.id }) { track ->
+        gridItems(visibleItems, key = { it.id }) { track ->
           PosterCard(track = track, session = uiState.session!!, onClick = { if (track.isVideo) viewModel.openDetail(track) else viewModel.playItem(context, track) }, cardWidth = 0.dp)
         }
         if (uiState.isLoadingMore) {
