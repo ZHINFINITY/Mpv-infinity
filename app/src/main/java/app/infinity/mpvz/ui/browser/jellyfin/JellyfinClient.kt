@@ -6,6 +6,8 @@ package app.infinity.mpvz.ui.browser.jellyfin
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import app.infinity.mpvz.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -38,14 +40,10 @@ internal class JellyfinClient(
     var lastError: Throwable = IOException("Unable to reach Jellyfin server")
     for (serverUrl in candidates) {
       try {
-        val deviceId = getDeviceId()
-        val authHeader =
-          "MediaBrowser Client=\"MpvInfinity\", Device=\"Android\", DeviceId=\"$deviceId\", Version=\"1.0.3-debug\""
         val body = "{\"Username\":${jsonString(username)},\"Pw\":${jsonString(password)}}"
         val request = Request.Builder()
           .url("$serverUrl/Users/AuthenticateByName")
-          .header("X-Emby-Authorization", authHeader)
-          .header("Authorization", authHeader)
+          .addJellyfinHeaders()
           .header("Content-Type", "application/json")
           .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
           .build()
@@ -80,8 +78,7 @@ internal class JellyfinClient(
             "&SortBy=SortName&SortOrder=Ascending"
         val request = Request.Builder()
           .url(url)
-          .header("X-Emby-Token", session.accessToken)
-          .header("X-MediaBrowser-Token", session.accessToken)
+          .addJellyfinHeaders(session.accessToken)
           .build()
 
         httpClient.newCall(request).execute().use { response ->
@@ -135,28 +132,65 @@ internal class JellyfinClient(
   private fun normalizeUrlCandidates(raw: String): List<String> {
     val trimmed = raw.trim().removeSuffix("/")
     require(trimmed.isNotBlank()) { "Enter a Jellyfin server URL" }
-    val candidates =
-      if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
-        listOf(trimmed)
-      } else {
-        listOf("https://$trimmed", "http://$trimmed")
-      }
-    candidates.forEach { candidate ->
-      require(!Uri.parse(candidate).host.isNullOrBlank()) {
+    if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+      require(!Uri.parse(trimmed).host.isNullOrBlank()) {
         "Enter a valid Jellyfin server address, for example jellyfin.example.com"
       }
+      return listOf(trimmed)
+    }
+
+    val clean = trimmed.removePrefix("//")
+    val host = clean.substringBefore('/').substringBeforeLast(':')
+    val port = clean.substringAfterLast(":", "").substringBefore('/').toIntOrNull()
+    val local = host.equals("localhost", ignoreCase = true) ||
+      host == "127.0.0.1" ||
+      host.startsWith("192.168.") ||
+      host.startsWith("10.") ||
+      (host.startsWith("172.") && host.substringAfter("172.").substringBefore('.').toIntOrNull() in 16..31) ||
+      host.endsWith(".local", ignoreCase = true) ||
+      host.endsWith(".lan", ignoreCase = true)
+    val candidates = if (local || port == 80 || port == 8096) {
+      listOf("http://$clean", "https://$clean")
+    } else {
+      listOf("https://$clean", "http://$clean")
+    }
+    require(!Uri.parse(candidates.first()).host.isNullOrBlank()) {
+      "Enter a valid Jellyfin server address, for example jellyfin.example.com"
     }
     return candidates
   }
 
   private fun normalizeUrl(raw: String): String = normalizeUrlCandidates(raw).first()
 
+  private fun authHeader(token: String? = null): String {
+    val model = Build.MODEL.orEmpty()
+    val manufacturer = Build.MANUFACTURER.orEmpty()
+    val device = if (model.startsWith(manufacturer, ignoreCase = true)) {
+      model
+    } else {
+      "$manufacturer $model".trim().ifBlank { "Android" }
+    }
+    val base = "MediaBrowser Client=\"mpvRx\", Device=\"$device\", DeviceId=\"${getDeviceId()}\", Version=\"${BuildConfig.VERSION_NAME.ifBlank { "1.0.3-debug" }}\""
+    return if (!token.isNullOrBlank()) "$base, Token=\"$token\"" else base
+  }
+
+  private fun Request.Builder.addJellyfinHeaders(token: String? = null): Request.Builder {
+    val auth = authHeader(token)
+    header("X-Emby-Authorization", auth)
+    header("Authorization", auth)
+    if (!token.isNullOrBlank()) {
+      header("X-Emby-Token", token)
+      header("X-MediaBrowser-Token", token)
+    }
+    return this
+  }
+
   private fun getDeviceId(): String {
-    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    val existing = prefs.getString(KEY_DEVICE_ID, null)
+    val prefs = context.getSharedPreferences("jellyfin_client_prefs", Context.MODE_PRIVATE)
+    val existing = prefs.getString("device_id", null)
     if (!existing.isNullOrBlank()) return existing
     val created = UUID.randomUUID().toString().replace("-", "")
-    prefs.edit().putString(KEY_DEVICE_ID, created).apply()
+    prefs.edit().putString("device_id", created).apply()
     return created
   }
 
@@ -164,7 +198,5 @@ internal class JellyfinClient(
     Json.encodeToString(kotlinx.serialization.json.JsonPrimitive(value))
 
   private companion object {
-    const val PREFS = "jellyfin_debug"
-    const val KEY_DEVICE_ID = "device_id"
   }
 }
