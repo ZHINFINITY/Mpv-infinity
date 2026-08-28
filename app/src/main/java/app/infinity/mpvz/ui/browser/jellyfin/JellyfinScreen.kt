@@ -4,40 +4,51 @@
 
 package app.infinity.mpvz.ui.browser.jellyfin
 
-import android.content.Context
-import android.content.Intent
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -48,6 +59,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,12 +70,18 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+
+private val StarYellow = Color(0xFFFFC107)
 
 // ─── Main JellyfinScreen ────────────────────────────────────────────
 @Composable
@@ -80,16 +98,9 @@ fun JellyfinScreen(
   }
 
   if (uiState.session == null) {
-    JellyfinLoginContent(
-      uiState = uiState,
-      viewModel = viewModel,
-    )
+    JellyfinLoginContent(uiState = uiState, viewModel = viewModel)
   } else {
-    JellyfinHomeContent(
-      uiState = uiState,
-      viewModel = viewModel,
-      context = context,
-    )
+    JellyfinHomeContent(uiState = uiState, viewModel = viewModel, context = context)
   }
 }
 
@@ -118,7 +129,7 @@ private fun JellyfinLoginContent(
     ) {
       Box(contentAlignment = Alignment.Center) {
         Icon(
-          imageVector = Icons.RoundedFilled.Add,
+          imageVector = Icons.RoundedFilled.PlayArrow,
           contentDescription = null,
           tint = MaterialTheme.colorScheme.onPrimaryContainer,
           modifier = Modifier.size(40.dp),
@@ -136,6 +147,7 @@ private fun JellyfinLoginContent(
       text = "Stream your media library directly with hardware acceleration.",
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
+      textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(24.dp))
 
@@ -175,11 +187,8 @@ private fun JellyfinLoginContent(
     } else {
       Button(
         onClick = {
-          if (useToken) {
-            viewModel.loginWithToken(serverUrl, username, password) { }
-          } else {
-            viewModel.login(serverUrl, username, password) { }
-          }
+          if (useToken) viewModel.loginWithToken(serverUrl, username, password) { }
+          else viewModel.login(serverUrl, username, password) { }
         },
         modifier = Modifier.fillMaxWidth(),
         enabled = serverUrl.isNotBlank() && username.isNotBlank() && password.isNotBlank(),
@@ -190,21 +199,7 @@ private fun JellyfinLoginContent(
 
     uiState.authError?.let { error ->
       Spacer(modifier = Modifier.height(12.dp))
-      Text(
-        text = error,
-        color = MaterialTheme.colorScheme.error,
-        style = MaterialTheme.typography.bodySmall,
-      )
-    }
-
-    uiState.servers.forEach { profile ->
-      Spacer(modifier = Modifier.height(16.dp))
-      OutlinedButton(
-        onClick = { viewModel.loginWithToken(profile.serverUrl, profile.username, profile.accessToken) { } },
-        modifier = Modifier.fillMaxWidth(),
-      ) {
-        Text("Switch to ${profile.name} @ ${profile.serverUrl}")
-      }
+      Text(text = error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     }
   }
 }
@@ -215,136 +210,175 @@ private fun JellyfinLoginContent(
 private fun JellyfinHomeContent(
   uiState: JellyfinUiState,
   viewModel: JellyfinViewModel,
-  context: Context,
+  context: android.content.Context,
 ) {
-  var showSearch by remember { mutableStateOf(false) }
-  var searchQuery by remember { mutableStateOf("") }
-  var showSortMenu by remember { mutableStateOf(false) }
+  val scope = rememberCoroutineScope()
+  var isSearching by remember { mutableStateOf(false) }
+  var isSortDialogOpen by remember { mutableStateOf(false) }
 
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = {
-          if (showSearch) {
-            OutlinedTextField(
-              value = searchQuery,
-              onValueChange = {
-                searchQuery = it
-                viewModel.search(it)
-              },
-              placeholder = { Text("Search Jellyfin...") },
-              modifier = Modifier.fillMaxWidth(),
-              singleLine = true,
-            )
-          } else {
-            Text(
-              text = uiState.openLibrary?.title ?: "Jellyfin",
-              fontWeight = FontWeight.Bold,
-            )
-          }
-        },
-        navigationIcon = {
-          if (uiState.openLibrary != null && !showSearch) {
-            IconButton(onClick = {
-              viewModel.setSearchQuery("")
-              viewModel.loadLibrary(uiState.openLibrary!!.id)
-            }) {
-              Icon(
-                imageVector = Icons.RoundedFilled.ArrowBack,
-                contentDescription = "Back",
-              )
-            }
-          }
-        },
-        actions = {
-          IconButton(onClick = { showSearch = !showSearch }) {
-            Icon(
-              imageVector = if (showSearch) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search,
-              contentDescription = "Search",
-            )
-          }
-          Box {
-            IconButton(onClick = { showSortMenu = true }) {
-              Icon(
-                imageVector = Icons.RoundedFilled.Tune,
-                contentDescription = "Sort",
-              )
-            }
-            DropdownMenu(
-              expanded = showSortMenu,
-              onDismissRequest = { showSortMenu = false },
-            ) {
-              JellyfinSortBy.entries.forEach { sortBy ->
-                DropdownMenuItem(
-                  text = { Text(sortBy.displayName) },
-                  onClick = {
-                    viewModel.setSort(sortBy, uiState.sortOrder)
-                    showSortMenu = false
-                  },
-                )
-              }
-              DropdownMenuItem(
-                text = { Text("Reverse order") },
-                onClick = {
-                  val newOrder = if (uiState.sortOrder == JellyfinSortOrder.ASCENDING)
-                    JellyfinSortOrder.DESCENDING else JellyfinSortOrder.ASCENDING
-                  viewModel.setSort(uiState.sortBy, newOrder)
-                  showSortMenu = false
-                },
-              )
-            }
-          }
-          TextButton(onClick = { viewModel.logout() }) {
-            Text("Logout")
-          }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.surface,
-        ),
-      )
-    },
-  ) { padding ->
-    if (uiState.isLoading && uiState.currentItems.isEmpty()) {
-      Box(
-        modifier = Modifier.fillMaxSize().padding(padding),
-        contentAlignment = Alignment.Center,
-      ) {
-        CircularProgressIndicator()
+  BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
+    when {
+      isSearching -> {
+        isSearching = false
+        viewModel.setSearchQuery("")
+        viewModel.refresh()
       }
-    } else if (uiState.error != null) {
-      Box(
-        modifier = Modifier.fillMaxSize().padding(padding),
-        contentAlignment = Alignment.Center,
+      else -> viewModel.navigateBack()
+    }
+  }
+
+  val headerBg = if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background),
+  ) {
+    // Top Bar
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(headerBg),
+    ) {
+      AnimatedVisibility(
+        visible = isSearching,
+        enter = slideInVertically() + fadeIn(),
+        exit = slideOutVertically() + fadeOut(),
       ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-          Text(uiState.error!!, color = MaterialTheme.colorScheme.error)
-          Spacer(modifier = Modifier.height(12.dp))
-          Button(onClick = { /* retry */ }) {
-            Text("Retry")
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          OutlinedTextField(
+            value = uiState.searchQuery,
+            onValueChange = { viewModel.setSearchQuery(it); viewModel.search(it) },
+            placeholder = { Text("Search movies, shows...") },
+            leadingIcon = {
+              Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = null)
+            },
+            trailingIcon = {
+              IconButton(onClick = {
+                if (uiState.searchQuery.isNotEmpty()) {
+                  viewModel.setSearchQuery("")
+                  viewModel.refresh()
+                } else {
+                  isSearching = false
+                }
+              }) {
+                Icon(imageVector = Icons.RoundedFilled.Close, contentDescription = null)
+              }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            shape = RoundedCornerShape(28.dp),
+          )
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            JellyfinSearchCategory.entries.forEach { category ->
+              val selected = uiState.searchCategory == category
+              FilterChip(
+                selected = selected,
+                onClick = { viewModel.setSearchCategory(category) },
+                label = { Text(category.displayName, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+                shape = RoundedCornerShape(12.dp),
+                colors = FilterChipDefaults.filterChipColors(
+                  selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                  selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+              )
+            }
           }
         }
       }
-    } else if (uiState.openLibrary != null && uiState.currentItems.isNotEmpty()) {
-      LibraryGrid(
-        items = uiState.currentItems,
-        viewModel = viewModel,
-        context = context,
-        modifier = Modifier.padding(padding),
-      )
-    } else if (uiState.searchQuery.isNotBlank()) {
-      LibraryGrid(
-        items = uiState.currentItems,
-        viewModel = viewModel,
-        context = context,
-        modifier = Modifier.padding(padding),
-      )
-    } else {
-      HomeDashboard(
-        uiState = uiState,
-        viewModel = viewModel,
-        context = context,
-        modifier = Modifier.padding(padding),
-      )
+
+      if (!isSearching) {
+        TopAppBar(
+          title = {
+            Text(
+              text = uiState.openLibrary?.title ?: uiState.activeServer?.name ?: "Jellyfin",
+              fontWeight = FontWeight.Bold,
+            )
+          },
+          navigationIcon = {
+            if (uiState.openLibrary != null) {
+              IconButton(onClick = { viewModel.navigateBack() }) {
+                Icon(imageVector = Icons.RoundedFilled.ArrowBack, contentDescription = "Back")
+              }
+            }
+          },
+          actions = {
+            IconButton(onClick = { isSearching = true }) {
+              Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
+            }
+            if (uiState.openLibrary != null) {
+              Box {
+                var showSortMenu by remember { mutableStateOf(false) }
+                IconButton(onClick = { showSortMenu = true }) {
+                  Icon(imageVector = Icons.RoundedFilled.Tune, contentDescription = "Sort")
+                }
+                DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                  JellyfinSortBy.entries.forEach { sortBy ->
+                    DropdownMenuItem(
+                      text = { Text(sortBy.displayName) },
+                      onClick = { viewModel.setSort(sortBy, uiState.sortOrder); showSortMenu = false },
+                    )
+                  }
+                  DropdownMenuItem(
+                    text = { Text("Reverse order") },
+                    onClick = {
+                      val newOrder = if (uiState.sortOrder == JellyfinSortOrder.ASCENDING) JellyfinSortOrder.DESCENDING else JellyfinSortOrder.ASCENDING
+                      viewModel.setSort(uiState.sortBy, newOrder)
+                      showSortMenu = false
+                    },
+                  )
+                }
+              }
+            }
+          },
+          colors = TopAppBarDefaults.topAppBarColors(containerColor = headerBg),
+        )
+      }
+    }
+
+    // Main Body
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .weight(1f),
+    ) {
+      when {
+        uiState.isLoading && uiState.libraries.isEmpty() && uiState.heroItems.isEmpty() -> {
+          CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+        }
+        uiState.error != null && uiState.libraries.isEmpty() && uiState.currentItems.isEmpty() -> {
+          Column(
+            modifier = Modifier.padding(24.dp).align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            Icon(imageVector = Icons.RoundedFilled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(uiState.error ?: "An error occurred", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { viewModel.refresh() }) { Text("Retry") }
+          }
+        }
+
+        // Home Dashboard (no library open, no search)
+        uiState.openLibrary == null && uiState.searchQuery.isBlank() -> {
+          HomeDashboard(uiState = uiState, viewModel = viewModel, context = context)
+        }
+
+        // Library content or search results
+        else -> {
+          LibraryContent(uiState = uiState, viewModel = viewModel, context = context)
+        }
+      }
     }
   }
 }
@@ -354,30 +388,41 @@ private fun JellyfinHomeContent(
 private fun HomeDashboard(
   uiState: JellyfinUiState,
   viewModel: JellyfinViewModel,
-  context: Context,
-  modifier: Modifier = Modifier,
+  context: android.content.Context,
 ) {
   LazyColumn(
-    modifier = modifier.fillMaxSize(),
-    contentPadding = PaddingValues(bottom = 16.dp),
+    modifier = Modifier.fillMaxSize(),
+    verticalArrangement = Arrangement.spacedBy(20.dp),
   ) {
-    if (uiState.libraries.isNotEmpty()) {
-      item(key = "libraries_header") {
-        Text(
-          text = "Libraries",
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.Bold,
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+    // 1. Hero Banner
+    if (uiState.heroItems.isNotEmpty()) {
+      item {
+        JellyfinHeroBanner(
+          items = uiState.heroItems,
+          session = uiState.session!!,
+          onPlay = { viewModel.playItem(context, it) },
+          onDetails = { /* TODO: detail sheet */ },
         )
       }
-      item(key = "libraries_row") {
+    }
+
+    // 2. Libraries
+    val homeLibraries = uiState.libraries.filter {
+      !it.collectionType.equals("playlists", ignoreCase = true) && !it.name.equals("playlists", ignoreCase = true)
+    }
+    if (homeLibraries.isNotEmpty()) {
+      item {
+        SectionHeader(title = "Libraries")
+      }
+      item {
         LazyRow(
-          contentPadding = PaddingValues(horizontal = 16.dp),
           horizontalArrangement = Arrangement.spacedBy(12.dp),
+          contentPadding = PaddingValues(horizontal = 16.dp),
         ) {
-          items(uiState.libraries) { lib ->
-            LibraryChip(
+          items(homeLibraries, key = { it.id }) { lib ->
+            LibraryCard(
               collection = lib,
+              session = uiState.session!!,
               onClick = { viewModel.loadLibrary(lib.id) },
             )
           }
@@ -385,322 +430,551 @@ private fun HomeDashboard(
       }
     }
 
-    if (uiState.heroItems.isNotEmpty()) {
-      item(key = "hero") {
-        HeroBanner(
-          items = uiState.heroItems,
-          onItemClick = { viewModel.playItem(context, it) },
-        )
-      }
-    }
-
+    // 3. Latest Movies
     if (uiState.latestMovies.isNotEmpty()) {
-      item(key = "movies_header") {
-        Text(
-          text = "Latest Movies",
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.Bold,
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+      item {
+        SectionHeader(title = "Latest Movies", subtitle = "Newly added")
       }
-      item(key = "movies_rail") {
-        ContentRail(
+      item {
+        HorizontalSection(
           items = uiState.latestMovies,
-          onTrackClick = { index -> viewModel.playTracks(context, uiState.latestMovies, index) },
+          session = uiState.session!!,
+          onItemPlay = { viewModel.playItem(context, it) },
         )
       }
     }
 
+    // 4. Latest Shows
     if (uiState.latestShows.isNotEmpty()) {
-      item(key = "shows_header") {
-        Text(
-          text = "Latest Episodes",
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.Bold,
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+      item {
+        SectionHeader(title = "Latest Episodes", subtitle = "Newly updated")
       }
-      item(key = "shows_rail") {
-        ContentRail(
+      item {
+        HorizontalSection(
           items = uiState.latestShows,
-          onTrackClick = { index -> viewModel.playTracks(context, uiState.latestShows, index) },
+          session = uiState.session!!,
+          onItemPlay = { viewModel.playItem(context, it) },
         )
       }
     }
 
+    // 5. Music
     if (uiState.latestMusic.isNotEmpty()) {
-      item(key = "music_header") {
-        Text(
-          text = "Latest Music",
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.Bold,
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+      item {
+        SectionHeader(title = "Music", subtitle = "Albums & Tracks")
       }
-      item(key = "music_rail") {
-        ContentRail(
+      item {
+        HorizontalSection(
           items = uiState.latestMusic,
-          onTrackClick = { index -> viewModel.playTracks(context, uiState.latestMusic, index) },
+          session = uiState.session!!,
+          onItemPlay = { viewModel.playItem(context, it) },
         )
       }
     }
   }
 }
 
-// ─── Library Grid ───────────────────────────────────────────────────
+// ─── Library Content ────────────────────────────────────────────────
 @Composable
-private fun LibraryGrid(
-  items: List<JellyfinTrack>,
+private fun LibraryContent(
+  uiState: JellyfinUiState,
   viewModel: JellyfinViewModel,
-  context: Context,
-  modifier: Modifier = Modifier,
+  context: android.content.Context,
+) {
+  if (uiState.openLibrary?.isMusic == true) {
+    MusicContent(uiState = uiState, viewModel = viewModel, context = context)
+  } else {
+    if (uiState.currentItems.isEmpty() && !uiState.isLoading) {
+      Box(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        contentAlignment = Alignment.Center,
+      ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          Icon(imageVector = Icons.RoundedFilled.Movie, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(48.dp))
+          Spacer(modifier = Modifier.height(12.dp))
+          Text(
+            text = if (uiState.searchQuery.isNotBlank()) "No results found" else "No media found",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+          )
+        }
+      }
+    } else {
+      LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        items(uiState.currentItems, key = { it.id }) { track ->
+          ListItemCard(
+            track = track,
+            session = uiState.session!!,
+            onClick = { viewModel.playItem(context, track) },
+          )
+        }
+        if (uiState.isLoadingMore) {
+          item {
+            Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+              CircularProgressIndicator()
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// ─── Music Content (Tabs: Home, Songs, Albums, Artists, Playlists) ──
+@Composable
+private fun MusicContent(
+  uiState: JellyfinUiState,
+  viewModel: JellyfinViewModel,
+  context: android.content.Context,
+) {
+  val scope = rememberCoroutineScope()
+  val musicTabs = remember {
+    listOf(JellyfinMusicTab.HOME, JellyfinMusicTab.TRACKS, JellyfinMusicTab.ALBUMS, JellyfinMusicTab.ARTISTS, JellyfinMusicTab.PLAYLISTS)
+  }
+  val pagerState = rememberPagerState(
+    initialPage = musicTabs.indexOf(uiState.musicActiveTab).coerceIn(0, musicTabs.lastIndex),
+    pageCount = { musicTabs.size },
+  )
+
+  LaunchedEffect(pagerState.settledPage, musicTabs) {
+    musicTabs.getOrNull(pagerState.settledPage)?.let { tab ->
+      if (uiState.musicActiveTab != tab) viewModel.setMusicTab(tab)
+    }
+  }
+
+  Column(modifier = Modifier.fillMaxSize()) {
+    PrimaryScrollableTabRow(
+      selectedTabIndex = pagerState.currentPage.coerceIn(0, musicTabs.lastIndex),
+      containerColor = Color.Transparent,
+      contentColor = MaterialTheme.colorScheme.primary,
+      edgePadding = 8.dp,
+      divider = {},
+    ) {
+      musicTabs.forEachIndexed { index, tab ->
+        Tab(
+          selected = pagerState.currentPage == index,
+          onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+          text = {
+            Text(
+              text = tab.title,
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Medium,
+              maxLines = 1,
+            )
+          },
+        )
+      }
+    }
+
+    HorizontalPager(
+      state = pagerState,
+      modifier = Modifier.fillMaxSize(),
+      beyondViewportPageCount = 1,
+    ) { page ->
+      val tab = musicTabs.getOrNull(page) ?: JellyfinMusicTab.HOME
+      when (tab) {
+        JellyfinMusicTab.HOME -> MusicHomeView(uiState = uiState, session = uiState.session!!, context = context, viewModel = viewModel)
+        JellyfinMusicTab.TRACKS -> MusicListView(uiState.musicTracks.ifEmpty { uiState.latestMusic }, uiState.session!!, context, viewModel)
+        JellyfinMusicTab.ALBUMS -> MusicGridView(uiState.musicAlbums.ifEmpty { uiState.latestMusic }, uiState.session!!)
+        JellyfinMusicTab.ARTISTS -> MusicGridView(uiState.musicArtists, uiState.session!!)
+        JellyfinMusicTab.PLAYLISTS -> MusicGridView(uiState.musicTracks, uiState.session!!)
+      }
+    }
+  }
+}
+
+@Composable
+private fun MusicHomeView(
+  uiState: JellyfinUiState,
+  session: JellyfinSession,
+  context: android.content.Context,
+  viewModel: JellyfinViewModel,
 ) {
   LazyColumn(
-    modifier = modifier.fillMaxSize(),
+    modifier = Modifier.fillMaxSize(),
+    verticalArrangement = Arrangement.spacedBy(20.dp),
+    contentPadding = PaddingValues(bottom = 16.dp),
+  ) {
+    if (uiState.latestMusic.isNotEmpty()) {
+      item { SectionHeader(title = "Recently Added") }
+      item {
+        LazyRow(
+          contentPadding = PaddingValues(horizontal = 16.dp),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          items(uiState.latestMusic.take(10), key = { it.id }) { track ->
+            PosterCard(track = track, session = session, onClick = { viewModel.playItem(context, track) })
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun MusicListView(
+  items: List<JellyfinTrack>,
+  session: JellyfinSession,
+  context: android.content.Context,
+  viewModel: JellyfinViewModel,
+) {
+  LazyColumn(
+    modifier = Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(16.dp),
+    verticalArrangement = Arrangement.spacedBy(4.dp),
+  ) {
+    items(items, key = { it.id }) { track ->
+      ListItemCard(track = track, session = session, onClick = { viewModel.playItem(context, track) })
+    }
+  }
+}
+
+@Composable
+private fun MusicGridView(
+  items: List<JellyfinTrack>,
+  session: JellyfinSession,
+) {
+  if (items.isEmpty()) {
+    Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+      Text("No items", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    return
+  }
+  LazyColumn(
+    modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     items(items, key = { it.id }) { track ->
-      JellyfinMediaCard(
-        track = track,
-        onClick = { viewModel.playItem(context, track) },
-      )
+      ListItemCard(track = track, session = session, onClick = { })
     }
-    if (items.isEmpty()) {
-      item {
-        Box(
-          modifier = Modifier.fillMaxWidth().padding(32.dp),
-          contentAlignment = Alignment.Center,
-        ) {
-          Text("No items found", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+  }
+}
+
+// ─── Hero Banner (mpvRx style with auto-scroll) ─────────────────────
+@Composable
+private fun JellyfinHeroBanner(
+  items: List<JellyfinTrack>,
+  session: JellyfinSession,
+  onPlay: (JellyfinTrack) -> Unit,
+  onDetails: (JellyfinTrack) -> Unit,
+) {
+  if (items.isEmpty()) return
+
+  val pageCount = if (items.size > 1) Int.MAX_VALUE else items.size
+  val initialPage = remember(items) {
+    if (items.size > 1) {
+      val middle = Int.MAX_VALUE / 2
+      middle - (middle % items.size)
+    } else 0
+  }
+  val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pageCount })
+
+  LaunchedEffect(pagerState.settledPage, items.size) {
+    if (items.size > 1) {
+      delay(5000L)
+      if (!pagerState.isScrollInProgress) {
+        pagerState.animateScrollToPage(pagerState.currentPage + 1, animationSpec = tween(800))
       }
     }
   }
-}
 
-// ─── Library Chip ───────────────────────────────────────────────────
-@Composable
-private fun LibraryChip(
-  collection: JellyfinCollection,
-  onClick: () -> Unit,
-) {
-  Surface(
-    onClick = onClick,
-    shape = RoundedCornerShape(12.dp),
-    color = MaterialTheme.colorScheme.primaryContainer,
-    modifier = Modifier.height(40.dp),
-  ) {
-    Row(
-      modifier = Modifier.padding(horizontal = 16.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        text = collection.name,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onPrimaryContainer,
-      )
-    }
-  }
-}
-
-// ─── Hero Banner ────────────────────────────────────────────────────
-@Composable
-private fun HeroBanner(
-  items: List<JellyfinTrack>,
-  onItemClick: (JellyfinTrack) -> Unit,
-) {
   Box(
     modifier = Modifier
       .fillMaxWidth()
-      .height(240.dp)
-      .padding(horizontal = 16.dp, vertical = 8.dp)
-      .clip(RoundedCornerShape(20.dp))
-      .clickable { if (items.isNotEmpty()) onItemClick(items.first()) },
+      .height(360.dp)
+      .padding(horizontal = 16.dp)
+      .clip(RoundedCornerShape(20.dp)),
   ) {
-    val first = items.first()
-    RemoteImage(
-      url = first.artworkUrl ?: "",
-      contentDescription = first.title,
-      modifier = Modifier.fillMaxSize(),
-      contentScale = ContentScale.Crop,
-    )
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .background(
-          Brush.verticalGradient(
-            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
-          ),
-        ),
-    )
-    Column(
-      modifier = Modifier
-        .align(Alignment.BottomStart)
-        .padding(16.dp),
-    ) {
-      Text(
-        text = first.title,
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.Bold,
-        color = Color.White,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
-      Text(
-        text = "${first.artist} · ${first.album}",
-        style = MaterialTheme.typography.bodyMedium,
-        color = Color.White.copy(alpha = 0.8f),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
-    }
-    if (items.size > 1) {
-      Row(
-        modifier = Modifier
-          .align(Alignment.BottomEnd)
-          .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        items.take(5).forEachIndexed { index, _ ->
-          Box(
-            modifier = Modifier
-              .size(8.dp)
-              .clip(CircleShape)
-              .background(
-                if (index == 0) Color.White
-                else Color.White.copy(alpha = 0.4f),
+    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+      val item = items[page % items.size]
+      val artworkUrl = remember(session.serverUrl, item.id, session.accessToken) {
+        "${session.serverUrl}/Items/${item.id}/Images/Backdrop?maxWidth=1280&quality=80&api_key=${session.accessToken}"
+      }
+
+      Box(modifier = Modifier.fillMaxSize()) {
+        RemoteImage(
+          url = artworkUrl,
+          contentDescription = item.title,
+          contentScale = ContentScale.Crop,
+          modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+          modifier = Modifier
+            .fillMaxSize()
+            .background(
+              Brush.verticalGradient(
+                0.0f to Color.Black.copy(alpha = 0.6f),
+                0.3f to Color.Transparent,
+                0.6f to MaterialTheme.colorScheme.background.copy(alpha = 0.6f),
+                1.0f to MaterialTheme.colorScheme.background,
               ),
+            ),
+        )
+        Column(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+          verticalArrangement = Arrangement.Bottom,
+        ) {
+          // Type Badge
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 6.dp),
+          ) {
+            Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)) {
+              Text(
+                text = if (item.isVideo) "MOVIE" else "AUDIO",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+              )
+            }
+          }
+          Text(
+            text = item.title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
           )
+          Spacer(modifier = Modifier.height(4.dp))
+          Text(
+            text = item.artist,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.8f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Spacer(modifier = Modifier.height(12.dp))
+          Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+              onClick = { onPlay(item) },
+              shape = RoundedCornerShape(14.dp),
+              contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+            ) {
+              Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(text = "Play Now", fontWeight = FontWeight.Bold)
+            }
+            FilledTonalButton(
+              onClick = { onDetails(item) },
+              shape = RoundedCornerShape(14.dp),
+              contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+              Icon(imageVector = Icons.RoundedFilled.Info, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(text = "Details", fontWeight = FontWeight.Medium)
+            }
+          }
         }
       }
     }
   }
 }
 
-// ─── Content Rail ───────────────────────────────────────────────────
+// ─── Section Header ─────────────────────────────────────────────────
 @Composable
-private fun ContentRail(
-  items: List<JellyfinTrack>,
-  onTrackClick: (Int) -> Unit,
+private fun SectionHeader(
+  title: String,
+  subtitle: String? = null,
+  onSeeAll: (() -> Unit)? = null,
 ) {
-  LazyRow(
-    contentPadding = PaddingValues(horizontal = 16.dp),
-    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 16.dp, vertical = 4.dp),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
   ) {
-    itemsIndexed(items) { index, track ->
-      JellyfinPosterCard(
-        track = track,
-        onClick = { onTrackClick(index) },
-      )
+    Column {
+      Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+      if (!subtitle.isNullOrBlank()) {
+        Text(text = subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+    }
+    if (onSeeAll != null) {
+      TextButton(onClick = onSeeAll, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+        Text("See All", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        Icon(imageVector = Icons.RoundedFilled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+      }
+    }
+  }
+}
+
+// ─── Horizontal Section ─────────────────────────────────────────────
+@Composable
+private fun HorizontalSection(
+  items: List<JellyfinTrack>,
+  session: JellyfinSession,
+  onItemPlay: (JellyfinTrack) -> Unit,
+) {
+  if (items.isEmpty()) return
+  LazyRow(
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+    contentPadding = PaddingValues(horizontal = 16.dp),
+  ) {
+    items(items, key = { it.id }) { item ->
+      PosterCard(track = item, session = session, onClick = { onItemPlay(item) })
     }
   }
 }
 
 // ─── Poster Card ────────────────────────────────────────────────────
 @Composable
-private fun JellyfinPosterCard(
+private fun PosterCard(
   track: JellyfinTrack,
+  session: JellyfinSession,
   onClick: () -> Unit,
+  cardWidth: androidx.compose.ui.unit.Dp = 136.dp,
 ) {
+  val imageUrl = remember(session.serverUrl, track.id, session.accessToken) {
+    "${session.serverUrl}/Items/${track.id}/Images/Primary?maxWidth=400&quality=90&api_key=${session.accessToken}"
+  }
+
   Column(
     modifier = Modifier
-      .width(if (track.isVideo) 142.dp else 156.dp)
-      .clip(RoundedCornerShape(14.dp))
+      .width(cardWidth)
+      .clip(RoundedCornerShape(8.dp))
       .clickable(onClick = onClick),
   ) {
     Box(
       modifier = Modifier
         .fillMaxWidth()
-        .height(if (track.isVideo) 202.dp else 156.dp)
-        .clip(RoundedCornerShape(14.dp))
-        .background(MaterialTheme.colorScheme.surfaceVariant),
+        .aspectRatio(2f / 3f)
+        .clip(RoundedCornerShape(8.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {
-      track.artworkUrl?.let { artwork ->
-        RemoteImage(
-          url = artwork,
-          contentDescription = track.title,
-          modifier = Modifier.fillMaxSize(),
-          contentScale = ContentScale.Crop,
-        )
-      }
-      Surface(
-        modifier = Modifier
-          .align(Alignment.BottomStart)
-          .padding(8.dp),
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.72f),
-      ) {
-        Text(
-          text = if (track.isVideo) track.mediaType else "AUDIO",
-          modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-          color = MaterialTheme.colorScheme.onPrimary,
-          style = MaterialTheme.typography.labelSmall,
-        )
-      }
+      RemoteImage(
+        url = imageUrl,
+        contentDescription = track.title,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+      )
     }
-    Spacer(Modifier.height(7.dp))
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(top = 6.dp),
+    ) {
+      Text(
+        text = track.title,
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Text(
+        text = if (track.isVideo) track.album else track.artist,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+  }
+}
+
+// ─── Library Card ───────────────────────────────────────────────────
+@Composable
+private fun LibraryCard(
+  collection: JellyfinCollection,
+  session: JellyfinSession,
+  onClick: () -> Unit,
+) {
+  val colType = collection.collectionType?.lowercase() ?: ""
+  val icon = when {
+    colType == "movies" -> Icons.RoundedFilled.Movie
+    colType == "tvshows" -> Icons.RoundedFilled.Movie
+    colType == "music" -> Icons.RoundedFilled.Audiotrack
+    else -> Icons.RoundedFilled.Folder
+  }
+
+  Column(
+    modifier = Modifier
+      .width(200.dp)
+      .clickable(onClick = onClick),
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .aspectRatio(16f / 9f)
+        .clip(RoundedCornerShape(10.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+      contentAlignment = Alignment.Center,
+    ) {
+      Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+    }
+    Spacer(modifier = Modifier.height(6.dp))
     Text(
-      track.title,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
-      style = MaterialTheme.typography.titleSmall,
-    )
-    Text(
-      if (track.isVideo) track.album else track.artist,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
+      text = collection.name,
+      style = MaterialTheme.typography.labelMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
-      style = MaterialTheme.typography.bodySmall,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
     )
   }
 }
 
-// ─── Media Card (List-style) ────────────────────────────────────────
+// ─── List Item Card ─────────────────────────────────────────────────
 @Composable
-private fun JellyfinMediaCard(
+private fun ListItemCard(
   track: JellyfinTrack,
+  session: JellyfinSession,
   onClick: () -> Unit,
 ) {
+  val imageUrl = remember(session.serverUrl, track.id, session.accessToken) {
+    "${session.serverUrl}/Items/${track.id}/Images/Primary?maxWidth=400&quality=90&api_key=${session.accessToken}"
+  }
+
   Row(
     modifier = Modifier
       .fillMaxWidth()
-      .clip(RoundedCornerShape(14.dp))
-      .background(MaterialTheme.colorScheme.surfaceContainer)
+      .clip(RoundedCornerShape(8.dp))
       .clickable(onClick = onClick)
-      .padding(10.dp),
+      .padding(horizontal = 4.dp, vertical = 6.dp),
     verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     Box(
       modifier = Modifier
-        .size(if (track.isVideo) 84.dp else 64.dp)
-        .clip(RoundedCornerShape(10.dp))
-        .background(MaterialTheme.colorScheme.surfaceVariant),
+        .size(width = if (track.isVideo) 140.dp else 84.dp, height = if (track.isVideo) 79.dp else 84.dp)
+        .clip(RoundedCornerShape(8.dp))
+        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {
-      track.artworkUrl?.let { artwork ->
-        RemoteImage(
-          url = artwork,
-          contentDescription = track.title,
-          modifier = Modifier.fillMaxSize(),
-          contentScale = ContentScale.Crop,
-        )
-      }
+      RemoteImage(
+        url = imageUrl,
+        contentDescription = track.title,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+      )
     }
-    Spacer(Modifier.width(12.dp))
-    Column(Modifier.weight(1f)) {
+    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
       Text(
-        track.title,
+        text = track.title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        style = MaterialTheme.typography.titleMedium,
       )
       Text(
-        if (track.isVideo) "${track.mediaType} · ${track.album}" else "${track.artist} · ${track.album}",
+        text = if (track.isVideo) track.album else track.artist,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.bodyMedium,
       )
     }
+    Icon(
+      imageVector = Icons.RoundedFilled.PlayArrow,
+      contentDescription = "Play",
+      tint = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.size(22.dp),
+    )
   }
 }

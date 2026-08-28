@@ -25,15 +25,62 @@ class JellyfinViewModel(
   application: Application,
 ) : AndroidViewModel(application) {
 
-  private val prefs = application.getSharedPreferences("jellyfin_debug", Context.MODE_PRIVATE)
+  private val prefs = application.getSharedPreferences("jellyfin_profiles", Context.MODE_PRIVATE)
 
   private val _uiState = MutableStateFlow(JellyfinUiState())
   val uiState: StateFlow<JellyfinUiState> = _uiState.asStateFlow()
 
   private var httpClient: OkHttpClient? = null
 
+  init {
+    restoreSavedSession()
+  }
+
   fun setHttpClient(client: OkHttpClient) {
     httpClient = client
+    val session = _uiState.value.session
+    if (session != null && httpClient != null && _uiState.value.libraries.isEmpty()) {
+      loadHome(session)
+    }
+  }
+
+  private fun restoreSavedSession() {
+    val serverUrl = prefs.getString("server_url", null)
+    val accessToken = prefs.getString("access_token", null)
+    val userId = prefs.getString("user_id", null)
+    val username = prefs.getString("username", null)
+
+    if (!serverUrl.isNullOrBlank() && !accessToken.isNullOrBlank() && !userId.isNullOrBlank()) {
+      val session = JellyfinSession(
+        serverUrl = serverUrl,
+        userId = userId,
+        accessToken = accessToken,
+      )
+      val profile = JellyfinServerProfile(
+        id = userId,
+        name = username ?: "Server",
+        serverUrl = serverUrl,
+        userId = userId,
+        username = username ?: "",
+        accessToken = accessToken,
+      )
+      _uiState.update {
+        it.copy(
+          session = session,
+          activeServer = profile,
+          servers = listOf(profile),
+        )
+      }
+    }
+  }
+
+  private fun saveSession(session: JellyfinSession, username: String) {
+    prefs.edit()
+      .putString("server_url", session.serverUrl)
+      .putString("access_token", session.accessToken)
+      .putString("user_id", session.userId)
+      .putString("username", username)
+      .apply()
   }
 
   fun login(
@@ -60,11 +107,11 @@ class JellyfinViewModel(
             it.copy(
               session = session,
               activeServer = profile,
-              servers = it.servers + profile,
+              servers = listOf(profile),
               isAuthenticating = false,
             )
           }
-          prefs.edit().putString("server_url", session.serverUrl).putString("username", username).apply()
+          saveSession(session, username)
           loadHome(session)
           onResult(true)
         },
@@ -85,7 +132,6 @@ class JellyfinViewModel(
     val client = httpClient ?: return
     viewModelScope.launch {
       _uiState.update { it.copy(isAuthenticating = true, authError = null) }
-      val jellyfin = JellyfinClient(client, getApplication())
       val session = JellyfinSession(
         serverUrl = JellyfinClient.normalizeUrl(serverUrl),
         userId = username,
@@ -103,20 +149,18 @@ class JellyfinViewModel(
         it.copy(
           session = session,
           activeServer = profile,
-          servers = it.servers + profile,
+          servers = listOf(profile),
           isAuthenticating = false,
         )
       }
-      prefs.edit().putString("server_url", session.serverUrl).putString("username", username).apply()
+      saveSession(session, username)
       loadHome(session)
       onResult(true)
     }
   }
 
   fun logout() {
-    _uiState.update {
-      JellyfinUiState(servers = it.servers)
-    }
+    _uiState.update { JellyfinUiState() }
     prefs.edit().clear().apply()
   }
 
@@ -142,10 +186,8 @@ class JellyfinViewModel(
               onFailure = { },
             )
           }
-
           val videos = allItems.filter { it.isVideo }
           val audio = allItems.filter { !it.isVideo }
-
           _uiState.update { state ->
             state.copy(
               heroItems = videos.take(5),
@@ -180,7 +222,6 @@ class JellyfinViewModel(
           isMusic = it.collectionType == "music",
         )
       }
-
       withContext(Dispatchers.IO) {
         jellyfin.loadMedia(
           session = session,
@@ -207,16 +248,28 @@ class JellyfinViewModel(
     }
   }
 
+  fun navigateBack() {
+    _uiState.update {
+      it.copy(openLibrary = null, selectedLibraryId = null, currentItems = emptyList(), searchQuery = "")
+    }
+    val session = _uiState.value.session ?: return
+    loadHome(session)
+  }
+
+  fun refresh() {
+    val session = _uiState.value.session ?: return
+    val libraryId = _uiState.value.selectedLibraryId
+    if (libraryId != null) loadLibrary(libraryId) else loadHome(session)
+  }
+
   fun loadMore() {
     val session = _uiState.value.session ?: return
     val libraryId = _uiState.value.selectedLibraryId ?: return
     val client = httpClient ?: return
     if (_uiState.value.isLoadingMore || !_uiState.value.hasMore) return
-
     viewModelScope.launch {
       _uiState.update { it.copy(isLoadingMore = true) }
       val jellyfin = JellyfinClient(client, getApplication())
-
       withContext(Dispatchers.IO) {
         jellyfin.loadMedia(
           session = session,
@@ -228,16 +281,10 @@ class JellyfinViewModel(
         ).fold(
           onSuccess = { newItems ->
             _uiState.update {
-              it.copy(
-                currentItems = it.currentItems + newItems,
-                isLoadingMore = false,
-                hasMore = newItems.isNotEmpty(),
-              )
+              it.copy(currentItems = it.currentItems + newItems, isLoadingMore = false, hasMore = newItems.isNotEmpty())
             }
           },
-          onFailure = {
-            _uiState.update { it.copy(isLoadingMore = false) }
-          },
+          onFailure = { _uiState.update { it.copy(isLoadingMore = false) } },
         )
       }
     }
@@ -246,13 +293,15 @@ class JellyfinViewModel(
   fun setSort(sortBy: JellyfinSortBy, sortOrder: JellyfinSortOrder) {
     _uiState.update { it.copy(sortBy = sortBy, sortOrder = sortOrder) }
     val libraryId = _uiState.value.selectedLibraryId
-    if (libraryId != null) {
-      loadLibrary(libraryId)
-    }
+    if (libraryId != null) loadLibrary(libraryId)
   }
 
   fun setSearchQuery(query: String) {
     _uiState.update { it.copy(searchQuery = query) }
+  }
+
+  fun setMusicTab(tab: JellyfinMusicTab) {
+    _uiState.update { it.copy(musicActiveTab = tab) }
   }
 
   fun setSearchCategory(category: JellyfinSearchCategory) {
@@ -269,21 +318,10 @@ class JellyfinViewModel(
     viewModelScope.launch {
       _uiState.update { it.copy(isLoading = true, searchQuery = query) }
       val jellyfin = JellyfinClient(client, getApplication())
-
       withContext(Dispatchers.IO) {
-        jellyfin.search(
-          session = session,
-          query = query,
-          limit = 50,
-        ).fold(
-          onSuccess = { items ->
-            _uiState.update {
-              it.copy(currentItems = items, isLoading = false, openLibrary = null)
-            }
-          },
-          onFailure = { e ->
-            _uiState.update { it.copy(isLoading = false, error = e.message) }
-          },
+        jellyfin.search(session = session, query = query, limit = 50).fold(
+          onSuccess = { items -> _uiState.update { it.copy(currentItems = items, isLoading = false, openLibrary = null) } },
+          onFailure = { e -> _uiState.update { it.copy(isLoading = false, error = e.message) } },
         )
       }
     }
@@ -294,7 +332,6 @@ class JellyfinViewModel(
     val client = httpClient ?: return
     val jellyfin = JellyfinClient(client, context)
     val streamUrl = jellyfin.getStreamUrl(session, track.id)
-
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(streamUrl)).apply {
       setClass(context, Class.forName("app.infinity.mpvz.ui.player.PlayerActivity"))
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
