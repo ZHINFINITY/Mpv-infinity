@@ -36,6 +36,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -216,6 +217,8 @@ private fun JellyfinHomeContent(
   val scope = rememberCoroutineScope()
   var isSearching by remember { mutableStateOf(false) }
   var isSortDialogOpen by remember { mutableStateOf(false) }
+  var isMoreMenuOpen by remember { mutableStateOf(false) }
+  var isSeerrInfoOpen by remember { mutableStateOf(false) }
 
   BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
     when {
@@ -314,6 +317,9 @@ private fun JellyfinHomeContent(
             }
           },
           actions = {
+            IconButton(onClick = { viewModel.refresh() }) {
+              Icon(imageVector = Icons.RoundedFilled.Refresh, contentDescription = "Refresh")
+            }
             IconButton(onClick = { isSearching = true }) {
               Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
             }
@@ -339,6 +345,37 @@ private fun JellyfinHomeContent(
                     },
                   )
                 }
+              }
+            }
+            Box {
+              IconButton(onClick = { isMoreMenuOpen = true }) {
+                Icon(imageVector = Icons.RoundedFilled.MoreVert, contentDescription = "More Jellyfin options")
+              }
+              DropdownMenu(
+                expanded = isMoreMenuOpen,
+                onDismissRequest = { isMoreMenuOpen = false },
+              ) {
+                DropdownMenuItem(
+                  text = { Text("Manage servers") },
+                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = null) },
+                  onClick = { isMoreMenuOpen = false },
+                )
+                DropdownMenuItem(
+                  text = { Text("Seerr requests") },
+                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
+                  onClick = {
+                    isMoreMenuOpen = false
+                    isSeerrInfoOpen = true
+                  },
+                )
+                DropdownMenuItem(
+                  text = { Text("Disconnect") },
+                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = null) },
+                  onClick = {
+                    isMoreMenuOpen = false
+                    viewModel.logout()
+                  },
+                )
               }
             }
           },
@@ -380,6 +417,19 @@ private fun JellyfinHomeContent(
           LibraryContent(uiState = uiState, viewModel = viewModel, context = context)
         }
       }
+    }
+
+    if (isSeerrInfoOpen) {
+      AlertDialog(
+        onDismissRequest = { isSeerrInfoOpen = false },
+        title = { Text("Seerr requests") },
+        text = {
+          Text("Seerr is available as a Jellyfin-side request service. Configure it in the server profile before submitting requests.")
+        },
+        confirmButton = {
+          TextButton(onClick = { isSeerrInfoOpen = false }) { Text("OK") }
+        },
+      )
     }
   }
 }
