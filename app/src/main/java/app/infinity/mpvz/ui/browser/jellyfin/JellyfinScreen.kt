@@ -50,9 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.LinkOff
-import androidx.compose.material.icons.filled.Refresh
+import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlayerActivity
@@ -422,10 +420,10 @@ private fun JellyfinConnectedContent(
       }
       Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onRefresh, enabled = !isLoading) {
-          Icon(Icons.Filled.Refresh, contentDescription = "Refresh Jellyfin library")
+          Icon(Icons.RoundedFilled.Refresh, contentDescription = "Refresh Jellyfin library")
         }
         IconButton(onClick = onLogout) {
-          Icon(Icons.Filled.LinkOff, contentDescription = "Disconnect Jellyfin server")
+          Icon(Icons.RoundedFilled.LinkOff, contentDescription = "Disconnect Jellyfin server")
         }
       }
     }
