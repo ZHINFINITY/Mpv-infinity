@@ -5621,6 +5621,12 @@ class PlayerActivity :
           PlaybackSession.getPropertyInt("height") ?: PlaybackSession.getPropertyInt("video-params/h") ?: 0
         }.getOrDefault(0)
 
+      // Server-backed Jellyfin playback is tracked by Jellyfin, not the local Recents database.
+      if (launchSource.equals("jellyfin", ignoreCase = true)) {
+        Log.d(TAG, "Skipping recently-played save for Jellyfin item: $filePath")
+        return@runCatching
+      }
+
       // Secure Folder playback should never surface in Recents/playback-history — that would
       // defeat the point of hiding the file in the first place.
       if (isSecureFolderLaunch) {
