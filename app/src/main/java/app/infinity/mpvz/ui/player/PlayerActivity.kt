@@ -5051,6 +5051,13 @@ class PlayerActivity :
             syncBackgroundPlaybackService(updateThumbnail = true)
           }
 
+          // Jellyfin owns server-side playback history; never update local Recents.
+          if (isJellyfinLaunch()) {
+            RecentlyPlayedOps.onVideoDeleted(uri.toString())
+            Log.d(TAG, "Skipping recently-played metadata update for Jellyfin item")
+            return@launch
+          }
+
           // Update recently played with the parsed video title, duration, and file size
           val filePath =
             when (uri.scheme) {
@@ -5623,6 +5630,7 @@ class PlayerActivity :
 
       // Server-backed Jellyfin playback is tracked by Jellyfin, not the local Recents database.
       if (launchSource.equals("jellyfin", ignoreCase = true)) {
+        RecentlyPlayedOps.onVideoDeleted(filePath)
         Log.d(TAG, "Skipping recently-played save for Jellyfin item: $filePath")
         return@runCatching
       }
@@ -7889,6 +7897,11 @@ class PlayerActivity :
         Log.d(TAG, "Skipping recently-played save (playlist nav) for secure_folder launch: $filePath")
         return@runCatching
       }
+      if (isJellyfinLaunch()) {
+        RecentlyPlayedOps.onVideoDeleted(filePath)
+        Log.d(TAG, "Skipping recently-played save (playlist nav) for Jellyfin launch: $filePath")
+        return@runCatching
+      }
 
       RecentlyPlayedOps.addRecentlyPlayed(
         filePath = filePath,
@@ -7913,6 +7926,9 @@ class PlayerActivity :
       Log.e(TAG, "Error saving recently played for playlist item", e)
     }
   }
+
+  private fun isJellyfinLaunch(): Boolean =
+    intent.getStringExtra("launch_source").equals("jellyfin", ignoreCase = true)
 
   /** Generates one collision-resistant identifier without including network credentials. */
   private fun getMediaIdentifier(
