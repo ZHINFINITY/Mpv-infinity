@@ -19,8 +19,16 @@ internal data class JellyfinTrack(
   val album: String,
   val durationMs: Long,
   val artworkUrl: String?,
-  val streamUrl: String,
+  val streamUrl: String?,
+  val mediaType: String = "Audio",
 ) {
-  val uri: Uri
-    get() = Uri.parse(streamUrl)
+  val isVideo: Boolean
+    get() = mediaType.equals("Movie", ignoreCase = true) ||
+      mediaType.equals("Episode", ignoreCase = true)
+
+  val isPlayable: Boolean
+    get() = !streamUrl.isNullOrBlank()
+
+  val uri: Uri?
+    get() = streamUrl?.let(Uri::parse)
 }

@@ -34,41 +34,49 @@ internal class JellyfinClient(
     username: String,
     password: String,
   ): Result<JellyfinSession> = withContext(Dispatchers.IO) {
-    runCatching {
-      val serverUrl = normalizeUrl(rawServerUrl)
-      val deviceId = getDeviceId()
-      val authHeader =
-        "MediaBrowser Client=\"MpvInfinity\", Device=\"Android\", DeviceId=\"$deviceId\", Version=\"1.0.3-debug\""
-      val body = "{\"Username\":${jsonString(username)},\"Pw\":${jsonString(password)}}"
-      val request = Request.Builder()
-        .url("$serverUrl/Users/AuthenticateByName")
-        .header("X-Emby-Authorization", authHeader)
-        .header("Authorization", authHeader)
-        .header("Content-Type", "application/json")
-        .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
-        .build()
+    val candidates = normalizeUrlCandidates(rawServerUrl)
+    var lastError: Throwable = IOException("Unable to reach Jellyfin server")
+    for (serverUrl in candidates) {
+      try {
+        val deviceId = getDeviceId()
+        val authHeader =
+          "MediaBrowser Client=\"MpvInfinity\", Device=\"Android\", DeviceId=\"$deviceId\", Version=\"1.0.3-debug\""
+        val body = "{\"Username\":${jsonString(username)},\"Pw\":${jsonString(password)}}"
+        val request = Request.Builder()
+          .url("$serverUrl/Users/AuthenticateByName")
+          .header("X-Emby-Authorization", authHeader)
+          .header("Authorization", authHeader)
+          .header("Content-Type", "application/json")
+          .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
+          .build()
 
-      httpClient.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) {
-          throw IOException("Jellyfin login failed: HTTP ${response.code}")
+        httpClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) {
+            throw IOException("Jellyfin login failed: HTTP ${response.code}")
+          }
+          val root = json.parseToJsonElement(response.body.string()).jsonObject
+          val token = root["AccessToken"]?.jsonPrimitive?.content
+            ?: throw IOException("Jellyfin did not return an access token")
+          val userId = root["User"]?.jsonObject?.get("Id")?.jsonPrimitive?.content
+            ?: throw IOException("Jellyfin did not return a user id")
+          return@withContext Result.success(
+            JellyfinSession(serverUrl = serverUrl, userId = userId, accessToken = token),
+          )
         }
-        val root = json.parseToJsonElement(response.body.string()).jsonObject
-        val token = root["AccessToken"]?.jsonPrimitive?.content
-          ?: throw IOException("Jellyfin did not return an access token")
-        val userId = root["User"]?.jsonObject?.get("Id")?.jsonPrimitive?.content
-          ?: throw IOException("Jellyfin did not return a user id")
-        JellyfinSession(serverUrl = serverUrl, userId = userId, accessToken = token)
+      } catch (error: Throwable) {
+        lastError = error
       }
     }
+    Result.failure(lastError)
   }
 
-  suspend fun loadAudio(session: JellyfinSession, limit: Int = 200): Result<List<JellyfinTrack>> =
+  suspend fun loadMedia(session: JellyfinSession, limit: Int = 200): Result<List<JellyfinTrack>> =
     withContext(Dispatchers.IO) {
       runCatching {
-        val fields = "PrimaryImageAspectRatio,MediaSources,RunTimeTicks,Album,AlbumArtist,Artists,ImageTags"
+        val fields = "PrimaryImageAspectRatio,MediaSources,RunTimeTicks,Album,AlbumArtist,Artists,ImageTags,Type,SeriesName,IndexNumber,ParentIndexNumber"
         val url =
           "${session.serverUrl}/Users/${session.userId}/Items" +
-            "?IncludeItemTypes=Audio&Recursive=true&Fields=$fields&StartIndex=0&Limit=$limit" +
+            "?IncludeItemTypes=Audio,Movie,Episode&Recursive=true&Fields=$fields&StartIndex=0&Limit=$limit" +
             "&SortBy=SortName&SortOrder=Ascending"
         val request = Request.Builder()
           .url(url)
@@ -90,10 +98,14 @@ internal class JellyfinClient(
   private fun parseTrack(obj: JsonObject, session: JellyfinSession): JellyfinTrack? {
     val id = obj["Id"]?.jsonPrimitive?.content ?: return null
     val name = obj["Name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return null
+    val mediaType = obj["Type"]?.jsonPrimitive?.content ?: "Audio"
     val artist = obj["AlbumArtist"]?.jsonPrimitive?.content
       ?: obj["Artists"]?.jsonArray?.firstOrNull()?.jsonPrimitive?.content
-      ?: "Unknown artist"
-    val album = obj["Album"]?.jsonPrimitive?.content ?: "Unknown album"
+      ?: obj["SeriesName"]?.jsonPrimitive?.content
+      ?: if (mediaType.equals("Audio", ignoreCase = true)) "Unknown artist" else "Jellyfin"
+    val album = obj["Album"]?.jsonPrimitive?.content
+      ?: obj["SeriesName"]?.jsonPrimitive?.content
+      ?: mediaType
     val ticks = obj["RunTimeTicks"]?.jsonPrimitive?.longOrNull ?: 0L
     val tag = obj["ImageTags"]?.jsonObject?.get("Primary")?.jsonPrimitive?.content
     val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
@@ -101,7 +113,13 @@ internal class JellyfinClient(
       "${session.serverUrl}/Items/$id/Images/Primary?maxWidth=600&quality=90&tag=$it&api_key=$encodedToken"
     }
     val stream =
-      "${session.serverUrl}/Audio/$id/stream?static=true&api_key=$encodedToken"
+      when {
+        mediaType.equals("Audio", ignoreCase = true) ->
+          "${session.serverUrl}/Audio/$id/stream?static=true&api_key=$encodedToken"
+        mediaType.equals("Movie", ignoreCase = true) || mediaType.equals("Episode", ignoreCase = true) ->
+          "${session.serverUrl}/Videos/$id/stream?static=true&api_key=$encodedToken"
+        else -> null
+      }
     return JellyfinTrack(
       id = id,
       title = name,
@@ -110,16 +128,28 @@ internal class JellyfinClient(
       durationMs = ticks / 10_000L,
       artworkUrl = artwork,
       streamUrl = stream,
+      mediaType = mediaType,
     )
   }
 
-  private fun normalizeUrl(raw: String): String {
+  private fun normalizeUrlCandidates(raw: String): List<String> {
     val trimmed = raw.trim().removeSuffix("/")
-    require(trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      "Enter a complete Jellyfin URL, for example https://jellyfin.example.com"
+    require(trimmed.isNotBlank()) { "Enter a Jellyfin server URL" }
+    val candidates =
+      if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+        listOf(trimmed)
+      } else {
+        listOf("https://$trimmed", "http://$trimmed")
+      }
+    candidates.forEach { candidate ->
+      require(!Uri.parse(candidate).host.isNullOrBlank()) {
+        "Enter a valid Jellyfin server address, for example jellyfin.example.com"
+      }
     }
-    return trimmed
+    return candidates
   }
+
+  private fun normalizeUrl(raw: String): String = normalizeUrlCandidates(raw).first()
 
   private fun getDeviceId(): String {
     val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

@@ -72,10 +72,11 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
       val savedSession = JellyfinSession(savedUrl, savedUserId, savedToken)
       session = savedSession
       isLoading = true
-      JellyfinClient(client, context).loadAudio(savedSession).fold(
-        onSuccess = { tracks = it; error = null },
-        onFailure = { error = it.message ?: "Unable to load Jellyfin audio" },
-      )
+              JellyfinClient(client, context).loadMedia(savedSession).fold(
+          onSuccess = { tracks = it; error = null },
+          onFailure = { error = it.message ?: "Unable to load Jellyfin media" },
+        )
+
       isLoading = false
     }
   }
@@ -94,9 +95,9 @@ fun JellyfinScreen(modifier: Modifier = Modifier) {
             .apply()
           session = authenticated
           password = ""
-          JellyfinClient(client, context).loadAudio(authenticated).fold(
+          JellyfinClient(client, context).loadMedia(authenticated).fold(
             onSuccess = { tracks = it },
-            onFailure = { error = it.message ?: "Unable to load Jellyfin audio" },
+            onFailure = { error = it.message ?: "Unable to load Jellyfin media" },
           )
         },
         onFailure = { error = it.message ?: "Jellyfin login failed" },
@@ -193,7 +194,7 @@ private fun JellyfinLibrary(
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Text("Jellyfin music", style = MaterialTheme.typography.titleLarge)
+      Text("Jellyfin media", style = MaterialTheme.typography.titleLarge)
       Text("Disconnect", modifier = Modifier.clickable(onClick = onLogout), color = MaterialTheme.colorScheme.primary)
     }
     if (isLoading) {
@@ -201,7 +202,7 @@ private fun JellyfinLibrary(
     } else if (!error.isNullOrBlank()) {
       Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) { Text(error, color = MaterialTheme.colorScheme.error) }
     } else if (tracks.isEmpty()) {
-      Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) { Text("No audio items found on this Jellyfin server.") }
+      Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) { Text("No playable media found on this Jellyfin server.") }
     } else {
       LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), modifier = Modifier.fillMaxSize()) {
         itemsIndexed(tracks, key = { _, track -> track.id }) { index, track ->
@@ -224,7 +225,8 @@ private fun JellyfinLibrary(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
               Text(track.title, maxLines = 1)
-              Text("${track.artist} · ${track.album}", maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              val kind = if (track.isVideo) track.mediaType else "Audio"
+              Text("$kind · ${track.artist} · ${track.album}", maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
           }
         }
@@ -235,19 +237,22 @@ private fun JellyfinLibrary(
 
 private fun playJellyfinTracks(context: Context, tracks: List<JellyfinTrack>, index: Int) {
   if (tracks.isEmpty()) return
-  val queue = tracks.map { track ->
+  val queue = tracks.filter { it.isPlayable }.map { track ->
     PlaybackItem.fromUri(
-      uri = track.streamUrl,
+      uri = track.streamUrl!!,
       title = track.title,
       artist = track.artist,
-      mimeType = "audio/*",
+      mimeType = if (track.isVideo) "video/*" else "audio/*",
       artworkUri = track.artworkUrl,
     )
   }
   val safeIndex = index.coerceIn(queue.indices)
   val token = PreparedPlaybackLaunchStore.stage(queue, safeIndex, isExplicitQueue = true)
-  val first = tracks[safeIndex]
-  val intent = Intent(Intent.ACTION_VIEW, first.uri).apply {
+  val playableTracks = tracks.filter { it.isPlayable }
+  val first = playableTracks[safeIndex]
+  val firstUri = first.uri ?: return
+  val isAudio = !first.isVideo
+  val intent = Intent(Intent.ACTION_VIEW, firstUri).apply {
     setClass(context, PlayerActivity::class.java)
     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     putExtra("internal_launch", true)
@@ -255,8 +260,8 @@ private fun playJellyfinTracks(context: Context, tracks: List<JellyfinTrack>, in
     putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, token)
     putExtra("playlist_index", safeIndex)
     putExtra("launch_source", "jellyfin_music")
-    putExtra("media_library_audio", true)
-    putExtra("is_audio", true)
+    putExtra("media_library_audio", isAudio)
+    putExtra("is_audio", isAudio)
     putExtra("title", first.title)
   }
   context.startActivity(intent)
