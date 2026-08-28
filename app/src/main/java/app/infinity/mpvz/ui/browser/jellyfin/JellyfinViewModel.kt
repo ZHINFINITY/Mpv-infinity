@@ -40,6 +40,9 @@ class JellyfinViewModel(
     httpClient = client
     val session = _uiState.value.session
     if (session != null && httpClient != null && _uiState.value.libraries.isEmpty()) {
+      viewModelScope.launch { loadHome(session) }
+    }
+    // original:
       loadHome(session)
     }
   }
@@ -253,13 +256,13 @@ class JellyfinViewModel(
       it.copy(openLibrary = null, selectedLibraryId = null, currentItems = emptyList(), searchQuery = "")
     }
     val session = _uiState.value.session ?: return
-    loadHome(session)
+    viewModelScope.launch { loadHome(session) }
   }
 
   fun refresh() {
     val session = _uiState.value.session ?: return
     val libraryId = _uiState.value.selectedLibraryId
-    if (libraryId != null) loadLibrary(libraryId) else loadHome(session)
+    if (libraryId != null) loadLibrary(libraryId) else viewModelScope.launch { loadHome(session) }
   }
 
   fun loadMore() {
