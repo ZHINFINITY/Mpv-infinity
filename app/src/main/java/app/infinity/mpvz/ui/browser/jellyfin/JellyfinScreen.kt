@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -390,6 +391,7 @@ private fun JellyfinHomeContent(
   var seerrAuthMode by remember { mutableStateOf(SeerrAuthMode.JELLYFIN) }
   var seerrUsername by remember { mutableStateOf("") }
   var seerrPassword by remember { mutableStateOf("") }
+  var isSeerrPasswordVisible by remember { mutableStateOf(false) }
   var seerrUrl by remember {
     mutableStateOf(
       context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
@@ -844,7 +846,15 @@ private fun JellyfinHomeContent(
                 onValueChange = { seerrPassword = it },
                 label = { Text("Password") },
                 leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Lock, contentDescription = null) },
-                visualTransformation = PasswordVisualTransformation(),
+                trailingIcon = {
+                  IconButton(onClick = { isSeerrPasswordVisible = !isSeerrPasswordVisible }) {
+                    Icon(
+                      imageVector = if (isSeerrPasswordVisible) Icons.RoundedFilled.VisibilityOff else Icons.RoundedFilled.Visibility,
+                      contentDescription = if (isSeerrPasswordVisible) "Hide password" else "Show password",
+                    )
+                  }
+                },
+                visualTransformation = if (isSeerrPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
