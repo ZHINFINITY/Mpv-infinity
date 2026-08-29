@@ -184,7 +184,7 @@ class JellyfinClient(
         "?ParentId=$parentId&Limit=$limit&StartIndex=$startIndex" +
         "" + typeParam +
         "&SortBy=$sortBy&SortOrder=$sortOrder&Recursive=true" +
-        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating,Genres,Studios,RemoteTrailers,ProviderIds" +
+        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating,CriticRating,Genres,Studios,RemoteTrailers,ProviderIds" +
         "&api_key=$encodedToken"
       val request = Request.Builder()
         .url(url)
@@ -205,7 +205,7 @@ class JellyfinClient(
       val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
       val url = "${session.serverUrl}/Items/$itemId/Similar" +
         "?UserId=${session.userId}&Limit=$limit" +
-        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating,Genres,Studios,RemoteTrailers,ProviderIds" +
+        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating,CriticRating,Genres,Studios,RemoteTrailers,ProviderIds" +
         "&api_key=$encodedToken"
       val request = Request.Builder().url(url).addJellyfinHeaders(session.accessToken).get().build()
       httpClient.newCall(request).execute().use { response ->
@@ -364,6 +364,11 @@ class JellyfinClient(
     val premiereDate = obj["PremiereDate"]?.jsonPrimitive?.contentOrNull
     val endDate = obj["EndDate"]?.jsonPrimitive?.contentOrNull
     val rating = obj["CommunityRating"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+    val criticRating = obj["CriticRating"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+    val providerIds = obj["ProviderIds"]?.jsonObject
+      ?.mapNotNull { (key, value) -> value.jsonPrimitive.contentOrNull?.let { key to it } }
+      ?.toMap()
+      .orEmpty()
     val officialRating = obj["OfficialRating"]?.jsonPrimitive?.contentOrNull
     val status = obj["Status"]?.jsonPrimitive?.contentOrNull
     val seasonNumber = if (mediaType.equals("Season", ignoreCase = true)) {
@@ -418,6 +423,8 @@ class JellyfinClient(
       episodeNumber = episodeNumber,
       chapterCount = chapterCount,
       communityRating = rating,
+      criticRating = criticRating,
+      providerIds = providerIds,
       genres = genres,
       qualityLabel = quality,
       trailerUrl = trailer,

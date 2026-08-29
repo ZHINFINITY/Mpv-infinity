@@ -41,6 +41,8 @@ data class JellyfinTrack(
   val premiereDate: String? = null,
   val endDate: String? = null,
   val communityRating: Double? = null,
+  val criticRating: Double? = null,
+  val providerIds: Map<String, String> = emptyMap(),
   val officialRating: String? = null,
   val status: String? = null,
   val seasonNumber: Int? = null,

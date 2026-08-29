@@ -110,10 +110,6 @@ fun JellyfinScreen(
   LaunchedEffect(httpClient) {
     viewModel.setHttpClient(httpClient)
   }
-  LaunchedEffect(uiState.session?.serverUrl) {
-    if (uiState.session != null) viewModel.refresh()
-  }
-
   if (uiState.session == null) {
     JellyfinLoginContent(uiState = uiState, viewModel = viewModel)
   } else {
@@ -1454,6 +1450,21 @@ private fun JellyfinHeroBanner(
         }
       }
     }
+
+    Row(
+      modifier = Modifier
+        .align(Alignment.TopEnd)
+        .padding(top = 14.dp, end = 14.dp),
+      horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+      repeat(5) { index ->
+        Surface(
+          shape = CircleShape,
+          color = if (pagerState.currentPage == index) Color.White else Color.White.copy(alpha = 0.42f),
+          modifier = Modifier.size(if (pagerState.currentPage == index) 7.dp else 5.dp),
+        ) {}
+      }
+    }
   }
 }
 
@@ -1575,14 +1586,53 @@ private fun PosterCard(
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
       )
-      Text(
-        text = if (track.isVideo) track.album else track.artist,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Text(
+          text = if (track.isVideo) track.album else track.artist,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f),
+        )
+        track.communityRating?.let { rating ->
+          RatingBadge("★", String.format(java.util.Locale.US, "%.1f", rating))
+        }
+      }
+      if (track.isVideo && (track.communityRating != null || track.criticRating != null || track.officialRating != null || track.providerIds.containsKey("Tmdb") || track.providerIds.containsKey("Imdb"))) {
+        Row(
+          modifier = Modifier.padding(top = 4.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          track.communityRating?.let {
+            RatingBadge("Rating", String.format(java.util.Locale.US, "%.1f/10", it))
+          }
+          track.criticRating?.let {
+            RatingBadge("Critics", String.format(java.util.Locale.US, "%.0f/100", it))
+          }
+          track.providerIds["Imdb"]?.let { RatingBadge("IMDb", "linked") }
+          track.providerIds["Tmdb"]?.let { RatingBadge("TMDb", "linked") }
+          track.officialRating?.let { RatingBadge("Rated", it) }
+        }
+      }
     }
+  }
+}
+
+@Composable
+private fun RatingBadge(label: String, value: String) {
+  Surface(shape = RoundedCornerShape(5.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+    Text(
+      text = "$label $value",
+      modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+      style = MaterialTheme.typography.labelSmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      maxLines = 1,
+    )
   }
 }
 
