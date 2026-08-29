@@ -27,6 +27,7 @@ data class JellyfinCollection(
 
 data class JellyfinTrack(
   val id: String,
+  val parentId: String? = null,
   val title: String,
   val artist: String,
   val album: String,

@@ -238,22 +238,24 @@ class JellyfinClient(
   ): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
     runCatching {
       val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
-      val url = "${session.serverUrl}/Users/${session.userId}/Items" +
-        "?Filters=IsPlayed&IncludeItemTypes=Movie,Series,Episode&EnableUserData=true" +
-        "&SortBy=DatePlayed&SortOrder=Descending&Limit=$limit&Recursive=true" +
-        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,PremiereDate,EndDate,OriginalTitle,OfficialRating,Status,Genres,Studios,RemoteTrailers,ProviderIds,Chapters,UserData" +
-        "&api_key=$encodedToken"
-      val request = Request.Builder()
-        .url(url)
-        .addJellyfinHeaders(session.accessToken)
-        .get()
-        .build()
-      httpClient.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) throw IOException("Failed to load Jellyfin watch history: HTTP ${response.code}")
-        val root = json.parseToJsonElement(response.body.string()).jsonObject
-        val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
-        items.mapNotNull { parseTrack(it.jsonObject, session) }
+      val fields = "Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,PremiereDate,EndDate,OriginalTitle,OfficialRating,Status,Genres,Studios,RemoteTrailers,ProviderIds,Chapters,UserData"
+      fun query(filter: String): List<JellyfinTrack> {
+        val url = "${session.serverUrl}/Users/${session.userId}/Items" +
+          "?Filters=$filter&IncludeItemTypes=Movie,Series,Episode&EnableUserData=true" +
+          "&SortBy=DatePlayed&SortOrder=Descending&Limit=$limit&Recursive=true" +
+          "&Fields=$fields&api_key=$encodedToken"
+        val request = Request.Builder().url(url).addJellyfinHeaders(session.accessToken).get().build()
+        httpClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) throw IOException("Failed to load Jellyfin watch history: HTTP ${response.code}")
+          val root = json.parseToJsonElement(response.body.string()).jsonObject
+          val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
+          return@use items.mapNotNull { parseTrack(it.jsonObject, session) }
+        }
       }
+      (runCatching { query("IsResumable") }.getOrDefault(emptyList()) +
+        runCatching { query("IsPlayed") }.getOrDefault(emptyList()))
+        .distinctBy { it.id }
+        .take(limit)
     }
   }
 
@@ -329,6 +331,7 @@ class JellyfinClient(
 
   private fun parseTrack(obj: JsonObject, session: JellyfinSession): JellyfinTrack? {
     val id = obj["Id"]?.jsonPrimitive?.content ?: return null
+    val parentId = obj["ParentId"]?.jsonPrimitive?.contentOrNull
     val name = obj["Name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return null
     val mediaType = obj["Type"]?.jsonPrimitive?.content ?: "Audio"
     val artist = obj["AlbumArtist"]?.jsonPrimitive?.content
@@ -384,6 +387,7 @@ class JellyfinClient(
     val studio = obj["Studios"]?.jsonArray?.firstOrNull()?.jsonObject?.get("Name")?.jsonPrimitive?.contentOrNull
     return JellyfinTrack(
       id = id,
+      parentId = parentId,
       title = name,
       artist = artist,
       album = album,

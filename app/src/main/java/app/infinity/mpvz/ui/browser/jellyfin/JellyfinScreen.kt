@@ -399,7 +399,14 @@ private fun JellyfinHomeContent(
       isEpisodesLoading = uiState.isDetailEpisodesLoading,
       similarItems = uiState.detailSimilarItems,
       onBack = { viewModel.closeDetail() },
-      onPlay = { viewModel.playItem(context, uiState.detailItem!!) },
+      onPlay = {
+        val selected = uiState.detailItem!!
+        if (selected.mediaType.equals("Series", ignoreCase = true)) {
+          viewModel.playTracks(context, uiState.detailEpisodes, 0)
+        } else {
+          viewModel.playItem(context, selected)
+        }
+      },
       onEpisodePlay = { episode ->
         val episodeIndex = uiState.detailEpisodes.indexOfFirst { it.id == episode.id }.coerceAtLeast(0)
         viewModel.playTracks(context, uiState.detailEpisodes, episodeIndex)
@@ -787,6 +794,8 @@ private fun JellyfinDetailPage(
   onOpenTrailer: (String) -> Unit,
   onSimilarClick: (JellyfinTrack) -> Unit,
 ) {
+  var selectedSeasonId by remember(mediaItem.id) { mutableStateOf<String?>(null) }
+  val visibleEpisodes = if (selectedSeasonId == null) episodes else episodes.filter { it.parentId == selectedSeasonId }
   val imageUrl = mediaItem.artworkUrl ?: "${session.serverUrl}/Items/${mediaItem.id}/Images/Primary?maxWidth=900&quality=90&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
   Column(
     modifier = Modifier
@@ -908,8 +917,13 @@ private fun JellyfinDetailPage(
             Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
               Text("Seasons", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
               Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DetailBadge(text = "All Episodes", selected = selectedSeasonId == null, onClick = { selectedSeasonId = null })
                 seasons.forEach { season ->
-                  DetailBadge(season.title)
+                  DetailBadge(
+                    text = season.title,
+                    selected = selectedSeasonId == season.id,
+                    onClick = { selectedSeasonId = season.id },
+                  )
                 }
               }
             }
@@ -921,7 +935,7 @@ private fun JellyfinDetailPage(
             when {
               isEpisodesLoading -> CircularProgressIndicator(modifier = Modifier.size(28.dp))
               episodes.isEmpty() -> Text("No episodes available", color = MaterialTheme.colorScheme.onSurfaceVariant)
-              else -> episodes.take(50).forEach { episode ->
+              else -> visibleEpisodes.take(50).forEach { episode ->
                 JellyfinEpisodeRow(episode = episode, onClick = { onEpisodePlay(episode) })
               }
             }
@@ -974,8 +988,12 @@ private fun JellyfinEpisodeRow(
 }
 
 @Composable
-private fun DetailBadge(text: String) {
-  Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+private fun DetailBadge(text: String, selected: Boolean = false, onClick: (() -> Unit)? = null) {
+  Surface(
+    shape = RoundedCornerShape(10.dp),
+    color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+    modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
+  ) {
     Text(text, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelLarge)
   }
 }
