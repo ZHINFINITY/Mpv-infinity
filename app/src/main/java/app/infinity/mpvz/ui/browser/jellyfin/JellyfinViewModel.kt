@@ -305,22 +305,53 @@ class JellyfinViewModel(
     }
   }
 
-  fun requestSeerr(media: SeerrMediaItem) {
+  fun searchSeerr(query: String) {
+    val normalized = query.trim()
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
+    if (normalized.isBlank()) {
+      _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = "", searchResults = emptyList(), isSearching = false)) }
+      return
+    }
     viewModelScope.launch {
-      client.requestMedia(url, media).onSuccess {
-        _uiState.update { state ->
-          state.copy(seerrDiscover = state.seerrDiscover.copy(
-            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(requested = true) else it },
-            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(requested = true) else it },
-            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(requested = true) else it },
-          ))
-        }
-      }
+      _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = normalized, isSearching = true, error = null)) }
+      client.search(url, normalized).fold(
+        onSuccess = { results -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = results, isSearching = false)) } },
+        onFailure = { error -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = emptyList(), isSearching = false, error = error.message ?: "Seerr search failed")) } },
+      )
     }
   }
 
+  fun requestSeerr(media: SeerrMediaItem, is4k: Boolean = false) {
+    val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
+    val client = seerrClient ?: return
+    _uiState.update { state -> state.copy(seerrDiscover = state.seerrDiscover.copy(
+      movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
+      shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
+      trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
+      searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
+    )) }
+    viewModelScope.launch {
+      client.requestMedia(url, media, is4k).onSuccess {
+        _uiState.update { state ->
+          state.copy(seerrDiscover = state.seerrDiscover.copy(
+            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
+            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
+            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
+            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
+                    ))
+        }
+      }
+        .onFailure {
+          _uiState.update { state -> state.copy(seerrDiscover = state.seerrDiscover.copy(
+            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
+            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
+            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
+            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
+          )) }
+        }
+    }
+  }
   fun disconnectSeerr() {
     seerrClient = null
     _uiState.update { it.copy(seerr = SeerrUiState(), seerrDiscover = SeerrDiscoverState()) }

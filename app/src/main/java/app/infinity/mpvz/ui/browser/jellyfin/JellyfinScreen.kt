@@ -394,6 +394,7 @@ private fun JellyfinHomeContent(
   var isSortDialogOpen by remember { mutableStateOf(false) }
   var isMoreMenuOpen by remember { mutableStateOf(false) }
   var isServerMenuOpen by remember { mutableStateOf(false) }
+  var isProfileMenuOpen by remember { mutableStateOf(false) }
   var isServerManagerOpen by remember { mutableStateOf(false) }
   var isSeerrInfoOpen by remember { mutableStateOf(false) }
   var isSeerrDashboardOpen by remember { mutableStateOf(false) }
@@ -422,7 +423,8 @@ private fun JellyfinHomeContent(
       state = uiState.seerrDiscover,
       onBack = { isSeerrDashboardOpen = false },
       onRefresh = { viewModel.loadSeerrDiscover() },
-      onRequest = { viewModel.requestSeerr(it) },
+      onSearch = { viewModel.searchSeerr(it) },
+      onRequest = { media, is4k -> viewModel.requestSeerr(media, is4k) },
       onDisconnect = {
         viewModel.disconnectSeerr()
         seerrUrl = ""
@@ -561,6 +563,19 @@ private fun JellyfinHomeContent(
             }
             IconButton(onClick = { if (uiState.seerrDiscover.isConnected) isSeerrDashboardOpen = true else { viewModel.resetSeerrConnectionState(); seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }; isSeerrInfoOpen = true } }) {
               Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
+            }
+            Box {
+              IconButton(onClick = { isProfileMenuOpen = true }) {
+                Icon(imageVector = Icons.RoundedFilled.Person, contentDescription = "Jellyfin profile")
+              }
+              DropdownMenu(expanded = isProfileMenuOpen, onDismissRequest = { isProfileMenuOpen = false }) {
+                DropdownMenuItem(text = { Text(uiState.activeServer?.username ?: "Jellyfin account") }, onClick = { })
+                DropdownMenuItem(
+                  text = { Text("Disconnect") },
+                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = null) },
+                  onClick = { isProfileMenuOpen = false; viewModel.logout() },
+                )
+              }
             }
             IconButton(onClick = { isServerManagerOpen = true }) {
               Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers")
