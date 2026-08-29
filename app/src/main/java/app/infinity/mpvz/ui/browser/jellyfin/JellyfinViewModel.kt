@@ -42,12 +42,14 @@ class JellyfinViewModel(
   private var searchGeneration = 0L
 
   private fun libraryItemTypes(collectionType: String?, libraryName: String = ""): String = when {
-    collectionType.equals("movies", ignoreCase = true) && !libraryName.contains("anime", ignoreCase = true) -> "Movie"
-    collectionType.equals("tvshows", ignoreCase = true) ||
-      libraryName.contains("anime", ignoreCase = true) ||
+    libraryName.contains("anime", ignoreCase = true) ||
+      collectionType.equals("tvshows", ignoreCase = true) ||
       libraryName.contains("tv", ignoreCase = true) ||
       libraryName.contains("show", ignoreCase = true) ||
       libraryName.contains("series", ignoreCase = true) -> "Series"
+    collectionType.equals("movies", ignoreCase = true) ||
+      libraryName.contains("movie", ignoreCase = true) ||
+      libraryName.contains("film", ignoreCase = true) -> "Movie"
     collectionType.equals("music", ignoreCase = true) -> "Audio,MusicAlbum,MusicArtist"
     else -> "Movie,Series"
   }
@@ -232,10 +234,10 @@ class JellyfinViewModel(
       jellyfin.loadLibraries(session).fold(
         onSuccess = { libs ->
           val watchHistory = jellyfin.loadWatchHistory(session).getOrDefault(emptyList())
-          val topPicks = watchHistory.firstOrNull()?.let { historyItem ->
+          val serverTopPicks = watchHistory.firstOrNull()?.let { historyItem ->
             jellyfin.loadSimilarItems(session, historyItem.id, limit = 20).getOrDefault(emptyList())
           }.orEmpty()
-          _uiState.update { it.copy(libraries = libs, watchHistory = watchHistory, topPicks = topPicks) }
+          _uiState.update { it.copy(libraries = libs, watchHistory = watchHistory, topPicks = serverTopPicks) }
           val allItems = libs.map { lib ->
             async(Dispatchers.IO) {
               jellyfin.loadMedia(
@@ -250,11 +252,13 @@ class JellyfinViewModel(
           }.awaitAll().flatten().toMutableList()
           val videos = allItems.filter { it.isVideo }
           val audio = allItems.filter { !it.isVideo }
+          val fallbackTopPicks = mixedHeroItems(videos)
+            .filterNot { candidate -> watchHistory.any { it.id == candidate.id } }
           _uiState.update { state ->
             state.copy(
               heroItems = mixedHeroItems(videos),
               watchHistory = watchHistory,
-              topPicks = topPicks,
+              topPicks = serverTopPicks.ifEmpty { fallbackTopPicks },
               latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
               latestShows = groupShows(videos).take(20),
               latestMusic = audio.take(20),
