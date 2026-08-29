@@ -82,6 +82,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.sp
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
@@ -385,6 +386,10 @@ private fun JellyfinHomeContent(
   var isServerMenuOpen by remember { mutableStateOf(false) }
   var isServerManagerOpen by remember { mutableStateOf(false) }
   var isSeerrInfoOpen by remember { mutableStateOf(false) }
+  var isSeerrDashboardOpen by remember { mutableStateOf(false) }
+  var seerrAuthMode by remember { mutableStateOf(SeerrAuthMode.JELLYFIN) }
+  var seerrUsername by remember { mutableStateOf("") }
+  var seerrPassword by remember { mutableStateOf("") }
   var seerrUrl by remember {
     mutableStateOf(
       context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
@@ -399,6 +404,20 @@ private fun JellyfinHomeContent(
   var useToken by remember { mutableStateOf(false) }
   val isRefreshing = remember { mutableStateOf(false) }
   val backStack = LocalBackStack.current
+
+  if (isSeerrDashboardOpen && seerrUrl.isNotBlank()) {
+    SeerrDashboard(
+      url = seerrUrl,
+      onBack = { isSeerrDashboardOpen = false },
+      onDisconnect = {
+        seerrUrl = ""
+        isSeerrDashboardOpen = false
+        context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE).edit().remove("seerr_url").apply()
+      },
+    )
+    return
+  }
+
   BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
     when {
       uiState.detailItem != null -> viewModel.closeDetail()
@@ -526,7 +545,7 @@ private fun JellyfinHomeContent(
             IconButton(onClick = { isSearching = true }) {
               Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
             }
-            IconButton(onClick = { isSeerrInfoOpen = true }) {
+            IconButton(onClick = { if (seerrUrl.isNotBlank()) isSeerrDashboardOpen = true else isSeerrInfoOpen = true }) {
               Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
             }
             IconButton(onClick = { isServerManagerOpen = true }) {
@@ -684,14 +703,23 @@ private fun JellyfinHomeContent(
               }
             }
             uiState.servers.forEach { server ->
-              FilledTonalButton(
-                onClick = { isServerManagerOpen = false; viewModel.switchServer(server) },
+              Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
               ) {
-                Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (server.id == uiState.activeServer?.id) "Connected: ${server.name}" else "Use ${server.name}")
+                FilledTonalButton(
+                  onClick = { isServerManagerOpen = false; viewModel.switchServer(server) },
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(16.dp),
+                ) {
+                  Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = null)
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(if (server.id == uiState.activeServer?.id) "Connected: ${server.name}" else "Use ${server.name}")
+                }
+                IconButton(onClick = { viewModel.removeServer(server) }) {
+                  Icon(imageVector = Icons.RoundedFilled.Close, contentDescription = "Disconnect ${server.name}")
+                }
               }
             }
             Text("Add another server", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -769,6 +797,24 @@ private fun JellyfinHomeContent(
             "Connect your Seerr or Overseerr server to browse titles and submit media requests.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            listOf(
+              SeerrAuthMode.JELLYFIN to "Jellyfin Auth",
+              SeerrAuthMode.LOCAL to "Local Account",
+              SeerrAuthMode.API_KEY to "API Key",
+            ).forEach { (mode, label) ->
+              FilterChip(
+                selected = seerrAuthMode == mode,
+                onClick = { seerrAuthMode = mode },
+                label = { Text(label, maxLines = 1) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp),
+              )
+            }
+          }
           OutlinedTextField(
             value = seerrUrl,
             onValueChange = { seerrUrl = it },
@@ -779,25 +825,96 @@ private fun JellyfinHomeContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
           )
+          if (seerrAuthMode != SeerrAuthMode.JELLYFIN) {
+            OutlinedTextField(
+              value = seerrUsername,
+              onValueChange = { seerrUsername = it },
+              label = { Text(if (seerrAuthMode == SeerrAuthMode.API_KEY) "API key" else "Username") },
+              leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Person, contentDescription = null) },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(16.dp),
+            )
+            if (seerrAuthMode == SeerrAuthMode.LOCAL) {
+              OutlinedTextField(
+                value = seerrPassword,
+                onValueChange = { seerrPassword = it },
+                label = { Text("Password") },
+                leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Lock, contentDescription = null) },
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+              )
+            }
+          }
           Button(
             onClick = {
               val enteredUrl = seerrUrl.trim().removeSuffix("/")
               val url = if (enteredUrl.startsWith("http://", ignoreCase = true) || enteredUrl.startsWith("https://", ignoreCase = true)) enteredUrl else "https://$enteredUrl"
               if (url != "https://") {
                 seerrUrl = url
-                context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE).edit().putString("seerr_url", url).apply()
-                runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+                context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
+                  .edit()
+                  .putString("seerr_url", url)
+                  .putString("seerr_auth_mode", seerrAuthMode.name)
+                  .putString("seerr_username", seerrUsername)
+                  .apply()
                 isSeerrInfoOpen = false
+                isSeerrDashboardOpen = true
               }
             },
             enabled = seerrUrl.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-          ) { Text("Open Seerr") }
+          ) { Text("Connect") }
           Spacer(modifier = Modifier.height(8.dp))
         }
       }
     }
+  }
+}
+
+@Composable
+private fun SeerrDashboard(
+  url: String,
+  onBack: () -> Unit,
+  onDisconnect: () -> Unit,
+) {
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background)
+      .statusBarsPadding(),
+  ) {
+    TopAppBar(
+      title = { Text("Discover", color = MaterialTheme.colorScheme.primary) },
+      navigationIcon = {
+        IconButton(onClick = onBack) {
+          Icon(imageVector = Icons.RoundedFilled.ArrowBack, contentDescription = "Back")
+        }
+      },
+      actions = {
+        IconButton(onClick = onDisconnect) {
+          Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = "Disconnect Seerr")
+        }
+      },
+      colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+    )
+    AndroidView(
+      modifier = Modifier.fillMaxSize(),
+      factory = { viewContext ->
+        android.webkit.WebView(viewContext).apply {
+          settings.javaScriptEnabled = true
+          settings.domStorageEnabled = true
+          settings.loadsImagesAutomatically = true
+          settings.mediaPlaybackRequiresUserGesture = false
+          webViewClient = android.webkit.WebViewClient()
+          android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+          loadUrl(url)
+        }
+      },
+    )
   }
 }
 
@@ -1077,10 +1194,11 @@ private fun HomeDashboard(
     }
     val animeLibrary = homeLibraries.firstOrNull { it.name.contains("anime", ignoreCase = true) }
     val tvLibrary = homeLibraries.firstOrNull {
-      it.collectionType.equals("tvshows", ignoreCase = true) ||
-        it.name.contains("tv", ignoreCase = true) ||
-        it.name.contains("show", ignoreCase = true) ||
-        it.name.contains("series", ignoreCase = true)
+      !it.name.contains("anime", ignoreCase = true) &&
+        (it.collectionType.equals("tvshows", ignoreCase = true) ||
+          it.name.contains("tv", ignoreCase = true) ||
+          it.name.contains("show", ignoreCase = true) ||
+          it.name.contains("series", ignoreCase = true))
     }
 
     // 3. Server-side Watch History (Jellyfin tab only)
