@@ -165,12 +165,12 @@ internal fun SeerrNativeDashboard(
               ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.RoundedFilled.Movie, null) }
             Column(Modifier.align(Alignment.TopCenter).padding(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
               when {
-                detailedMedia.availableInJellyfin -> Surface(RoundedCornerShape(5.dp), Color(0xFF2E7D32)) { Text("Available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                detailedMedia.partiallyAvailable -> Surface(RoundedCornerShape(5.dp), Color(0xFFE65100)) { Text("Partially available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                detailedMedia.availableInJellyfin -> Surface(shape = RoundedCornerShape(5.dp), color = Color(0xFF2E7D32)) { Text("Available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                detailedMedia.partiallyAvailable -> Surface(shape = RoundedCornerShape(5.dp), color = Color(0xFFE65100)) { Text("Partially available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
               }
               when {
-                detailedMedia.isRequesting -> Surface(RoundedCornerShape(5.dp), Color(0xFFE65100)) { Text("Processing…", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-                detailedMedia.requested -> Surface(RoundedCornerShape(5.dp), Color(0xFF1B5E20)) { Text(if (detailedMedia.requested4k) "4K requested" else "Requested", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                detailedMedia.isRequesting -> Surface(shape = RoundedCornerShape(5.dp), color = Color(0xFFE65100)) { Text("Processing…", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+                detailedMedia.requested -> Surface(shape = RoundedCornerShape(5.dp), color = Color(0xFF1B5E20)) { Text(if (detailedMedia.requested4k) "4K requested" else "Requested", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
               }
             }
             if (detailedMedia.availableInJellyfin) Surface(Modifier.align(Alignment.Center), CircleShape, Color.Black.copy(alpha = .72f)) { Icon(Icons.RoundedFilled.PlayArrow, "Play in mpv∞", Modifier.padding(9.dp).size(25.dp), tint = Color.White) }
@@ -253,13 +253,13 @@ private fun SeerrNativeCard(item: SeerrMediaItem, onOpen: (SeerrMediaItem) -> Un
       item.voteAverage?.takeIf { it > 0 }?.let { Surface(Modifier.align(Alignment.TopStart).padding(6.dp), RoundedCornerShape(6.dp), Color.Black.copy(alpha = .75f)) { Text("★ ${String.format(java.util.Locale.US, "%.1f", it)}", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), color = Color(0xFFFFC107), style = MaterialTheme.typography.labelSmall) } }
       Column(Modifier.align(Alignment.TopCenter).padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         when {
-          item.availableInJellyfin -> Surface(RoundedCornerShape(6.dp), Color(0xFF2E7D32)) { Text("Available", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-          item.partiallyAvailable -> Surface(RoundedCornerShape(6.dp), Color(0xFFE65100)) { Text("Partially available", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+          item.availableInJellyfin -> Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF2E7D32)) { Text("Available", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+          item.partiallyAvailable -> Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFE65100)) { Text("Partially available", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
         }
         when {
-          item.isRequesting -> Surface(RoundedCornerShape(6.dp), Color(0xFFE65100)) { Text("Processing…", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-          item.requestError != null -> Surface(RoundedCornerShape(6.dp), Color(0xFFB71C1C)) { Text("Failed", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-          item.requested -> Surface(RoundedCornerShape(6.dp), Color(0xFF1B5E20)) { Text(if (item.requested4k) "4K requested" else "Requested", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
+          item.isRequesting -> Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFE65100)) { Text("Processing…", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+          item.requestError != null -> Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFFB71C1C)) { Text("Failed", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+          item.requested -> Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF1B5E20)) { Text(if (item.requested4k) "4K requested" else "Requested", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
         }
       }
       if (item.availableInJellyfin) Surface(Modifier.align(Alignment.Center), CircleShape, Color.Black.copy(alpha = .72f)) { Icon(Icons.RoundedFilled.PlayArrow, "Play in mpv∞", Modifier.padding(12.dp).size(28.dp), tint = Color.White) }
