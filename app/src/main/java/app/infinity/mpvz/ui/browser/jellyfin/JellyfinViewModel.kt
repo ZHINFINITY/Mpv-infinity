@@ -400,7 +400,39 @@ class JellyfinViewModel(
   }
 
   fun openDetail(track: JellyfinTrack) {
-    _uiState.update { it.copy(detailItem = track) }
+    val session = _uiState.value.session ?: return
+    val client = httpClient ?: return
+    _uiState.update {
+      it.copy(
+        detailItem = track,
+        detailSeasons = emptyList(),
+        detailEpisodes = emptyList(),
+        isDetailLoading = true,
+        isDetailEpisodesLoading = track.mediaType.equals("Series", ignoreCase = true),
+      )
+    }
+    viewModelScope.launch {
+      val jellyfin = JellyfinClient(client, getApplication())
+      val fullItem = jellyfin.loadItem(session, track.id).getOrNull() ?: track
+      _uiState.update { it.copy(detailItem = fullItem, isDetailLoading = false) }
+      if (fullItem.mediaType.equals("Series", ignoreCase = true)) {
+        jellyfin.loadMedia(session, fullItem.id, limit = 100, sortBy = "SortName", sortOrder = "Ascending").fold(
+          onSuccess = { seasons ->
+            val seasonItems = seasons.filter { it.mediaType.equals("Season", ignoreCase = true) }
+            _uiState.update { it.copy(detailSeasons = seasonItems) }
+            val episodes = mutableListOf<JellyfinTrack>()
+            for (season in seasonItems) {
+              jellyfin.loadMedia(session, season.id, limit = 200, sortBy = "ParentIndexNumber,IndexNumber", sortOrder = "Ascending")
+                .onSuccess { episodes.addAll(it.filter { item -> item.mediaType.equals("Episode", ignoreCase = true) }) }
+            }
+            _uiState.update { it.copy(detailEpisodes = episodes, isDetailEpisodesLoading = false) }
+          },
+          onFailure = { _uiState.update { it.copy(isDetailEpisodesLoading = false) } },
+        )
+      } else {
+        _uiState.update { it.copy(isDetailEpisodesLoading = false) }
+      }
+    }
   }
 
   fun closeDetail() {

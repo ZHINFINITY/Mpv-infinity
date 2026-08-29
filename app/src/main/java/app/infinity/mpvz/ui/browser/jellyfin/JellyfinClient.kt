@@ -197,6 +197,21 @@ class JellyfinClient(
     }
   }
 
+  suspend fun loadItem(session: JellyfinSession, itemId: String): Result<JellyfinTrack> = withContext(Dispatchers.IO) {
+    runCatching {
+      val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+      val url = "${session.serverUrl}/Users/${session.userId}/Items/$itemId" +
+        "?Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,PremiereDate,EndDate,OriginalTitle,OfficialRating,Status,Genres,Studios,RemoteTrailers,ProviderIds,Chapters,UserData" +
+        "&api_key=$encodedToken"
+      val request = Request.Builder().url(url).addJellyfinHeaders(session.accessToken).get().build()
+      httpClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw IOException("Failed to load Jellyfin item: HTTP ${response.code}")
+        parseTrack(json.parseToJsonElement(response.body.string()).jsonObject, session)
+          ?: throw IOException("Jellyfin returned an empty item")
+      }
+    }
+  }
+
   suspend fun loadWatchHistory(
     session: JellyfinSession,
     limit: Int = 25,
@@ -323,6 +338,8 @@ class JellyfinClient(
     val rating = obj["CommunityRating"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
     val officialRating = obj["OfficialRating"]?.jsonPrimitive?.contentOrNull
     val status = obj["Status"]?.jsonPrimitive?.contentOrNull
+    val seasonNumber = obj["ParentIndexNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    val episodeNumber = obj["IndexNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
     val chapterCount = obj["Chapters"]?.jsonArray?.size ?: 0
     val genres = obj["Genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
     val videoStream = obj["MediaStreams"]?.jsonArray?.firstOrNull {
@@ -361,6 +378,8 @@ class JellyfinClient(
       endDate = endDate,
       officialRating = officialRating,
       status = status,
+      seasonNumber = seasonNumber,
+      episodeNumber = episodeNumber,
       chapterCount = chapterCount,
       communityRating = rating,
       genres = genres,

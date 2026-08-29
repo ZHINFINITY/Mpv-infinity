@@ -42,6 +42,8 @@ data class JellyfinTrack(
   val communityRating: Double? = null,
   val officialRating: String? = null,
   val status: String? = null,
+  val seasonNumber: Int? = null,
+  val episodeNumber: Int? = null,
   val chapterCount: Int = 0,
   val genres: List<String> = emptyList(),
   val qualityLabel: String? = null,
