@@ -297,8 +297,32 @@ class JellyfinViewModel(
   }
 
   private suspend fun enrichSeerrItems(url: String, client: SeerrClient, items: List<SeerrMediaItem>): List<SeerrMediaItem> = withContext(Dispatchers.IO) {
+    val session = _uiState.value.session
+    val localCatalog = (_uiState.value.currentItems + _uiState.value.latestMovies + _uiState.value.latestShows + _uiState.value.latestAnime + _uiState.value.topPicks).distinctBy { it.id }
+    val jellyfin = session?.let { httpClient?.let { clientRef -> JellyfinClient(clientRef, getApplication()) } }
     coroutineScope {
-      items.map { item -> async { client.getDetails(url, item).getOrDefault(item) } }.awaitAll()
+      items.map { item ->
+        async {
+          val details = client.getDetails(url, item).getOrDefault(item)
+          val normalizedTitle = item.title.filter(Char::isLetterOrDigit).lowercase()
+          val localMatch = localCatalog.firstOrNull { candidate ->
+            candidate.title.filter(Char::isLetterOrDigit).lowercase() == normalizedTitle &&
+              ((item.mediaType == "tv" && candidate.mediaType.equals("Series", true)) ||
+                (item.mediaType != "tv" && candidate.mediaType.equals("Movie", true)))
+          }
+          val jellyfinMatch = localMatch ?: if (session != null && jellyfin != null) {
+            jellyfin.search(session, item.title, limit = 20).getOrNull()?.firstOrNull { candidate ->
+              candidate.title.filter(Char::isLetterOrDigit).lowercase() == normalizedTitle &&
+                ((item.mediaType == "tv" && candidate.mediaType.equals("Series", true)) ||
+                  (item.mediaType != "tv" && candidate.mediaType.equals("Movie", true)))
+            }
+          } else null
+          details.copy(
+            availableInJellyfin = details.availableInJellyfin || jellyfinMatch != null,
+            jellyfinMediaId = details.jellyfinMediaId ?: jellyfinMatch?.id,
+          )
+        }
+      }.awaitAll()
     }
   }
 
@@ -337,11 +361,16 @@ class JellyfinViewModel(
     _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = normalized, isSearching = true, error = null)) }
     seerrSearchJob = viewModelScope.launch {
       delay(300L)
-      val firstResult = client.search(url, normalized)
-      val result = if (firstResult.getOrNull().isNullOrEmpty() && compact != normalized) client.search(url, compact) else firstResult
+      val variants = listOf(
+        normalized,
+        compact,
+        normalized.replace(Regex("\\banime\\b", RegexOption.IGNORE_CASE), " ").replace(Regex("\\s+"), " ").trim(),
+      ).filter { it.length >= 2 }.distinct()
+      val results = coroutineScope { variants.map { variant -> async { client.search(url, variant) } }.awaitAll() }
       if (generation != seerrSearchGeneration) return@launch
-      if (result.isSuccess) {
-        val raw = result.getOrDefault(emptyList())
+      if (results.any { it.isSuccess }) {
+        val raw = results.flatMap { it.getOrDefault(emptyList()) }
+          .distinctBy { "${it.mediaType}:${it.id}" }
         _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = raw, isSearching = true)) }
         val enriched = enrichSeerrItems(url, client, raw)
         if (generation == seerrSearchGeneration) _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = enriched, isSearching = false)) }

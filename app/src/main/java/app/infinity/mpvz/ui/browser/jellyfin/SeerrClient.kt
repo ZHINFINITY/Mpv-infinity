@@ -87,24 +87,29 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
     val seasons = obj["seasons"]?.jsonArray.orEmpty().mapNotNull { element ->
       val season = element.jsonObject
       val number = season["seasonNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-      val status = season["status"]?.jsonPrimitive?.contentOrNull.orEmpty().lowercase()
+      val statusRaw = season["status"]?.jsonPrimitive?.contentOrNull.orEmpty()
+      val status = statusRaw.lowercase()
+      val statusCode = statusRaw.toIntOrNull()
       SeerrSeason(
         seasonNumber = number,
         name = season["name"]?.jsonPrimitive?.contentOrNull ?: "Season $number",
         episodeCount = season["episodeCount"]?.jsonPrimitive?.intOrNull ?: 0,
-        available = season["available"]?.jsonPrimitive?.booleanOrNull == true || status == "available",
-        requested = season["requested"]?.jsonPrimitive?.booleanOrNull == true || status.contains("requested") || status.contains("processing"),
+        available = season["available"]?.jsonPrimitive?.booleanOrNull == true || status == "available" || statusCode == 5,
+        requested = season["requested"]?.jsonPrimitive?.booleanOrNull == true || status.contains("requested") || status.contains("processing") || statusCode == 2 || statusCode == 3,
       )
     }
     val mediaStatus = mediaInfo?.get("status")?.jsonPrimitive?.contentOrNull.orEmpty()
+    val mediaStatusCode = mediaStatus.toIntOrNull()
+    val mediaAvailableByStatus = mediaStatus.equals("available", true) || mediaStatusCode == 5
+    val mediaPartialByStatus = mediaStatus.contains("partial", true) || mediaStatus.contains("partially", true) || mediaStatusCode == 4
     val requestRecords = root["requests"]?.jsonArray ?: mediaInfo?.get("requests")?.jsonArray
     val hasRequest = requestRecords?.isNotEmpty() == true || mediaStatus.contains("requested", true) || mediaStatus.contains("processing", true)
     val has4kRequest = requestRecords?.any { it.jsonObject["is4k"]?.jsonPrimitive?.booleanOrNull == true } == true
     val isTv = media.mediaType.equals("tv", true)
     val allSeasonsAvailable = seasons.isNotEmpty() && seasons.all { it.available }
     val someSeasonsAvailable = seasons.any { it.available }
-    val available = if (isTv && seasons.isNotEmpty()) allSeasonsAvailable else mediaStatus.equals("available", true) || !jellyfinMediaId.isNullOrBlank()
-    val partialStatus = mediaStatus.contains("partial", true) || mediaStatus.contains("partially", true) || (isTv && someSeasonsAvailable && !allSeasonsAvailable)
+    val available = if (isTv && seasons.isNotEmpty()) allSeasonsAvailable else mediaAvailableByStatus || !jellyfinMediaId.isNullOrBlank()
+    val partialStatus = mediaPartialByStatus || (isTv && someSeasonsAvailable && !allSeasonsAvailable)
     media.copy(
       overview = obj["overview"]?.jsonPrimitive?.contentOrNull ?: media.overview,
       posterPath = obj["posterPath"]?.jsonPrimitive?.contentOrNull ?: media.posterPath,
