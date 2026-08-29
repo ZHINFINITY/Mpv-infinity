@@ -17,6 +17,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URI
+import java.net.URLEncoder
 
 internal class SeerrClient(private val httpClient: OkHttpClient) {
   private val json = Json { ignoreUnknownKeys = true }
@@ -59,10 +60,16 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
     }
   }
 
-  suspend fun requestMedia(baseUrl: String, media: SeerrMediaItem): Result<Unit> = runCatching {
+  suspend fun search(baseUrl: String, query: String): Result<List<SeerrMediaItem>> {
+    val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+    return request(baseUrl, "/search?query=$encoded&page=1").map { parseResults(it, null) }
+  }
+
+  suspend fun requestMedia(baseUrl: String, media: SeerrMediaItem, is4k: Boolean = false): Result<Unit> = runCatching {
     val body = buildJsonObject {
       put("mediaType", if (media.mediaType == "tv") "tv" else "movie")
       put("mediaId", media.id)
+      put("is4k", is4k)
     }
     request(baseUrl, "/request", "POST", body).getOrThrow()
     Unit

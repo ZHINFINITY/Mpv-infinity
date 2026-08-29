@@ -10,6 +10,8 @@ data class SeerrMediaItem(
   val releaseDate: String? = null,
   val voteAverage: Double? = null,
   val requested: Boolean = false,
+  val requested4k: Boolean = false,
+  val isRequesting: Boolean = false,
 )
 
 data class SeerrDiscoverState(
@@ -20,4 +22,7 @@ data class SeerrDiscoverState(
   val movies: List<SeerrMediaItem> = emptyList(),
   val shows: List<SeerrMediaItem> = emptyList(),
   val trending: List<SeerrMediaItem> = emptyList(),
+  val searchQuery: String = "",
+  val searchResults: List<SeerrMediaItem> = emptyList(),
+  val isSearching: Boolean = false,
 )

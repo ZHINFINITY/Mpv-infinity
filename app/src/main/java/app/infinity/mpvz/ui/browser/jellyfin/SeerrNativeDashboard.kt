@@ -24,14 +24,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -59,38 +61,49 @@ internal fun SeerrNativeDashboard(
   state: SeerrDiscoverState,
   onBack: () -> Unit,
   onRefresh: () -> Unit,
-  onRequest: (SeerrMediaItem) -> Unit,
+  onSearch: (String) -> Unit,
+  onRequest: (SeerrMediaItem, Boolean) -> Unit,
   onDisconnect: () -> Unit,
 ) {
+  var searchOpen by remember { mutableStateOf(false) }
+  var searchText by remember { mutableStateOf("") }
   var selected by remember { mutableStateOf<SeerrMediaItem?>(null) }
-  var query by remember { mutableStateOf("") }
-  val filtered = { source: List<SeerrMediaItem> ->
-    if (query.isBlank()) source else source.filter { it.title.contains(query, ignoreCase = true) }
-  }
+  var profileOpen by remember { mutableStateOf(false) }
   BackHandler(onBack = onBack)
+  val sections = if (searchOpen && state.searchQuery.isNotBlank()) listOf("Search results" to state.searchResults) else listOf("Trending" to state.trending, "Movies" to state.movies, "TV Shows" to state.shows)
 
-  Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+  Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
     TopAppBar(
       title = { Text("Discover", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) },
       navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
       actions = {
-        IconButton(onClick = onRefresh) { Icon(Icons.RoundedFilled.Refresh, "Refresh") }
-        IconButton(onClick = onDisconnect) { Icon(Icons.RoundedFilled.LinkOff, "Disconnect Seerr") }
+        IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) { searchText = ""; onSearch("") } }) { Icon(if (searchOpen) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, "Search") }
+        Box {
+          IconButton(onClick = { profileOpen = true }) {
+            Surface(Modifier.size(30.dp), CircleShape, MaterialTheme.colorScheme.primaryContainer) { Box(contentAlignment = Alignment.Center) { Icon(Icons.RoundedFilled.Person, "Profile", tint = MaterialTheme.colorScheme.onPrimaryContainer) } }
+          }
+          DropdownMenu(expanded = profileOpen, onDismissRequest = { profileOpen = false }) {
+            DropdownMenuItem(text = { Text(state.userName ?: "Seerr account") }, onClick = { })
+            DropdownMenuItem(text = { Text("Disconnect") }, leadingIcon = { Icon(Icons.RoundedFilled.LinkOff, null) }, onClick = { profileOpen = false; onDisconnect() })
+          }
+        }
       },
       colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     )
-    OutlinedTextField(
-      value = query,
-      onValueChange = { query = it },
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-      singleLine = true,
-      shape = RoundedCornerShape(24.dp),
-      placeholder = { Text("Search movies and TV shows in Seerr") },
-      leadingIcon = { Icon(Icons.RoundedFilled.Search, null) },
-    )
+    if (searchOpen) {
+      OutlinedTextField(
+        value = searchText,
+        onValueChange = { searchText = it; if (it.length >= 2) onSearch(it) },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        singleLine = true,
+        shape = RoundedCornerShape(24.dp),
+        placeholder = { Text("Search movies and TV shows") },
+        leadingIcon = { Icon(Icons.RoundedFilled.Search, null) },
+      )
+    }
     if (state.isLoading && state.movies.isEmpty() && state.shows.isEmpty()) {
       Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-    } else if (state.error != null && state.movies.isEmpty() && state.shows.isEmpty()) {
+    } else if (state.error != null && sections.all { it.second.isEmpty() }) {
       Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text(state.error, color = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(16.dp))
@@ -98,33 +111,38 @@ internal fun SeerrNativeDashboard(
       }
     } else {
       LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        item { SeerrAccountBanner(state = state, onDisconnect = onDisconnect) }
-        if (filtered(state.trending).isNotEmpty()) {
-          item { SeerrNativeSection("Trending", "Popular on Seerr") }
-          item { SeerrNativeRail(filtered(state.trending), onRequest) { selected = it } }
+        item { SeerrAccountBanner(state, onDisconnect) }
+        sections.forEach { (title, items) ->
+          if (items.isNotEmpty()) {
+            item { SeerrNativeSection(title, if (title == "Search results") "Results from Seerr" else "Browse and request media") }
+            item { SeerrNativeRail(items, onRequest) { selected = it } }
+          }
         }
-        if (filtered(state.movies).isNotEmpty()) {
-          item { SeerrNativeSection("Movies", "Discover movies") }
-          item { SeerrNativeRail(filtered(state.movies), onRequest) { selected = it } }
-        }
-        if (filtered(state.shows).isNotEmpty()) {
-          item { SeerrNativeSection("TV Shows", "Discover series") }
-          item { SeerrNativeRail(filtered(state.shows), onRequest) { selected = it } }
-        }
+        if (searchOpen && state.isSearching) item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
       }
     }
   }
 
   selected?.let { media ->
-    ModalBottomSheet(onDismissRequest = { selected = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-      Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(media.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        media.releaseDate?.take(4)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        media.voteAverage?.takeIf { it > 0 }?.let { Text("★ ${String.format(java.util.Locale.US, "%.1f", it)} / 10", color = Color(0xFFFFC107), fontWeight = FontWeight.Bold) }
-        if (media.overview.isNotBlank()) Text(media.overview, maxLines = 6, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(onClick = { onRequest(media); selected = null }, enabled = !media.requested, modifier = Modifier.fillMaxWidth()) {
-          Text(if (media.requested) "Requested" else "Request ${if (media.mediaType == "tv") "TV Show" else "Movie"}")
+    var is4k by remember(media.id) { mutableStateOf(false) }
+    ModalBottomSheet(onDismissRequest = { selected = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+      Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
+          media.posterPath?.let { RemoteImage("https://image.tmdb.org/t/p/w342$it", media.title, Modifier.width(112.dp).height(168.dp).clip(RoundedCornerShape(10.dp)), ContentScale.Crop) }
+          Column(Modifier.weight(1f)) {
+            Text(media.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            media.releaseDate?.take(4)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            media.voteAverage?.takeIf { it > 0 }?.let { Text("★ ${String.format(java.util.Locale.US, "%.1f", it)} / 10", color = Color(0xFFFFC107), fontWeight = FontWeight.Bold) }
+          }
         }
+        Text("Request ${if (media.mediaType == "tv") "TV Show" else "Movie"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Button(onClick = { onRequest(media, is4k); selected = null }, enabled = !media.requested && !media.isRequesting, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (media.isRequesting) "Requesting…" else if (media.requested) "Requested" else "Request ${if (media.mediaType == "tv") "TV Show" else "Movie"}") }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+          Text("Request in 4K", style = MaterialTheme.typography.titleMedium)
+          Switch(checked = is4k, onCheckedChange = { is4k = it })
+        }
+        Text("Overview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(media.overview.ifBlank { "No overview available." }, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 6, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(12.dp))
       }
     }
@@ -135,53 +153,29 @@ internal fun SeerrNativeDashboard(
 private fun SeerrAccountBanner(state: SeerrDiscoverState, onDisconnect: () -> Unit) {
   Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
     Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-      Surface(Modifier.size(44.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-        Box(contentAlignment = Alignment.Center) { Icon(Icons.RoundedFilled.Person, null, tint = MaterialTheme.colorScheme.onPrimaryContainer) }
-      }
-      Column(Modifier.weight(1f).padding(start = 12.dp)) {
-        Text(state.userName ?: "Seerr", fontWeight = FontWeight.Bold)
-        Text("Connected to Seerr", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      }
+      Surface(Modifier.size(44.dp), CircleShape, MaterialTheme.colorScheme.primaryContainer) { Box(contentAlignment = Alignment.Center) { Icon(Icons.RoundedFilled.Person, null, tint = MaterialTheme.colorScheme.onPrimaryContainer) } }
+      Column(Modifier.weight(1f).padding(start = 12.dp)) { Text(state.userName ?: "Seerr", fontWeight = FontWeight.Bold); Text("Connected to Seerr", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
       IconButton(onClick = onDisconnect) { Icon(Icons.RoundedFilled.LinkOff, "Disconnect") }
     }
   }
 }
 
 @Composable
-private fun SeerrNativeSection(title: String, subtitle: String) {
-  Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-  }
-}
+private fun SeerrNativeSection(title: String, subtitle: String) { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 
 @Composable
-private fun SeerrNativeRail(items: List<SeerrMediaItem>, onRequest: (SeerrMediaItem) -> Unit, onOpen: (SeerrMediaItem) -> Unit) {
-  LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-    items(items, key = { "native-seerr-${it.mediaType}-${it.id}" }) { item ->
-      SeerrNativeCard(item, onRequest, onOpen)
-    }
-  }
-}
+private fun SeerrNativeRail(items: List<SeerrMediaItem>, onRequest: (SeerrMediaItem, Boolean) -> Unit, onOpen: (SeerrMediaItem) -> Unit) { LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(items, key = { "native-seerr-${it.mediaType}-${it.id}" }) { SeerrNativeCard(it, onRequest, onOpen) } } }
 
 @Composable
-private fun SeerrNativeCard(item: SeerrMediaItem, onRequest: (SeerrMediaItem) -> Unit, onOpen: (SeerrMediaItem) -> Unit) {
+private fun SeerrNativeCard(item: SeerrMediaItem, onRequest: (SeerrMediaItem, Boolean) -> Unit, onOpen: (SeerrMediaItem) -> Unit) {
   Column(Modifier.width(138.dp)) {
     Box(Modifier.fillMaxWidth().height(204.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest).clickable { onOpen(item) }) {
-      item.posterPath?.let { path ->
-        RemoteImage("https://image.tmdb.org/t/p/w500$path", item.title, Modifier.fillMaxSize(), ContentScale.Crop)
-      } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(if (item.mediaType == "tv") Icons.RoundedFilled.SmartDisplay else Icons.RoundedFilled.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-      item.voteAverage?.takeIf { it > 0 }?.let { rating ->
-        Surface(Modifier.align(Alignment.TopStart).padding(6.dp), shape = RoundedCornerShape(6.dp), color = Color.Black.copy(alpha = .75f)) { Text("★ ${String.format(java.util.Locale.US, "%.1f", rating)}", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), color = Color(0xFFFFC107), style = MaterialTheme.typography.labelSmall) }
-      }
-      if (item.requested) Surface(Modifier.align(Alignment.TopEnd).padding(6.dp), shape = RoundedCornerShape(6.dp), color = Color(0xFF1B5E20)) { Text("Requested", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
+      item.posterPath?.let { RemoteImage("https://image.tmdb.org/t/p/w500$it", item.title, Modifier.fillMaxSize(), ContentScale.Crop) } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(if (item.mediaType == "tv") Icons.RoundedFilled.SmartDisplay else Icons.RoundedFilled.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+      item.voteAverage?.takeIf { it > 0 }?.let { Surface(Modifier.align(Alignment.TopStart).padding(6.dp), RoundedCornerShape(6.dp), Color.Black.copy(alpha = .75f)) { Text("★ ${String.format(java.util.Locale.US, "%.1f", it)}", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), color = Color(0xFFFFC107), style = MaterialTheme.typography.labelSmall) } }
+      if (item.requested) Surface(Modifier.align(Alignment.TopEnd).padding(6.dp), RoundedCornerShape(6.dp), Color(0xFF1B5E20)) { Text(if (item.requested4k) "4K requested" else "Requested", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
     }
     Text(item.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Text(item.releaseDate?.take(4) ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      Spacer(Modifier.width(4.dp))
-      Text(if (item.mediaType == "tv") "TV" else "Movie", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-    }
-    OutlinedButton(onClick = { onRequest(item) }, enabled = !item.requested, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text(if (item.requested) "Requested" else "Request", maxLines = 1) }
+    Row(verticalAlignment = Alignment.CenterVertically) { Text(item.releaseDate?.take(4) ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(4.dp)); Text(if (item.mediaType == "tv") "TV" else "Movie", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+    OutlinedButton(onClick = { onOpen(item) }, enabled = !item.requested && !item.isRequesting, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text(if (item.isRequesting) "Requesting…" else if (item.requested) "Requested" else "Request", maxLines = 1) }
   }
 }
