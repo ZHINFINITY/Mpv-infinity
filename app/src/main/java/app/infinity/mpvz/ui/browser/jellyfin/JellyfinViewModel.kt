@@ -684,27 +684,27 @@ class JellyfinViewModel(
     viewModelScope.launch {
       val jellyfin = JellyfinClient(client, context)
       val resolved = media.jellyfinMediaId?.let { jellyfin.loadItem(session, it).getOrNull() }
-        ?: jellyfin.search(session, media.title, limit = 20).getOrNull()?.firstOrNull { it.title.equals(media.title, true) || it.originalTitle.equals(media.title, true) }
-      if (resolved != null) {
-        if (resolved.isPlayable || resolved.isVideo) playItem(context, resolved) else openDetail(resolved)
+        ?: jellyfin.search(session, media.title, limit = 20).getOrNull()?.firstOrNull {
+          it.title.filter(Char::isLetterOrDigit).equals(media.title.filter(Char::isLetterOrDigit), true) &&
+            ((media.mediaType == "tv" && it.mediaType.equals("Series", true)) ||
+              (media.mediaType != "tv" && it.mediaType.equals("Movie", true)))
+        }
+      val playable = when {
+        resolved == null -> null
+        resolved.mediaType.equals("Series", true) -> jellyfin.loadFirstPlayableEpisode(session, resolved.id).getOrNull()
+        resolved.mediaType.equals("Season", true) -> resolved.parentId?.let { jellyfin.loadFirstPlayableEpisode(session, it).getOrNull() }
+        else -> resolved
       }
+      if (playable?.isPlayable == true) playTracks(context, listOf(playable), 0)
+      else if (resolved != null) openDetail(resolved)
     }
   }
 
   fun playItem(context: Context, track: JellyfinTrack) {
-    val session = _uiState.value.session ?: return
-    val client = httpClient ?: return
-    val jellyfin = JellyfinClient(client, context)
-    val streamUrl = jellyfin.getStreamUrl(session, track.id, isVideo = track.isVideo)
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(streamUrl)).apply {
-      setClass(context, Class.forName("app.infinity.mpvz.ui.player.PlayerActivity"))
-      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      putExtra("internal_launch", true)
-      putExtra("launch_source", "jellyfin")
-      putExtra("is_audio", !track.isVideo)
-      putExtra("title", track.title)
-    }
-    context.startActivity(intent)
+    // Use the same authenticated launch path as playlist playback. The old direct
+    // ACTION_VIEW intent omitted Jellyfin session extras, so PlayerActivity could
+    // open successfully but remain stuck while loading the remote stream.
+    playTracks(context, listOf(track), 0)
   }
 
   fun playTracks(context: Context, tracks: List<JellyfinTrack>, index: Int) {
