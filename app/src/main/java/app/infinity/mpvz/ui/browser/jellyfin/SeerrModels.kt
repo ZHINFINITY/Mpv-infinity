@@ -1,5 +1,11 @@
 package app.infinity.mpvz.ui.browser.jellyfin
 
+data class SeerrCastMember(
+  val name: String,
+  val character: String? = null,
+  val profilePath: String? = null,
+)
+
 data class SeerrMediaItem(
   val id: Int,
   val title: String,
@@ -9,6 +15,8 @@ data class SeerrMediaItem(
   val overview: String = "",
   val releaseDate: String? = null,
   val voteAverage: Double? = null,
+  val genres: List<String> = emptyList(),
+  val cast: List<SeerrCastMember> = emptyList(),
   val requested: Boolean = false,
   val requested4k: Boolean = false,
   val isRequesting: Boolean = false,
@@ -25,4 +33,6 @@ data class SeerrDiscoverState(
   val searchQuery: String = "",
   val searchResults: List<SeerrMediaItem> = emptyList(),
   val isSearching: Boolean = false,
+  val detailLoadingKey: String? = null,
+  val details: Map<String, SeerrMediaItem> = emptyMap(),
 )

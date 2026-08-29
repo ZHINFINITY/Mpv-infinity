@@ -424,6 +424,7 @@ private fun JellyfinHomeContent(
       onBack = { isSeerrDashboardOpen = false },
       onRefresh = { viewModel.loadSeerrDiscover() },
       onSearch = { viewModel.searchSeerr(it) },
+      onOpenDetails = { viewModel.loadSeerrDetails(it) },
       onRequest = { media, is4k -> viewModel.requestSeerr(media, is4k) },
       onDisconnect = {
         viewModel.disconnectSeerr()

@@ -62,6 +62,7 @@ internal fun SeerrNativeDashboard(
   onBack: () -> Unit,
   onRefresh: () -> Unit,
   onSearch: (String) -> Unit,
+  onOpenDetails: (SeerrMediaItem) -> Unit,
   onRequest: (SeerrMediaItem, Boolean) -> Unit,
   onDisconnect: () -> Unit,
 ) {
@@ -84,6 +85,7 @@ internal fun SeerrNativeDashboard(
           }
           DropdownMenu(expanded = profileOpen, onDismissRequest = { profileOpen = false }) {
             DropdownMenuItem(text = { Text(state.userName ?: "Seerr account") }, onClick = { })
+            DropdownMenuItem(text = { Text("Refresh") }, leadingIcon = { Icon(Icons.RoundedFilled.Refresh, null) }, onClick = { profileOpen = false; onRefresh() })
             DropdownMenuItem(text = { Text("Disconnect") }, leadingIcon = { Icon(Icons.RoundedFilled.LinkOff, null) }, onClick = { profileOpen = false; onDisconnect() })
           }
         }
@@ -115,7 +117,7 @@ internal fun SeerrNativeDashboard(
         sections.forEach { (title, items) ->
           if (items.isNotEmpty()) {
             item { SeerrNativeSection(title, if (title == "Search results") "Results from Seerr" else "Browse and request media") }
-            item { SeerrNativeRail(items, onRequest) { selected = it } }
+            item { SeerrNativeRail(items, onRequest) { selected = it; onOpenDetails(it) } }
           }
         }
         if (searchOpen && state.isSearching) item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
@@ -124,15 +126,18 @@ internal fun SeerrNativeDashboard(
   }
 
   selected?.let { media ->
+    val detailKey = "${media.mediaType}:${media.id}"
+    val detailedMedia = state.details[detailKey] ?: media
     var is4k by remember(media.id) { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = { selected = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainer) {
       Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-          media.posterPath?.let { RemoteImage("https://image.tmdb.org/t/p/w342$it", media.title, Modifier.width(112.dp).height(168.dp).clip(RoundedCornerShape(10.dp)), ContentScale.Crop) }
+          detailedMedia.posterPath?.let { RemoteImage("https://image.tmdb.org/t/p/w342$it", detailedMedia.title, Modifier.width(112.dp).height(168.dp).clip(RoundedCornerShape(10.dp)), ContentScale.Crop) }
           Column(Modifier.weight(1f)) {
-            Text(media.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            media.releaseDate?.take(4)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            media.voteAverage?.takeIf { it > 0 }?.let { Text("★ ${String.format(java.util.Locale.US, "%.1f", it)} / 10", color = Color(0xFFFFC107), fontWeight = FontWeight.Bold) }
+            Text(detailedMedia.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            detailedMedia.releaseDate?.take(4)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            detailedMedia.voteAverage?.takeIf { it > 0 }?.let { Text("★ ${String.format(java.util.Locale.US, "%.1f", it)} / 10", color = Color(0xFFFFC107), fontWeight = FontWeight.Bold) }
+            if (detailedMedia.genres.isNotEmpty()) Text(detailedMedia.genres.joinToString("  •  "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 2)
           }
         }
         Text("Request ${if (media.mediaType == "tv") "TV Show" else "Movie"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -142,7 +147,19 @@ internal fun SeerrNativeDashboard(
           Switch(checked = is4k, onCheckedChange = { is4k = it })
         }
         Text("Overview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(media.overview.ifBlank { "No overview available." }, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 6, overflow = TextOverflow.Ellipsis)
+        Text(detailedMedia.overview.ifBlank { "No overview available." }, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 6, overflow = TextOverflow.Ellipsis)
+        if (detailedMedia.cast.isNotEmpty()) {
+          Text("Cast", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(detailedMedia.cast, key = { "cast-${it.name}" }) { person ->
+              Column(Modifier.width(72.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                person.profilePath?.let { RemoteImage("https://image.tmdb.org/t/p/w185$it", person.name, Modifier.size(58.dp).clip(CircleShape), ContentScale.Crop) } ?: Surface(Modifier.size(58.dp), CircleShape, MaterialTheme.colorScheme.surfaceVariant) { Box(contentAlignment = Alignment.Center) { Icon(Icons.RoundedFilled.Person, null) } }
+                Text(person.name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                person.character?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+              }
+            }
+          }
+        }
         Spacer(Modifier.height(12.dp))
       }
     }

@@ -322,6 +322,23 @@ class JellyfinViewModel(
     }
   }
 
+  fun loadSeerrDetails(media: SeerrMediaItem) {
+    val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
+    val client = seerrClient ?: return
+    val key = "${media.mediaType}:${media.id}"
+    viewModelScope.launch {
+      _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(detailLoadingKey = key)) }
+      client.getDetails(url, media).fold(
+        onSuccess = { details ->
+          _uiState.update { state -> state.copy(seerrDiscover = state.seerrDiscover.copy(detailLoadingKey = null, details = state.seerrDiscover.details + (key to details))) }
+        },
+        onFailure = { error ->
+          _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(detailLoadingKey = null, error = error.message ?: "Unable to load Seerr details")) }
+        },
+      )
+    }
+  }
+
   fun requestSeerr(media: SeerrMediaItem, is4k: Boolean = false) {
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
