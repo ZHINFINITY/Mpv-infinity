@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +42,8 @@ class JellyfinViewModel(
   private var searchJob: Job? = null
   private var searchGeneration = 0L
   private var seerrClient: SeerrClient? = null
+  private var seerrSearchJob: Job? = null
+  private var seerrSearchGeneration = 0L
 
   private fun libraryItemTypes(collectionType: String?, libraryName: String = ""): String = when {
     libraryName.contains("anime", ignoreCase = true) ||
@@ -294,8 +297,8 @@ class JellyfinViewModel(
   }
 
   private suspend fun enrichSeerrItems(url: String, client: SeerrClient, items: List<SeerrMediaItem>): List<SeerrMediaItem> = withContext(Dispatchers.IO) {
-    items.map { item ->
-      client.getDetails(url, item).getOrDefault(item)
+    coroutineScope {
+      items.map { item -> async { client.getDetails(url, item).getOrDefault(item) } }.awaitAll()
     }
   }
 
@@ -324,19 +327,26 @@ class JellyfinViewModel(
     val compact = normalized.replace(Regex("\\s+"), "")
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
+    seerrSearchJob?.cancel()
+    seerrSearchGeneration += 1
+    val generation = seerrSearchGeneration
     if (normalized.isBlank()) {
       _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = "", searchResults = emptyList(), isSearching = false)) }
       return
     }
-    viewModelScope.launch {
-      _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = normalized, isSearching = true, error = null)) }
+    _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = normalized, isSearching = true, error = null)) }
+    seerrSearchJob = viewModelScope.launch {
+      delay(300L)
       val firstResult = client.search(url, normalized)
       val result = if (firstResult.getOrNull().isNullOrEmpty() && compact != normalized) client.search(url, compact) else firstResult
+      if (generation != seerrSearchGeneration) return@launch
       if (result.isSuccess) {
-        val enriched = enrichSeerrItems(url, client, result.getOrDefault(emptyList()))
-        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = enriched, isSearching = false)) }
-      } else {
-        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = emptyList(), isSearching = false, error = result.exceptionOrNull()?.message ?: "Seerr search failed")) }
+        val raw = result.getOrDefault(emptyList())
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = raw, isSearching = true)) }
+        val enriched = enrichSeerrItems(url, client, raw)
+        if (generation == seerrSearchGeneration) _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = enriched, isSearching = false)) }
+      } else if (generation == seerrSearchGeneration) {
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isSearching = false, error = result.exceptionOrNull()?.message ?: "Seerr search failed")) }
       }
     }
   }
