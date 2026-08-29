@@ -66,10 +66,11 @@ class JellyfinClient(
     }
   }
 
-  fun getStreamUrl(session: JellyfinSession, itemId: String): String {
+  fun getStreamUrl(session: JellyfinSession, itemId: String, isVideo: Boolean = true): String {
     val base = normalizeUrl(session.serverUrl)
     val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
-    return "$base/Videos/$itemId/stream?static=true&api_key=$encodedToken"
+    val mediaPath = if (isVideo) "Videos" else "Audio"
+    return "$base/$mediaPath/$itemId/stream?static=true&api_key=$encodedToken"
   }
 
   fun getImageUrl(session: JellyfinSession, itemId: String, imageTag: String? = null, maxWidth: Int = 600): String {
@@ -154,7 +155,14 @@ class JellyfinClient(
             val id = obj["Id"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val name = obj["Name"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val collectionType = obj["CollectionType"]?.jsonPrimitive?.contentOrNull
-            JellyfinCollection(id = id, name = name, collectionType = collectionType)
+            val imageTag = obj["ImageTags"]?.jsonObject?.get("Primary")?.jsonPrimitive?.contentOrNull
+            val artworkUrl = getImageUrl(session, id, imageTag, maxWidth = 900)
+            JellyfinCollection(
+              id = id,
+              name = name,
+              collectionType = collectionType,
+              artworkUrl = artworkUrl,
+            )
           }
         }
       }
@@ -261,9 +269,7 @@ class JellyfinClient(
     val ticks = obj["RunTimeTicks"]?.jsonPrimitive?.longOrNull ?: 0L
     val tag = obj["ImageTags"]?.jsonObject?.get("Primary")?.jsonPrimitive?.content
     val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
-    val artwork = tag?.let {
-      "${session.serverUrl}/Items/$id/Images/Primary?maxWidth=600&quality=90&tag=$it&api_key=$encodedToken"
-    }
+    val artwork = getImageUrl(session, id, tag, maxWidth = 600)
     val stream =
       when {
         mediaType.equals("Audio", ignoreCase = true) ->
