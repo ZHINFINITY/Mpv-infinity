@@ -201,6 +201,37 @@ class JellyfinClient(
     }
   }
 
+  suspend fun loadAllMedia(
+    session: JellyfinSession,
+    parentId: String,
+    sortBy: String = "DateCreated",
+    sortOrder: String = "Descending",
+    includeItemTypes: String? = null,
+    libraryName: String? = null,
+  ): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
+    runCatching {
+      val pageSize = 100
+      buildList {
+        var startIndex = 0
+        while (true) {
+          val page = loadMedia(
+            session = session,
+            parentId = parentId,
+            limit = pageSize,
+            startIndex = startIndex,
+            sortBy = sortBy,
+            sortOrder = sortOrder,
+            includeItemTypes = includeItemTypes,
+            libraryName = libraryName,
+          ).getOrThrow()
+          addAll(page)
+          if (page.size < pageSize) break
+          startIndex += page.size
+        }
+      }
+    }
+  }
+
   suspend fun loadSimilarItems(session: JellyfinSession, itemId: String, limit: Int = 12): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
     runCatching {
       val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
