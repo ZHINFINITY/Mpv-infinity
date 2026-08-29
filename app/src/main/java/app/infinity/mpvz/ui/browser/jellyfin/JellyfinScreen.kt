@@ -85,6 +85,8 @@ import androidx.compose.ui.unit.sp
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.PreferencesScreen
+import app.infinity.mpvz.ui.utils.LocalBackStack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -100,6 +102,7 @@ fun JellyfinScreen(
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val context = LocalContext.current
+  val backStack = LocalBackStack.current
 
   LaunchedEffect(httpClient) {
     viewModel.setHttpClient(httpClient)
@@ -125,6 +128,7 @@ private fun JellyfinLoginContent(
   var username by remember { mutableStateOf("") }
   var password by remember { mutableStateOf("") }
   var useToken by remember { mutableStateOf(false) }
+  val backStack = LocalBackStack.current
 
   Column(
     modifier = Modifier
@@ -151,8 +155,8 @@ private fun JellyfinLoginContent(
         IconButton(onClick = { showSeerrInfo = true }) {
           Icon(imageVector = Icons.RoundedFilled.PlaylistAdd, contentDescription = "Seerr requests")
         }
-        IconButton(onClick = { showAddServer = true }) {
-          Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "Jellyfin settings")
+        IconButton(onClick = { backStack.add(PreferencesScreen) }) {
+          Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "App settings")
         }
       },
       colors = TopAppBarDefaults.topAppBarColors(
@@ -320,8 +324,8 @@ private fun JellyfinLoginContent(
           } else {
             Button(
               onClick = {
-                if (useToken) viewModel.loginWithToken(serverUrl, username, password) { }
-                else viewModel.login(serverUrl, username, password) { }
+                if (useToken) viewModel.loginWithToken(serverUrl, username, password, serverName) { }
+                else viewModel.login(serverUrl, username, password, serverName) { }
               },
               modifier = Modifier.fillMaxWidth(),
               enabled = serverUrl.isNotBlank() && password.isNotBlank() && (useToken || username.isNotBlank()),
@@ -364,6 +368,7 @@ private fun JellyfinHomeContent(
   var isMoreMenuOpen by remember { mutableStateOf(false) }
   var isServerMenuOpen by remember { mutableStateOf(false) }
   var isSeerrInfoOpen by remember { mutableStateOf(false) }
+  val backStack = LocalBackStack.current
 
   BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
     when {
@@ -484,6 +489,12 @@ private fun JellyfinHomeContent(
             }
             IconButton(onClick = { isSearching = true }) {
               Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
+            }
+            IconButton(onClick = { isSeerrInfoOpen = true }) {
+              Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
+            }
+            IconButton(onClick = { backStack.add(PreferencesScreen) }) {
+              Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "App settings")
             }
             Box {
               IconButton(onClick = { isServerMenuOpen = true }) {
