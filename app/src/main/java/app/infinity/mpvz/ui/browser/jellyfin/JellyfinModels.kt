@@ -35,6 +35,7 @@ data class JellyfinTrack(
   val artworkUrl: String?,
   val streamUrl: String?,
   val mediaType: String = "Audio",
+  val libraryName: String? = null,
   val overview: String = "",
   val originalTitle: String? = null,
   val productionYear: Int? = null,
@@ -63,6 +64,10 @@ data class JellyfinTrack(
 
   val isPlayable: Boolean
     get() = !streamUrl.isNullOrBlank()
+
+  val isAnime: Boolean
+    get() = libraryName?.contains("anime", ignoreCase = true) == true ||
+      genres.any { it.contains("anime", ignoreCase = true) }
 
   val uri: Uri?
     get() = streamUrl?.let(Uri::parse)
@@ -116,6 +121,7 @@ data class JellyfinUiState(
   val topPicks: List<JellyfinTrack> = emptyList(),
   val latestMovies: List<JellyfinTrack> = emptyList(),
   val latestShows: List<JellyfinTrack> = emptyList(),
+  val latestAnime: List<JellyfinTrack> = emptyList(),
   val latestMusic: List<JellyfinTrack> = emptyList(),
   val currentItems: List<JellyfinTrack> = emptyList(),
   val openLibrary: JellyfinLibraryView? = null,

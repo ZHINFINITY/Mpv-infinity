@@ -621,7 +621,6 @@ private fun JellyfinHomeContent(
             isRefreshing = isRefreshing,
             onRefresh = {
               viewModel.refresh()
-              delay(900L)
             },
             modifier = Modifier.fillMaxSize(),
           ) {
@@ -1095,11 +1094,9 @@ private fun HomeDashboard(
       }
     }
 
-    // 5. Latest Movies
+    // 5. Movies
     if (uiState.latestMovies.isNotEmpty()) {
-      item {
-        SectionHeader(title = "Latest Movies", subtitle = "Newly added")
-      }
+      item { SectionHeader(title = "Movies", subtitle = "Recently added") }
       item {
         HorizontalSection(
           items = uiState.latestMovies,
@@ -1110,16 +1107,27 @@ private fun HomeDashboard(
       }
     }
 
-    // 4. Latest Shows
-    if (uiState.latestShows.isNotEmpty()) {
+    // 6. Anime
+    if (uiState.latestAnime.isNotEmpty()) {
+      item { SectionHeader(title = "Anime", subtitle = "From your anime library") }
       item {
-        SectionHeader(title = "Latest Episodes", subtitle = "Newly updated")
+        HorizontalSection(
+          items = uiState.latestAnime,
+          session = uiState.session!!,
+          onItemPlay = { if (it.isPlayable) viewModel.playItem(context, it) else viewModel.openDetail(it) },
+          onItemDetails = { viewModel.openDetail(it) },
+        )
       }
+    }
+
+    // 7. TV Shows
+    if (uiState.latestShows.isNotEmpty()) {
+      item { SectionHeader(title = "TV Shows", subtitle = "Recently updated") }
       item {
         HorizontalSection(
           items = uiState.latestShows,
           session = uiState.session!!,
-          onItemPlay = { viewModel.playItem(context, it) },
+          onItemPlay = { if (it.isPlayable) viewModel.playItem(context, it) else viewModel.openDetail(it) },
           onItemDetails = { viewModel.openDetail(it) },
         )
       }
@@ -1371,6 +1379,21 @@ private fun JellyfinHeroBanner(
           contentScale = ContentScale.Crop,
           modifier = Modifier.fillMaxSize(),
         )
+        item.qualityLabel?.let { quality ->
+          Surface(
+            modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
+            shape = RoundedCornerShape(6.dp),
+            color = Color.Black.copy(alpha = 0.62f),
+          ) {
+            Text(
+              text = quality,
+              modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+              style = MaterialTheme.typography.labelSmall,
+              fontWeight = FontWeight.Bold,
+              color = Color.White,
+            )
+          }
+        }
         Box(
           modifier = Modifier
             .fillMaxSize()
@@ -1426,6 +1449,22 @@ private fun JellyfinHeroBanner(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
+          if (item.communityRating != null || item.criticRating != null || item.officialRating != null || item.providerIds.containsKey("Imdb") || item.providerIds.containsKey("Tmdb")) {
+            Row(
+              modifier = Modifier.padding(top = 8.dp),
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              item.communityRating?.let {
+                HeroRatingBadge("★ ${String.format(java.util.Locale.US, "%.1f", it)}")
+              }
+              item.criticRating?.let {
+                HeroRatingBadge("RT ${String.format(java.util.Locale.US, "%.0f", it)}")
+              }
+              item.officialRating?.let { HeroRatingBadge("Rated $it") }
+              if (item.providerIds.containsKey("Imdb")) HeroRatingBadge("IMDb")
+              if (item.providerIds.containsKey("Tmdb")) HeroRatingBadge("TMDb")
+            }
+          }
           Spacer(modifier = Modifier.height(12.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
@@ -1612,7 +1651,7 @@ private fun PosterCard(
             RatingBadge("Rating", String.format(java.util.Locale.US, "%.1f/10", it))
           }
           track.criticRating?.let {
-            RatingBadge("Critics", String.format(java.util.Locale.US, "%.0f/100", it))
+            RatingBadge("RT", String.format(java.util.Locale.US, "%.0f/100", it))
           }
           track.providerIds["Imdb"]?.let { RatingBadge("IMDb", "linked") }
           track.providerIds["Tmdb"]?.let { RatingBadge("TMDb", "linked") }
@@ -1620,6 +1659,23 @@ private fun PosterCard(
         }
       }
     }
+  }
+}
+
+@Composable
+private fun HeroRatingBadge(text: String) {
+  Surface(
+    shape = RoundedCornerShape(5.dp),
+    color = Color.Black.copy(alpha = 0.58f),
+  ) {
+    Text(
+      text = text,
+      modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+      style = MaterialTheme.typography.labelSmall,
+      color = Color.White,
+      fontWeight = FontWeight.SemiBold,
+      maxLines = 1,
+    )
   }
 }
 
