@@ -39,10 +39,10 @@ class JellyfinViewModel(
   private var searchJob: Job? = null
   private var searchGeneration = 0L
 
-  private fun libraryItemTypes(collectionType: String?): String = when (collectionType?.lowercase()) {
-    "movies" -> "Movie"
-    "tvshows" -> "Series"
-    "music" -> "Audio,MusicAlbum,MusicArtist"
+  private fun libraryItemTypes(collectionType: String?, libraryName: String = ""): String = when {
+    collectionType.equals("movies", ignoreCase = true) && !libraryName.contains("anime", ignoreCase = true) -> "Movie"
+    collectionType.equals("tvshows", ignoreCase = true) || libraryName.contains("anime", ignoreCase = true) -> "Series"
+    collectionType.equals("music", ignoreCase = true) -> "Audio,MusicAlbum,MusicArtist"
     else -> "Movie,Series"
   }
 
@@ -224,7 +224,7 @@ class JellyfinViewModel(
               limit = 50,
               sortBy = "DateCreated",
               sortOrder = "Descending",
-              includeItemTypes = libraryItemTypes(lib.collectionType),
+              includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
             ).fold(
               onSuccess = { items -> allItems.addAll(items) },
               onFailure = { },
@@ -262,7 +262,7 @@ class JellyfinViewModel(
         JellyfinLibraryView(
           id = it.id,
           title = it.name,
-          itemTypes = libraryItemTypes(it.collectionType),
+          itemTypes = libraryItemTypes(it.collectionType, it.name),
           collectionType = it.collectionType,
           isMusic = it.collectionType == "music",
         )
@@ -403,9 +403,29 @@ class JellyfinViewModel(
   }
 
   fun playTracks(context: Context, tracks: List<JellyfinTrack>, index: Int) {
+    val session = _uiState.value.session ?: return
+    val client = httpClient ?: return
     if (tracks.isEmpty()) return
-    val track = tracks[index.coerceIn(tracks.indices)]
-    playItem(context, track)
+    val jellyfin = JellyfinClient(client, context)
+    val playableTracks = tracks.filter { it.isPlayable || it.isVideo }
+    if (playableTracks.isEmpty()) return
+    val safeIndex = index.coerceIn(0, playableTracks.lastIndex)
+    val track = playableTracks[safeIndex]
+    val playlist = ArrayList<Uri>(playableTracks.size)
+    playableTracks.forEach { item ->
+      playlist.add(Uri.parse(item.streamUrl ?: jellyfin.getStreamUrl(session, item.id, isVideo = item.isVideo)))
+    }
+    val intent = Intent(Intent.ACTION_VIEW, playlist[safeIndex]).apply {
+      setClass(context, Class.forName("app.infinity.mpvz.ui.player.PlayerActivity"))
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      putExtra("internal_launch", true)
+      putExtra("launch_source", "jellyfin")
+      putExtra("is_audio", !track.isVideo)
+      putExtra("title", track.title)
+      putParcelableArrayListExtra("playlist", playlist)
+      putExtra("playlist_index", safeIndex)
+    }
+    context.startActivity(intent)
   }
 
   fun openDetail(track: JellyfinTrack) {
