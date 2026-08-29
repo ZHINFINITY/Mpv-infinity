@@ -36,7 +36,8 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       put("username", username)
       put("password", password)
       put("hostname", hostname)
-      put("serverType", 3)
+      // Seerr's MediaServerType enum is PLEX=1, JELLYFIN=2, EMBY=3.
+      put("serverType", 2)
     })
 
   suspend fun verifyApiKey(baseUrl: String): Result<String> = request(baseUrl, "/auth/me")
@@ -115,11 +116,17 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       requestBuilder.post(requestBody)
     }
     httpClient.newCall(requestBuilder.build()).execute().use { response ->
-      if (!response.isSuccessful) error("Seerr returned HTTP ${response.code}")
+      val responseBody = response.body?.string().orEmpty()
+      if (!response.isSuccessful) {
+        val detail = runCatching {
+          json.parseToJsonElement(responseBody).jsonObject["message"]?.jsonPrimitive?.contentOrNull
+        }.getOrNull()
+        error(detail ?: "Seerr returned HTTP ${response.code}")
+      }
       response.headers("Set-Cookie").firstOrNull()?.let { cookie ->
         sessionCookie = cookie.substringBefore(';')
       }
-      response.body?.string().orEmpty()
+      responseBody
     }
   }
 
