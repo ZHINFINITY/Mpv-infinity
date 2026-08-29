@@ -175,11 +175,14 @@ class JellyfinClient(
     startIndex: Int = 0,
     sortBy: String = "DateCreated",
     sortOrder: String = "Descending",
+    includeItemTypes: String? = null,
   ): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
     runCatching {
       val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+      val typeParam = includeItemTypes?.takeIf { it.isNotBlank() }?.let { "&IncludeItemTypes=${URLEncoder.encode(it, Charsets.UTF_8.name())}" }.orEmpty()
       val url = "${session.serverUrl}/Users/${session.userId}/Items" +
         "?ParentId=$parentId&Limit=$limit&StartIndex=$startIndex" +
+        "" + typeParam +
         "&SortBy=$sortBy&SortOrder=$sortOrder&Recursive=true" +
         "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating,Genres,Studios,RemoteTrailers,ProviderIds" +
         "&api_key=$encodedToken"
@@ -190,6 +193,23 @@ class JellyfinClient(
         .build()
       httpClient.newCall(request).execute().use { response ->
         if (!response.isSuccessful) throw IOException("Failed to load Jellyfin media: HTTP ${response.code}")
+        val root = json.parseToJsonElement(response.body.string()).jsonObject
+        val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
+        items.mapNotNull { parseTrack(it.jsonObject, session) }
+      }
+    }
+  }
+
+  suspend fun loadSimilarItems(session: JellyfinSession, itemId: String, limit: Int = 12): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
+    runCatching {
+      val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+      val url = "${session.serverUrl}/Items/$itemId/Similar" +
+        "?UserId=${session.userId}&Limit=$limit" +
+        "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,CommunityRating,Genres,Studios,RemoteTrailers,ProviderIds" +
+        "&api_key=$encodedToken"
+      val request = Request.Builder().url(url).addJellyfinHeaders(session.accessToken).get().build()
+      httpClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw IOException("Failed to load related Jellyfin items: HTTP ${response.code}")
         val root = json.parseToJsonElement(response.body.string()).jsonObject
         val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
         items.mapNotNull { parseTrack(it.jsonObject, session) }
