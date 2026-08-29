@@ -65,6 +65,30 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
     return request(baseUrl, "/search?query=$encoded&page=1").map { parseResults(it, null) }
   }
 
+  suspend fun getDetails(baseUrl: String, media: SeerrMediaItem): Result<SeerrMediaItem> = request(
+    baseUrl,
+    "/${if (media.mediaType == "tv") "tv" else "movie"}/${media.id}",
+  ).map { raw ->
+    val root = json.parseToJsonElement(raw).jsonObject
+    val obj = root["mediaInfo"]?.jsonObject ?: root
+    val credits = root["credits"]?.jsonObject ?: obj["credits"]?.jsonObject
+    val cast = credits?.get("cast")?.jsonArray.orEmpty().mapNotNull { element ->
+      val person = element.jsonObject
+      val name = person["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+      SeerrCastMember(name, person["character"]?.jsonPrimitive?.contentOrNull, person["profilePath"]?.jsonPrimitive?.contentOrNull)
+    }.take(12)
+    val genres = obj["genres"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+    media.copy(
+      overview = obj["overview"]?.jsonPrimitive?.contentOrNull ?: media.overview,
+      posterPath = obj["posterPath"]?.jsonPrimitive?.contentOrNull ?: media.posterPath,
+      backdropPath = obj["backdropPath"]?.jsonPrimitive?.contentOrNull ?: media.backdropPath,
+      releaseDate = obj["releaseDate"]?.jsonPrimitive?.contentOrNull ?: obj["firstAirDate"]?.jsonPrimitive?.contentOrNull ?: media.releaseDate,
+      voteAverage = obj["voteAverage"]?.jsonPrimitive?.doubleOrNull ?: media.voteAverage,
+      genres = genres.ifEmpty { media.genres },
+      cast = cast,
+    )
+  }
+
   suspend fun requestMedia(baseUrl: String, media: SeerrMediaItem, is4k: Boolean = false): Result<Unit> = runCatching {
     val body = buildJsonObject {
       put("mediaType", if (media.mediaType == "tv") "tv" else "movie")
