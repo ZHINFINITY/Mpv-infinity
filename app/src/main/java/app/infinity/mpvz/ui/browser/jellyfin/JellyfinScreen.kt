@@ -86,6 +86,7 @@ import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
+import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -405,7 +406,6 @@ private fun JellyfinHomeContent(
   }
 
   val headerBg = if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
-
   Column(
     modifier = Modifier
       .fillMaxSize()
@@ -425,6 +425,7 @@ private fun JellyfinHomeContent(
         Column(
           modifier = Modifier
             .fillMaxWidth()
+            .statusBarsPadding()
             .padding(horizontal = 16.dp, vertical = 6.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -787,7 +788,7 @@ private fun JellyfinDetailPage(
     }
     LazyColumn(
       modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(bottom = 24.dp),
+      contentPadding = PaddingValues(bottom = 24.dp + LocalNavigationBarHeight.current),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       item {
@@ -900,6 +901,7 @@ private fun HomeDashboard(
 ) {
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(bottom = LocalNavigationBarHeight.current),
     verticalArrangement = Arrangement.spacedBy(20.dp),
   ) {
     // 1. Hero Banner
@@ -1033,7 +1035,7 @@ private fun LibraryContent(
     } else {
       LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + LocalNavigationBarHeight.current),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
