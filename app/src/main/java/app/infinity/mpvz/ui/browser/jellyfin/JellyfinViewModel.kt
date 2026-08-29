@@ -40,6 +40,7 @@ class JellyfinViewModel(
   private var httpClient: OkHttpClient? = null
   private var searchJob: Job? = null
   private var searchGeneration = 0L
+  private var seerrClient: SeerrClient? = null
 
   private fun libraryItemTypes(collectionType: String?, libraryName: String = ""): String = when {
     libraryName.contains("anime", ignoreCase = true) ||
@@ -235,6 +236,80 @@ class JellyfinViewModel(
     }
   }
 
+  fun connectSeerr(
+    url: String,
+    mode: SeerrAuthMode,
+    username: String,
+    secret: String,
+    onResult: (Boolean) -> Unit,
+  ) {
+    val client = httpClient ?: return onResult(false)
+    val normalizedUrl = SeerrClient.normalizeUrl(url)
+    viewModelScope.launch {
+      _uiState.update { it.copy(seerr = it.seerr.copy(url = normalizedUrl), seerrDiscover = it.seerrDiscover.copy(isLoading = true, error = null)) }
+      val seerr = seerrClient ?: SeerrClient(client).also { seerrClient = it }
+      val authResult = when (mode) {
+        SeerrAuthMode.API_KEY -> {
+          seerr.setApiKey(secret)
+          seerr.verifyApiKey(normalizedUrl)
+        }
+        SeerrAuthMode.LOCAL -> {
+          seerr.setApiKey(null)
+          seerr.loginLocal(normalizedUrl, username, secret)
+        }
+        SeerrAuthMode.JELLYFIN -> {
+          seerr.setApiKey(null)
+          seerr.loginJellyfin(normalizedUrl, username, secret, _uiState.value.activeServer?.serverUrl.orEmpty())
+        }
+      }
+      authResult.fold(
+        onSuccess = { userName ->
+          _uiState.update { it.copy(seerr = SeerrUiState(normalizedUrl, mode, true, true), seerrDiscover = it.seerrDiscover.copy(isConnected = true, userName = userName)) }
+          loadSeerrDiscover()
+          onResult(true)
+        },
+        onFailure = { error ->
+          _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = false, error = error.message ?: "Seerr connection failed")) }
+          onResult(false)
+        },
+      )
+    }
+  }
+
+  fun loadSeerrDiscover() {
+    val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
+    val client = seerrClient ?: return
+    viewModelScope.launch {
+      _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = true, error = null)) }
+      client.discover(url).fold(
+        onSuccess = { data -> _uiState.update { it.copy(seerrDiscover = data.copy(isLoading = false, isConnected = true), seerr = it.seerr.copy(isDashboardOpen = true)) } },
+        onFailure = { error -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = false, error = error.message ?: "Unable to load Seerr")) } },
+      )
+    }
+  }
+
+  fun requestSeerr(media: SeerrMediaItem) {
+    val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
+    val client = seerrClient ?: return
+    viewModelScope.launch {
+      client.requestMedia(url, media).onSuccess {
+        _uiState.update { state ->
+          state.copy(seerrDiscover = state.seerrDiscover.copy(
+            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(requested = true) else it },
+            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(requested = true) else it },
+            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(requested = true) else it },
+          ))
+        }
+      }
+    }
+  }
+
+  fun disconnectSeerr() {
+    seerrClient = null
+    _uiState.update { it.copy(seerr = SeerrUiState(), seerrDiscover = SeerrDiscoverState()) }
+    prefs.edit().remove("seerr_url").remove("seerr_api_key").apply()
+  }
+
   fun logout() {
     _uiState.update { JellyfinUiState() }
     prefs.edit().clear().apply()
@@ -374,7 +449,8 @@ class JellyfinViewModel(
     // pull-to-refresh feel instant while the refreshed dashboard loads below it.
     val state = _uiState.value
     val nextRotation = state.heroRotation + 1
-    val nextHeroItems = mixedHeroItems(state.currentItems.filter { it.isVideo }, nextRotation)
+    val rotatedHeroItems = mixedHeroItems(state.currentItems.filter { it.isVideo }, nextRotation)
+    val nextHeroItems = rotatedHeroItems.ifEmpty { state.heroItems }
     _uiState.update { it.copy(heroRotation = nextRotation, heroItems = nextHeroItems) }
     viewModelScope.launch { loadHome(session) }
   }

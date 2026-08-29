@@ -166,6 +166,7 @@ data class JellyfinUiState(
   val isAuthenticating: Boolean = false,
   val authError: String? = null,
   val seerr: SeerrUiState = SeerrUiState(),
+  val seerrDiscover: SeerrDiscoverState = SeerrDiscoverState(),
 )
 
 data class JellyfinServerProfile(

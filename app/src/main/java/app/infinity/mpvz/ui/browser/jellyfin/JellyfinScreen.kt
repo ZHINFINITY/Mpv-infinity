@@ -82,7 +82,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.sp
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
@@ -405,14 +404,16 @@ private fun JellyfinHomeContent(
   val isRefreshing = remember { mutableStateOf(false) }
   val backStack = LocalBackStack.current
 
-  if (isSeerrDashboardOpen && seerrUrl.isNotBlank()) {
+  if (isSeerrDashboardOpen) {
     SeerrDashboard(
-      url = seerrUrl,
+      state = uiState.seerrDiscover,
       onBack = { isSeerrDashboardOpen = false },
+      onRefresh = { viewModel.loadSeerrDiscover() },
+      onRequest = { viewModel.requestSeerr(it) },
       onDisconnect = {
+        viewModel.disconnectSeerr()
         seerrUrl = ""
         isSeerrDashboardOpen = false
-        context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE).edit().remove("seerr_url").apply()
       },
     )
     return
@@ -825,8 +826,7 @@ private fun JellyfinHomeContent(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
           )
-          if (seerrAuthMode != SeerrAuthMode.JELLYFIN) {
-            OutlinedTextField(
+          OutlinedTextField(
               value = seerrUsername,
               onValueChange = { seerrUsername = it },
               label = { Text(if (seerrAuthMode == SeerrAuthMode.API_KEY) "API key" else "Username") },
@@ -835,7 +835,7 @@ private fun JellyfinHomeContent(
               modifier = Modifier.fillMaxWidth(),
               shape = RoundedCornerShape(16.dp),
             )
-            if (seerrAuthMode == SeerrAuthMode.LOCAL) {
+            if (seerrAuthMode != SeerrAuthMode.API_KEY) {
               OutlinedTextField(
                 value = seerrPassword,
                 onValueChange = { seerrPassword = it },
@@ -847,7 +847,6 @@ private fun JellyfinHomeContent(
                 shape = RoundedCornerShape(16.dp),
               )
             }
-          }
           Button(
             onClick = {
               val enteredUrl = seerrUrl.trim().removeSuffix("/")
@@ -860,14 +859,22 @@ private fun JellyfinHomeContent(
                   .putString("seerr_auth_mode", seerrAuthMode.name)
                   .putString("seerr_username", seerrUsername)
                   .apply()
-                isSeerrInfoOpen = false
-                isSeerrDashboardOpen = true
+                val secret = if (seerrAuthMode == SeerrAuthMode.API_KEY) seerrUsername else seerrPassword
+                viewModel.connectSeerr(url, seerrAuthMode, seerrUsername, secret) { success ->
+                  if (success) {
+                    isSeerrInfoOpen = false
+                    isSeerrDashboardOpen = true
+                  }
+                }
               }
             },
-            enabled = seerrUrl.isNotBlank(),
+            enabled = seerrUrl.isNotBlank() && (seerrAuthMode == SeerrAuthMode.JELLYFIN || seerrUsername.isNotBlank()),
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
           ) { Text("Connect") }
+          uiState.seerrDiscover.error?.let { error ->
+            Text(error, color = MaterialTheme.colorScheme.error)
+          }
           Spacer(modifier = Modifier.height(8.dp))
         }
       }
@@ -877,44 +884,72 @@ private fun JellyfinHomeContent(
 
 @Composable
 private fun SeerrDashboard(
-  url: String,
+  state: SeerrDiscoverState,
   onBack: () -> Unit,
+  onRefresh: () -> Unit,
+  onRequest: (SeerrMediaItem) -> Unit,
   onDisconnect: () -> Unit,
 ) {
-  Column(
-    modifier = Modifier
-      .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
-      .statusBarsPadding(),
-  ) {
+  Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
     TopAppBar(
       title = { Text("Discover", color = MaterialTheme.colorScheme.primary) },
-      navigationIcon = {
-        IconButton(onClick = onBack) {
-          Icon(imageVector = Icons.RoundedFilled.ArrowBack, contentDescription = "Back")
-        }
-      },
+      navigationIcon = { IconButton(onClick = onBack) { Icon(imageVector = Icons.RoundedFilled.ArrowBack, contentDescription = "Back") } },
       actions = {
-        IconButton(onClick = onDisconnect) {
-          Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = "Disconnect Seerr")
-        }
+        IconButton(onClick = onRefresh) { Icon(imageVector = Icons.RoundedFilled.Refresh, contentDescription = "Refresh Discover") }
+        IconButton(onClick = onDisconnect) { Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = "Disconnect Seerr") }
       },
       colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
     )
-    AndroidView(
-      modifier = Modifier.fillMaxSize(),
-      factory = { viewContext ->
-        android.webkit.WebView(viewContext).apply {
-          settings.javaScriptEnabled = true
-          settings.domStorageEnabled = true
-          settings.loadsImagesAutomatically = true
-          settings.mediaPlaybackRequiresUserGesture = false
-          webViewClient = android.webkit.WebViewClient()
-          android.webkit.CookieManager.getInstance().setAcceptCookie(true)
-          loadUrl(url)
+    if (state.isLoading && state.movies.isEmpty() && state.shows.isEmpty()) {
+      Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    } else if (state.error != null && state.movies.isEmpty() && state.shows.isEmpty()) {
+      Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text(state.error, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onRefresh) { Text("Retry") }
+      }
+    } else {
+      LazyColumn(contentPadding = PaddingValues(bottom = LocalNavigationBarHeight.current), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        state.trending.takeIf { it.isNotEmpty() }?.let { trending ->
+          item { SectionHeader(title = "Trending", subtitle = "Popular on Seerr") }
+          item { SeerrRail(items = trending, onRequest = onRequest) }
         }
-      },
-    )
+        item { SectionHeader(title = "Movies", subtitle = "Discover movies") }
+        item { SeerrRail(items = state.movies, onRequest = onRequest) }
+        item { SectionHeader(title = "TV Shows", subtitle = "Discover series") }
+        item { SeerrRail(items = state.shows, onRequest = onRequest) }
+      }
+    }
+  }
+}
+
+@Composable
+private fun SeerrRail(items: List<SeerrMediaItem>, onRequest: (SeerrMediaItem) -> Unit) {
+  LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
+    items(items, key = { "seerr-${it.mediaType}-${it.id}" }) { item ->
+      SeerrPosterCard(item = item, onRequest = onRequest)
+    }
+  }
+}
+
+@Composable
+private fun SeerrPosterCard(item: SeerrMediaItem, onRequest: (SeerrMediaItem) -> Unit) {
+  val imageUrl = item.posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
+  Column(modifier = Modifier.width(132.dp)) {
+    Box(modifier = Modifier.fillMaxWidth().height(198.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+      if (imageUrl != null) {
+        RemoteImage(url = imageUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+      }
+      item.voteAverage?.takeIf { it > 0 }?.let { rating ->
+        Surface(modifier = Modifier.align(Alignment.TopStart).padding(6.dp), shape = RoundedCornerShape(7.dp), color = Color.Black.copy(alpha = 0.78f)) {
+          Text("★ ${String.format(java.util.Locale.US, "%.1f", rating)}", modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
+        }
+      }
+    }
+    Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+    OutlinedButton(onClick = { onRequest(item) }, enabled = !item.requested, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+      Text(if (item.requested) "Requested" else "Request", maxLines = 1)
+    }
   }
 }
 
