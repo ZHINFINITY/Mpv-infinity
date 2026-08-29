@@ -99,8 +99,11 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
     val requestRecords = root["requests"]?.jsonArray ?: mediaInfo?.get("requests")?.jsonArray
     val hasRequest = requestRecords?.isNotEmpty() == true || mediaStatus.contains("requested", true) || mediaStatus.contains("processing", true)
     val has4kRequest = requestRecords?.any { it.jsonObject["is4k"]?.jsonPrimitive?.booleanOrNull == true } == true
-    val available = mediaStatus.equals("available", true) || !jellyfinMediaId.isNullOrBlank()
-    val partialStatus = mediaStatus.contains("partial", true) || mediaStatus.contains("partially", true)
+    val isTv = media.mediaType.equals("tv", true)
+    val allSeasonsAvailable = seasons.isNotEmpty() && seasons.all { it.available }
+    val someSeasonsAvailable = seasons.any { it.available }
+    val available = if (isTv && seasons.isNotEmpty()) allSeasonsAvailable else mediaStatus.equals("available", true) || !jellyfinMediaId.isNullOrBlank()
+    val partialStatus = mediaStatus.contains("partial", true) || mediaStatus.contains("partially", true) || (isTv && someSeasonsAvailable && !allSeasonsAvailable)
     media.copy(
       overview = obj["overview"]?.jsonPrimitive?.contentOrNull ?: media.overview,
       posterPath = obj["posterPath"]?.jsonPrimitive?.contentOrNull ?: media.posterPath,

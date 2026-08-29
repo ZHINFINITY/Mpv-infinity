@@ -392,8 +392,6 @@ private fun JellyfinHomeContent(
   val scope = rememberCoroutineScope()
   var isSearching by remember { mutableStateOf(false) }
   var isSortDialogOpen by remember { mutableStateOf(false) }
-  var isMoreMenuOpen by remember { mutableStateOf(false) }
-  var isServerMenuOpen by remember { mutableStateOf(false) }
   var isProfileMenuOpen by remember { mutableStateOf(false) }
   var isServerManagerOpen by remember { mutableStateOf(false) }
   var isSeerrInfoOpen by remember { mutableStateOf(false) }
@@ -426,11 +424,8 @@ private fun JellyfinHomeContent(
       onSearch = { viewModel.searchSeerr(it) },
       onOpenDetails = { viewModel.loadSeerrDetails(it) },
       onPlay = { media ->
-        val catalog = (uiState.currentItems + uiState.latestMovies + uiState.latestShows + uiState.latestAnime + uiState.topPicks).distinctBy { it.id }
-        val match = catalog.firstOrNull { item -> item.id == media.jellyfinMediaId || item.title.equals(media.title, ignoreCase = true) }
-        if (match != null) {
-          if (match.mediaType.equals("Series", true)) viewModel.openDetail(match) else viewModel.playItem(context, match)
-        }
+        isSeerrDashboardOpen = false
+        viewModel.playSeerrMedia(context, media)
       },
       onRequest = { media, is4k, seasons, audio -> viewModel.requestSeerr(media, is4k, seasons, audio) },
       onDisconnect = {
@@ -566,9 +561,6 @@ private fun JellyfinHomeContent(
             }
           },
           actions = {
-            IconButton(onClick = { isSearching = true }) {
-              Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
-            }
             IconButton(onClick = { if (uiState.seerrDiscover.isConnected) isSeerrDashboardOpen = true else { viewModel.resetSeerrConnectionState(); seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }; isSeerrInfoOpen = true } }) {
               Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
             }
@@ -578,33 +570,11 @@ private fun JellyfinHomeContent(
               }
               DropdownMenu(expanded = isProfileMenuOpen, onDismissRequest = { isProfileMenuOpen = false }) {
                 DropdownMenuItem(text = { Text(uiState.activeServer?.username ?: "Jellyfin account") }, onClick = { })
-                DropdownMenuItem(
-                  text = { Text("Disconnect") },
-                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = null) },
-                  onClick = { isProfileMenuOpen = false; viewModel.logout() },
-                )
-              }
-            }
-            IconButton(onClick = { isServerManagerOpen = true }) {
-              Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers")
-            }
-            IconButton(onClick = { backStack.add(PreferencesScreen) }) {
-              Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "App settings")
-            }
-            Box {
-              DropdownMenu(expanded = isServerMenuOpen, onDismissRequest = { isServerMenuOpen = false }) {
-                Text("Active server", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                uiState.servers.forEach { server ->
-                  DropdownMenuItem(
-                    text = { Text(if (server.id == uiState.activeServer?.id) "✓ ${server.name}" else server.name) },
-                    onClick = { isServerMenuOpen = false; viewModel.switchServer(server) },
-                  )
-                }
-                DropdownMenuItem(
-                  text = { Text("Manage servers") },
-                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = null) },
-                  onClick = { isServerMenuOpen = false; isServerManagerOpen = true },
-                )
+                DropdownMenuItem(text = { Text("Search") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = null) }, onClick = { isProfileMenuOpen = false; isSearching = true })
+                DropdownMenuItem(text = { Text("Manage servers") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = null) }, onClick = { isProfileMenuOpen = false; isServerManagerOpen = true })
+                DropdownMenuItem(text = { Text("Settings") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = null) }, onClick = { isProfileMenuOpen = false; backStack.add(PreferencesScreen) })
+                DropdownMenuItem(text = { Text("Refresh") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Refresh, contentDescription = null) }, onClick = { isProfileMenuOpen = false; viewModel.refresh() })
+                DropdownMenuItem(text = { Text("Disconnect") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = null) }, onClick = { isProfileMenuOpen = false; viewModel.logout() })
               }
             }
             if (uiState.openLibrary != null) {
@@ -631,39 +601,7 @@ private fun JellyfinHomeContent(
                 }
               }
             }
-            Box {
-              IconButton(onClick = { isMoreMenuOpen = true }) {
-                Icon(imageVector = Icons.RoundedFilled.MoreVert, contentDescription = "More Jellyfin options")
-              }
-              DropdownMenu(
-                expanded = isMoreMenuOpen,
-                onDismissRequest = { isMoreMenuOpen = false },
-              ) {
-                DropdownMenuItem(
-                  text = { Text("Manage servers") },
-                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = null) },
-                  onClick = { isMoreMenuOpen = false; isServerManagerOpen = true },
-                )
-                DropdownMenuItem(
-                  text = { Text("Seerr requests") },
-                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
-                  onClick = {
-                    isMoreMenuOpen = false
-                    viewModel.resetSeerrConnectionState()
-                    seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }
-                    isSeerrInfoOpen = true
-                  },
-                )
-                DropdownMenuItem(
-                  text = { Text("Disconnect") },
-                  leadingIcon = { Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = null) },
-                  onClick = {
-                    isMoreMenuOpen = false
-                    viewModel.logout()
-                  },
-                )
-              }
-            }
+
           },
           colors = TopAppBarDefaults.topAppBarColors(containerColor = headerBg),
         )
@@ -1601,7 +1539,8 @@ private fun JellyfinHeroBanner(
 ) {
   if (items.isEmpty()) return
 
-  val pagerState = rememberPagerState(pageCount = { items.size })
+  val initialPage = remember(items.size) { Int.MAX_VALUE / 2 - (Int.MAX_VALUE / 2) % items.size }
+  val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { Int.MAX_VALUE })
 
   LaunchedEffect(pagerState.settledPage, items.size) {
     if (items.size > 1) {
@@ -1620,7 +1559,7 @@ private fun JellyfinHeroBanner(
       .clip(RoundedCornerShape(20.dp)),
   ) {
     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-      val item = items[page]
+      val item = items[page % items.size]
       val artworkUrl = remember(session.serverUrl, item.id, session.accessToken) {
         "${session.serverUrl}/Items/${item.id}/Images/Backdrop?maxWidth=1280&quality=80&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
       }
@@ -1756,8 +1695,8 @@ private fun JellyfinHeroBanner(
       repeat(5) { index ->
         Surface(
           shape = CircleShape,
-          color = if (pagerState.currentPage == index) Color.White else Color.White.copy(alpha = 0.42f),
-          modifier = Modifier.size(if (pagerState.currentPage == index) 7.dp else 5.dp),
+          color = if (pagerState.currentPage % items.size == index) Color.White else Color.White.copy(alpha = 0.42f),
+          modifier = Modifier.size(if (pagerState.currentPage % items.size == index) 7.dp else 5.dp),
         ) {}
       }
     }
