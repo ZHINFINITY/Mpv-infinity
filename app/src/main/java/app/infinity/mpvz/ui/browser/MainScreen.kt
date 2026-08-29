@@ -168,6 +168,7 @@ object MainScreen : Screen {
     val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val hideNavigationBar = NavigationBarState.shouldHideNavigationBar
     val isPermissionDenied = NavigationBarState.isPermissionDenied
+    val isPermissionStateInitialized = NavigationBarState.isPermissionStateInitialized
     val isDualPaneFolderSelected = NavigationBarState.isDualPaneFolderSelected
     val isMiniPlayerVisible = NavigationBarState.isMiniPlayerVisible
 
@@ -198,7 +199,7 @@ object MainScreen : Screen {
       }
     }
     SideEffect {
-      NavigationBarState.isNavBarVisible = !hideNavigationBar && visibleTabs.isNotEmpty() && !isPermissionDenied
+      NavigationBarState.isNavBarVisible = isPermissionStateInitialized && !hideNavigationBar && visibleTabs.isNotEmpty() && !isPermissionDenied
     }
 
     val scope = rememberCoroutineScope()
@@ -355,7 +356,7 @@ object MainScreen : Screen {
 
         // Animated bottom navigation bar with slide animations
         AnimatedVisibility(
-          visible = !hideNavigationBar && visibleTabs.isNotEmpty() && !isPermissionDenied,
+          visible = isPermissionStateInitialized && !hideNavigationBar && visibleTabs.isNotEmpty() && !isPermissionDenied,
           enter =
             slideInVertically(
               animationSpec =

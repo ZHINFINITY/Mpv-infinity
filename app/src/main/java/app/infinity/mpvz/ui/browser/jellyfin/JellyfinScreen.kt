@@ -5,12 +5,16 @@
 package app.infinity.mpvz.ui.browser.jellyfin
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -112,10 +116,16 @@ fun JellyfinScreen(
   LaunchedEffect(httpClient) {
     viewModel.setHttpClient(httpClient)
   }
-  if (uiState.session == null) {
-    JellyfinLoginContent(uiState = uiState, viewModel = viewModel)
-  } else {
-    JellyfinHomeContent(uiState = uiState, viewModel = viewModel, context = context)
+  AnimatedContent(
+    targetState = uiState.session != null,
+    transitionSpec = {
+      (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 10 }) togetherWith
+        (fadeOut(tween(160)) + slideOutHorizontally(tween(180)) { -it / 10 })
+    },
+    label = "jellyfin_connection_transition",
+  ) { connected ->
+    if (connected) JellyfinHomeContent(uiState = uiState, viewModel = viewModel, context = context)
+    else JellyfinLoginContent(uiState = uiState, viewModel = viewModel)
   }
 }
 
@@ -567,21 +577,19 @@ private fun JellyfinHomeContent(
             IconButton(onClick = { if (uiState.seerrDiscover.isConnected) isSeerrDashboardOpen = true else { viewModel.resetSeerrConnectionState(); seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }; isSeerrInfoOpen = true } }) {
               Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
             }
-            IconButton(onClick = { isServerManagerOpen = true }) {
-              Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers")
-            }
-            IconButton(onClick = { backStack.add(PreferencesScreen) }) {
-              Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "App settings")
-            }
             Box {
               IconButton(onClick = { isProfileMenuOpen = true }) {
                 Icon(imageVector = Icons.RoundedFilled.Person, contentDescription = "Jellyfin profile")
               }
               DropdownMenu(expanded = isProfileMenuOpen, onDismissRequest = { isProfileMenuOpen = false }) {
                 DropdownMenuItem(text = { Text(uiState.activeServer?.username ?: "Jellyfin account") }, onClick = { })
+                DropdownMenuItem(text = { Text("Manage servers") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = null) }, onClick = { isProfileMenuOpen = false; isServerManagerOpen = true })
                 DropdownMenuItem(text = { Text("Refresh") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Refresh, contentDescription = null) }, onClick = { isProfileMenuOpen = false; viewModel.refresh() })
                 DropdownMenuItem(text = { Text("Disconnect") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = null) }, onClick = { isProfileMenuOpen = false; viewModel.logout() })
               }
+            }
+            IconButton(onClick = { backStack.add(PreferencesScreen) }) {
+              Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "App settings")
             }
             if (uiState.openLibrary != null) {
               Box {
