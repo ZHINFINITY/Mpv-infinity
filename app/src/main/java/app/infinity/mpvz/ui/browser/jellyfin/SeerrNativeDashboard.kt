@@ -194,7 +194,7 @@ internal fun SeerrNativeDashboard(
             }
           }
         }
-        Button(onClick = { onRequest(detailedMedia, is4k, selectedSeasons.takeIf { isTv }, audioPreference) }, enabled = canRequest, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (detailedMedia.isRequesting) "Requesting…" else if (detailedMedia.requested) "Requested" else "Request ${if (isTv) "Selected Seasons" else "Movie"}") }
+        Button(onClick = { onRequest(detailedMedia, is4k, selectedSeasons.takeIf { isTv }?.toList(), audioPreference) }, enabled = canRequest, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (detailedMedia.isRequesting) "Requesting…" else if (detailedMedia.requested) "Requested" else "Request ${if (isTv) "Selected Seasons" else "Movie"}") }
         if (detailedMedia.isRequesting) Text("Submitting request…", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         if (detailedMedia.requested) Text(if (detailedMedia.requested4k) "Request submitted for 4K" else "Request submitted", color = Color(0xFF43A047), fontWeight = FontWeight.SemiBold)
         if (detailedMedia.availableInJellyfin && detailedMedia.jellyfinMediaId != null) OutlinedButton(onClick = { onPlay(detailedMedia); selected = null }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Icon(Icons.RoundedFilled.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (isTv) "Open in Jellyfin" else "Play in mpv∞") }
