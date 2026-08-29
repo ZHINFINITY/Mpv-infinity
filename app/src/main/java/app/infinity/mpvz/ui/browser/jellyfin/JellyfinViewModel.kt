@@ -54,15 +54,18 @@ class JellyfinViewModel(
     else -> "Movie,Series"
   }
 
-  private fun mixedHeroItems(items: List<JellyfinTrack>): List<JellyfinTrack> {
+  private fun mixedHeroItems(items: List<JellyfinTrack>, rotation: Int = 0): List<JellyfinTrack> {
     val movies = items.filter { it.mediaType.equals("Movie", ignoreCase = true) }.distinctBy { it.id }
     val series = items.filter { it.mediaType.equals("Series", ignoreCase = true) }.distinctBy { it.id }
-    return buildList {
+    val mixed = buildList {
       for (index in 0 until maxOf(movies.size, series.size)) {
         movies.getOrNull(index)?.let(::add)
         series.getOrNull(index)?.let(::add)
       }
-    }.take(8)
+    }
+    if (mixed.isEmpty()) return emptyList()
+    val offset = rotation.mod(mixed.size)
+    return (mixed.drop(offset) + mixed.take(offset)).take(8)
   }
 
   private fun groupShows(items: List<JellyfinTrack>): List<JellyfinTrack> {
@@ -233,38 +236,52 @@ class JellyfinViewModel(
     withContext(Dispatchers.IO) {
       jellyfin.loadLibraries(session).fold(
         onSuccess = { libs ->
-          val watchHistory = jellyfin.loadWatchHistory(session).getOrDefault(emptyList())
-          val serverTopPicks = watchHistory.firstOrNull()?.let { historyItem ->
-            jellyfin.loadSimilarItems(session, historyItem.id, limit = 20).getOrDefault(emptyList())
-          }.orEmpty()
-          _uiState.update { it.copy(libraries = libs, watchHistory = watchHistory, topPicks = serverTopPicks) }
-          val allItems = libs.map { lib ->
-            async(Dispatchers.IO) {
-              jellyfin.loadMedia(
-                session = session,
-                parentId = lib.id,
-                limit = 50,
-                sortBy = "DateCreated",
-                sortOrder = "Descending",
-                includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
-              ).getOrDefault(emptyList())
-            }
-          }.awaitAll().flatten().toMutableList()
+          val historyDeferred = async(Dispatchers.IO) {
+            jellyfin.loadWatchHistory(session).getOrDefault(emptyList())
+          }
+          val mediaDeferred = async(Dispatchers.IO) {
+            libs.map { lib ->
+              async(Dispatchers.IO) {
+                jellyfin.loadMedia(
+                  session = session,
+                  parentId = lib.id,
+                  limit = 50,
+                  sortBy = "DateCreated",
+                  sortOrder = "Descending",
+                  includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
+                ).getOrDefault(emptyList())
+              }
+            }.awaitAll().flatten()
+          }
+          val watchHistory = historyDeferred.await()
+          val allItems = mediaDeferred.await()
           val videos = allItems.filter { it.isVideo }
           val audio = allItems.filter { !it.isVideo }
-          val fallbackTopPicks = mixedHeroItems(videos)
-            .filterNot { candidate -> watchHistory.any { it.id == candidate.id } }
+          val rotation = _uiState.value.heroRotation + 1
+          val heroItems = mixedHeroItems(videos, rotation)
+          val fallbackTopPicks = heroItems.filterNot { candidate -> watchHistory.any { it.id == candidate.id } }
           _uiState.update { state ->
             state.copy(
-              heroItems = mixedHeroItems(videos),
+              libraries = libs,
+              heroItems = heroItems,
+              heroRotation = rotation,
               watchHistory = watchHistory,
-              topPicks = serverTopPicks.ifEmpty { fallbackTopPicks },
+              topPicks = fallbackTopPicks,
               latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
               latestShows = groupShows(videos).take(20),
               latestMusic = audio.take(20),
               currentItems = allItems,
               isLoading = false,
             )
+          }
+          // Similar-items is optional enrichment. It must never delay or clear the usable dashboard.
+          viewModelScope.launch(Dispatchers.IO) {
+            val serverTopPicks = watchHistory.firstOrNull()?.let { historyItem ->
+              jellyfin.loadSimilarItems(session, historyItem.id, limit = 20).getOrDefault(emptyList())
+            }.orEmpty()
+            if (serverTopPicks.isNotEmpty()) {
+              _uiState.update { state -> state.copy(topPicks = serverTopPicks) }
+            }
           }
         },
         onFailure = { e ->
@@ -334,6 +351,7 @@ class JellyfinViewModel(
   fun loadMore() {
     val session = _uiState.value.session ?: return
     val libraryId = _uiState.value.selectedLibraryId ?: return
+    val libraryTypes = _uiState.value.openLibrary?.itemTypes
     val client = httpClient ?: return
     if (_uiState.value.isLoadingMore || !_uiState.value.hasMore) return
     viewModelScope.launch {
@@ -347,6 +365,7 @@ class JellyfinViewModel(
           startIndex = _uiState.value.currentItems.size,
           sortBy = _uiState.value.sortBy.apiValue,
           sortOrder = _uiState.value.sortOrder.apiValue,
+          includeItemTypes = libraryTypes,
         ).fold(
           onSuccess = { newItems ->
             _uiState.update {
@@ -369,6 +388,17 @@ class JellyfinViewModel(
     _uiState.update { it.copy(searchQuery = query) }
   }
 
+  fun clearSearch() {
+    searchJob?.cancel()
+    searchGeneration += 1
+    val libraryId = _uiState.value.selectedLibraryId
+    _uiState.update { it.copy(searchQuery = "", currentItems = if (libraryId == null) it.currentItems else emptyList(), error = null) }
+    if (libraryId != null) loadLibrary(libraryId) else {
+      val session = _uiState.value.session ?: return
+      viewModelScope.launch { loadHome(session) }
+    }
+  }
+
   fun setMusicTab(tab: JellyfinMusicTab) {
     _uiState.update { it.copy(musicActiveTab = tab) }
   }
@@ -385,11 +415,11 @@ class JellyfinViewModel(
     val session = _uiState.value.session ?: return
     val client = httpClient ?: return
     if (normalizedQuery.isBlank()) {
-      _uiState.update { it.copy(currentItems = emptyList(), searchQuery = "", isLoading = false, error = null) }
+      clearSearch()
       return
     }
     searchJob = viewModelScope.launch {
-      _uiState.update { it.copy(isLoading = true, searchQuery = query, error = null, openLibrary = null) }
+      _uiState.update { it.copy(isLoading = true, searchQuery = query, error = null) }
       delay(250L)
       val jellyfin = JellyfinClient(client, getApplication())
       withContext(Dispatchers.IO) {

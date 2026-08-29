@@ -108,6 +108,7 @@ data class JellyfinUiState(
   val session: JellyfinSession? = null,
   val libraries: List<JellyfinCollection> = emptyList(),
   val heroItems: List<JellyfinTrack> = emptyList(),
+  val heroRotation: Int = 0,
   val resumeItems: List<JellyfinTrack> = emptyList(),
   val watchHistory: List<JellyfinTrack> = emptyList(),
   val topPicks: List<JellyfinTrack> = emptyList(),

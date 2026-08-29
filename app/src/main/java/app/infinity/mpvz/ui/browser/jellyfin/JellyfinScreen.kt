@@ -388,8 +388,7 @@ private fun JellyfinHomeContent(
       uiState.detailItem != null -> viewModel.closeDetail()
       isSearching -> {
         isSearching = false
-        viewModel.setSearchQuery("")
-        viewModel.refresh()
+        viewModel.clearSearch()
       }
       else -> viewModel.navigateBack()
     }
@@ -436,11 +435,7 @@ private fun JellyfinHomeContent(
         .fillMaxWidth()
         .background(headerBg),
     ) {
-      AnimatedVisibility(
-        visible = isSearching,
-        enter = slideInVertically() + fadeIn(),
-        exit = slideOutVertically() + fadeOut(),
-      ) {
+      if (isSearching) {
         Column(
           modifier = Modifier
             .fillMaxWidth()
@@ -458,11 +453,9 @@ private fun JellyfinHomeContent(
             trailingIcon = {
               IconButton(onClick = {
                 if (uiState.searchQuery.isNotEmpty()) {
-                  viewModel.setSearchQuery("")
-                  viewModel.refresh()
-                } else {
-                  isSearching = false
+                  viewModel.clearSearch()
                 }
+                isSearching = false
               }) {
                 Icon(imageVector = Icons.RoundedFilled.Close, contentDescription = null)
               }
