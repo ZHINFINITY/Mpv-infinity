@@ -361,6 +361,7 @@ private fun JellyfinHomeContent(
   var isSortDialogOpen by remember { mutableStateOf(false) }
   var isMoreMenuOpen by remember { mutableStateOf(false) }
   var isServerMenuOpen by remember { mutableStateOf(false) }
+  var isServerManagerOpen by remember { mutableStateOf(false) }
   var isSeerrInfoOpen by remember { mutableStateOf(false) }
   var seerrUrl by remember {
     mutableStateOf(
@@ -369,6 +370,11 @@ private fun JellyfinHomeContent(
         .orEmpty(),
     )
   }
+  var serverUrl by remember { mutableStateOf("") }
+  var serverName by remember { mutableStateOf("") }
+  var serverUsername by remember { mutableStateOf("") }
+  var serverPassword by remember { mutableStateOf("") }
+  var useToken by remember { mutableStateOf(false) }
   val backStack = LocalBackStack.current
 
   BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
@@ -403,8 +409,7 @@ private fun JellyfinHomeContent(
   Column(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background)
-      .statusBarsPadding(),
+      .background(MaterialTheme.colorScheme.background),
   ) {
     // Top Bar
     Column(
@@ -485,22 +490,19 @@ private fun JellyfinHomeContent(
             }
           },
           actions = {
-            IconButton(onClick = { viewModel.refresh() }) {
-              Icon(imageVector = Icons.RoundedFilled.Refresh, contentDescription = "Refresh")
-            }
             IconButton(onClick = { isSearching = true }) {
               Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
             }
             IconButton(onClick = { isSeerrInfoOpen = true }) {
               Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
             }
+            IconButton(onClick = { isServerManagerOpen = true }) {
+              Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers")
+            }
             IconButton(onClick = { backStack.add(PreferencesScreen) }) {
               Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "App settings")
             }
             Box {
-              IconButton(onClick = { isServerMenuOpen = true }) {
-                Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = "Active Jellyfin server")
-              }
               DropdownMenu(expanded = isServerMenuOpen, onDismissRequest = { isServerMenuOpen = false }) {
                 Text("Active server", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 uiState.servers.forEach { server ->
@@ -512,7 +514,7 @@ private fun JellyfinHomeContent(
                 DropdownMenuItem(
                   text = { Text("Manage servers") },
                   leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = null) },
-                  onClick = { isServerMenuOpen = false; isMoreMenuOpen = true },
+                  onClick = { isServerMenuOpen = false; isServerManagerOpen = true },
                 )
               }
             }
@@ -551,7 +553,7 @@ private fun JellyfinHomeContent(
                 DropdownMenuItem(
                   text = { Text("Manage servers") },
                   leadingIcon = { Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = null) },
-                  onClick = { isMoreMenuOpen = false; isServerMenuOpen = true },
+                  onClick = { isMoreMenuOpen = false; isServerManagerOpen = true },
                 )
                 DropdownMenuItem(
                   text = { Text("Seerr requests") },
@@ -608,6 +610,100 @@ private fun JellyfinHomeContent(
         // Library content or search results
         else -> {
           LibraryContent(uiState = uiState, viewModel = viewModel, context = context)
+        }
+      }
+    }
+
+    if (isServerManagerOpen) {
+      Dialog(onDismissRequest = { if (!uiState.isAuthenticating) isServerManagerOpen = false }) {
+        Surface(
+          shape = RoundedCornerShape(28.dp),
+          color = MaterialTheme.colorScheme.surface,
+          tonalElevation = 8.dp,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text("Manage Jellyfin servers", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("Switch servers or add another connection", color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              IconButton(onClick = { isServerManagerOpen = false }, enabled = !uiState.isAuthenticating) {
+                Icon(imageVector = Icons.RoundedFilled.Close, contentDescription = "Close")
+              }
+            }
+            uiState.servers.forEach { server ->
+              FilledTonalButton(
+                onClick = { isServerManagerOpen = false; viewModel.switchServer(server) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+              ) {
+                Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(if (server.id == uiState.activeServer?.id) "Connected: ${server.name}" else "Use ${server.name}")
+              }
+            }
+            Text("Add another server", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+              value = serverUrl,
+              onValueChange = { serverUrl = it },
+              label = { Text("Server address") },
+              placeholder = { Text("jellyfin.example.com:8096") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(16.dp),
+            )
+            OutlinedTextField(
+              value = serverName,
+              onValueChange = { serverName = it },
+              label = { Text("Profile name") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(16.dp),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              FilterChip(selected = !useToken, onClick = { useToken = false }, label = { Text("Credentials") })
+              FilterChip(selected = useToken, onClick = { useToken = true }, label = { Text("API token") })
+            }
+            OutlinedTextField(
+              value = serverUsername,
+              onValueChange = { serverUsername = it },
+              label = { Text(if (useToken) "User ID" else "Username") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(16.dp),
+            )
+            OutlinedTextField(
+              value = serverPassword,
+              onValueChange = { serverPassword = it },
+              label = { Text(if (useToken) "API token" else "Password") },
+              visualTransformation = PasswordVisualTransformation(),
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(16.dp),
+            )
+            Button(
+              onClick = {
+                if (useToken) viewModel.loginWithToken(serverUrl, serverUsername, serverPassword, serverName) { success -> if (success) isServerManagerOpen = false }
+                else viewModel.login(serverUrl, serverUsername, serverPassword, serverName) { success -> if (success) isServerManagerOpen = false }
+              },
+              enabled = serverUrl.isNotBlank() && serverPassword.isNotBlank() && (useToken || serverUsername.isNotBlank()) && !uiState.isAuthenticating,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(18.dp),
+            ) {
+              Icon(imageVector = Icons.RoundedFilled.Add, contentDescription = null)
+              Spacer(modifier = Modifier.width(8.dp))
+              Text("Add server")
+            }
+            uiState.authError?.let { error -> Text(error, color = MaterialTheme.colorScheme.error) }
+          }
         }
       }
     }
