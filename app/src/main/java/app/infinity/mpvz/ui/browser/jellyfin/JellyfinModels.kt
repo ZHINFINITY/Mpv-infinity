@@ -50,6 +50,8 @@ data class JellyfinTrack(
   val qualityLabel: String? = null,
   val trailerUrl: String? = null,
   val studio: String? = null,
+  val playbackPositionMs: Long = 0L,
+  val lastPlayedDate: String? = null,
 ) {
   val isVideo: Boolean
     get() = mediaType.equals("Movie", ignoreCase = true) ||

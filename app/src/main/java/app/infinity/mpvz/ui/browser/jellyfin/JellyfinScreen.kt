@@ -51,6 +51,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
@@ -1076,6 +1077,7 @@ private fun HomeDashboard(
             session = uiState.session,
             onItemPlay = { if (it.isPlayable) viewModel.playItem(context, it) else viewModel.openDetail(it) },
             onItemDetails = { viewModel.openDetail(it) },
+            showProgress = true,
           )
         }
       } else if (!uiState.isLoading) {
@@ -1134,19 +1136,6 @@ private fun HomeDashboard(
       }
     }
 
-    // 5. Music
-    if (uiState.latestMusic.isNotEmpty()) {
-      item {
-        SectionHeader(title = "Music", subtitle = "Albums & Tracks")
-      }
-      item {
-        HorizontalSection(
-          items = uiState.latestMusic,
-          session = uiState.session!!,
-          onItemPlay = { viewModel.playItem(context, it) },
-        )
-      }
-    }
   }
 }
 
@@ -1162,17 +1151,24 @@ private fun LibraryContent(
     return
   }
   var selectedGenre by remember(uiState.selectedLibraryId) { mutableStateOf<String?>(null) }
-  val genres = remember(uiState.currentItems) {
-    uiState.currentItems.flatMap { it.genres }.distinct().sorted()
+  val libraryItems = remember(uiState.currentItems, uiState.openLibrary?.itemTypes) {
+    when (uiState.openLibrary?.itemTypes) {
+      "Movie" -> uiState.currentItems.filter { it.mediaType.equals("Movie", ignoreCase = true) }
+      "Series" -> uiState.currentItems.filter { it.mediaType.equals("Series", ignoreCase = true) }
+      else -> uiState.currentItems
+    }
+  }
+  val genres = remember(libraryItems) {
+    libraryItems.flatMap { it.genres }.distinct().sorted()
   }
   val categoryItems = if (uiState.searchQuery.isBlank()) {
-    uiState.currentItems
+    libraryItems
   } else {
     when (uiState.searchCategory) {
-      JellyfinSearchCategory.ALL -> uiState.currentItems
-      JellyfinSearchCategory.MOVIES -> uiState.currentItems.filter { it.mediaType.equals("Movie", ignoreCase = true) }
-      JellyfinSearchCategory.SHOWS -> uiState.currentItems.filter { it.mediaType.equals("Series", ignoreCase = true) || it.mediaType.equals("Season", ignoreCase = true) }
-      JellyfinSearchCategory.EPISODES -> uiState.currentItems.filter { it.mediaType.equals("Episode", ignoreCase = true) }
+      JellyfinSearchCategory.ALL -> libraryItems
+      JellyfinSearchCategory.MOVIES -> libraryItems.filter { it.mediaType.equals("Movie", ignoreCase = true) }
+      JellyfinSearchCategory.SHOWS -> libraryItems.filter { it.mediaType.equals("Series", ignoreCase = true) || it.mediaType.equals("Season", ignoreCase = true) }
+      JellyfinSearchCategory.EPISODES -> libraryItems.filter { it.mediaType.equals("Episode", ignoreCase = true) }
     }
   }
   val visibleItems = if (selectedGenre == null) categoryItems else categoryItems.filter { selectedGenre in it.genres }
@@ -1504,6 +1500,7 @@ private fun HorizontalSection(
   session: JellyfinSession,
   onItemPlay: (JellyfinTrack) -> Unit,
   onItemDetails: (JellyfinTrack) -> Unit = onItemPlay,
+  showProgress: Boolean = false,
 ) {
   if (items.isEmpty()) return
   LazyRow(
@@ -1511,7 +1508,7 @@ private fun HorizontalSection(
     contentPadding = PaddingValues(horizontal = 16.dp),
   ) {
     items(items, key = { it.id }) { item ->
-      PosterCard(track = item, session = session, onClick = { onItemDetails(item) })
+      PosterCard(track = item, session = session, onClick = { onItemDetails(item) }, cardWidth = if (showProgress) 170.dp else 136.dp, showProgress = showProgress)
     }
   }
 }
@@ -1523,6 +1520,7 @@ private fun PosterCard(
   session: JellyfinSession,
   onClick: () -> Unit,
   cardWidth: androidx.compose.ui.unit.Dp = 136.dp,
+  showProgress: Boolean = false,
 ) {
   val imageUrl = remember(session.serverUrl, track.id, session.accessToken, track.artworkUrl) {
     track.artworkUrl ?: "${session.serverUrl}/Items/${track.id}/Images/Primary?maxWidth=600&quality=90&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
@@ -1547,6 +1545,15 @@ private fun PosterCard(
         contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxSize(),
       )
+      if (showProgress && track.durationMs > 0L && track.playbackPositionMs > 0L) {
+        val progress = (track.playbackPositionMs.toFloat() / track.durationMs.toFloat()).coerceIn(0f, 1f)
+        LinearProgressIndicator(
+          progress = { progress },
+          modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
+          color = MaterialTheme.colorScheme.primary,
+          trackColor = Color.Black.copy(alpha = 0.55f),
+        )
+      }
       track.qualityLabel?.let { quality ->
         Surface(
           modifier = Modifier.align(Alignment.TopStart).padding(6.dp),

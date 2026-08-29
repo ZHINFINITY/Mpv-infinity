@@ -254,7 +254,12 @@ class JellyfinClient(
       }
       (runCatching { query("IsResumable") }.getOrDefault(emptyList()) +
         runCatching { query("IsPlayed") }.getOrDefault(emptyList()))
-        .distinctBy { it.id }
+        .groupBy { it.id }
+        .values
+        .mapNotNull { records ->
+          records.maxWithOrNull(compareBy<JellyfinTrack> { it.lastPlayedDate.orEmpty() }.thenBy { it.playbackPositionMs })
+        }
+        .sortedByDescending { it.lastPlayedDate.orEmpty() }
         .take(limit)
     }
   }
@@ -367,6 +372,9 @@ class JellyfinClient(
       obj["ParentIndexNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
     }
     val episodeNumber = obj["IndexNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    val userData = obj["UserData"]?.jsonObject
+    val playbackPositionMs = (userData?.get("PlaybackPositionTicks")?.jsonPrimitive?.longOrNull ?: 0L) / 10_000L
+    val lastPlayedDate = userData?.get("LastPlayedDate")?.jsonPrimitive?.contentOrNull
     val chapterCount = obj["Chapters"]?.jsonArray?.size ?: 0
     val genres = obj["Genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
     val videoStream = obj["MediaStreams"]?.jsonArray?.firstOrNull {
@@ -414,6 +422,8 @@ class JellyfinClient(
       qualityLabel = quality,
       trailerUrl = trailer,
       studio = studio,
+      playbackPositionMs = playbackPositionMs,
+      lastPlayedDate = lastPlayedDate,
     )
   }
 
