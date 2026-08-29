@@ -547,7 +547,7 @@ private fun JellyfinHomeContent(
             IconButton(onClick = { isSearching = true }) {
               Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
             }
-            IconButton(onClick = { if (uiState.seerrDiscover.isConnected) isSeerrDashboardOpen = true else { seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }; isSeerrInfoOpen = true } }) {
+            IconButton(onClick = { if (uiState.seerrDiscover.isConnected) isSeerrDashboardOpen = true else { viewModel.resetSeerrConnectionState(); seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }; isSeerrInfoOpen = true } }) {
               Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
             }
             IconButton(onClick = { isServerManagerOpen = true }) {
@@ -614,6 +614,7 @@ private fun JellyfinHomeContent(
                   leadingIcon = { Icon(imageVector = Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                   onClick = {
                     isMoreMenuOpen = false
+                    viewModel.resetSeerrConnectionState()
                     seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }
                     isSeerrInfoOpen = true
                   },

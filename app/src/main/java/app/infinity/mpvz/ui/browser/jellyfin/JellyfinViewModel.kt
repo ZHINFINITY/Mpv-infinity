@@ -251,7 +251,12 @@ class JellyfinViewModel(
       listOf("https://$enteredUrl", "http://$enteredUrl")
     }
     viewModelScope.launch {
-      _uiState.update { it.copy(seerr = it.seerr.copy(url = enteredUrl), seerrDiscover = it.seerrDiscover.copy(isLoading = true, error = null)) }
+      _uiState.update {
+        it.copy(
+          seerr = it.seerr.copy(url = enteredUrl, isConnected = false, isDashboardOpen = false),
+          seerrDiscover = it.seerrDiscover.copy(isConnected = false, isLoading = true, error = null),
+        )
+      }
       val seerr = seerrClient ?: SeerrClient(client).also { seerrClient = it }
       suspend fun authenticate(candidate: String): Result<String> = when (mode) {
         SeerrAuthMode.API_KEY -> {
@@ -286,6 +291,10 @@ class JellyfinViewModel(
         },
       )
     }
+  }
+
+  fun resetSeerrConnectionState() {
+    _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isConnected = false, isLoading = false, error = null)) }
   }
 
   fun loadSeerrDiscover() {
