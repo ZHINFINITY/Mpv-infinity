@@ -425,7 +425,14 @@ private fun JellyfinHomeContent(
       onRefresh = { viewModel.loadSeerrDiscover() },
       onSearch = { viewModel.searchSeerr(it) },
       onOpenDetails = { viewModel.loadSeerrDetails(it) },
-      onRequest = { media, is4k -> viewModel.requestSeerr(media, is4k) },
+      onPlay = { media ->
+        val catalog = (uiState.currentItems + uiState.latestMovies + uiState.latestShows + uiState.latestAnime + uiState.topPicks).distinctBy { it.id }
+        val match = catalog.firstOrNull { item -> item.id == media.jellyfinMediaId || item.title.equals(media.title, ignoreCase = true) }
+        if (match != null) {
+          if (match.mediaType.equals("Series", true)) viewModel.openDetail(match) else viewModel.playItem(context, match)
+        }
+      },
+      onRequest = { media, is4k, seasons, audio -> viewModel.requestSeerr(media, is4k, seasons, audio) },
       onDisconnect = {
         viewModel.disconnectSeerr()
         seerrUrl = ""

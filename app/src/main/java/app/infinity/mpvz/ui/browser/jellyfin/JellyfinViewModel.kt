@@ -339,7 +339,12 @@ class JellyfinViewModel(
     }
   }
 
-  fun requestSeerr(media: SeerrMediaItem, is4k: Boolean = false) {
+  fun requestSeerr(
+    media: SeerrMediaItem,
+    is4k: Boolean = false,
+    seasons: List<Int>? = null,
+    audioPreference: SeerrAudioPreference = SeerrAudioPreference.DEFAULT,
+  ) {
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
     _uiState.update { state -> state.copy(seerrDiscover = state.seerrDiscover.copy(
@@ -349,7 +354,7 @@ class JellyfinViewModel(
       searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
     )) }
     viewModelScope.launch {
-      client.requestMedia(url, media, is4k).onSuccess {
+      client.requestMedia(url, media, is4k, seasons, audioPreference).onSuccess {
         _uiState.update { state ->
           state.copy(seerrDiscover = state.seerrDiscover.copy(
             movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
