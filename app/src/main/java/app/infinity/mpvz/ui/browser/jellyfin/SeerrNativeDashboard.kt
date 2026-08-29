@@ -63,7 +63,8 @@ internal fun SeerrNativeDashboard(
   onRefresh: () -> Unit,
   onSearch: (String) -> Unit,
   onOpenDetails: (SeerrMediaItem) -> Unit,
-  onRequest: (SeerrMediaItem, Boolean) -> Unit,
+  onPlay: (SeerrMediaItem) -> Unit,
+  onRequest: (SeerrMediaItem, Boolean, List<Int>?, SeerrAudioPreference) -> Unit,
   onDisconnect: () -> Unit,
 ) {
   var searchOpen by remember { mutableStateOf(false) }
@@ -117,7 +118,7 @@ internal fun SeerrNativeDashboard(
         sections.forEach { (title, items) ->
           if (items.isNotEmpty()) {
             item { SeerrNativeSection(title, if (title == "Search results") "Results from Seerr" else "Browse and request media") }
-            item { SeerrNativeRail(items, onRequest) { selected = it; onOpenDetails(it) } }
+            item { SeerrNativeRail(items) { selected = it; onOpenDetails(it) } }
           }
         }
         if (searchOpen && state.isSearching) item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
@@ -129,19 +130,56 @@ internal fun SeerrNativeDashboard(
     val detailKey = "${media.mediaType}:${media.id}"
     val detailedMedia = state.details[detailKey] ?: media
     var is4k by remember(media.id) { mutableStateOf(false) }
+    var selectedSeasons by remember(detailedMedia.id, detailedMedia.seasons) { mutableStateOf(detailedMedia.seasons.filterNot { it.available || it.requested }.map { it.seasonNumber }.toSet()) }
+    var audioPreference by remember(detailedMedia.id) { mutableStateOf(SeerrAudioPreference.DEFAULT) }
+    val isTv = detailedMedia.mediaType == "tv"
+    val canRequest = !detailedMedia.requested && !detailedMedia.isRequesting && (!isTv || selectedSeasons.isNotEmpty())
     ModalBottomSheet(onDismissRequest = { selected = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainer) {
       Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.Top) {
-          detailedMedia.posterPath?.let { RemoteImage("https://image.tmdb.org/t/p/w342$it", detailedMedia.title, Modifier.width(112.dp).height(168.dp).clip(RoundedCornerShape(10.dp)), ContentScale.Crop) }
+          Box(Modifier.width(112.dp).height(168.dp).clip(RoundedCornerShape(10.dp))) {
+            detailedMedia.posterPath?.let { RemoteImage("https://image.tmdb.org/t/p/w342$it", detailedMedia.title, Modifier.fillMaxSize(), ContentScale.Crop) }
+              ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.RoundedFilled.Movie, null) }
+            when {
+              detailedMedia.availableInJellyfin -> Surface(Modifier.align(Alignment.TopCenter).padding(5.dp), RoundedCornerShape(5.dp), Color(0xFF2E7D32)) { Text("Available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+              detailedMedia.partiallyAvailable -> Surface(Modifier.align(Alignment.TopCenter).padding(5.dp), RoundedCornerShape(5.dp), Color(0xFFE65100)) { Text("Partially available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+            }
+            if (detailedMedia.availableInJellyfin) Surface(Modifier.align(Alignment.Center), CircleShape, Color.Black.copy(alpha = .72f)) { Icon(Icons.RoundedFilled.PlayArrow, "Play in mpv∞", Modifier.padding(9.dp).size(25.dp), tint = Color.White) }
+          }
           Column(Modifier.weight(1f)) {
             Text(detailedMedia.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             detailedMedia.releaseDate?.take(4)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             detailedMedia.voteAverage?.takeIf { it > 0 }?.let { Text("★ ${String.format(java.util.Locale.US, "%.1f", it)} / 10", color = Color(0xFFFFC107), fontWeight = FontWeight.Bold) }
+            when {
+              detailedMedia.availableInJellyfin -> Text("Available in Jellyfin", color = Color(0xFF43A047), fontWeight = FontWeight.Bold)
+              detailedMedia.partiallyAvailable -> Text("Partially available", color = Color(0xFFFF9800), fontWeight = FontWeight.Bold)
+            }
             if (detailedMedia.genres.isNotEmpty()) Text(detailedMedia.genres.joinToString("  •  "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 2)
           }
         }
-        Text("Request ${if (media.mediaType == "tv") "TV Show" else "Movie"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Button(onClick = { onRequest(media, is4k); selected = null }, enabled = !media.requested && !media.isRequesting, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (media.isRequesting) "Requesting…" else if (media.requested) "Requested" else "Request ${if (media.mediaType == "tv") "TV Show" else "Movie"}") }
+        Text("Request ${if (isTv) "TV Show" else "Movie"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        if (isTv && detailedMedia.seasons.isNotEmpty()) {
+          Text("Choose seasons", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          detailedMedia.seasons.forEach { season ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+              Column(Modifier.weight(1f)) {
+                Text(season.name)
+                Text(when { season.available -> "Available in Jellyfin"; season.requested -> "Already requested"; else -> "Not available" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              OutlinedButton(onClick = { if (!season.available && !season.requested) selectedSeasons = if (season.seasonNumber in selectedSeasons) selectedSeasons - season.seasonNumber else selectedSeasons + season.seasonNumber }, enabled = !season.available && !season.requested) { Text(if (season.seasonNumber in selectedSeasons) "Selected" else if (season.available) "Available" else "Request") }
+            }
+          }
+        }
+        if (isTv && detailedMedia.genres.any { it.contains("anime", true) } || detailedMedia.title.contains("anime", true)) {
+          Text("Anime audio", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SeerrAudioPreference.values().forEach { option ->
+              OutlinedButton(onClick = { audioPreference = option }) { Text(if (audioPreference == option) "✓ ${option.label}" else option.label) }
+            }
+          }
+        }
+        Button(onClick = { onRequest(detailedMedia, is4k, selectedSeasons.takeIf { isTv }, audioPreference); selected = null }, enabled = canRequest, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (detailedMedia.isRequesting) "Requesting…" else if (detailedMedia.requested) "Requested" else "Request ${if (isTv) "Selected Seasons" else "Movie"}") }
+        if (detailedMedia.availableInJellyfin && detailedMedia.jellyfinMediaId != null) OutlinedButton(onClick = { onPlay(detailedMedia); selected = null }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Icon(Icons.RoundedFilled.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (isTv) "Open in Jellyfin" else "Play in mpv∞") }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
           Text("Request in 4K", style = MaterialTheme.typography.titleMedium)
           Switch(checked = is4k, onCheckedChange = { is4k = it })
@@ -181,14 +219,19 @@ private fun SeerrAccountBanner(state: SeerrDiscoverState, onDisconnect: () -> Un
 private fun SeerrNativeSection(title: String, subtitle: String) { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 
 @Composable
-private fun SeerrNativeRail(items: List<SeerrMediaItem>, onRequest: (SeerrMediaItem, Boolean) -> Unit, onOpen: (SeerrMediaItem) -> Unit) { LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(items, key = { "native-seerr-${it.mediaType}-${it.id}" }) { SeerrNativeCard(it, onRequest, onOpen) } } }
+private fun SeerrNativeRail(items: List<SeerrMediaItem>, onOpen: (SeerrMediaItem) -> Unit) { LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(items, key = { "native-seerr-${it.mediaType}-${it.id}" }) { SeerrNativeCard(it, onOpen) } } }
 
 @Composable
-private fun SeerrNativeCard(item: SeerrMediaItem, onRequest: (SeerrMediaItem, Boolean) -> Unit, onOpen: (SeerrMediaItem) -> Unit) {
+private fun SeerrNativeCard(item: SeerrMediaItem, onOpen: (SeerrMediaItem) -> Unit) {
   Column(Modifier.width(138.dp)) {
     Box(Modifier.fillMaxWidth().height(204.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest).clickable { onOpen(item) }) {
       item.posterPath?.let { RemoteImage("https://image.tmdb.org/t/p/w500$it", item.title, Modifier.fillMaxSize(), ContentScale.Crop) } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(if (item.mediaType == "tv") Icons.RoundedFilled.SmartDisplay else Icons.RoundedFilled.Movie, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
       item.voteAverage?.takeIf { it > 0 }?.let { Surface(Modifier.align(Alignment.TopStart).padding(6.dp), RoundedCornerShape(6.dp), Color.Black.copy(alpha = .75f)) { Text("★ ${String.format(java.util.Locale.US, "%.1f", it)}", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), color = Color(0xFFFFC107), style = MaterialTheme.typography.labelSmall) } }
+      when {
+        item.availableInJellyfin -> Surface(Modifier.align(Alignment.TopCenter).padding(top = 6.dp), RoundedCornerShape(6.dp), Color(0xFF2E7D32)) { Text("Available", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+        item.partiallyAvailable -> Surface(Modifier.align(Alignment.TopCenter).padding(top = 6.dp), RoundedCornerShape(6.dp), Color(0xFFE65100)) { Text("Partially available", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+      }
+      if (item.availableInJellyfin) Surface(Modifier.align(Alignment.Center), CircleShape, Color.Black.copy(alpha = .72f)) { Icon(Icons.RoundedFilled.PlayArrow, "Play in mpv∞", Modifier.padding(12.dp).size(28.dp), tint = Color.White) }
       if (item.requested) Surface(Modifier.align(Alignment.TopEnd).padding(6.dp), RoundedCornerShape(6.dp), Color(0xFF1B5E20)) { Text(if (item.requested4k) "4K requested" else "Requested", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
     }
     Text(item.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)

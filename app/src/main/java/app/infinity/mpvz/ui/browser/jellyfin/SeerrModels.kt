@@ -6,6 +6,20 @@ data class SeerrCastMember(
   val profilePath: String? = null,
 )
 
+data class SeerrSeason(
+  val seasonNumber: Int,
+  val name: String = "Season $seasonNumber",
+  val episodeCount: Int = 0,
+  val available: Boolean = false,
+  val requested: Boolean = false,
+)
+
+enum class SeerrAudioPreference(val label: String) {
+  DEFAULT("Default audio"),
+  DUB("Dub"),
+  SUB("Subtitles"),
+}
+
 data class SeerrMediaItem(
   val id: Int,
   val title: String,
@@ -17,6 +31,10 @@ data class SeerrMediaItem(
   val voteAverage: Double? = null,
   val genres: List<String> = emptyList(),
   val cast: List<SeerrCastMember> = emptyList(),
+  val seasons: List<SeerrSeason> = emptyList(),
+  val availableInJellyfin: Boolean = false,
+  val partiallyAvailable: Boolean = false,
+  val jellyfinMediaId: String? = null,
   val requested: Boolean = false,
   val requested4k: Boolean = false,
   val isRequesting: Boolean = false,

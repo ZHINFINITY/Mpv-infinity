@@ -2,7 +2,9 @@ package app.infinity.mpvz.ui.browser.jellyfin
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
@@ -78,6 +80,23 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       SeerrCastMember(name, person["character"]?.jsonPrimitive?.contentOrNull, person["profilePath"]?.jsonPrimitive?.contentOrNull)
     }.take(12)
     val genres = obj["genres"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+    val mediaInfo = root["mediaInfo"]?.jsonObject
+    val jellyfinMediaId = mediaInfo?.get("jellyfinMediaId")?.jsonPrimitive?.contentOrNull
+    val seasons = obj["seasons"]?.jsonArray.orEmpty().mapNotNull { element ->
+      val season = element.jsonObject
+      val number = season["seasonNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+      val status = season["status"]?.jsonPrimitive?.contentOrNull.orEmpty().lowercase()
+      SeerrSeason(
+        seasonNumber = number,
+        name = season["name"]?.jsonPrimitive?.contentOrNull ?: "Season $number",
+        episodeCount = season["episodeCount"]?.jsonPrimitive?.intOrNull ?: 0,
+        available = season["available"]?.jsonPrimitive?.booleanOrNull == true || status == "available",
+        requested = season["requested"]?.jsonPrimitive?.booleanOrNull == true || status.contains("requested") || status.contains("processing"),
+      )
+    }
+    val mediaStatus = mediaInfo?.get("status")?.jsonPrimitive?.contentOrNull.orEmpty()
+    val available = mediaStatus.equals("available", true) || !jellyfinMediaId.isNullOrBlank()
+    val partialStatus = mediaStatus.contains("partial", true) || mediaStatus.contains("partially", true)
     media.copy(
       overview = obj["overview"]?.jsonPrimitive?.contentOrNull ?: media.overview,
       posterPath = obj["posterPath"]?.jsonPrimitive?.contentOrNull ?: media.posterPath,
@@ -86,14 +105,26 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       voteAverage = obj["voteAverage"]?.jsonPrimitive?.doubleOrNull ?: media.voteAverage,
       genres = genres.ifEmpty { media.genres },
       cast = cast,
+      seasons = seasons.ifEmpty { media.seasons },
+      availableInJellyfin = available || media.availableInJellyfin,
+      partiallyAvailable = partialStatus || (!available && seasons.any { it.available }) || (seasons.any { it.available } && seasons.any { !it.available }),
+      jellyfinMediaId = jellyfinMediaId ?: media.jellyfinMediaId,
     )
   }
 
-  suspend fun requestMedia(baseUrl: String, media: SeerrMediaItem, is4k: Boolean = false): Result<Unit> = runCatching {
+  suspend fun requestMedia(
+    baseUrl: String,
+    media: SeerrMediaItem,
+    is4k: Boolean = false,
+    seasons: List<Int>? = null,
+    audioPreference: SeerrAudioPreference = SeerrAudioPreference.DEFAULT,
+  ): Result<Unit> = runCatching {
     val body = buildJsonObject {
       put("mediaType", if (media.mediaType == "tv") "tv" else "movie")
       put("mediaId", media.id)
       put("is4k", is4k)
+      seasons?.takeIf { it.isNotEmpty() }?.let { selected -> put("seasons", buildJsonArray { selected.forEach(::add) }) }
+      if (audioPreference != SeerrAudioPreference.DEFAULT) put("audioPreference", audioPreference.name.lowercase())
     }
     request(baseUrl, "/request", "POST", body).getOrThrow()
     Unit
