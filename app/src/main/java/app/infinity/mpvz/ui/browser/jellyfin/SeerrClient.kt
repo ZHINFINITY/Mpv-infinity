@@ -14,7 +14,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.net.URLEncoder
+import java.net.URI
 
 internal class SeerrClient(private val httpClient: OkHttpClient) {
   private val json = Json { ignoreUnknownKeys = true }
@@ -31,13 +31,12 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       put("password", password)
     })
 
-  suspend fun loginJellyfin(baseUrl: String, username: String, password: String, hostname: String): Result<String> =
+  // Matches mpvRx: Seerr resolves the Jellyfin server configured on Seerr itself.
+  // Do not send hostname/serverType; those fields make otherwise valid logins fail on many installs.
+  suspend fun loginJellyfin(baseUrl: String, username: String, password: String): Result<String> =
     postAuth(baseUrl, "/auth/jellyfin", buildJsonObject {
       put("username", username)
       put("password", password)
-      put("hostname", hostname)
-      // Seerr's MediaServerType enum is PLEX=1, JELLYFIN=2, EMBY=3.
-      put("serverType", 2)
     })
 
   suspend fun verifyApiKey(baseUrl: String): Result<String> = request(baseUrl, "/auth/me")
@@ -131,9 +130,22 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
   }
 
   companion object {
-    fun normalizeUrl(value: String): String {
-      val trimmed = value.trim().removeSuffix("/")
-      return if (trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)) trimmed else "https://$trimmed"
+    fun generateCandidateUrls(input: String): List<String> {
+      val trimmed = input.trim().removeSuffix("/")
+      if (trimmed.isBlank()) return emptyList()
+      val hasScheme = trimmed.startsWith("http://", true) || trimmed.startsWith("https://", true)
+      val parsed = runCatching { URI(if (hasScheme) trimmed else "http://$trimmed") }.getOrNull()
+      val host = parsed?.host?.takeIf { it.isNotBlank() } ?: trimmed
+      val port = parsed?.port ?: -1
+      return when {
+        hasScheme && port != -1 -> listOf(trimmed)
+        !hasScheme && port != -1 -> listOf("https://$trimmed", "http://$trimmed")
+        hasScheme && parsed?.scheme.equals("https", true) -> listOf(trimmed, "https://$host:5055")
+        hasScheme && parsed?.scheme.equals("http", true) -> listOf(trimmed, "http://$host:5055")
+        else -> listOf("https://$host", "https://$host:5055", "http://$host:5055", "http://$host")
+      }
     }
+
+    fun normalizeUrl(value: String): String = generateCandidateUrls(value).firstOrNull().orEmpty()
   }
 }
