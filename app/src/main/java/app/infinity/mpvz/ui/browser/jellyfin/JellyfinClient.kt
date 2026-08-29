@@ -224,6 +224,12 @@ class JellyfinClient(
           val name = obj["Name"]?.jsonPrimitive?.content ?: return@mapNotNull null
           val type = obj["Type"]?.jsonPrimitive?.content ?: "Audio"
           val seriesName = obj["SeriesName"]?.jsonPrimitive?.contentOrNull
+          val originalTitle = obj["OriginalTitle"]?.jsonPrimitive?.contentOrNull
+          val premiereDate = obj["PremiereDate"]?.jsonPrimitive?.contentOrNull
+          val endDate = obj["EndDate"]?.jsonPrimitive?.contentOrNull
+          val officialRating = obj["OfficialRating"]?.jsonPrimitive?.contentOrNull
+          val status = obj["Status"]?.jsonPrimitive?.contentOrNull
+          val chapterCount = obj["Chapters"]?.jsonArray?.size ?: 0
           val artist = obj["Artist"]?.jsonPrimitive?.contentOrNull ?: seriesName ?: "Unknown"
           val album = obj["Album"]?.jsonPrimitive?.contentOrNull ?: type
           val ticks = obj["RunTimeTicks"]?.jsonPrimitive?.longOrNull ?: 0L
@@ -249,6 +255,12 @@ class JellyfinClient(
             artworkUrl = artwork,
             streamUrl = stream,
             mediaType = type,
+            originalTitle = originalTitle,
+            premiereDate = premiereDate,
+            endDate = endDate,
+            officialRating = officialRating,
+            status = status,
+            chapterCount = chapterCount,
           )
         }
       }
@@ -279,8 +291,14 @@ class JellyfinClient(
         else -> null
       }
     val overview = obj["Overview"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val originalTitle = obj["OriginalTitle"]?.jsonPrimitive?.contentOrNull
     val year = obj["ProductionYear"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    val premiereDate = obj["PremiereDate"]?.jsonPrimitive?.contentOrNull
+    val endDate = obj["EndDate"]?.jsonPrimitive?.contentOrNull
     val rating = obj["CommunityRating"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
+    val officialRating = obj["OfficialRating"]?.jsonPrimitive?.contentOrNull
+    val status = obj["Status"]?.jsonPrimitive?.contentOrNull
+    val chapterCount = obj["Chapters"]?.jsonArray?.size ?: 0
     val genres = obj["Genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
     val videoStream = obj["MediaStreams"]?.jsonArray?.firstOrNull {
       it.jsonObject["Type"]?.jsonPrimitive?.contentOrNull.equals("Video", ignoreCase = true)
@@ -312,7 +330,13 @@ class JellyfinClient(
       streamUrl = stream,
       mediaType = mediaType,
       overview = overview,
+      originalTitle = originalTitle,
       productionYear = year,
+      premiereDate = premiereDate,
+      endDate = endDate,
+      officialRating = officialRating,
+      status = status,
+      chapterCount = chapterCount,
       communityRating = rating,
       genres = genres,
       qualityLabel = quality,

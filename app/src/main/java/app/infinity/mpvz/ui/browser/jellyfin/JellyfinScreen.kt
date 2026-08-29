@@ -712,7 +712,10 @@ private fun JellyfinDetailPage(
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             mediaItem.communityRating?.let { rating -> DetailBadge("★ ${String.format(java.util.Locale.US, "%.1f", rating)}") }
             mediaItem.productionYear?.let { DetailBadge(it.toString()) }
+            mediaItem.officialRating?.let { DetailBadge(it) }
+            mediaItem.status?.let { status -> DetailBadge(status) }
             mediaItem.qualityLabel?.let { DetailBadge(it) }
+            if (mediaItem.chapterCount > 0) DetailBadge("${mediaItem.chapterCount} chapters")
           }
           if (mediaItem.genres.isNotEmpty()) {
             Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -747,6 +750,21 @@ private fun JellyfinDetailPage(
                 Column(horizontalAlignment = Alignment.End) { Text("Length", color = MaterialTheme.colorScheme.onSurfaceVariant); Text(length, fontWeight = FontWeight.Medium) }
               }
             }
+          }
+          mediaItem.originalTitle?.takeIf { it.isNotBlank() && it != mediaItem.title }?.let { originalTitle ->
+            Text("Original title", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(originalTitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+          if (mediaItem.premiereDate != null || mediaItem.endDate != null) {
+            Text("Release information", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+              listOfNotNull(
+                mediaItem.premiereDate?.take(10)?.let { "Released $it" },
+                mediaItem.endDate?.take(10)?.let { "Ended $it" },
+              ).joinToString(" • "),
+              style = MaterialTheme.typography.bodyLarge,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           }
           if (mediaItem.overview.isNotBlank()) {
             Text("Overview", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
