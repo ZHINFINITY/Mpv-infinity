@@ -1,5 +1,8 @@
 package app.infinity.mpvz.ui.browser.jellyfin
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 
@@ -77,6 +81,7 @@ internal fun SeerrNativeDashboard(
   var searchText by remember { mutableStateOf("") }
   var selected by remember { mutableStateOf<SeerrMediaItem?>(null) }
   var profileOpen by remember { mutableStateOf(false) }
+  val isRefreshing = remember { mutableStateOf(false) }
   BackHandler(onBack = onBack)
   val sections = if (searchOpen && state.searchQuery.isNotBlank()) listOf("Search results" to state.searchResults) else listOf("Trending" to state.trending, "Movies" to state.movies, "TV Shows" to state.shows)
 
@@ -99,7 +104,7 @@ internal fun SeerrNativeDashboard(
       },
       colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     )
-    if (searchOpen) {
+    AnimatedVisibility(visible = searchOpen, enter = fadeIn(), exit = fadeOut()) {
       OutlinedTextField(
         value = searchText,
         onValueChange = { searchText = it; if (it.length >= 2) onSearch(it) },
@@ -110,6 +115,7 @@ internal fun SeerrNativeDashboard(
         leadingIcon = { Icon(Icons.RoundedFilled.Search, null) },
       )
     }
+    PullRefreshBox(isRefreshing = isRefreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
     if (state.isLoading && state.movies.isEmpty() && state.shows.isEmpty()) {
       Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     } else if (state.error != null && sections.all { it.second.isEmpty() }) {
@@ -140,6 +146,7 @@ internal fun SeerrNativeDashboard(
         }
       }
     }
+    }
   }
 
   selected?.let { media ->
@@ -158,7 +165,7 @@ internal fun SeerrNativeDashboard(
               ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.RoundedFilled.Movie, null) }
             when {
               detailedMedia.availableInJellyfin -> Surface(Modifier.align(Alignment.TopCenter).padding(5.dp), RoundedCornerShape(5.dp), Color(0xFF2E7D32)) { Text("Available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
-              detailedMedia.partiallyAvailable -> Surface(Modifier.align(Alignment.TopCenter).padding(5.dp), RoundedCornerShape(5.dp), Color(0xFFE65100)) { Text("Partially available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+              detailedMedia.partiallyAvailable -> Surface(Modifier.align(Alignment.TopStart).padding(5.dp), RoundedCornerShape(5.dp), Color(0xFFE65100)) { Text("Partially available", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
             }
             when {
               detailedMedia.isRequesting -> Surface(Modifier.align(Alignment.TopEnd).padding(5.dp), RoundedCornerShape(5.dp), Color(0xFFE65100)) { Text("Processing…", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
@@ -201,7 +208,7 @@ internal fun SeerrNativeDashboard(
           }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-          Column(Modifier.weight(1f)) { Text("Request in 4K", style = MaterialTheme.typography.titleMedium); Text(if (is4k) "4K version selected" else "Standard version", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+          Column(Modifier.weight(1f)) { Text("Request in 4K", style = MaterialTheme.typography.titleMedium); Text(if (is4k) "4K version selected · requires Seerr 4K permission" else "Standard version", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
           Switch(checked = is4k, onCheckedChange = { is4k = it })
         }
         Button(onClick = { onRequest(detailedMedia, is4k, selectedSeasons.takeIf { isTv }?.toList(), audioPreference) }, enabled = canRequest, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (detailedMedia.isRequesting) "Requesting…" else if (detailedMedia.requested) "Requested" else "Request ${if (isTv) "Selected Seasons" else "Movie"}") }

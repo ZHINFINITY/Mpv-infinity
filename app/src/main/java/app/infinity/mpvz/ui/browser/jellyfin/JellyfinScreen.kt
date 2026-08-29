@@ -561,8 +561,17 @@ private fun JellyfinHomeContent(
             }
           },
           actions = {
+            IconButton(onClick = { isSearching = true }) {
+              Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
+            }
             IconButton(onClick = { if (uiState.seerrDiscover.isConnected) isSeerrDashboardOpen = true else { viewModel.resetSeerrConnectionState(); seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }; isSeerrInfoOpen = true } }) {
               Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
+            }
+            IconButton(onClick = { isServerManagerOpen = true }) {
+              Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers")
+            }
+            IconButton(onClick = { backStack.add(PreferencesScreen) }) {
+              Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "App settings")
             }
             Box {
               IconButton(onClick = { isProfileMenuOpen = true }) {
@@ -570,9 +579,6 @@ private fun JellyfinHomeContent(
               }
               DropdownMenu(expanded = isProfileMenuOpen, onDismissRequest = { isProfileMenuOpen = false }) {
                 DropdownMenuItem(text = { Text(uiState.activeServer?.username ?: "Jellyfin account") }, onClick = { })
-                DropdownMenuItem(text = { Text("Search") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = null) }, onClick = { isProfileMenuOpen = false; isSearching = true })
-                DropdownMenuItem(text = { Text("Manage servers") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = null) }, onClick = { isProfileMenuOpen = false; isServerManagerOpen = true })
-                DropdownMenuItem(text = { Text("Settings") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = null) }, onClick = { isProfileMenuOpen = false; backStack.add(PreferencesScreen) })
                 DropdownMenuItem(text = { Text("Refresh") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Refresh, contentDescription = null) }, onClick = { isProfileMenuOpen = false; viewModel.refresh() })
                 DropdownMenuItem(text = { Text("Disconnect") }, leadingIcon = { Icon(imageVector = Icons.RoundedFilled.LinkOff, contentDescription = null) }, onClick = { isProfileMenuOpen = false; viewModel.logout() })
               }

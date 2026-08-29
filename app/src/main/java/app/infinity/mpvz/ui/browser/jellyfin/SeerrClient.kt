@@ -135,7 +135,12 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       seasons?.takeIf { it.isNotEmpty() }?.let { selected -> put("seasons", buildJsonArray { selected.forEach { add(JsonPrimitive(it)) } }) }
       if (audioPreference != SeerrAudioPreference.DEFAULT) put("audioPreference", audioPreference.name.lowercase())
     }
-    request(baseUrl, "/request", "POST", body).getOrThrow()
+    request(baseUrl, "/request", "POST", body).getOrElse { error ->
+      if (is4k && (error.message?.contains("403") == true || error.message?.contains("permission", true) == true || error.message?.contains("forbidden", true) == true)) {
+        throw IOException("Seerr denied this 4K request. Enable 4K request permission for this account in Seerr, then try again.")
+      }
+      throw error
+    }
     Unit
   }
 
