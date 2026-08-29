@@ -10,6 +10,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -98,34 +100,36 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
     }
   }.getOrDefault(emptyList())
 
-  private fun request(
+  private suspend fun request(
     baseUrl: String,
     path: String,
     method: String = "GET",
     body: JsonObject? = null,
-  ): Result<String> = runCatching {
-    val normalized = normalizeUrl(baseUrl)
-    val url = "$normalized/api/v1$path"
-    val requestBuilder = Request.Builder().url(url)
-      .header("Accept", "application/json")
-    apiKey?.let { requestBuilder.header("X-Api-Key", it) }
-    sessionCookie?.let { requestBuilder.header("Cookie", it) }
-    if (method == "POST") {
-      val requestBody = (body?.toString() ?: "{}").toRequestBody("application/json".toMediaType())
-      requestBuilder.post(requestBody)
-    }
-    httpClient.newCall(requestBuilder.build()).execute().use { response ->
-      val responseBody = response.body?.string().orEmpty()
-      if (!response.isSuccessful) {
-        val detail = runCatching {
-          json.parseToJsonElement(responseBody).jsonObject["message"]?.jsonPrimitive?.contentOrNull
-        }.getOrNull()
-        error(detail ?: "Seerr returned HTTP ${response.code}")
+  ): Result<String> = withContext(Dispatchers.IO) {
+    runCatching {
+      val normalized = normalizeUrl(baseUrl)
+      val url = "$normalized/api/v1$path"
+      val requestBuilder = Request.Builder().url(url)
+        .header("Accept", "application/json")
+      apiKey?.let { requestBuilder.header("X-Api-Key", it) }
+      sessionCookie?.let { requestBuilder.header("Cookie", it) }
+      if (method == "POST") {
+        val requestBody = (body?.toString() ?: "{}").toRequestBody("application/json".toMediaType())
+        requestBuilder.post(requestBody)
       }
-      response.headers("Set-Cookie").firstOrNull()?.let { cookie ->
-        sessionCookie = cookie.substringBefore(';')
+      httpClient.newCall(requestBuilder.build()).execute().use { response ->
+        val responseBody = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+          val detail = runCatching {
+            json.parseToJsonElement(responseBody).jsonObject["message"]?.jsonPrimitive?.contentOrNull
+          }.getOrNull()
+          error(detail ?: "Seerr returned HTTP ${response.code}")
+        }
+        response.headers("Set-Cookie").firstOrNull()?.let { cookie ->
+          sessionCookie = cookie.substringBefore(';')
+        }
+        responseBody
       }
-      responseBody
     }
   }
 
