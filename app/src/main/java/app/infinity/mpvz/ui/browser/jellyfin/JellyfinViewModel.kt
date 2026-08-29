@@ -39,6 +39,13 @@ class JellyfinViewModel(
   private var searchJob: Job? = null
   private var searchGeneration = 0L
 
+  private fun libraryItemTypes(collectionType: String?): String = when (collectionType?.lowercase()) {
+    "movies" -> "Movie"
+    "tvshows" -> "Series"
+    "music" -> "Audio,MusicAlbum,MusicArtist"
+    else -> "Movie,Series"
+  }
+
   private fun groupShows(items: List<JellyfinTrack>): List<JellyfinTrack> {
     return items
       .filter { it.mediaType.equals("Series", ignoreCase = true) || it.mediaType.equals("Episode", ignoreCase = true) }
@@ -217,6 +224,7 @@ class JellyfinViewModel(
               limit = 50,
               sortBy = "DateCreated",
               sortOrder = "Descending",
+              includeItemTypes = libraryItemTypes(lib.collectionType),
             ).fold(
               onSuccess = { items -> allItems.addAll(items) },
               onFailure = { },
@@ -254,7 +262,7 @@ class JellyfinViewModel(
         JellyfinLibraryView(
           id = it.id,
           title = it.name,
-          itemTypes = if (it.collectionType == "music") "Audio,MusicAlbum,MusicArtist" else "Movie,Episode,Series",
+          itemTypes = libraryItemTypes(it.collectionType),
           collectionType = it.collectionType,
           isMusic = it.collectionType == "music",
         )
@@ -266,6 +274,7 @@ class JellyfinViewModel(
           limit = 100,
           sortBy = _uiState.value.sortBy.apiValue,
           sortOrder = _uiState.value.sortOrder.apiValue,
+          includeItemTypes = libView?.itemTypes,
         ).fold(
           onSuccess = { items ->
             _uiState.update {
@@ -407,6 +416,7 @@ class JellyfinViewModel(
         detailItem = track,
         detailSeasons = emptyList(),
         detailEpisodes = emptyList(),
+        detailSimilarItems = emptyList(),
         isDetailLoading = true,
         isDetailEpisodesLoading = track.mediaType.equals("Series", ignoreCase = true),
       )
@@ -414,7 +424,8 @@ class JellyfinViewModel(
     viewModelScope.launch {
       val jellyfin = JellyfinClient(client, getApplication())
       val fullItem = jellyfin.loadItem(session, track.id).getOrNull() ?: track
-      _uiState.update { it.copy(detailItem = fullItem, isDetailLoading = false) }
+      val similarItems = jellyfin.loadSimilarItems(session, fullItem.id).getOrDefault(emptyList())
+      _uiState.update { it.copy(detailItem = fullItem, detailSimilarItems = similarItems, isDetailLoading = false) }
       if (fullItem.mediaType.equals("Series", ignoreCase = true)) {
         jellyfin.loadMedia(session, fullItem.id, limit = 100, sortBy = "SortName", sortOrder = "Ascending").fold(
           onSuccess = { seasons ->

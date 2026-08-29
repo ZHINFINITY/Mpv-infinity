@@ -485,6 +485,10 @@ private fun JellyfinHomeContent(
             Text(
               text = uiState.openLibrary?.title ?: uiState.activeServer?.name ?: "Jellyfin",
               fontWeight = FontWeight.Bold,
+              maxLines = 1,
+              softWrap = false,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f),
             )
           },
           navigationIcon = {
