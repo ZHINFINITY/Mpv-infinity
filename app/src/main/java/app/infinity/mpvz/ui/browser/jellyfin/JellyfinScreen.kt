@@ -83,6 +83,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
@@ -107,6 +108,9 @@ fun JellyfinScreen(
 
   LaunchedEffect(httpClient) {
     viewModel.setHttpClient(httpClient)
+  }
+  LaunchedEffect(uiState.session?.serverUrl) {
+    if (uiState.session != null) viewModel.refresh()
   }
 
   if (uiState.session == null) {
@@ -376,8 +380,8 @@ private fun JellyfinHomeContent(
   var serverUsername by remember { mutableStateOf("") }
   var serverPassword by remember { mutableStateOf("") }
   var useToken by remember { mutableStateOf(false) }
+  val isRefreshing = remember { mutableStateOf(false) }
   val backStack = LocalBackStack.current
-
   BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
     when {
       uiState.detailItem != null -> viewModel.closeDetail()
@@ -623,7 +627,16 @@ private fun JellyfinHomeContent(
 
         // Home Dashboard (no library open, no search)
         uiState.openLibrary == null && uiState.searchQuery.isBlank() -> {
-          HomeDashboard(uiState = uiState, viewModel = viewModel, context = context)
+          PullRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+              viewModel.refresh()
+              delay(900L)
+            },
+            modifier = Modifier.fillMaxSize(),
+          ) {
+            HomeDashboard(uiState = uiState, viewModel = viewModel, context = context)
+          }
         }
 
         // Library content or search results
@@ -795,7 +808,12 @@ private fun JellyfinDetailPage(
   onSimilarClick: (JellyfinTrack) -> Unit,
 ) {
   var selectedSeasonId by remember(mediaItem.id) { mutableStateOf<String?>(null) }
-  val visibleEpisodes = if (selectedSeasonId == null) episodes else episodes.filter { it.parentId == selectedSeasonId }
+  var selectedSeasonNumber by remember(mediaItem.id) { mutableStateOf<Int?>(null) }
+  val visibleEpisodes = if (selectedSeasonId == null && selectedSeasonNumber == null) {
+    episodes
+  } else {
+    episodes.filter { it.parentId == selectedSeasonId || it.seasonNumber == selectedSeasonNumber }
+  }
   val imageUrl = mediaItem.artworkUrl ?: "${session.serverUrl}/Items/${mediaItem.id}/Images/Primary?maxWidth=900&quality=90&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
   Column(
     modifier = Modifier
@@ -917,12 +935,12 @@ private fun JellyfinDetailPage(
             Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
               Text("Seasons", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
               Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DetailBadge(text = "All Episodes", selected = selectedSeasonId == null, onClick = { selectedSeasonId = null })
+                DetailBadge(text = "All Episodes", selected = selectedSeasonId == null && selectedSeasonNumber == null, onClick = { selectedSeasonId = null; selectedSeasonNumber = null })
                 seasons.forEach { season ->
                   DetailBadge(
                     text = season.title,
                     selected = selectedSeasonId == season.id,
-                    onClick = { selectedSeasonId = season.id },
+                    onClick = { selectedSeasonId = season.id; selectedSeasonNumber = season.seasonNumber },
                   )
                 }
               }
@@ -1071,7 +1089,22 @@ private fun HomeDashboard(
       }
     }
 
-    // 4. Latest Movies
+    // 4. Top Picks for You, based on the active Jellyfin server history
+    if (uiState.topPicks.isNotEmpty()) {
+      item {
+        SectionHeader(title = "Top Picks for You", subtitle = "Because you watched these on Jellyfin")
+      }
+      item {
+        HorizontalSection(
+          items = uiState.topPicks,
+          session = uiState.session!!,
+          onItemPlay = { if (it.isPlayable) viewModel.playItem(context, it) else viewModel.openDetail(it) },
+          onItemDetails = { viewModel.openDetail(it) },
+        )
+      }
+    }
+
+    // 5. Latest Movies
     if (uiState.latestMovies.isNotEmpty()) {
       item {
         SectionHeader(title = "Latest Movies", subtitle = "Newly added")

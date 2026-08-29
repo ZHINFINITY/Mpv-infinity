@@ -14,6 +14,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +50,17 @@ class JellyfinViewModel(
       libraryName.contains("series", ignoreCase = true) -> "Series"
     collectionType.equals("music", ignoreCase = true) -> "Audio,MusicAlbum,MusicArtist"
     else -> "Movie,Series"
+  }
+
+  private fun mixedHeroItems(items: List<JellyfinTrack>): List<JellyfinTrack> {
+    val movies = items.filter { it.mediaType.equals("Movie", ignoreCase = true) }.distinctBy { it.id }
+    val series = items.filter { it.mediaType.equals("Series", ignoreCase = true) }.distinctBy { it.id }
+    return buildList {
+      for (index in 0 until maxOf(movies.size, series.size)) {
+        movies.getOrNull(index)?.let(::add)
+        series.getOrNull(index)?.let(::add)
+      }
+    }.take(8)
   }
 
   private fun groupShows(items: List<JellyfinTrack>): List<JellyfinTrack> {
@@ -219,30 +232,29 @@ class JellyfinViewModel(
       jellyfin.loadLibraries(session).fold(
         onSuccess = { libs ->
           val watchHistory = jellyfin.loadWatchHistory(session).getOrDefault(emptyList())
-          _uiState.update { it.copy(libraries = libs, watchHistory = watchHistory) }
-          val allItems = mutableListOf<JellyfinTrack>()
-          for (lib in libs) {
-            jellyfin.loadMedia(
-              session = session,
-              parentId = lib.id,
-              limit = 50,
-              sortBy = "DateCreated",
-              sortOrder = "Descending",
-              includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
-            ).fold(
-              onSuccess = { items -> allItems.addAll(items) },
-              onFailure = { },
-            )
-          }
+          val topPicks = watchHistory.firstOrNull()?.let { historyItem ->
+            jellyfin.loadSimilarItems(session, historyItem.id, limit = 20).getOrDefault(emptyList())
+          }.orEmpty()
+          _uiState.update { it.copy(libraries = libs, watchHistory = watchHistory, topPicks = topPicks) }
+          val allItems = libs.map { lib ->
+            async(Dispatchers.IO) {
+              jellyfin.loadMedia(
+                session = session,
+                parentId = lib.id,
+                limit = 50,
+                sortBy = "DateCreated",
+                sortOrder = "Descending",
+                includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
+              ).getOrDefault(emptyList())
+            }
+          }.awaitAll().flatten().toMutableList()
           val videos = allItems.filter { it.isVideo }
           val audio = allItems.filter { !it.isVideo }
           _uiState.update { state ->
             state.copy(
-              heroItems = videos
-                .filter { it.mediaType.equals("Movie", ignoreCase = true) || it.mediaType.equals("Series", ignoreCase = true) }
-                .distinctBy { it.id }
-                .takeLast(8),
+              heroItems = mixedHeroItems(videos),
               watchHistory = watchHistory,
+              topPicks = topPicks,
               latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
               latestShows = groupShows(videos).take(20),
               latestMusic = audio.take(20),
