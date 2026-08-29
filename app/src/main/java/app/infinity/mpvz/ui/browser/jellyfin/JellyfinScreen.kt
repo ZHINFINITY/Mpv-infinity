@@ -406,7 +406,7 @@ private fun JellyfinHomeContent(
   val backStack = LocalBackStack.current
 
   if (isSeerrDashboardOpen) {
-    SeerrDashboard(
+    SeerrNativeDashboard(
       state = uiState.seerrDiscover,
       onBack = { isSeerrDashboardOpen = false },
       onRefresh = { viewModel.loadSeerrDiscover() },
