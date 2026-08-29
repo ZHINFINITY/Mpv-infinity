@@ -238,7 +238,10 @@ class JellyfinViewModel(
           val audio = allItems.filter { !it.isVideo }
           _uiState.update { state ->
             state.copy(
-              heroItems = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) || it.mediaType.equals("Series", ignoreCase = true) }.take(5),
+              heroItems = videos
+                .filter { it.mediaType.equals("Movie", ignoreCase = true) || it.mediaType.equals("Series", ignoreCase = true) }
+                .distinctBy { it.id }
+                .takeLast(8),
               watchHistory = watchHistory,
               latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
               latestShows = groupShows(videos).take(20),
@@ -416,8 +419,11 @@ class JellyfinViewModel(
     val safeIndex = index.coerceIn(0, playableTracks.lastIndex)
     val track = playableTracks[safeIndex]
     val playlist = ArrayList<Uri>(playableTracks.size)
+    val playlistTitles = ArrayList<String>(playableTracks.size)
     playableTracks.forEach { item ->
       playlist.add(Uri.parse(item.streamUrl ?: jellyfin.getStreamUrl(session, item.id, isVideo = item.isVideo)))
+      val number = listOfNotNull(item.seasonNumber?.let { "S%02d".format(it) }, item.episodeNumber?.let { "E%02d".format(it) }).joinToString("")
+      playlistTitles.add(if (number.isBlank()) item.title else "$number · ${item.title}")
     }
     val intent = Intent(Intent.ACTION_VIEW, playlist[safeIndex]).apply {
       setClass(context, Class.forName("app.infinity.mpvz.ui.player.PlayerActivity"))
@@ -428,6 +434,13 @@ class JellyfinViewModel(
       putExtra("title", track.title)
       putParcelableArrayListExtra("playlist", playlist)
       putExtra("playlist_index", safeIndex)
+      putStringArrayListExtra("playlist_titles", playlistTitles)
+      putExtra("jellyfin_server_url", session.serverUrl)
+      putExtra("jellyfin_user_id", session.userId)
+      putExtra("jellyfin_access_token", session.accessToken)
+      putExtra("jellyfin_item_id", track.id)
+      putExtra("jellyfin_season_number", track.seasonNumber ?: -1)
+      putExtra("jellyfin_episode_number", track.episodeNumber ?: -1)
     }
     context.startActivity(intent)
   }

@@ -412,8 +412,8 @@ class PlayerActivity :
   /**
    * Playlist of URIs for sequential playback
    */
-  internal var playlist: List<Uri> = emptyList()
-
+    internal var playlist: List<Uri> = emptyList()
+  private var playlistTitles: List<String> = emptyList()
   /**
    * Database metadata for playlist items, if the current playlist was loaded from Room.
    */
@@ -4078,6 +4078,7 @@ class PlayerActivity :
    * @return The display name of the file, or empty string if not found
    */
   private fun getFileName(intent: Intent): String {
+    playlistTitles.getOrNull(playlistIndex)?.takeIf { it.isNotBlank() }?.let { return it }
     // First check if a custom title/filename was provided via intent extras
     intent.getStringExtra("title")?.let { return it }
     intent.getStringExtra("filename")?.let { return it }
@@ -5788,6 +5789,7 @@ class PlayerActivity :
         @Suppress("DEPRECATION")
         intent.getParcelableArrayListExtra("playlist") ?: emptyList()
       }
+    playlistTitles = intent.getStringArrayListExtra("playlist_titles") ?: emptyList()
 
     val installedPreparedPlaybackQueue = installPreparedPlaybackQueue(intent)
     val preparedPlaybackQueue =
