@@ -394,9 +394,13 @@ private fun JellyfinHomeContent(
     JellyfinDetailPage(
       mediaItem = uiState.detailItem,
       session = uiState.session!!,
+      seasons = uiState.detailSeasons,
+      episodes = uiState.detailEpisodes,
+      isEpisodesLoading = uiState.isDetailEpisodesLoading,
       similarItems = uiState.detailSimilarItems,
       onBack = { viewModel.closeDetail() },
       onPlay = { viewModel.playItem(context, uiState.detailItem!!) },
+      onEpisodePlay = { episode -> viewModel.playItem(context, episode) },
       onOpenTrailer = { url ->
         context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
       },
@@ -766,9 +770,13 @@ private fun JellyfinHomeContent(
 private fun JellyfinDetailPage(
   mediaItem: JellyfinTrack,
   session: JellyfinSession,
+  seasons: List<JellyfinTrack>,
+  episodes: List<JellyfinTrack>,
+  isEpisodesLoading: Boolean,
   similarItems: List<JellyfinTrack>,
   onBack: () -> Unit,
   onPlay: () -> Unit,
+  onEpisodePlay: (JellyfinTrack) -> Unit,
   onOpenTrailer: (String) -> Unit,
   onSimilarClick: (JellyfinTrack) -> Unit,
 ) {
@@ -797,7 +805,18 @@ private fun JellyfinDetailPage(
           Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background))))
           Column(modifier = Modifier.align(Alignment.BottomStart).padding(20.dp)) {
             Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-              Text(if (mediaItem.isVideo) "MOVIE" else "AUDIO", modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+              Text(
+                when {
+                  mediaItem.mediaType.equals("Series", ignoreCase = true) -> "TV SHOW"
+                  mediaItem.mediaType.equals("Season", ignoreCase = true) -> "SEASON"
+                  mediaItem.mediaType.equals("Episode", ignoreCase = true) -> "EPISODE"
+                  mediaItem.isVideo -> "MOVIE"
+                  else -> "AUDIO"
+                },
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontWeight = FontWeight.Bold,
+              )
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(mediaItem.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
@@ -823,7 +842,14 @@ private fun JellyfinDetailPage(
             Button(onClick = onPlay, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
               Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = null)
               Spacer(modifier = Modifier.width(8.dp))
-              Text("Play ${if (mediaItem.isVideo) "Movie" else "Track"}")
+              Text(
+                when {
+                  mediaItem.mediaType.equals("Series", ignoreCase = true) -> "Play Series"
+                  mediaItem.mediaType.equals("Episode", ignoreCase = true) -> "Play Episode"
+                  mediaItem.isVideo -> "Play Movie"
+                  else -> "Play Track"
+                },
+              )
             }
             mediaItem.trailerUrl?.let { trailer ->
               FilledTonalButton(onClick = { onOpenTrailer(trailer) }, shape = RoundedCornerShape(16.dp)) {
@@ -869,6 +895,32 @@ private fun JellyfinDetailPage(
           }
         }
       }
+      if (mediaItem.mediaType.equals("Series", ignoreCase = true)) {
+        if (seasons.isNotEmpty()) {
+          item {
+            Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+              Text("Seasons", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+              Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                seasons.forEach { season ->
+                  DetailBadge(season.title)
+                }
+              }
+            }
+          }
+        }
+        item {
+          Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Episodes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            when {
+              isEpisodesLoading -> CircularProgressIndicator(modifier = Modifier.size(28.dp))
+              episodes.isEmpty() -> Text("No episodes available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+              else -> episodes.take(50).forEach { episode ->
+                JellyfinEpisodeRow(episode = episode, onClick = { onEpisodePlay(episode) })
+              }
+            }
+          }
+        }
+      }
       if (similarItems.isNotEmpty()) {
         item {
           Text("More Like This", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 20.dp))
@@ -882,6 +934,35 @@ private fun JellyfinDetailPage(
         }
       }
     }
+  }
+}
+
+@Composable
+private fun JellyfinEpisodeRow(
+  episode: JellyfinTrack,
+  onClick: () -> Unit,
+) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(RoundedCornerShape(14.dp))
+      .clickable(onClick = onClick)
+      .background(MaterialTheme.colorScheme.surfaceContainer)
+      .padding(8.dp),
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Box(modifier = Modifier.width(112.dp).height(64.dp).clip(RoundedCornerShape(10.dp))) {
+      episode.artworkUrl?.let { url ->
+        RemoteImage(url = url, contentDescription = episode.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+      } ?: Icon(imageVector = Icons.RoundedFilled.PlayCircle, contentDescription = null, modifier = Modifier.align(Alignment.Center))
+    }
+    Column(modifier = Modifier.weight(1f)) {
+      val number = listOfNotNull(episode.seasonNumber?.let { "S%02d".format(it) }, episode.episodeNumber?.let { "E%02d".format(it) }).joinToString("")
+      Text(if (number.isBlank()) episode.title else "$number · ${episode.title}", fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+      if (episode.overview.isNotBlank()) Text(episode.overview, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+    Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = "Play episode", tint = MaterialTheme.colorScheme.primary)
   }
 }
 
