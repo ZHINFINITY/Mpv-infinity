@@ -293,20 +293,35 @@ class JellyfinViewModel(
     _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isConnected = false, isLoading = false, error = null)) }
   }
 
+  private suspend fun enrichSeerrItems(url: String, client: SeerrClient, items: List<SeerrMediaItem>): List<SeerrMediaItem> = withContext(Dispatchers.IO) {
+    items.map { item ->
+      client.getDetails(url, item).getOrDefault(item)
+    }
+  }
+
   fun loadSeerrDiscover() {
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
     viewModelScope.launch {
       _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = true, error = null)) }
-      client.discover(url).fold(
-        onSuccess = { data -> _uiState.update { it.copy(seerrDiscover = data.copy(isLoading = false, isConnected = true), seerr = it.seerr.copy(isDashboardOpen = true)) } },
-        onFailure = { error -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = false, error = error.message ?: "Unable to load Seerr")) } },
-      )
+      val discoverResult = client.discover(url)
+      if (discoverResult.isSuccess) {
+        val data = discoverResult.getOrThrow()
+        val enriched = data.copy(
+          movies = enrichSeerrItems(url, client, data.movies),
+          shows = enrichSeerrItems(url, client, data.shows),
+          trending = enrichSeerrItems(url, client, data.trending),
+        )
+        _uiState.update { it.copy(seerrDiscover = enriched.copy(isLoading = false, isConnected = true), seerr = it.seerr.copy(isDashboardOpen = true)) }
+      } else {
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = false, error = discoverResult.exceptionOrNull()?.message ?: "Unable to load Seerr")) }
+      }
     }
   }
 
   fun searchSeerr(query: String) {
     val normalized = query.trim()
+    val compact = normalized.replace(Regex("\\s+"), "")
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
     if (normalized.isBlank()) {
@@ -315,10 +330,14 @@ class JellyfinViewModel(
     }
     viewModelScope.launch {
       _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = normalized, isSearching = true, error = null)) }
-      client.search(url, normalized).fold(
-        onSuccess = { results -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = results, isSearching = false)) } },
-        onFailure = { error -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = emptyList(), isSearching = false, error = error.message ?: "Seerr search failed")) } },
-      )
+      val firstResult = client.search(url, normalized)
+      val result = if (firstResult.getOrNull().isNullOrEmpty() && compact != normalized) client.search(url, compact) else firstResult
+      if (result.isSuccess) {
+        val enriched = enrichSeerrItems(url, client, result.getOrDefault(emptyList()))
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = enriched, isSearching = false)) }
+      } else {
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = emptyList(), isSearching = false, error = result.exceptionOrNull()?.message ?: "Seerr search failed")) }
+      }
     }
   }
 
