@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,6 +116,19 @@ internal fun SeerrNativeDashboard(
         Spacer(Modifier.height(16.dp))
         Button(onClick = onRefresh) { Text("Retry") }
       }
+    } else if (searchOpen && state.searchQuery.isNotBlank()) {
+      LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+      ) {
+        item(span = { GridItemSpan(2) }) { SeerrAccountBanner(state, onDisconnect) }
+        item(span = { GridItemSpan(2) }) { SeerrNativeSection("Search results", "Results from Seerr") }
+        gridItems(state.searchResults, key = { "search-${it.mediaType}-${it.id}" }) { item -> SeerrNativeCard(item) { selected = item; onOpenDetails(item) } }
+        if (state.isSearching) item(span = { GridItemSpan(2) }) { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
+      }
     } else {
       LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { SeerrAccountBanner(state, onDisconnect) }
@@ -121,7 +138,6 @@ internal fun SeerrNativeDashboard(
             item { SeerrNativeRail(items) { selected = it; onOpenDetails(it) } }
           }
         }
-        if (searchOpen && state.isSearching) item { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
       }
     }
   }
@@ -178,7 +194,9 @@ internal fun SeerrNativeDashboard(
             }
           }
         }
-        Button(onClick = { onRequest(detailedMedia, is4k, selectedSeasons.takeIf { isTv }, audioPreference); selected = null }, enabled = canRequest, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (detailedMedia.isRequesting) "Requesting…" else if (detailedMedia.requested) "Requested" else "Request ${if (isTv) "Selected Seasons" else "Movie"}") }
+        Button(onClick = { onRequest(detailedMedia, is4k, selectedSeasons.takeIf { isTv }, audioPreference) }, enabled = canRequest, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (detailedMedia.isRequesting) "Requesting…" else if (detailedMedia.requested) "Requested" else "Request ${if (isTv) "Selected Seasons" else "Movie"}") }
+        if (detailedMedia.isRequesting) Text("Submitting request…", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+        if (detailedMedia.requested) Text(if (detailedMedia.requested4k) "Request submitted for 4K" else "Request submitted", color = Color(0xFF43A047), fontWeight = FontWeight.SemiBold)
         if (detailedMedia.availableInJellyfin && detailedMedia.jellyfinMediaId != null) OutlinedButton(onClick = { onPlay(detailedMedia); selected = null }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Icon(Icons.RoundedFilled.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (isTv) "Open in Jellyfin" else "Play in mpv∞") }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
           Text("Request in 4K", style = MaterialTheme.typography.titleMedium)
@@ -236,6 +254,6 @@ private fun SeerrNativeCard(item: SeerrMediaItem, onOpen: (SeerrMediaItem) -> Un
     }
     Text(item.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
     Row(verticalAlignment = Alignment.CenterVertically) { Text(item.releaseDate?.take(4) ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(4.dp)); Text(if (item.mediaType == "tv") "TV" else "Movie", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
-    OutlinedButton(onClick = { onOpen(item) }, enabled = !item.requested && !item.isRequesting, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text(if (item.isRequesting) "Requesting…" else if (item.requested) "Requested" else "Request", maxLines = 1) }
+    OutlinedButton(onClick = { onOpen(item) }, modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) { Text("Details", maxLines = 1) }
   }
 }
