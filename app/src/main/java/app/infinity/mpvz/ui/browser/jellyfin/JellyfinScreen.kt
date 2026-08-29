@@ -1029,17 +1029,27 @@ private fun HomeDashboard(
     }
 
     // 3. Server-side Watch History (Jellyfin tab only)
-    if (uiState.session != null && uiState.watchHistory.isNotEmpty()) {
+    if (uiState.session != null) {
       item {
         SectionHeader(title = "Watch History", subtitle = "Played on this Jellyfin server")
       }
-      item {
-        HorizontalSection(
-          items = uiState.watchHistory,
-          session = uiState.session,
-          onItemPlay = { if (it.isPlayable) viewModel.playItem(context, it) else viewModel.openDetail(it) },
-          onItemDetails = { viewModel.openDetail(it) },
-        )
+      if (uiState.watchHistory.isNotEmpty()) {
+        item {
+          HorizontalSection(
+            items = uiState.watchHistory,
+            session = uiState.session,
+            onItemPlay = { if (it.isPlayable) viewModel.playItem(context, it) else viewModel.openDetail(it) },
+            onItemDetails = { viewModel.openDetail(it) },
+          )
+        }
+      } else if (!uiState.isLoading) {
+        item {
+          Text(
+            "No watched items yet",
+            modifier = Modifier.padding(horizontal = 16.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
       }
     }
 
@@ -1351,7 +1361,13 @@ private fun JellyfinHeroBanner(
           ) {
             Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)) {
               Text(
-                text = if (item.isVideo) "MOVIE" else "AUDIO",
+                text = when {
+                  item.mediaType.equals("Series", ignoreCase = true) -> "TV SHOW"
+                  item.mediaType.equals("Season", ignoreCase = true) -> "SEASON"
+                  item.mediaType.equals("Episode", ignoreCase = true) -> "EPISODE"
+                  item.isVideo -> "MOVIE"
+                  else -> "AUDIO"
+                },
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
                 color = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),

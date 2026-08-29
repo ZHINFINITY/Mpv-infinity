@@ -41,7 +41,11 @@ class JellyfinViewModel(
 
   private fun libraryItemTypes(collectionType: String?, libraryName: String = ""): String = when {
     collectionType.equals("movies", ignoreCase = true) && !libraryName.contains("anime", ignoreCase = true) -> "Movie"
-    collectionType.equals("tvshows", ignoreCase = true) || libraryName.contains("anime", ignoreCase = true) -> "Series"
+    collectionType.equals("tvshows", ignoreCase = true) ||
+      libraryName.contains("anime", ignoreCase = true) ||
+      libraryName.contains("tv", ignoreCase = true) ||
+      libraryName.contains("show", ignoreCase = true) ||
+      libraryName.contains("series", ignoreCase = true) -> "Series"
     collectionType.equals("music", ignoreCase = true) -> "Audio,MusicAlbum,MusicArtist"
     else -> "Movie,Series"
   }

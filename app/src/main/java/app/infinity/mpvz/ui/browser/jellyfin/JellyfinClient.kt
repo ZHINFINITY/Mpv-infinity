@@ -239,7 +239,7 @@ class JellyfinClient(
     runCatching {
       val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
       val url = "${session.serverUrl}/Users/${session.userId}/Items" +
-        "?Filters=IsPlayed&IncludeItemTypes=Movie,Series,Episode" +
+        "?Filters=IsPlayed&IncludeItemTypes=Movie,Series,Episode&EnableUserData=true" +
         "&SortBy=DatePlayed&SortOrder=Descending&Limit=$limit&Recursive=true" +
         "&Fields=Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,PremiereDate,EndDate,OriginalTitle,OfficialRating,Status,Genres,Studios,RemoteTrailers,ProviderIds,Chapters,UserData" +
         "&api_key=$encodedToken"
