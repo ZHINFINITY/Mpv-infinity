@@ -111,6 +111,19 @@ data class JellyfinLibraryView(
   val isMusic: Boolean = false,
 )
 
+enum class SeerrAuthMode {
+  JELLYFIN,
+  LOCAL,
+  API_KEY,
+}
+
+data class SeerrUiState(
+  val url: String = "",
+  val authMode: SeerrAuthMode = SeerrAuthMode.JELLYFIN,
+  val isConnected: Boolean = false,
+  val isDashboardOpen: Boolean = false,
+)
+
 data class JellyfinUiState(
   val session: JellyfinSession? = null,
   val libraries: List<JellyfinCollection> = emptyList(),
@@ -152,6 +165,7 @@ data class JellyfinUiState(
   val activeServer: JellyfinServerProfile? = null,
   val isAuthenticating: Boolean = false,
   val authError: String? = null,
+  val seerr: SeerrUiState = SeerrUiState(),
 )
 
 data class JellyfinServerProfile(

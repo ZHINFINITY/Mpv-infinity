@@ -72,13 +72,8 @@ class JellyfinViewModel(
 
   private fun groupShows(items: List<JellyfinTrack>): List<JellyfinTrack> {
     return items
-      .filter { it.mediaType.equals("Series", ignoreCase = true) || it.mediaType.equals("Episode", ignoreCase = true) }
-      .groupBy { item ->
-        item.album.trim().takeIf { it.isNotBlank() }
-          ?: item.title.substringBefore(" - ").substringBefore(" — ").trim()
-      }
-      .values
-      .map { group -> group.firstOrNull { it.mediaType.equals("Series", ignoreCase = true) } ?: group.first() }
+      .filter { it.mediaType.equals("Series", ignoreCase = true) }
+      .distinctBy { it.id }
   }
 
   init {
@@ -225,6 +220,21 @@ class JellyfinViewModel(
     viewModelScope.launch { loadHome(session) }
   }
 
+  fun removeServer(profile: JellyfinServerProfile) {
+    profileStore.remove(profile.id)
+    val remaining = profileStore.getAll().map { it.toServerProfile() }
+    if (_uiState.value.activeServer?.id == profile.id) {
+      val next = remaining.firstOrNull()
+      if (next != null) {
+        switchServer(next)
+      } else {
+        logout()
+      }
+    } else {
+      _uiState.update { it.copy(servers = remaining) }
+    }
+  }
+
   fun logout() {
     _uiState.update { JellyfinUiState() }
     prefs.edit().clear().apply()
@@ -257,23 +267,29 @@ class JellyfinViewModel(
           }
           val watchHistory = historyDeferred.await()
           val allItems = mediaDeferred.await()
-          val videos = allItems.filter { it.isVideo }
-          val audio = allItems.filter { !it.isVideo }
-          val rotation = _uiState.value.heroRotation + if (advanceHero) 1 else 0
-          val heroItems = mixedHeroItems(videos, rotation)
+          val previous = _uiState.value
+          val usableItems = if (allItems.isNotEmpty()) allItems else previous.currentItems
+          val videos = usableItems.filter { it.isVideo }
+          val audio = usableItems.filter { !it.isVideo }
+          val rotation = previous.heroRotation + if (advanceHero) 1 else 0
+          val refreshedHeroItems = mixedHeroItems(videos, rotation)
+          val heroItems = refreshedHeroItems.ifEmpty { previous.heroItems }
+          val refreshedMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(50)
+          val refreshedShows = groupShows(videos.filterNot { it.isAnime }).take(50)
+          val refreshedAnime = videos.filter { it.isAnime }.take(50)
           val fallbackTopPicks = heroItems.filterNot { candidate -> watchHistory.any { it.id == candidate.id } }
           _uiState.update { state ->
             state.copy(
               libraries = libs,
               heroItems = heroItems,
               heroRotation = rotation,
-              watchHistory = watchHistory,
-              topPicks = fallbackTopPicks,
-              latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
-              latestShows = groupShows(videos.filterNot { it.isAnime }).take(20),
-              latestAnime = videos.filter { it.isAnime }.take(20),
-              latestMusic = audio.take(20),
-              currentItems = allItems,
+              watchHistory = if (watchHistory.isNotEmpty()) watchHistory else state.watchHistory,
+              topPicks = fallbackTopPicks.ifEmpty { state.topPicks },
+              latestMovies = refreshedMovies.ifEmpty { state.latestMovies },
+              latestShows = refreshedShows.ifEmpty { state.latestShows },
+              latestAnime = refreshedAnime.ifEmpty { state.latestAnime },
+              latestMusic = audio.take(20).ifEmpty { state.latestMusic },
+              currentItems = usableItems,
               isLoading = false,
             )
           }
