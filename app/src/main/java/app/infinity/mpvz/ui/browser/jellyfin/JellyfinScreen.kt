@@ -40,18 +40,17 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
@@ -61,6 +60,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -118,6 +118,7 @@ fun JellyfinScreen(
 }
 
 // ─── Login Screen ───────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun JellyfinLoginContent(
   uiState: JellyfinUiState,
@@ -212,7 +213,10 @@ private fun JellyfinLoginContent(
   }
 
   if (showAddServer) {
-    Dialog(onDismissRequest = { if (!uiState.isAuthenticating) showAddServer = false }) {
+    ModalBottomSheet(
+      onDismissRequest = { if (!uiState.isAuthenticating) showAddServer = false },
+      sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
       Surface(
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -341,12 +345,28 @@ private fun JellyfinLoginContent(
   }
 
   if (showSeerrInfo) {
-    AlertDialog(
+    ModalBottomSheet(
       onDismissRequest = { showSeerrInfo = false },
-      title = { Text("Seerr requests") },
-      text = { Text("Connect to a Jellyfin server first. Seerr requests will appear here when a Seerr server is configured.") },
-      confirmButton = { TextButton(onClick = { showSeerrInfo = false }) { Text("OK") } },
-    )
+      sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
+        Text("Seerr requests", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(
+          "Connect to a Jellyfin server first. Seerr requests will appear here when a Seerr server is configured.",
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(
+          onClick = { showSeerrInfo = false },
+          modifier = Modifier.align(Alignment.End),
+        ) { Text("Close") }
+        Spacer(modifier = Modifier.height(8.dp))
+      }
+    }
   }
 }
 
@@ -636,7 +656,10 @@ private fun JellyfinHomeContent(
     }
 
     if (isServerManagerOpen) {
-      Dialog(onDismissRequest = { if (!uiState.isAuthenticating) isServerManagerOpen = false }) {
+      ModalBottomSheet(
+        onDismissRequest = { if (!uiState.isAuthenticating) isServerManagerOpen = false },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+      ) {
         Surface(
           shape = RoundedCornerShape(28.dp),
           color = MaterialTheme.colorScheme.surface,
@@ -730,53 +753,49 @@ private fun JellyfinHomeContent(
     }
 
     if (isSeerrInfoOpen) {
-      AlertDialog(
+      ModalBottomSheet(
         onDismissRequest = { isSeerrInfoOpen = false },
-        title = { Text("Discover with Seerr") },
-        text = {
-          Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-              "Connect your Seerr or Overseerr server to browse titles and submit media requests.",
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-              value = seerrUrl,
-              onValueChange = { seerrUrl = it },
-              label = { Text("Seerr server URL") },
-              placeholder = { Text("https://seerr.example.com") },
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth(),
-              shape = RoundedCornerShape(14.dp),
-            )
-          }
-        },
-        dismissButton = {
-          TextButton(onClick = { isSeerrInfoOpen = false }) { Text("Cancel") }
-        },
-        confirmButton = {
-          TextButton(
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+          Text("Discover with Seerr", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+          Text(
+            "Connect your Seerr or Overseerr server to browse titles and submit media requests.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          OutlinedTextField(
+            value = seerrUrl,
+            onValueChange = { seerrUrl = it },
+            label = { Text("Seerr server URL") },
+            placeholder = { Text("https://seerr.example.com") },
+            leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+          )
+          Button(
             onClick = {
               val enteredUrl = seerrUrl.trim().removeSuffix("/")
-              val url = if (enteredUrl.startsWith("http://", ignoreCase = true) || enteredUrl.startsWith("https://", ignoreCase = true)) {
-                enteredUrl
-              } else {
-                "https://$enteredUrl"
-              }
+              val url = if (enteredUrl.startsWith("http://", ignoreCase = true) || enteredUrl.startsWith("https://", ignoreCase = true)) enteredUrl else "https://$enteredUrl"
               if (url != "https://") {
                 seerrUrl = url
-                context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
-                  .edit().putString("seerr_url", url).apply()
-                runCatching {
-                  context.startActivity(
-                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)),
-                  )
-                }
+                context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE).edit().putString("seerr_url", url).apply()
+                runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
                 isSeerrInfoOpen = false
               }
             },
             enabled = seerrUrl.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
           ) { Text("Open Seerr") }
-        },
+          Spacer(modifier = Modifier.height(8.dp))
+        }
       )
     }
   }
@@ -1053,6 +1072,17 @@ private fun HomeDashboard(
       }
     }
 
+    val movieLibrary = homeLibraries.firstOrNull {
+      it.collectionType.equals("movies", ignoreCase = true) || it.name.contains("movie", ignoreCase = true) || it.name.contains("film", ignoreCase = true)
+    }
+    val animeLibrary = homeLibraries.firstOrNull { it.name.contains("anime", ignoreCase = true) }
+    val tvLibrary = homeLibraries.firstOrNull {
+      it.collectionType.equals("tvshows", ignoreCase = true) ||
+        it.name.contains("tv", ignoreCase = true) ||
+        it.name.contains("show", ignoreCase = true) ||
+        it.name.contains("series", ignoreCase = true)
+    }
+
     // 3. Server-side Watch History (Jellyfin tab only)
     if (uiState.session != null) {
       item {
@@ -1096,7 +1126,13 @@ private fun HomeDashboard(
 
     // 5. Movies
     if (uiState.latestMovies.isNotEmpty()) {
-      item { SectionHeader(title = "Movies", subtitle = "Recently added") }
+      item {
+        SectionHeader(
+          title = "Movies",
+          subtitle = "Recently added",
+          onSeeAll = movieLibrary?.let { library -> { viewModel.loadLibrary(library.id) } },
+        )
+      }
       item {
         HorizontalSection(
           items = uiState.latestMovies,
@@ -1109,7 +1145,13 @@ private fun HomeDashboard(
 
     // 6. Anime
     if (uiState.latestAnime.isNotEmpty()) {
-      item { SectionHeader(title = "Anime", subtitle = "From your anime library") }
+      item {
+        SectionHeader(
+          title = "Anime",
+          subtitle = "From your anime library",
+          onSeeAll = animeLibrary?.let { library -> { viewModel.loadLibrary(library.id) } },
+        )
+      }
       item {
         HorizontalSection(
           items = uiState.latestAnime,
@@ -1122,7 +1164,13 @@ private fun HomeDashboard(
 
     // 7. TV Shows
     if (uiState.latestShows.isNotEmpty()) {
-      item { SectionHeader(title = "TV Shows", subtitle = "Recently updated") }
+      item {
+        SectionHeader(
+          title = "TV Shows",
+          subtitle = "Recently updated",
+          onSeeAll = tvLibrary?.let { library -> { viewModel.loadLibrary(library.id) } },
+        )
+      }
       item {
         HorizontalSection(
           items = uiState.latestShows,
@@ -1369,7 +1417,10 @@ private fun JellyfinHeroBanner(
     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
       val item = items[page]
       val artworkUrl = remember(session.serverUrl, item.id, session.accessToken) {
-        "${session.serverUrl}/Items/${item.id}/Images/Backdrop?maxWidth=1280&quality=80&api_key=${session.accessToken}"
+        "${session.serverUrl}/Items/${item.id}/Images/Backdrop?maxWidth=1280&quality=80&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
+      }
+      val posterFallbackUrl = remember(session.serverUrl, item.id, session.accessToken) {
+        "${session.serverUrl}/Items/${item.id}/Images/Primary?maxWidth=900&quality=90&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
       }
 
       Box(modifier = Modifier.fillMaxSize()) {
@@ -1378,6 +1429,7 @@ private fun JellyfinHeroBanner(
           contentDescription = item.title,
           contentScale = ContentScale.Crop,
           modifier = Modifier.fillMaxSize(),
+          fallbackUrl = posterFallbackUrl,
         )
         item.qualityLabel?.let { quality ->
           Surface(
@@ -1568,6 +1620,9 @@ private fun PosterCard(
   val imageUrl = remember(session.serverUrl, track.id, session.accessToken, track.artworkUrl) {
     track.artworkUrl ?: "${session.serverUrl}/Items/${track.id}/Images/Primary?maxWidth=600&quality=90&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
   }
+  val primaryFallbackUrl = remember(session.serverUrl, track.id, session.accessToken) {
+    "${session.serverUrl}/Items/${track.id}/Images/Primary?maxWidth=900&quality=90&api_key=${java.net.URLEncoder.encode(session.accessToken, "UTF-8")}"
+  }
   Column(
     modifier = Modifier
       .then(if (cardWidth == 0.dp) Modifier.fillMaxWidth() else Modifier.width(cardWidth))
@@ -1587,6 +1642,7 @@ private fun PosterCard(
         contentDescription = track.title,
         contentScale = ContentScale.Crop,
         modifier = Modifier.fillMaxSize(),
+        fallbackUrl = primaryFallbackUrl,
       )
       if (showProgress && track.durationMs > 0L && track.playbackPositionMs > 0L) {
         val progress = (track.playbackPositionMs.toFloat() / track.durationMs.toFloat()).coerceIn(0f, 1f)

@@ -40,17 +40,18 @@ fun RemoteImage(
   modifier: Modifier = Modifier,
   contentScale: ContentScale = ContentScale.Fit,
   alpha: Float = 1f,
+  fallbackUrl: String? = null,
 ) {
   val context = LocalContext.current
   val client = koinInject<OkHttpClient>()
-  var bitmap by remember(url) { mutableStateOf(RemoteImageLoader.getFromMemory(url)) }
+  var bitmap by remember(url, fallbackUrl) { mutableStateOf(RemoteImageLoader.getFromMemory(url)) }
 
-  LaunchedEffect(url) {
+  LaunchedEffect(url, fallbackUrl) {
     if (bitmap == null) {
-      bitmap =
-        withContext(Dispatchers.IO) {
-          RemoteImageLoader.load(context, client, url)
-        }
+      bitmap = withContext(Dispatchers.IO) { RemoteImageLoader.load(context, client, url) }
+      if (bitmap == null && !fallbackUrl.isNullOrBlank() && fallbackUrl != url) {
+        bitmap = withContext(Dispatchers.IO) { RemoteImageLoader.load(context, client, fallbackUrl) }
+      }
     }
   }
 

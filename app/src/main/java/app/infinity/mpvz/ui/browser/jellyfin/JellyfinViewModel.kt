@@ -244,10 +244,9 @@ class JellyfinViewModel(
           val mediaDeferred = async(Dispatchers.IO) {
             libs.map { lib ->
               async(Dispatchers.IO) {
-                jellyfin.loadMedia(
+                jellyfin.loadAllMedia(
                   session = session,
                   parentId = lib.id,
-                  limit = 24,
                   sortBy = "DateCreated",
                   sortOrder = "Descending",
                   includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
