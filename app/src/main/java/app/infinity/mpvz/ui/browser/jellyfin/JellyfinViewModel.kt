@@ -64,8 +64,10 @@ class JellyfinViewModel(
       }
     }
     if (mixed.isEmpty()) return emptyList()
-    val offset = rotation.mod(mixed.size)
-    return (mixed.drop(offset) + mixed.take(offset)).take(8)
+    // Advance one complete five-card page on each refresh so the next batch
+    // does not repeat the previous five titles until the catalog is exhausted.
+    val offset = (rotation * 5).mod(mixed.size)
+    return (mixed.drop(offset) + mixed.take(offset)).take(5)
   }
 
   private fun groupShows(items: List<JellyfinTrack>): List<JellyfinTrack> {
@@ -245,7 +247,7 @@ class JellyfinViewModel(
                 jellyfin.loadMedia(
                   session = session,
                   parentId = lib.id,
-                  limit = 50,
+                  limit = 24,
                   sortBy = "DateCreated",
                   sortOrder = "Descending",
                   includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
