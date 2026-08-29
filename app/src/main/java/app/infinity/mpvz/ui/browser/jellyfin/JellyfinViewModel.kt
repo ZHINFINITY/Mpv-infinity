@@ -367,31 +367,31 @@ class JellyfinViewModel(
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
     _uiState.update { state -> state.copy(seerrDiscover = state.seerrDiscover.copy(
-      movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
-      shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
-      trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
-      searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
-      details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(isRequesting = true) else value },
+      movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = true, requestError = null) else it },
+      shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = true, requestError = null) else it },
+      trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = true, requestError = null) else it },
+      searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = true, requestError = null) else it },
+      details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(isRequesting = true, requestError = null) else value },
     )) }
     viewModelScope.launch {
       client.requestMedia(url, media, is4k, seasons, audioPreference).onSuccess {
         _uiState.update { state ->
           state.copy(seerrDiscover = state.seerrDiscover.copy(
-            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
-            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
-            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
-            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
-            details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(requested = true, requested4k = is4k, isRequesting = false) else value.copy(isRequesting = false) },
+            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else it.copy(isRequesting = false) },
+            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else it.copy(isRequesting = false) },
+            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else it.copy(isRequesting = false) },
+            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else it.copy(isRequesting = false) },
+            details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else value.copy(isRequesting = false) },
                     ))
         }
       }
-        .onFailure {
+        .onFailure { error ->
           _uiState.update { state -> state.copy(seerrDiscover = state.seerrDiscover.copy(
-            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
-            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
-            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
-            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
-            details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(isRequesting = false) else value },
+            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = false, requestError = error.message ?: "Request failed") else it },
+            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = false, requestError = error.message ?: "Request failed") else it },
+            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = false, requestError = error.message ?: "Request failed") else it },
+            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = false, requestError = error.message ?: "Request failed") else it },
+            details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(isRequesting = false, requestError = error.message ?: "Request failed") else value },
           )) }
         }
     }
@@ -634,6 +634,19 @@ class JellyfinViewModel(
             }
           },
         )
+      }
+    }
+  }
+
+  fun playSeerrMedia(context: Context, media: SeerrMediaItem) {
+    val session = _uiState.value.session ?: return
+    val client = httpClient ?: return
+    viewModelScope.launch {
+      val jellyfin = JellyfinClient(client, context)
+      val resolved = media.jellyfinMediaId?.let { jellyfin.loadItem(session, it).getOrNull() }
+        ?: jellyfin.search(session, media.title, limit = 20).getOrNull()?.firstOrNull { it.title.equals(media.title, true) || it.originalTitle.equals(media.title, true) }
+      if (resolved != null) {
+        if (resolved.isPlayable || resolved.isVideo) playItem(context, resolved) else openDetail(resolved)
       }
     }
   }
