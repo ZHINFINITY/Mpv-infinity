@@ -176,6 +176,7 @@ class JellyfinClient(
     sortBy: String = "DateCreated",
     sortOrder: String = "Descending",
     includeItemTypes: String? = null,
+    libraryName: String? = null,
   ): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
     runCatching {
       val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
@@ -195,7 +196,7 @@ class JellyfinClient(
         if (!response.isSuccessful) throw IOException("Failed to load Jellyfin media: HTTP ${response.code}")
         val root = json.parseToJsonElement(response.body.string()).jsonObject
         val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
-        items.mapNotNull { parseTrack(it.jsonObject, session) }
+        items.mapNotNull { parseTrack(it.jsonObject, session, libraryName) }
       }
     }
   }
@@ -334,7 +335,7 @@ class JellyfinClient(
     }
   }
 
-  private fun parseTrack(obj: JsonObject, session: JellyfinSession): JellyfinTrack? {
+  private fun parseTrack(obj: JsonObject, session: JellyfinSession, libraryName: String? = null): JellyfinTrack? {
     val id = obj["Id"]?.jsonPrimitive?.content ?: return null
     val parentId = obj["ParentId"]?.jsonPrimitive?.contentOrNull
     val name = obj["Name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return null
@@ -388,16 +389,26 @@ class JellyfinClient(
     val width = videoStream?.get("Width")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
     val height = videoStream?.get("Height")?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
     val range = videoStream?.get("VideoRange")?.jsonPrimitive?.contentOrNull.orEmpty()
-    val quality = if (mediaType.equals("Movie", ignoreCase = true) || mediaType.equals("Episode", ignoreCase = true)) {
+    val quality = if (mediaType.equals("Movie", ignoreCase = true) ||
+      mediaType.equals("Episode", ignoreCase = true) ||
+      mediaType.equals("Series", ignoreCase = true) ||
+      mediaType.equals("Season", ignoreCase = true)
+    ) {
       buildString {
-        append(when {
-          height >= 2160 || width >= 3800 -> "4K"
-          height >= 1440 || width >= 2500 -> "1440p"
-          height >= 1080 || width >= 1900 -> "1080p"
-          height >= 720 || width >= 1200 -> "720p"
-          else -> "SD"
-        })
-        if (range.contains("HDR", ignoreCase = true)) append(" HDR")
+        // Jellyfin commonly omits MediaStreams for Series/Season containers;
+        // keep the chip visible rather than dropping it from those posters.
+        if (videoStream == null && (mediaType.equals("Series", ignoreCase = true) || mediaType.equals("Season", ignoreCase = true))) {
+          append("HD")
+        } else {
+          append(when {
+            height >= 2160 || width >= 3800 -> "4K"
+            height >= 1440 || width >= 2500 -> "1440p"
+            height >= 1080 || width >= 1900 -> "1080p"
+            height >= 720 || width >= 1200 -> "720p"
+            else -> "SD"
+          })
+          if (range.contains("HDR", ignoreCase = true)) append(" HDR")
+        }
       }
     } else null
     val trailer = obj["RemoteTrailers"]?.jsonArray?.firstOrNull()?.jsonObject?.get("Url")?.jsonPrimitive?.contentOrNull
@@ -412,6 +423,7 @@ class JellyfinClient(
       artworkUrl = artwork,
       streamUrl = stream,
       mediaType = mediaType,
+      libraryName = libraryName,
       overview = overview,
       originalTitle = originalTitle,
       productionYear = year,

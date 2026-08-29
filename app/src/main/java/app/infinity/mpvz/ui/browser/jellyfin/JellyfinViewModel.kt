@@ -230,7 +230,7 @@ class JellyfinViewModel(
     prefs.edit().clear().apply()
   }
 
-  private suspend fun loadHome(session: JellyfinSession) {
+  private suspend fun loadHome(session: JellyfinSession, advanceHero: Boolean = false) {
     _uiState.update { it.copy(isLoading = true, error = null) }
     val client = httpClient ?: return
     val jellyfin = JellyfinClient(client, getApplication())
@@ -251,6 +251,7 @@ class JellyfinViewModel(
                   sortBy = "DateCreated",
                   sortOrder = "Descending",
                   includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
+                  libraryName = lib.name,
                 ).getOrDefault(emptyList())
               }
             }.awaitAll().flatten()
@@ -259,7 +260,7 @@ class JellyfinViewModel(
           val allItems = mediaDeferred.await()
           val videos = allItems.filter { it.isVideo }
           val audio = allItems.filter { !it.isVideo }
-          val rotation = _uiState.value.heroRotation + 1
+          val rotation = _uiState.value.heroRotation + if (advanceHero) 1 else 0
           val heroItems = mixedHeroItems(videos, rotation)
           val fallbackTopPicks = heroItems.filterNot { candidate -> watchHistory.any { it.id == candidate.id } }
           _uiState.update { state ->
@@ -270,7 +271,8 @@ class JellyfinViewModel(
               watchHistory = watchHistory,
               topPicks = fallbackTopPicks,
               latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
-              latestShows = groupShows(videos).take(20),
+              latestShows = groupShows(videos.filterNot { it.isAnime }).take(20),
+              latestAnime = videos.filter { it.isAnime }.take(20),
               latestMusic = audio.take(20),
               currentItems = allItems,
               isLoading = false,
@@ -317,6 +319,7 @@ class JellyfinViewModel(
           sortBy = _uiState.value.sortBy.apiValue,
           sortOrder = _uiState.value.sortOrder.apiValue,
           includeItemTypes = libView?.itemTypes,
+          libraryName = library?.name,
         ).fold(
           onSuccess = { items ->
             _uiState.update {
@@ -347,7 +350,18 @@ class JellyfinViewModel(
   fun refresh() {
     val session = _uiState.value.session ?: return
     val libraryId = _uiState.value.selectedLibraryId
-    if (libraryId != null) loadLibrary(libraryId) else viewModelScope.launch { loadHome(session) }
+    if (libraryId != null) {
+      loadLibrary(libraryId)
+      return
+    }
+
+    // Swap the visible batch before the network request starts. This makes a
+    // pull-to-refresh feel instant while the refreshed dashboard loads below it.
+    val state = _uiState.value
+    val nextRotation = state.heroRotation + 1
+    val nextHeroItems = mixedHeroItems(state.currentItems.filter { it.isVideo }, nextRotation)
+    _uiState.update { it.copy(heroRotation = nextRotation, heroItems = nextHeroItems) }
+    viewModelScope.launch { loadHome(session) }
   }
 
   fun loadMore() {
