@@ -13,6 +13,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +36,8 @@ class JellyfinViewModel(
   val uiState: StateFlow<JellyfinUiState> = _uiState.asStateFlow()
 
   private var httpClient: OkHttpClient? = null
+  private var searchJob: Job? = null
+  private var searchGeneration = 0L
 
   private fun groupShows(items: List<JellyfinTrack>): List<JellyfinTrack> {
     return items
@@ -340,19 +344,32 @@ class JellyfinViewModel(
   }
 
   fun search(query: String) {
+    val normalizedQuery = query.trim()
+    searchJob?.cancel()
+    searchGeneration += 1
+    val generation = searchGeneration
     val session = _uiState.value.session ?: return
     val client = httpClient ?: return
-    if (query.isBlank()) {
-      _uiState.update { it.copy(currentItems = emptyList(), searchQuery = "") }
+    if (normalizedQuery.isBlank()) {
+      _uiState.update { it.copy(currentItems = emptyList(), searchQuery = "", isLoading = false, error = null) }
       return
     }
-    viewModelScope.launch {
-      _uiState.update { it.copy(isLoading = true, searchQuery = query) }
+    searchJob = viewModelScope.launch {
+      _uiState.update { it.copy(isLoading = true, searchQuery = query, error = null, openLibrary = null) }
+      delay(250L)
       val jellyfin = JellyfinClient(client, getApplication())
       withContext(Dispatchers.IO) {
-        jellyfin.search(session = session, query = query, limit = 50).fold(
-          onSuccess = { items -> _uiState.update { it.copy(currentItems = items, isLoading = false, openLibrary = null) } },
-          onFailure = { e -> _uiState.update { it.copy(isLoading = false, error = e.message) } },
+        jellyfin.search(session = session, query = normalizedQuery, limit = 50).fold(
+          onSuccess = { items ->
+            if (generation == searchGeneration) {
+              _uiState.update { it.copy(currentItems = items, isLoading = false, error = null, openLibrary = null) }
+            }
+          },
+          onFailure = { e ->
+            if (generation == searchGeneration) {
+              _uiState.update { it.copy(isLoading = false, error = e.message ?: "Search failed") }
+            }
+          },
         )
       }
     }
@@ -362,7 +379,7 @@ class JellyfinViewModel(
     val session = _uiState.value.session ?: return
     val client = httpClient ?: return
     val jellyfin = JellyfinClient(client, context)
-    val streamUrl = jellyfin.getStreamUrl(session, track.id)
+    val streamUrl = jellyfin.getStreamUrl(session, track.id, isVideo = track.isVideo)
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(streamUrl)).apply {
       setClass(context, Class.forName("app.infinity.mpvz.ui.player.PlayerActivity"))
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

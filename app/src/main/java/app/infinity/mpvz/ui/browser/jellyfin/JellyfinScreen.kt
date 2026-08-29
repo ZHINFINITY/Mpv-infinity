@@ -147,13 +147,7 @@ private fun JellyfinLoginContent(
       },
       actions = {
         IconButton(onClick = { showAddServer = true }) {
-          Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search Jellyfin")
-        }
-        IconButton(onClick = { showAddServer = true }) {
           Icon(imageVector = Icons.RoundedFilled.BringYourOwnIp, contentDescription = "Jellyfin servers")
-        }
-        IconButton(onClick = { showSeerrInfo = true }) {
-          Icon(imageVector = Icons.RoundedFilled.PlaylistAdd, contentDescription = "Seerr requests")
         }
         IconButton(onClick = { backStack.add(PreferencesScreen) }) {
           Icon(imageVector = Icons.RoundedFilled.Settings, contentDescription = "App settings")
@@ -368,6 +362,13 @@ private fun JellyfinHomeContent(
   var isMoreMenuOpen by remember { mutableStateOf(false) }
   var isServerMenuOpen by remember { mutableStateOf(false) }
   var isSeerrInfoOpen by remember { mutableStateOf(false) }
+  var seerrUrl by remember {
+    mutableStateOf(
+      context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
+        .getString("seerr_url", "")
+        .orEmpty(),
+    )
+  }
   val backStack = LocalBackStack.current
 
   BackHandler(enabled = isSearching || uiState.detailItem != null || uiState.openLibrary != null) {
@@ -614,12 +615,50 @@ private fun JellyfinHomeContent(
     if (isSeerrInfoOpen) {
       AlertDialog(
         onDismissRequest = { isSeerrInfoOpen = false },
-        title = { Text("Seerr requests") },
+        title = { Text("Discover with Seerr") },
         text = {
-          Text("Seerr is available as a Jellyfin-side request service. Configure it in the server profile before submitting requests.")
+          Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+              "Connect your Seerr or Overseerr server to browse titles and submit media requests.",
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+              value = seerrUrl,
+              onValueChange = { seerrUrl = it },
+              label = { Text("Seerr server URL") },
+              placeholder = { Text("https://seerr.example.com") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(14.dp),
+            )
+          }
+        },
+        dismissButton = {
+          TextButton(onClick = { isSeerrInfoOpen = false }) { Text("Cancel") }
         },
         confirmButton = {
-          TextButton(onClick = { isSeerrInfoOpen = false }) { Text("OK") }
+          TextButton(
+            onClick = {
+              val enteredUrl = seerrUrl.trim().removeSuffix("/")
+              val url = if (enteredUrl.startsWith("http://", ignoreCase = true) || enteredUrl.startsWith("https://", ignoreCase = true)) {
+                enteredUrl
+              } else {
+                "https://$enteredUrl"
+              }
+              if (url != "https://") {
+                seerrUrl = url
+                context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
+                  .edit().putString("seerr_url", url).apply()
+                runCatching {
+                  context.startActivity(
+                    android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)),
+                  )
+                }
+                isSeerrInfoOpen = false
+              }
+            },
+            enabled = seerrUrl.isNotBlank(),
+          ) { Text("Open Seerr") }
         },
       )
     }
@@ -846,7 +885,17 @@ private fun LibraryContent(
   val genres = remember(uiState.currentItems) {
     uiState.currentItems.flatMap { it.genres }.distinct().sorted()
   }
-  val visibleItems = if (selectedGenre == null) uiState.currentItems else uiState.currentItems.filter { selectedGenre in it.genres }
+  val categoryItems = if (uiState.searchQuery.isBlank()) {
+    uiState.currentItems
+  } else {
+    when (uiState.searchCategory) {
+      JellyfinSearchCategory.ALL -> uiState.currentItems
+      JellyfinSearchCategory.MOVIES -> uiState.currentItems.filter { it.mediaType.equals("Movie", ignoreCase = true) }
+      JellyfinSearchCategory.SHOWS -> uiState.currentItems.filter { it.mediaType.equals("Series", ignoreCase = true) || it.mediaType.equals("Season", ignoreCase = true) }
+      JellyfinSearchCategory.EPISODES -> uiState.currentItems.filter { it.mediaType.equals("Episode", ignoreCase = true) }
+    }
+  }
+  val visibleItems = if (selectedGenre == null) categoryItems else categoryItems.filter { selectedGenre in it.genres }
   Column(modifier = Modifier.fillMaxSize()) {
     if (genres.isNotEmpty()) {
       Row(
@@ -1195,8 +1244,9 @@ private fun PosterCard(
   Column(
     modifier = Modifier
       .then(if (cardWidth == 0.dp) Modifier.fillMaxWidth() else Modifier.width(cardWidth))
-      .clip(RoundedCornerShape(8.dp))
-      .clickable(onClick = onClick),
+      .clip(RoundedCornerShape(10.dp))
+      .clickable(onClick = onClick)
+      .padding(bottom = 2.dp),
   ) {
     Box(
       modifier = Modifier
@@ -1268,7 +1318,9 @@ private fun LibraryCard(
   Column(
     modifier = Modifier
       .width(200.dp)
-      .clickable(onClick = onClick),
+      .clip(RoundedCornerShape(12.dp))
+      .clickable(onClick = onClick)
+      .padding(bottom = 4.dp),
   ) {
     Box(
       modifier = Modifier
@@ -1279,6 +1331,14 @@ private fun LibraryCard(
       contentAlignment = Alignment.Center,
     ) {
       Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+      collection.artworkUrl?.let { artworkUrl ->
+        RemoteImage(
+          url = artworkUrl,
+          contentDescription = collection.name,
+          contentScale = ContentScale.Crop,
+          modifier = Modifier.fillMaxSize(),
+        )
+      }
     }
     Spacer(modifier = Modifier.height(6.dp))
     Text(
