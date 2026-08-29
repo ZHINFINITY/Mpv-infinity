@@ -857,7 +857,7 @@ private fun JellyfinHomeContent(
               if (url != "https://") {
                 context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
                   .edit()
-                  .putString("seerr_url", url)
+                  .putString("seerr_url", enteredUrl)
                   .putString("seerr_auth_mode", seerrAuthMode.name)
                   .putString("seerr_username", seerrUsername)
                   .apply()

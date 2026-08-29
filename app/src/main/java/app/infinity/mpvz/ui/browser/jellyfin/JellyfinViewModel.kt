@@ -245,11 +245,7 @@ class JellyfinViewModel(
   ) {
     val client = httpClient ?: return onResult(false)
     val enteredUrl = url.trim().removeSuffix("/")
-    val candidates = if (enteredUrl.startsWith("http://", true) || enteredUrl.startsWith("https://", true)) {
-      listOf(enteredUrl)
-    } else {
-      listOf("https://$enteredUrl", "http://$enteredUrl")
-    }
+    val candidates = SeerrClient.generateCandidateUrls(enteredUrl)
     viewModelScope.launch {
       _uiState.update {
         it.copy(
@@ -269,7 +265,7 @@ class JellyfinViewModel(
         }
         SeerrAuthMode.JELLYFIN -> {
           seerr.setApiKey(null)
-          seerr.loginJellyfin(candidate, username, secret, _uiState.value.activeServer?.serverUrl.orEmpty())
+          seerr.loginJellyfin(candidate, username, secret)
         }
       }
       var workingUrl = candidates.first()
