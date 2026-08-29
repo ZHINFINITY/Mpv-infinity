@@ -853,8 +853,7 @@ private fun JellyfinHomeContent(
           Button(
             onClick = {
               val enteredUrl = seerrUrl.trim().removeSuffix("/")
-              val url = if (enteredUrl.startsWith("http://", ignoreCase = true) || enteredUrl.startsWith("https://", ignoreCase = true)) enteredUrl else "https://$enteredUrl"
-              if (url != "https://") {
+              if (enteredUrl.isNotBlank()) {
                 context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
                   .edit()
                   .putString("seerr_url", enteredUrl)
@@ -862,7 +861,7 @@ private fun JellyfinHomeContent(
                   .putString("seerr_username", seerrUsername)
                   .apply()
                 val secret = if (seerrAuthMode == SeerrAuthMode.API_KEY) seerrUsername else seerrPassword
-                viewModel.connectSeerr(url, seerrAuthMode, seerrUsername, secret) { success ->
+                viewModel.connectSeerr(enteredUrl, seerrAuthMode, seerrUsername, secret) { success ->
                   if (success) {
                     isSeerrInfoOpen = false
                     isSeerrDashboardOpen = true
