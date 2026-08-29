@@ -400,7 +400,10 @@ private fun JellyfinHomeContent(
       similarItems = uiState.detailSimilarItems,
       onBack = { viewModel.closeDetail() },
       onPlay = { viewModel.playItem(context, uiState.detailItem!!) },
-      onEpisodePlay = { episode -> viewModel.playItem(context, episode) },
+      onEpisodePlay = { episode ->
+        val episodeIndex = uiState.detailEpisodes.indexOfFirst { it.id == episode.id }.coerceAtLeast(0)
+        viewModel.playTracks(context, uiState.detailEpisodes, episodeIndex)
+      },
       onOpenTrailer = { url ->
         context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
       },
