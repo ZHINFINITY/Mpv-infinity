@@ -199,7 +199,7 @@ class JellyfinClient(
       val encodedQuery = URLEncoder.encode(query, Charsets.UTF_8.name())
       val url = "${session.serverUrl}/Search/Hints" +
         "?SearchTerm=$encodedQuery&Limit=$limit" +
-        "&IncludePeople=false&IncludeMedia=false&IncludeGenres=false&IncludeStudios=false" +
+        "&IncludePeople=false&IncludeMedia=true&IncludeGenres=true&IncludeStudios=true" +
         "&api_key=$encodedToken"
       val request = Request.Builder()
         .url(url)
@@ -220,8 +220,10 @@ class JellyfinClient(
           val album = obj["Album"]?.jsonPrimitive?.contentOrNull ?: type
           val ticks = obj["RunTimeTicks"]?.jsonPrimitive?.longOrNull ?: 0L
           val tag = obj["ImageTags"]?.jsonObject?.get("Primary")?.jsonPrimitive?.content
-          val artwork = tag?.let {
-            "${session.serverUrl}/Items/$id/Images/Primary?maxWidth=600&quality=90&tag=$it&api_key=$encodedToken"
+          val artwork = if (!tag.isNullOrBlank()) {
+            "${session.serverUrl}/Items/$id/Images/Primary?maxWidth=600&quality=90&tag=$tag&api_key=$encodedToken"
+          } else {
+            "${session.serverUrl}/Items/$id/Images/Primary?maxWidth=600&quality=90&api_key=$encodedToken"
           }
           val stream = when {
             type.equals("Audio", ignoreCase = true) ->

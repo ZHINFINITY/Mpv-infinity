@@ -26,11 +26,25 @@ class JellyfinViewModel(
 ) : AndroidViewModel(application) {
 
   private val prefs = application.getSharedPreferences("jellyfin_profiles", Context.MODE_PRIVATE)
+  private val profileStore = JellyfinProfileStore(application)
+
+  private fun JellyfinProfile.toServerProfile() = JellyfinServerProfile(id, name, serverUrl, userId, username, accessToken)
 
   private val _uiState = MutableStateFlow(JellyfinUiState())
   val uiState: StateFlow<JellyfinUiState> = _uiState.asStateFlow()
 
   private var httpClient: OkHttpClient? = null
+
+  private fun groupShows(items: List<JellyfinTrack>): List<JellyfinTrack> {
+    return items
+      .filter { it.mediaType.equals("Series", ignoreCase = true) || it.mediaType.equals("Episode", ignoreCase = true) }
+      .groupBy { item ->
+        item.album.trim().takeIf { it.isNotBlank() }
+          ?: item.title.substringBefore(" - ").substringBefore(" — ").trim()
+      }
+      .values
+      .map { group -> group.firstOrNull { it.mediaType.equals("Series", ignoreCase = true) } ?: group.first() }
+  }
 
   init {
     restoreSavedSession()
@@ -51,6 +65,8 @@ class JellyfinViewModel(
     val username = prefs.getString("username", null)
 
     if (!serverUrl.isNullOrBlank() && !accessToken.isNullOrBlank() && !userId.isNullOrBlank()) {
+      val savedProfiles = profileStore.getAll()
+      val activeProfile = savedProfiles.firstOrNull { it.serverUrl == serverUrl && it.userId == userId }
       val session = JellyfinSession(
         serverUrl = serverUrl,
         userId = userId,
@@ -67,8 +83,8 @@ class JellyfinViewModel(
       _uiState.update {
         it.copy(
           session = session,
-          activeServer = profile,
-          servers = listOf(profile),
+          activeServer = activeProfile?.toServerProfile() ?: profile,
+          servers = (savedProfiles.map { it.toServerProfile() } + profile).distinctBy { it.id },
         )
       }
     }
@@ -87,6 +103,7 @@ class JellyfinViewModel(
     serverUrl: String,
     username: String,
     password: String,
+    profileName: String = "",
     onResult: (Boolean) -> Unit,
   ) {
     val client = httpClient ?: return
@@ -97,17 +114,19 @@ class JellyfinViewModel(
         onSuccess = { session ->
           val profile = JellyfinServerProfile(
             id = session.userId,
-            name = username,
+            name = profileName.ifBlank { username },
             serverUrl = session.serverUrl,
             userId = session.userId,
             username = username,
             accessToken = session.accessToken,
           )
+          profileStore.upsert(JellyfinProfile(profile.id, profile.name, profile.serverUrl, profile.username, profile.userId, profile.accessToken))
+          val savedProfiles = profileStore.getAll().map { it.toServerProfile() }
           _uiState.update {
             it.copy(
               session = session,
               activeServer = profile,
-              servers = listOf(profile),
+              servers = savedProfiles,
               isAuthenticating = false,
             )
           }
@@ -127,6 +146,7 @@ class JellyfinViewModel(
     serverUrl: String,
     username: String,
     token: String,
+    profileName: String = "",
     onResult: (Boolean) -> Unit,
   ) {
     val client = httpClient ?: return
@@ -139,17 +159,19 @@ class JellyfinViewModel(
       )
       val profile = JellyfinServerProfile(
         id = username,
-        name = username,
+        name = profileName.ifBlank { username },
         serverUrl = session.serverUrl,
         userId = username,
         username = username,
         accessToken = token,
       )
+      profileStore.upsert(JellyfinProfile(profile.id, profile.name, profile.serverUrl, profile.username, profile.userId, profile.accessToken))
+      val savedProfiles = profileStore.getAll().map { it.toServerProfile() }
       _uiState.update {
         it.copy(
           session = session,
           activeServer = profile,
-          servers = listOf(profile),
+          servers = savedProfiles,
           isAuthenticating = false,
         )
       }
@@ -201,10 +223,7 @@ class JellyfinViewModel(
             state.copy(
               heroItems = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) || it.mediaType.equals("Series", ignoreCase = true) }.take(5),
               latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
-              latestShows = videos.filter { it.mediaType.equals("Series", ignoreCase = true) }.ifEmpty {
-                videos.filter { it.mediaType.equals("Episode", ignoreCase = true) }
-                  .distinctBy { it.album.ifBlank { it.title.substringBefore(" - ") } }
-              }.take(20),
+              latestShows = groupShows(videos).take(20),
               latestMusic = audio.take(20),
               currentItems = allItems,
               isLoading = false,
