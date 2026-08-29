@@ -96,6 +96,9 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       )
     }
     val mediaStatus = mediaInfo?.get("status")?.jsonPrimitive?.contentOrNull.orEmpty()
+    val requestRecords = root["requests"]?.jsonArray ?: mediaInfo?.get("requests")?.jsonArray
+    val hasRequest = requestRecords?.isNotEmpty() == true || mediaStatus.contains("requested", true) || mediaStatus.contains("processing", true)
+    val has4kRequest = requestRecords?.any { it.jsonObject["is4k"]?.jsonPrimitive?.booleanOrNull == true } == true
     val available = mediaStatus.equals("available", true) || !jellyfinMediaId.isNullOrBlank()
     val partialStatus = mediaStatus.contains("partial", true) || mediaStatus.contains("partially", true)
     media.copy(
@@ -108,6 +111,8 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       cast = cast,
       seasons = seasons.ifEmpty { media.seasons },
       availableInJellyfin = available || media.availableInJellyfin,
+      requested = hasRequest || media.requested,
+      requested4k = has4kRequest || media.requested4k,
       partiallyAvailable = partialStatus || (!available && seasons.any { it.available }) || (seasons.any { it.available } && seasons.any { !it.available }),
       jellyfinMediaId = jellyfinMediaId ?: media.jellyfinMediaId,
     )
