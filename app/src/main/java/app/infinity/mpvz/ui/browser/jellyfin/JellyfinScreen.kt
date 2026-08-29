@@ -940,7 +940,22 @@ private fun HomeDashboard(
       }
     }
 
-    // 3. Latest Movies
+    // 3. Server-side Watch History (Jellyfin tab only)
+    if (uiState.session != null && uiState.watchHistory.isNotEmpty()) {
+      item {
+        SectionHeader(title = "Watch History", subtitle = "Played on this Jellyfin server")
+      }
+      item {
+        HorizontalSection(
+          items = uiState.watchHistory,
+          session = uiState.session,
+          onItemPlay = { if (it.isPlayable) viewModel.playItem(context, it) else viewModel.openDetail(it) },
+          onItemDetails = { viewModel.openDetail(it) },
+        )
+      }
+    }
+
+    // 4. Latest Movies
     if (uiState.latestMovies.isNotEmpty()) {
       item {
         SectionHeader(title = "Latest Movies", subtitle = "Newly added")

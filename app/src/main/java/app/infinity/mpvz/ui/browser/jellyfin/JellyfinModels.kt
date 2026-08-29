@@ -104,6 +104,7 @@ data class JellyfinUiState(
   val libraries: List<JellyfinCollection> = emptyList(),
   val heroItems: List<JellyfinTrack> = emptyList(),
   val resumeItems: List<JellyfinTrack> = emptyList(),
+  val watchHistory: List<JellyfinTrack> = emptyList(),
   val latestMovies: List<JellyfinTrack> = emptyList(),
   val latestShows: List<JellyfinTrack> = emptyList(),
   val latestMusic: List<JellyfinTrack> = emptyList(),
