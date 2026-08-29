@@ -361,7 +361,11 @@ class JellyfinClient(
     val rating = obj["CommunityRating"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()
     val officialRating = obj["OfficialRating"]?.jsonPrimitive?.contentOrNull
     val status = obj["Status"]?.jsonPrimitive?.contentOrNull
-    val seasonNumber = obj["ParentIndexNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    val seasonNumber = if (mediaType.equals("Season", ignoreCase = true)) {
+      obj["IndexNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    } else {
+      obj["ParentIndexNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+    }
     val episodeNumber = obj["IndexNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
     val chapterCount = obj["Chapters"]?.jsonArray?.size ?: 0
     val genres = obj["Genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
