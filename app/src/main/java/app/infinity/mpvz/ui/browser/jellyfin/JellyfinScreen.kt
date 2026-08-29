@@ -132,6 +132,7 @@ private fun JellyfinLoginContent(
   var serverName by remember { mutableStateOf("") }
   var username by remember { mutableStateOf("") }
   var password by remember { mutableStateOf("") }
+  var isJellyfinPasswordVisible by remember { mutableStateOf(false) }
   var useToken by remember { mutableStateOf(false) }
   val backStack = LocalBackStack.current
 
@@ -315,7 +316,15 @@ private fun JellyfinLoginContent(
               onValueChange = { password = it },
               label = { Text("Password") },
               leadingIcon = { Icon(imageVector = Icons.RoundedFilled.Lock, contentDescription = null) },
-              visualTransformation = PasswordVisualTransformation(),
+              trailingIcon = {
+                IconButton(onClick = { isJellyfinPasswordVisible = !isJellyfinPasswordVisible }) {
+                  Icon(
+                    imageVector = if (isJellyfinPasswordVisible) Icons.RoundedFilled.VisibilityOff else Icons.RoundedFilled.Visibility,
+                    contentDescription = if (isJellyfinPasswordVisible) "Hide password" else "Show password",
+                  )
+                }
+              },
+              visualTransformation = if (isJellyfinPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
               modifier = Modifier.fillMaxWidth(),
               singleLine = true,
               shape = RoundedCornerShape(16.dp),
@@ -403,6 +412,7 @@ private fun JellyfinHomeContent(
   var serverName by remember { mutableStateOf("") }
   var serverUsername by remember { mutableStateOf("") }
   var serverPassword by remember { mutableStateOf("") }
+  var isServerPasswordVisible by remember { mutableStateOf(false) }
   var useToken by remember { mutableStateOf(false) }
   val isRefreshing = remember { mutableStateOf(false) }
   val backStack = LocalBackStack.current
@@ -762,7 +772,15 @@ private fun JellyfinHomeContent(
               value = serverPassword,
               onValueChange = { serverPassword = it },
               label = { Text(if (useToken) "API token" else "Password") },
-              visualTransformation = PasswordVisualTransformation(),
+              trailingIcon = {
+                IconButton(onClick = { isServerPasswordVisible = !isServerPasswordVisible }) {
+                  Icon(
+                    imageVector = if (isServerPasswordVisible) Icons.RoundedFilled.VisibilityOff else Icons.RoundedFilled.Visibility,
+                    contentDescription = if (isServerPasswordVisible) "Hide password" else "Show password",
+                  )
+                }
+              },
+              visualTransformation = if (isServerPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
               singleLine = true,
               modifier = Modifier.fillMaxWidth(),
               shape = RoundedCornerShape(16.dp),
