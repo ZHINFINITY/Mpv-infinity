@@ -245,11 +245,11 @@ class JellyfinClient(
           "&SortBy=DatePlayed&SortOrder=Descending&Limit=$limit&Recursive=true" +
           "&Fields=$fields&api_key=$encodedToken"
         val request = Request.Builder().url(url).addJellyfinHeaders(session.accessToken).get().build()
-        httpClient.newCall(request).execute().use { response ->
+        return httpClient.newCall(request).execute().use { response ->
           if (!response.isSuccessful) throw IOException("Failed to load Jellyfin watch history: HTTP ${response.code}")
           val root = json.parseToJsonElement(response.body.string()).jsonObject
           val items = root["Items"]?.jsonArray ?: JsonArray(emptyList())
-          return@use items.mapNotNull { parseTrack(it.jsonObject, session) }
+          items.mapNotNull { parseTrack(it.jsonObject, session) }
         }
       }
       (runCatching { query("IsResumable") }.getOrDefault(emptyList()) +
