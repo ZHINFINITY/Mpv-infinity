@@ -188,7 +188,7 @@ class JellyfinViewModel(
   fun switchServer(profile: JellyfinServerProfile) {
     val session = JellyfinSession(profile.serverUrl, profile.userId, profile.accessToken)
     _uiState.update {
-      it.copy(session = session, activeServer = profile, currentItems = emptyList(), libraries = emptyList(), openLibrary = null, selectedLibraryId = null, error = null)
+      it.copy(session = session, activeServer = profile, currentItems = emptyList(), libraries = emptyList(), watchHistory = emptyList(), openLibrary = null, selectedLibraryId = null, error = null)
     }
     saveSession(session, profile.username.ifBlank { profile.name })
     viewModelScope.launch { loadHome(session) }
@@ -207,7 +207,8 @@ class JellyfinViewModel(
     withContext(Dispatchers.IO) {
       jellyfin.loadLibraries(session).fold(
         onSuccess = { libs ->
-          _uiState.update { it.copy(libraries = libs) }
+          val watchHistory = jellyfin.loadWatchHistory(session).getOrDefault(emptyList())
+          _uiState.update { it.copy(libraries = libs, watchHistory = watchHistory) }
           val allItems = mutableListOf<JellyfinTrack>()
           for (lib in libs) {
             jellyfin.loadMedia(
@@ -226,6 +227,7 @@ class JellyfinViewModel(
           _uiState.update { state ->
             state.copy(
               heroItems = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) || it.mediaType.equals("Series", ignoreCase = true) }.take(5),
+              watchHistory = watchHistory,
               latestMovies = videos.filter { it.mediaType.equals("Movie", ignoreCase = true) }.take(20),
               latestShows = groupShows(videos).take(20),
               latestMusic = audio.take(20),

@@ -537,7 +537,7 @@ private fun TelegramPillNavigationBar(
                     MainScreen.MainTab.RECENTS ->
                       Icon(
                         Icons.RoundedFilled.History,
-                         contentDescription = "Watch history",
+                         contentDescription = stringResource(R.string.ui_recents),
                         tint = contentColor,
                         modifier = Modifier.size(22.dp),
                       )
@@ -570,7 +570,7 @@ private fun TelegramPillNavigationBar(
                       when (tab) {
                         MainScreen.MainTab.HOME -> "Home"
                         MainScreen.MainTab.MUSIC -> "Music"
-                        MainScreen.MainTab.RECENTS -> "Watch history"
+                        MainScreen.MainTab.RECENTS -> "Recents"
                         MainScreen.MainTab.PLAYLISTS -> "Playlists"
                         MainScreen.MainTab.NETWORK -> "Network"
                         MainScreen.MainTab.JELLYFIN -> "Jellyfin"
