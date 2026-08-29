@@ -2,6 +2,7 @@ package app.infinity.mpvz.ui.browser.jellyfin
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
@@ -123,7 +124,7 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       put("mediaType", if (media.mediaType == "tv") "tv" else "movie")
       put("mediaId", media.id)
       put("is4k", is4k)
-      seasons?.takeIf { it.isNotEmpty() }?.let { selected -> put("seasons", buildJsonArray { selected.forEach(::add) }) }
+      seasons?.takeIf { it.isNotEmpty() }?.let { selected -> put("seasons", buildJsonArray { selected.forEach { add(JsonPrimitive(it)) } }) }
       if (audioPreference != SeerrAudioPreference.DEFAULT) put("audioPreference", audioPreference.name.lowercase())
     }
     request(baseUrl, "/request", "POST", body).getOrThrow()

@@ -352,6 +352,7 @@ class JellyfinViewModel(
       shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
       trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
       searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
+      details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(isRequesting = true) else value },
     )) }
     viewModelScope.launch {
       client.requestMedia(url, media, is4k, seasons, audioPreference).onSuccess {
@@ -361,6 +362,7 @@ class JellyfinViewModel(
             shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
             trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
             searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
+            details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(requested = true, requested4k = is4k, isRequesting = false) else value.copy(isRequesting = false) },
                     ))
         }
       }
@@ -370,6 +372,7 @@ class JellyfinViewModel(
             shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
             trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
             searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
+            details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(isRequesting = false) else value },
           )) }
         }
     }
