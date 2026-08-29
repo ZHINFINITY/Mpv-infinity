@@ -547,7 +547,7 @@ private fun JellyfinHomeContent(
             IconButton(onClick = { isSearching = true }) {
               Icon(imageVector = Icons.RoundedFilled.Search, contentDescription = "Search")
             }
-            IconButton(onClick = { if (seerrUrl.isNotBlank()) isSeerrDashboardOpen = true else isSeerrInfoOpen = true }) {
+            IconButton(onClick = { if (uiState.seerrDiscover.isConnected) isSeerrDashboardOpen = true else { seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }; isSeerrInfoOpen = true } }) {
               Icon(imageVector = Icons.RoundedFilled.Explore, contentDescription = "Discover and Seerr")
             }
             IconButton(onClick = { isServerManagerOpen = true }) {
@@ -614,6 +614,7 @@ private fun JellyfinHomeContent(
                   leadingIcon = { Icon(imageVector = Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                   onClick = {
                     isMoreMenuOpen = false
+                    seerrUsername = seerrUsername.ifBlank { uiState.activeServer?.username.orEmpty() }
                     isSeerrInfoOpen = true
                   },
                 )
@@ -853,7 +854,6 @@ private fun JellyfinHomeContent(
               val enteredUrl = seerrUrl.trim().removeSuffix("/")
               val url = if (enteredUrl.startsWith("http://", ignoreCase = true) || enteredUrl.startsWith("https://", ignoreCase = true)) enteredUrl else "https://$enteredUrl"
               if (url != "https://") {
-                seerrUrl = url
                 context.getSharedPreferences("jellyfin_profiles", android.content.Context.MODE_PRIVATE)
                   .edit()
                   .putString("seerr_url", url)

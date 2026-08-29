@@ -244,24 +244,36 @@ class JellyfinViewModel(
     onResult: (Boolean) -> Unit,
   ) {
     val client = httpClient ?: return onResult(false)
-    val normalizedUrl = SeerrClient.normalizeUrl(url)
+    val enteredUrl = url.trim().removeSuffix("/")
+    val candidates = if (enteredUrl.startsWith("http://", true) || enteredUrl.startsWith("https://", true)) {
+      listOf(enteredUrl)
+    } else {
+      listOf("https://$enteredUrl", "http://$enteredUrl")
+    }
     viewModelScope.launch {
-      _uiState.update { it.copy(seerr = it.seerr.copy(url = normalizedUrl), seerrDiscover = it.seerrDiscover.copy(isLoading = true, error = null)) }
+      _uiState.update { it.copy(seerr = it.seerr.copy(url = enteredUrl), seerrDiscover = it.seerrDiscover.copy(isLoading = true, error = null)) }
       val seerr = seerrClient ?: SeerrClient(client).also { seerrClient = it }
-      val authResult = when (mode) {
+      suspend fun authenticate(candidate: String): Result<String> = when (mode) {
         SeerrAuthMode.API_KEY -> {
           seerr.setApiKey(secret)
-          seerr.verifyApiKey(normalizedUrl)
+          seerr.verifyApiKey(candidate)
         }
         SeerrAuthMode.LOCAL -> {
           seerr.setApiKey(null)
-          seerr.loginLocal(normalizedUrl, username, secret)
+          seerr.loginLocal(candidate, username, secret)
         }
         SeerrAuthMode.JELLYFIN -> {
           seerr.setApiKey(null)
-          seerr.loginJellyfin(normalizedUrl, username, secret, _uiState.value.activeServer?.serverUrl.orEmpty())
+          seerr.loginJellyfin(candidate, username, secret, _uiState.value.activeServer?.serverUrl.orEmpty())
         }
       }
+      var workingUrl = candidates.first()
+      var authResult = authenticate(workingUrl)
+      if (authResult.isFailure && candidates.size > 1) {
+        workingUrl = candidates[1]
+        authResult = authenticate(workingUrl)
+      }
+      val normalizedUrl = workingUrl
       authResult.fold(
         onSuccess = { userName ->
           _uiState.update { it.copy(seerr = SeerrUiState(normalizedUrl, mode, true, true), seerrDiscover = it.seerrDiscover.copy(isConnected = true, userName = userName)) }
