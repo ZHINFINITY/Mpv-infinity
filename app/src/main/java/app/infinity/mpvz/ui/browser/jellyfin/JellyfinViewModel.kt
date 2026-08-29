@@ -375,7 +375,8 @@ class JellyfinViewModel(
         val enriched = enrichSeerrItems(url, client, raw)
         if (generation == seerrSearchGeneration) _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = enriched, isSearching = false)) }
       } else if (generation == seerrSearchGeneration) {
-        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isSearching = false, error = result.exceptionOrNull()?.message ?: "Seerr search failed")) }
+        val searchError = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isSearching = false, error = searchError ?: "Seerr search failed")) }
       }
     }
   }
