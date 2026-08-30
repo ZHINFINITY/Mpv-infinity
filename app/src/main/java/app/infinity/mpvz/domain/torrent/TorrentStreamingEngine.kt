@@ -6,6 +6,7 @@ package app.infinity.mpvz.domain.torrent
 
 import android.content.Context
 import android.net.Uri
+import android.os.StatFs
 import android.util.Log
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.utils.media.MediaInfoParser
@@ -59,6 +60,9 @@ class TorrentStreamingEngine(
     private const val TAG = "TorrentStreamingEngine"
     private const val METADATA_TIMEOUT_MS = 90_000L
     private const val INITIAL_BUFFER_TIMEOUT_MS = 45_000L
+    private const val BYTES_PER_MB = 1024L * 1024L
+    private const val MIN_BUFFER_BYTES = 8L * BYTES_PER_MB
+    private const val STORAGE_RESERVE_BYTES = 512L * BYTES_PER_MB
     private const val MAX_METADATA_BYTES = 16L * 1024L * 1024L
     private const val MAX_TORRENT_FILES = 100_000
     private const val STATUS_INTERVAL_MS = 1_000L
@@ -271,6 +275,7 @@ class TorrentStreamingEngine(
                   lastPiece = lastPiece,
                   mimeType = selected.mimeType,
                   readAheadBytes = readAheadBufferBytes(),
+                  cacheBudgetBytes = cacheBudgetBytes(),
                 ),
             ).also { it.start() }
           proxy = startedProxy
@@ -668,11 +673,30 @@ class TorrentStreamingEngine(
     throw streamError("Torrent did not buffer enough data to start playback. Check seeders and connection speed.")
   }
 
+  private fun availableStorageBytes(): Long =
+    StatFs(appContext.cacheDir.absolutePath).availableBytes.coerceAtLeast(0L)
+
+  private fun maximumSafeStorageBytes(): Long =
+    (availableStorageBytes() - STORAGE_RESERVE_BYTES).coerceAtLeast(MIN_BUFFER_BYTES)
+
+  private fun configuredMegabytes(value: Long): Long =
+    if (value <= 0L) maximumSafeStorageBytes() / BYTES_PER_MB
+    else value.coerceAtMost(Long.MAX_VALUE / BYTES_PER_MB)
+
   private fun startupBufferBytes(): Long =
-    advancedPreferences.torrentStartupBufferMb.get().coerceIn(8, 512).toLong() * 1024L * 1024L
+    (configuredMegabytes(advancedPreferences.torrentStartupBufferMb.get()) * BYTES_PER_MB)
+      .coerceAtMost(maximumSafeStorageBytes())
+      .coerceAtLeast(MIN_BUFFER_BYTES)
 
   private fun readAheadBufferBytes(): Long =
-    advancedPreferences.torrentReadAheadMb.get().coerceIn(8, 512).toLong() * 1024L * 1024L
+    (configuredMegabytes(advancedPreferences.torrentReadAheadMb.get()) * BYTES_PER_MB)
+      .coerceAtMost(maximumSafeStorageBytes())
+      .coerceAtLeast(MIN_BUFFER_BYTES)
+
+  private fun cacheBudgetBytes(): Long =
+    (configuredMegabytes(advancedPreferences.torrentCacheMb.get()) * BYTES_PER_MB)
+      .coerceAtMost(maximumSafeStorageBytes())
+      .coerceAtLeast(MIN_BUFFER_BYTES)
 
   private fun configureStreaming(
     handle: TorrentHandle,

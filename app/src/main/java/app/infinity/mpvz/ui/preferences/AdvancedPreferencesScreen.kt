@@ -12,6 +12,7 @@ package app.infinity.mpvz.ui.preferences
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.os.StatFs
 import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -46,8 +47,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.util.fastJoinToString
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.core.net.toUri
 import androidx.core.os.LocaleListCompat
 import androidx.documentfile.provider.DocumentFile
@@ -77,13 +80,14 @@ import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
 import org.koin.compose.koinInject
 import java.io.File
 import java.util.Locale
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.outputStream
 import kotlin.io.path.readLines
+
+private fun Double.formatOneDecimal(): String = String.format(Locale.US, "%.1f", this)
 
 private enum class AppLanguage(
   val languageTag: String,
@@ -582,6 +586,12 @@ object AdvancedPreferencesScreen : Screen {
               val enableHlsProxy by preferences.enableHlsProxy.collectAsState()
               val torrentStartupBufferMb by preferences.torrentStartupBufferMb.collectAsState()
               val torrentReadAheadMb by preferences.torrentReadAheadMb.collectAsState()
+              val torrentCacheMb by preferences.torrentCacheMb.collectAsState()
+              var startupBufferText by remember(torrentStartupBufferMb) { mutableStateOf(torrentStartupBufferMb.toString()) }
+              var readAheadText by remember(torrentReadAheadMb) { mutableStateOf(torrentReadAheadMb.toString()) }
+              var cacheText by remember(torrentCacheMb) { mutableStateOf(torrentCacheMb.toString()) }
+              val freeStorageBytes = remember(context) { StatFs(context.cacheDir.absolutePath).availableBytes }
+              val freeStorageGb = freeStorageBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
 
               SwitchPreference(
                 value = enableP2pStreaming,
@@ -611,26 +621,49 @@ object AdvancedPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              SliderPreference(
-                value = torrentStartupBufferMb.toFloat(),
-                onValueChange = { preferences.torrentStartupBufferMb.set(it.toInt().coerceIn(8, 512)) },
-                title = { Text("Torrent startup buffer") },
-                valueRange = 8f..512f,
-                summary = { Text("${torrentStartupBufferMb} MB downloaded before playback starts", color = MaterialTheme.colorScheme.outline) },
-                onSliderValueChange = { preferences.torrentStartupBufferMb.set(it.toInt().coerceIn(8, 512)) },
-                sliderValue = torrentStartupBufferMb.toFloat(),
+              OutlinedTextField(
+                value = startupBufferText,
+                onValueChange = { value ->
+                  startupBufferText = value.filter(Char::isDigit)
+                  startupBufferText.toLongOrNull()?.takeIf { it >= 0L }?.let(preferences.torrentStartupBufferMb::set)
+                },
+                label = { Text("Torrent startup buffer (MB)") },
+                supportingText = { Text("0 = maximum safe free storage; currently ${freeStorageGb.formatOneDecimal()} GB free") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
               )
 
-              PreferenceDivider()
+              OutlinedTextField(
+                value = readAheadText,
+                onValueChange = { value ->
+                  readAheadText = value.filter(Char::isDigit)
+                  readAheadText.toLongOrNull()?.takeIf { it >= 0L }?.let(preferences.torrentReadAheadMb::set)
+                },
+                label = { Text("Torrent read-ahead (MB)") },
+                supportingText = { Text("0 = maximum safe free storage; larger values reduce seek buffering") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+              )
 
-              SliderPreference(
-                value = torrentReadAheadMb.toFloat(),
-                onValueChange = { preferences.torrentReadAheadMb.set(it.toInt().coerceIn(8, 512)) },
-                title = { Text("Torrent read-ahead buffer") },
-                valueRange = 8f..512f,
-                summary = { Text("${torrentReadAheadMb} MB prioritized ahead of playback", color = MaterialTheme.colorScheme.outline) },
-                onSliderValueChange = { preferences.torrentReadAheadMb.set(it.toInt().coerceIn(8, 512)) },
-                sliderValue = torrentReadAheadMb.toFloat(),
+              OutlinedTextField(
+                value = cacheText,
+                onValueChange = { value ->
+                  cacheText = value.filter(Char::isDigit)
+                  cacheText.toLongOrNull()?.takeIf { it >= 0L }?.let(preferences.torrentCacheMb::set)
+                },
+                label = { Text("Torrent cache budget (MB)") },
+                supportingText = { Text("0 = maximum safe free storage; used to keep skipped-ahead data available") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+              )
+
+              Text(
+                text = "Available storage: ${freeStorageGb.formatOneDecimal()} GB (${freeStorageBytes / (1024L * 1024L)} MB). A 512 MB safety reserve is kept free.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
               )
             }
           }

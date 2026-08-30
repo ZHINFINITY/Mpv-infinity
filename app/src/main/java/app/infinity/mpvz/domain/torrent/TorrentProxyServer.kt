@@ -36,6 +36,7 @@ class TorrentProxyServer(
     val lastPiece: Int,
     val mimeType: String,
     val readAheadBytes: Long,
+    val cacheBudgetBytes: Long,
   )
 
   companion object {
@@ -121,7 +122,8 @@ class TorrentProxyServer(
     val absoluteEnd =
               min(
           target.fileOffset + target.fileSize - 1L,
-          absoluteStart + target.readAheadBytes.coerceAtLeast(DEFAULT_READ_AHEAD_BYTES / 8L) - 1L,
+          absoluteStart + target.readAheadBytes.coerceAtLeast(DEFAULT_READ_AHEAD_BYTES / 8L)
+            .coerceAtMost(target.cacheBudgetBytes) - 1L,
         )
 
     val last = (absoluteEnd / target.pieceLength).toInt().coerceIn(first, target.lastPiece)
