@@ -103,7 +103,12 @@ sealed class AndroidPreference<T>(
       preferences: SharedPreferences,
       key: String,
       defaultValue: Long,
-    ): Long = preferences.getLong(key, defaultValue)
+    ): Long =
+      when (val storedValue = preferences.all[key]) {
+        is Number -> storedValue.toLong()
+        is String -> storedValue.toLongOrNull() ?: defaultValue
+        else -> defaultValue
+      }
 
     override fun write(
       key: String,
