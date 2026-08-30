@@ -19,6 +19,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import java.net.URI
 import java.net.URLEncoder
 
@@ -86,18 +87,29 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
     val seasons = obj["seasons"]?.jsonArray.orEmpty().mapNotNull { element ->
       val season = element.jsonObject
       val number = season["seasonNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-      val status = season["status"]?.jsonPrimitive?.contentOrNull.orEmpty().lowercase()
+      val statusRaw = season["status"]?.jsonPrimitive?.contentOrNull.orEmpty()
+      val status = statusRaw.lowercase()
+      val statusCode = statusRaw.toIntOrNull()
       SeerrSeason(
         seasonNumber = number,
         name = season["name"]?.jsonPrimitive?.contentOrNull ?: "Season $number",
         episodeCount = season["episodeCount"]?.jsonPrimitive?.intOrNull ?: 0,
-        available = season["available"]?.jsonPrimitive?.booleanOrNull == true || status == "available",
-        requested = season["requested"]?.jsonPrimitive?.booleanOrNull == true || status.contains("requested") || status.contains("processing"),
+        available = season["available"]?.jsonPrimitive?.booleanOrNull == true || status == "available" || statusCode == 5,
+        requested = season["requested"]?.jsonPrimitive?.booleanOrNull == true || status.contains("requested") || status.contains("processing") || statusCode == 2 || statusCode == 3,
       )
     }
     val mediaStatus = mediaInfo?.get("status")?.jsonPrimitive?.contentOrNull.orEmpty()
-    val available = mediaStatus.equals("available", true) || !jellyfinMediaId.isNullOrBlank()
-    val partialStatus = mediaStatus.contains("partial", true) || mediaStatus.contains("partially", true)
+    val mediaStatusCode = mediaStatus.toIntOrNull()
+    val mediaAvailableByStatus = mediaStatus.equals("available", true) || mediaStatusCode == 5
+    val mediaPartialByStatus = mediaStatus.contains("partial", true) || mediaStatus.contains("partially", true) || mediaStatusCode == 4
+    val requestRecords = root["requests"]?.jsonArray ?: mediaInfo?.get("requests")?.jsonArray
+    val hasRequest = requestRecords?.isNotEmpty() == true || mediaStatus.contains("requested", true) || mediaStatus.contains("processing", true)
+    val has4kRequest = requestRecords?.any { it.jsonObject["is4k"]?.jsonPrimitive?.booleanOrNull == true } == true
+    val isTv = media.mediaType.equals("tv", true)
+    val allSeasonsAvailable = seasons.isNotEmpty() && seasons.all { it.available }
+    val someSeasonsAvailable = seasons.any { it.available }
+    val available = if (isTv && seasons.isNotEmpty()) allSeasonsAvailable else mediaAvailableByStatus || !jellyfinMediaId.isNullOrBlank()
+    val partialStatus = mediaPartialByStatus || (isTv && someSeasonsAvailable && !allSeasonsAvailable)
     media.copy(
       overview = obj["overview"]?.jsonPrimitive?.contentOrNull ?: media.overview,
       posterPath = obj["posterPath"]?.jsonPrimitive?.contentOrNull ?: media.posterPath,
@@ -108,6 +120,8 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       cast = cast,
       seasons = seasons.ifEmpty { media.seasons },
       availableInJellyfin = available || media.availableInJellyfin,
+      requested = hasRequest || media.requested,
+      requested4k = has4kRequest || media.requested4k,
       partiallyAvailable = partialStatus || (!available && seasons.any { it.available }) || (seasons.any { it.available } && seasons.any { !it.available }),
       jellyfinMediaId = jellyfinMediaId ?: media.jellyfinMediaId,
     )
@@ -127,7 +141,12 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
       seasons?.takeIf { it.isNotEmpty() }?.let { selected -> put("seasons", buildJsonArray { selected.forEach { add(JsonPrimitive(it)) } }) }
       if (audioPreference != SeerrAudioPreference.DEFAULT) put("audioPreference", audioPreference.name.lowercase())
     }
-    request(baseUrl, "/request", "POST", body).getOrThrow()
+    request(baseUrl, "/request", "POST", body).getOrElse { error ->
+      if (is4k && (error.message?.contains("403") == true || error.message?.contains("permission", true) == true || error.message?.contains("forbidden", true) == true)) {
+        throw IOException("Seerr denied this 4K request. Enable 4K request permission for this account in Seerr, then try again.")
+      }
+      throw error
+    }
     Unit
   }
 

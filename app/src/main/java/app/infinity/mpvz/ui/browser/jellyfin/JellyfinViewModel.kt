@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +42,9 @@ class JellyfinViewModel(
   private var searchJob: Job? = null
   private var searchGeneration = 0L
   private var seerrClient: SeerrClient? = null
+  private var seerrSearchJob: Job? = null
+  private var seerrSearchGeneration = 0L
+  private var seerrRestoreAttempted = false
 
   private fun libraryItemTypes(collectionType: String?, libraryName: String = ""): String = when {
     libraryName.contains("anime", ignoreCase = true) ||
@@ -87,6 +91,20 @@ class JellyfinViewModel(
     if (session != null && _uiState.value.libraries.isEmpty()) {
       viewModelScope.launch { loadHome(session) }
     }
+    if (!seerrRestoreAttempted) {
+      seerrRestoreAttempted = true
+      restoreSavedSeerr()
+    }
+  }
+
+  private fun restoreSavedSeerr() {
+    val url = prefs.getString("seerr_url", null)?.takeIf { it.isNotBlank() } ?: return
+    val mode = prefs.getString("seerr_auth_mode", null)?.let { value ->
+      runCatching { SeerrAuthMode.valueOf(value) }.getOrNull()
+    } ?: return
+    val username = prefs.getString("seerr_username", "").orEmpty()
+    val secret = prefs.getString("seerr_secret", null)?.takeIf { it.isNotBlank() } ?: return
+    connectSeerr(url, mode, username, secret) { }
   }
 
   private fun restoreSavedSession() {
@@ -277,6 +295,12 @@ class JellyfinViewModel(
       val normalizedUrl = workingUrl
       authResult.fold(
         onSuccess = { userName ->
+          prefs.edit()
+            .putString("seerr_url", normalizedUrl)
+            .putString("seerr_auth_mode", mode.name)
+            .putString("seerr_username", username)
+            .putString("seerr_secret", secret)
+            .apply()
           _uiState.update { it.copy(seerr = SeerrUiState(normalizedUrl, mode, true, true), seerrDiscover = it.seerrDiscover.copy(isConnected = true, userName = userName)) }
           loadSeerrDiscover()
           onResult(true)
@@ -293,32 +317,89 @@ class JellyfinViewModel(
     _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isConnected = false, isLoading = false, error = null)) }
   }
 
+  private suspend fun enrichSeerrItems(url: String, client: SeerrClient, items: List<SeerrMediaItem>): List<SeerrMediaItem> = withContext(Dispatchers.IO) {
+    val session = _uiState.value.session
+    val localCatalog = (_uiState.value.currentItems + _uiState.value.latestMovies + _uiState.value.latestShows + _uiState.value.latestAnime + _uiState.value.topPicks).distinctBy { it.id }
+    val jellyfin = session?.let { httpClient?.let { clientRef -> JellyfinClient(clientRef, getApplication()) } }
+    coroutineScope {
+      items.map { item ->
+        async {
+          val details = client.getDetails(url, item).getOrDefault(item)
+          val normalizedTitle = item.title.filter(Char::isLetterOrDigit).lowercase()
+          val localMatch = localCatalog.firstOrNull { candidate ->
+            candidate.title.filter(Char::isLetterOrDigit).lowercase() == normalizedTitle &&
+              ((item.mediaType == "tv" && candidate.mediaType.equals("Series", true)) ||
+                (item.mediaType != "tv" && candidate.mediaType.equals("Movie", true)))
+          }
+          val jellyfinMatch = localMatch ?: if (session != null && jellyfin != null) {
+            jellyfin.search(session, item.title, limit = 20).getOrNull()?.firstOrNull { candidate ->
+              candidate.title.filter(Char::isLetterOrDigit).lowercase() == normalizedTitle &&
+                ((item.mediaType == "tv" && candidate.mediaType.equals("Series", true)) ||
+                  (item.mediaType != "tv" && candidate.mediaType.equals("Movie", true)))
+            }
+          } else null
+          details.copy(
+            availableInJellyfin = details.availableInJellyfin || jellyfinMatch != null,
+            jellyfinMediaId = details.jellyfinMediaId ?: jellyfinMatch?.id,
+          )
+        }
+      }.awaitAll()
+    }
+  }
+
   fun loadSeerrDiscover() {
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
     viewModelScope.launch {
       _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = true, error = null)) }
-      client.discover(url).fold(
-        onSuccess = { data -> _uiState.update { it.copy(seerrDiscover = data.copy(isLoading = false, isConnected = true), seerr = it.seerr.copy(isDashboardOpen = true)) } },
-        onFailure = { error -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = false, error = error.message ?: "Unable to load Seerr")) } },
-      )
+      val discoverResult = client.discover(url)
+      if (discoverResult.isSuccess) {
+        val data = discoverResult.getOrThrow()
+        val enriched = data.copy(
+          movies = enrichSeerrItems(url, client, data.movies),
+          shows = enrichSeerrItems(url, client, data.shows),
+          trending = enrichSeerrItems(url, client, data.trending),
+        )
+        _uiState.update { it.copy(seerrDiscover = enriched.copy(isLoading = false, isConnected = true), seerr = it.seerr.copy(isDashboardOpen = true)) }
+      } else {
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = false, error = discoverResult.exceptionOrNull()?.message ?: "Unable to load Seerr")) }
+      }
     }
   }
 
   fun searchSeerr(query: String) {
     val normalized = query.trim()
+    val compact = normalized.replace(Regex("\\s+"), "")
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
+    seerrSearchJob?.cancel()
+    seerrSearchGeneration += 1
+    val generation = seerrSearchGeneration
     if (normalized.isBlank()) {
       _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = "", searchResults = emptyList(), isSearching = false)) }
       return
     }
-    viewModelScope.launch {
-      _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = normalized, isSearching = true, error = null)) }
-      client.search(url, normalized).fold(
-        onSuccess = { results -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = results, isSearching = false)) } },
-        onFailure = { error -> _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = emptyList(), isSearching = false, error = error.message ?: "Seerr search failed")) } },
-      )
+    _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchQuery = normalized, isSearching = true, error = null)) }
+    seerrSearchJob = viewModelScope.launch {
+      delay(300L)
+      val variants = listOf(
+        normalized,
+        compact,
+        normalized.replace(Regex("\\banime\\b", RegexOption.IGNORE_CASE), " ").replace(Regex("\\s+"), " ").trim(),
+        *normalized.split(Regex("\\s+")).toTypedArray(),
+      ).filter { it.length >= 2 }.distinct()
+      val results = coroutineScope { variants.map { variant -> async { client.search(url, variant) } }.awaitAll() }
+      if (generation != seerrSearchGeneration) return@launch
+      if (results.any { it.isSuccess }) {
+        val raw = results.flatMap { it.getOrDefault(emptyList()) }
+          .distinctBy { "${it.mediaType}:${it.id}" }
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = raw, isSearching = true)) }
+        val enriched = enrichSeerrItems(url, client, raw)
+        if (generation == seerrSearchGeneration) _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(searchResults = enriched, isSearching = false)) }
+      } else if (generation == seerrSearchGeneration) {
+        val searchError = results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
+        _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isSearching = false, error = searchError ?: "Seerr search failed")) }
+      }
     }
   }
 
@@ -348,28 +429,31 @@ class JellyfinViewModel(
     val url = _uiState.value.seerr.url.takeIf { it.isNotBlank() } ?: return
     val client = seerrClient ?: return
     _uiState.update { state -> state.copy(seerrDiscover = state.seerrDiscover.copy(
-      movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
-      shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
-      trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
-      searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = true) else it },
+      movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = true, requestError = null) else it },
+      shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = true, requestError = null) else it },
+      trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = true, requestError = null) else it },
+      searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = true, requestError = null) else it },
+      details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(isRequesting = true, requestError = null) else value },
     )) }
     viewModelScope.launch {
       client.requestMedia(url, media, is4k, seasons, audioPreference).onSuccess {
         _uiState.update { state ->
           state.copy(seerrDiscover = state.seerrDiscover.copy(
-            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
-            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
-            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
-            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false) else it.copy(isRequesting = false) },
+            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else it.copy(isRequesting = false) },
+            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else it.copy(isRequesting = false) },
+            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else it.copy(isRequesting = false) },
+            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else it.copy(isRequesting = false) },
+            details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(requested = true, requested4k = is4k, isRequesting = false, requestError = null) else value.copy(isRequesting = false) },
                     ))
         }
       }
-        .onFailure {
+        .onFailure { error ->
           _uiState.update { state -> state.copy(seerrDiscover = state.seerrDiscover.copy(
-            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
-            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
-            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
-            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = false) else it },
+            movies = state.seerrDiscover.movies.map { if (it.id == media.id) it.copy(isRequesting = false, requestError = error.message ?: "Request failed") else it },
+            shows = state.seerrDiscover.shows.map { if (it.id == media.id) it.copy(isRequesting = false, requestError = error.message ?: "Request failed") else it },
+            trending = state.seerrDiscover.trending.map { if (it.id == media.id) it.copy(isRequesting = false, requestError = error.message ?: "Request failed") else it },
+            searchResults = state.seerrDiscover.searchResults.map { if (it.id == media.id) it.copy(isRequesting = false, requestError = error.message ?: "Request failed") else it },
+            details = state.seerrDiscover.details.mapValues { (key, value) -> if (key == "${media.mediaType}:${media.id}") value.copy(isRequesting = false, requestError = error.message ?: "Request failed") else value },
           )) }
         }
     }
@@ -377,7 +461,7 @@ class JellyfinViewModel(
   fun disconnectSeerr() {
     seerrClient = null
     _uiState.update { it.copy(seerr = SeerrUiState(), seerrDiscover = SeerrDiscoverState()) }
-    prefs.edit().remove("seerr_url").remove("seerr_api_key").apply()
+    prefs.edit().remove("seerr_url").remove("seerr_auth_mode").remove("seerr_username").remove("seerr_secret").remove("seerr_api_key").apply()
   }
 
   fun logout() {
@@ -616,20 +700,41 @@ class JellyfinViewModel(
     }
   }
 
-  fun playItem(context: Context, track: JellyfinTrack) {
+  fun playSeerrMedia(context: Context, media: SeerrMediaItem) {
     val session = _uiState.value.session ?: return
     val client = httpClient ?: return
-    val jellyfin = JellyfinClient(client, context)
-    val streamUrl = jellyfin.getStreamUrl(session, track.id, isVideo = track.isVideo)
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(streamUrl)).apply {
-      setClass(context, Class.forName("app.infinity.mpvz.ui.player.PlayerActivity"))
-      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      putExtra("internal_launch", true)
-      putExtra("launch_source", "jellyfin")
-      putExtra("is_audio", !track.isVideo)
-      putExtra("title", track.title)
+    viewModelScope.launch {
+      val jellyfin = JellyfinClient(client, context)
+      val resolved = media.jellyfinMediaId?.let { jellyfin.loadItem(session, it).getOrNull() }
+        ?: jellyfin.search(session, media.title, limit = 20).getOrNull()?.firstOrNull {
+          it.title.filter(Char::isLetterOrDigit).equals(media.title.filter(Char::isLetterOrDigit), true) &&
+            ((media.mediaType == "tv" && it.mediaType.equals("Series", true)) ||
+              (media.mediaType != "tv" && it.mediaType.equals("Movie", true)))
+        }
+      if (resolved == null) return@launch
+      if (resolved.mediaType.equals("Series", true)) {
+        val episodes = jellyfin.loadPlayableEpisodes(session, resolved.id).getOrDefault(emptyList())
+        if (episodes.isNotEmpty()) {
+          playTracks(context, episodes, 0)
+        } else {
+          openDetail(resolved)
+        }
+      } else {
+        val playable = when {
+          resolved.mediaType.equals("Season", true) -> resolved.parentId?.let { jellyfin.loadFirstPlayableEpisode(session, it).getOrNull() }
+          else -> resolved
+        }
+        if (playable?.isPlayable == true || playable?.isVideo == true) playTracks(context, listOf(playable), 0)
+        else openDetail(resolved)
+      }
     }
-    context.startActivity(intent)
+  }
+
+  fun playItem(context: Context, track: JellyfinTrack) {
+    // Use the same authenticated launch path as playlist playback. The old direct
+    // ACTION_VIEW intent omitted Jellyfin session extras, so PlayerActivity could
+    // open successfully but remain stuck while loading the remote stream.
+    playTracks(context, listOf(track), 0)
   }
 
   fun playTracks(context: Context, tracks: List<JellyfinTrack>, index: Int) {

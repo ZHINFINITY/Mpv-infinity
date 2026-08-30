@@ -53,6 +53,9 @@ object NavigationBarState {
   var isPermissionDenied: Boolean by mutableStateOf(false)
     private set
 
+  var isPermissionStateInitialized: Boolean by mutableStateOf(false)
+    private set
+
   var isBrowserBottomBarVisible: Boolean by mutableStateOf(false)
     private set
 
@@ -73,6 +76,7 @@ object NavigationBarState {
 
   fun updatePermissionState(denied: Boolean) {
     isPermissionDenied = denied
+    isPermissionStateInitialized = true
   }
 
   fun updateBottomBarVisibility(visible: Boolean) {

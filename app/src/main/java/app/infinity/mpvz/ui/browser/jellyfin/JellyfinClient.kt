@@ -232,6 +232,15 @@ class JellyfinClient(
     }
   }
 
+  suspend fun loadPlayableEpisodes(session: JellyfinSession, seriesId: String): Result<List<JellyfinTrack>> =
+    loadAllMedia(
+      session = session,
+      parentId = seriesId,
+      sortBy = "ParentIndexNumber,IndexNumber",
+      sortOrder = "Ascending",
+      includeItemTypes = "Episode",
+    ).map { episodes -> episodes.filter { it.isPlayable || it.isVideo } }
+
   suspend fun loadSimilarItems(session: JellyfinSession, itemId: String, limit: Int = 12): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
     runCatching {
       val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
@@ -260,6 +269,22 @@ class JellyfinClient(
         if (!response.isSuccessful) throw IOException("Failed to load Jellyfin item: HTTP ${response.code}")
         parseTrack(json.parseToJsonElement(response.body.string()).jsonObject, session)
           ?: throw IOException("Jellyfin returned an empty item")
+      }
+    }
+  }
+
+  suspend fun loadFirstPlayableEpisode(session: JellyfinSession, seriesId: String): Result<JellyfinTrack> = withContext(Dispatchers.IO) {
+    runCatching {
+      val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
+      val encodedUser = URLEncoder.encode(session.userId, Charsets.UTF_8.name())
+      val fields = "Overview,RunTimeTicks,ImageTags,MediaStreams,ProductionYear,PremiereDate,EndDate,OriginalTitle,OfficialRating,Status,Genres,Studios,ProviderIds,UserData"
+      val url = "${session.serverUrl}/Shows/$seriesId/Episodes?UserId=$encodedUser&Limit=1&SortBy=ParentIndexNumber,IndexNumber&SortOrder=Ascending&Fields=$fields&api_key=$encodedToken"
+      val request = Request.Builder().url(url).addJellyfinHeaders(session.accessToken).get().build()
+      httpClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw IOException("Failed to load Jellyfin episodes: HTTP ${response.code}")
+        val items = json.parseToJsonElement(response.body.string()).jsonObject["Items"]?.jsonArray.orEmpty()
+        items.firstNotNullOfOrNull { parseTrack(it.jsonObject, session) }
+          ?: throw IOException("No playable episodes were found in Jellyfin")
       }
     }
   }

@@ -38,6 +38,7 @@ data class SeerrMediaItem(
   val requested: Boolean = false,
   val requested4k: Boolean = false,
   val isRequesting: Boolean = false,
+  val requestError: String? = null,
 )
 
 data class SeerrDiscoverState(
