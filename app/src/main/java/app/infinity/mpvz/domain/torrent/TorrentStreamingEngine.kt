@@ -717,12 +717,11 @@ class TorrentStreamingEngine(
     val lastPiece = ((fileOffset + selected.size - 1L) / pieceLength).toInt()
     handle.setSequentialRange(firstPiece, lastPiece)
 
-    val prebufferPieces = ((startupBufferBytes() + pieceLength - 1L) / pieceLength).toInt()
-    val headEnd = (firstPiece + prebufferPieces - 1).coerceAtMost(lastPiece)
-    for (piece in firstPiece..headEnd) {
-      handle.piecePriority(piece, Priority.TOP_PRIORITY)
-      handle.setPieceDeadline(piece, (piece - firstPiece) * 100)
-    }
+    // Do not expand the startup priority window from the user’s storage budget. A value of
+    // 0 means “use available storage” and can represent many gigabytes, which would enqueue
+    // an enormous number of deadlines before the first piece can arrive.
+    handle.piecePriority(firstPiece, Priority.TOP_PRIORITY)
+    handle.setPieceDeadline(firstPiece, 0)
     val tailStart = (lastPiece - 7).coerceAtLeast(firstPiece)
     for (piece in tailStart..lastPiece) handle.piecePriority(piece, Priority.TOP_PRIORITY)
     handle.unsetFlags(TorrentFlags.UPLOAD_MODE)
