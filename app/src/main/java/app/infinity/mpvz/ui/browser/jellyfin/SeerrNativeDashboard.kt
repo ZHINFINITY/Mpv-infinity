@@ -178,7 +178,7 @@ internal fun SeerrNativeDashboard(
             }
           }
         }
-        Button(onClick = { onRequest(detailedMedia, is4k, selectedSeasons.takeIf { isTv }, audioPreference); selected = null }, enabled = canRequest, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (detailedMedia.isRequesting) "Requesting…" else if (detailedMedia.requested) "Requested" else "Request ${if (isTv) "Selected Seasons" else "Movie"}") }
+        Button(onClick = { onRequest(detailedMedia, is4k, selectedSeasons.takeIf { isTv }?.toList(), audioPreference); selected = null }, enabled = canRequest, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text(if (detailedMedia.isRequesting) "Requesting…" else if (detailedMedia.requested) "Requested" else "Request ${if (isTv) "Selected Seasons" else "Movie"}") }
         if (detailedMedia.availableInJellyfin && detailedMedia.jellyfinMediaId != null) OutlinedButton(onClick = { onPlay(detailedMedia); selected = null }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Icon(Icons.RoundedFilled.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text(if (isTv) "Open in Jellyfin" else "Play in mpv∞") }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
           Text("Request in 4K", style = MaterialTheme.typography.titleMedium)
