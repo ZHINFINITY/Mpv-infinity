@@ -412,8 +412,8 @@ class PlayerActivity :
   /**
    * Playlist of URIs for sequential playback
    */
-  internal var playlist: List<Uri> = emptyList()
-
+    internal var playlist: List<Uri> = emptyList()
+  private var playlistTitles: List<String> = emptyList()
   /**
    * Database metadata for playlist items, if the current playlist was loaded from Room.
    */
@@ -794,8 +794,10 @@ class PlayerActivity :
         intent.getParcelableArrayListExtra("playlist") ?: emptyList()
       }
 
+    val installedPreparedPlaybackQueue = installPreparedPlaybackQueue(intent)
     val preparedPlaybackQueue =
-      playlist.isEmpty() && restorePreparedPlaybackQueue(intent)
+      playlist.isEmpty() &&
+        (installedPreparedPlaybackQueue || restorePreparedPlaybackQueue(intent))
 
     var restoredSavedPlaylistItem = false
     if (playlist.isNotEmpty()) {
@@ -2336,8 +2338,14 @@ class PlayerActivity :
             if (serviceBound || mediaPlaybackService != null) {
               syncBackgroundPlaybackService(updateThumbnail = true)
             }
-            viewModel.calculateVideoHash(Uri.parse(item.originalUri))
-            viewModel.refreshPlaylistItems()
+            // Audio navigation does not need the video hash or a database playlist refresh on every
+            // tap. Those background/UI updates were repeated during rapid skips and competed with
+            // MPV’s AudioTrack replacement, contributing to underruns. The final item refreshes
+            // after it becomes ready in loadPlaylistItemInternal().
+            if (!isAudioItem) {
+              viewModel.calculateVideoHash(Uri.parse(item.originalUri))
+              viewModel.refreshPlaylistItems()
+            }
           }
       }
     }
@@ -3014,6 +3022,32 @@ class PlayerActivity :
     viewModel.refreshPlaylistItems()
     syncBackgroundPlaybackService(updateThumbnail = false)
     return true
+  }
+
+  /** Installs the exact metadata-rich queue staged by an internal browser launch. */
+  private fun installPreparedPlaybackQueue(sourceIntent: Intent): Boolean {
+    if (!sourceIntent.getBooleanExtra(EXTRA_PREPARED_PLAYBACK_QUEUE, false) ||
+      !sourceIntent.getBooleanExtra("internal_launch", false)
+    ) {
+      return false
+    }
+
+    val token = sourceIntent.getLongExtra(EXTRA_PREPARED_PLAYBACK_TOKEN, 0L)
+    return when (val result = PreparedPlaybackLaunchStore.consume(token)) {
+      is PreparedPlaybackLaunchResult.Accepted -> {
+        val launch = result.launch
+        PlaybackSession.replaceQueue(
+          items = launch.items,
+          currentIndex = launch.currentIndex,
+          isExplicitQueue = launch.isExplicitQueue,
+          isM3u = launch.isM3u,
+        )
+        true
+      }
+      PreparedPlaybackLaunchResult.Missing,
+      PreparedPlaybackLaunchResult.Stale,
+      -> false
+    }
   }
 
   /** Restores a process-local queue prepared by an internal browser without Binder-sized arrays. */
@@ -4044,6 +4078,7 @@ class PlayerActivity :
    * @return The display name of the file, or empty string if not found
    */
   private fun getFileName(intent: Intent): String {
+    playlistTitles.getOrNull(playlistIndex)?.takeIf { it.isNotBlank() }?.let { return it }
     // First check if a custom title/filename was provided via intent extras
     intent.getStringExtra("title")?.let { return it }
     intent.getStringExtra("filename")?.let { return it }
@@ -4719,7 +4754,9 @@ class PlayerActivity :
         if (playWhenFileLoaded) {
           playWhenFileLoaded = false
         }
-        viewModel.onVideoLoadCompleted()
+        if (PlaybackSession.queue.value.currentItem?.let(::isAudioPlaybackItem) != true) {
+          viewModel.onVideoLoadCompleted()
+        }
         handleFileLoaded(loadGeneration)
         // Background service ownership is established by onStop()/Back handoff. Starting or
         // resyncing it for every foreground FILE_LOADED event makes rapid audio transitions
@@ -4732,7 +4769,9 @@ class PlayerActivity :
         if (!isReady) {
           isReady = true
         }
-        viewModel.onVideoLoadCompleted()
+        if (PlaybackSession.queue.value.currentItem?.let(::isAudioPlaybackItem) != true) {
+          viewModel.onVideoLoadCompleted()
+        }
       }
     }
   }
@@ -4776,7 +4815,14 @@ class PlayerActivity :
     val loadedIntent = Intent(intent)
     val loadedPlaylistIndex = playlistIndex
     val loadedPlaylist = playlist.toList()
-    currentUri?.let { viewModel.calculateVideoHash(it) }
+    val loadedQueueItem = PlaybackSession.queue.value.currentItem
+    val isAudioLoad =
+      loadedQueueItem?.let(::isAudioPlaybackItem) == true ||
+        loadedIntent.getBooleanExtra("is_audio", false) ||
+        loadedIntent.getBooleanExtra("media_library_audio", false)
+    if (!isAudioLoad) {
+      currentUri?.let { viewModel.calculateVideoHash(it) }
+    }
 
     reportJellyfinStop()
     currentUri?.toString()?.let { url ->
@@ -4785,11 +4831,13 @@ class PlayerActivity :
       startJellyfinProgressLoop()
     }
 
-    // Reset AB loop values when video changes
-    viewModel.clearABLoop()
+    if (!isAudioLoad) {
+      // Reset AB loop values when video changes
+      viewModel.clearABLoop()
 
-    // Drop the old ambient shader file, but keep the user's ambient preference/style.
-    viewModel.prepareAmbientForNewVideo()
+      // Drop the old ambient shader file, but keep the user's ambient preference/style.
+      viewModel.prepareAmbientForNewVideo()
+    }
 
     setIntentExtras(intent.extras)
 
@@ -4803,16 +4851,18 @@ class PlayerActivity :
         )
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
 
-      // Apply track selection logic (defaults only apply when no saved state)
-      trackSelector.onFileLoaded(hasState)
+      if (!isAudioLoad) {
+        // Apply track selection logic (defaults only apply when no saved state)
+        trackSelector.onFileLoaded(hasState)
 
-      // Apply default zoom only if there's no saved state
-      if (!hasState) {
-        withContext(Dispatchers.Main) {
-          if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
-          val zoomPreference = playerPreferences.defaultVideoZoom.get()
-          PlaybackSession.setPropertyDouble("video-zoom", zoomPreference.toDouble())
-          viewModel.setVideoZoom(zoomPreference)
+        // Apply default zoom only if there's no saved state
+        if (!hasState) {
+          withContext(Dispatchers.Main) {
+            if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
+            val zoomPreference = playerPreferences.defaultVideoZoom.get()
+            PlaybackSession.setPropertyDouble("video-zoom", zoomPreference.toDouble())
+            viewModel.setVideoZoom(zoomPreference)
+          }
         }
       }
     }
@@ -4837,37 +4887,34 @@ class PlayerActivity :
       }
     }
 
-    // Only set orientation immediately if NOT in Video mode
-    // For Video mode, wait for video-params/aspect to become available
-    if (playerPreferences.orientation.get() != PlayerOrientation.Video) {
-      setOrientation()
-    } else {
-      // For Video mode, try to set orientation after a short delay to ensure
-      // video dimensions are available
-      lifecycleScope.launch {
-        kotlinx.coroutines.delay(100)
-        if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
-          val aspect = player.getVideoOutAspect()
-          Log.d(TAG, "handleFileLoaded - Video mode, aspect after delay: $aspect")
-          if (aspect != null && aspect > 0) {
-            setOrientation()
+    if (!isAudioLoad) {
+      // Only set orientation immediately if NOT in Video mode
+      // For Video mode, wait for video-params/aspect to become available
+      if (playerPreferences.orientation.get() != PlayerOrientation.Video) {
+        setOrientation()
+      } else {
+        lifecycleScope.launch {
+          kotlinx.coroutines.delay(100)
+          if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
+            val aspect = player.getVideoOutAspect()
+            Log.d(TAG, "handleFileLoaded - Video mode, aspect after delay: $aspect")
+            if (aspect != null && aspect > 0) setOrientation()
           }
         }
       }
-    }
 
-    // Audio track information becomes available only after FILE_LOADED. Re-apply
-    // orientation once the track list settles so album art is not treated as video.
-    lifecycleScope.launch {
-      delay(100)
-      if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
-        setOrientation()
+      // Audio track information is not needed for a true audio-only load.
+      lifecycleScope.launch {
+        delay(100)
+        if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
+          setOrientation()
+        }
       }
-    }
 
-    applySubtitlePreferences()
-    applyVideoFilterPreferences()
-    viewModel.restoreSavedVideoAspect(showUpdate = false)
+      applySubtitlePreferences()
+      applyVideoFilterPreferences()
+      viewModel.restoreSavedVideoAspect(showUpdate = false)
+    }
 
     if (shouldForceCurrentMediaTitle()) {
       val preferredTitle = getPreferredCurrentTitle()
@@ -4877,16 +4924,18 @@ class PlayerActivity :
 
     viewModel.unpause()
     if (!holdsAudioFocus) scheduleAudioFocusRetry()
-    lifecycleScope.launch {
-
-      withContext(playbackRenderDispatcher) {
-        if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
-        player.applyAnime4KShaders()
-        viewModel.restartHdrScreenOutputAndAmbientIfActive()
+    if (!isAudioLoad) {
+      lifecycleScope.launch {
+        withContext(playbackRenderDispatcher) {
+          if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
+          player.applyAnime4KShaders()
+          viewModel.restartHdrScreenOutputAndAmbientIfActive()
+        }
       }
     }
 
     if (
+      !isAudioLoad &&
       subtitlesPreferences.autoEnableSubtitles.get() &&
       subtitlesPreferences.autoloadMatchingSubtitles.get()
     ) {
@@ -4919,7 +4968,8 @@ class PlayerActivity :
     }
 
     updateMediaSessionMetadata(
-      title = fileName,
+      title = getPreferredCurrentTitle().ifBlank { fileName },
+      artist = getPreferredCurrentArtist(),
       durationMs = (PlaybackSession.getPropertyDouble("duration")?.times(1000))?.toLong() ?: 0L,
     )
     updateMediaSessionPlaybackState(isPlaying = true)
@@ -5000,6 +5050,13 @@ class PlayerActivity :
             )
 
             syncBackgroundPlaybackService(updateThumbnail = true)
+          }
+
+          // Jellyfin owns server-side playback history; never update local Recents.
+          if (isJellyfinLaunch()) {
+            RecentlyPlayedOps.onVideoDeleted(uri.toString())
+            Log.d(TAG, "Skipping recently-played metadata update for Jellyfin item")
+            return@launch
           }
 
           // Update recently played with the parsed video title, duration, and file size
@@ -5572,6 +5629,13 @@ class PlayerActivity :
           PlaybackSession.getPropertyInt("height") ?: PlaybackSession.getPropertyInt("video-params/h") ?: 0
         }.getOrDefault(0)
 
+      // Server-backed Jellyfin playback is tracked by Jellyfin, not the local Recents database.
+      if (launchSource.equals("jellyfin", ignoreCase = true)) {
+        RecentlyPlayedOps.onVideoDeleted(filePath)
+        Log.d(TAG, "Skipping recently-played save for Jellyfin item: $filePath")
+        return@runCatching
+      }
+
       // Secure Folder playback should never surface in Recents/playback-history — that would
       // defeat the point of hiding the file in the first place.
       if (isSecureFolderLaunch) {
@@ -5725,9 +5789,12 @@ class PlayerActivity :
         @Suppress("DEPRECATION")
         intent.getParcelableArrayListExtra("playlist") ?: emptyList()
       }
+    playlistTitles = intent.getStringArrayListExtra("playlist_titles") ?: emptyList()
 
+    val installedPreparedPlaybackQueue = installPreparedPlaybackQueue(intent)
     val preparedPlaybackQueue =
-      playlistFromIntent.isEmpty() && restorePreparedPlaybackQueue(intent)
+      playlistFromIntent.isEmpty() &&
+        (installedPreparedPlaybackQueue || restorePreparedPlaybackQueue(intent))
 
     if (preparedPlaybackQueue) {
       viewModel.refreshPlaylistItems()
@@ -7487,7 +7554,9 @@ class PlayerActivity :
     playlistIndex = index
     PlaybackSession.selectQueueItem(index)
     TemporaryPlaybackQueue.syncFromSession()
-    viewModel.calculateVideoHash(uri)
+    if (targetQueueItem == null || !isAudioPlaybackItem(targetQueueItem)) {
+      viewModel.calculateVideoHash(uri)
+    }
 
     // Extract and set the new file name
     fileName = getPlaylistItemByIndex(index)?.fileName?.takeIf { it.isNotBlank() }
@@ -7830,6 +7899,11 @@ class PlayerActivity :
         Log.d(TAG, "Skipping recently-played save (playlist nav) for secure_folder launch: $filePath")
         return@runCatching
       }
+      if (isJellyfinLaunch()) {
+        RecentlyPlayedOps.onVideoDeleted(filePath)
+        Log.d(TAG, "Skipping recently-played save (playlist nav) for Jellyfin launch: $filePath")
+        return@runCatching
+      }
 
       RecentlyPlayedOps.addRecentlyPlayed(
         filePath = filePath,
@@ -7854,6 +7928,10 @@ class PlayerActivity :
       Log.e(TAG, "Error saving recently played for playlist item", e)
     }
   }
+
+  private fun isJellyfinLaunch(): Boolean =
+    intent.getStringExtra("launch_source").equals("jellyfin", ignoreCase = true) ||
+      jellyfinSessionReporter != null
 
   /** Generates one collision-resistant identifier without including network credentials. */
   private fun getMediaIdentifier(
@@ -8773,6 +8851,7 @@ class PlayerActivity :
     const val TAG = "MpvInfinity"
 
     const val EXTRA_PREPARED_PLAYBACK_QUEUE = "prepared_playback_queue"
+    const val EXTRA_PREPARED_PLAYBACK_TOKEN = "prepared_playback_token"
     private const val STATE_PLAYLIST_INDEX = "player_state_playlist_index"
     private const val STATE_PLAYLIST_STABLE_ID = "player_state_playlist_stable_id"
     private const val STATE_PLAYLIST_ORIGINAL_URI = "player_state_playlist_original_uri"

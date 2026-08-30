@@ -933,16 +933,22 @@ class MediaPlaybackService :
                   parsedUri.scheme == "content" -> null
                   else -> sourceUri
                 }
-              val retriever = MediaMetadataRetriever()
-              try {
-                if (cleanPath != null) {
-                  retriever.setDataSource(cleanPath)
-                } else {
-                  retriever.setDataSource(this@MediaPlaybackService, parsedUri)
+              val explicitArtwork =
+                EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, item.artworkUri)
+              if (explicitArtwork != null) {
+                explicitArtwork
+              } else {
+                val retriever = MediaMetadataRetriever()
+                try {
+                  if (cleanPath != null) {
+                    retriever.setDataSource(cleanPath)
+                  } else {
+                    retriever.setDataSource(this@MediaPlaybackService, parsedUri)
+                  }
+                  EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
+                } finally {
+                  runCatching { retriever.release() }
                 }
-                EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
-              } finally {
-                runCatching { retriever.release() }
               }
             }.getOrNull()
           }
