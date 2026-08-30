@@ -232,6 +232,15 @@ class JellyfinClient(
     }
   }
 
+  suspend fun loadPlayableEpisodes(session: JellyfinSession, seriesId: String): Result<List<JellyfinTrack>> =
+    loadAllMedia(
+      session = session,
+      parentId = seriesId,
+      sortBy = "ParentIndexNumber,IndexNumber",
+      sortOrder = "Ascending",
+      includeItemTypes = "Episode",
+    ).map { episodes -> episodes.filter { it.isPlayable || it.isVideo } }
+
   suspend fun loadSimilarItems(session: JellyfinSession, itemId: String, limit: Int = 12): Result<List<JellyfinTrack>> = withContext(Dispatchers.IO) {
     runCatching {
       val encodedToken = URLEncoder.encode(session.accessToken, Charsets.UTF_8.name())
