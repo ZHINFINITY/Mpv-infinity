@@ -632,7 +632,7 @@ object AdvancedPreferencesScreen : Screen {
                 supportingText = { Text("0 = maximum safe free storage; currently ${freeStorageGb.formatOneDecimal()} GB free") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
               )
 
               OutlinedTextField(
@@ -645,7 +645,7 @@ object AdvancedPreferencesScreen : Screen {
                 supportingText = { Text("0 = maximum safe free storage; larger values reduce seek buffering") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
               )
 
               OutlinedTextField(
@@ -658,10 +658,11 @@ object AdvancedPreferencesScreen : Screen {
                 supportingText = { Text("0 = maximum safe free storage; used to keep skipped-ahead data available") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
               )
 
               Text(
+                modifier = Modifier.padding(horizontal = 16.dp),
                 text = "Available storage: ${freeStorageGb.formatOneDecimal()} GB (${freeStorageBytes / (1024L * 1024L)} MB). A 512 MB safety reserve is kept free.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline,

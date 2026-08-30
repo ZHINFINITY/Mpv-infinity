@@ -649,7 +649,9 @@ class TorrentStreamingEngine(
     pieceLength: Int,
     startGeneration: Long,
   ) {
-    val targetBytes = minOf(fileSize, startupBufferBytes())
+    // Start once the first piece is available; the stream reader continues waiting for
+    // subsequent pieces, so a large user-configured buffer cannot block playback entirely.
+    val targetBytes = minOf(fileSize, pieceLength.toLong())
     val targetPiece = (firstPiece + ((targetBytes - 1L).coerceAtLeast(0L) / pieceLength).toInt()).coerceAtMost(lastPiece)
     val deadline = System.currentTimeMillis() + INITIAL_BUFFER_TIMEOUT_MS
     _state.value = TorrentStreamingState.Connecting("Buffering enough data to start playback...")

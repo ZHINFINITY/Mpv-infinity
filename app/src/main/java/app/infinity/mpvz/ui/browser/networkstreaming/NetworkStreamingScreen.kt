@@ -308,9 +308,15 @@ object NetworkStreamingScreen : Screen {
         }
       },
       floatingActionButton = {
-        if (pagerState.currentPage == NetworkTab.LOCAL_NETWORK.ordinal) {
+        if (pagerState.currentPage == NetworkTab.LOCAL_NETWORK.ordinal || pagerState.currentPage == NetworkTab.MEDIA.ordinal) {
           ExtendedFloatingActionButton(
-            onClick = { showAddSheet = true },
+            onClick = {
+              if (pagerState.currentPage == NetworkTab.LOCAL_NETWORK.ordinal) {
+                showAddSheet = true
+              } else {
+                showStreamDialog = true
+              }
+            },
             icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
             text = {
               Text(
@@ -1143,7 +1149,6 @@ private fun StreamLinkSection(
 ) {
   val context = LocalContext.current
   val keyboardController = LocalSoftwareKeyboardController.current
-  val playStreamContentDescription = stringResource(R.string.ui_play_stream)
   var linkUrl by rememberSaveable { mutableStateOf("") }
 
   fun pasteFromClipboard() {
@@ -1180,17 +1185,6 @@ private fun StreamLinkSection(
         .padding(horizontal = 16.dp, vertical = 6.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    Button(
-      onClick = { onShowDialogChange(true) },
-      shape = RoundedCornerShape(14.dp),
-      contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-      modifier = Modifier.semantics { contentDescription = playStreamContentDescription },
-    ) {
-      Icon(Icons.RoundedFilled.Link, contentDescription = null, modifier = Modifier.size(18.dp))
-      Spacer(modifier = Modifier.width(8.dp))
-      Text(stringResource(R.string.ui_add_stream), fontWeight = FontWeight.SemiBold)
-    }
-
     if (showDialog) {
       AlertDialog(
         onDismissRequest = { onShowDialogChange(false) },
