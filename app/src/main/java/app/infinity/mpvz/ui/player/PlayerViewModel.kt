@@ -2523,7 +2523,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun translateSubtitle(
-    track: SubtitleTrack,
+    track: TrackNode,
     targetLanguage: String,
   ) {
     val externalPath = track.externalFilename ?: return
