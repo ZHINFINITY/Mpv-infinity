@@ -92,6 +92,6 @@ val domainModule =
     }
     single { app.infinity.mpvz.data.lyrics.LrcLibApiService(get()) }
     single { app.infinity.mpvz.repository.lyrics.LyricsRepository(androidContext(), get()) }
-    single { TorrentStreamingEngine(androidContext()) }
+    single { TorrentStreamingEngine(androidContext(), get()) }
   }
 
