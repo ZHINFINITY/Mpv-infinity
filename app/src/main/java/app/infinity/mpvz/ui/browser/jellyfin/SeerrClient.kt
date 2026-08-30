@@ -14,6 +14,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -51,16 +53,27 @@ internal class SeerrClient(private val httpClient: OkHttpClient) {
 
   suspend fun discover(baseUrl: String): Result<SeerrDiscoverState> {
     return runCatching {
-      val movies = parseResults(request(baseUrl, "/discover/movies?sortBy=popularity.desc&page=1&language=en").getOrThrow(), "movie")
-      val shows = parseResults(request(baseUrl, "/discover/tv?sortBy=popularity.desc&page=1&language=en").getOrThrow(), "tv")
-      val trending = parseResults(request(baseUrl, "/discover/trending?page=1").getOrThrow(), null)
-      SeerrDiscoverState(
-        isConnected = true,
-        userName = request(baseUrl, "/auth/me").getOrNull()?.let(::parseUserName),
-        movies = movies,
-        shows = shows,
-        trending = trending,
-      )
+      coroutineScope {
+        val moviesDeferred = async(Dispatchers.IO) {
+          parseResults(request(baseUrl, "/discover/movies?sortBy=popularity.desc&page=1&language=en").getOrThrow(), "movie")
+        }
+        val showsDeferred = async(Dispatchers.IO) {
+          parseResults(request(baseUrl, "/discover/tv?sortBy=popularity.desc&page=1&language=en").getOrThrow(), "tv")
+        }
+        val trendingDeferred = async(Dispatchers.IO) {
+          parseResults(request(baseUrl, "/discover/trending?page=1").getOrThrow(), null)
+        }
+        val userNameDeferred = async(Dispatchers.IO) {
+          request(baseUrl, "/auth/me").getOrNull()?.let(::parseUserName)
+        }
+        SeerrDiscoverState(
+          isConnected = true,
+          userName = userNameDeferred.await(),
+          movies = moviesDeferred.await(),
+          shows = showsDeferred.await(),
+          trending = trendingDeferred.await(),
+        )
+      }
     }
   }
 

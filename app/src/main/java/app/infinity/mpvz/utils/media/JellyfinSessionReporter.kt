@@ -148,14 +148,16 @@ class JellyfinSessionReporter(
           PositionTicks = positionMs * TICKS_PER_MILLISECOND,
         )
       val jsonBody = Json.encodeToString(info)
-      sendPostRequest(urlString, jsonBody)
+      if (sendPostRequest(urlString, jsonBody)) {
+        JellyfinPlaybackEvents.notifyCompleted()
+      }
     }
   }
 
   private fun sendPostRequest(
     urlString: String,
     jsonBody: String,
-  ) {
+  ): Boolean {
     var connection: HttpURLConnection? = null
     try {
       val url = URL(urlString)
@@ -176,6 +178,7 @@ class JellyfinSessionReporter(
       val responseCode = connection.responseCode
       if (responseCode in 200..299) {
         Log.d(TAG, "Successfully reported status to Jellyfin: $urlString")
+        return true
       } else {
         Log.e(TAG, "Failed to report status to Jellyfin: $urlString, response code: $responseCode")
       }
@@ -184,5 +187,6 @@ class JellyfinSessionReporter(
     } finally {
       connection?.disconnect()
     }
+    return false
   }
 }
