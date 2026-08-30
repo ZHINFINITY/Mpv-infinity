@@ -2,6 +2,16 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.4 — Stable Seerr and Jellyfin Release
+
+This release adds the native Seerr client experience and improves Jellyfin dashboard reliability, discovery, and playback.
+
+- **Native Seerr client:** Search, discovery rails, metadata, cast information, season selection, anime audio preferences, 4K requests, and request-state feedback are available inside Mpv∞ without a WebView.
+- **Seerr search and requests:** Search handles spaced and compact title variants, including anime titles such as One Piece; stale results are guarded, request failures are shown, and processing/requested badges remain visible on posters.
+- **Jellyfin availability:** Movies and shows show Available or Partially available status, season-level availability is exposed, and available media can launch directly in Mpv∞.
+- **Jellyfin dashboard:** The top-five hero rail loops continuously, the toolbar uses Search → Seerr → Profile → Settings, and additional account/server actions are available through Profile.
+- **UI polish and stability:** Pull-to-refresh, smoother transitions, non-overlapping poster badges, improved detail-sheet scrolling, and corrected first-install permission navigation behavior.
+
 ## 1.0.3 — Public Hotfix Release
 
 This hotfix keeps the tested v1.0.2 feature set and corrects the remaining branding, subtitle, notification, crash-diagnostics, and music-player issues.
