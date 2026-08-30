@@ -96,6 +96,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
 import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.utils.media.JellyfinPlaybackEvents
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -115,6 +116,11 @@ fun JellyfinScreen(
 
   LaunchedEffect(httpClient) {
     viewModel.setHttpClient(httpClient)
+  }
+  LaunchedEffect(viewModel) {
+    JellyfinPlaybackEvents.completed.collect {
+      if (viewModel.uiState.value.session != null) viewModel.refresh()
+    }
   }
   AnimatedContent(
     targetState = uiState.session != null,

@@ -9,6 +9,8 @@ import android.net.Uri
 import android.os.Build
 import app.infinity.mpvz.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -309,8 +311,11 @@ class JellyfinClient(
           items.mapNotNull { parseTrack(it.jsonObject, session) }
         }
       }
-      (runCatching { query("IsResumable") }.getOrDefault(emptyList()) +
-        runCatching { query("IsPlayed") }.getOrDefault(emptyList()))
+      coroutineScope {
+        val resumableDeferred = async(Dispatchers.IO) { runCatching { query("IsResumable") }.getOrDefault(emptyList()) }
+        val playedDeferred = async(Dispatchers.IO) { runCatching { query("IsPlayed") }.getOrDefault(emptyList()) }
+        (resumableDeferred.await() + playedDeferred.await())
+      }
         .groupBy { it.id }
         .values
         .mapNotNull { records ->

@@ -355,12 +355,20 @@ class JellyfinViewModel(
       val discoverResult = client.discover(url)
       if (discoverResult.isSuccess) {
         val data = discoverResult.getOrThrow()
-        val enriched = data.copy(
-          movies = enrichSeerrItems(url, client, data.movies),
-          shows = enrichSeerrItems(url, client, data.shows),
-          trending = enrichSeerrItems(url, client, data.trending),
-        )
-        _uiState.update { it.copy(seerrDiscover = enriched.copy(isLoading = false, isConnected = true), seerr = it.seerr.copy(isDashboardOpen = true)) }
+        // Render the server-provided rails immediately. Details and Jellyfin availability are
+        // optional enrichment and must not block the first Seerr dashboard frame.
+        _uiState.update { it.copy(seerrDiscover = data.copy(isLoading = false, isConnected = true), seerr = it.seerr.copy(isDashboardOpen = true)) }
+        viewModelScope.launch(Dispatchers.IO) {
+          val enriched = coroutineScope {
+            val movies = async { enrichSeerrItems(url, client, data.movies) }
+            val shows = async { enrichSeerrItems(url, client, data.shows) }
+            val trending = async { enrichSeerrItems(url, client, data.trending) }
+            data.copy(movies = movies.await(), shows = shows.await(), trending = trending.await())
+          }
+          _uiState.update { state ->
+            if (state.seerr.url == url) state.copy(seerrDiscover = enriched.copy(isLoading = false, isConnected = true)) else state
+          }
+        }
       } else {
         _uiState.update { it.copy(seerrDiscover = it.seerrDiscover.copy(isLoading = false, error = discoverResult.exceptionOrNull()?.message ?: "Unable to load Seerr")) }
       }
@@ -483,9 +491,10 @@ class JellyfinViewModel(
           val mediaDeferred = async(Dispatchers.IO) {
             libs.map { lib ->
               async(Dispatchers.IO) {
-                jellyfin.loadAllMedia(
+                jellyfin.loadMedia(
                   session = session,
                   parentId = lib.id,
+                  limit = 50,
                   sortBy = "DateCreated",
                   sortOrder = "Descending",
                   includeItemTypes = libraryItemTypes(lib.collectionType, lib.name),
