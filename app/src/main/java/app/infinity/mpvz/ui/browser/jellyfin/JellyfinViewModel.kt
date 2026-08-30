@@ -44,6 +44,7 @@ class JellyfinViewModel(
   private var seerrClient: SeerrClient? = null
   private var seerrSearchJob: Job? = null
   private var seerrSearchGeneration = 0L
+  private var seerrRestoreAttempted = false
 
   private fun libraryItemTypes(collectionType: String?, libraryName: String = ""): String = when {
     libraryName.contains("anime", ignoreCase = true) ||
@@ -90,6 +91,20 @@ class JellyfinViewModel(
     if (session != null && _uiState.value.libraries.isEmpty()) {
       viewModelScope.launch { loadHome(session) }
     }
+    if (!seerrRestoreAttempted) {
+      seerrRestoreAttempted = true
+      restoreSavedSeerr()
+    }
+  }
+
+  private fun restoreSavedSeerr() {
+    val url = prefs.getString("seerr_url", null)?.takeIf { it.isNotBlank() } ?: return
+    val mode = prefs.getString("seerr_auth_mode", null)?.let { value ->
+      runCatching { SeerrAuthMode.valueOf(value) }.getOrNull()
+    } ?: return
+    val username = prefs.getString("seerr_username", "").orEmpty()
+    val secret = prefs.getString("seerr_secret", null)?.takeIf { it.isNotBlank() } ?: return
+    connectSeerr(url, mode, username, secret) { }
   }
 
   private fun restoreSavedSession() {
@@ -280,6 +295,12 @@ class JellyfinViewModel(
       val normalizedUrl = workingUrl
       authResult.fold(
         onSuccess = { userName ->
+          prefs.edit()
+            .putString("seerr_url", normalizedUrl)
+            .putString("seerr_auth_mode", mode.name)
+            .putString("seerr_username", username)
+            .putString("seerr_secret", secret)
+            .apply()
           _uiState.update { it.copy(seerr = SeerrUiState(normalizedUrl, mode, true, true), seerrDiscover = it.seerrDiscover.copy(isConnected = true, userName = userName)) }
           loadSeerrDiscover()
           onResult(true)
@@ -440,7 +461,7 @@ class JellyfinViewModel(
   fun disconnectSeerr() {
     seerrClient = null
     _uiState.update { it.copy(seerr = SeerrUiState(), seerrDiscover = SeerrDiscoverState()) }
-    prefs.edit().remove("seerr_url").remove("seerr_api_key").apply()
+    prefs.edit().remove("seerr_url").remove("seerr_auth_mode").remove("seerr_username").remove("seerr_secret").remove("seerr_api_key").apply()
   }
 
   fun logout() {
