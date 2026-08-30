@@ -365,6 +365,7 @@ class JellyfinViewModel(
         normalized,
         compact,
         normalized.replace(Regex("\\banime\\b", RegexOption.IGNORE_CASE), " ").replace(Regex("\\s+"), " ").trim(),
+        *normalized.split(Regex("\\s+")).toTypedArray(),
       ).filter { it.length >= 2 }.distinct()
       val results = coroutineScope { variants.map { variant -> async { client.search(url, variant) } }.awaitAll() }
       if (generation != seerrSearchGeneration) return@launch
@@ -689,14 +690,22 @@ class JellyfinViewModel(
             ((media.mediaType == "tv" && it.mediaType.equals("Series", true)) ||
               (media.mediaType != "tv" && it.mediaType.equals("Movie", true)))
         }
-      val playable = when {
-        resolved == null -> null
-        resolved.mediaType.equals("Series", true) -> jellyfin.loadFirstPlayableEpisode(session, resolved.id).getOrNull()
-        resolved.mediaType.equals("Season", true) -> resolved.parentId?.let { jellyfin.loadFirstPlayableEpisode(session, it).getOrNull() }
-        else -> resolved
+      if (resolved == null) return@launch
+      if (resolved.mediaType.equals("Series", true)) {
+        val episodes = jellyfin.loadPlayableEpisodes(session, resolved.id).getOrDefault(emptyList())
+        if (episodes.isNotEmpty()) {
+          playTracks(context, episodes, 0)
+        } else {
+          openDetail(resolved)
+        }
+      } else {
+        val playable = when {
+          resolved.mediaType.equals("Season", true) -> resolved.parentId?.let { jellyfin.loadFirstPlayableEpisode(session, it).getOrNull() }
+          else -> resolved
+        }
+        if (playable?.isPlayable == true || playable?.isVideo == true) playTracks(context, listOf(playable), 0)
+        else openDetail(resolved)
       }
-      if (playable?.isPlayable == true) playTracks(context, listOf(playable), 0)
-      else if (resolved != null) openDetail(resolved)
     }
   }
 
