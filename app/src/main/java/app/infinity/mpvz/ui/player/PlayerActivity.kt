@@ -8878,11 +8878,12 @@ class PlayerActivity :
 @androidx.compose.runtime.Composable
 private fun TorrentBufferingOverlay(engine: TorrentStreamingEngine) {
   val state by engine.state.collectAsState()
-  val visible = when (state) {
+  val currentState = state
+  val visible = when (currentState) {
     is TorrentStreamingState.Connecting,
     is TorrentStreamingState.Error,
     -> true
-    is TorrentStreamingState.Streaming -> state.bufferProgress < 0.9f
+    is TorrentStreamingState.Streaming -> currentState.bufferProgress < 0.9f
     TorrentStreamingState.Idle -> false
   }
   if (!visible) return
@@ -8904,7 +8905,7 @@ private fun TorrentBufferingOverlay(engine: TorrentStreamingEngine) {
         horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        when (val current = state) {
+        when (val current = currentState) {
           is TorrentStreamingState.Connecting -> {
             CircularProgressIndicator()
             Text(current.phase, style = MaterialTheme.typography.titleMedium)
