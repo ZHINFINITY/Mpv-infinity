@@ -55,12 +55,22 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.pm.PackageInfoCompat
@@ -87,6 +97,8 @@ import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.domain.torrent.TorrentStreamRequest
 import app.infinity.mpvz.domain.torrent.TorrentStreamException
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
+import app.infinity.mpvz.domain.torrent.TorrentStreamingState
+import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
 import app.infinity.mpvz.domain.torrent.canonicalInfoHash
 import app.infinity.mpvz.domain.torrent.isTorrentSource
 import app.infinity.mpvz.network.AndroidCookieJar
@@ -1245,6 +1257,9 @@ class PlayerActivity :
             },
             modifier = Modifier,
           )
+          if (intent.getStringExtra("launch_source") == "network_torrent") {
+            TorrentBufferingOverlay(engine = torrentStreamingEngine)
+          }
         }
       }
     }
@@ -4606,6 +4621,7 @@ class PlayerActivity :
           val height = player.height.takeIf { it > 0 }?.toFloat()
           applySubtitlePositions(primaryPosition, width, height)
         }
+        viewModel.translateEmbeddedSubtitleCue(value)
       }
       else -> {
         when (property.substringBeforeLast("/")) {
@@ -8855,5 +8871,62 @@ class PlayerActivity :
     private const val STATE_PLAYLIST_INDEX = "player_state_playlist_index"
     private const val STATE_PLAYLIST_STABLE_ID = "player_state_playlist_stable_id"
     private const val STATE_PLAYLIST_ORIGINAL_URI = "player_state_playlist_original_uri"
+  }
+}
+
+
+@androidx.compose.runtime.Composable
+private fun TorrentBufferingOverlay(engine: TorrentStreamingEngine) {
+  val state by engine.state.collectAsState()
+  val visible = when (state) {
+    is TorrentStreamingState.Connecting,
+    is TorrentStreamingState.Error,
+    -> true
+    is TorrentStreamingState.Streaming -> state.bufferProgress < 0.9f
+    TorrentStreamingState.Idle -> false
+  }
+  if (!visible) return
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.62f)),
+    contentAlignment = androidx.compose.ui.Alignment.Center,
+  ) {
+    Surface(
+      modifier = Modifier.padding(24.dp),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+      tonalElevation = 8.dp,
+    ) {
+      Column(
+        modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        when (val current = state) {
+          is TorrentStreamingState.Connecting -> {
+            CircularProgressIndicator()
+            Text(current.phase, style = MaterialTheme.typography.titleMedium)
+            Text(
+              "${current.peers} peers  •  ${formatTorrentSpeed(current.downloadSpeed)}",
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          is TorrentStreamingState.Streaming -> {
+            CircularProgressIndicator()
+            Text("Buffering ${((current.bufferProgress * 100).coerceIn(0f, 100f)).toInt()}%", style = MaterialTheme.typography.titleMedium)
+            Text(
+              "${current.peers} peers  •  ${current.seeds} seeds  •  ${formatTorrentSpeed(current.downloadSpeed)}",
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          is TorrentStreamingState.Error -> Text(current.message, color = MaterialTheme.colorScheme.error)
+          TorrentStreamingState.Idle -> Unit
+        }
+      }
+    }
   }
 }
