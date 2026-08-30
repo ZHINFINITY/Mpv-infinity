@@ -743,6 +743,9 @@
   <string name="toast_torrent_streaming_disabled">Enable P2P torrent streaming in Advanced settings first</string>
   <string name="ui_recent_stream_links">Recent links</string>
   <string name="ui_torrent_files">Torrents</string>
+  <string name="ui_media">Media</string>
+  <string name="ui_add_stream">Add stream</string>
+  <string name="ui_stream_url_dialog_title">Enter stream URL</string>
   <plurals name="ui_torrent_group_file_count">
     <item quantity="one">%1$d playable file</item>
     <item quantity="other">%1$d playable files</item>
