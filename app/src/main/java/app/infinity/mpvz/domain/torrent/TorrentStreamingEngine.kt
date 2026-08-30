@@ -56,6 +56,8 @@ class TorrentStreamingEngine(
   companion object {
     private const val TAG = "TorrentStreamingEngine"
     private const val METADATA_TIMEOUT_MS = 90_000L
+    private const val INITIAL_BUFFER_TIMEOUT_MS = 45_000L
+    private const val INITIAL_BUFFER_BYTES = 64L * 1024L * 1024L
     private const val MAX_METADATA_BYTES = 16L * 1024L * 1024L
     private const val MAX_TORRENT_FILES = 100_000
     private const val STATUS_INTERVAL_MS = 1_000L
@@ -245,6 +247,15 @@ class TorrentStreamingEngine(
           val firstPiece = (fileOffset / pieceLength).toInt()
           val lastPiece = ((fileOffset + selected.size - 1L) / pieceLength).toInt()
           val selectedPath = safeCacheFile(preparedSession.cacheDir, selected.path)
+          waitForInitialBuffer(
+            handle = preparedSession.handle,
+            firstPiece = firstPiece,
+            lastPiece = lastPiece,
+            fileSize = selected.size,
+            pieceLength = pieceLength,
+            startGeneration = startGeneration,
+          )
+          ensureCurrent(startGeneration)
 
           val startedProxy =
             TorrentProxyServer(
@@ -623,6 +634,38 @@ class TorrentStreamingEngine(
     }
   }
 
+  private suspend fun waitForInitialBuffer(
+    handle: TorrentHandle,
+    firstPiece: Int,
+    lastPiece: Int,
+    fileSize: Long,
+    pieceLength: Int,
+    startGeneration: Long,
+  ) {
+    val targetBytes = minOf(fileSize, INITIAL_BUFFER_BYTES)
+    val targetPiece = (firstPiece + ((targetBytes - 1L).coerceAtLeast(0L) / pieceLength).toInt()).coerceAtMost(lastPiece)
+    val deadline = System.currentTimeMillis() + INITIAL_BUFFER_TIMEOUT_MS
+    _state.value = TorrentStreamingState.Connecting("Buffering enough data to start playback...")
+    while (System.currentTimeMillis() < deadline) {
+      ensureCurrent(startGeneration)
+      if (!handle.isValid) throw streamError("Torrent session stopped before playback could start.")
+      val ready = (firstPiece..targetPiece).all(handle::havePiece)
+      if (ready) return
+      runCatching {
+        val status = handle.status()
+        _state.value = TorrentStreamingState.Connecting(
+          phase = "Buffering enough data to start playback...",
+          downloadSpeed = status.downloadPayloadRate().toLong(),
+          uploadSpeed = status.uploadPayloadRate().toLong(),
+          peers = status.numPeers(),
+          seeds = status.numSeeds(),
+        )
+      }
+      delay(250L)
+    }
+    throw streamError("Torrent did not buffer enough data to start playback. Check seeders and connection speed.")
+  }
+
   private fun configureStreaming(
     handle: TorrentHandle,
     info: TorrentInfo,
@@ -640,7 +683,8 @@ class TorrentStreamingEngine(
     val lastPiece = ((fileOffset + selected.size - 1L) / pieceLength).toInt()
     handle.setSequentialRange(firstPiece, lastPiece)
 
-    val headEnd = (firstPiece + 15).coerceAtMost(lastPiece)
+    val prebufferPieces = ((INITIAL_BUFFER_BYTES + pieceLength - 1L) / pieceLength).toInt()
+    val headEnd = (firstPiece + prebufferPieces - 1).coerceAtMost(lastPiece)
     for (piece in firstPiece..headEnd) {
       handle.piecePriority(piece, Priority.TOP_PRIORITY)
       handle.setPieceDeadline(piece, (piece - firstPiece) * 100)
