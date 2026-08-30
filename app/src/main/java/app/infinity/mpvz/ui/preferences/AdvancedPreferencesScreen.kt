@@ -77,6 +77,7 @@ import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
+import me.zhanghai.compose.preference.SliderPreference
 import org.koin.compose.koinInject
 import java.io.File
 import java.util.Locale
@@ -579,6 +580,8 @@ object AdvancedPreferencesScreen : Screen {
             PreferenceCard {
               val enableP2pStreaming by preferences.enableP2pStreaming.collectAsState()
               val enableHlsProxy by preferences.enableHlsProxy.collectAsState()
+              val torrentStartupBufferMb by preferences.torrentStartupBufferMb.collectAsState()
+              val torrentReadAheadMb by preferences.torrentReadAheadMb.collectAsState()
 
               SwitchPreference(
                 value = enableP2pStreaming,
@@ -604,6 +607,30 @@ object AdvancedPreferencesScreen : Screen {
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
+              )
+
+              PreferenceDivider()
+
+              SliderPreference(
+                value = torrentStartupBufferMb.toFloat(),
+                onValueChange = { preferences.torrentStartupBufferMb.set(it.toInt().coerceIn(8, 512)) },
+                title = { Text("Torrent startup buffer") },
+                valueRange = 8f..512f,
+                summary = { Text("${torrentStartupBufferMb} MB downloaded before playback starts", color = MaterialTheme.colorScheme.outline) },
+                onSliderValueChange = { preferences.torrentStartupBufferMb.set(it.toInt().coerceIn(8, 512)) },
+                sliderValue = torrentStartupBufferMb.toFloat(),
+              )
+
+              PreferenceDivider()
+
+              SliderPreference(
+                value = torrentReadAheadMb.toFloat(),
+                onValueChange = { preferences.torrentReadAheadMb.set(it.toInt().coerceIn(8, 512)) },
+                title = { Text("Torrent read-ahead buffer") },
+                valueRange = 8f..512f,
+                summary = { Text("${torrentReadAheadMb} MB prioritized ahead of playback", color = MaterialTheme.colorScheme.outline) },
+                onSliderValueChange = { preferences.torrentReadAheadMb.set(it.toInt().coerceIn(8, 512)) },
+                sliderValue = torrentReadAheadMb.toFloat(),
               )
             }
           }

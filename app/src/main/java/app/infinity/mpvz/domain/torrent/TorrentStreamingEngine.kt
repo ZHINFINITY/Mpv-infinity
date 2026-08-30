@@ -7,6 +7,7 @@ package app.infinity.mpvz.domain.torrent
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.utils.media.MediaInfoParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -52,12 +53,12 @@ import java.util.concurrent.atomic.AtomicReference
 
 class TorrentStreamingEngine(
   context: Context,
+  private val advancedPreferences: AdvancedPreferences,
 ) {
   companion object {
     private const val TAG = "TorrentStreamingEngine"
     private const val METADATA_TIMEOUT_MS = 90_000L
     private const val INITIAL_BUFFER_TIMEOUT_MS = 45_000L
-    private const val INITIAL_BUFFER_BYTES = 64L * 1024L * 1024L
     private const val MAX_METADATA_BYTES = 16L * 1024L * 1024L
     private const val MAX_TORRENT_FILES = 100_000
     private const val STATUS_INTERVAL_MS = 1_000L
@@ -269,6 +270,7 @@ class TorrentStreamingEngine(
                   firstPiece = firstPiece,
                   lastPiece = lastPiece,
                   mimeType = selected.mimeType,
+                  readAheadBytes = readAheadBufferBytes(),
                 ),
             ).also { it.start() }
           proxy = startedProxy
@@ -642,7 +644,7 @@ class TorrentStreamingEngine(
     pieceLength: Int,
     startGeneration: Long,
   ) {
-    val targetBytes = minOf(fileSize, INITIAL_BUFFER_BYTES)
+    val targetBytes = minOf(fileSize, startupBufferBytes())
     val targetPiece = (firstPiece + ((targetBytes - 1L).coerceAtLeast(0L) / pieceLength).toInt()).coerceAtMost(lastPiece)
     val deadline = System.currentTimeMillis() + INITIAL_BUFFER_TIMEOUT_MS
     _state.value = TorrentStreamingState.Connecting("Buffering enough data to start playback...")
@@ -666,6 +668,12 @@ class TorrentStreamingEngine(
     throw streamError("Torrent did not buffer enough data to start playback. Check seeders and connection speed.")
   }
 
+  private fun startupBufferBytes(): Long =
+    advancedPreferences.torrentStartupBufferMb.get().coerceIn(8, 512).toLong() * 1024L * 1024L
+
+  private fun readAheadBufferBytes(): Long =
+    advancedPreferences.torrentReadAheadMb.get().coerceIn(8, 512).toLong() * 1024L * 1024L
+
   private fun configureStreaming(
     handle: TorrentHandle,
     info: TorrentInfo,
@@ -683,7 +691,7 @@ class TorrentStreamingEngine(
     val lastPiece = ((fileOffset + selected.size - 1L) / pieceLength).toInt()
     handle.setSequentialRange(firstPiece, lastPiece)
 
-    val prebufferPieces = ((INITIAL_BUFFER_BYTES + pieceLength - 1L) / pieceLength).toInt()
+    val prebufferPieces = ((startupBufferBytes() + pieceLength - 1L) / pieceLength).toInt()
     val headEnd = (firstPiece + prebufferPieces - 1).coerceAtMost(lastPiece)
     for (piece in firstPiece..headEnd) {
       handle.piecePriority(piece, Priority.TOP_PRIORITY)

@@ -33,6 +33,12 @@ class AdvancedPreferences(
 
   val enableP2pStreaming = preferenceStore.getBoolean("enable_p2p_streaming", true)
 
+  /** Amount of media data to download before starting torrent playback, in megabytes. */
+  val torrentStartupBufferMb = preferenceStore.getInt("torrent_startup_buffer_mb", 64)
+
+  /** Amount of data prioritized ahead of the current torrent playback position, in megabytes. */
+  val torrentReadAheadMb = preferenceStore.getInt("torrent_read_ahead_mb", 64)
+
   val enableHlsProxy = preferenceStore.getBoolean("enable_hls_proxy", true)
 
   /** Notification style for the playback service (Media vs Progress-centric on Android 16+). */
