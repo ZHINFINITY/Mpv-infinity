@@ -1,0 +1,69 @@
+name: Music and Jellyfin arm64 Debug
+
+on:
+  push:
+    branches:
+      - music-jellyfin-debug
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: music-jellyfin-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-arm64-debug:
+    name: Build Standard arm64-v8a Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out the stable-v1.0.3-based branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37.0 build-tools;35.0.0 cmake;3.22.1 ndk;27.3.13750724'
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build only Standard arm64-v8a Debug
+        run: ./gradlew :app:assembleStandardDebug -Parm64Only=true --no-daemon --max-workers=2 --stacktrace
+
+      - name: Verify only the requested APK is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          output_dir="app/build/outputs/apk/standard/debug"
+          apk="$output_dir/app-standard-arm64-v8a-debug.apk"
+          test -f "$apk"
+          if find "$output_dir" -maxdepth 1 -type f -name '*.apk' ! -name 'app-standard-arm64-v8a-debug.apk' | grep -q .; then
+            echo 'Unexpected additional APK output:'
+            find "$output_dir" -maxdepth 1 -type f -name '*.apk' -print
+            exit 1
+          fi
+          sha256sum "$apk" | tee "$output_dir/SHA256SUMS.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$apk" | grep -E "package:|native-code"
+
+      - name: Upload private CI artifact for device testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-infinity-music-jellyfin-standard-arm64-debug-${{ github.sha }}
+          path: |
+            app/build/outputs/apk/standard/debug/app-standard-arm64-v8a-debug.apk
+            app/build/outputs/apk/standard/debug/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7

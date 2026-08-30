@@ -121,6 +121,7 @@ object Icons {
       LazyThreadSafetyMode.NONE,
     ) { AppIcon(MaterialSymbols.RoundedFilled.Format_color_reset) }
     val FormatColorText by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Format_color_text) }
+    val Explore by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Explore) }
     val FormatItalic by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Format_italic) }
     val FormatSize by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Format_size) }
     val FrameInspect by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Frame_inspect) }
@@ -333,6 +334,7 @@ object Icons {
     val FormatColorFill get() = Shared.FormatColorFill
     val FormatColorReset get() = Shared.FormatColorReset
     val FormatColorText get() = Shared.FormatColorText
+    val Explore get() = Shared.Explore
     val FormatItalic get() = Shared.FormatItalic
     val FormatSize get() = Shared.FormatSize
     val FrameInspect get() = Shared.FrameInspect

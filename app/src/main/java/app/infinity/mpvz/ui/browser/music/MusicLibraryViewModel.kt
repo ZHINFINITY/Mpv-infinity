@@ -11,8 +11,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -283,18 +285,26 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
   fun playSong(context: Context, song: MusicSong, songList: List<MusicSong> = _songs.value) {
     if (songList.isEmpty()) return
     val index = songList.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
-    val playlistUris = ArrayList(songList.map { it.uri })
+    val queueItems = songList.map(::toPlaybackItem)
+    val launchToken = PreparedPlaybackLaunchStore.stage(
+      items = queueItems,
+      currentIndex = index,
+      isExplicitQueue = true,
+    )
 
     val intent = Intent(Intent.ACTION_VIEW, song.uri).apply {
       setClass(context, PlayerActivity::class.java)
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
       putExtra("internal_launch", true)
+      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
+      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
       putExtra("playlist_index", index)
+      putParcelableArrayListExtra("playlist", ArrayList(songList.map { it.uri }))
+      putStringArrayListExtra("playlist_titles", ArrayList(songList.map { it.title }))
       putExtra("launch_source", "music_library")
       putExtra("media_library_audio", true)
       putExtra("is_audio", true)
-      putParcelableArrayListExtra("playlist", playlistUris)
-      putExtra("title", "${song.artist} - ${song.title}")
+      putExtra("title", song.title)
     }
     context.startActivity(intent)
   }
@@ -303,21 +313,37 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
     if (songsToPlay.isEmpty()) return
     val list = if (shuffle) songsToPlay.shuffled() else songsToPlay
     val firstSong = list.first()
-    val playlistUris = ArrayList(list.map { it.uri })
+    val launchToken = PreparedPlaybackLaunchStore.stage(
+      items = list.map(::toPlaybackItem),
+      currentIndex = 0,
+      isExplicitQueue = true,
+    )
 
     val intent = Intent(Intent.ACTION_VIEW, firstSong.uri).apply {
       setClass(context, PlayerActivity::class.java)
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
       putExtra("internal_launch", true)
+      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
+      putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
       putExtra("playlist_index", 0)
+      putParcelableArrayListExtra("playlist", ArrayList(list.map { it.uri }))
+      putStringArrayListExtra("playlist_titles", ArrayList(list.map { it.title }))
       putExtra("launch_source", if (shuffle) "music_shuffle" else "music_play_all")
       putExtra("media_library_audio", true)
       putExtra("is_audio", true)
-      putParcelableArrayListExtra("playlist", playlistUris)
-      putExtra("title", "${firstSong.artist} - ${firstSong.title}")
+      putExtra("title", firstSong.title)
     }
     context.startActivity(intent)
   }
+
+  private fun toPlaybackItem(song: MusicSong): PlaybackItem =
+    PlaybackItem.fromUri(
+      uri = song.uri.toString(),
+      title = song.title,
+      artist = song.artist,
+      mimeType = "audio/*",
+      artworkUri = song.albumArtUri?.toString(),
+    )
 
   fun createPlaylist(name: String) {
     viewModelScope.launch {

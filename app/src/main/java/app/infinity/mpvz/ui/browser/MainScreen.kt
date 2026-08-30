@@ -84,6 +84,7 @@ import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
+import app.infinity.mpvz.ui.browser.jellyfin.JellyfinScreen
 import app.infinity.mpvz.ui.browser.medialibrary.MediaLibraryContent
 import app.infinity.mpvz.ui.browser.music.MusicLibraryContent
 import app.infinity.mpvz.ui.browser.networkstreaming.NetworkStreamingScreen
@@ -97,6 +98,7 @@ import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Serializable
 object MainScreen : Screen {
@@ -106,6 +108,7 @@ object MainScreen : Screen {
     RECENTS,
     PLAYLISTS,
     NETWORK,
+    JELLYFIN,
   }
 
   // Use a companion object to store state more persistently
@@ -162,6 +165,7 @@ object MainScreen : Screen {
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
     val showPlaylistsTab by appearancePreferences.showPlaylistsTab.collectAsState()
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
+    val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val hideNavigationBar = NavigationBarState.shouldHideNavigationBar
     val isPermissionDenied = NavigationBarState.isPermissionDenied
     val isDualPaneFolderSelected = NavigationBarState.isDualPaneFolderSelected
@@ -170,9 +174,11 @@ object MainScreen : Screen {
     val visibleTabs =
       remember(
         showHomeTab,
+        showMusicTab,
         showRecentsTab,
         showPlaylistsTab,
         showNetworkTab,
+        showJellyfinTab,
       ) {
       buildList {
         if (showHomeTab) add(MainTab.HOME)
@@ -180,6 +186,7 @@ object MainScreen : Screen {
         if (showRecentsTab) add(MainTab.RECENTS)
         if (showPlaylistsTab) add(MainTab.PLAYLISTS)
         if (showNetworkTab) add(MainTab.NETWORK)
+        if (showJellyfinTab) add(MainTab.JELLYFIN)
       }
       }
 
@@ -333,6 +340,14 @@ object MainScreen : Screen {
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
+                MainTab.JELLYFIN -> {
+                  val viewModel: app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel = viewModel()
+                  val httpClient = koinInject<okhttp3.OkHttpClient>()
+                  JellyfinScreen(
+                    viewModel = viewModel,
+                    httpClient = httpClient,
+                  )
+                }
               }
             }
           }
@@ -522,7 +537,7 @@ private fun TelegramPillNavigationBar(
                     MainScreen.MainTab.RECENTS ->
                       Icon(
                         Icons.RoundedFilled.History,
-                        contentDescription = stringResource(R.string.ui_recents),
+                         contentDescription = stringResource(R.string.ui_recents),
                         tint = contentColor,
                         modifier = Modifier.size(22.dp),
                       )
@@ -540,6 +555,13 @@ private fun TelegramPillNavigationBar(
                         tint = contentColor,
                         modifier = Modifier.size(22.dp),
                       )
+                    MainScreen.MainTab.JELLYFIN ->
+                      Icon(
+                        Icons.RoundedFilled.VideoLibrary,
+                        contentDescription = "Jellyfin",
+                        tint = contentColor,
+                        modifier = Modifier.size(22.dp),
+                      )
                   }
                 }
                 Spacer(modifier = Modifier.height(3.dp))
@@ -551,6 +573,7 @@ private fun TelegramPillNavigationBar(
                         MainScreen.MainTab.RECENTS -> "Recents"
                         MainScreen.MainTab.PLAYLISTS -> "Playlists"
                         MainScreen.MainTab.NETWORK -> "Network"
+                        MainScreen.MainTab.JELLYFIN -> "Jellyfin"
                       },
                   style = MaterialTheme.typography.labelSmall,
                   fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
