@@ -170,6 +170,7 @@ class PlayerViewModel : ViewModel(),
   private val json: Json by inject()
   private val playbackStateDao: app.infinity.mpvz.database.dao.PlaybackStateDao by inject()
   private val aiService: app.infinity.mpvz.repository.ai.AiService by inject()
+  private val embeddedSubtitleTranslator: app.infinity.mpvz.repository.ai.EmbeddedSubtitleTranslator by inject()
   private val subtitleGenerationService: SubtitleGenerationService by inject()
   private val realtimeSubtitleService: app.infinity.mpvz.repository.ai.RealtimeSubtitleService by inject()
   private val wyzieRepository: WyzieSearchRepository by inject()
@@ -282,6 +283,8 @@ class PlayerViewModel : ViewModel(),
 
   private var realtimeSubsJob: Job? = null
   private var realtimeSrtFile: java.io.File? = null
+  private var embeddedCueTranslationJob: Job? = null
+  private var lastEmbeddedCue = ""
 
   private var playlistMetadataJob: Job? = null
   private var controlsVisibleForPolling = false
@@ -2482,8 +2485,45 @@ class PlayerViewModel : ViewModel(),
 
   private var translationJob: Job? = null
 
+  /**
+   * Translates the currently displayed embedded soft-subtitle cue when enabled. The request is
+   * debounced so rapidly changing cues cannot build an unbounded queue. The existing AI provider
+   * and endpoint preferences remain the source of truth; the player engine is not replaced.
+   */
+  fun translateEmbeddedSubtitleCue(rawCue: String) {
+    val cue = rawCue.trim()
+    if (cue.isBlank() || cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
+    val target = aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim()
+      ?: return
+    lastEmbeddedCue = cue
+    embeddedCueTranslationJob?.cancel()
+    embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
+      _translationStatus.value = "Translating embedded subtitle…"
+      val translationResult =
+        if (aiPreferences.embeddedSubtitleTranslationProvider.get() == "Google Translate") {
+          embeddedSubtitleTranslator.translateGoogle(cue, target)
+        } else {
+          aiService.generateWithAi(
+            cue,
+            app.infinity.mpvz.repository.ai.AiTask.TRANSLATE,
+            "Translate only into $target. Return only the translated subtitle text; preserve line breaks and do not add commentary.",
+          )
+        }
+      translationResult
+        .onSuccess { translated ->
+          withContext(Dispatchers.Main.immediate) {
+            playerUpdate.value = PlayerUpdates.ShowText(translated.trim())
+            _translationStatus.value = ""
+          }
+        }
+        .onFailure {
+          withContext(Dispatchers.Main.immediate) { _translationStatus.value = "" }
+        }
+    }
+  }
+
   fun translateSubtitle(
-    track: TrackNode,
+    track: SubtitleTrack,
     targetLanguage: String,
   ) {
     val externalPath = track.externalFilename ?: return
