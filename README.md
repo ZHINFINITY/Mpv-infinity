@@ -12,6 +12,13 @@
 
 **Mpv∞ (Mpv-infinity) is an ad-free, open-source Android media player for high-quality video and audio playback, combining MPV/libmpv with AndroidX Media3/ExoPlayer engines, dual subtitles, HDR, Dolby Vision, HDR10+, chapters, and customizable playback controls.**
 
+### Jellyfin Client and Seerr Support
+Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media servers, browsing libraries, searching movies and TV shows, and playing available media directly in Mpv∞. It also includes native **Seerr support** for Seerr and Overseerr-compatible media request servers, including discovery, search, availability status, season requests, and direct playback of available Jellyfin content. Relevant search terms include **Jellyfin Android client**, **Jellyfin media player**, **Seerr client**, **Overseerr client**, **Android MPV player**, and **Jellyfin video playback**.
+
+<p align="center">
+  <a href="https://t.me/Infinityzlabs"><b>Join InfinityZ Lab on Telegram for app feedback and feature requests</b></a>
+</p>
+
 > [!IMPORTANT]
 > **Mpv∞ is actively developed by ZHINFINITY.**
 >
