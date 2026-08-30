@@ -2,6 +2,18 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.4 — Public Feature Release
+
+This release adds native media-server browsing and media-request workflows while preserving Mpv∞’s existing MPV and Media3 playback engines.
+
+- **Jellyfin Client:** Connect to Jellyfin servers, manage saved Jellyfin profiles, browse libraries, search movies and series, view media details, inspect seasons and episodes, and play available content in Mpv∞.
+- **Jellyfin playback integration:** Start authenticated remote playback from Jellyfin, preserve playback state, support series and episode navigation, and continue using the existing player controls and playback engines.
+- **Seerr support:** Connect to Seerr and Overseerr-compatible servers using Jellyfin authentication, local account authentication, or an API key.
+- **Seerr discovery:** Browse trending movies, movies, and TV shows with posters, ratings, descriptions, genres, cast information, and availability status.
+- **Media requests:** Request movies or selected TV seasons through Seerr, including standard and 4K request options and anime audio preferences where supported by the server.
+- **Jellyfin availability matching:** Match Seerr titles with the Jellyfin library so available content can be launched directly in Mpv∞.
+- **Browser and player improvements:** Add the Jellyfin entry point to the app browser and improve remote artwork, playback launching, and media-library presentation.
+
 ## 1.0.3 — Public Hotfix Release
 
 This hotfix keeps the tested v1.0.2 feature set and corrects the remaining branding, subtitle, notification, crash-diagnostics, and music-player issues.
