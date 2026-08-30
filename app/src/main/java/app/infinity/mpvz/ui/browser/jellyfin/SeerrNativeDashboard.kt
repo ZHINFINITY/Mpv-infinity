@@ -107,7 +107,7 @@ internal fun SeerrNativeDashboard(
     AnimatedVisibility(visible = searchOpen, enter = fadeIn(), exit = fadeOut()) {
       OutlinedTextField(
         value = searchText,
-        onValueChange = { searchText = it; if (it.length >= 2) onSearch(it) },
+        onValueChange = { searchText = it; onSearch(it.takeIf { value -> value.trim().length >= 2 } ?: "") },
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         singleLine = true,
         shape = RoundedCornerShape(24.dp),
@@ -173,7 +173,7 @@ internal fun SeerrNativeDashboard(
                 detailedMedia.requested -> Surface(shape = RoundedCornerShape(5.dp), color = Color(0xFF1B5E20)) { Text(if (detailedMedia.requested4k) "4K requested" else "Requested", Modifier.padding(horizontal = 5.dp, vertical = 2.dp), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
               }
             }
-            if (detailedMedia.availableInJellyfin) Surface(Modifier.align(Alignment.Center), CircleShape, Color.Black.copy(alpha = .72f)) { Icon(Icons.RoundedFilled.PlayArrow, "Play in “Mpv∞”", Modifier.padding(9.dp).size(25.dp), tint = Color.White) }
+            if (detailedMedia.availableInJellyfin) Surface(Modifier.align(Alignment.Center), CircleShape, Color.Black.copy(alpha = .72f)) { Icon(Icons.RoundedFilled.PlayArrow, "Play in Mpv∞", Modifier.padding(9.dp).size(25.dp), tint = Color.White) }
           }
           Column(Modifier.weight(1f)) {
             Text(detailedMedia.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -217,7 +217,7 @@ internal fun SeerrNativeDashboard(
         if (detailedMedia.isRequesting) Text("Submitting request…", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         if (detailedMedia.requested) Text(if (detailedMedia.requested4k) "Request submitted for 4K" else "Request submitted", color = Color(0xFF43A047), fontWeight = FontWeight.SemiBold)
         detailedMedia.requestError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-        if (detailedMedia.availableInJellyfin && detailedMedia.jellyfinMediaId != null) OutlinedButton(onClick = { onPlay(detailedMedia); selected = null }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Icon(Icons.RoundedFilled.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Play in “Mpv∞”") }
+        if (detailedMedia.availableInJellyfin && detailedMedia.jellyfinMediaId != null) OutlinedButton(onClick = { onPlay(detailedMedia); selected = null }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Icon(Icons.RoundedFilled.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Play in Mpv∞") }
         Text("Overview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(detailedMedia.overview.ifBlank { "No overview available." }, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 6, overflow = TextOverflow.Ellipsis)
         if (detailedMedia.cast.isNotEmpty()) {
@@ -262,7 +262,7 @@ private fun SeerrNativeCard(item: SeerrMediaItem, onOpen: (SeerrMediaItem) -> Un
           item.requested -> Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF1B5E20)) { Text(if (item.requested4k) "4K requested" else "Requested", Modifier.padding(horizontal = 5.dp, vertical = 3.dp), color = Color.White, style = MaterialTheme.typography.labelSmall) }
         }
       }
-      if (item.availableInJellyfin) Surface(Modifier.align(Alignment.Center), CircleShape, Color.Black.copy(alpha = .72f)) { Icon(Icons.RoundedFilled.PlayArrow, "Play in “Mpv∞”", Modifier.padding(12.dp).size(28.dp), tint = Color.White) }
+      if (item.availableInJellyfin) Surface(Modifier.align(Alignment.Center), CircleShape, Color.Black.copy(alpha = .72f)) { Icon(Icons.RoundedFilled.PlayArrow, "Play in Mpv∞", Modifier.padding(12.dp).size(28.dp), tint = Color.White) }
     }
     Text(item.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
     Row(verticalAlignment = Alignment.CenterVertically) { Text(item.releaseDate?.take(4) ?: "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(4.dp)); Text(if (item.mediaType == "tv") "TV" else "Movie", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
