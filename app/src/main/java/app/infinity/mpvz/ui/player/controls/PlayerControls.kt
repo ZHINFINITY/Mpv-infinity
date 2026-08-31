@@ -220,6 +220,16 @@ fun PlayerControls(
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
   val subtitlesPreferences = koinInject<SubtitlesPreferences>()
+  val subtitleFontSize by subtitlesPreferences.fontSize.collectAsState()
+  val subtitleScale by subtitlesPreferences.subScale.collectAsState()
+  val subtitleTextColor by subtitlesPreferences.textColor.collectAsState()
+  val subtitleBackgroundColor by subtitlesPreferences.backgroundColor.collectAsState()
+  val subtitleBorderColor by subtitlesPreferences.borderColor.collectAsState()
+  val subtitleBorderSize by subtitlesPreferences.borderSize.collectAsState()
+  val subtitleShadowOffset by subtitlesPreferences.shadowOffset.collectAsState()
+  val subtitleBold by subtitlesPreferences.bold.collectAsState()
+  val subtitleItalic by subtitlesPreferences.italic.collectAsState()
+  val subtitleJustification by subtitlesPreferences.justification.collectAsState()
   val audioPreferences = koinInject<AudioPreferences>()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
@@ -815,6 +825,7 @@ fun PlayerControls(
 
           val holdForMultipleSpeed by playerPreferences.holdForMultipleSpeed.collectAsState()
           val currentPlayerUpdate by viewModel.playerUpdate.collectAsState()
+          val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
           val isTranslatingSub by viewModel.isTranslatingSub.collectAsState()
           val translationProgress by viewModel.translationProgress.collectAsState()
           val translationStatus by viewModel.translationStatus.collectAsState()
@@ -1019,7 +1030,7 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible = currentPlayerUpdate is PlayerUpdates.TranslatedSubtitle,
+            visible = embeddedTranslatedSubtitle != null,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.constrainAs(translatedSubtitle) {
@@ -1029,11 +1040,24 @@ fun PlayerControls(
               bottom.linkTo(parent.bottom, (if (isPortrait) 92.dp else 68.dp) + configuredOffset)
             },
           ) {
-            val translated = currentPlayerUpdate as? PlayerUpdates.TranslatedSubtitle
-            if (translated != null) {
+            val translated = embeddedTranslatedSubtitle
+            if (!translated.isNullOrBlank()) {
               TranslatedSubtitleText(
-                text = translated.value,
+                text = translated,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                fontSize = (subtitleFontSize * subtitleScale).coerceIn(8f, 120f).sp,
+                textColor = Color(subtitleTextColor),
+                backgroundColor = Color(subtitleBackgroundColor),
+                outlineColor = Color(subtitleBorderColor),
+                outlineWidth = subtitleBorderSize.toFloat(),
+                shadowOffset = subtitleShadowOffset.toFloat(),
+                bold = subtitleBold,
+                italic = subtitleItalic,
+                textAlign = when (subtitleJustification.name.lowercase()) {
+                  "left" -> androidx.compose.ui.text.style.TextAlign.Start
+                  "right" -> androidx.compose.ui.text.style.TextAlign.End
+                  else -> androidx.compose.ui.text.style.TextAlign.Center
+                },
               )
             }
           }
