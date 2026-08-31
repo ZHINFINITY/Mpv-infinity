@@ -4624,7 +4624,11 @@ class PlayerActivity :
           applySubtitlePositions(primaryPosition, width, height)
         }
         if (value.isBlank()) {
-          viewModel.resetEmbeddedSubtitleTranslation()
+          if (aiPreferences.subtitleTranslationEnabled.get()) {
+            viewModel.clearEmbeddedSubtitleTranslationCue()
+          } else {
+            viewModel.resetEmbeddedSubtitleTranslation()
+          }
         } else {
           viewModel.translateEmbeddedSubtitleCue(value)
         }

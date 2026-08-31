@@ -2502,6 +2502,7 @@ class PlayerViewModel : ViewModel(),
         PlaybackSession.setPropertyBoolean("sub-visibility", false)
         nativeSubtitleHiddenForTranslation = true
       }
+      syncSubtitleLayout()
       val cue = lastEmbeddedCue
       if (cue.isNotBlank()) {
         lastEmbeddedCue = ""
@@ -2510,6 +2511,7 @@ class PlayerViewModel : ViewModel(),
     } else {
       resetEmbeddedSubtitleTranslation()
     }
+    syncSubtitleLayout()
   }
 
   fun setEmbeddedSubtitleTranslationLanguage(language: String) {
@@ -2518,6 +2520,22 @@ class PlayerViewModel : ViewModel(),
     if (cue.isNotBlank() && aiPreferences.subtitleTranslationEnabled.get()) {
       lastEmbeddedCue = ""
       translateEmbeddedSubtitleCue(cue)
+    }
+    syncSubtitleLayout()
+  }
+
+  /** Clears a transient blank cue without restoring native subtitles while translation remains on. */
+  fun clearEmbeddedSubtitleTranslationCue() {
+    embeddedTranslationRequestId += 1L
+    embeddedCueTranslationJob?.cancel()
+    embeddedCueTranslationJob = null
+    lastEmbeddedCue = ""
+    _translationStatus.value = ""
+    playerUpdate.value = PlayerUpdates.None
+    _embeddedTranslatedSubtitle.value = null
+    if (aiPreferences.subtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
+      PlaybackSession.setPropertyBoolean("sub-visibility", false)
+      nativeSubtitleHiddenForTranslation = true
     }
   }
 
@@ -2533,12 +2551,17 @@ class PlayerViewModel : ViewModel(),
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
       nativeSubtitleHiddenForTranslation = false
     }
+    syncSubtitleLayout()
   }
 
   fun translateEmbeddedSubtitleCue(rawCue: String) {
     val cue = rawCue.trim()
     if (cue.isBlank()) {
-      resetEmbeddedSubtitleTranslation()
+      if (aiPreferences.subtitleTranslationEnabled.get()) {
+        clearEmbeddedSubtitleTranslationCue()
+      } else {
+        resetEmbeddedSubtitleTranslation()
+      }
       return
     }
     if (cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
