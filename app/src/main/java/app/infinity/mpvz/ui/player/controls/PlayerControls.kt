@@ -223,6 +223,7 @@ fun PlayerControls(
   val subtitleFontSize by subtitlesPreferences.fontSize.collectAsState()
   val subtitleScale by subtitlesPreferences.subScale.collectAsState()
   val liveSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
+  val liveSubtitleFontSize by PlaybackSession.propInt["sub-font-size"].collectAsState()
   val subtitleTextColor by subtitlesPreferences.textColor.collectAsState()
   val subtitleBackgroundColor by subtitlesPreferences.backgroundColor.collectAsState()
   val subtitleBorderColor by subtitlesPreferences.borderColor.collectAsState()
@@ -1037,7 +1038,9 @@ fun PlayerControls(
             exit = fadeOut(),
             modifier = Modifier.constrainAs(translatedSubtitle) {
               linkTo(parent.start, parent.end)
-              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 220)
+              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 150)
+              // Keep the translated cue on the same anchor as MPV's primary subtitle. The
+              // position is the shared MPV 0–150 coordinate, not a separate overlay setting.
               val configuredOffset = (((150 - position) * (if (isPortrait) 1.55f else 2.1f)).coerceIn(-250f, 250f)).dp
               bottom.linkTo(parent.bottom, configuredOffset)
             },
@@ -1047,7 +1050,7 @@ fun PlayerControls(
               TranslatedSubtitleText(
                 text = translated,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                fontSize = (subtitleFontSize * (liveSubtitleScale ?: subtitleScale)).coerceIn(8f, 120f).sp,
+                fontSize = ((liveSubtitleFontSize ?: subtitleFontSize) * (liveSubtitleScale ?: subtitleScale)).coerceIn(8f, 120f).sp,
                 textColor = Color(subtitleTextColor),
                 backgroundColor = Color(subtitleBackgroundColor),
                 outlineColor = Color(subtitleBorderColor),
