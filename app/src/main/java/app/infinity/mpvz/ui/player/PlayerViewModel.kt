@@ -2534,9 +2534,8 @@ class PlayerViewModel : ViewModel(),
     val requestId = ++embeddedTranslationRequestId
     embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
-      // Let MPV settle on the newest cue before making a network request. Older requests are
-      // cancelled and guarded by requestId so a slow response can never overwrite the current cue.
-      delay(90L)
+      // Request the newest cue immediately. Older requests are cancelled and guarded by requestId
+      // so a slow response can never overwrite the current cue.
       _translationStatus.value = "Translating embedded subtitle…"
       val translationResult =
         if (aiPreferences.embeddedSubtitleTranslationProvider.get().trim().isBlank() ||

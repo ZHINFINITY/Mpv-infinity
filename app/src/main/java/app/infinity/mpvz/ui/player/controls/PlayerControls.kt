@@ -11,6 +11,7 @@ package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.preferences.PlaybackEngineMode
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
+import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
@@ -230,6 +231,7 @@ fun PlayerControls(
   val subtitleBold by subtitlesPreferences.bold.collectAsState()
   val subtitleItalic by subtitlesPreferences.italic.collectAsState()
   val subtitleJustification by subtitlesPreferences.justification.collectAsState()
+  val subtitlePosition by PlaybackSession.propInt["sub-pos"].collectAsState()
   val audioPreferences = koinInject<AudioPreferences>()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
@@ -246,6 +248,7 @@ fun PlayerControls(
   val preciseDuration by viewModel.preciseDuration.collectAsState()
   val paused = if (isMedia3Active) !media3State.isPlaying else mpvPaused
   val torrentBuffering = torrentStreamingState is TorrentStreamingState.Connecting
+  val torrentConnectingState = torrentStreamingState as? TorrentStreamingState.Connecting
   val duration =
     if (isMedia3Active) {
       // Do not reuse the inactive MPV timeline while Media3 is preparing. That stale duration can
@@ -1035,7 +1038,7 @@ fun PlayerControls(
             exit = fadeOut(),
             modifier = Modifier.constrainAs(translatedSubtitle) {
               linkTo(parent.start, parent.end)
-              val position = subtitlesPreferences.subPos.get().coerceIn(0, 100)
+              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 100)
               val configuredOffset = (((100 - position) * (if (isPortrait) 2.2f else 3f)).coerceIn(0f, 220f)).dp
               bottom.linkTo(parent.bottom, (if (isPortrait) 92.dp else 68.dp) + configuredOffset)
             },
@@ -1523,7 +1526,17 @@ fun PlayerControls(
                         },
                     ) {
                       if (torrentBuffering) {
-                        LoadingIndicator(modifier = Modifier.size(24.dp))
+                        Column(
+                          horizontalAlignment = Alignment.CenterHorizontally,
+                          verticalArrangement = Arrangement.spacedBy(1.dp),
+                        ) {
+                          LoadingIndicator(modifier = Modifier.size(24.dp))
+                          Text(
+                            text = "${torrentConnectingState?.peers ?: 0} peers  ${formatTorrentSpeed(torrentConnectingState?.downloadSpeed ?: 0L)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                          )
+                        }
                       } else {
                         AnimatedPlayPauseIcon(
                           isPlaying = paused == false,
@@ -1633,7 +1646,17 @@ fun PlayerControls(
                       },
                   ) {
                     if (torrentBuffering) {
-                      LoadingIndicator(modifier = Modifier.size(24.dp))
+                      Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
+                      ) {
+                        LoadingIndicator(modifier = Modifier.size(24.dp))
+                        Text(
+                          text = "${torrentConnectingState?.peers ?: 0} peers  ${formatTorrentSpeed(torrentConnectingState?.downloadSpeed ?: 0L)}",
+                          style = MaterialTheme.typography.labelSmall,
+                          maxLines = 1,
+                        )
+                      }
                     } else {
                       AnimatedPlayPauseIcon(
                         isPlaying = paused == false,
