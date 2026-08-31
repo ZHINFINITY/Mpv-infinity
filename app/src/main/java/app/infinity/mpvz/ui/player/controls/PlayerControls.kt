@@ -44,7 +44,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -170,6 +169,22 @@ import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+@Composable
+private fun TorrentBufferStatus(state: TorrentStreamingState) {
+  val connecting = state as? TorrentStreamingState.Connecting
+  Column(
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(1.dp),
+  ) {
+    LoadingIndicator(modifier = Modifier.size(24.dp))
+    Text(
+      text = "${connecting?.peers ?: 0} peers  ${formatTorrentSpeed(connecting?.downloadSpeed ?: 0L)}",
+      style = MaterialTheme.typography.labelSmall,
+      maxLines = 1,
+    )
+  }
+}
+
 @Suppress("CompositionLocalAllowlist")
 val LocalPlayerButtonsClickEvent = staticCompositionLocalOf { {} }
 
@@ -250,7 +265,6 @@ fun PlayerControls(
   val preciseDuration by viewModel.preciseDuration.collectAsState()
   val paused = if (isMedia3Active) !media3State.isPlaying else mpvPaused
   val torrentBuffering = torrentStreamingState is TorrentStreamingState.Connecting
-  val torrentConnectingState = torrentStreamingState as? TorrentStreamingState.Connecting
   val duration =
     if (isMedia3Active) {
       // Do not reuse the inactive MPV timeline while Media3 is preparing. That stale duration can
@@ -1040,9 +1054,9 @@ fun PlayerControls(
             exit = fadeOut(),
             modifier = Modifier.constrainAs(translatedSubtitle) {
               linkTo(parent.start, parent.end)
-              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 150)
-              val configuredOffset = (((150 - position) * (if (isPortrait) 1.55f else 2.1f)).coerceIn(0f, 250f)).dp
-              bottom.linkTo(parent.bottom, (if (isPortrait) 92.dp else 68.dp) + configuredOffset)
+              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 220)
+              val configuredOffset = (((150 - position) * (if (isPortrait) 1.55f else 2.1f)).coerceIn(-250f, 250f)).dp
+              bottom.linkTo(parent.bottom, configuredOffset)
             },
           ) {
             val translated = embeddedTranslatedSubtitle
@@ -1528,15 +1542,7 @@ fun PlayerControls(
                         },
                     ) {
                       if (torrentBuffering) {
-                        Box(contentAlignment = Alignment.Center) {
-                          LoadingIndicator(modifier = Modifier.size(34.dp))
-                          Text(
-                            text = "${torrentConnectingState?.peers ?: 0} peers  ${formatTorrentSpeed(torrentConnectingState?.downloadSpeed ?: 0L)}",
-                            modifier = Modifier.offset(y = 25.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                          )
-                        }
+                        TorrentBufferStatus(torrentStreamingState)
                       } else {
                         AnimatedPlayPauseIcon(
                           isPlaying = paused == false,
@@ -1646,15 +1652,7 @@ fun PlayerControls(
                       },
                   ) {
                     if (torrentBuffering) {
-                      Box(contentAlignment = Alignment.Center) {
-                        LoadingIndicator(modifier = Modifier.size(34.dp))
-                        Text(
-                          text = "${torrentConnectingState?.peers ?: 0} peers  ${formatTorrentSpeed(torrentConnectingState?.downloadSpeed ?: 0L)}",
-                          modifier = Modifier.offset(y = 25.dp),
-                          style = MaterialTheme.typography.labelSmall,
-                          maxLines = 1,
-                        )
-                      }
+                      TorrentBufferStatus(torrentStreamingState)
                     } else {
                       AnimatedPlayPauseIcon(
                         isPlaying = paused == false,
