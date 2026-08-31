@@ -285,6 +285,7 @@ class PlayerViewModel : ViewModel(),
   private var realtimeSrtFile: java.io.File? = null
   private var embeddedCueTranslationJob: Job? = null
   private var lastEmbeddedCue = ""
+  private var embeddedTranslationRequestId = 0L
 
   private var playlistMetadataJob: Job? = null
   private var controlsVisibleForPolling = false
@@ -2490,17 +2491,43 @@ class PlayerViewModel : ViewModel(),
    * debounced so rapidly changing cues cannot build an unbounded queue. The existing AI provider
    * and endpoint preferences remain the source of truth; the player engine is not replaced.
    */
+  fun resetEmbeddedSubtitleTranslation() {
+    embeddedTranslationRequestId += 1L
+    embeddedCueTranslationJob?.cancel()
+    embeddedCueTranslationJob = null
+    lastEmbeddedCue = ""
+    _translationStatus.value = ""
+    playerUpdate.value = PlayerUpdates.None
+  }
+
   fun translateEmbeddedSubtitleCue(rawCue: String) {
     val cue = rawCue.trim()
-    if (cue.isBlank() || cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
-    val target = aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim()
-      ?: return
+    if (cue.isBlank()) {
+      resetEmbeddedSubtitleTranslation()
+      return
+    }
+    if (cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
+    val target =
+      aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim()
+        ?.lowercase()
+        ?.substringBefore("-")
+        ?.substringBefore("_")
+        ?.takeIf { it.length in 2..8 }
+        ?: java.util.Locale.getDefault().language.takeIf { it.length in 2..8 }
+        ?: "en"
     lastEmbeddedCue = cue
+    playerUpdate.value = PlayerUpdates.None
+    val requestId = ++embeddedTranslationRequestId
     embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
+      // Let MPV settle on the newest cue before making a network request. Older requests are
+      // cancelled and guarded by requestId so a slow response can never overwrite the current cue.
+      delay(90L)
       _translationStatus.value = "Translating embedded subtitle…"
       val translationResult =
-        if (aiPreferences.embeddedSubtitleTranslationProvider.get() == "Google Translate") {
+        if (aiPreferences.embeddedSubtitleTranslationProvider.get().trim().isBlank() ||
+          aiPreferences.embeddedSubtitleTranslationProvider.get().trim().equals("Google Translate", ignoreCase = true)
+        ) {
           embeddedSubtitleTranslator.translateGoogle(cue, target)
         } else {
           aiService.generateWithAi(
@@ -2513,14 +2540,17 @@ class PlayerViewModel : ViewModel(),
         .onSuccess { translated ->
           withContext(Dispatchers.Main.immediate) {
             val translatedText = translated.trim()
-            if (translatedText.isNotBlank()) {
+            if (requestId == embeddedTranslationRequestId && cue == lastEmbeddedCue && translatedText.isNotBlank()) {
               playerUpdate.value = PlayerUpdates.TranslatedSubtitle(translatedText)
             }
-            _translationStatus.value = ""
+            if (requestId == embeddedTranslationRequestId) _translationStatus.value = ""
           }
         }
-        .onFailure {
-          withContext(Dispatchers.Main.immediate) { _translationStatus.value = "" }
+        .onFailure { error ->
+          if (requestId == embeddedTranslationRequestId) {
+            android.util.Log.w("PlayerViewModel", "Embedded subtitle translation failed", error)
+            withContext(Dispatchers.Main.immediate) { _translationStatus.value = "" }
+          }
         }
     }
   }

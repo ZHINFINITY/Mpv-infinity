@@ -63,7 +63,7 @@ class TorrentStreamingEngine(
     private const val BYTES_PER_MB = 1024L * 1024L
     private const val MIN_BUFFER_BYTES = 8L * BYTES_PER_MB
     // A practical two-minute startup window for typical compressed video bitrates.
-    private const val DEFAULT_STARTUP_BUFFER_MB = 128L
+    private const val DEFAULT_STARTUP_BUFFER_MB = 64L
     private const val STORAGE_RESERVE_BYTES = 512L * BYTES_PER_MB
     private const val MAX_METADATA_BYTES = 16L * 1024L * 1024L
     private const val MAX_TORRENT_FILES = 100_000
@@ -676,7 +676,12 @@ class TorrentStreamingEngine(
       }
       delay(250L)
     }
-    throw streamError("Torrent did not buffer enough data to start playback. Check seeders and connection speed.")
+    // A slow or lightly seeded torrent must still be allowed to start once its first verified
+    // piece is available. The proxy will block only when mpv reaches data that is not ready yet.
+    // This preserves the previous build's reliable startup behavior while retaining the bounded
+    // startup/read-ahead scheduler.
+    if (handle.havePiece(firstPiece)) return
+    throw streamError("Torrent did not receive its first playable piece. Check seeders and connection speed.")
   }
 
   private fun availableStorageBytes(): Long =

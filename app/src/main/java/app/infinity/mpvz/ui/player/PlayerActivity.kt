@@ -70,7 +70,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.pm.PackageInfoCompat
@@ -4621,7 +4625,11 @@ class PlayerActivity :
           val height = player.height.takeIf { it > 0 }?.toFloat()
           applySubtitlePositions(primaryPosition, width, height)
         }
-        viewModel.translateEmbeddedSubtitleCue(value)
+        if (value.isBlank()) {
+          viewModel.resetEmbeddedSubtitleTranslation()
+        } else {
+          viewModel.translateEmbeddedSubtitleCue(value)
+        }
       }
       else -> {
         when (property.substringBeforeLast("/")) {
@@ -8886,37 +8894,59 @@ private fun TorrentBufferingOverlay(engine: TorrentStreamingEngine) {
   if (!visible) return
 
   Box(
-    modifier = Modifier
-      .fillMaxSize()
-      .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.62f)),
+    modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)),
     contentAlignment = androidx.compose.ui.Alignment.Center,
   ) {
-    Surface(
-      modifier = Modifier.padding(24.dp),
-      shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-      tonalElevation = 8.dp,
-    ) {
-      Column(
-        modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
-        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        when (val current = currentState) {
-          is TorrentStreamingState.Connecting -> {
-            CircularProgressIndicator()
-            Text(current.phase, style = MaterialTheme.typography.titleMedium)
+    when (val current = currentState) {
+      is TorrentStreamingState.Connecting -> {
+        Column(
+          horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+          Box(
+            modifier = Modifier
+              .size(96.dp)
+              .clip(androidx.compose.foundation.shape.CircleShape)
+              .background(
+                Brush.linearGradient(
+                  listOf(
+                    Color(0xFFB8C7FF),
+                    Color(0xFF889CFF),
+                    Color(0xFFD4B7FF),
+                  ),
+                ),
+              ),
+          )
+          Surface(
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+            color = Color(0xFF304B8C).copy(alpha = 0.88f),
+            contentColor = Color(0xFFE2E8FF),
+          ) {
             Text(
-              "${current.peers} peers  •  ${formatTorrentSpeed(current.downloadSpeed)}",
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              text = "• ${formatTorrentSpeed(current.downloadSpeed)}  |  ${current.peers} peers  |  ${current.phase}",
+              modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+              style = MaterialTheme.typography.labelLarge,
+              maxLines = 1,
             )
           }
-          is TorrentStreamingState.Streaming -> Unit
-          is TorrentStreamingState.Error -> Text(current.message, color = MaterialTheme.colorScheme.error)
-          TorrentStreamingState.Idle -> Unit
         }
       }
+      is TorrentStreamingState.Streaming -> Unit
+      is TorrentStreamingState.Error -> {
+        Surface(
+          modifier = Modifier.padding(horizontal = 24.dp),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+          color = Color(0xFF15161B),
+        ) {
+          Text(
+            current.message,
+            modifier = Modifier.padding(horizontal = 28.dp, vertical = 20.dp),
+            color = Color(0xFFFFB7C0),
+            style = MaterialTheme.typography.bodyLarge,
+          )
+        }
+      }
+      TorrentStreamingState.Idle -> Unit
     }
   }
 }
