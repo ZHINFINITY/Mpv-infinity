@@ -11,7 +11,6 @@ package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.preferences.PlaybackEngineMode
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
-import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
@@ -168,22 +167,6 @@ import kotlinx.coroutines.flow.update
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
-
-@Composable
-private fun TorrentBufferStatus(state: TorrentStreamingState) {
-  val connecting = state as? TorrentStreamingState.Connecting
-  Column(
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(1.dp),
-  ) {
-    LoadingIndicator(modifier = Modifier.size(24.dp))
-    Text(
-      text = "${connecting?.peers ?: 0} peers  ${formatTorrentSpeed(connecting?.downloadSpeed ?: 0L)}",
-      style = MaterialTheme.typography.labelSmall,
-      maxLines = 1,
-    )
-  }
-}
 
 @Suppress("CompositionLocalAllowlist")
 val LocalPlayerButtonsClickEvent = staticCompositionLocalOf { {} }
@@ -1542,7 +1525,7 @@ fun PlayerControls(
                         },
                     ) {
                       if (torrentBuffering) {
-                        TorrentBufferStatus(torrentStreamingState)
+                        LoadingIndicator(modifier = Modifier.size(24.dp))
                       } else {
                         AnimatedPlayPauseIcon(
                           isPlaying = paused == false,
@@ -1652,7 +1635,7 @@ fun PlayerControls(
                       },
                   ) {
                     if (torrentBuffering) {
-                      TorrentBufferStatus(torrentStreamingState)
+                      LoadingIndicator(modifier = Modifier.size(24.dp))
                     } else {
                       AnimatedPlayPauseIcon(
                         isPlaying = paused == false,

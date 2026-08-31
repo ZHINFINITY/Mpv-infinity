@@ -2495,6 +2495,32 @@ class PlayerViewModel : ViewModel(),
    * debounced so rapidly changing cues cannot build an unbounded queue. The existing AI provider
    * and endpoint preferences remain the source of truth; the player engine is not replaced.
    */
+  fun setEmbeddedSubtitleTranslationEnabled(enabled: Boolean) {
+    aiPreferences.subtitleTranslationEnabled.set(enabled)
+    if (enabled) {
+      if (!nativeSubtitleHiddenForTranslation) {
+        PlaybackSession.setPropertyBoolean("sub-visibility", false)
+        nativeSubtitleHiddenForTranslation = true
+      }
+      val cue = lastEmbeddedCue
+      if (cue.isNotBlank()) {
+        lastEmbeddedCue = ""
+        translateEmbeddedSubtitleCue(cue)
+      }
+    } else {
+      resetEmbeddedSubtitleTranslation()
+    }
+  }
+
+  fun setEmbeddedSubtitleTranslationLanguage(language: String) {
+    aiPreferences.embeddedSubtitleTargetLanguage.set(language)
+    val cue = lastEmbeddedCue
+    if (cue.isNotBlank() && aiPreferences.subtitleTranslationEnabled.get()) {
+      lastEmbeddedCue = ""
+      translateEmbeddedSubtitleCue(cue)
+    }
+  }
+
   fun resetEmbeddedSubtitleTranslation() {
     embeddedTranslationRequestId += 1L
     embeddedCueTranslationJob?.cancel()
@@ -2517,7 +2543,8 @@ class PlayerViewModel : ViewModel(),
     }
     if (cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
     val target =
-      aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim()
+      (aiPreferences.embeddedSubtitleTargetLanguage.get().trim().takeIf { it.isNotBlank() }
+        ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
         ?.lowercase()
         ?.substringBefore("-")
         ?.substringBefore("_")
