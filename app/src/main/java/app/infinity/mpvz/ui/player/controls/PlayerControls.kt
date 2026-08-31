@@ -117,6 +117,7 @@ import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.preferences.preference.deleteAndGet
@@ -216,6 +217,7 @@ fun PlayerControls(
   val portraitPlaybackControlsPosition by
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
+  val subtitlesPreferences = koinInject<SubtitlesPreferences>()
   val audioPreferences = koinInject<AudioPreferences>()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
