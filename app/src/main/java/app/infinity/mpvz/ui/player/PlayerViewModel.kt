@@ -2512,7 +2512,10 @@ class PlayerViewModel : ViewModel(),
       translationResult
         .onSuccess { translated ->
           withContext(Dispatchers.Main.immediate) {
-            playerUpdate.value = PlayerUpdates.ShowText(translated.trim())
+            val translatedText = translated.trim()
+            if (translatedText.isNotBlank()) {
+              playerUpdate.value = PlayerUpdates.TranslatedSubtitle(translatedText)
+            }
             _translationStatus.value = ""
           }
         }
