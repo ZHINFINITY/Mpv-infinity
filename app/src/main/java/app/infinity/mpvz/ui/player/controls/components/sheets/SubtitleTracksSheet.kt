@@ -23,7 +23,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -98,6 +99,8 @@ fun SubtitlesSheet(
   subtitlesOff: Boolean = false,
   onDisableSubtitles: () -> Unit = {},
   onToggleEmbeddedTranslation: () -> Unit = {},
+  embeddedTranslationLanguage: String = "",
+  onEmbeddedTranslationLanguageChange: (String) -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val items =
@@ -353,6 +356,27 @@ fun SubtitlesSheet(
             )
           }
           Switch(checked = embeddedTranslationEnabled, onCheckedChange = { onToggleEmbeddedTranslation() })
+        }
+        if (embeddedTranslationEnabled && configuredLanguages.size >= 2) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+          ) {
+            Text(
+              "Translation language",
+              style = MaterialTheme.typography.labelLarge,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
+              configuredLanguages.take(2).forEach { code ->
+                FilterChip(
+                  selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
+                  onClick = { onEmbeddedTranslationLanguageChange(code) },
+                  label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
+                )
+              }
+            }
+          }
         }
       }
 

@@ -66,6 +66,7 @@ class AiPreferences(
 
   // Auto-translate target languages (comma-separated codes: "en,es,fr")
   val autoTranslateLanguages = preferenceStore.getString("ai_auto_translate_languages", "")
+  val embeddedSubtitleTargetLanguage = preferenceStore.getString("ai_embedded_subtitle_target_language", "")
 
   // Real-time embedded soft-subtitle translation. Google Translate is the no-key default;
   // optional endpoints support OpenAI-compatible, DeepL, and Gemini-compatible services.
