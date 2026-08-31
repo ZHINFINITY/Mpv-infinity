@@ -436,6 +436,9 @@ private fun TelegramPillNavigationBar(
     val availableWidth = totalWidth - (horizontalPadding * 2)
     val itemWidth = availableWidth / count
     val itemWidthPx = with(density) { itemWidth.toPx() }
+    val activePillWidth = (itemWidth * 1.5f).coerceIn(72.dp, 96.dp).coerceAtMost(availableWidth)
+    val activePillWidthPx = with(density) { activePillWidth.toPx() }
+    val availableWidthPx = with(density) { availableWidth.toPx() }
 
     Surface(
       modifier = Modifier.fillMaxWidth(),
@@ -460,7 +463,7 @@ private fun TelegramPillNavigationBar(
           Box(
             modifier =
               Modifier
-                .width(itemWidth)
+                .width(activePillWidth)
                 .height(54.dp)
                 .graphicsLayer {
                   val currentPos =
@@ -472,7 +475,16 @@ private fun TelegramPillNavigationBar(
                   // Stretch the active pill while it travels, giving the selection a soft
                   // liquid / water-drop transition instead of a rigid jump.
                   scaleX = 1f + (0.08f * (distanceFromNearestTab * 2f).coerceIn(0f, 1f))
-                  translationX = if (isRtl) -itemWidthPx * currentPos else itemWidthPx * currentPos
+                  val centeredOffset = (itemWidthPx - activePillWidthPx) / 2f
+                  val rawTranslationX = if (isRtl) {
+                    -itemWidthPx * currentPos - centeredOffset
+                  } else {
+                    itemWidthPx * currentPos + centeredOffset
+                  }
+                  translationX = rawTranslationX.coerceIn(
+                    0f,
+                    (availableWidthPx - activePillWidthPx).coerceAtLeast(0f),
+                  )
                 }.clip(RoundedCornerShape(24.dp))
                 .background(MaterialTheme.colorScheme.primaryContainer),
           )
@@ -498,7 +510,6 @@ private fun TelegramPillNavigationBar(
                 Modifier
                   .weight(1f)
                   .height(54.dp)
-                  .clip(RoundedCornerShape(24.dp))
                   .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -507,6 +518,7 @@ private fun TelegramPillNavigationBar(
               contentAlignment = Alignment.Center,
             ) {
               Column(
+                modifier = Modifier.width(if (isSelected) activePillWidth else itemWidth),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
               ) {
