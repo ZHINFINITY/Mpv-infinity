@@ -426,19 +426,8 @@ private fun TelegramPillNavigationBar(
   onTabSelected: (MainScreen.MainTab) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val density = LocalDensity.current
-  val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-
-  BoxWithConstraints(modifier = modifier) {
-    val totalWidth = maxWidth
-    val count = visibleTabs.size.coerceAtLeast(1)
+  Box(modifier = modifier) {
     val horizontalPadding = 6.dp
-    val availableWidth = totalWidth - (horizontalPadding * 2)
-    val itemWidth = availableWidth / count
-    val itemWidthPx = with(density) { itemWidth.toPx() }
-    val activePillWidth = (itemWidth * 1.5f).coerceIn(72.dp, 96.dp).coerceAtMost(availableWidth)
-    val activePillWidthPx = with(density) { activePillWidth.toPx() }
-    val availableWidthPx = with(density) { availableWidth.toPx() }
 
     Surface(
       modifier = Modifier.fillMaxWidth(),
@@ -458,38 +447,8 @@ private fun TelegramPillNavigationBar(
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding, vertical = 5.dp),
       ) {
-        // Hardware accelerated sliding active pill background
-        if (visibleTabs.isNotEmpty()) {
-          Box(
-            modifier =
-              Modifier
-                .width(activePillWidth)
-                .height(54.dp)
-                .graphicsLayer {
-                  val currentPos =
-                    pagerPositionFloatProvider().coerceIn(
-                      0f,
-                      (visibleTabs.size - 1).coerceAtLeast(0).toFloat(),
-                    )
-                  val distanceFromNearestTab = kotlin.math.abs(currentPos - currentPos.roundToInt())
-                  // Stretch the active pill while it travels, giving the selection a soft
-                  // liquid / water-drop transition instead of a rigid jump.
-                  scaleX = 1f + (0.08f * (distanceFromNearestTab * 2f).coerceIn(0f, 1f))
-                  val centeredOffset = (itemWidthPx - activePillWidthPx) / 2f
-                  val rawTranslationX = if (isRtl) {
-                    -itemWidthPx * currentPos - centeredOffset
-                  } else {
-                    itemWidthPx * currentPos + centeredOffset
-                  }
-                  translationX = rawTranslationX.coerceIn(
-                    0f,
-                    (availableWidthPx - activePillWidthPx).coerceAtLeast(0f),
-                  )
-                }.clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.primaryContainer),
-          )
-        }
-
+        // Each tab owns its space. The active slot animates wider while inactive slots
+        // contract, so the active pill never covers a neighboring icon.
         // Tab Items Layer
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -504,12 +463,32 @@ private fun TelegramPillNavigationBar(
               } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
               }
+            val targetWeight = if (isSelected) 1.55f else 1f
+            val animatedWeight by
+              androidx.compose.animation.core.animateFloatAsState(
+                targetValue = targetWeight,
+                animationSpec =
+                  androidx.compose.animation.core.spring(
+                    dampingRatio = 0.82f,
+                    stiffness = 520f,
+                  ),
+                label = "tabWeight",
+              )
 
             Box(
               modifier =
                 Modifier
-                  .weight(1f)
+                  .weight(animatedWeight)
                   .height(54.dp)
+                  .then(
+                    if (isSelected) {
+                      Modifier
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                    } else {
+                      Modifier
+                    },
+                  )
                   .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -518,7 +497,6 @@ private fun TelegramPillNavigationBar(
               contentAlignment = Alignment.Center,
             ) {
               Column(
-                modifier = Modifier.width(if (isSelected) activePillWidth else itemWidth),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
               ) {
