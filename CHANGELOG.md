@@ -2,6 +2,17 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.5 — Stable Playback, Navigation, and Subtitle Features
+
+This release adds optional subtitle translation, torrent streaming support, a refined navigation experience, and clearer media history organization.
+
+- **Torrent streaming:** Stream supported torrent media through the integrated playback path with startup buffering feedback and smoother playback handoff.
+- **Optional subtitle translation:** Translate embedded subtitles into a selected language when needed, with translation disabled by default.
+- **Subtitle presentation:** Translated subtitles follow embedded subtitle styling, size, and screen position, while original subtitles are managed to prevent duplicate captions.
+- **Subtitle preferences:** Translation state, language selection, and subtitle presentation preferences are retained for future playback.
+- **Compact navigation bar:** Main navigation uses icon-only inactive tabs and an expanded active tab with its label, with a fluid transition between destinations.
+- **Organized playback history:** Recent playback is separated into Video and Music sections so audio and video history remain distinct.
+
 ## 1.0.4 — Stable Seerr and Jellyfin Release
 
 This release adds the native Seerr client experience and improves Jellyfin dashboard reliability, discovery, and playback.
