@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -223,6 +224,7 @@ fun PlayerControls(
   val subtitlesPreferences = koinInject<SubtitlesPreferences>()
   val subtitleFontSize by subtitlesPreferences.fontSize.collectAsState()
   val subtitleScale by subtitlesPreferences.subScale.collectAsState()
+  val liveSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
   val subtitleTextColor by subtitlesPreferences.textColor.collectAsState()
   val subtitleBackgroundColor by subtitlesPreferences.backgroundColor.collectAsState()
   val subtitleBorderColor by subtitlesPreferences.borderColor.collectAsState()
@@ -1038,8 +1040,8 @@ fun PlayerControls(
             exit = fadeOut(),
             modifier = Modifier.constrainAs(translatedSubtitle) {
               linkTo(parent.start, parent.end)
-              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 100)
-              val configuredOffset = (((100 - position) * (if (isPortrait) 2.2f else 3f)).coerceIn(0f, 220f)).dp
+              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 150)
+              val configuredOffset = (((150 - position) * (if (isPortrait) 1.55f else 2.1f)).coerceIn(0f, 250f)).dp
               bottom.linkTo(parent.bottom, (if (isPortrait) 92.dp else 68.dp) + configuredOffset)
             },
           ) {
@@ -1048,7 +1050,7 @@ fun PlayerControls(
               TranslatedSubtitleText(
                 text = translated,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                fontSize = (subtitleFontSize * subtitleScale).coerceIn(8f, 120f).sp,
+                fontSize = (subtitleFontSize * (liveSubtitleScale ?: subtitleScale)).coerceIn(8f, 120f).sp,
                 textColor = Color(subtitleTextColor),
                 backgroundColor = Color(subtitleBackgroundColor),
                 outlineColor = Color(subtitleBorderColor),
@@ -1526,13 +1528,11 @@ fun PlayerControls(
                         },
                     ) {
                       if (torrentBuffering) {
-                        Column(
-                          horizontalAlignment = Alignment.CenterHorizontally,
-                          verticalArrangement = Arrangement.spacedBy(1.dp),
-                        ) {
-                          LoadingIndicator(modifier = Modifier.size(24.dp))
+                        Box(contentAlignment = Alignment.Center) {
+                          LoadingIndicator(modifier = Modifier.size(34.dp))
                           Text(
                             text = "${torrentConnectingState?.peers ?: 0} peers  ${formatTorrentSpeed(torrentConnectingState?.downloadSpeed ?: 0L)}",
+                            modifier = Modifier.offset(y = 25.dp),
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1,
                           )
@@ -1646,13 +1646,11 @@ fun PlayerControls(
                       },
                   ) {
                     if (torrentBuffering) {
-                      Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(1.dp),
-                      ) {
-                        LoadingIndicator(modifier = Modifier.size(24.dp))
+                      Box(contentAlignment = Alignment.Center) {
+                        LoadingIndicator(modifier = Modifier.size(34.dp))
                         Text(
                           text = "${torrentConnectingState?.peers ?: 0} peers  ${formatTorrentSpeed(torrentConnectingState?.downloadSpeed ?: 0L)}",
+                          modifier = Modifier.offset(y = 25.dp),
                           style = MaterialTheme.typography.labelSmall,
                           maxLines = 1,
                         )
