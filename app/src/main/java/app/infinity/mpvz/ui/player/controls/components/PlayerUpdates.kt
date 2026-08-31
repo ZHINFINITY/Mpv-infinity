@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -52,6 +53,26 @@ fun PlayerUpdate(
       content()
     }
   }
+}
+
+@Composable
+fun TranslatedSubtitleText(
+  text: String,
+  modifier: Modifier = Modifier,
+) {
+  Text(
+    text = text,
+    modifier = modifier,
+    color = androidx.compose.ui.graphics.Color.White,
+    fontWeight = FontWeight.SemiBold,
+    textAlign = TextAlign.Center,
+    style = MaterialTheme.typography.bodyLarge.copy(
+      shadow = Shadow(
+        color = androidx.compose.ui.graphics.Color.Black,
+        blurRadius = 8f,
+      ),
+    ),
+  )
 }
 
 @Composable

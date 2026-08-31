@@ -148,6 +148,7 @@ import app.infinity.mpvz.ui.player.controls.components.SeekThumbnailPreviewBubbl
 import app.infinity.mpvz.ui.player.controls.components.SeekbarWithTimers
 import app.infinity.mpvz.ui.player.controls.components.SlideToUnlock
 import app.infinity.mpvz.ui.player.controls.components.TextPlayerUpdate
+import app.infinity.mpvz.ui.player.controls.components.TranslatedSubtitleText
 import app.infinity.mpvz.ui.player.controls.components.VolumeSlider
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.player.getTrackSelectionId
@@ -656,7 +657,7 @@ fun PlayerControls(
           val skipSegmentChip = createRef()
           val seekbar = createRef()
           val thumbnailPreview = createRef()
-          val (playerUpdates) = createRefs()
+          val (playerUpdates, translatedSubtitle) = createRefs()
           val (customLeftButtonsRef, customRightButtonsRef) = createRefs()
           val customButtonsPortraitRef = createRef()
 
@@ -840,6 +841,7 @@ fun PlayerControls(
               is PlayerUpdates.RepeatMode -> showActionFeedbackOverlay
               is PlayerUpdates.Shuffle -> showRepeatShuffleOverlay
               is PlayerUpdates.ShowText -> showActionFeedbackOverlay
+              is PlayerUpdates.TranslatedSubtitle -> false
               is PlayerUpdates.ProviderStatusText -> showProviderStatusOverlay
               is PlayerUpdates.HorizontalSeek -> showActionFeedbackOverlay
               is PlayerUpdates.FrameInfo -> true // Groups 3/4 — not in scope
@@ -1008,6 +1010,26 @@ fun PlayerControls(
               }
 
               else -> {}
+            }
+          }
+
+          AnimatedVisibility(
+            visible = currentPlayerUpdate is PlayerUpdates.TranslatedSubtitle,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.constrainAs(translatedSubtitle) {
+              linkTo(parent.start, parent.end)
+              val position = subtitlesPreferences.subPos.get().coerceIn(0, 100)
+              val configuredOffset = ((100 - position) * (if (isPortrait) 2.2.dp else 3.dp)).coerceIn(0.dp, 220.dp)
+              bottom.linkTo(parent.bottom, (if (isPortrait) 92.dp else 68.dp) + configuredOffset)
+            },
+          ) {
+            val translated = currentPlayerUpdate as? PlayerUpdates.TranslatedSubtitle
+            if (translated != null) {
+              TranslatedSubtitleText(
+                text = translated.value,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+              )
             }
           }
 
@@ -1346,7 +1368,7 @@ fun PlayerControls(
                   verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                   LoadingIndicator(
-                    modifier = Modifier.size(76.dp),
+                    modifier = Modifier.size(if (isPortrait) 34.dp else 40.dp),
                   )
                   val bufferText =
                     when {
@@ -1356,31 +1378,12 @@ fun PlayerControls(
                         "Buffering (${String.format(java.util.Locale.ROOT, "%.1f", demuxerCacheDuration)}s)"
                       else -> stringResource(R.string.ui_buffering)
                     }
-                  Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                  ) {
-                    Row(
-                      modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                      Box(
-                        modifier =
-                          Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                      )
-                      Text(
-                        text = bufferText,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                      )
-                    }
-                  }
+                  Text(
+                    text = bufferText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                  )
                 }
               }
 
