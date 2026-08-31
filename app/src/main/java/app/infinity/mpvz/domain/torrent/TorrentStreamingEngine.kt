@@ -62,6 +62,8 @@ class TorrentStreamingEngine(
     private const val INITIAL_BUFFER_TIMEOUT_MS = 45_000L
     private const val BYTES_PER_MB = 1024L * 1024L
     private const val MIN_BUFFER_BYTES = 8L * BYTES_PER_MB
+    // A practical two-minute startup window for typical compressed video bitrates.
+    private const val DEFAULT_STARTUP_BUFFER_MB = 128L
     private const val STORAGE_RESERVE_BYTES = 512L * BYTES_PER_MB
     private const val MAX_METADATA_BYTES = 16L * 1024L * 1024L
     private const val MAX_TORRENT_FILES = 100_000
@@ -651,8 +653,10 @@ class TorrentStreamingEngine(
   ) {
     // Start once the first piece is available; the stream reader continues waiting for
     // subsequent pieces, so a large user-configured buffer cannot block playback entirely.
-    val targetBytes = minOf(fileSize, pieceLength.toLong())
-    val targetPiece = (firstPiece + ((targetBytes - 1L).coerceAtLeast(0L) / pieceLength).toInt()).coerceAtMost(lastPiece)
+    val targetBytes = minOf(fileSize, startupBufferBytes())
+    val targetPiece =
+      (firstPiece + ((targetBytes - 1L).coerceAtLeast(0L) / pieceLength).toInt())
+        .coerceAtMost(lastPiece)
     val deadline = System.currentTimeMillis() + INITIAL_BUFFER_TIMEOUT_MS
     _state.value = TorrentStreamingState.Connecting("Buffering enough data to start playback...")
     while (System.currentTimeMillis() < deadline) {
@@ -686,7 +690,7 @@ class TorrentStreamingEngine(
     else value.coerceAtMost(Long.MAX_VALUE / BYTES_PER_MB)
 
   private fun startupBufferBytes(): Long =
-    (configuredMegabytes(advancedPreferences.torrentStartupBufferMb.get()) * BYTES_PER_MB)
+    ((advancedPreferences.torrentStartupBufferMb.get().takeIf { it > 0L } ?: DEFAULT_STARTUP_BUFFER_MB) * BYTES_PER_MB)
       .coerceAtMost(maximumSafeStorageBytes())
       .coerceAtLeast(MIN_BUFFER_BYTES)
 
@@ -715,15 +719,19 @@ class TorrentStreamingEngine(
     val fileOffset = storage.fileOffset(selected.index)
     val firstPiece = (fileOffset / pieceLength).toInt()
     val lastPiece = ((fileOffset + selected.size - 1L) / pieceLength).toInt()
-    handle.setSequentialRange(firstPiece, lastPiece)
-
-    // Do not expand the startup priority window from the user’s storage budget. A value of
-    // 0 means “use available storage” and can represent many gigabytes, which would enqueue
-    // an enormous number of deadlines before the first piece can arrive.
+    val startupLastPiece =
+      (firstPiece + ((startupBufferBytes() - 1L).coerceAtLeast(0L) / pieceLength).toInt())
+        .coerceAtMost(lastPiece)
+    // Restrict sequential download to the startup window. The loopback proxy expands this
+    // window as mpv reads, so later pieces are fetched in the background rather than the entire
+    // file being scheduled immediately.
+    handle.setSequentialRange(firstPiece, startupLastPiece)
     handle.piecePriority(firstPiece, Priority.TOP_PRIORITY)
     handle.setPieceDeadline(firstPiece, 0)
-    val tailStart = (lastPiece - 7).coerceAtLeast(firstPiece)
-    for (piece in tailStart..lastPiece) handle.piecePriority(piece, Priority.TOP_PRIORITY)
+    for (piece in firstPiece..startupLastPiece) {
+      handle.piecePriority(piece, Priority.TOP_PRIORITY)
+      handle.setPieceDeadline(piece, ((piece - firstPiece) * 100).coerceAtMost(12_000))
+    }
     handle.unsetFlags(TorrentFlags.UPLOAD_MODE)
     handle.resume()
   }

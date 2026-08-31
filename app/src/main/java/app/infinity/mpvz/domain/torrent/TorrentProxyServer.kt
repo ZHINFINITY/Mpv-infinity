@@ -130,9 +130,11 @@ class TorrentProxyServer(
 
     synchronized(priorityLock) {
       if (first == prioritizedFrom && last <= prioritizedThrough) return
-      // Keep the engine's full selected-file sequential range stable. mpv commonly issues
-      // overlapping head/tail probes; moving the global range for every HTTP request makes those
-      // probes race and can starve the actual playback reader.
+      // Advance the sequential window as mpv consumes the stream. This keeps the initial torrent
+      // request bounded while allowing the next read-ahead window to download in the background.
+      if (last > prioritizedThrough) {
+        target.handle.setSequentialRange(target.firstPiece, last)
+      }
       for (piece in first..last) {
         target.handle.piecePriority(piece, Priority.TOP_PRIORITY)
         target.handle.setPieceDeadline(piece, ((piece - first) * 100).coerceAtMost(10_000))
