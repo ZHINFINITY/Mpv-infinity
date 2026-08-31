@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
@@ -466,6 +467,10 @@ private fun TelegramPillNavigationBar(
                       0f,
                       (visibleTabs.size - 1).coerceAtLeast(0).toFloat(),
                     )
+                  val distanceFromNearestTab = kotlin.math.abs(currentPos - currentPos.roundToInt())
+                  // Stretch the active pill while it travels, giving the selection a soft
+                  // liquid / water-drop transition instead of a rigid jump.
+                  scaleX = 1f + (0.18f * (distanceFromNearestTab * 2f).coerceIn(0f, 1f))
                   translationX = if (isRtl) -itemWidthPx * currentPos else itemWidthPx * currentPos
                 }.clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primaryContainer),
@@ -565,7 +570,8 @@ private fun TelegramPillNavigationBar(
                       )
                   }
                 }
-                Spacer(modifier = Modifier.height(3.dp))
+                if (isSelected) {
+                  Spacer(modifier = Modifier.height(3.dp))
                   Text(
                     text =
                       when (tab) {
@@ -576,13 +582,14 @@ private fun TelegramPillNavigationBar(
                         MainScreen.MainTab.NETWORK -> "Network"
                         MainScreen.MainTab.JELLYFIN -> "Jellyfin"
                       },
-                  style = MaterialTheme.typography.labelSmall,
-                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                  color = contentColor,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                  textAlign = TextAlign.Center,
-                )
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                  )
+                }
               }
             }
           }
