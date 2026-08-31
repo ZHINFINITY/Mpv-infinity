@@ -2532,7 +2532,6 @@ class PlayerViewModel : ViewModel(),
       nativeSubtitleHiddenForTranslation = true
     }
     val requestId = ++embeddedTranslationRequestId
-    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
       // Request the newest cue immediately. Older requests are cancelled and guarded by requestId
       // so a slow response can never overwrite the current cue.
