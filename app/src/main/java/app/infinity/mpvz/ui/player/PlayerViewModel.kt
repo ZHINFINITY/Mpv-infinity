@@ -1095,6 +1095,9 @@ class PlayerViewModel : ViewModel(),
   val areControlsLocked: StateFlow<Boolean> = _areControlsLocked.asStateFlow()
 
   val playerUpdate = MutableStateFlow<PlayerUpdates>(PlayerUpdates.None)
+
+  private val _embeddedTranslatedSubtitle = MutableStateFlow<String?>(null)
+  val embeddedTranslatedSubtitle: StateFlow<String?> = _embeddedTranslatedSubtitle.asStateFlow()
   val isBrightnessSliderShown = MutableStateFlow(false)
   val isVolumeSliderShown = MutableStateFlow(false)
   val volumeSliderTimestamp = MutableStateFlow(0L)
@@ -2499,6 +2502,7 @@ class PlayerViewModel : ViewModel(),
     lastEmbeddedCue = ""
     _translationStatus.value = ""
     playerUpdate.value = PlayerUpdates.None
+    _embeddedTranslatedSubtitle.value = null
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
       nativeSubtitleHiddenForTranslation = false
@@ -2522,6 +2526,7 @@ class PlayerViewModel : ViewModel(),
         ?: "en"
     lastEmbeddedCue = cue
     playerUpdate.value = PlayerUpdates.None
+    _embeddedTranslatedSubtitle.value = null
     if (!nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", false)
       nativeSubtitleHiddenForTranslation = true
@@ -2550,6 +2555,7 @@ class PlayerViewModel : ViewModel(),
           withContext(Dispatchers.Main.immediate) {
             val translatedText = translated.trim()
             if (requestId == embeddedTranslationRequestId && cue == lastEmbeddedCue && translatedText.isNotBlank()) {
+              _embeddedTranslatedSubtitle.value = translatedText
               playerUpdate.value = PlayerUpdates.TranslatedSubtitle(translatedText)
             }
             if (requestId == embeddedTranslationRequestId) _translationStatus.value = ""

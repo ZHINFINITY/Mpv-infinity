@@ -102,7 +102,6 @@ import app.infinity.mpvz.domain.torrent.TorrentStreamRequest
 import app.infinity.mpvz.domain.torrent.TorrentStreamException
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
-import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
 import app.infinity.mpvz.domain.torrent.canonicalInfoHash
 import app.infinity.mpvz.domain.torrent.isTorrentSource
 import app.infinity.mpvz.network.AndroidCookieJar
@@ -1224,6 +1223,7 @@ class PlayerActivity :
     binding.controls.setContent {
       MpvrxTheme {
         Box(modifier = Modifier.fillMaxSize()) {
+          val torrentState by torrentStreamingEngine.state.collectAsState()
           PlayerControls(
             viewModel = viewModel,
             onBackPress = ::handleBackPress,
@@ -1259,11 +1259,9 @@ class PlayerActivity :
                 PlaybackSession.setPropertyString("hwdec", decoder.value)
               }
             },
+            torrentStreamingState = torrentState,
             modifier = Modifier,
           )
-          if (intent.getStringExtra("launch_source") == "network_torrent") {
-            TorrentBufferingOverlay(engine = torrentStreamingEngine)
-          }
         }
       }
     }
@@ -8879,74 +8877,5 @@ class PlayerActivity :
     private const val STATE_PLAYLIST_INDEX = "player_state_playlist_index"
     private const val STATE_PLAYLIST_STABLE_ID = "player_state_playlist_stable_id"
     private const val STATE_PLAYLIST_ORIGINAL_URI = "player_state_playlist_original_uri"
-  }
-}
-
-
-@androidx.compose.runtime.Composable
-private fun TorrentBufferingOverlay(engine: TorrentStreamingEngine) {
-  val state by engine.state.collectAsState()
-  val currentState = state
-  // Streaming progress is intentionally not shown as a blocking overlay. Once mpv has
-  // received the startup window, read-ahead continues in the background while playback remains
-  // responsive. The card is reserved for startup and genuine errors.
-  val visible = currentState is TorrentStreamingState.Connecting || currentState is TorrentStreamingState.Error
-  if (!visible) return
-
-  Box(
-    modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.82f)),
-    contentAlignment = androidx.compose.ui.Alignment.Center,
-  ) {
-    when (val current = currentState) {
-      is TorrentStreamingState.Connecting -> {
-        Column(
-          horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-          Box(
-            modifier = Modifier
-              .size(96.dp)
-              .clip(androidx.compose.foundation.shape.CircleShape)
-              .background(
-                Brush.linearGradient(
-                  listOf(
-                    Color(0xFFB8C7FF),
-                    Color(0xFF889CFF),
-                    Color(0xFFD4B7FF),
-                  ),
-                ),
-              ),
-          )
-          Surface(
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
-            color = Color(0xFF304B8C).copy(alpha = 0.88f),
-            contentColor = Color(0xFFE2E8FF),
-          ) {
-            Text(
-              text = "• ${formatTorrentSpeed(current.downloadSpeed)}  |  ${current.peers} peers  |  ${current.phase}",
-              modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-              style = MaterialTheme.typography.labelLarge,
-              maxLines = 1,
-            )
-          }
-        }
-      }
-      is TorrentStreamingState.Streaming -> Unit
-      is TorrentStreamingState.Error -> {
-        Surface(
-          modifier = Modifier.padding(horizontal = 24.dp),
-          shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-          color = Color(0xFF15161B),
-        ) {
-          Text(
-            current.message,
-            modifier = Modifier.padding(horizontal = 28.dp, vertical = 20.dp),
-            color = Color(0xFFFFB7C0),
-            style = MaterialTheme.typography.bodyLarge,
-          )
-        }
-      }
-      TorrentStreamingState.Idle -> Unit
-    }
   }
 }
