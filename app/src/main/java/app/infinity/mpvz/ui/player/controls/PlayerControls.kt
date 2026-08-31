@@ -1022,7 +1022,7 @@ fun PlayerControls(
             modifier = Modifier.constrainAs(translatedSubtitle) {
               linkTo(parent.start, parent.end)
               val position = subtitlesPreferences.subPos.get().coerceIn(0, 100)
-              val configuredOffset = ((100 - position) * (if (isPortrait) 2.2.dp else 3.dp)).coerceIn(0.dp, 220.dp)
+              val configuredOffset = (((100 - position) * (if (isPortrait) 2.2f else 3f)).coerceIn(0f, 220f)).dp
               bottom.linkTo(parent.bottom, (if (isPortrait) 92.dp else 68.dp) + configuredOffset)
             },
           ) {
