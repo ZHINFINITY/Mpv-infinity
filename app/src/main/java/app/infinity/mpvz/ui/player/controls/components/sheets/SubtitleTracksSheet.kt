@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -522,7 +523,7 @@ fun SubtitlesSheet(
               }
             }
             SubtitleItem.Divider -> {
-              HorizontalDivider(
+              Divider(
                 modifier =
                   Modifier.padding(
                     horizontal = MaterialTheme.spacing.medium,
