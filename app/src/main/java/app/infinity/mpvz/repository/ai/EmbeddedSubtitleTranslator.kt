@@ -26,25 +26,42 @@ class EmbeddedSubtitleTranslator(
   ): Result<String> =
     withContext(Dispatchers.IO) {
       runCatching {
-        val endpoint = preferences.embeddedSubtitleTranslationEndpoint.get().trim()
-        require(endpoint.isNotBlank()) { "Subtitle translation endpoint is empty" }
-        val url =
-          endpoint.toHttpUrl().newBuilder()
-            .addQueryParameter("client", "gtx")
-            .addQueryParameter("sl", "auto")
-            .addQueryParameter("tl", targetLanguage)
-            .addQueryParameter("dt", "t")
-            .addQueryParameter("q", text)
-            .build()
-        val response = client.newCall(Request.Builder().url(url).get().build()).execute()
-        val body = response.body.string()
-        check(response.isSuccessful) { "Translation endpoint returned HTTP ${response.code}" }
-        val root = json.parseToJsonElement(body).jsonArray
-        root.firstOrNull()?.jsonArray
-          ?.mapNotNull { segment -> segment.jsonArray.firstOrNull()?.jsonPrimitive?.content }
-          ?.joinToString("")
-          ?.takeIf(String::isNotBlank)
-          ?: error("Translation endpoint returned no text")
+        require(text.isNotBlank()) { "Subtitle text is empty" }
+        val language = targetLanguage.trim().lowercase().substringBefore('-').substringBefore('_')
+        require(language.length in 2..8) { "Google Translate target language is invalid" }
+        val configured = preferences.embeddedSubtitleTranslationEndpoint.get().trim()
+        val endpoints =
+          listOf(configured, "https://translate.googleapis.com/translate_a/single", "https://translate.google.com/translate_a/single")
+            .filter(String::isNotBlank)
+            .distinct()
+        var lastFailure: Throwable? = null
+        for (endpoint in endpoints) {
+          try {
+            val url =
+              endpoint.toHttpUrl().newBuilder()
+                .addQueryParameter("client", "gtx")
+                .addQueryParameter("sl", "auto")
+                .addQueryParameter("tl", language)
+                .addQueryParameter("dt", "t")
+                .addQueryParameter("q", text)
+                .build()
+            val translated =
+              client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                check(response.isSuccessful) { "Translation endpoint returned HTTP ${response.code}" }
+                json.parseToJsonElement(body).jsonArray.firstOrNull()?.jsonArray
+                  ?.mapNotNull { segment -> segment.jsonArray.firstOrNull()?.jsonPrimitive?.content }
+                  ?.joinToString("")
+                  ?.trim()
+                  ?.takeIf(String::isNotBlank)
+                  ?: throw IllegalStateException("Translation endpoint returned no text")
+              }
+            return@runCatching translated
+          } catch (failure: Throwable) {
+            lastFailure = failure
+          }
+        }
+        throw lastFailure ?: IllegalStateException("No Google Translate endpoint is available")
       }
     }
 }

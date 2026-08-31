@@ -185,6 +185,7 @@ fun PlayerSheets(
         translationProgress = translationProgress,
         translationStatus = translationStatus,
         translationEnabled = aiEnabled && translationEnabled,
+        embeddedTranslationEnabled = translationEnabled,
         isGeneratingSubtitles = isGeneratingSubtitles,
         subtitleGenerationProgress = subtitleGenerationProgress,
         subtitleGenerationStatus = subtitleGenerationStatus,

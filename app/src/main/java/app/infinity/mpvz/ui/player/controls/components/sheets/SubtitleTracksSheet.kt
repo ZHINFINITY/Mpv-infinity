@@ -86,6 +86,7 @@ fun SubtitlesSheet(
   translationProgress: Float,
   translationStatus: String,
   translationEnabled: Boolean,
+  embeddedTranslationEnabled: Boolean = translationEnabled,
   isGeneratingSubtitles: Boolean,
   subtitleGenerationProgress: Float,
   subtitleGenerationStatus: String,
@@ -338,7 +339,7 @@ fun SubtitlesSheet(
         },
       )
 
-      if (aiEnabled && tracks.any { it.external != true }) {
+      if (tracks.any { it.external != true }) {
         Row(
           modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.small),
           verticalAlignment = Alignment.CenterVertically,
@@ -351,7 +352,7 @@ fun SubtitlesSheet(
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
-          Switch(checked = translationEnabled, onCheckedChange = { onToggleEmbeddedTranslation() })
+          Switch(checked = embeddedTranslationEnabled, onCheckedChange = { onToggleEmbeddedTranslation() })
         }
       }
 
