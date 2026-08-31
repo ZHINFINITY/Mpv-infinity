@@ -2524,6 +2524,14 @@ class PlayerViewModel : ViewModel(),
     syncSubtitleLayout()
   }
 
+  fun handleEmbeddedSubtitleCueBlank() {
+    if (aiPreferences.subtitleTranslationEnabled.get()) {
+      clearEmbeddedSubtitleTranslationCue()
+    } else {
+      resetEmbeddedSubtitleTranslation()
+    }
+  }
+
   /** Clears a transient blank cue without restoring native subtitles while translation remains on. */
   fun clearEmbeddedSubtitleTranslationCue() {
     embeddedTranslationRequestId += 1L
