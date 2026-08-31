@@ -366,11 +366,15 @@ If something breaks or feels inconsistent, please report it through the [Issues]
 
 ---
 
-## Support
-
-If you find Mpv∞ useful and would like to support its development, you can support ZHINFINITY through the UPI details below.
+## Sponsor and Support
+If you find Mpv∞ useful, you can support its continued development through Ko-fi or the UPI details below.
 
 <div align="center">
+  <a href="https://ko-fi.com/zhinfinity">
+    <img src="https://img.shields.io/badge/Sponsor%20and%20Support%20on-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white" alt="Sponsor and Support ZHINFINITY on Ko-fi">
+  </a>
+  <br>
+  <br>
 
 ### UPI
 
