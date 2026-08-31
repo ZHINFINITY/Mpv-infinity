@@ -317,10 +317,11 @@ object PlaybackSession : MPVLib.EventObserver {
       // them has already gone away.
       clearAmbientShadersLocked(resetDesired = true)
 
-      // Stop/quit must silence the native audio output before its decoder/output queues are torn
-      // down. Restoring a seek guard's mute state before stop previously let a short buffered tail
-      // escape after the Activity had already disappeared.
-      clearSeekAudioGuardLocked(restoreMute = true)
+      // Silence MPV before touching any guard state. Restoring a seek guard's mute state before
+      // stop can briefly unmute an already-buffered AudioTrack tail after the Activity disappears.
+      // Keep the transition guard muted until the next load or explicit audio restoration.
+      runCatching { MPVLib.setPropertyBoolean("mute", true) }
+      clearSeekAudioGuardLocked(restoreMute = false)
       beginPlaybackTransitionAudioGuardLocked()
       runCatching { MPVLib.setPropertyBoolean("pause", true) }
       runCatching { MPVLib.command("stop") }
