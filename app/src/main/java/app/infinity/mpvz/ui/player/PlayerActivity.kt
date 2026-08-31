@@ -8879,13 +8879,10 @@ class PlayerActivity :
 private fun TorrentBufferingOverlay(engine: TorrentStreamingEngine) {
   val state by engine.state.collectAsState()
   val currentState = state
-  val visible = when (currentState) {
-    is TorrentStreamingState.Connecting,
-    is TorrentStreamingState.Error,
-    -> true
-    is TorrentStreamingState.Streaming -> currentState.bufferProgress < 0.9f
-    TorrentStreamingState.Idle -> false
-  }
+  // Streaming progress is intentionally not shown as a blocking overlay. Once mpv has
+  // received the startup window, read-ahead continues in the background while playback remains
+  // responsive. The card is reserved for startup and genuine errors.
+  val visible = currentState is TorrentStreamingState.Connecting || currentState is TorrentStreamingState.Error
   if (!visible) return
 
   Box(
@@ -8915,15 +8912,7 @@ private fun TorrentBufferingOverlay(engine: TorrentStreamingEngine) {
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
-          is TorrentStreamingState.Streaming -> {
-            CircularProgressIndicator()
-            Text("Buffering ${((current.bufferProgress * 100).coerceIn(0f, 100f)).toInt()}%", style = MaterialTheme.typography.titleMedium)
-            Text(
-              "${current.peers} peers  •  ${current.seeds} seeds  •  ${formatTorrentSpeed(current.downloadSpeed)}",
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          }
+          is TorrentStreamingState.Streaming -> Unit
           is TorrentStreamingState.Error -> Text(current.message, color = MaterialTheme.colorScheme.error)
           TorrentStreamingState.Idle -> Unit
         }

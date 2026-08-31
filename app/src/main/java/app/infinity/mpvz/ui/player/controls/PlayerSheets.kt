@@ -195,6 +195,9 @@ fun PlayerSheets(
         realtimeSubsEnabled = realtimeSubsEnabled,
         subtitlesOff = subtitlesOff,
         onDisableSubtitles = { viewModel.disableSubtitles() },
+        onToggleEmbeddedTranslation = {
+          aiPreferences.subtitleTranslationEnabled.set(!translationEnabled)
+        },
       )
     }
 

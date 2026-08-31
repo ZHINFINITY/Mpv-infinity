@@ -97,6 +97,8 @@ object AboutScreen : Screen {
       packageInfo.versionName?.substringBefore('-') ?: packageInfo.versionName ?: BuildConfig.VERSION_NAME
     val buildType = BuildConfig.BUILD_TYPE
     val githubRepoUrl = "https://github.com/ZHINFINITY/Mpv-infinity"
+    val koFiUrl = "https://ko-fi.com/zhinfinity"
+    val paypalUrl = "https://paypal.me/InfinityxEternity"
     val upiId = "zhjjk001-1@oksbi"
     val settingsScrollState = rememberScrollState()
     val settingsHighlight =
@@ -473,20 +475,34 @@ object AboutScreen : Screen {
               },
               modifier = Modifier.fillMaxWidth().height(50.dp),
               shape = RoundedCornerShape(12.dp),
-              colors =
-                ButtonDefaults.buttonColors(
-                  containerColor = cs.error,
-                  contentColor = cs.onError,
-                ),
+              colors = ButtonDefaults.buttonColors(containerColor = cs.error, contentColor = cs.onError),
               elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
             ) {
               Icon(Icons.RoundedFilled.MonetizationOn, null, modifier = Modifier.size(18.dp))
               Spacer(Modifier.width(8.dp))
               Text(
-                androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_send_love),
+                androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_send_love),
                 fontWeight = FontWeight.SemiBold,
               )
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+              Button(
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, koFiUrl.toUri())) },
+                modifier = Modifier.weight(1f).height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = cs.tertiaryContainer, contentColor = cs.onTertiaryContainer),
+              ) {
+                Text("Ko-fi", fontWeight = FontWeight.SemiBold)
+              }
+              Button(
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, paypalUrl.toUri())) },
+                modifier = Modifier.weight(1f).height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = cs.primaryContainer, contentColor = cs.onPrimaryContainer),
+              ) {
+                Text("PayPal", fontWeight = FontWeight.SemiBold)
+              }
             }
           }
         }

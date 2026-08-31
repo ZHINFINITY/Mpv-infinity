@@ -31,6 +31,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -95,6 +96,7 @@ fun SubtitlesSheet(
   realtimeSubsEnabled: Boolean = true,
   subtitlesOff: Boolean = false,
   onDisableSubtitles: () -> Unit = {},
+  onToggleEmbeddedTranslation: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val items =
@@ -335,6 +337,23 @@ fun SubtitlesSheet(
           }
         },
       )
+
+      if (aiEnabled && tracks.any { it.external != true }) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.small),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Translate embedded subtitles", style = MaterialTheme.typography.titleSmall)
+            Text(
+              "Show an AI translation over soft embedded subtitles",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          Switch(checked = translationEnabled, onCheckedChange = { onToggleEmbeddedTranslation() })
+        }
+      }
 
       if (aiEnabled && isTranslating) {
         Column(
