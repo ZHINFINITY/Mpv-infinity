@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.ConcurrentHashMap
 
 /** Translates individual embedded soft-subtitle cues without changing the playback engine. */
 class EmbeddedSubtitleTranslator(
@@ -20,6 +21,8 @@ class EmbeddedSubtitleTranslator(
   private val client: OkHttpClient,
   private val json: Json,
 ) {
+  private val cache = ConcurrentHashMap<String, String>()
+
   suspend fun translateGoogle(
     text: String,
     targetLanguage: String,
@@ -28,6 +31,8 @@ class EmbeddedSubtitleTranslator(
       runCatching {
         require(text.isNotBlank()) { "Subtitle text is empty" }
         val language = targetLanguage.trim().lowercase().substringBefore('-').substringBefore('_')
+        val cacheKey = "$language:${text.trim()}"
+        cache[cacheKey]?.let { return@runCatching it }
         require(language.length in 2..8) { "Google Translate target language is invalid" }
         val configured = preferences.embeddedSubtitleTranslationEndpoint.get().trim()
         val endpoints =
@@ -56,6 +61,7 @@ class EmbeddedSubtitleTranslator(
                   ?.takeIf(String::isNotBlank)
                   ?: throw IllegalStateException("Translation endpoint returned no text")
               }
+            cache[cacheKey] = translated
             return@runCatching translated
           } catch (failure: Throwable) {
             lastFailure = failure

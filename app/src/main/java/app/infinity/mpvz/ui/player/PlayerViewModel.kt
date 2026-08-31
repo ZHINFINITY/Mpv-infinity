@@ -286,6 +286,7 @@ class PlayerViewModel : ViewModel(),
   private var embeddedCueTranslationJob: Job? = null
   private var lastEmbeddedCue = ""
   private var embeddedTranslationRequestId = 0L
+  private var nativeSubtitleHiddenForTranslation = false
 
   private var playlistMetadataJob: Job? = null
   private var controlsVisibleForPolling = false
@@ -2498,6 +2499,10 @@ class PlayerViewModel : ViewModel(),
     lastEmbeddedCue = ""
     _translationStatus.value = ""
     playerUpdate.value = PlayerUpdates.None
+    if (nativeSubtitleHiddenForTranslation) {
+      PlaybackSession.setPropertyBoolean("sub-visibility", true)
+      nativeSubtitleHiddenForTranslation = false
+    }
   }
 
   fun translateEmbeddedSubtitleCue(rawCue: String) {
@@ -2517,6 +2522,10 @@ class PlayerViewModel : ViewModel(),
         ?: "en"
     lastEmbeddedCue = cue
     playerUpdate.value = PlayerUpdates.None
+    if (!nativeSubtitleHiddenForTranslation) {
+      PlaybackSession.setPropertyBoolean("sub-visibility", false)
+      nativeSubtitleHiddenForTranslation = true
+    }
     val requestId = ++embeddedTranslationRequestId
     embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
