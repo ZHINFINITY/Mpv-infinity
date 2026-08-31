@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -438,7 +439,7 @@ private fun TelegramPillNavigationBar(
 
     Surface(
       modifier = Modifier.fillMaxWidth(),
-      shape = CircleShape,
+      shape = RoundedCornerShape(30.dp),
       color = liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainerHigh),
       tonalElevation = 6.dp,
       shadowElevation = 8.dp,
@@ -452,7 +453,7 @@ private fun TelegramPillNavigationBar(
         modifier =
           Modifier
             .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = 6.dp),
+            .padding(horizontal = horizontalPadding, vertical = 5.dp),
       ) {
         // Hardware accelerated sliding active pill background
         if (visibleTabs.isNotEmpty()) {
@@ -460,7 +461,7 @@ private fun TelegramPillNavigationBar(
             modifier =
               Modifier
                 .width(itemWidth)
-                .height(56.dp)
+                .height(54.dp)
                 .graphicsLayer {
                   val currentPos =
                     pagerPositionFloatProvider().coerceIn(
@@ -470,9 +471,9 @@ private fun TelegramPillNavigationBar(
                   val distanceFromNearestTab = kotlin.math.abs(currentPos - currentPos.roundToInt())
                   // Stretch the active pill while it travels, giving the selection a soft
                   // liquid / water-drop transition instead of a rigid jump.
-                  scaleX = 1f + (0.18f * (distanceFromNearestTab * 2f).coerceIn(0f, 1f))
+                  scaleX = 1f + (0.08f * (distanceFromNearestTab * 2f).coerceIn(0f, 1f))
                   translationX = if (isRtl) -itemWidthPx * currentPos else itemWidthPx * currentPos
-                }.clip(CircleShape)
+                }.clip(RoundedCornerShape(24.dp))
                 .background(MaterialTheme.colorScheme.primaryContainer),
           )
         }
@@ -496,8 +497,8 @@ private fun TelegramPillNavigationBar(
               modifier =
                 Modifier
                   .weight(1f)
-                  .height(56.dp)
-                  .clip(CircleShape)
+                  .height(54.dp)
+                  .clip(RoundedCornerShape(24.dp))
                   .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -519,7 +520,12 @@ private fun TelegramPillNavigationBar(
                         )
                       val dist = kotlin.math.abs(currentPos - index)
                       val prog = (1f - dist).coerceIn(0f, 1f)
-                      val scale = 1.0f + 0.10f * prog
+                      val transition = kotlin.math.abs(currentPos - currentPos.roundToInt()).coerceIn(0f, 0.5f) * 2f
+                      val scale = if (isSelected) {
+                        1.0f + 0.06f * prog
+                      } else {
+                        1.0f - 0.10f * transition
+                      }
                       scaleX = scale
                       scaleY = scale
                     },
