@@ -10,6 +10,7 @@
 package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.preferences.PlaybackEngineMode
+import app.infinity.mpvz.domain.torrent.TorrentStreamingState
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
@@ -205,6 +206,7 @@ fun PlayerControls(
   onMedia3AudioProcessing: (Boolean, Boolean) -> Unit = { _, _ -> },
   onMedia3AudioPitchCorrection: (Boolean) -> Unit = {},
   modifier: Modifier = Modifier,
+  torrentStreamingState: TorrentStreamingState = TorrentStreamingState.Idle,
 ) {
   val spacing = MaterialTheme.spacing
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -233,6 +235,7 @@ fun PlayerControls(
   val mpvDuration by PlaybackSession.propInt["duration"].collectAsState()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
   val paused = if (isMedia3Active) !media3State.isPlaying else mpvPaused
+  val torrentBuffering = torrentStreamingState is TorrentStreamingState.Connecting
   val duration =
     if (isMedia3Active) {
       // Do not reuse the inactive MPV timeline while Media3 is preparing. That stale duration can
@@ -1495,14 +1498,18 @@ fun PlayerControls(
                           null
                         },
                     ) {
-                      AnimatedPlayPauseIcon(
-                        isPlaying = paused == false,
-                        modifier =
-                          Modifier
-                            .fillMaxSize()
-                            .padding(MaterialTheme.spacing.medium),
-                        tint = LocalContentColor.current,
-                      )
+                      if (torrentBuffering) {
+                        LoadingIndicator(modifier = Modifier.size(24.dp))
+                      } else {
+                        AnimatedPlayPauseIcon(
+                          isPlaying = paused == false,
+                          modifier =
+                            Modifier
+                              .fillMaxSize()
+                              .padding(MaterialTheme.spacing.medium),
+                          tint = LocalContentColor.current,
+                        )
+                      }
                     }
 
                     Surface(
@@ -1601,14 +1608,18 @@ fun PlayerControls(
                         null
                       },
                   ) {
-                    AnimatedPlayPauseIcon(
-                      isPlaying = paused == false,
-                      modifier =
-                        Modifier
-                          .fillMaxSize()
-                          .padding(MaterialTheme.spacing.medium),
-                      tint = LocalContentColor.current,
-                    )
+                    if (torrentBuffering) {
+                      LoadingIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                      AnimatedPlayPauseIcon(
+                        isPlaying = paused == false,
+                        modifier =
+                          Modifier
+                            .fillMaxSize()
+                            .padding(MaterialTheme.spacing.medium),
+                        tint = LocalContentColor.current,
+                      )
+                    }
                   }
                 }
               }
