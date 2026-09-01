@@ -1041,7 +1041,9 @@ fun PlayerControls(
               val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 150)
               // Keep the translated cue on the same anchor as MPV's primary subtitle. The
               // position is the shared MPV 0–150 coordinate, not a separate overlay setting.
-              val configuredOffset = (((150 - position) * (if (isPortrait) 1.55f else 2.1f)).coerceIn(-250f, 250f)).dp
+              // MPV's default sub-pos is 100. Keep the translated cue on the same baseline
+              // instead of applying the old 150-based offset, which moved it too high by default.
+              val configuredOffset = (((100 - position) * (if (isPortrait) 1.55f else 2.1f)).coerceIn(-250f, 250f)).dp
               bottom.linkTo(parent.bottom, configuredOffset)
             },
           ) {
@@ -1050,7 +1052,16 @@ fun PlayerControls(
               TranslatedSubtitleText(
                 text = translated,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                fontSize = ((liveSubtitleFontSize ?: subtitleFontSize) * (liveSubtitleScale ?: subtitleScale)).coerceIn(8f, 120f).sp,
+                // MPV's subtitle size is based on a 720px reference OSD; convert it to Compose
+                // sp using the live player height so translation matches the embedded subtitle.
+                fontSize = with(density) {
+                  val osdHeightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
+                  val fontSizePx =
+                    (liveSubtitleFontSize ?: subtitleFontSize) *
+                      (osdHeightPx / 720f) *
+                      (liveSubtitleScale ?: subtitleScale)
+                  (fontSizePx / density.density).coerceIn(8f, 120f).sp
+                },
                 textColor = Color(subtitleTextColor),
                 backgroundColor = Color(subtitleBackgroundColor),
                 outlineColor = Color(subtitleBorderColor),
