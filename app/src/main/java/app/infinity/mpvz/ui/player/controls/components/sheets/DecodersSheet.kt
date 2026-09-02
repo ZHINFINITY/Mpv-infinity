@@ -20,20 +20,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
-import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.PlaybackEngineMode
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.ui.player.Decoder
-import app.infinity.mpvz.ui.player.PlaybackSession
-import app.infinity.mpvz.ui.player.RendererBackendPolicy
 
 @Composable
 fun DecodersSheet(
@@ -45,14 +41,6 @@ fun DecodersSheet(
   onSelect: (Decoder) -> Unit,
   onDismissRequest: () -> Unit,
 ) {
-  val gpuApi by PlaybackSession.propString["gpu-api"].collectAsState()
-  val isVulkanActive = gpuApi == "vulkan"
-  val directMediaCodecAllowed =
-    RendererBackendPolicy.canUseDirectMediaCodec(
-      usesVulkan = isVulkanActive,
-      buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
-    )
-
   PlayerSheet(onDismissRequest) {
     LazyColumn {
       item {
@@ -147,7 +135,9 @@ fun DecodersSheet(
           AudioTrackRow(
             title = stringResource(R.string.player_sheets_decoder_formatted, decoder.title, decoder.value),
             isSelected = selectedDecoder == decoder,
-            enabled = decoder != Decoder.HWPlus || directMediaCodecAllowed,
+            // Keep HW+ selectable; RendererBackendPolicy safely falls back to mediacodec-copy
+            // when direct MediaCodec is unavailable for the active Vulkan/build combination.
+            enabled = true,
             onClick = { onSelect(decoder) },
             textColor = Color.White,
           )
