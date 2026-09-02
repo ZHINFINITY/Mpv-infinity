@@ -154,6 +154,10 @@ sealed class PlayerUpdates {
     val value: String,
   ) : PlayerUpdates()
 
+  data class TranslatedSubtitle(
+    val value: String,
+  ) : PlayerUpdates()
+
   data class ProviderStatusText(
     val value: String,
   ) : PlayerUpdates()

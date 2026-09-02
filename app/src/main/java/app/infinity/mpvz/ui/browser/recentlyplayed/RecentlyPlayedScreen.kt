@@ -33,6 +33,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButtonMenu
 import androidx.compose.material3.FloatingActionButtonMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
@@ -50,6 +51,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -94,6 +96,35 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
+private enum class RecentHistoryTab {
+  VIDEO,
+  MUSIC,
+}
+
+@Composable
+private fun RecentHistoryTabs(
+  selectedTab: RecentHistoryTab,
+  onTabSelected: (RecentHistoryTab) -> Unit,
+) {
+  androidx.compose.foundation.layout.Row(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+    horizontalArrangement = Arrangement.Center,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    FilterChip(
+      selected = selectedTab == RecentHistoryTab.VIDEO,
+      onClick = { onTabSelected(RecentHistoryTab.VIDEO) },
+      label = { Text("Video") },
+    )
+    androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+    FilterChip(
+      selected = selectedTab == RecentHistoryTab.MUSIC,
+      onClick = { onTabSelected(RecentHistoryTab.MUSIC) },
+      label = { Text("Music") },
+    )
+  }
+}
+
 @Serializable
 object RecentlyPlayedScreen : Screen {
   @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -106,6 +137,17 @@ object RecentlyPlayedScreen : Screen {
 
     val recentItems by viewModel.recentItems.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    var selectedHistoryTab by rememberSaveable { mutableStateOf(RecentHistoryTab.VIDEO.name) }
+    val historyTab = RecentHistoryTab.valueOf(selectedHistoryTab)
+    val filteredRecentItems =
+      remember(recentItems, historyTab) {
+        recentItems.filter { item ->
+          when (historyTab) {
+            RecentHistoryTab.VIDEO -> item !is RecentlyPlayedItem.VideoItem || !item.video.isAudio
+            RecentHistoryTab.MUSIC -> item is RecentlyPlayedItem.VideoItem && item.video.isAudio
+          }
+        }
+      }
     val deleteDialogOpen = rememberSaveable { mutableStateOf(false) }
     val deleteFilesCheckbox = rememberSaveable { mutableStateOf(false) }
     val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -125,7 +167,7 @@ object RecentlyPlayedScreen : Screen {
     // Selection manager for all items (videos and playlists)
     val selectionManager =
       rememberSelectionManager(
-        items = recentItems,
+        items = filteredRecentItems,
         getId = { item ->
           when (item) {
             is RecentlyPlayedItem.VideoItem -> "video_${item.video.id}"
@@ -210,7 +252,7 @@ object RecentlyPlayedScreen : Screen {
           title = stringResource(R.string.pref_advanced_enable_recently_played_title),
           isInSelectionMode = selectionManager.isInSelectionMode,
           selectedCount = selectionManager.selectedCount,
-          totalCount = recentItems.size,
+          totalCount = filteredRecentItems.size,
           onBackClick = null, // No back button for recently played screen
           onCancelSelection = { selectionManager.clear() },
           onSortClick = null, // No sorting in recently played
@@ -393,51 +435,64 @@ object RecentlyPlayedScreen : Screen {
           }
         }
 
-        recentItems.isEmpty() && !isLoading -> {
-          Box(
-            modifier =
-              Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentAlignment = Alignment.Center,
+        filteredRecentItems.isEmpty() && !isLoading -> {
+          androidx.compose.foundation.layout.Column(
+            modifier = Modifier.fillMaxSize().padding(padding),
           ) {
-            EmptyState(
-              icon = Icons.RoundedFilled.History,
-              title = stringResource(R.string.ui_no_recently_played_videos),
-              message = "Videos you play will appear here",
+            RecentHistoryTabs(
+              selectedTab = historyTab,
+              onTabSelected = { selectedHistoryTab = it.name },
             )
+            Box(
+              modifier = Modifier.fillMaxWidth().weight(1f),
+              contentAlignment = Alignment.Center,
+            ) {
+              EmptyState(
+                icon = Icons.RoundedFilled.History,
+                title = stringResource(R.string.ui_no_recently_played_videos),
+                message = if (historyTab == RecentHistoryTab.MUSIC) "Music you play will appear here" else "Videos you play will appear here",
+              )
+            }
           }
         }
 
         else -> {
-          RecentItemsContent(
-            recentItems = recentItems,
-            selectionManager = selectionManager,
-            onVideoClick = { video ->
-              coroutineScope.launch {
-                val playableVideo = viewModel.resolvePlayableRecentVideo(video)
-                if (playableVideo != null) {
-                  // Always play individual videos without creating a playlist.
-                  MediaUtils.playFile(playableVideo, context, "recently_played")
-                } else {
-                  Toast
-                    .makeText(
-                      context,
-                      context.getString(app.infinity.mpvz.R.string.ui_recent_file_no_longer_exists),
-                      Toast.LENGTH_SHORT,
-                    ).show()
+          androidx.compose.foundation.layout.Column(
+            modifier = Modifier.fillMaxSize().padding(padding),
+          ) {
+            RecentHistoryTabs(
+              selectedTab = historyTab,
+              onTabSelected = { selectedHistoryTab = it.name },
+            )
+            RecentItemsContent(
+              recentItems = filteredRecentItems,
+              selectionManager = selectionManager,
+              onVideoClick = { video ->
+                coroutineScope.launch {
+                  val playableVideo = viewModel.resolvePlayableRecentVideo(video)
+                  if (playableVideo != null) {
+                    // Always play individual videos without creating a playlist.
+                    MediaUtils.playFile(playableVideo, context, "recently_played")
+                  } else {
+                    Toast
+                      .makeText(
+                        context,
+                        context.getString(app.infinity.mpvz.R.string.ui_recent_file_no_longer_exists),
+                        Toast.LENGTH_SHORT,
+                      ).show()
+                  }
                 }
-              }
-            },
-            onPlaylistClick = { playlistItem ->
-              // Navigate to playlist detail screen
-              backStack.add(PlaylistDetailScreen(playlistItem.playlist.id))
-            },
-            modifier = Modifier.padding(padding),
-            isInSelectionMode = selectionManager.isInSelectionMode,
-            listState = listState,
-            gridState = gridState,
-          )
+              },
+              onPlaylistClick = { playlistItem ->
+                // Navigate to playlist detail screen
+                backStack.add(PlaylistDetailScreen(playlistItem.playlist.id))
+              },
+              modifier = Modifier.weight(1f),
+              isInSelectionMode = selectionManager.isInSelectionMode,
+              listState = listState,
+              gridState = gridState,
+            )
+          }
         }
       }
 

@@ -10,6 +10,7 @@
 package app.infinity.mpvz.ui.player.controls.components
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
@@ -21,8 +22,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.ui.theme.spacing
@@ -52,6 +57,43 @@ fun PlayerUpdate(
       content()
     }
   }
+}
+
+@Composable
+fun TranslatedSubtitleText(
+  text: String,
+  modifier: Modifier = Modifier,
+  fontSize: TextUnit = MaterialTheme.typography.bodyLarge.fontSize,
+  textColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.White,
+  backgroundColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Transparent,
+  outlineColor: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Black,
+  outlineWidth: Float = 0f,
+  shadowOffset: Float = 0f,
+  bold: Boolean = false,
+  italic: Boolean = false,
+  textAlign: TextAlign = TextAlign.Center,
+) {
+  Text(
+    text = text,
+    modifier = modifier
+      .background(
+        color = backgroundColor,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+      )
+      .padding(horizontal = 10.dp, vertical = 4.dp),
+    color = textColor,
+    fontSize = fontSize,
+    fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+    fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
+    textAlign = textAlign,
+    style = MaterialTheme.typography.bodyLarge.copy(
+      shadow = Shadow(
+        color = outlineColor,
+        blurRadius = (8f + outlineWidth * 2f).coerceAtLeast(1f),
+        offset = androidx.compose.ui.geometry.Offset(0f, shadowOffset),
+      ),
+    ),
+  )
 }
 
 @Composable
