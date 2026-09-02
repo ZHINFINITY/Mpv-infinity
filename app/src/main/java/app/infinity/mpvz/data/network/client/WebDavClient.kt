@@ -36,6 +36,10 @@ class WebDavClient(
 
   private var sardine: Sardine? = null
 
+  /** Decodes paths originating from WebDAV hrefs exactly once before URL construction. */
+  private fun decodedPath(rawPath: String): NetworkPath =
+    NetworkPath.from(rawPath.split('/').joinToString("/") { Uri.decode(it) })
+
   /** Builds a URL from decoded path segments so credentials and reserved characters cannot leak. */
   private fun buildUrl(
     relativePath: String,
@@ -49,8 +53,8 @@ class WebDavClient(
         .host(host)
         .port(connection.port)
 
-    NetworkPath.from(connection.path).segments.forEach(builder::addPathSegment)
-    NetworkPath.from(relativePath).segments.forEach(builder::addPathSegment)
+    decodedPath(connection.path).segments.forEach(builder::addPathSegment)
+    decodedPath(relativePath).segments.forEach(builder::addPathSegment)
     if (trailingSlash) builder.addPathSegment("")
     return builder.build().toString()
   }
@@ -101,10 +105,11 @@ class WebDavClient(
             .mapNotNull { resource: DavResource ->
               val resourceName = resource.name?.trimEnd('/')?.takeIf(String::isNotBlank)
                 ?: return@mapNotNull null
+              val decodedResourceName = Uri.decode(resourceName)
               runCatching {
-                val filePath = directory.child(resourceName)
+                val filePath = directory.child(decodedResourceName)
                 NetworkFile(
-                  name = resourceName,
+                  name = decodedResourceName,
                   path = filePath.value,
                   isDirectory = resource.isDirectory,
                   size = resource.contentLength ?: -1L,

@@ -63,7 +63,7 @@ fun CastPlayerButton(
           MediaRouteButton(context).apply {
             setBackgroundColor(Color.TRANSPARENT)
             contentDescription = castContentDescription
-            CastButtonFactory.setUpMediaRouteButton(context.applicationContext, this)
+            CastButtonFactory.setUpMediaRouteButton(context, this)
             setRemoteIndicatorDrawable(ColorDrawable(Color.TRANSPARENT))
           }
         },

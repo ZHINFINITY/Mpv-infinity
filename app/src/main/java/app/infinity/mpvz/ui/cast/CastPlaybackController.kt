@@ -186,7 +186,7 @@ class CastPlaybackController(
     try {
       val activity = activityReference.get() ?: return
       CastContext
-        .getSharedInstance(activity.applicationContext, ContextCompat.getMainExecutor(activity))
+        .getSharedInstance(activity, ContextCompat.getMainExecutor(activity))
         .addOnSuccessListener { context ->
           if (released) return@addOnSuccessListener
           castContext = context
