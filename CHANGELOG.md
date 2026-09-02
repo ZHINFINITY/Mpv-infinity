@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.6 — Chromecast and WebDAV Compatibility Fixes
+
+This stable release is built from the complete Mpv∞ v1.0.5 feature baseline and adds compatibility fixes for Cast discovery and WebDAV paths.
+
+- **Chromecast discovery:** Cast initialization and the media-route button now use the active Android context, with the required local network, Wi-Fi-state, and multicast permissions declared so compatible receivers can appear reliably.
+- **WebDAV filenames:** URL-encoded WebDAV path segments are decoded once before request construction, fixing browsing and playback for filenames containing spaces and other URL-special characters.
+- **Playback preservation:** MPV/libmpv, Media3, torrent streaming, subtitle translation, Seerr/Jellyfin, music playback, and existing v1.0.5 behavior are preserved.
+
 ## 1.0.5 — Stable Playback, Navigation, and Subtitle Features
 
 This release adds optional subtitle translation, torrent streaming support, a refined navigation experience, and clearer media history organization.
