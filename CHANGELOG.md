@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.7 — Public Hotfix Release
+
+This hotfix improves the MPV and Native playback handoff on supported Android devices.
+
+- **HW+ decoder selection:** HW+ remains selectable in the MPV decoder sheet, with a safe renderer fallback when direct MediaCodec is unavailable for the active build or GPU configuration.
+- **Native-to-MPV audio:** MPV reselects its automatic audio track after switching from Native, preventing stale Native track identifiers from leaving playback silent.
+- **Playback continuity:** Existing playback position and transition-audio restoration behavior remain preserved during engine switching.
+
 ## 1.0.4 — Public Feature Release
 
 This release adds native media-server browsing and media-request workflows while preserving Mpv∞’s existing MPV and Media3 playback engines.
