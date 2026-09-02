@@ -41,6 +41,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -52,6 +53,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
@@ -72,6 +74,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -87,6 +90,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.NetworkStreamEntryEntity
@@ -122,7 +126,7 @@ private const val VIEWED_TORRENT_FILES_PREFS = "torrent_viewed_files"
 private enum class NetworkTab(val titleResId: Int) {
   LOCAL_NETWORK(R.string.ui_local_network),
   SYNC_PLAY(R.string.syncplay_title),
-  TORRENT(R.string.ui_torrent_files),
+  MEDIA(R.string.ui_media),
 }
 
 @Serializable
@@ -155,6 +159,7 @@ object NetworkStreamingScreen : Screen {
     var showAddSheet by remember { mutableStateOf(false) }
     var editingConnection by remember { mutableStateOf<NetworkConnection?>(null) }
     var showTorrentPicker by remember { mutableStateOf(false) }
+    var showStreamDialog by rememberSaveable { mutableStateOf(false) }
     val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -305,9 +310,15 @@ object NetworkStreamingScreen : Screen {
         }
       },
       floatingActionButton = {
-        if (pagerState.currentPage == NetworkTab.LOCAL_NETWORK.ordinal) {
+        if (pagerState.currentPage == NetworkTab.LOCAL_NETWORK.ordinal || pagerState.currentPage == NetworkTab.MEDIA.ordinal) {
           ExtendedFloatingActionButton(
-            onClick = { showAddSheet = true },
+            onClick = {
+              if (pagerState.currentPage == NetworkTab.LOCAL_NETWORK.ordinal) {
+                showAddSheet = true
+              } else {
+                showStreamDialog = true
+              }
+            },
             icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
             text = {
               Text(
@@ -327,6 +338,8 @@ object NetworkStreamingScreen : Screen {
       ) {
         StreamLinkSection(
           recentLinks = filteredRecentLinks,
+          showDialog = showStreamDialog,
+          onShowDialogChange = { showStreamDialog = it },
           onPlayLink = { url ->
             val playableSource = normalizeTorrentSource(url) ?: url.trim()
             if (isTorrentSource(playableSource)) {
@@ -409,7 +422,7 @@ object NetworkStreamingScreen : Screen {
             NetworkTab.SYNC_PLAY -> {
               SyncPlayContent()
             }
-            NetworkTab.TORRENT -> {
+            NetworkTab.MEDIA -> {
               TorrentContent(
                 torrentGroups = filteredTorrentGroups,
                 searchQuery = searchQuery,
@@ -630,6 +643,7 @@ private fun AnimeTorrentCard(
   var episodeSearchQuery by rememberSaveable(group.id) { mutableStateOf("") }
   var sortDescending by rememberSaveable(group.id) { mutableStateOf(false) }
   val showFiles = forceExpanded || expanded || (isSearchOpen && episodeSearchQuery.isNotBlank())
+  var showDashboard by rememberSaveable(group.id) { mutableStateOf(false) }
 
   val fileCountLabel =
     pluralStringResource(
@@ -657,7 +671,8 @@ private fun AnimeTorrentCard(
     modifier =
       Modifier
         .fillMaxWidth()
-        .animateContentSize(),
+        .animateContentSize()
+        .clickable { showDashboard = true },
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     shape = RoundedCornerShape(20.dp),
   ) {
@@ -1010,6 +1025,120 @@ private fun AnimeTorrentCard(
       }
     }
   }
+
+  if (showDashboard) {
+    TorrentDashboardDialog(
+      group = group,
+      firstPlayableFile = firstPlayableFile,
+      viewedFileIndices = viewedFileIndices,
+      onDismiss = { showDashboard = false },
+      onPlay = { entry ->
+        showDashboard = false
+        val fileIdx = entry.fileIndex ?: 0
+        val infoHash = group.infoHash
+        if (infoHash != null) {
+          val updated = viewedFileIndices + fileIdx
+          viewedFileIndices = updated
+          saveViewedFileIndices(viewedPreferences, infoHash, updated)
+        }
+        onPlay(entry)
+      },
+      onDelete = {
+        showDashboard = false
+        onDeleteGroup()
+      },
+    )
+  }
+}
+
+@Composable
+private fun TorrentDashboardDialog(
+  group: TorrentStreamGroup,
+  firstPlayableFile: NetworkStreamEntryEntity?,
+  viewedFileIndices: Set<Int>,
+  onDismiss: () -> Unit,
+  onPlay: (NetworkStreamEntryEntity) -> Unit,
+  onDelete: () -> Unit,
+) {
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(28.dp),
+      color = MaterialTheme.colorScheme.surface,
+      tonalElevation = 8.dp,
+    ) {
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(bottom = 20.dp),
+      ) {
+        item {
+          Box(modifier = Modifier.fillMaxWidth().height(240.dp)) {
+            group.backdropUrl?.let { backdrop ->
+              RemoteImage(url = backdrop, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+            Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface))))
+            IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+              Icon(imageVector = Icons.RoundedFilled.Close, contentDescription = "Close")
+            }
+            Row(
+              modifier = Modifier.align(Alignment.BottomStart).padding(20.dp),
+              horizontalArrangement = Arrangement.spacedBy(14.dp),
+              verticalAlignment = Alignment.Bottom,
+            ) {
+              group.posterUrl?.let { poster ->
+                RemoteImage(url = poster, contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.width(112.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(14.dp)))
+              }
+              Column(modifier = Modifier.weight(1f)) {
+                MetaChip(text = (group.mediaType ?: "TORRENT").uppercase())
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(group.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+              }
+            }
+          }
+        }
+        item {
+          Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              group.releaseYear?.let { MetaChip(it) }
+              if (group.totalSize > 0) MetaChip(formatTorrentBytes(group.totalSize))
+              MetaChip("${group.files.size} file${if (group.files.size == 1) "" else "s"}")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+              firstPlayableFile?.let { entry ->
+                Button(onClick = { onPlay(entry) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp)) {
+                  Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = null)
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(if (entry.fileIndex in viewedFileIndices) "Resume" else "Watch Now")
+                }
+              }
+              IconButton(onClick = onDelete) { Icon(imageVector = Icons.RoundedFilled.Delete, contentDescription = "Delete torrent") }
+            }
+            group.overview?.takeIf { it.isNotBlank() }?.let {
+              Text("Storyline", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+              Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 5, overflow = TextOverflow.Ellipsis)
+            }
+            Text("Files & Episodes (${group.files.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+          }
+        }
+        items(group.files, key = { it.stableKey }) { entry ->
+          Row(
+            modifier = Modifier.fillMaxWidth().clickable { onPlay(entry) }.padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Surface(modifier = Modifier.size(44.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+              Box(contentAlignment = Alignment.Center) { Text("${(entry.fileIndex ?: 0) + 1}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer) }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+              Text(entry.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+              Text(formatTorrentBytes(entry.fileSize), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = "Play ${entry.fileName}", tint = MaterialTheme.colorScheme.primary)
+          }
+        }
+      }
+    }
+  }
 }
 
 @Composable
@@ -1130,13 +1259,14 @@ private fun EpisodeCardRow(
 @Composable
 private fun StreamLinkSection(
   recentLinks: List<NetworkStreamEntryEntity>,
+  showDialog: Boolean,
+  onShowDialogChange: (Boolean) -> Unit,
   onPlayLink: (String) -> Unit,
   onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
   onDeleteRecent: (String) -> Unit,
 ) {
   val context = LocalContext.current
   val keyboardController = LocalSoftwareKeyboardController.current
-  val playStreamContentDescription = stringResource(R.string.ui_play_stream)
   var linkUrl by rememberSaveable { mutableStateOf("") }
 
   fun pasteFromClipboard() {
@@ -1173,102 +1303,50 @@ private fun StreamLinkSection(
         .padding(horizontal = 16.dp, vertical = 6.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    // 1. Stream URL Input Box
-    Card(
-      modifier = Modifier.fillMaxWidth(),
-      colors =
-        CardDefaults.cardColors(
-          containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        ),
-      shape = RoundedCornerShape(16.dp),
-    ) {
-      Row(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .padding(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        OutlinedTextField(
-          value = linkUrl,
-          onValueChange = { linkUrl = it },
-          modifier = Modifier.weight(1f),
-          placeholder = {
-            Text(
-              text = stringResource(R.string.ui_enter_stream_url),
-              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            )
-          },
-          leadingIcon = {
-            Icon(
-              imageVector = Icons.RoundedFilled.Link,
-              contentDescription = null,
-              tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-              modifier = Modifier.size(20.dp),
-            )
-          },
-          trailingIcon = {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              IconButton(onClick = { pasteFromClipboard() }) {
-                Icon(
-                  imageVector = Icons.RoundedFilled.ContentPaste,
-                  contentDescription = stringResource(R.string.ui_paste_stream_url),
-                  modifier = Modifier.size(18.dp),
-                )
-              }
-              if (linkUrl.isNotBlank()) {
-                IconButton(onClick = { linkUrl = "" }) {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Close,
-                    contentDescription = stringResource(R.string.ui_clear_stream_url),
-                    modifier = Modifier.size(18.dp),
-                  )
+    if (showDialog) {
+      AlertDialog(
+        onDismissRequest = { onShowDialogChange(false) },
+        title = { Text(stringResource(R.string.ui_stream_url_dialog_title)) },
+        text = {
+          OutlinedTextField(
+            value = linkUrl,
+            onValueChange = { linkUrl = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(stringResource(R.string.ui_enter_stream_url)) },
+            leadingIcon = { Icon(Icons.RoundedFilled.Link, contentDescription = null) },
+            trailingIcon = {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { pasteFromClipboard() }) {
+                  Icon(Icons.RoundedFilled.ContentPaste, contentDescription = stringResource(R.string.ui_paste_stream_url))
+                }
+                if (linkUrl.isNotBlank()) {
+                  IconButton(onClick = { linkUrl = "" }) {
+                    Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.ui_clear_stream_url))
+                  }
                 }
               }
-            }
-          },
-          singleLine = true,
-          shape = RoundedCornerShape(14.dp),
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-              unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-              focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-              unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-          keyboardActions =
-            KeyboardActions(
-              onGo = { playCurrentLink() },
-            ),
-        )
-        Spacer(modifier = Modifier.size(6.dp))
-        Button(
-          onClick = { playCurrentLink() },
-          enabled = linkUrl.isNotBlank(),
-          contentPadding = PaddingValues(12.dp),
-          shape = RoundedCornerShape(14.dp),
-          colors =
-            ButtonDefaults.buttonColors(
-              containerColor = MaterialTheme.colorScheme.primary,
-            ),
-          modifier =
-            Modifier.semantics {
-              contentDescription = playStreamContentDescription
             },
-        ) {
-          Icon(
-            imageVector = Icons.RoundedFilled.PlayArrow,
-            contentDescription = null,
-            modifier = Modifier.size(20.dp),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+            keyboardActions = KeyboardActions(onGo = { playCurrentLink() }),
           )
-        }
-      }
+        },
+        confirmButton = {
+          Button(onClick = { playCurrentLink(); onShowDialogChange(false) }, enabled = linkUrl.isNotBlank()) {
+            Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(stringResource(R.string.ui_play))
+          }
+        },
+        dismissButton = {
+          TextButton(onClick = { onShowDialogChange(false) }) {
+            Text(stringResource(R.string.generic_cancel))
+          }
+        },
+      )
     }
 
-    // 2. Top 3 Recent Stream Links with Quick Autofill
+    // Recent Stream Links with Quick Autofill
     val topRecent = remember(recentLinks) { recentLinks.take(3) }
     if (topRecent.isNotEmpty()) {
       Column(
@@ -1301,6 +1379,7 @@ private fun StreamLinkSection(
                 .fillMaxWidth()
                 .clickable {
                   linkUrl = entry.canonicalSourceUri
+                  onShowDialogChange(true)
                 },
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,

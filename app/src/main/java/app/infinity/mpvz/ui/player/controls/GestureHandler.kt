@@ -147,11 +147,11 @@ fun GestureHandler(
         val videoScale = 2f.pow(zoom)
         val videoPanY = videoPanYState?.toFloat() ?: 0f
         val screenCenterY = height / 2f
-        val subtitleScreenY = screenCenterY + (subPos / 100f - 0.5f + videoPanY) * videoHeight * videoScale
+        val subtitleScreenY = screenCenterY + (subPos / 150f - 0.5f + videoPanY) * videoHeight * videoScale
         return subtitleScreenY.coerceIn(0f, height)
       }
     }
-    return (height * (subPos / 100f)).coerceIn(0f, height)
+    return (height * (subPos / 150f)).coerceIn(0f, height)
   }
 
   val panelShown by viewModel.panelShown.collectAsState()

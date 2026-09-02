@@ -9,6 +9,8 @@ This hotfix improves the MPV and Native playback handoff on supported Android de
 - **HW+ decoder selection:** HW+ remains selectable in the MPV decoder sheet, with a safe renderer fallback when direct MediaCodec is unavailable for the active build or GPU configuration.
 - **Native-to-MPV audio:** MPV reselects its automatic audio track after switching from Native, preventing stale Native track identifiers from leaving playback silent.
 - **Playback continuity:** Existing playback position and transition-audio restoration behavior remain preserved during engine switching.
+- **Embedded subtitle translation:** Optional translation of embedded subtitles, language selection, translated-cue positioning, subtitle styling, and translation visibility controls are included for supported playback sources.
+- **Torrent playback improvements:** Startup buffering, background read-ahead, and clearer inline torrent playback status are included.
 
 ## 1.0.4 — Public Feature Release
 

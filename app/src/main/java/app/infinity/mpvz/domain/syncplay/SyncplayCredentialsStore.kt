@@ -24,7 +24,7 @@ data class SyncplayCredentials(
   companion object {
     const val DEFAULT_HOST = "syncplay.pl"
     const val DEFAULT_PORT = 8999
-    const val DEFAULT_USERNAME = "MpvRxUser"
+    const val DEFAULT_USERNAME = "Mpv∞ User"
     const val DEFAULT_ROOM = "TestRoom"
   }
 }

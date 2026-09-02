@@ -33,6 +33,15 @@ class AdvancedPreferences(
 
   val enableP2pStreaming = preferenceStore.getBoolean("enable_p2p_streaming", true)
 
+  /** Amount of media data to download before starting torrent playback, in megabytes; 0 means auto. */
+  val torrentStartupBufferMb = preferenceStore.getLong("torrent_startup_buffer_mb", 64L)
+
+  /** Amount of data prioritized ahead of the current torrent playback position, in megabytes; 0 means auto. */
+  val torrentReadAheadMb = preferenceStore.getLong("torrent_read_ahead_mb", 64L)
+
+  /** Maximum torrent payload cache in megabytes; 0 means use the maximum safe free space. */
+  val torrentCacheMb = preferenceStore.getLong("torrent_cache_mb", 0L)
+
   val enableHlsProxy = preferenceStore.getBoolean("enable_hls_proxy", true)
 
   /** Notification style for the playback service (Media vs Progress-centric on Android 16+). */

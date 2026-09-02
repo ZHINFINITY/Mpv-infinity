@@ -6,7 +6,9 @@ package app.infinity.mpvz.domain.torrent
 
 import android.content.Context
 import android.net.Uri
+import android.os.StatFs
 import android.util.Log
+import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.utils.media.MediaInfoParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -52,10 +54,17 @@ import java.util.concurrent.atomic.AtomicReference
 
 class TorrentStreamingEngine(
   context: Context,
+  private val advancedPreferences: AdvancedPreferences,
 ) {
   companion object {
     private const val TAG = "TorrentStreamingEngine"
     private const val METADATA_TIMEOUT_MS = 90_000L
+    private const val INITIAL_BUFFER_TIMEOUT_MS = 45_000L
+    private const val BYTES_PER_MB = 1024L * 1024L
+    private const val MIN_BUFFER_BYTES = 8L * BYTES_PER_MB
+    // A practical two-minute startup window for typical compressed video bitrates.
+    private const val DEFAULT_STARTUP_BUFFER_MB = 64L
+    private const val STORAGE_RESERVE_BYTES = 512L * BYTES_PER_MB
     private const val MAX_METADATA_BYTES = 16L * 1024L * 1024L
     private const val MAX_TORRENT_FILES = 100_000
     private const val STATUS_INTERVAL_MS = 1_000L
@@ -245,6 +254,15 @@ class TorrentStreamingEngine(
           val firstPiece = (fileOffset / pieceLength).toInt()
           val lastPiece = ((fileOffset + selected.size - 1L) / pieceLength).toInt()
           val selectedPath = safeCacheFile(preparedSession.cacheDir, selected.path)
+          waitForInitialBuffer(
+            handle = preparedSession.handle,
+            firstPiece = firstPiece,
+            lastPiece = lastPiece,
+            fileSize = selected.size,
+            pieceLength = pieceLength,
+            startGeneration = startGeneration,
+          )
+          ensureCurrent(startGeneration)
 
           val startedProxy =
             TorrentProxyServer(
@@ -258,6 +276,8 @@ class TorrentStreamingEngine(
                   firstPiece = firstPiece,
                   lastPiece = lastPiece,
                   mimeType = selected.mimeType,
+                  readAheadBytes = readAheadBufferBytes(),
+                  cacheBudgetBytes = cacheBudgetBytes(),
                 ),
             ).also { it.start() }
           proxy = startedProxy
@@ -623,6 +643,72 @@ class TorrentStreamingEngine(
     }
   }
 
+  private suspend fun waitForInitialBuffer(
+    handle: TorrentHandle,
+    firstPiece: Int,
+    lastPiece: Int,
+    fileSize: Long,
+    pieceLength: Int,
+    startGeneration: Long,
+  ) {
+    // Start once the first piece is available; the stream reader continues waiting for
+    // subsequent pieces, so a large user-configured buffer cannot block playback entirely.
+    val targetBytes = minOf(fileSize, startupBufferBytes())
+    val targetPiece =
+      (firstPiece + ((targetBytes - 1L).coerceAtLeast(0L) / pieceLength).toInt())
+        .coerceAtMost(lastPiece)
+    val deadline = System.currentTimeMillis() + INITIAL_BUFFER_TIMEOUT_MS
+    _state.value = TorrentStreamingState.Connecting("Buffering enough data to start playback...")
+    while (System.currentTimeMillis() < deadline) {
+      ensureCurrent(startGeneration)
+      if (!handle.isValid) throw streamError("Torrent session stopped before playback could start.")
+      val ready = (firstPiece..targetPiece).all(handle::havePiece)
+      if (ready) return
+      runCatching {
+        val status = handle.status()
+        _state.value = TorrentStreamingState.Connecting(
+          phase = "Buffering enough data to start playback...",
+          downloadSpeed = status.downloadPayloadRate().toLong(),
+          uploadSpeed = status.uploadPayloadRate().toLong(),
+          peers = status.numPeers(),
+          seeds = status.numSeeds(),
+        )
+      }
+      delay(250L)
+    }
+    // A slow or lightly seeded torrent must still be allowed to start once its first verified
+    // piece is available. The proxy will block only when mpv reaches data that is not ready yet.
+    // This preserves the previous build's reliable startup behavior while retaining the bounded
+    // startup/read-ahead scheduler.
+    if (handle.havePiece(firstPiece)) return
+    throw streamError("Torrent did not receive its first playable piece. Check seeders and connection speed.")
+  }
+
+  private fun availableStorageBytes(): Long =
+    StatFs(appContext.cacheDir.absolutePath).availableBytes.coerceAtLeast(0L)
+
+  private fun maximumSafeStorageBytes(): Long =
+    (availableStorageBytes() - STORAGE_RESERVE_BYTES).coerceAtLeast(MIN_BUFFER_BYTES)
+
+  private fun configuredMegabytes(value: Long): Long =
+    if (value <= 0L) maximumSafeStorageBytes() / BYTES_PER_MB
+    else value.coerceAtMost(Long.MAX_VALUE / BYTES_PER_MB)
+
+  private fun startupBufferBytes(): Long =
+    ((advancedPreferences.torrentStartupBufferMb.get().takeIf { it > 0L } ?: DEFAULT_STARTUP_BUFFER_MB) * BYTES_PER_MB)
+      .coerceAtMost(maximumSafeStorageBytes())
+      .coerceAtLeast(MIN_BUFFER_BYTES)
+
+  private fun readAheadBufferBytes(): Long =
+    (configuredMegabytes(advancedPreferences.torrentReadAheadMb.get()) * BYTES_PER_MB)
+      .coerceAtMost(maximumSafeStorageBytes())
+      .coerceAtLeast(MIN_BUFFER_BYTES)
+
+  private fun cacheBudgetBytes(): Long =
+    (configuredMegabytes(advancedPreferences.torrentCacheMb.get()) * BYTES_PER_MB)
+      .coerceAtMost(maximumSafeStorageBytes())
+      .coerceAtLeast(MIN_BUFFER_BYTES)
+
   private fun configureStreaming(
     handle: TorrentHandle,
     info: TorrentInfo,
@@ -638,15 +724,19 @@ class TorrentStreamingEngine(
     val fileOffset = storage.fileOffset(selected.index)
     val firstPiece = (fileOffset / pieceLength).toInt()
     val lastPiece = ((fileOffset + selected.size - 1L) / pieceLength).toInt()
-    handle.setSequentialRange(firstPiece, lastPiece)
-
-    val headEnd = (firstPiece + 15).coerceAtMost(lastPiece)
-    for (piece in firstPiece..headEnd) {
+    val startupLastPiece =
+      (firstPiece + ((startupBufferBytes() - 1L).coerceAtLeast(0L) / pieceLength).toInt())
+        .coerceAtMost(lastPiece)
+    // Restrict sequential download to the startup window. The loopback proxy expands this
+    // window as mpv reads, so later pieces are fetched in the background rather than the entire
+    // file being scheduled immediately.
+    handle.setSequentialRange(firstPiece, startupLastPiece)
+    handle.piecePriority(firstPiece, Priority.TOP_PRIORITY)
+    handle.setPieceDeadline(firstPiece, 0)
+    for (piece in firstPiece..startupLastPiece) {
       handle.piecePriority(piece, Priority.TOP_PRIORITY)
-      handle.setPieceDeadline(piece, (piece - firstPiece) * 100)
+      handle.setPieceDeadline(piece, ((piece - firstPiece) * 100).coerceAtMost(12_000))
     }
-    val tailStart = (lastPiece - 7).coerceAtLeast(firstPiece)
-    for (piece in tailStart..lastPiece) handle.piecePriority(piece, Priority.TOP_PRIORITY)
     handle.unsetFlags(TorrentFlags.UPLOAD_MODE)
     handle.resume()
   }

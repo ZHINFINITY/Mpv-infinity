@@ -55,12 +55,26 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.pm.PackageInfoCompat
@@ -87,6 +101,7 @@ import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.domain.torrent.TorrentStreamRequest
 import app.infinity.mpvz.domain.torrent.TorrentStreamException
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
+import app.infinity.mpvz.domain.torrent.TorrentStreamingState
 import app.infinity.mpvz.domain.torrent.canonicalInfoHash
 import app.infinity.mpvz.domain.torrent.isTorrentSource
 import app.infinity.mpvz.network.AndroidCookieJar
@@ -1208,6 +1223,7 @@ class PlayerActivity :
     binding.controls.setContent {
       MpvrxTheme {
         Box(modifier = Modifier.fillMaxSize()) {
+          val torrentState by torrentStreamingEngine.state.collectAsState()
           PlayerControls(
             viewModel = viewModel,
             onBackPress = ::handleBackPress,
@@ -1243,6 +1259,7 @@ class PlayerActivity :
                 PlaybackSession.setPropertyString("hwdec", decoder.value)
               }
             },
+            torrentStreamingState = torrentState,
             modifier = Modifier,
           )
         }
@@ -4608,6 +4625,11 @@ class PlayerActivity :
           val width = player.width.takeIf { it > 0 }?.toFloat()
           val height = player.height.takeIf { it > 0 }?.toFloat()
           applySubtitlePositions(primaryPosition, width, height)
+        }
+        if (value.isBlank()) {
+          viewModel.handleEmbeddedSubtitleCueBlank()
+        } else {
+          viewModel.translateEmbeddedSubtitleCue(value)
         }
       }
       else -> {

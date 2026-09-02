@@ -434,6 +434,10 @@ class MPVView(
       "user-data/mpv/console/open" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "sub-text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
       "sub-scale" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "sub-font-size" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "sub-pos" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "secondary-sub-pos" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "sub-visibility" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
     )
 
   private fun setupAudioOptions() {

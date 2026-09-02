@@ -10,6 +10,7 @@
 package app.infinity.mpvz.ui.player.controls
 
 import app.infinity.mpvz.preferences.PlaybackEngineMode
+import app.infinity.mpvz.domain.torrent.TorrentStreamingState
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
@@ -117,6 +118,7 @@ import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.preferences.preference.deleteAndGet
@@ -148,6 +150,7 @@ import app.infinity.mpvz.ui.player.controls.components.SeekThumbnailPreviewBubbl
 import app.infinity.mpvz.ui.player.controls.components.SeekbarWithTimers
 import app.infinity.mpvz.ui.player.controls.components.SlideToUnlock
 import app.infinity.mpvz.ui.player.controls.components.TextPlayerUpdate
+import app.infinity.mpvz.ui.player.controls.components.TranslatedSubtitleText
 import app.infinity.mpvz.ui.player.controls.components.VolumeSlider
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.player.getTrackSelectionId
@@ -203,6 +206,7 @@ fun PlayerControls(
   onMedia3AudioProcessing: (Boolean, Boolean) -> Unit = { _, _ -> },
   onMedia3AudioPitchCorrection: (Boolean) -> Unit = {},
   modifier: Modifier = Modifier,
+  torrentStreamingState: TorrentStreamingState = TorrentStreamingState.Idle,
 ) {
   val spacing = MaterialTheme.spacing
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -215,6 +219,20 @@ fun PlayerControls(
   val portraitPlaybackControlsPosition by
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
+  val subtitlesPreferences = koinInject<SubtitlesPreferences>()
+  val subtitleFontSize by subtitlesPreferences.fontSize.collectAsState()
+  val subtitleScale by subtitlesPreferences.subScale.collectAsState()
+  val liveSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
+  val liveSubtitleFontSize by PlaybackSession.propInt["sub-font-size"].collectAsState()
+  val subtitleTextColor by subtitlesPreferences.textColor.collectAsState()
+  val subtitleBackgroundColor by subtitlesPreferences.backgroundColor.collectAsState()
+  val subtitleBorderColor by subtitlesPreferences.borderColor.collectAsState()
+  val subtitleBorderSize by subtitlesPreferences.borderSize.collectAsState()
+  val subtitleShadowOffset by subtitlesPreferences.shadowOffset.collectAsState()
+  val subtitleBold by subtitlesPreferences.bold.collectAsState()
+  val subtitleItalic by subtitlesPreferences.italic.collectAsState()
+  val subtitleJustification by subtitlesPreferences.justification.collectAsState()
+  val subtitlePosition by PlaybackSession.propInt["sub-pos"].collectAsState()
   val audioPreferences = koinInject<AudioPreferences>()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
@@ -230,6 +248,7 @@ fun PlayerControls(
   val mpvDuration by PlaybackSession.propInt["duration"].collectAsState()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
   val paused = if (isMedia3Active) !media3State.isPlaying else mpvPaused
+  val torrentBuffering = torrentStreamingState is TorrentStreamingState.Connecting
   val duration =
     if (isMedia3Active) {
       // Do not reuse the inactive MPV timeline while Media3 is preparing. That stale duration can
@@ -656,7 +675,7 @@ fun PlayerControls(
           val skipSegmentChip = createRef()
           val seekbar = createRef()
           val thumbnailPreview = createRef()
-          val (playerUpdates) = createRefs()
+          val (playerUpdates, translatedSubtitle) = createRefs()
           val (customLeftButtonsRef, customRightButtonsRef) = createRefs()
           val customButtonsPortraitRef = createRef()
 
@@ -809,6 +828,7 @@ fun PlayerControls(
 
           val holdForMultipleSpeed by playerPreferences.holdForMultipleSpeed.collectAsState()
           val currentPlayerUpdate by viewModel.playerUpdate.collectAsState()
+          val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
           val isTranslatingSub by viewModel.isTranslatingSub.collectAsState()
           val translationProgress by viewModel.translationProgress.collectAsState()
           val translationStatus by viewModel.translationStatus.collectAsState()
@@ -840,6 +860,7 @@ fun PlayerControls(
               is PlayerUpdates.RepeatMode -> showActionFeedbackOverlay
               is PlayerUpdates.Shuffle -> showRepeatShuffleOverlay
               is PlayerUpdates.ShowText -> showActionFeedbackOverlay
+              is PlayerUpdates.TranslatedSubtitle -> false
               is PlayerUpdates.ProviderStatusText -> showProviderStatusOverlay
               is PlayerUpdates.HorizontalSeek -> showActionFeedbackOverlay
               is PlayerUpdates.FrameInfo -> true // Groups 3/4 — not in scope
@@ -1008,6 +1029,52 @@ fun PlayerControls(
               }
 
               else -> {}
+            }
+          }
+
+          AnimatedVisibility(
+            visible = embeddedTranslatedSubtitle != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.constrainAs(translatedSubtitle) {
+              linkTo(parent.start, parent.end)
+              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 150)
+              // Keep the translated cue on the same anchor as MPV's primary subtitle. The
+              // position is the shared MPV 0–150 coordinate, not a separate overlay setting.
+              // MPV's default sub-pos is 100. Keep the translated cue on the same baseline
+              // instead of applying the old 150-based offset, which moved it too high by default.
+              val configuredOffset = (((100 - position) * (if (isPortrait) 1.55f else 2.1f)).coerceIn(-250f, 250f)).dp
+              bottom.linkTo(parent.bottom, configuredOffset)
+            },
+          ) {
+            val translated = embeddedTranslatedSubtitle
+            if (!translated.isNullOrBlank()) {
+              TranslatedSubtitleText(
+                text = translated,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                // MPV's subtitle size is based on a 720px reference OSD; convert it to Compose
+                // sp using the live player height so translation matches the embedded subtitle.
+                fontSize = with(density) {
+                  val osdHeightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
+                  val fontSizePx =
+                    (liveSubtitleFontSize ?: subtitleFontSize) *
+                      (osdHeightPx / 720f) *
+                      (liveSubtitleScale ?: subtitleScale)
+                  (fontSizePx / density.density).coerceIn(8f, 120f).sp
+                },
+                textColor = Color(subtitleTextColor),
+                backgroundColor = Color(subtitleBackgroundColor),
+                outlineColor = Color(subtitleBorderColor),
+                outlineWidth = subtitleBorderSize.toFloat(),
+                shadowOffset = subtitleShadowOffset.toFloat(),
+                bold = subtitleBold,
+                italic = subtitleItalic,
+                textAlign = when (subtitleJustification.name.lowercase()) {
+                  "left" -> androidx.compose.ui.text.style.TextAlign.Start
+                  "right" -> androidx.compose.ui.text.style.TextAlign.End
+                  else -> androidx.compose.ui.text.style.TextAlign.Center
+                },
+              )
             }
           }
 
@@ -1346,7 +1413,7 @@ fun PlayerControls(
                   verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                   LoadingIndicator(
-                    modifier = Modifier.size(76.dp),
+                    modifier = Modifier.size(if (isPortrait) 34.dp else 40.dp),
                   )
                   val bufferText =
                     when {
@@ -1356,31 +1423,12 @@ fun PlayerControls(
                         "Buffering (${String.format(java.util.Locale.ROOT, "%.1f", demuxerCacheDuration)}s)"
                       else -> stringResource(R.string.ui_buffering)
                     }
-                  Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                  ) {
-                    Row(
-                      modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                      Box(
-                        modifier =
-                          Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                      )
-                      Text(
-                        text = bufferText,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                      )
-                    }
-                  }
+                  Text(
+                    text = bufferText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                  )
                 }
               }
 
@@ -1490,14 +1538,18 @@ fun PlayerControls(
                           null
                         },
                     ) {
-                      AnimatedPlayPauseIcon(
-                        isPlaying = paused == false,
-                        modifier =
-                          Modifier
-                            .fillMaxSize()
-                            .padding(MaterialTheme.spacing.medium),
-                        tint = LocalContentColor.current,
-                      )
+                      if (torrentBuffering) {
+                        LoadingIndicator(modifier = Modifier.size(24.dp))
+                      } else {
+                        AnimatedPlayPauseIcon(
+                          isPlaying = paused == false,
+                          modifier =
+                            Modifier
+                              .fillMaxSize()
+                              .padding(MaterialTheme.spacing.medium),
+                          tint = LocalContentColor.current,
+                        )
+                      }
                     }
 
                     Surface(
@@ -1596,14 +1648,18 @@ fun PlayerControls(
                         null
                       },
                   ) {
-                    AnimatedPlayPauseIcon(
-                      isPlaying = paused == false,
-                      modifier =
-                        Modifier
-                          .fillMaxSize()
-                          .padding(MaterialTheme.spacing.medium),
-                      tint = LocalContentColor.current,
-                    )
+                    if (torrentBuffering) {
+                      LoadingIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                      AnimatedPlayPauseIcon(
+                        isPlaying = paused == false,
+                        modifier =
+                          Modifier
+                            .fillMaxSize()
+                            .padding(MaterialTheme.spacing.medium),
+                        tint = LocalContentColor.current,
+                      )
+                    }
                   }
                 }
               }

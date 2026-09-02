@@ -19,17 +19,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.core.net.toUri
 import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
 import app.infinity.mpvz.domain.torrent.isTorrentSource
@@ -108,20 +107,19 @@ fun PlayLinkSheet(
     }
   }
 
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-
-  ModalBottomSheet(
-    onDismissRequest = handleDismiss,
-    sheetState = sheetState,
-    dragHandle = { BottomSheetDefaults.DragHandle() },
-    modifier = modifier,
-  ) {
-    Column(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)
-          .verticalScroll(rememberScrollState()),
+  Dialog(onDismissRequest = handleDismiss) {
+    Surface(
+      modifier = modifier.fillMaxWidth(),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+      tonalElevation = 6.dp,
+      color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+      Column(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 20.dp)
+            .verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
       // Title
@@ -204,7 +202,8 @@ fun PlayLinkSheet(
         }
       }
 
-      Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+      }
     }
   }
 }

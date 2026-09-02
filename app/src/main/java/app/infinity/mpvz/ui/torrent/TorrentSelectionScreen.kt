@@ -187,12 +187,15 @@ private fun TorrentReadyScreen(
           }
 
         // File list header
-        Column(
-          modifier =
-            Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 20.dp, vertical = 4.dp),
+        Surface(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+          shape = RoundedCornerShape(18.dp),
+          color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
+          tonalElevation = 2.dp,
         ) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+          ) {
           Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -287,6 +290,7 @@ private fun TorrentReadyScreen(
               textStyle = MaterialTheme.typography.bodySmall,
             )
           }
+          }
         }
 
         // File list
@@ -357,7 +361,7 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
     modifier =
       Modifier
         .fillMaxWidth()
-        .padding(horizontal = 20.dp)
+        .padding(horizontal = 16.dp)
         .then(if (hasBackdrop) Modifier else Modifier.padding(top = 8.dp)),
   ) {
     if (hasBackdrop) {
@@ -505,12 +509,13 @@ private fun TorrentFileRow(
       Modifier
         .fillMaxWidth()
         .clickable(enabled = enabled, onClick = onClick),
-    shape = RoundedCornerShape(12.dp),
-    color = MaterialTheme.colorScheme.surfaceContainer,
-    tonalElevation = if (launching) 2.dp else 0.dp,
+    shape = RoundedCornerShape(18.dp),
+    color = if (launching) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+      else MaterialTheme.colorScheme.surfaceContainerHigh,
+    tonalElevation = if (launching) 4.dp else 1.dp,
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+      modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

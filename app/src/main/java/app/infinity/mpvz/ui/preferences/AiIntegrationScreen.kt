@@ -167,6 +167,9 @@ object AiIntegrationScreen : Screen {
     val subtitleGenerationOutputFormat by preferences.subtitleGenerationOutputFormat.collectAsState()
     val autoTranslateLanguages by preferences.autoTranslateLanguages.collectAsState()
     val realtimeSubsEnabled by preferences.realtimeSubsEnabled.collectAsState()
+    val embeddedTranslationProvider by preferences.embeddedSubtitleTranslationProvider.collectAsState()
+    val embeddedTranslationEndpoint by preferences.embeddedSubtitleTranslationEndpoint.collectAsState()
+    val embeddedTranslationApiKey by preferences.embeddedSubtitleTranslationApiKey.collectAsState()
 
     var models by remember { mutableStateOf<List<AiModelInfo>>(emptyList()) }
     var isLoadingModels by remember { mutableStateOf(false) }
@@ -991,6 +994,66 @@ val apiKeyInfo =
                     languages = autoTranslateLanguages,
                     onLanguagesChange = { preferences.autoTranslateLanguages.set(it) },
                   )
+
+                  PreferenceDivider()
+
+                  ListPreference(
+                    value = embeddedTranslationProvider,
+                    onValueChange = { preferences.embeddedSubtitleTranslationProvider.set(it) },
+                    values = listOf("Google Translate", "OpenAI-compatible", "DeepL", "Gemini"),
+                    valueToText = { androidx.compose.ui.text.AnnotatedString(it) },
+                    title = { Text("Embedded soft-subtitle provider") },
+                    summary = {
+                      Text(
+                        if (embeddedTranslationProvider == "Google Translate") {
+                          "Free default; no API key required"
+                        } else {
+                          "Uses the endpoint and key below"
+                        },
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
+
+                  PreferenceDivider()
+
+                  TextFieldPreference(
+                    value = embeddedTranslationEndpoint,
+                    onValueChange = { preferences.embeddedSubtitleTranslationEndpoint.set(it.trim()) },
+                    textToValue = { it.trim() },
+                    title = { Text("Subtitle translation endpoint") },
+                    summary = { Text("Used for real-time embedded subtitle translation", color = MaterialTheme.colorScheme.outline) },
+                    textField = { value, onValueChange, _ ->
+                      TextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("https://...") },
+                        singleLine = true,
+                      )
+                    },
+                  )
+
+                  if (embeddedTranslationProvider != "Google Translate") {
+                    PreferenceDivider()
+                    TextFieldPreference(
+                      value = embeddedTranslationApiKey,
+                      onValueChange = { preferences.embeddedSubtitleTranslationApiKey.set(it.trim()) },
+                      textToValue = { it.trim() },
+                      title = { Text("Subtitle translation API key") },
+                      summary = { Text("Optional; stored in app preferences", color = MaterialTheme.colorScheme.outline) },
+                      textField = { value, onValueChange, _ ->
+                        TextField(
+                          value = value,
+                          onValueChange = onValueChange,
+                          modifier = Modifier.fillMaxWidth(),
+                          placeholder = { Text("API key") },
+                          singleLine = true,
+                          visualTransformation = PasswordVisualTransformation(),
+                        )
+                      },
+                    )
+                  }
                 }
               }
 

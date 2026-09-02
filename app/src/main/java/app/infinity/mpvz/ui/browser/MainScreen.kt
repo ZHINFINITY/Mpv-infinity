@@ -47,6 +47,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -78,6 +79,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
@@ -424,20 +426,12 @@ private fun TelegramPillNavigationBar(
   onTabSelected: (MainScreen.MainTab) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val density = LocalDensity.current
-  val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-
-  BoxWithConstraints(modifier = modifier) {
-    val totalWidth = maxWidth
-    val count = visibleTabs.size.coerceAtLeast(1)
+  Box(modifier = modifier) {
     val horizontalPadding = 6.dp
-    val availableWidth = totalWidth - (horizontalPadding * 2)
-    val itemWidth = availableWidth / count
-    val itemWidthPx = with(density) { itemWidth.toPx() }
 
     Surface(
       modifier = Modifier.fillMaxWidth(),
-      shape = CircleShape,
+      shape = RoundedCornerShape(30.dp),
       color = liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainerHigh),
       tonalElevation = 6.dp,
       shadowElevation = 8.dp,
@@ -451,27 +445,10 @@ private fun TelegramPillNavigationBar(
         modifier =
           Modifier
             .fillMaxWidth()
-            .padding(horizontal = horizontalPadding, vertical = 6.dp),
+            .padding(horizontal = horizontalPadding, vertical = 5.dp),
       ) {
-        // Hardware accelerated sliding active pill background
-        if (visibleTabs.isNotEmpty()) {
-          Box(
-            modifier =
-              Modifier
-                .width(itemWidth)
-                .height(56.dp)
-                .graphicsLayer {
-                  val currentPos =
-                    pagerPositionFloatProvider().coerceIn(
-                      0f,
-                      (visibleTabs.size - 1).coerceAtLeast(0).toFloat(),
-                    )
-                  translationX = if (isRtl) -itemWidthPx * currentPos else itemWidthPx * currentPos
-                }.clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-          )
-        }
-
+        // Each tab owns its space. The active slot animates wider while inactive slots
+        // contract, so the active pill never covers a neighboring icon.
         // Tab Items Layer
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -486,13 +463,32 @@ private fun TelegramPillNavigationBar(
               } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
               }
+            val targetWeight = if (isSelected) 1.55f else 1f
+            val animatedWeight by
+              androidx.compose.animation.core.animateFloatAsState(
+                targetValue = targetWeight,
+                animationSpec =
+                  androidx.compose.animation.core.spring(
+                    dampingRatio = 0.82f,
+                    stiffness = 520f,
+                  ),
+                label = "tabWeight",
+              )
 
             Box(
               modifier =
                 Modifier
-                  .weight(1f)
-                  .height(56.dp)
-                  .clip(CircleShape)
+                  .weight(animatedWeight)
+                  .height(54.dp)
+                  .then(
+                    if (isSelected) {
+                      Modifier
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                    } else {
+                      Modifier
+                    },
+                  )
                   .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -514,7 +510,12 @@ private fun TelegramPillNavigationBar(
                         )
                       val dist = kotlin.math.abs(currentPos - index)
                       val prog = (1f - dist).coerceIn(0f, 1f)
-                      val scale = 1.0f + 0.10f * prog
+                      val transition = kotlin.math.abs(currentPos - currentPos.roundToInt()).coerceIn(0f, 0.5f) * 2f
+                      val scale = if (isSelected) {
+                        1.0f + 0.06f * prog
+                      } else {
+                        1.0f - 0.10f * transition
+                      }
                       scaleX = scale
                       scaleY = scale
                     },
@@ -565,7 +566,8 @@ private fun TelegramPillNavigationBar(
                       )
                   }
                 }
-                Spacer(modifier = Modifier.height(3.dp))
+                if (isSelected) {
+                  Spacer(modifier = Modifier.height(3.dp))
                   Text(
                     text =
                       when (tab) {
@@ -576,13 +578,14 @@ private fun TelegramPillNavigationBar(
                         MainScreen.MainTab.NETWORK -> "Network"
                         MainScreen.MainTab.JELLYFIN -> "Jellyfin"
                       },
-                  style = MaterialTheme.typography.labelSmall,
-                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                  color = contentColor,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                  textAlign = TextAlign.Center,
-                )
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                  )
+                }
               }
             }
           }
