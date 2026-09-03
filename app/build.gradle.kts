@@ -288,6 +288,7 @@ dependencies {
   // Network protocol libraries
   implementation(libs.smbj)
   implementation(libs.commons.net)
+  implementation(libs.jsch)
   implementation(libs.sardine.android) {
     exclude(group = "xpp3", module = "xpp3")
   }
