@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components
+package app.gyrolet.mpvrx.ui.player.controls.components
 
 import android.graphics.Typeface
 import androidx.compose.animation.core.animateFloat
@@ -36,7 +36,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.theme.AppMotion
 import android.graphics.Paint as AndroidPaint
 
 @Composable

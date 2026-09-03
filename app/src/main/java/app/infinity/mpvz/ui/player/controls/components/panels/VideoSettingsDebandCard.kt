@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.panels
+package app.gyrolet.mpvrx.ui.player.controls.components.panels
 
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -33,25 +33,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.DecoderPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.preferences.preference.deleteAndGet
-import app.infinity.mpvz.presentation.components.ExpandableCard
-import app.infinity.mpvz.presentation.components.SliderItem
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.DebandSettings
-import app.infinity.mpvz.ui.player.Debanding
-import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
-import app.infinity.mpvz.ui.player.controls.panelCardsColors
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.DecoderPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.preferences.preference.deleteAndGet
+import app.gyrolet.mpvrx.presentation.components.ExpandableCard
+import app.gyrolet.mpvrx.presentation.components.SliderItem
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.DebandSettings
+import app.gyrolet.mpvrx.ui.player.Debanding
+import app.gyrolet.mpvrx.ui.player.controls.CARDS_MAX_WIDTH
+import app.gyrolet.mpvrx.ui.player.controls.panelCardsColors
+import app.gyrolet.mpvrx.ui.theme.spacing
+import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
 @Composable
 fun VideoSettingsDebandCard(modifier: Modifier = Modifier) {
   val decoderPreferences = koinInject<DecoderPreferences>()
+  val configOwnedOptions = currentMpvConfigOverrideOptions()
+  val modeOptions = setOf("deband", "vf")
+  val modeEnabled = modeOptions.none(configOwnedOptions::contains)
+  val debandOptions = modeOptions + DebandSettings.entries.map(DebandSettings::mpvProperty)
   val deband by decoderPreferences.debanding.collectAsState()
   var isExpanded by remember { mutableStateOf(true) }
 
@@ -79,6 +84,7 @@ fun VideoSettingsDebandCard(modifier: Modifier = Modifier) {
           Debanding.entries.forEach {
             IconToggleButton(
               checked = deband == it,
+              enabled = modeEnabled,
               onCheckedChange = { _ ->
                 decoderPreferences.debanding.set(it)
                 when (it) {
@@ -109,6 +115,7 @@ fun VideoSettingsDebandCard(modifier: Modifier = Modifier) {
 
           Spacer(Modifier.weight(1f))
           TextButton(
+            enabled = debandOptions.none(configOwnedOptions::contains),
             onClick = {
               decoderPreferences.debanding.set(Debanding.None)
               PlaybackSession.setOptionString("deband", "no")
@@ -140,6 +147,7 @@ fun VideoSettingsDebandCard(modifier: Modifier = Modifier) {
             },
             min = debandSettings.start,
             max = debandSettings.end,
+            enabled = debandSettings.mpvProperty !in configOwnedOptions,
           )
         }
       }

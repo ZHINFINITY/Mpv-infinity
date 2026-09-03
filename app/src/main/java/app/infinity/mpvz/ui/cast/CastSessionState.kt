@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.cast
+package app.gyrolet.mpvrx.ui.cast
 
 data class CastSessionState(
   val isConnected: Boolean = false,

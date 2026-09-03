@@ -7,51 +7,52 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls
+package app.gyrolet.mpvrx.ui.player.controls
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import app.infinity.mpvz.preferences.AudioChannels
-import app.infinity.mpvz.preferences.PlaybackEngineMode
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.player.Decoder
-import app.infinity.mpvz.ui.player.Panels
-import app.infinity.mpvz.ui.player.PlaybackSession
-import app.infinity.mpvz.ui.player.Sheets
-import app.infinity.mpvz.ui.player.TrackNode
-import app.infinity.mpvz.ui.player.controls.components.sheets.AmbientSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.AspectRatioSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.AudioTracksSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.ChaptersSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.DecodersSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.FrameNavigationSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.MoreSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.OnlineSubtitleSearchSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.PlaybackSpeedSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.SubtitlesSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.VideoZoomSheet
-import app.infinity.mpvz.ui.player.controls.components.sheets.VisualizerStyleSheet
+import app.gyrolet.mpvrx.preferences.AdvancedPreferences
+import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
+import app.gyrolet.mpvrx.preferences.MpvConfigOverride
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.ui.player.Decoder
+import app.gyrolet.mpvrx.ui.player.Panels
+import app.gyrolet.mpvrx.ui.player.Sheets
+import app.gyrolet.mpvrx.ui.player.TrackNode
+import app.gyrolet.mpvrx.ui.player.controls.components.MpvConfigOwnedSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AmbientSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AspectRatioSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioTracksSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.ChaptersSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.DecodersSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.FrameNavigationSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.MoreSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.OnlineSubtitleSearchSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaybackSpeedSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.SubtitlesSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.VideoZoomSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.VideoQualitySheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.VisualizerStyleSheet
+import app.gyrolet.mpvrx.ui.player.setTrackSelectionId
 import dev.vivvvek.seeker.Segment
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
-import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import androidx.compose.runtime.collectAsState as composeCollectAsState
 
 @Composable
 fun PlayerSheets(
   sheetShown: Sheets,
-  viewModel: app.infinity.mpvz.ui.player.PlayerViewModel,
+  viewModel: app.gyrolet.mpvrx.ui.player.PlayerViewModel,
   // subtitles sheet
   subtitles: ImmutableList<TrackNode>,
   onAddSubtitle: (Uri) -> Unit,
@@ -63,19 +64,12 @@ fun PlayerSheets(
   audioTracks: ImmutableList<TrackNode>,
   onAddAudio: (Uri) -> Unit,
   onSelectAudio: (TrackNode) -> Unit,
-  onMedia3AudioChannels: ((AudioChannels) -> Unit)? = null,
-  onMedia3AudioProcessing: ((Boolean, Boolean) -> Unit)? = null,
-  onMedia3AudioPitchCorrection: ((Boolean) -> Unit)? = null,
   // chapters sheet
   chapter: Segment?,
   chapters: ImmutableList<Segment>,
   onSeekToChapter: (Int) -> Unit,
   // Decoders sheet
   decoder: Decoder,
-  isMedia3Active: Boolean = false,
-  engineSelection: PlaybackEngineMode = if (isMedia3Active) PlaybackEngineMode.Media3 else PlaybackEngineMode.MPV,
-  onEngineSelected: (PlaybackEngineMode) -> Unit = {},
-  media3DecoderName: String? = null,
   onUpdateDecoder: (Decoder) -> Unit,
   // Speed sheet
   speed: Float,
@@ -91,9 +85,25 @@ fun PlayerSheets(
   onStartSleepTimer: (Int) -> Unit,
   onOpenPanel: (Panels) -> Unit,
   onShowSheet: (Sheets) -> Unit,
-  videoFormatStatus: app.infinity.mpvz.ui.player.VideoFormatStatus? = null,
   onDismissRequest: () -> Unit,
 ) {
+  val advancedPreferences = koinInject<AdvancedPreferences>()
+  val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
+  val configOwnedOptions =
+    remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
+  val fullyOwnedOptions =
+    when (sheetShown) {
+      Sheets.Decoders -> MpvConfigControlledFeatures.HARDWARE_DECODER
+      Sheets.AmbientConfig -> MpvConfigControlledFeatures.AMBIENT
+      Sheets.Equalizer -> setOf("af")
+      Sheets.AspectRatios -> MpvConfigControlledFeatures.VIDEO_ASPECT
+      else -> null
+    }
+  if (fullyOwnedOptions?.any(configOwnedOptions::contains) == true) {
+    MpvConfigOwnedSheet(onDismissRequest)
+    return
+  }
+
   when (sheetShown) {
     Sheets.None -> {}
     Sheets.SubtitleTracks -> {
@@ -105,7 +115,7 @@ fun PlayerSheets(
           onAddSubtitle(it)
         }
 
-      val subtitlesPreferences = koinInject<app.infinity.mpvz.preferences.SubtitlesPreferences>()
+      val subtitlesPreferences = koinInject<app.gyrolet.mpvrx.preferences.SubtitlesPreferences>()
       val savedPickerPath = subtitlesPreferences.pickerPath.get()
 
       val currentMediaTitle = viewModel.currentMediaTitle
@@ -120,7 +130,7 @@ fun PlayerSheets(
       var showFilePicker by remember { mutableStateOf(false) }
 
       if (showFilePicker) {
-        app.infinity.mpvz.ui.browser.dialogs.FilePickerDialog(
+        app.gyrolet.mpvrx.ui.browser.dialogs.FilePickerDialog(
           isOpen = true,
           currentPath = savedPickerPath,
           onDismiss = { showFilePicker = false },
@@ -159,12 +169,11 @@ fun PlayerSheets(
       val isGeneratingSubtitles by viewModel.isGeneratingSubtitles.composeCollectAsState()
       val subtitleGenerationProgress by viewModel.subtitleGenerationProgress.composeCollectAsState()
       val subtitleGenerationStatus by viewModel.subtitleGenerationStatus.composeCollectAsState()
-      val aiPreferences = koinInject<app.infinity.mpvz.preferences.AiPreferences>()
+      val aiPreferences = koinInject<app.gyrolet.mpvrx.preferences.AiPreferences>()
       val aiEnabled by aiPreferences.enabled.collectAsState()
       val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
       val translationEnabled by aiPreferences.subtitleTranslationEnabled.collectAsState()
       val autoTranslateLanguages by aiPreferences.autoTranslateLanguages.collectAsState()
-      val embeddedTranslationLanguage by aiPreferences.embeddedSubtitleTargetLanguage.collectAsState()
 
       val subtitlesOff = subtitles.none { isSubtitleSelected(it.id) }
 
@@ -177,6 +186,7 @@ fun PlayerSheets(
         onRemoveSubtitle = onRemoveSubtitle,
         onOpenSubtitleSettings = { onOpenPanel(Panels.SubtitleSettings) },
         onOpenSubtitleDelay = { onOpenPanel(Panels.SubtitleDelay) },
+        delayControlEnabled = setOf("sub-delay", "sub-speed").any { it !in configOwnedOptions },
         onOpenOnlineSearch = { onShowSheet(Sheets.OnlineSubtitleSearch) },
         onDismissRequest = onDismissRequest,
         onTranslateSubtitle = { track, lang -> viewModel.translateSubtitle(track, lang) },
@@ -186,23 +196,19 @@ fun PlayerSheets(
         translationProgress = translationProgress,
         translationStatus = translationStatus,
         translationEnabled = aiEnabled && translationEnabled,
-        embeddedTranslationEnabled = translationEnabled,
         isGeneratingSubtitles = isGeneratingSubtitles,
         subtitleGenerationProgress = subtitleGenerationProgress,
         subtitleGenerationStatus = subtitleGenerationStatus,
         translatingTrackId = translatingTrackId,
         translatingTrackName = translatingTrackName,
         autoTranslateLanguages = autoTranslateLanguages,
-        embeddedTranslationLanguage = embeddedTranslationLanguage,
-        onEmbeddedTranslationLanguageChange = { language ->
-          viewModel.setEmbeddedSubtitleTranslationLanguage(language)
-        },
         aiEnabled = aiEnabled,
         realtimeSubsEnabled = realtimeSubsEnabled,
         subtitlesOff = subtitlesOff,
-        onDisableSubtitles = { viewModel.disableSubtitles() },
-        onToggleEmbeddedTranslation = {
-          viewModel.setEmbeddedSubtitleTranslationEnabled(!translationEnabled)
+        onDisableSubtitles = {
+          setTrackSelectionId("sid", null)
+          setTrackSelectionId("secondary-sid", null)
+          subtitlesPreferences.autoEnableSubtitles.set(false)
         },
       )
     }
@@ -212,7 +218,7 @@ fun PlayerSheets(
       val isDownloading by viewModel.isDownloadingSub.composeCollectAsState()
       val results by viewModel.onlineSubtitleSearchResults.composeCollectAsState()
       val isOnlineSectionExpanded by viewModel.isOnlineSectionExpanded.composeCollectAsState()
-      val subtitlesPreferences = koinInject<app.infinity.mpvz.preferences.SubtitlesPreferences>()
+      val subtitlesPreferences = koinInject<app.gyrolet.mpvrx.preferences.SubtitlesPreferences>()
       val subtitleSearchMode by subtitlesPreferences.onlineSubtitleSearchMode.collectAsState()
 
       // Media Search / Autocomplete
@@ -236,7 +242,7 @@ fun PlayerSheets(
         isOnlineSectionExpanded = isOnlineSectionExpanded,
         onToggleOnlineSection = { viewModel.toggleOnlineSection() },
         mediaTitle = viewModel.currentMediaTitle,
-        showWyzieSelection = subtitleSearchMode != app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchMode.SUBHUB,
+        showWyzieSelection = subtitleSearchMode != app.gyrolet.mpvrx.repository.subtitle.OnlineSubtitleSearchMode.SUBHUB,
         // Autocomplete & Series Selection
         mediaSearchResults = mediaResults.toImmutableList(),
         isSearchingMedia = isSearchingMedia,
@@ -263,7 +269,7 @@ fun PlayerSheets(
           onAddAudio(it)
         }
 
-      val audioPreferences = koinInject<app.infinity.mpvz.preferences.AudioPreferences>()
+      val audioPreferences = koinInject<app.gyrolet.mpvrx.preferences.AudioPreferences>()
       val savedPickerPath = audioPreferences.pickerPath.get()
 
       val currentMediaTitle = viewModel.currentMediaTitle
@@ -297,7 +303,7 @@ fun PlayerSheets(
         }
 
       if (showAudioFilePicker) {
-        app.infinity.mpvz.ui.browser.dialogs.FilePickerDialog(
+        app.gyrolet.mpvrx.ui.browser.dialogs.FilePickerDialog(
           isOpen = true,
           currentPath = savedPickerPath,
           onDismiss = { showAudioFilePicker = false },
@@ -334,9 +340,20 @@ fun PlayerSheets(
         onAddAudioTrack = { showAudioFilePicker = true },
         onOpenDelayPanel = { onOpenPanel(Panels.AudioDelay) },
         onOpenEqualizerSheet = { onShowSheet(Sheets.Equalizer) },
-        isMedia3Active = isMedia3Active,
-        onMedia3AudioChannels = onMedia3AudioChannels,
-        onMedia3AudioProcessing = onMedia3AudioProcessing,
+        delayControlEnabled = "audio-delay" !in configOwnedOptions,
+        equalizerControlEnabled = "af" !in configOwnedOptions,
+        audioChannelsEnabled = "audio-channels" !in configOwnedOptions,
+        reverseStereoEnabled = "af" !in configOwnedOptions,
+        audioEffectsEnabled = "af" !in configOwnedOptions,
+        onDismissRequest = onDismissRequest,
+      )
+    }
+
+    Sheets.VideoQuality -> {
+      val videoQualityTracks by viewModel.videoQualityTracks.collectAsState()
+      VideoQualitySheet(
+        tracks = videoQualityTracks,
+        onSelect = viewModel::selectVideoQuality,
         onDismissRequest = onDismissRequest,
       )
     }
@@ -353,12 +370,8 @@ fun PlayerSheets(
     Sheets.Decoders -> {
       DecodersSheet(
         selectedDecoder = decoder,
-        isMedia3Active = isMedia3Active,
-        engineSelection = engineSelection,
-        onEngineSelected = onEngineSelected,
-        media3DecoderName = media3DecoderName,
         onSelect = onUpdateDecoder,
-        onDismissRequest = onDismissRequest,
+        onDismissRequest,
       )
     }
 
@@ -373,9 +386,9 @@ fun PlayerSheets(
         onEnterEqualizerSheet = { onShowSheet(Sheets.Equalizer) },
         anime4KUiState = anime4KUiState,
         onAnime4KModeSelected = viewModel::selectAnime4KMode,
-        videoFormatStatus = videoFormatStatus,
-        isMedia3Active = isMedia3Active,
-        modifier = Modifier,
+        filtersEnabled = MpvConfigOverride.VIDEO_FILTERS.optionNames.any { it !in configOwnedOptions },
+        equalizerEnabled = "af" !in configOwnedOptions,
+        anime4KEnabled = MpvConfigControlledFeatures.ANIME4K.none(configOwnedOptions::contains),
       )
     }
 
@@ -389,9 +402,9 @@ fun PlayerSheets(
         onResetPresets = onResetSpeedPresets,
         onMakeDefault = onMakeDefaultSpeed,
         onResetDefault = onResetDefaultSpeed,
-        isMedia3Active = isMedia3Active,
-        onMedia3AudioPitchCorrection = onMedia3AudioPitchCorrection,
         onDismissRequest = onDismissRequest,
+        speedControlEnabled = "speed" !in configOwnedOptions,
+        pitchCorrectionEnabled = "audio-pitch-correction" !in configOwnedOptions,
       )
     }
 
@@ -399,22 +412,25 @@ fun PlayerSheets(
       val videoZoom by viewModel.videoZoom.composeCollectAsState()
       VideoZoomSheet(
         videoZoom = videoZoom,
-        isMedia3Active = isMedia3Active,
         onSetVideoZoom = viewModel::setVideoZoom,
         onResetVideoPan = viewModel::resetVideoPan,
         onDismissRequest = onDismissRequest,
+        zoomControlEnabled = "video-zoom" !in configOwnedOptions,
+        panControlEnabled = setOf("video-pan-x", "video-pan-y").any { it !in configOwnedOptions },
       )
     }
 
     Sheets.AspectRatios -> {
-      val playerPreferences = koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
+      val playerPreferences = koinInject<app.gyrolet.mpvrx.preferences.PlayerPreferences>()
       val customRatiosSet by playerPreferences.customAspectRatios.collectAsState()
+      val autoCropEnabled by playerPreferences.autoCropBlackBars.collectAsState()
       val currentRatio by viewModel.currentAspectRatio.composeCollectAsState()
+      val autoCropState by viewModel.autoCropState.composeCollectAsState()
       val customRatios =
         customRatiosSet.mapNotNull { str ->
           val parts = str.split("|")
           if (parts.size == 2) {
-            app.infinity.mpvz.ui.player.controls.components.sheets.AspectRatio(
+            app.gyrolet.mpvrx.ui.player.controls.components.sheets.AspectRatio(
               label = parts[0],
               ratio = parts[1].toDoubleOrNull() ?: return@mapNotNull null,
               isCustom = true,
@@ -427,10 +443,14 @@ fun PlayerSheets(
       AspectRatioSheet(
         currentRatio = currentRatio,
         customRatios = customRatios,
+        autoCropEnabled = autoCropEnabled,
+        autoCropState = autoCropState,
+        autoCropControlEnabled = MpvConfigControlledFeatures.AUTO_CROP.none(configOwnedOptions::contains),
+        onAutoCropChanged = viewModel::setAutoCropBlackBars,
         onSelectRatio = { ratio ->
           if (ratio < 0) {
             // Default selected - apply Fit mode
-            viewModel.changeVideoAspect(app.infinity.mpvz.ui.player.VideoAspect.Fit)
+            viewModel.changeVideoAspect(app.gyrolet.mpvrx.ui.player.VideoAspect.Fit)
           } else {
             // Custom ratio selected
             viewModel.setCustomAspectRatio(ratio)
@@ -445,7 +465,7 @@ fun PlayerSheets(
           playerPreferences.customAspectRatios.set(customRatiosSet - toRemove)
           // If the deleted ratio is currently active, reset to default (Fit)
           if (kotlin.math.abs(currentRatio - ratio.ratio) < 0.01) {
-            viewModel.changeVideoAspect(app.infinity.mpvz.ui.player.VideoAspect.Fit)
+            viewModel.changeVideoAspect(app.gyrolet.mpvrx.ui.player.VideoAspect.Fit)
           }
         },
         onDismissRequest = onDismissRequest,
@@ -453,6 +473,10 @@ fun PlayerSheets(
     }
 
     Sheets.FrameNavigation -> {
+      LaunchedEffect(Unit) {
+        viewModel.hideControls()
+        viewModel.panelShown.value = Panels.None
+      }
       val currentFrame by viewModel.currentFrame.composeCollectAsState()
       val totalFrames by viewModel.totalFrames.composeCollectAsState()
       FrameNavigationSheet(
@@ -462,76 +486,31 @@ fun PlayerSheets(
         onPause = viewModel::pause,
         onUnpause = viewModel::unpause,
         onPauseUnpause = viewModel::pauseUnpause,
-        onPreviousFrame = viewModel::frameStepBackward,
-        onNextFrame = viewModel::frameStepForward,
-        onSeekTo = { position, _ -> viewModel.seekTo(position) },
+        onSeekToFrame = { targetFrame, finished ->
+          viewModel.seekToFrame(targetFrame, totalFrames, finished)
+        },
+        onCancelFrameSeek = viewModel::cancelFrameSeek,
         onDismissRequest = onDismissRequest,
       )
     }
 
     Sheets.Playlist -> {
-      // Refresh once on open and again whenever the asynchronous folder queue publishes siblings.
-      val queueState by PlaybackSession.queue.collectAsState()
-      LaunchedEffect(queueState.items.size, queueState.currentIndex) {
-        // Some controls, including gesture and compact portrait variants, update sheetShown
-        // directly instead of passing through PlayerControls.onOpenSheet. Trigger discovery here
-        // as the authoritative sheet-open path so a singleton external launch can materialize its
-        // sibling MKV queue regardless of which playlist control opened the sheet.
-        if (!queueState.isTemporaryQueue) {
-          viewModel.refreshCurrentFolderQueue()
-        }
-        viewModel.refreshPlaylistItems(forceMetadata = true)
+      // Refresh playlist items when sheet is shown
+      LaunchedEffect(Unit) {
+        viewModel.refreshPlaylistItems()
       }
 
       // Observe playlist updates
       val playlist by viewModel.playlistItems.collectAsState()
       val isAudioOnly by viewModel.isAudioOnly.collectAsState()
-      val playerPreferences = koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
+      val playerPreferences = koinInject<app.gyrolet.mpvrx.preferences.PlayerPreferences>()
       val isPlaylistSwipeActive by viewModel.isPlaylistSwipeActive.collectAsState()
       val playlistSwipeOffset by viewModel.playlistSwipeOffset.collectAsState()
 
-      val filteredPlaylist =
-        remember(playlist, isAudioOnly, queueState.items.size, queueState.currentIndex, queueState.isTemporaryQueue) {
-          // The sheet can be composed before the IO refresh publishes playlistItems. Use the
-          // already-loaded explicit queue for the first frame, then switch to the refreshed list.
-          val sourcePlaylist =
-            if (queueState.isTemporaryQueue) {
-              // The Activity playlist can still reflect the previous music-only screen after items
-              // are added from another browser surface. Read the process queue directly so mixed
-              // audio/video entries are never hidden by a stale local list.
-              viewModel.getPlaylistData().orEmpty()
-            } else {
-              playlist.ifEmpty { viewModel.getPlaylistData().orEmpty() }
-            }
-          if (queueState.isTemporaryQueue) {
-            // A temporary queue is intentionally mixed-media and must remain fully editable and
-            // visible regardless of whether audio or video is currently active.
-            sourcePlaylist
-          } else if (isAudioOnly) {
-            sourcePlaylist.filter { it.isAudio }
-          } else {
-            sourcePlaylist.filter { !it.isAudio }
-          }
-        }
+      val playlistImmutable = remember(playlist) { playlist.toImmutableList() }
 
-      LaunchedEffect(queueState.items.size, queueState.currentIndex, filteredPlaylist.isEmpty()) {
-        if (filteredPlaylist.isEmpty()) {
-          // A folder queue can take a moment to be discovered. Give it time to publish; if it
-          // remains a singleton, close the empty sheet so the player cannot be left in a blocked
-          // Playlist state where Back is the only way to restore controls.
-          delay(5000L)
-          if (
-            PlaybackSession.queue.value.items.size <= 1 &&
-              viewModel.sheetShown.value == Sheets.Playlist
-          ) {
-            onDismissRequest()
-          }
-        }
-      }
-
-      if (filteredPlaylist.isNotEmpty()) {
-        val playlistImmutable = filteredPlaylist.toImmutableList()
-        val totalCount = filteredPlaylist.size
+      if (playlistImmutable.isNotEmpty()) {
+        val totalCount = playlistImmutable.size
         val isM3U = viewModel.isPlaylistM3U()
         PlaylistSheet(
           playlist = playlistImmutable,
@@ -541,11 +520,6 @@ fun PlayerSheets(
           },
           onReorder = { from, to ->
             viewModel.reorderPlaylistItem(from, to)
-          },
-          onRemove = if (PlaybackSession.queue.value.isTemporaryQueue) {
-            { item -> viewModel.removePlaylistItem(item.index) }
-          } else {
-            null
           },
           totalCount = totalCount,
           isM3UPlaylist = isM3U,
@@ -566,7 +540,7 @@ fun PlayerSheets(
 
     Sheets.Equalizer -> {
       val equalizerState by viewModel.equalizerState.collectAsState()
-      app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerSheet(
+      app.gyrolet.mpvrx.ui.player.controls.components.sheets.EqualizerSheet(
         state = equalizerState,
         onEnabledChanged = viewModel::setEqualizerEnabled,
         onPresetSelected = viewModel::applyEqualizerPreset,
@@ -577,39 +551,15 @@ fun PlayerSheets(
     }
 
     Sheets.AudioProperties -> {
-      // The MPV properties may arrive shortly after the sheet is opened. Observe the active
-      // audio session so the panel refreshes instead of keeping an empty first snapshot.
-      val audioPath by PlaybackSession.propString["path"].collectAsState()
-      val audioStreamFilename by PlaybackSession.propString["stream-open-filename"].collectAsState()
-      val audioTitle by PlaybackSession.propString["metadata/by-key/Title"].collectAsState()
-      val audioArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsState()
-      val audioAlbum by PlaybackSession.propString["metadata/by-key/Album"].collectAsState()
-      val audioCodec by PlaybackSession.propString["audio-codec-name"].collectAsState()
-      val audioSampleRate by PlaybackSession.propInt["audio-params/samplerate"].collectAsState()
-      val audioChannels by PlaybackSession.propInt["audio-params/channel-count"].collectAsState()
-      val audioBitrate by PlaybackSession.propInt["audio-bitrate"].collectAsState()
-      val properties =
-        remember(
-          audioPath,
-          audioStreamFilename,
-          audioTitle,
-          audioArtist,
-          audioAlbum,
-          audioCodec,
-          audioSampleRate,
-          audioChannels,
-          audioBitrate,
-        ) {
-          viewModel.getAudioPropertiesData()
-        }
-      app.infinity.mpvz.ui.player.controls.components.sheets.AudioPropertiesSheet(
+      val properties = remember { viewModel.getAudioPropertiesData() }
+      app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioPropertiesSheet(
         properties = properties,
         onDismissRequest = onDismissRequest,
       )
     }
 
     Sheets.VisualizerStyle -> {
-      val audioPreferences = koinInject<app.infinity.mpvz.preferences.AudioPreferences>()
+      val audioPreferences = koinInject<app.gyrolet.mpvrx.preferences.AudioPreferences>()
       val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
       VisualizerStyleSheet(
         selectedStyle = audioVisualizerStyle,
@@ -619,7 +569,7 @@ fun PlayerSheets(
     }
 
     Sheets.Lyrics -> {
-      app.infinity.mpvz.ui.player.controls.components.sheets.LyricsSheet(
+      app.gyrolet.mpvrx.ui.player.controls.components.sheets.LyricsSheet(
         viewModel = viewModel,
         onDismiss = onDismissRequest,
       )

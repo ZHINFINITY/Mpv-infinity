@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import android.Manifest
 import android.content.ComponentName
@@ -45,22 +45,23 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AdvancedPreferences
-import app.infinity.mpvz.preferences.AudioPreferences
-import app.infinity.mpvz.preferences.IntroSegmentProvider
-import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.NotificationStyle
-import app.infinity.mpvz.ui.player.PlayerOrientation
-import app.infinity.mpvz.ui.player.screenshot.ScreenshotFormat
-import app.infinity.mpvz.ui.preferences.components.SwitchPreference
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
-import app.infinity.mpvz.ui.utils.popSafely
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AdvancedPreferences
+import app.gyrolet.mpvrx.preferences.AudioPreferences
+import app.gyrolet.mpvrx.preferences.IntroSegmentProvider
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.NotificationStyle
+import app.gyrolet.mpvrx.ui.player.PlayerOrientation
+import app.gyrolet.mpvrx.ui.player.screenshot.ScreenshotFormat
+import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
+import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.Preference
@@ -79,6 +80,7 @@ object PlayerPreferencesScreen : Screen {
     val context = LocalContext.current
     val resources = LocalResources.current
     val preferences = koinInject<PlayerPreferences>()
+    val configOwnedOptions = currentMpvConfigOverrideOptions()
     val audioPreferences = koinInject<AudioPreferences>()
     val advancedPreferences = koinInject<AdvancedPreferences>()
     val notificationPermissionLauncher =
@@ -261,6 +263,7 @@ object PlayerPreferencesScreen : Screen {
 
               val playlistMode by preferences.playlistMode.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_playlist_mode_title),
                 value = playlistMode,
                 onValueChange = preferences.playlistMode::set,
                 title = { Text(stringResource(R.string.pref_playlist_mode_title)) },
@@ -304,8 +307,26 @@ object PlayerPreferencesScreen : Screen {
 
               PreferenceDivider()
 
+              val pipOnHomeGestureOnly by preferences.pipOnHomeGestureOnly.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_auto_pip_home_only_title),
+                value = pipOnHomeGestureOnly,
+                onValueChange = preferences.pipOnHomeGestureOnly::set,
+                enabled = autoPiPOnNavigation,
+                title = { Text(stringResource(R.string.pref_auto_pip_home_only_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_auto_pip_home_only_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
               val enableVideoMiniPlayer by preferences.enableVideoMiniPlayer.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_enable_video_mini_player_title),
                 value = enableVideoMiniPlayer,
                 onValueChange = { enabled ->
                   when {
@@ -370,10 +391,11 @@ object PlayerPreferencesScreen : Screen {
 
               val enableMediaInfoIntent by preferences.enableMediaInfoIntent.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_show_media_info_in_chooser),
                 value = enableMediaInfoIntent,
                 onValueChange = { enabled ->
                   preferences.enableMediaInfoIntent.set(enabled)
-                  val componentName = ComponentName(context, "app.infinity.mpvz.ui.mediainfo.MediaInfoActivityAlias")
+                  val componentName = ComponentName(context, "app.gyrolet.mpvrx.ui.mediainfo.MediaInfoActivityAlias")
                   val newState =
                     if (enabled) {
                       PackageManager.COMPONENT_ENABLED_STATE_ENABLED
@@ -393,13 +415,47 @@ object PlayerPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_show_media_info_in_chooser),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_show_media_info_in_chooser),
                   )
                 },
                 summary = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_show_media_info_in_system),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_show_media_info_in_system),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              val enableWebStreamLinkIntents by preferences.enableWebStreamLinkIntents.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_web_stream_links_title),
+                value = enableWebStreamLinkIntents,
+                onValueChange = { enabled ->
+                  preferences.enableWebStreamLinkIntents.set(enabled)
+                  val componentName = ComponentName(context, "app.gyrolet.mpvrx.ui.player.WebStreamLinksActivityAlias")
+                  val newState =
+                    if (enabled) {
+                      PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    } else {
+                      PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    }
+                  try {
+                    context.packageManager.setComponentEnabledSetting(
+                      componentName,
+                      newState,
+                      PackageManager.DONT_KILL_APP,
+                    )
+                  } catch (e: Exception) {
+                    android.util.Log.e("PlayerPreferencesScreen", "Failed to set alias state", e)
+                  }
+                },
+                title = { Text(stringResource(R.string.pref_player_web_stream_links_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_player_web_stream_links_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
@@ -433,6 +489,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showBufferedRange by preferences.showBufferedRange.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_show_buffered_range_title),
                 value = showBufferedRange,
                 onValueChange = preferences.showBufferedRange::set,
                 title = { Text(stringResource(R.string.pref_player_show_buffered_range_title)) },
@@ -448,6 +505,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showChapterIndicators by preferences.showChapterIndicators.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_show_chapter_indicators_title),
                 value = showChapterIndicators,
                 onValueChange = preferences.showChapterIndicators::set,
                 title = { Text(stringResource(R.string.pref_player_show_chapter_indicators_title)) },
@@ -465,24 +523,9 @@ object PlayerPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_use_precise_seeking),
                 value = usePreciseSeeking,
+                enabled = setOf("hr-seek", "hr-seek-framedrop").none(configOwnedOptions::contains),
                 onValueChange = preferences.usePreciseSeeking::set,
                 title = { Text(stringResource(R.string.pref_player_use_precise_seeking)) },
-              )
-
-              PreferenceDivider()
-
-              val useThumbFastSeekPreview by preferences.useThumbFastSeekPreview.collectAsState()
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_player_seek_preview_thumbfast_title),
-                value = useThumbFastSeekPreview,
-                onValueChange = preferences.useThumbFastSeekPreview::set,
-                title = { Text(stringResource(R.string.pref_player_seek_preview_thumbfast_title)) },
-                summary = {
-                  Text(
-                    stringResource(R.string.pref_player_seek_preview_thumbfast_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
               )
 
               PreferenceDivider()
@@ -597,7 +640,7 @@ object PlayerPreferencesScreen : Screen {
                           placeholder = {
                             Text(
                               androidx.compose.ui.res
-                                .stringResource(app.infinity.mpvz.R.string.ui_e_g_intro_opening_op),
+                                .stringResource(app.gyrolet.mpvrx.R.string.ui_e_g_intro_opening_op),
                             )
                           },
                           singleLine = true,
@@ -647,7 +690,7 @@ object PlayerPreferencesScreen : Screen {
                           placeholder = {
                             Text(
                               androidx.compose.ui.res
-                                .stringResource(app.infinity.mpvz.R.string.ui_e_g_outro_ending_ed),
+                                .stringResource(app.gyrolet.mpvrx.R.string.ui_e_g_outro_ending_ed),
                             )
                           },
                           singleLine = true,
@@ -696,6 +739,22 @@ object PlayerPreferencesScreen : Screen {
           item { PreferenceSectionHeader(title = stringResource(R.string.pref_section_display_controls)) }
           item {
             PreferenceCard {
+              val showControlsDrawer by preferences.showControlsDrawer.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_controls_drawer_title),
+                value = showControlsDrawer,
+                onValueChange = preferences.showControlsDrawer::set,
+                title = { Text(stringResource(R.string.pref_player_controls_drawer_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_player_controls_drawer_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
               val showSystemStatusBar by preferences.showSystemStatusBar.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_display_show_status_bar),
@@ -724,6 +783,7 @@ object PlayerPreferencesScreen : Screen {
 
               val safeAreaWindow by preferences.safeAreaWindow.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_safe_area_window_title),
                 value = safeAreaWindow,
                 onValueChange = preferences.safeAreaWindow::set,
                 title = { Text(stringResource(R.string.pref_player_safe_area_window_title)) },
@@ -783,6 +843,7 @@ object PlayerPreferencesScreen : Screen {
             PreferenceCard {
               val screenshotFormat by preferences.screenshotFormat.collectAsState()
               ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_image_format),
                 value = screenshotFormat,
                 onValueChange = preferences.screenshotFormat::set,
                 values = ScreenshotFormat.entries,
@@ -790,7 +851,7 @@ object PlayerPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_image_format),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_image_format),
                   )
                 },
                 summary = {
@@ -805,12 +866,13 @@ object PlayerPreferencesScreen : Screen {
 
               val includeSubtitles by preferences.includeSubtitlesInSnapshot.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_include_subtitles_in_screenshots),
                 value = includeSubtitles,
                 onValueChange = preferences.includeSubtitlesInSnapshot::set,
                 title = {
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_include_subtitles_in_screenshots,
+                      app.gyrolet.mpvrx.R.string.ui_include_subtitles_in_screenshots,
                     ),
                   )
                 },
@@ -820,10 +882,11 @@ object PlayerPreferencesScreen : Screen {
 
               val screenshotTemplate by preferences.screenshotTemplate.collectAsState()
               Preference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_filename_template),
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_filename_template),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_filename_template),
                   )
                 },
                 summary = { Text(screenshotTemplate, color = MaterialTheme.colorScheme.outline) },
@@ -837,12 +900,13 @@ object PlayerPreferencesScreen : Screen {
 
               val screenshotQuality by preferences.screenshotQuality.collectAsState()
               SliderPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_jpeg_webp_quality),
                 value = screenshotQuality.toFloat(),
                 onValueChange = { preferences.screenshotQuality.set(it.roundToInt().coerceIn(1, 100)) },
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_jpeg_webp_quality),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_jpeg_webp_quality),
                   )
                 },
                 valueRange = 1f..100f,
@@ -855,12 +919,13 @@ object PlayerPreferencesScreen : Screen {
 
               val pngCompression by preferences.screenshotPngCompression.collectAsState()
               SliderPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_png_compression),
                 value = pngCompression.toFloat(),
                 onValueChange = { preferences.screenshotPngCompression.set(it.roundToInt().coerceIn(0, 9)) },
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_png_compression),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_png_compression),
                   )
                 },
                 valueRange = 0f..9f,
@@ -879,13 +944,13 @@ object PlayerPreferencesScreen : Screen {
                   title = {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.ui_webp_lossless),
+                        .stringResource(app.gyrolet.mpvrx.R.string.ui_webp_lossless),
                     )
                   },
                   summary = {
                     Text(
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_uses_mpv_native_lossless_output_android_fallback_uses_lossless_o,
+                        app.gyrolet.mpvrx.R.string.ui_uses_mpv_native_lossless_output_android_fallback_uses_lossless_o,
                       ),
                       color = MaterialTheme.colorScheme.outline,
                     )
@@ -901,6 +966,7 @@ object PlayerPreferencesScreen : Screen {
             PreferenceCard {
               val showVolumeGestureOverlay by preferences.showVolumeGestureOverlay.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_volume_overlay_title),
                 value = showVolumeGestureOverlay,
                 onValueChange = preferences.showVolumeGestureOverlay::set,
                 title = { Text(stringResource(R.string.pref_volume_overlay_title)) },
@@ -916,6 +982,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showBrightnessGestureOverlay by preferences.showBrightnessGestureOverlay.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_brightness_overlay_title),
                 value = showBrightnessGestureOverlay,
                 onValueChange = preferences.showBrightnessGestureOverlay::set,
                 title = { Text(stringResource(R.string.pref_brightness_overlay_title)) },
@@ -931,6 +998,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showHoldSpeedOverlay by preferences.showHoldSpeedOverlay.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_hold_speed_overlay_pref_title),
                 value = showHoldSpeedOverlay,
                 onValueChange = preferences.showHoldSpeedOverlay::set,
                 title = { Text(stringResource(R.string.pref_hold_speed_overlay_pref_title)) },
@@ -946,6 +1014,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showAspectRatioOverlay by preferences.showAspectRatioOverlay.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_aspect_ratio_overlay_title),
                 value = showAspectRatioOverlay,
                 onValueChange = preferences.showAspectRatioOverlay::set,
                 title = { Text(stringResource(R.string.pref_aspect_ratio_overlay_title)) },
@@ -961,6 +1030,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showZoomLevelOverlay by preferences.showZoomLevelOverlay.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_zoom_overlay_title),
                 value = showZoomLevelOverlay,
                 onValueChange = preferences.showZoomLevelOverlay::set,
                 title = { Text(stringResource(R.string.pref_zoom_overlay_title)) },
@@ -976,6 +1046,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showRepeatShuffleOverlay by preferences.showRepeatShuffleOverlay.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_repeat_shuffle_overlay_title),
                 value = showRepeatShuffleOverlay,
                 onValueChange = preferences.showRepeatShuffleOverlay::set,
                 title = { Text(stringResource(R.string.pref_repeat_shuffle_overlay_title)) },
@@ -991,6 +1062,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showActionFeedbackOverlay by preferences.showActionFeedbackOverlay.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_action_feedback_overlay_title),
                 value = showActionFeedbackOverlay,
                 onValueChange = preferences.showActionFeedbackOverlay::set,
                 title = { Text(stringResource(R.string.pref_action_feedback_overlay_title)) },
@@ -1006,6 +1078,7 @@ object PlayerPreferencesScreen : Screen {
 
               val showProviderStatusOverlay by preferences.showProviderStatusOverlay.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_provider_status_overlay_title),
                 value = showProviderStatusOverlay,
                 onValueChange = preferences.showProviderStatusOverlay::set,
                 title = { Text(stringResource(R.string.pref_provider_status_overlay_title)) },
@@ -1061,7 +1134,7 @@ object PlayerPreferencesScreen : Screen {
         title = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_filename_template),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_filename_template),
           )
         },
         text = {
@@ -1072,7 +1145,7 @@ object PlayerPreferencesScreen : Screen {
               label = {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_template),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_template),
                 )
               },
               modifier = Modifier.fillMaxWidth(),
@@ -1080,7 +1153,7 @@ object PlayerPreferencesScreen : Screen {
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.infinity.mpvz.R.string.ui_use_placeholders_to_customize_the_screenshot_filename_n,
+                  app.gyrolet.mpvrx.R.string.ui_use_placeholders_to_customize_the_screenshot_filename_n,
                 ) +
                   "• %f — Video title or filename\n" +
                   "• %p — Playback position (seconds)\n" +
@@ -1101,7 +1174,7 @@ object PlayerPreferencesScreen : Screen {
           ) {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_save),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_save),
             )
           }
         },
@@ -1109,7 +1182,7 @@ object PlayerPreferencesScreen : Screen {
           TextButton(onClick = { showTemplateDialog = false }) {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+                .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
             )
           }
         },

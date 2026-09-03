@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -19,10 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AudioVisualizerStyle
-import app.infinity.mpvz.presentation.components.PlayerSheet
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AudioVisualizerStyle
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
+import app.gyrolet.mpvrx.ui.theme.spacing
 
 @Composable
 fun VisualizerStyleSheet(

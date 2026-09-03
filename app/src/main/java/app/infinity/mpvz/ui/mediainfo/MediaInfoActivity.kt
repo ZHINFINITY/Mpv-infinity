@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.mediainfo
+package app.gyrolet.mpvrx.ui.mediainfo
 
 import android.content.Intent
 import android.net.Uri
@@ -44,6 +44,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,15 +56,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,20 +80,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.theme.DarkMode
-import app.infinity.mpvz.ui.theme.MpvrxTheme
-import app.infinity.mpvz.utils.clipboard.SafeClipboard
-import app.infinity.mpvz.utils.media.MediaInfoOps
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.resolveLocalPath
+import app.gyrolet.mpvrx.ui.theme.DarkMode
+import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
+import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
+import app.gyrolet.mpvrx.utils.media.MediaInfoOps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import java.io.File
+
+private data class ValueDetailSelection(
+  val label: String,
+  val value: String,
+)
+
+private val LocalValueDetailRequest =
+  staticCompositionLocalOf<(String, String) -> Unit> {
+    error("No value-detail dialog host")
+  }
 
 class MediaInfoActivity : AppCompatActivity() {
   private val appearancePreferences by inject<AppearancePreferences>()
@@ -136,6 +151,7 @@ class MediaInfoActivity : AppCompatActivity() {
     var fileName by remember { mutableStateOf("Media File") }
     var fileUri by remember { mutableStateOf<Uri?>(null) }
     var mediaInfo by remember { mutableStateOf<MediaInfoOps.MediaInfoData?>(null) }
+    var valueDetail by remember { mutableStateOf<ValueDetailSelection?>(null) }
 
     LaunchedEffect(Unit) {
       val uri =
@@ -215,7 +231,7 @@ class MediaInfoActivity : AppCompatActivity() {
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_media_info),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_media_info),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
               )
@@ -234,7 +250,7 @@ class MediaInfoActivity : AppCompatActivity() {
                 Icons.RoundedFilled.ArrowBack,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.back),
+                    .stringResource(app.gyrolet.mpvrx.R.string.back),
               )
             }
           },
@@ -257,7 +273,7 @@ class MediaInfoActivity : AppCompatActivity() {
                     imageVector = Icons.RoundedFilled.ContentCopy,
                     contentDescription =
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.ui_copy),
+                        .stringResource(app.gyrolet.mpvrx.R.string.ui_copy),
                   )
                 }
 
@@ -279,7 +295,7 @@ class MediaInfoActivity : AppCompatActivity() {
                     imageVector = Icons.RoundedFilled.Share,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.generic_share,
+                        app.gyrolet.mpvrx.R.string.generic_share,
                       ),
                   )
                 }
@@ -303,9 +319,26 @@ class MediaInfoActivity : AppCompatActivity() {
         when {
           isLoading -> LoadingContent()
           error != null -> ErrorContent(error!!)
-          mediaInfo != null -> MediaInfoContent(mediaInfo!!, fileName, fullMediaInfoText)
+          mediaInfo != null ->
+            CompositionLocalProvider(
+              LocalValueDetailRequest provides { label, value ->
+                valueDetail = ValueDetailSelection(label, value)
+              },
+            ) {
+              MediaInfoContent(mediaInfo!!, fileName, fullMediaInfoText, fileUri)
+            }
         }
       }
+    }
+
+    valueDetail?.let { detail ->
+      ValueDetailDialog(
+        label = detail.label,
+        value = detail.value,
+        onDismiss = {
+          if (valueDetail == detail) valueDetail = null
+        },
+      )
     }
   }
 
@@ -327,7 +360,7 @@ class MediaInfoActivity : AppCompatActivity() {
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_analyzing_media_file),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_analyzing_media_file),
           style = MaterialTheme.typography.bodyLarge,
           fontWeight = FontWeight.Medium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -370,7 +403,10 @@ class MediaInfoActivity : AppCompatActivity() {
     VIDEO(R.string.media_info_tab_video),
     AUDIO(R.string.media_info_tab_audio),
     SUBTITLES(R.string.media_info_tab_subtitles),
+    IMAGE(R.string.media_info_tab_image),
     CHAPTERS(R.string.media_info_tab_chapters),
+    OTHER(R.string.media_info_tab_other),
+    RAW(R.string.media_info_tab_raw),
   }
 
   @Composable
@@ -378,6 +414,7 @@ class MediaInfoActivity : AppCompatActivity() {
     mediaInfo: MediaInfoOps.MediaInfoData,
     fileName: String,
     fullMediaInfoText: String?,
+    fileUri: Uri?,
   ) {
     if (fullMediaInfoText == null) {
       Box(
@@ -389,6 +426,11 @@ class MediaInfoActivity : AppCompatActivity() {
       return
     }
 
+    val context = LocalContext.current
+    val filePath =
+      remember(fileUri) {
+        fileUri?.let { uri -> uri.resolveLocalPath(context) ?: uri.toString() }
+      }
     val sections = remember(fullMediaInfoText) { parseMediaInfoText(fullMediaInfoText) }
 
     // Group sections dynamically
@@ -401,12 +443,39 @@ class MediaInfoActivity : AppCompatActivity() {
             it.name.startsWith("Subtitle", ignoreCase = true)
         }
       }
+    val imageSections = remember(sections) { sections.filter { it.name.startsWith("Image", ignoreCase = true) } }
     val menuSections =
       remember(sections) {
         sections.filter {
-          it.name.equals("Menu", ignoreCase = true) ||
+          it.name.startsWith("Menu", ignoreCase = true) ||
             it.name.startsWith("Chapter", ignoreCase = true)
         }
+      }
+    // Timecode tracks, programs, and any section kind a future MediaInfo release adds.
+    val otherSections =
+      remember(sections) {
+        sections.filter { section ->
+          !section.name.equals("General", ignoreCase = true) &&
+            !section.name.startsWith("Video", ignoreCase = true) &&
+            !section.name.startsWith("Audio", ignoreCase = true) &&
+            !section.name.startsWith("Text", ignoreCase = true) &&
+            !section.name.startsWith("Subtitle", ignoreCase = true) &&
+            !section.name.startsWith("Image", ignoreCase = true) &&
+            !section.name.startsWith("Menu", ignoreCase = true) &&
+            !section.name.startsWith("Chapter", ignoreCase = true)
+        }
+      }
+    val attachmentNames =
+      remember(sections) {
+        sections
+          .firstOrNull { it.name.equals("General", ignoreCase = true) }
+          ?.properties
+          ?.firstOrNull { it.first.equals("Attachments", ignoreCase = true) || it.first.equals("Attachment", ignoreCase = true) }
+          ?.second
+          ?.split(" / ")
+          ?.map(String::trim)
+          ?.filter(String::isNotEmpty)
+          .orEmpty()
       }
 
     // Determine available tabs
@@ -417,7 +486,10 @@ class MediaInfoActivity : AppCompatActivity() {
           if (videoSections.isNotEmpty()) add(InfoTab.VIDEO)
           if (audioSections.isNotEmpty()) add(InfoTab.AUDIO)
           if (subtitleSections.isNotEmpty()) add(InfoTab.SUBTITLES)
+          if (imageSections.isNotEmpty()) add(InfoTab.IMAGE)
           if (menuSections.isNotEmpty()) add(InfoTab.CHAPTERS)
+          if (otherSections.isNotEmpty() || attachmentNames.isNotEmpty()) add(InfoTab.OTHER)
+          add(InfoTab.RAW)
         }
       }
 
@@ -456,11 +528,15 @@ class MediaInfoActivity : AppCompatActivity() {
               audioSections.size,
               subtitleSections.size,
               menuSections.firstOrNull()?.properties?.size ?: 0,
+              filePath,
             )
           InfoTab.VIDEO -> StreamTabContent(videoSections, "Video Stream")
           InfoTab.AUDIO -> StreamTabContent(audioSections, "Audio Stream")
           InfoTab.SUBTITLES -> StreamTabContent(subtitleSections, "Subtitle Track")
+          InfoTab.IMAGE -> StreamTabContent(imageSections, "Image")
           InfoTab.CHAPTERS -> ChaptersTabContent(menuSections)
+          InfoTab.OTHER -> OtherTabContent(otherSections, attachmentNames)
+          InfoTab.RAW -> RawTabContent(fullMediaInfoText)
         }
       }
 
@@ -516,7 +592,10 @@ class MediaInfoActivity : AppCompatActivity() {
                   InfoTab.VIDEO -> Icons.RoundedFilled.Videocam
                   InfoTab.AUDIO -> Icons.RoundedFilled.VolumeUp
                   InfoTab.SUBTITLES -> Icons.RoundedFilled.Subtitles
+                  InfoTab.IMAGE -> Icons.RoundedFilled.Palette
                   InfoTab.CHAPTERS -> Icons.RoundedFilled.ViewList
+                  InfoTab.OTHER -> Icons.RoundedFilled.Tune
+                  InfoTab.RAW -> Icons.RoundedFilled.Article
                 }
               Icon(
                 imageVector = icon,
@@ -555,17 +634,19 @@ class MediaInfoActivity : AppCompatActivity() {
   private fun QuickStatCard(
     title: String,
     value: String,
-    icon: app.infinity.mpvz.ui.icons.AppIcon,
+    icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
     accentColor: Color,
     modifier: Modifier = Modifier,
   ) {
     val context = LocalContext.current
     GlassmorphicCard(
       modifier =
-        modifier.clickable {
-          SafeClipboard.copyPlainText(context, title, value)
-          Toast.makeText(context, context.getString(R.string.toast_copied_value, value), Toast.LENGTH_SHORT).show()
-        },
+        modifier
+          .clip(RoundedCornerShape(24.dp))
+          .clickable {
+            SafeClipboard.copyPlainText(context, title, value)
+            Toast.makeText(context, context.getString(R.string.toast_copied_value, value), Toast.LENGTH_SHORT).show()
+          },
       containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.20f),
     ) {
       Row(
@@ -638,9 +719,24 @@ class MediaInfoActivity : AppCompatActivity() {
     audioCount: Int,
     subtitleCount: Int,
     chapterCount: Int,
+    filePath: String?,
   ) {
     // Quick Stat values
     val primaryVideo = mediaInfo.videoStreams.firstOrNull()
+    val primaryAudio = mediaInfo.audioStreams.firstOrNull()
+    val imageSection = remember(sections) { sections.firstOrNull { it.name.startsWith("Image", ignoreCase = true) } }
+    val isImageFile = imageSection != null && primaryVideo == null && primaryAudio == null
+    val isAudioFile = primaryAudio != null && primaryVideo == null
+
+    fun imageValue(key: String): String =
+      imageSection?.properties?.firstOrNull { it.first.equals(key, ignoreCase = true) }?.second.orEmpty()
+
+    val imageResolution =
+      remember(imageSection) {
+        val w = imageValue("Width").filter(Char::isDigit)
+        val h = imageValue("Height").filter(Char::isDigit)
+        if (w.isNotEmpty() && h.isNotEmpty()) "${w}x$h" else ""
+      }
     val resolutionLabel =
       remember(primaryVideo) {
         if (primaryVideo != null) {
@@ -669,7 +765,7 @@ class MediaInfoActivity : AppCompatActivity() {
     val formatLabel = mediaInfo.general.format.ifBlank { "Unknown" }
 
     val heroChips =
-      remember(mediaInfo) {
+      remember(mediaInfo, sections) {
         buildList {
           primaryVideo?.let { v ->
             val w = v.width.filter { it.isDigit() }.toIntOrNull() ?: 0
@@ -687,6 +783,10 @@ class MediaInfoActivity : AppCompatActivity() {
           }
           mediaInfo.audioStreams.firstOrNull()?.let { a ->
             if (a.format.isNotBlank() && a.format != "---") add(a.format)
+          }
+          if (isImageFile) {
+            imageValue("Format").takeIf(String::isNotBlank)?.let { add(it) }
+            if (imageResolution.isNotBlank()) add(imageResolution)
           }
           if (sizeLabel != "Unknown") add(sizeLabel)
           if (durationLabel != "Unknown") add(durationLabel)
@@ -739,88 +839,186 @@ class MediaInfoActivity : AppCompatActivity() {
         HeroChipRow(heroChips)
       }
 
-      // Quick Specs Grid (2 columns)
+      // Quick Specs Grid (2 columns), adapted to the media kind so images and music never
+      // show placeholder values such as "No Video".
       Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          QuickStatCard(
-            title = stringResource(R.string.ui_resolution),
-            value = resolutionLabel,
-            icon = Icons.RoundedFilled.Videocam,
-            accentColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.weight(1f),
-          )
-          QuickStatCard(
-            title = stringResource(R.string.ui_file_size),
-            value = sizeLabel,
-            icon = Icons.RoundedFilled.SdCard,
-            accentColor = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.weight(1f),
-          )
-        }
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          QuickStatCard(
-            title = stringResource(R.string.ui_duration),
-            value = durationLabel,
-            icon = Icons.RoundedFilled.Timer,
-            accentColor = MaterialTheme.colorScheme.tertiary,
-            modifier = Modifier.weight(1f),
-          )
-          QuickStatCard(
-            title = stringResource(R.string.ui_bitrate),
-            value = mediaInfo.general.overallBitRate.ifBlank { "Unknown" },
-            icon = Icons.RoundedFilled.Speed,
-            accentColor = Color(0xFFFFB300),
-            modifier = Modifier.weight(1f),
-          )
-        }
-      }
-
-      // Stream summary blocks
-      GlassmorphicCard(
-        modifier = Modifier.fillMaxWidth(),
-      ) {
-        Column(
-          modifier = Modifier.padding(16.dp),
-          verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-          Text(
-            text =
-              androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_media_tracks_summary),
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.primary,
-          )
-
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceAround,
-          ) {
-            TrackSummaryItem(videoCount, "Video", Icons.RoundedFilled.Videocam, MaterialTheme.colorScheme.primary)
-            TrackSummaryItem(audioCount, "Audio", Icons.RoundedFilled.VolumeUp, MaterialTheme.colorScheme.secondary)
-            TrackSummaryItem(
-              subtitleCount,
-              "Subtitle",
-              Icons.RoundedFilled.Subtitles,
-              MaterialTheme.colorScheme.tertiary,
-            )
-            if (chapterCount > 0) {
-              TrackSummaryItem(chapterCount, "Chapters", Icons.RoundedFilled.ViewList, Color(0xFFFFB300))
+        when {
+          isImageFile -> {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              QuickStatCard(
+                title = stringResource(R.string.ui_resolution),
+                value = imageResolution.ifBlank { "Unknown" },
+                icon = Icons.RoundedFilled.Palette,
+                accentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+              )
+              QuickStatCard(
+                title = stringResource(R.string.media_info_stat_format),
+                value = imageValue("Format").ifBlank { formatLabel },
+                icon = Icons.RoundedFilled.Info,
+                accentColor = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.weight(1f),
+              )
+            }
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              QuickStatCard(
+                title = stringResource(R.string.media_info_stat_bit_depth),
+                value = imageValue("Bit depth").ifBlank { "Unknown" },
+                icon = Icons.RoundedFilled.Tune,
+                accentColor = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.weight(1f),
+              )
+              QuickStatCard(
+                title = stringResource(R.string.ui_file_size),
+                value = sizeLabel,
+                icon = Icons.RoundedFilled.SdCard,
+                accentColor = Color(0xFFFFB300),
+                modifier = Modifier.weight(1f),
+              )
+            }
+          }
+          isAudioFile -> {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              QuickStatCard(
+                title = stringResource(R.string.ui_duration),
+                value = durationLabel,
+                icon = Icons.RoundedFilled.Timer,
+                accentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+              )
+              QuickStatCard(
+                title = stringResource(R.string.media_info_stat_channels),
+                value = primaryAudio?.channels?.ifBlank { "Unknown" } ?: "Unknown",
+                icon = Icons.RoundedFilled.VolumeUp,
+                accentColor = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.weight(1f),
+              )
+            }
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              QuickStatCard(
+                title = stringResource(R.string.media_info_stat_sample_rate),
+                value = primaryAudio?.samplingRate?.ifBlank { "Unknown" } ?: "Unknown",
+                icon = Icons.RoundedFilled.Tune,
+                accentColor = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.weight(1f),
+              )
+              QuickStatCard(
+                title = stringResource(R.string.ui_bitrate),
+                value = mediaInfo.general.overallBitRate.ifBlank { "Unknown" },
+                icon = Icons.RoundedFilled.Speed,
+                accentColor = Color(0xFFFFB300),
+                modifier = Modifier.weight(1f),
+              )
+            }
+          }
+          else -> {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              QuickStatCard(
+                title = stringResource(R.string.ui_resolution),
+                value = resolutionLabel,
+                icon = Icons.RoundedFilled.Videocam,
+                accentColor = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+              )
+              QuickStatCard(
+                title = stringResource(R.string.ui_file_size),
+                value = sizeLabel,
+                icon = Icons.RoundedFilled.SdCard,
+                accentColor = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.weight(1f),
+              )
+            }
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              QuickStatCard(
+                title = stringResource(R.string.ui_duration),
+                value = durationLabel,
+                icon = Icons.RoundedFilled.Timer,
+                accentColor = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.weight(1f),
+              )
+              QuickStatCard(
+                title = stringResource(R.string.ui_bitrate),
+                value = mediaInfo.general.overallBitRate.ifBlank { "Unknown" },
+                icon = Icons.RoundedFilled.Speed,
+                accentColor = Color(0xFFFFB300),
+                modifier = Modifier.weight(1f),
+              )
             }
           }
         }
       }
 
-      // Detailed metadata list
+      // Stream summary blocks; only kinds that exist appear, so images and music never
+      // display irrelevant zero-count rows.
+      val imageCount = remember(sections) { sections.count { it.name.startsWith("Image", ignoreCase = true) } }
+      if (videoCount + audioCount + subtitleCount + chapterCount + imageCount > 0) {
+        GlassmorphicCard(
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+          ) {
+            Text(
+              text =
+                androidx.compose.ui.res
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_media_tracks_summary),
+              style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.primary,
+            )
+
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.SpaceAround,
+            ) {
+              if (videoCount > 0) {
+                TrackSummaryItem(videoCount, "Video", Icons.RoundedFilled.Videocam, MaterialTheme.colorScheme.primary)
+              }
+              if (audioCount > 0) {
+                TrackSummaryItem(audioCount, "Audio", Icons.RoundedFilled.VolumeUp, MaterialTheme.colorScheme.secondary)
+              }
+              if (subtitleCount > 0) {
+                TrackSummaryItem(
+                  subtitleCount,
+                  "Subtitle",
+                  Icons.RoundedFilled.Subtitles,
+                  MaterialTheme.colorScheme.tertiary,
+                )
+              }
+              if (imageCount > 0) {
+                TrackSummaryItem(imageCount, "Image", Icons.RoundedFilled.Palette, MaterialTheme.colorScheme.secondary)
+              }
+              if (chapterCount > 0) {
+                TrackSummaryItem(chapterCount, "Chapters", Icons.RoundedFilled.ViewList, Color(0xFFFFB300))
+              }
+            }
+          }
+        }
+      }
+
+      // Detailed metadata list: every General field MediaInfo reports, plus the resolved path.
       val generalSection = sections.firstOrNull { it.name.equals("General", ignoreCase = true) }
-      if (generalSection != null) {
+      if (generalSection != null || filePath != null) {
         GlassmorphicCard(
           modifier = Modifier.fillMaxWidth(),
         ) {
@@ -831,7 +1029,7 @@ class MediaInfoActivity : AppCompatActivity() {
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_container_metadata),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_container_metadata),
               style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
               color = MaterialTheme.colorScheme.primary,
             )
@@ -840,11 +1038,11 @@ class MediaInfoActivity : AppCompatActivity() {
               Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
               ) {
-                generalSection.properties.forEach { (key, value) ->
-                  // Avoid showing details already on Quick Stats to keep clean
-                  if (key != "Format" && key != "File size" && key != "Duration" && key != "Overall bit rate") {
-                    PropertyRow(key, value)
-                  }
+                filePath?.let { path ->
+                  PropertyRow(stringResource(R.string.media_info_file_path), path)
+                }
+                generalSection?.properties?.forEach { (key, value) ->
+                  PropertyRow(key, value)
                 }
               }
             }
@@ -858,7 +1056,7 @@ class MediaInfoActivity : AppCompatActivity() {
   private fun TrackSummaryItem(
     count: Int,
     label: String,
-    icon: app.infinity.mpvz.ui.icons.AppIcon,
+    icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
     color: Color,
   ) {
     Column(
@@ -887,7 +1085,7 @@ class MediaInfoActivity : AppCompatActivity() {
   private fun StreamCard(
     title: String,
     badge: String?,
-    icon: app.infinity.mpvz.ui.icons.AppIcon,
+    icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
     headerBgColor: Color,
     headerTextColor: Color,
     properties: List<Pair<String, String>>,
@@ -955,7 +1153,7 @@ class MediaInfoActivity : AppCompatActivity() {
                     Toast
                       .makeText(
                         context,
-                        context.getString(app.infinity.mpvz.R.string.ui_copied_specifications_to_clipboard),
+                        context.getString(app.gyrolet.mpvrx.R.string.ui_copied_specifications_to_clipboard),
                         Toast.LENGTH_SHORT,
                       ).show()
                   }
@@ -966,7 +1164,7 @@ class MediaInfoActivity : AppCompatActivity() {
               imageVector = Icons.RoundedFilled.ContentCopy,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_copy_all),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_copy_all),
               tint = headerTextColor.copy(alpha = 0.8f),
               modifier = Modifier.size(16.dp),
             )
@@ -1007,13 +1205,9 @@ class MediaInfoActivity : AppCompatActivity() {
     value: String,
     modifier: Modifier = Modifier,
   ) {
-    val context = LocalContext.current
+    val requestValueDetail = LocalValueDetailRequest.current
     Surface(
-      modifier =
-        modifier.clickable {
-          SafeClipboard.copyPlainText(context, label, value)
-          Toast.makeText(context, context.getString(R.string.toast_copied_value, value), Toast.LENGTH_SHORT).show()
-        },
+      modifier = modifier.clip(RoundedCornerShape(12.dp)).clickable { requestValueDetail(label, value) },
       shape = RoundedCornerShape(12.dp),
       color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f),
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)),
@@ -1078,6 +1272,12 @@ class MediaInfoActivity : AppCompatActivity() {
                 MaterialTheme.colorScheme.onTertiaryContainer,
                 Icons.RoundedFilled.VolumeUp,
               )
+            streamTypeLabel.contains("Image", ignoreCase = true) ->
+              Triple(
+                MaterialTheme.colorScheme.secondaryContainer,
+                MaterialTheme.colorScheme.onSecondaryContainer,
+                Icons.RoundedFilled.Palette,
+              )
             else ->
               Triple(
                 MaterialTheme.colorScheme.secondaryContainer,
@@ -1122,7 +1322,7 @@ class MediaInfoActivity : AppCompatActivity() {
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_video_chapters_timeline),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_video_chapters_timeline),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.primary,
           )
@@ -1155,6 +1355,7 @@ class MediaInfoActivity : AppCompatActivity() {
                   Modifier
                     .fillMaxWidth()
                     .height(IntrinsicSize.Min)
+                    .clip(RoundedCornerShape(8.dp))
                     .clickable {
                       scope.launch {
                         SafeClipboard.copyPlainText(context, "Chapter timestamp", timestamp)
@@ -1252,19 +1453,15 @@ class MediaInfoActivity : AppCompatActivity() {
     label: String,
     value: String,
   ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val requestValueDetail = LocalValueDetailRequest.current
 
     Row(
       modifier =
         Modifier
           .fillMaxWidth()
-          .clickable {
-            scope.launch {
-              SafeClipboard.copyPlainText(context, label, value)
-              Toast.makeText(context, context.getString(R.string.toast_copied_value, value), Toast.LENGTH_SHORT).show()
-            }
-          }.padding(vertical = 4.dp),
+          .clip(RoundedCornerShape(8.dp))
+          .clickable { requestValueDetail(label, value) }
+          .padding(vertical = 4.dp),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.Top,
     ) {
@@ -1288,6 +1485,124 @@ class MediaInfoActivity : AppCompatActivity() {
         color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.weight(1.5f),
       )
+    }
+  }
+
+  /** Full-value reader for truncated fields: scrollable, selectable, and copyable. */
+  @Composable
+  private fun ValueDetailDialog(
+    label: String,
+    value: String,
+    onDismiss: () -> Unit,
+  ) {
+    val context = LocalContext.current
+    AlertDialog(
+      onDismissRequest = onDismiss,
+      title = {
+        Text(
+          text = label,
+          style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        )
+      },
+      text = {
+        SelectionContainer {
+          Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+          )
+        }
+      },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            SafeClipboard.copyPlainText(context, label, value)
+            Toast.makeText(context, context.getString(R.string.toast_copied_value, value), Toast.LENGTH_SHORT).show()
+            onDismiss()
+          },
+        ) {
+          Text(stringResource(R.string.ui_copy))
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = onDismiss) {
+          Text(stringResource(R.string.generic_cancel))
+        }
+      },
+    )
+  }
+
+  @Composable
+  private fun OtherTabContent(
+    sections: List<InfoSection>,
+    attachments: List<String>,
+  ) {
+    Column(
+      modifier =
+        Modifier
+          .fillMaxSize()
+          .verticalScroll(rememberScrollState())
+          .padding(bottom = 24.dp),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      if (attachments.isNotEmpty()) {
+        GlassmorphicCard(modifier = Modifier.fillMaxWidth()) {
+          Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Text(
+              text = stringResource(R.string.media_info_attachments),
+              style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+              color = MaterialTheme.colorScheme.primary,
+            )
+            SelectionContainer {
+              Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+              ) {
+                attachments.forEachIndexed { index, name ->
+                  PropertyRow("#${index + 1}", name)
+                }
+              }
+            }
+          }
+        }
+      }
+
+      sections.forEach { section ->
+        StreamCard(
+          title = section.name,
+          badge = null,
+          icon = Icons.RoundedFilled.Tune,
+          headerBgColor = MaterialTheme.colorScheme.secondaryContainer,
+          headerTextColor = MaterialTheme.colorScheme.onSecondaryContainer,
+          properties = section.properties,
+        )
+      }
+    }
+  }
+
+  @Composable
+  private fun RawTabContent(rawText: String) {
+    Column(
+      modifier =
+        Modifier
+          .fillMaxSize()
+          .verticalScroll(rememberScrollState())
+          .padding(bottom = 24.dp),
+    ) {
+      GlassmorphicCard(modifier = Modifier.fillMaxWidth()) {
+        SelectionContainer {
+          Text(
+            text = rawText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(16.dp),
+          )
+        }
+      }
     }
   }
 

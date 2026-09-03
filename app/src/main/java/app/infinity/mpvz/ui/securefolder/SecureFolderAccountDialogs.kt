@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.securefolder
+package app.gyrolet.mpvrx.ui.securefolder
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,11 +27,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.SecureFolderPreferences
-import app.infinity.mpvz.presentation.components.ExposedTextDropDownMenu
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
+import app.gyrolet.mpvrx.presentation.components.ExposedTextDropDownMenu
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
 import kotlinx.collections.immutable.toImmutableList
 
 /**

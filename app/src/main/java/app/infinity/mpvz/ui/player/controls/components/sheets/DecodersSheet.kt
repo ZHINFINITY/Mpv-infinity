@@ -1,5 +1,4 @@
 /*
- * Mpv∞
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify
@@ -8,140 +7,44 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.shape.RoundedCornerShape
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.PlaybackEngineMode
-import app.infinity.mpvz.presentation.components.PlayerSheet
-import app.infinity.mpvz.ui.player.Decoder
+import app.gyrolet.mpvrx.BuildConfig
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
+import app.gyrolet.mpvrx.ui.player.Decoder
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.RendererBackendPolicy
 
 @Composable
 fun DecodersSheet(
   selectedDecoder: Decoder,
-  isMedia3Active: Boolean = false,
-  engineSelection: PlaybackEngineMode = if (isMedia3Active) PlaybackEngineMode.Media3 else PlaybackEngineMode.MPV,
-  onEngineSelected: (PlaybackEngineMode) -> Unit = {},
-  media3DecoderName: String? = null,
   onSelect: (Decoder) -> Unit,
   onDismissRequest: () -> Unit,
 ) {
+  val gpuApi by PlaybackSession.propString["gpu-api"].collectAsState()
+  val isVulkanActive = gpuApi == "vulkan"
+  val directMediaCodecAllowed =
+    RendererBackendPolicy.canUseDirectMediaCodec(
+      usesVulkan = isVulkanActive,
+      buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
+    )
+
   PlayerSheet(onDismissRequest) {
     LazyColumn {
-      item {
-        Column(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-          Text(
-            text = "Playback engine",
-            color = Color.White,
-            style = MaterialTheme.typography.titleSmall,
-          )
-          // Keep the same surface treatment as the MPV engine selector. Native status and
-          // codec information belong to the sheet background, not inside this selection card.
-          Surface(
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            tonalElevation = 0.dp,
-          ) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-              AudioTrackRow(
-                title = "MPV",
-                isSelected = engineSelection == PlaybackEngineMode.MPV,
-                onClick = {
-                  onEngineSelected(PlaybackEngineMode.MPV)
-                  onDismissRequest()
-                },
-                textColor = Color.White,
-                modifier = Modifier.weight(1f),
-              )
-              AudioTrackRow(
-                title = "Native",
-                isSelected = engineSelection == PlaybackEngineMode.Media3,
-                onClick = {
-                  onEngineSelected(PlaybackEngineMode.Media3)
-                  onDismissRequest()
-                },
-                textColor = Color.White,
-                modifier = Modifier.weight(1f),
-              )
-            }
-          }
-
-          if (isMedia3Active) {
-            val decoderName = media3DecoderName.orEmpty()
-            val decoderMode =
-              if (
-                decoderName.lowercase().contains("ffmpeg") ||
-                  decoderName.lowercase().contains("software")
-              ) {
-                "SW"
-              } else {
-                "HW"
-              }
-            Column(
-              modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            ) {
-              Text(
-                text = "Active decoder: Native · $decoderMode",
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium,
-              )
-              if (decoderName.isNotBlank()) {
-                Text(
-                  text = decoderName,
-                  color = Color.White.copy(alpha = 0.75f),
-                  style = MaterialTheme.typography.bodySmall,
-                )
-              }
-              Text(
-                text = "Codec mode: selected automatically by Native",
-                color = Color.White.copy(alpha = 0.9f),
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(top = 10.dp),
-              )
-              Decoder.entries.forEach { decoder ->
-                AudioTrackRow(
-                  title = "${decoder.title} (${decoder.value})",
-                  isSelected = false,
-                  onClick = {},
-                  enabled = false,
-                  textColor = Color.White.copy(alpha = 0.72f),
-                  modifier = Modifier.fillMaxWidth(),
-                )
-              }
-            }
-          }
-        }
-      }
-      if (!isMedia3Active) {
-        items(Decoder.entries, key = { it.name }) { decoder ->
-          AudioTrackRow(
-            title = stringResource(R.string.player_sheets_decoder_formatted, decoder.title, decoder.value),
-            isSelected = selectedDecoder == decoder,
-            // Keep HW+ selectable; RendererBackendPolicy safely falls back to mediacodec-copy
-            // when direct MediaCodec is unavailable for the active Vulkan/build combination.
-            enabled = true,
-            onClick = { onSelect(decoder) },
-            textColor = Color.White,
-          )
-        }
+      items(Decoder.entries.minusElement(Decoder.Auto), key = { it.name }) { decoder ->
+        AudioTrackRow(
+          title = stringResource(R.string.player_sheets_decoder_formatted, decoder.title, decoder.value),
+          isSelected = selectedDecoder == decoder,
+          enabled = decoder != Decoder.HWPlus || directMediaCodecAllowed,
+          onClick = { onSelect(decoder) },
+        )
       }
     }
   }

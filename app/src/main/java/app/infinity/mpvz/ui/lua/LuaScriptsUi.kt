@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.lua
+package app.gyrolet.mpvrx.ui.lua
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
@@ -25,7 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import app.infinity.mpvz.ui.components.IconSwitch
+import app.gyrolet.mpvrx.ui.components.IconSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,9 +43,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import app.infinity.mpvz.R
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -205,7 +206,7 @@ fun LuaRuntimeStatusCard(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_script_runtime),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_script_runtime),
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.SemiBold,
         )
@@ -325,6 +326,7 @@ fun LuaScriptToggleCard(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(MaterialTheme.shapes.large)
         .clickable(onClick = onToggle),
     shape = MaterialTheme.shapes.large,
     color = containerColor,
@@ -405,7 +407,7 @@ fun LuaSelectionFootnote(modifier: Modifier = Modifier) {
   Text(
     text =
       androidx.compose.ui.res.stringResource(
-        app.infinity.mpvz.R.string.ui_newly_enabled_scripts_can_load_during_playback_scripts_you_turn,
+        app.gyrolet.mpvrx.R.string.ui_newly_enabled_scripts_can_load_during_playback_scripts_you_turn,
       ),
     style = MaterialTheme.typography.bodySmall,
     color = MaterialTheme.colorScheme.onSurfaceVariant,

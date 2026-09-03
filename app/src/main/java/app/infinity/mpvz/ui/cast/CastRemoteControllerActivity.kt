@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.cast
+package app.gyrolet.mpvrx.ui.cast
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -17,7 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import app.infinity.mpvz.ui.theme.MpvrxTheme
+import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
 
 class CastRemoteControllerActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {

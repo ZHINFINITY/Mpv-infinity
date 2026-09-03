@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.infinity.mpvz.ui.browser.music
+package app.gyrolet.mpvrx.ui.browser.music
 
 import android.net.Uri
 import androidx.compose.runtime.Immutable
@@ -57,8 +57,7 @@ data class MusicArtist(
 
 @Immutable
 enum class MusicSortField(val displayName: String) {
-  // Name is the display/file title used for alphabetical song browsing.
-  TITLE("Name"),
+  TITLE("Title"),
   ARTIST("Artist"),
   ALBUM("Album"),
   DURATION("Duration"),

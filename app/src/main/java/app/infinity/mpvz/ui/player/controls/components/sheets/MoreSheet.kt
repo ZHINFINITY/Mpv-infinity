@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import android.content.res.Configuration
 import android.text.format.DateUtils
@@ -37,7 +37,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
@@ -54,18 +53,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import app.infinity.mpvz.R
-import app.infinity.mpvz.domain.anime4k.Anime4KManager
-import app.infinity.mpvz.preferences.AdvancedPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.components.PlayerSheet
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.VideoFormatStatus
-import app.infinity.mpvz.ui.player.VideoFormatStatusRow
-import app.infinity.mpvz.ui.player.anime4k.Anime4KUiState
-import app.infinity.mpvz.ui.theme.AppShapeScale
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
+import app.gyrolet.mpvrx.preferences.AdvancedPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.anime4k.Anime4KUiState
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.ui.theme.spacing
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -79,13 +76,13 @@ fun MoreSheet(
   onEnterEqualizerSheet: (() -> Unit)? = null,
   anime4KUiState: Anime4KUiState,
   onAnime4KModeSelected: (Anime4KManager.Mode) -> Unit,
-  videoFormatStatus: VideoFormatStatus? = null,
-  isMedia3Active: Boolean = false,
+  filtersEnabled: Boolean = true,
+  equalizerEnabled: Boolean = true,
+  anime4KEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   val advancedPreferences = koinInject<AdvancedPreferences>()
   val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
-  val showVideoFormatStatus by advancedPreferences.showVideoFormatStatus.collectAsState()
   val enableLuaScripts by advancedPreferences.enableLuaScripts.collectAsState()
   val selectedLuaScripts by advancedPreferences.selectedLuaScripts.collectAsState()
   val mpvConfStorageLocation by advancedPreferences.mpvConfStorageUri.collectAsState()
@@ -148,7 +145,7 @@ fun MoreSheet(
             }
           }
           if (onEnterEqualizerSheet != null) {
-            TextButton(onClick = onEnterEqualizerSheet) {
+            TextButton(onClick = onEnterEqualizerSheet, enabled = equalizerEnabled) {
               Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
@@ -163,7 +160,7 @@ fun MoreSheet(
               }
             }
           }
-          TextButton(onClick = onEnterFiltersPanel) {
+          TextButton(onClick = onEnterFiltersPanel, enabled = filtersEnabled) {
             Row(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
@@ -242,69 +239,40 @@ fun MoreSheet(
               )
             },
             onClick = {
-              if (isMedia3Active) {
-                // Media3 has no MPV stats script or console. PlayerControls renders the selected
-                // page from Media3PlaybackController.State instead.
-                advancedPreferences.enabledStatisticsPage.set(page)
-              } else {
-                val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
+              val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
 
-                if (page != 7 && isConsoleOpen) {
-                  PlaybackSession.command("script-message-to", "console", "disable")
-                }
-
-                when (page) {
-                  0, 6 -> {
-                    if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                  }
-                  7 -> {
-                    if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                    if (!isConsoleOpen) {
-                      PlaybackSession.command("script-message-to", "console", "enable")
-                    }
-                  }
-                  else -> {
-                    if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {
-                      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                    }
-                    PlaybackSession.command("script-binding", "stats/display-page-$page")
-                  }
-                }
-                advancedPreferences.enabledStatisticsPage.set(page)
+              // If we are choosing any page OTHER than Console, close the console if it's currently open
+              if (page != 7 && isConsoleOpen) {
+                PlaybackSession.command("script-message-to", "console", "disable")
               }
+
+              when (page) {
+                0 -> {
+                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                }
+                6 -> {
+                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                }
+                7 -> {
+                  if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  // Enable console only if it is not already open
+                  if (!isConsoleOpen) {
+                    PlaybackSession.command("script-message-to", "console", "enable")
+                  }
+                }
+                else -> {
+                  if (statisticsPage == 0 || statisticsPage == 6 || statisticsPage == 7) {
+                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+                  }
+                  PlaybackSession.command("script-binding", "stats/display-page-$page")
+                }
+              }
+              advancedPreferences.enabledStatisticsPage.set(page)
             },
             selected = statisticsPage == page,
             leadingIcon = null,
           )
         }
-      }
-
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = stringResource(R.string.player_sheets_video_format_title),
-            style = MaterialTheme.typography.titleSmall,
-          )
-          Text(
-            text = stringResource(R.string.player_sheets_video_format_summary),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
-          )
-        }
-        Switch(
-          checked = showVideoFormatStatus,
-          onCheckedChange = { advancedPreferences.showVideoFormatStatus.set(it) },
-        )
-      }
-      if (showVideoFormatStatus) {
-        VideoFormatStatusRow(
-          status = videoFormatStatus,
-          modifier = Modifier.padding(top = 2.dp),
-        )
       }
 
       // Standard Anime4K needs legacy gpu or gpu-next with Vulkan.
@@ -319,7 +287,7 @@ fun MoreSheet(
           Text(
             text =
               androidx.compose.ui.res.stringResource(
-                app.infinity.mpvz.R.string.ui_not_available_for_4k_8k_video,
+                app.gyrolet.mpvrx.R.string.ui_not_available_for_4k_8k_video,
               ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
@@ -334,7 +302,7 @@ fun MoreSheet(
             FilterChip(
               label = { Text(stringResource(mode.titleRes)) },
               selected = anime4KUiState.selectedMode == mode.name,
-              enabled = anime4KUiState.allowHighRes || mode == Anime4KManager.Mode.OFF,
+              enabled = anime4KEnabled && (anime4KUiState.allowHighRes || mode == Anime4KManager.Mode.OFF),
               leadingIcon = null,
               onClick = { onAnime4KModeSelected(mode) },
             )
@@ -410,7 +378,7 @@ fun TimePickerDialog(
         ) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_quick_presets),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_quick_presets),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -489,7 +457,7 @@ fun SectionHeaderWithInfo(
         imageVector = Icons.RoundedFilled.Info,
         contentDescription =
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.info),
+            .stringResource(app.gyrolet.mpvrx.R.string.info),
         tint = MaterialTheme.colorScheme.primary,
         modifier = Modifier.size(16.dp),
       )

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -32,10 +32,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
-import app.infinity.mpvz.ui.components.IconSwitch
+import app.gyrolet.mpvrx.ui.components.IconSwitch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -113,7 +114,11 @@ fun EqualizerSheet(
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  val sheetState =
+    rememberBottomSheetState(
+      initialValue = SheetValue.Hidden,
+      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
 
   ModalBottomSheet(
     onDismissRequest = onDismissRequest,

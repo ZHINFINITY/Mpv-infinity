@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.securefolder
+package app.gyrolet.mpvrx.ui.securefolder
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,8 +29,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import app.infinity.mpvz.R
-import app.infinity.mpvz.database.repository.SecureFolderRepository
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.database.repository.SecureFolderRepository
 
 /**
  * Progress UI shown while a restore / delete-forever / move-in batch is running, driven by
@@ -38,7 +38,7 @@ import app.infinity.mpvz.database.repository.SecureFolderRepository
  *
  * Deliberately not dismissable by back-press or outside-tap — [onCancel] (wired to
  * [SecureFolderViewModel.cancelCurrentOperation]) is the only way out, same as
- * [app.infinity.mpvz.ui.browser.dialogs.VideoCompressorOverlay]'s in-progress state.
+ * [app.gyrolet.mpvrx.ui.browser.dialogs.VideoCompressorOverlay]'s in-progress state.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable

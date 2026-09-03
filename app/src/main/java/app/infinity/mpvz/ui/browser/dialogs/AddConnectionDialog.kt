@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.dialogs
+package app.gyrolet.mpvrx.ui.browser.dialogs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -43,8 +44,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.domain.network.NetworkConnection
-import app.infinity.mpvz.domain.network.NetworkProtocol
+import app.gyrolet.mpvrx.domain.network.NetworkConnection
+import app.gyrolet.mpvrx.domain.network.NetworkProtocol
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,7 +95,7 @@ fun AddConnectionSheet(
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_add_network_connection),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_add_network_connection),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Medium,
       )
@@ -119,7 +120,7 @@ fun AddConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_name),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_name),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -141,7 +142,7 @@ fun AddConnectionSheet(
               label = {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_protocol),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_protocol),
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                 )
@@ -177,7 +178,7 @@ fun AddConnectionSheet(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_host_ip_address),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_host_ip_address),
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -199,7 +200,7 @@ fun AddConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_port),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_port),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -216,7 +217,7 @@ fun AddConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_path),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_path),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -239,7 +240,7 @@ fun AddConnectionSheet(
           Spacer(modifier = Modifier.width(8.dp))
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_anonymous_guest_access),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_anonymous_guest_access),
           )
         }
 
@@ -264,7 +265,7 @@ fun AddConnectionSheet(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_use_https_secure_connection),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_use_https_secure_connection),
             )
           }
         }
@@ -281,7 +282,7 @@ fun AddConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_username),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_username),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -298,7 +299,7 @@ fun AddConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_password),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_password),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -320,7 +321,7 @@ fun AddConnectionSheet(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_save),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_save),
           fontWeight = FontWeight.SemiBold,
         )
       }
@@ -330,7 +331,7 @@ fun AddConnectionSheet(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+              .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
           fontWeight = FontWeight.Medium,
         )
       }

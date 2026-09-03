@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.selection
+package app.gyrolet.mpvrx.ui.browser.selection
 
 import androidx.compose.runtime.Stable
 

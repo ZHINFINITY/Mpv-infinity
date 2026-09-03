@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences.components
+package app.gyrolet.mpvrx.ui.preferences.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -29,11 +29,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.infinity.mpvz.preferences.PlayerButton
-import app.infinity.mpvz.preferences.getPlayerButtonLabel
-import app.infinity.mpvz.ui.icons.AppIcon
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.player.controls.components.AbLoopIcon
+import app.gyrolet.mpvrx.preferences.PlayerButton
+import app.gyrolet.mpvrx.preferences.getPlayerButtonLabel
+import app.gyrolet.mpvrx.ui.icons.AppIcon
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.player.controls.components.AbLoopIcon
 
 /**
  * A simple "Quick Settings" style chip for a player button.
@@ -88,7 +88,7 @@ fun PlayerButtonChip(
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_video_title),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_video_title),
               // TODO: strings
               fontSize = 15.sp, // Increased font size
               textAlign = TextAlign.Center,
@@ -108,7 +108,7 @@ fun PlayerButtonChip(
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_1_06_chapter_1),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_1_06_chapter_1),
                 // TODO: strings
                 fontSize = 15.sp,
                 textAlign = TextAlign.Center,

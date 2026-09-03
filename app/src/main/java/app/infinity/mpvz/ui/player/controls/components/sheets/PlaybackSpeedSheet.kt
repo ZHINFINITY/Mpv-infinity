@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,15 +41,15 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AudioPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.components.PlayerSheet
-import app.infinity.mpvz.presentation.components.RepeatingIconButton
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.preferences.components.SwitchPreference
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AudioPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
+import app.gyrolet.mpvrx.presentation.components.RepeatingIconButton
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
+import app.gyrolet.mpvrx.ui.theme.spacing
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 import kotlin.math.pow
@@ -65,9 +65,9 @@ fun PlaybackSpeedSheet(
   onResetPresets: () -> Unit,
   onMakeDefault: (Float) -> Unit,
   onResetDefault: () -> Unit,
-  isMedia3Active: Boolean = false,
-  onMedia3AudioPitchCorrection: ((Boolean) -> Unit)? = null,
   onDismissRequest: () -> Unit,
+  speedControlEnabled: Boolean = true,
+  pitchCorrectionEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   PlayerSheet(onDismissRequest = onDismissRequest) {
@@ -106,6 +106,7 @@ fun PlaybackSpeedSheet(
       ) {
         RepeatingIconButton(
           onClick = { onSpeedChange((speed - 0.05f).coerceAtLeast(0.05f)) },
+          enabled = speedControlEnabled,
           modifier = Modifier.size(40.dp),
         ) {
           Icon(Icons.RoundedFilled.Remove, null, modifier = Modifier.size(24.dp))
@@ -119,11 +120,13 @@ fun PlaybackSpeedSheet(
             onSpeedChange(snapped)
           },
           valueRange = 0.1f..4.0f,
+          enabled = speedControlEnabled,
           modifier = Modifier.weight(1f),
         )
 
         RepeatingIconButton(
           onClick = { onSpeedChange((speed + 0.05f).coerceAtMost(4.0f)) },
+          enabled = speedControlEnabled,
           modifier = Modifier.size(40.dp),
         ) {
           Icon(Icons.RoundedFilled.Add, null, modifier = Modifier.size(24.dp))
@@ -154,6 +157,7 @@ fun PlaybackSpeedSheet(
               onClick = { onSpeedChange(presetSpeed) },
               label = { Text("${presetSpeed.toFixed(2)}") },
               leadingIcon = null,
+              enabled = speedControlEnabled,
               colors =
                 if (!isDefault) {
                   androidx.compose.material3.FilterChipDefaults.filterChipColors(
@@ -181,6 +185,7 @@ fun PlaybackSpeedSheet(
           if (!isDefaultPreset) {
             Button(
               onClick = { onRemoveSpeedPreset(speed) },
+              enabled = speedControlEnabled,
               colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
               contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
               modifier = buttonModifier,
@@ -188,20 +193,21 @@ fun PlaybackSpeedSheet(
               Icon(Icons.RoundedFilled.Remove, null, modifier = Modifier.size(16.dp).padding(end = 4.dp))
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_remove),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_remove),
               )
             }
           }
         } else {
           Button(
             onClick = { onAddSpeedPreset(speed) },
+            enabled = speedControlEnabled,
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
             modifier = buttonModifier,
           ) {
             Icon(Icons.RoundedFilled.Add, null, modifier = Modifier.size(16.dp).padding(end = 4.dp))
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_add),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_add),
             )
           }
         }
@@ -215,13 +221,10 @@ fun PlaybackSpeedSheet(
 
         SwitchPreference(
           value = pitchCorrection,
+          enabled = pitchCorrectionEnabled,
           onValueChange = { newValue ->
             audioPreferences.audioPitchCorrection.set(newValue)
-            if (isMedia3Active) {
-              onMedia3AudioPitchCorrection?.invoke(newValue)
-            } else {
-              PlaybackSession.setPropertyBoolean("audio-pitch-correction", newValue)
-            }
+            PlaybackSession.setPropertyBoolean("audio-pitch-correction", newValue)
           },
           title = {
             Text(
@@ -250,14 +253,18 @@ fun PlaybackSpeedSheet(
         Button(
           modifier = Modifier.weight(1f),
           onClick = { onMakeDefault(speed) },
+          enabled = speedControlEnabled,
         ) {
           Text(text = stringResource(id = R.string.player_sheets_speed_make_default))
         }
-        Button(onClick = {
-          onResetDefault()
-          onResetPresets()
-          onSpeedChange(1.0f)
-        }) {
+        Button(
+          onClick = {
+            onResetDefault()
+            onResetPresets()
+            onSpeedChange(1.0f)
+          },
+          enabled = speedControlEnabled,
+        ) {
           Text(text = stringResource(id = R.string.generic_reset))
         }
       }

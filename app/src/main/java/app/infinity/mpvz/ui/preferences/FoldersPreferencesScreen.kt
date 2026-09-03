@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import android.app.Application
 import android.net.Uri
@@ -36,8 +36,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import app.infinity.mpvz.ui.components.IconSwitch
+import app.gyrolet.mpvrx.ui.components.IconSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -54,24 +55,25 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.domain.media.model.VideoFolder
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.domain.media.model.VideoFolder
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.RadioButton
-import app.infinity.mpvz.preferences.BlacklistScope
-import app.infinity.mpvz.preferences.FoldersPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.ui.browser.components.BrowserTopBar
-import app.infinity.mpvz.ui.browser.selection.SelectionState
-import app.infinity.mpvz.ui.browser.states.EmptyState
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
-import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.utils.media.MediaLibraryEvents
+import app.gyrolet.mpvrx.preferences.BlacklistScope
+import app.gyrolet.mpvrx.preferences.FoldersPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
+import app.gyrolet.mpvrx.ui.browser.selection.SelectionState
+import app.gyrolet.mpvrx.ui.browser.states.EmptyState
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
+import app.gyrolet.mpvrx.utils.storage.normalizeHiddenMarkerName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -90,6 +92,7 @@ object FoldersPreferencesScreen : Screen {
     val blacklistedVideoFolders by preferences.blacklistedFolders.collectAsState()
     val blacklistedAudioFolders by preferences.blacklistedAudioFolders.collectAsState()
     val includeNoMediaFolders by preferences.includeNoMediaFolders.collectAsState()
+    val hiddenFolderMarkerNames by preferences.hiddenFolderMarkerNames.collectAsState()
     var availableFolders by remember { mutableStateOf<List<VideoFolder>>(emptyList()) }
     var showAddDialog by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
@@ -163,11 +166,18 @@ object FoldersPreferencesScreen : Screen {
           )
 
           NoMediaPreferenceCard(
-            modifier = Modifier.settingsSearchTarget(R.string.pref_folders_include_nomedia_title),
+            modifier = Modifier.settingsSearchTarget(R.string.pref_folders_include_hidden_title),
             includeNoMediaFolders = includeNoMediaFolders,
+            markerNames = hiddenFolderMarkerNames,
             onIncludeNoMediaFoldersChanged = { enabled ->
               preferences.includeNoMediaFolders.set(enabled)
-              app.infinity.mpvz.repository.MediaFileRepository
+              app.gyrolet.mpvrx.repository.MediaFileRepository
+                .clearCache()
+              MediaLibraryEvents.notifyChanged()
+            },
+            onMarkerNamesChanged = { markerNames ->
+              preferences.hiddenFolderMarkerNames.set(markerNames)
+              app.gyrolet.mpvrx.repository.MediaFileRepository
                 .clearCache()
               MediaLibraryEvents.notifyChanged()
             },
@@ -321,9 +331,14 @@ object FoldersPreferencesScreen : Screen {
 @Composable
 private fun NoMediaPreferenceCard(
   includeNoMediaFolders: Boolean,
+  markerNames: Set<String>,
   onIncludeNoMediaFoldersChanged: (Boolean) -> Unit,
+  onMarkerNamesChanged: (Set<String>) -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  var showAddMarkerDialog by remember { mutableStateOf(false) }
+  var markerInput by remember { mutableStateOf("") }
+
   Card(
     modifier = modifier.fillMaxWidth(),
     colors =
@@ -331,33 +346,135 @@ private fun NoMediaPreferenceCard(
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
       ),
   ) {
-    Row(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .clickable { onIncludeNoMediaFoldersChanged(!includeNoMediaFolders) }
-          .padding(16.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text = stringResource(R.string.pref_folders_include_nomedia_title),
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-          text = stringResource(R.string.pref_folders_include_nomedia_summary),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Column {
+      Row(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .clickable { onIncludeNoMediaFoldersChanged(!includeNoMediaFolders) }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.pref_folders_include_hidden_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+          )
+          Spacer(modifier = Modifier.height(4.dp))
+          Text(
+            text = stringResource(R.string.pref_folders_include_hidden_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        IconSwitch(
+          checked = includeNoMediaFolders,
+          onCheckedChange = onIncludeNoMediaFoldersChanged,
         )
       }
-      IconSwitch(
-        checked = includeNoMediaFolders,
-        onCheckedChange = onIncludeNoMediaFoldersChanged,
-      )
+
+      if (includeNoMediaFolders) {
+        HorizontalDivider()
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+          Text(
+            text = stringResource(R.string.pref_folders_hidden_markers_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Text(
+            text = stringResource(R.string.pref_folders_hidden_markers_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+
+          if (markerNames.isEmpty()) {
+            Text(
+              text = stringResource(R.string.pref_folders_hidden_markers_empty),
+              modifier = Modifier.padding(top = 8.dp),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          } else {
+            markerNames.sorted().forEach { markerName ->
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Text(text = markerName, modifier = Modifier.weight(1f))
+                IconButton(onClick = { onMarkerNamesChanged(markerNames - markerName) }) {
+                  Icon(
+                    Icons.RoundedFilled.Close,
+                    contentDescription =
+                      stringResource(R.string.pref_folders_remove_marker, markerName),
+                  )
+                }
+              }
+            }
+          }
+
+          TextButton(
+            onClick = {
+              markerInput = ""
+              showAddMarkerDialog = true
+            },
+          ) {
+            Icon(Icons.RoundedFilled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.size(8.dp))
+            Text(stringResource(R.string.pref_folders_add_marker))
+          }
+        }
+      }
     }
+  }
+
+  if (showAddMarkerDialog) {
+    val normalizedMarker = normalizeHiddenMarkerName(markerInput)
+    val errorMessage =
+      when {
+        markerInput.isBlank() -> null
+        normalizedMarker == null -> R.string.pref_folders_marker_invalid
+        normalizedMarker in markerNames -> R.string.pref_folders_marker_duplicate
+        else -> null
+      }
+
+    AlertDialog(
+      onDismissRequest = { showAddMarkerDialog = false },
+      title = { Text(stringResource(R.string.pref_folders_add_marker_title)) },
+      text = {
+        OutlinedTextField(
+          value = markerInput,
+          onValueChange = { markerInput = it },
+          label = { Text(stringResource(R.string.pref_folders_marker_name)) },
+          placeholder = { Text(".nomedia") },
+          singleLine = true,
+          isError = errorMessage != null,
+          supportingText =
+            if (errorMessage == null) {
+              null
+            } else {
+              { Text(stringResource(errorMessage)) }
+            },
+        )
+      },
+      confirmButton = {
+        TextButton(
+          enabled = normalizedMarker != null && normalizedMarker !in markerNames,
+          onClick = {
+            onMarkerNamesChanged(markerNames + requireNotNull(normalizedMarker))
+            showAddMarkerDialog = false
+          },
+        ) {
+          Text(stringResource(R.string.pref_folders_add_marker))
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showAddMarkerDialog = false }) {
+          Text(stringResource(R.string.generic_cancel))
+        }
+      },
+    )
   }
 }
 
@@ -634,7 +751,7 @@ internal fun StorageRootPickerCard(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_base_storage_folder),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_base_storage_folder),
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
         )
@@ -658,7 +775,7 @@ internal fun StorageRootPickerCard(
             imageVector = Icons.RoundedFilled.Clear,
             contentDescription =
               androidx.compose.ui.res.stringResource(
-                app.infinity.mpvz.R.string.pref_clear_content_desc,
+                app.gyrolet.mpvrx.R.string.pref_clear_content_desc,
               ),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -676,11 +793,11 @@ internal fun getSimplifiedStoragePath(uriString: String): String =
   }
 
 private suspend fun scanAllMediaFolders(context: Application): List<VideoFolder> {
-  val repoFolders = app.infinity.mpvz.repository.MediaFileRepository
+  val repoFolders = app.gyrolet.mpvrx.repository.MediaFileRepository
     .getAllVideoFoldersFast(context = context, includeAudioOverride = true)
 
   val songs = try {
-    app.infinity.mpvz.ui.browser.music.MusicLibraryScanner.scanSongs(context)
+    app.gyrolet.mpvrx.ui.browser.music.MusicLibraryScanner.scanSongs(context)
   } catch (_: Exception) {
     emptyList()
   }

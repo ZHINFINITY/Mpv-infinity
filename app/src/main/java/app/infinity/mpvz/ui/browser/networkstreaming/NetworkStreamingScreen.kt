@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.networkstreaming
+package app.gyrolet.mpvrx.ui.browser.networkstreaming
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -41,11 +41,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -53,12 +53,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -74,7 +71,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -90,33 +86,43 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.R
-import app.infinity.mpvz.database.entities.NetworkStreamEntryEntity
-import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
-import app.infinity.mpvz.domain.network.ConnectionStatus
-import app.infinity.mpvz.domain.network.NetworkConnection
-import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
-import app.infinity.mpvz.domain.torrent.formatTorrentBytes
-import app.infinity.mpvz.domain.torrent.isTorrentSource
-import app.infinity.mpvz.domain.torrent.normalizeTorrentSource
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.presentation.components.RemoteImage
-import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
-import app.infinity.mpvz.utils.media.MediaInfoParser
-import app.infinity.mpvz.ui.browser.cards.NetworkConnectionCard
-import app.infinity.mpvz.ui.browser.components.BrowserTopBar
-import app.infinity.mpvz.ui.browser.dialogs.AddConnectionSheet
-import app.infinity.mpvz.ui.browser.dialogs.EditConnectionSheet
-import app.infinity.mpvz.ui.icons.AppIcon
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.torrent.TorrentSelectionInput
-import app.infinity.mpvz.ui.torrent.TorrentSelectionScreen
-import app.infinity.mpvz.ui.torrent.TorrentSelectionViewModel
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.utils.media.MediaUtils
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.database.entities.NetworkStreamEntryEntity
+import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
+import app.gyrolet.mpvrx.domain.network.ConnectionStatus
+import app.gyrolet.mpvrx.domain.network.NetworkConnection
+import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
+import app.gyrolet.mpvrx.domain.torrent.formatTorrentBytes
+import app.gyrolet.mpvrx.domain.torrent.isTorrentSource
+import app.gyrolet.mpvrx.domain.torrent.normalizeTorrentSource
+import app.gyrolet.mpvrx.preferences.YtdlPreferences
+import app.gyrolet.mpvrx.preferences.NetworkBookmarkPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.presentation.components.RemoteImage
+import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
+import app.gyrolet.mpvrx.utils.media.MediaInfoParser
+import app.gyrolet.mpvrx.ui.browser.cards.NetworkConnectionCard
+import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
+import app.gyrolet.mpvrx.ui.browser.dialogs.AddConnectionSheet
+import app.gyrolet.mpvrx.ui.browser.dialogs.EditConnectionSheet
+import app.gyrolet.mpvrx.ui.components.InlineSearchBar
+import app.gyrolet.mpvrx.ui.icons.AppIcon
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpInstallPromptDialog
+import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpInstallProgressDialog
+import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
+import app.gyrolet.mpvrx.ui.preferences.YtdlpSettingsScreen
+import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionInput
+import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionScreen
+import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionViewModel
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.utils.media.SharedUrlExtractor
+import app.gyrolet.mpvrx.utils.media.MediaUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
@@ -125,8 +131,8 @@ private const val VIEWED_TORRENT_FILES_PREFS = "torrent_viewed_files"
 
 private enum class NetworkTab(val titleResId: Int) {
   LOCAL_NETWORK(R.string.ui_local_network),
-  SYNC_PLAY(R.string.syncplay_title),
   MEDIA(R.string.ui_media),
+  SYNC_PLAY(R.string.syncplay_title),
 }
 
 @Serializable
@@ -140,7 +146,10 @@ object NetworkStreamingScreen : Screen {
       viewModel(factory = NetworkStreamingViewModel.factory(context.applicationContext as android.app.Application))
     val torrentStreamingEngine = koinInject<TorrentStreamingEngine>()
     val streamEntryRepository = koinInject<NetworkStreamEntryRepository>()
+    val ytdlPreferences = koinInject<YtdlPreferences>()
+    val bookmarkPreferences = koinInject<NetworkBookmarkPreferences>()
     val wyzieSearchRepository = koinInject<WyzieSearchRepository>()
+    val linkDownloadCoordinator = koinInject<app.gyrolet.mpvrx.domain.download.LinkDownloadCoordinator>()
     val torrentPickerViewModel: TorrentSelectionViewModel =
       viewModel(
         key = "network_torrent_picker",
@@ -153,15 +162,58 @@ object NetworkStreamingScreen : Screen {
       )
     val torrentPickerState by torrentPickerViewModel.uiState.collectAsState()
     val connections by viewModel.connections.collectAsState()
+    val folderBookmarks by bookmarkPreferences.bookmarks.collectAsState()
     val connectionStatuses by viewModel.connectionStatuses.collectAsState()
     val recentLinks by viewModel.recentLinks.collectAsState()
-    val torrentGroups by viewModel.torrentGroups.collectAsState()
+    val allMediaGroups by viewModel.allMediaGroups.collectAsState()
     var showAddSheet by remember { mutableStateOf(false) }
+    var showAddMediaDialog by remember { mutableStateOf(false) }
     var editingConnection by remember { mutableStateOf<NetworkConnection?>(null) }
     var showTorrentPicker by remember { mutableStateOf(false) }
-    var showStreamDialog by rememberSaveable { mutableStateOf(false) }
-    val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
+    val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
     val coroutineScope = rememberCoroutineScope()
+
+    // yt-dlp install gate for the "paste link -> Play" flow: instead of silently installing
+    // yt-dlp in the background while the player buffers on first use, we ask up front.
+    var pendingYtdlpUrl by remember { mutableStateOf<String?>(null) }
+    var showYtdlpInstallPrompt by remember { mutableStateOf(false) }
+    var showYtdlpInstallProgress by remember { mutableStateOf(false) }
+    var ytdlpInstallLastLog by remember { mutableStateOf("") }
+    var ytdlpInstallError by remember { mutableStateOf<String?>(null) }
+    var ytdlpInstallJob by remember { mutableStateOf<Job?>(null) }
+    var linkPlaybackJob by remember { mutableStateOf<Job?>(null) }
+
+    fun proceedToPlay(url: String) {
+      if (linkPlaybackJob?.isActive == true) return
+      linkPlaybackJob =
+        coroutineScope.launch {
+          try {
+            val extractedPlaylist =
+              if (YtdlpManager.isPotentialPlaylistUrl(url)) {
+                YtdlpManager.extractPlaylist(context, url, ytdlPreferences).getOrNull()
+              } else {
+                null
+              }
+            viewModel.recordSubmittedLink(url)
+            if (extractedPlaylist != null) {
+              YtdlpManager.playPlaylist(context, extractedPlaylist, "network_stream")
+            } else {
+              MediaUtils.playFile(url, context, "network_stream")
+            }
+          } finally {
+            linkPlaybackJob = null
+          }
+        }
+    }
+
+    fun playLinkGatingYtdlp(url: String) {
+      if (YtdlpManager.requiresYtdlp(url) && !YtdlpManager.isInstalled(context)) {
+        pendingYtdlpUrl = url
+        showYtdlpInstallPrompt = true
+      } else {
+        proceedToPlay(url)
+      }
+    }
 
     LaunchedEffect(torrentPickerViewModel) {
       torrentPickerViewModel.launches.collect { request ->
@@ -203,29 +255,41 @@ object NetworkStreamingScreen : Screen {
         }
       }
 
-    val filteredTorrentGroups =
-      remember(torrentGroups, searchQuery) {
-        val query = searchQuery.trim()
-        torrentGroups.mapNotNull { group ->
-          if (query.isEmpty()) return@mapNotNull VisibleTorrentGroup(group, group.files)
+    val resolvedFolderBookmarks =
+      remember(folderBookmarks, connections) {
+        resolveNetworkFolderBookmarks(folderBookmarks, connections)
+      }
 
-          val groupMatches =
+    val filteredFolderBookmarks =
+      remember(resolvedFolderBookmarks, searchQuery) {
+        if (searchQuery.isBlank()) {
+          resolvedFolderBookmarks
+        } else {
+          resolvedFolderBookmarks.filter { item ->
+            item.bookmark.folderName.contains(searchQuery, ignoreCase = true) ||
+              item.connection.name.contains(searchQuery, ignoreCase = true) ||
+              item.bookmark.path.contains(searchQuery, ignoreCase = true)
+          }
+        }
+      }
+
+    val filteredMediaGroups =
+      remember(allMediaGroups, searchQuery) {
+        val query = searchQuery.trim()
+        if (query.isEmpty()) {
+          allMediaGroups
+        } else {
+          allMediaGroups.filter { group ->
             group.title.contains(query, ignoreCase = true) ||
               group.infoHash.orEmpty().contains(query, ignoreCase = true) ||
               group.canonicalSourceUri.contains(query, ignoreCase = true) ||
               group.overview.orEmpty().contains(query, ignoreCase = true) ||
-              group.releaseYear.orEmpty().contains(query, ignoreCase = true)
-
-          val matchingFiles =
-            group.files.filter { entry ->
-              entry.fileName.contains(query, ignoreCase = true) ||
-                entry.filePath.orEmpty().contains(query, ignoreCase = true) ||
-                entry.fileIndex?.toString() == query
-            }
-          when {
-            groupMatches -> VisibleTorrentGroup(group, group.files)
-            matchingFiles.isNotEmpty() -> VisibleTorrentGroup(group, matchingFiles)
-            else -> null
+              group.releaseYear.orEmpty().contains(query, ignoreCase = true) ||
+              group.files.any { entry ->
+                entry.fileName.contains(query, ignoreCase = true) ||
+                  entry.filePath.orEmpty().contains(query, ignoreCase = true) ||
+                  entry.fileIndex?.toString() == query
+              }
           }
         }
       }
@@ -237,160 +301,158 @@ object NetworkStreamingScreen : Screen {
 
     val pagerState = rememberPagerState { NetworkTab.entries.size }
 
+    val headerContainerColor =
+      if (MaterialTheme.colorScheme.background == Color.Black) Color.Black else MaterialTheme.colorScheme.surfaceContainer
+
     Scaffold(
+      modifier = Modifier.fillMaxSize(),
       topBar = {
-        if (isSearching) {
-          SearchBar(
-            inputField = {
-              SearchBarDefaults.InputField(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                onSearch = { },
-                expanded = false,
-                onExpandedChange = { },
-                placeholder = {
-                  Text(stringResource(R.string.settings_search_title))
-                },
-                leadingIcon = {
+        Column(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .background(headerContainerColor),
+        ) {
+          if (isSearching) {
+            InlineSearchBar(
+              query = searchQuery,
+              onQueryChange = { searchQuery = it },
+              onSearch = { },
+              modifier =
+                Modifier
+                  .fillMaxWidth()
+                  .padding(horizontal = 16.dp, vertical = 8.dp),
+              inputFieldModifier = Modifier.focusRequester(focusRequester),
+              placeholder = {
+                Text(stringResource(R.string.settings_search_title))
+              },
+              leadingIcon = {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Search,
+                  contentDescription = stringResource(R.string.settings_search_title),
+                )
+              },
+              trailingIcon = {
+                IconButton(
+                  onClick = {
+                    isSearching = false
+                    searchQuery = ""
+                  },
+                ) {
                   Icon(
-                    imageVector = Icons.RoundedFilled.Search,
-                    contentDescription = stringResource(R.string.settings_search_title),
+                    imageVector = Icons.RoundedFilled.Close,
+                    contentDescription = stringResource(R.string.generic_cancel),
                   )
+                }
+              },
+              shape = RoundedCornerShape(28.dp),
+              tonalElevation = 6.dp,
+            )
+          } else {
+            Box {
+              BrowserTopBar(
+                title = stringResource(R.string.ui_network),
+                isInSelectionMode = false,
+                selectedCount = 0,
+                totalCount = connections.size + recentLinks.size + allMediaGroups.size + resolvedFolderBookmarks.size,
+                onBackClick = null,
+                onCancelSelection = { },
+                onSortClick = null,
+                onSearchClick = null,
+                onSettingsClick = {
+                  backstack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
                 },
-                trailingIcon = {
+                onDeleteClick = null,
+                onRenameClick = null,
+                isSingleSelection = false,
+                onInfoClick = null,
+                onShareClick = null,
+                onPlayClick = null,
+                onSelectAll = null,
+                onInvertSelection = null,
+                onDeselectAll = null,
+                additionalActions = {
                   IconButton(
-                    onClick = {
-                      isSearching = false
-                      searchQuery = ""
-                    },
+                    onClick = { backstack.add(app.gyrolet.mpvrx.ui.downloads.DownloadsScreen) },
+                    modifier = Modifier.padding(horizontal = 2.dp),
                   ) {
                     Icon(
-                      imageVector = Icons.RoundedFilled.Close,
-                      contentDescription = stringResource(R.string.generic_cancel),
+                      imageVector = Icons.RoundedFilled.Download,
+                      contentDescription = stringResource(R.string.downloads_open_downloads),
+                      modifier = Modifier.size(24.dp),
+                      tint = MaterialTheme.colorScheme.secondary,
                     )
                   }
                 },
-                modifier = Modifier.focusRequester(focusRequester),
               )
-            },
-            expanded = false,
-            onExpandedChange = { },
-            modifier =
-              Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(28.dp),
-            tonalElevation = 6.dp,
-          ) {
-            // Empty search bar content
+            }
           }
-        } else {
-          BrowserTopBar(
-            title = stringResource(R.string.ui_network),
-            isInSelectionMode = false,
-            selectedCount = 0,
-            totalCount = connections.size + recentLinks.size + torrentGroups.size,
-            onBackClick = null,
-            onCancelSelection = { },
-            onSortClick = null,
-            onSearchClick = null,
-            onSettingsClick = {
-              backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
-            },
-            onDeleteClick = null,
-            onRenameClick = null,
-            isSingleSelection = false,
-            onInfoClick = null,
-            onShareClick = null,
-            onPlayClick = null,
-            onSelectAll = null,
-            onInvertSelection = null,
-            onDeselectAll = null,
-          )
+
+          PrimaryScrollableTabRow(
+            selectedTabIndex = pagerState.currentPage.coerceIn(0, (NetworkTab.entries.size - 1).coerceAtLeast(0)),
+            edgePadding = 8.dp,
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.primary,
+            divider = {},
+          ) {
+            NetworkTab.entries.forEachIndexed { index, tab ->
+              Tab(
+                selected = pagerState.currentPage == index,
+                onClick = {
+                  coroutineScope.launch { pagerState.animateScrollToPage(index) }
+                },
+                text = {
+                  Text(
+                    text = stringResource(tab.titleResId),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                },
+              )
+            }
+          }
+          HorizontalDivider()
         }
       },
       floatingActionButton = {
-        if (pagerState.currentPage == NetworkTab.LOCAL_NETWORK.ordinal || pagerState.currentPage == NetworkTab.MEDIA.ordinal) {
-          ExtendedFloatingActionButton(
-            onClick = {
-              if (pagerState.currentPage == NetworkTab.LOCAL_NETWORK.ordinal) {
-                showAddSheet = true
-              } else {
-                showStreamDialog = true
-              }
-            },
-            icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
-            text = {
-              Text(
-                stringResource(R.string.ui_add_connection),
-              )
-            },
-            modifier = Modifier.padding(bottom = navigationBarHeight),
-          )
+        when (pagerState.currentPage) {
+          NetworkTab.LOCAL_NETWORK.ordinal -> {
+            ExtendedFloatingActionButton(
+              onClick = { showAddSheet = true },
+              icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
+              text = {
+                Text(
+                  stringResource(R.string.ui_add_connection),
+                )
+              },
+              modifier = Modifier.padding(bottom = navigationBarHeight),
+            )
+          }
+          NetworkTab.MEDIA.ordinal -> {
+            ExtendedFloatingActionButton(
+              onClick = { showAddMediaDialog = true },
+              icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
+              text = { Text("Add Media") },
+              modifier = Modifier.padding(bottom = navigationBarHeight),
+            )
+          }
         }
       },
     ) { padding ->
-      Column(
+      Box(
         modifier =
           Modifier
             .fillMaxSize()
             .padding(padding),
       ) {
-        StreamLinkSection(
-          recentLinks = filteredRecentLinks,
-          showDialog = showStreamDialog,
-          onShowDialogChange = { showStreamDialog = it },
-          onPlayLink = { url ->
-            val playableSource = normalizeTorrentSource(url) ?: url.trim()
-            if (isTorrentSource(playableSource)) {
-              showTorrentPicker = true
-              torrentPickerViewModel.open(TorrentSelectionInput(source = playableSource))
-            } else {
-              viewModel.recordSubmittedLink(playableSource)
-              MediaUtils.playFile(playableSource, context, "network_stream")
-            }
-          },
-          onPlayRecent = { entry ->
-            viewModel.recordSubmittedLink(entry.canonicalSourceUri)
-            MediaUtils.playFile(
-              source = entry.canonicalSourceUri,
-              context = context,
-              launchSource = "network_recent",
-              title = entry.fileName,
-            )
-          },
-          onDeleteRecent = viewModel::deleteStreamEntry,
-        )
-
-        ScrollableTabRow(
-          selectedTabIndex = pagerState.currentPage,
-          edgePadding = 16.dp,
-          containerColor = MaterialTheme.colorScheme.surface,
-          contentColor = MaterialTheme.colorScheme.primary,
-          divider = {},
-        ) {
-          NetworkTab.entries.forEachIndexed { index, tab ->
-            Tab(
-              selected = pagerState.currentPage == index,
-              onClick = {
-                coroutineScope.launch { pagerState.animateScrollToPage(index) }
-              },
-              text = {
-                Text(
-                  text = stringResource(tab.titleResId),
-                  fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal,
-                )
-              },
-            )
-          }
-        }
-
         HorizontalPager(
           state = pagerState,
           modifier =
             Modifier
-              .fillMaxSize()
-              .weight(1f),
+              .fillMaxSize(),
           userScrollEnabled = true,
           beyondViewportPageCount = 1,
         ) { page ->
@@ -398,7 +460,50 @@ object NetworkStreamingScreen : Screen {
             NetworkTab.LOCAL_NETWORK -> {
               LocalNetworkContent(
                 connections = filteredConnections,
+                bookmarks = filteredFolderBookmarks,
                 connectionStatuses = connectionStatuses,
+                recentLinks = filteredRecentLinks,
+                isPreparingLink =
+                  showYtdlpInstallPrompt ||
+                    showYtdlpInstallProgress ||
+                    linkPlaybackJob?.isActive == true,
+                onPlayLink = { url ->
+                  val playableSource = normalizeTorrentSource(url) ?: url.trim()
+                  if (isTorrentSource(playableSource)) {
+                    showTorrentPicker = true
+                    torrentPickerViewModel.open(TorrentSelectionInput(source = playableSource))
+                  } else {
+                    playLinkGatingYtdlp(playableSource)
+                  }
+                },
+                onPlayRecent = { entry ->
+                  viewModel.recordExistingLinkPlayed(entry.stableKey)
+                  MediaUtils.playFile(
+                    source = entry.canonicalSourceUri,
+                    context = context,
+                    launchSource = "network_recent",
+                    title = entry.fileName,
+                  )
+                },
+                onSaveToMedia = { entry ->
+                  val playableSource = normalizeTorrentSource(entry.canonicalSourceUri) ?: entry.canonicalSourceUri.trim()
+                  if (isTorrentSource(playableSource)) {
+                    showTorrentPicker = true
+                    torrentPickerViewModel.open(TorrentSelectionInput(source = playableSource, title = entry.fileName))
+                  } else {
+                    when (linkDownloadCoordinator.enqueue(playableSource, entry.fileName)) {
+                      app.gyrolet.mpvrx.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED ->
+                        android.widget.Toast
+                          .makeText(context, R.string.downloads_location_invalid, android.widget.Toast.LENGTH_SHORT)
+                          .show()
+                      else ->
+                        android.widget.Toast
+                          .makeText(context, R.string.downloads_started, android.widget.Toast.LENGTH_SHORT)
+                          .show()
+                    }
+                  }
+                },
+                onDeleteRecent = viewModel::deleteStreamEntry,
                 onConnect = { viewModel.connect(it) },
                 onDisconnect = { viewModel.disconnect(it) },
                 onEdit = { editingConnection = it },
@@ -417,27 +522,48 @@ object NetworkStreamingScreen : Screen {
                 onAutoConnectChange = { conn, autoConnect ->
                   viewModel.updateConnection(conn.copy(autoConnect = autoConnect))
                 },
+                onOpenBookmark = { item ->
+                  backstack.add(
+                    NetworkBrowserScreen(
+                      connectionId = item.connection.id,
+                      connectionName = item.connection.name,
+                      currentPath = item.bookmark.path,
+                    ),
+                  )
+                },
+                onManageBookmarks = { backstack.add(NetworkBookmarksScreen) },
+              )
+            }
+            NetworkTab.MEDIA -> {
+              MediaContent(
+                mediaGroups = filteredMediaGroups,
+                searchQuery = searchQuery,
+                onPlayMedia = { entry ->
+                  val playableSource = normalizeTorrentSource(entry.canonicalSourceUri) ?: entry.canonicalSourceUri.trim()
+                  if (isTorrentSource(playableSource)) {
+                    MediaUtils.playFile(
+                      source = entry.canonicalSourceUri,
+                      context = context,
+                      launchSource = "network_torrent",
+                      title = entry.fileName,
+                      torrentFileIndex = entry.fileIndex,
+                    )
+                  } else {
+                    viewModel.recordExistingLinkPlayed(entry.stableKey)
+                    MediaUtils.playFile(
+                      source = entry.canonicalSourceUri,
+                      context = context,
+                      launchSource = "network_media",
+                      title = entry.fileName,
+                    )
+                  }
+                },
+                onDeleteMediaFile = viewModel::deleteStreamEntry,
+                onDeleteMediaGroup = { viewModel.deleteMediaGroup(it) },
               )
             }
             NetworkTab.SYNC_PLAY -> {
               SyncPlayContent()
-            }
-            NetworkTab.MEDIA -> {
-              TorrentContent(
-                torrentGroups = filteredTorrentGroups,
-                searchQuery = searchQuery,
-                onPlayTorrent = { entry ->
-                  MediaUtils.playFile(
-                    source = entry.canonicalSourceUri,
-                    context = context,
-                    launchSource = "network_torrent",
-                    title = entry.fileName,
-                    torrentFileIndex = entry.fileIndex,
-                  )
-                },
-                onDeleteTorrentFile = viewModel::deleteStreamEntry,
-                onDeleteTorrentGroup = { viewModel.deleteTorrentGroup(it.group) },
-              )
             }
           }
         }
@@ -449,6 +575,70 @@ object NetworkStreamingScreen : Screen {
         onSave = { connection ->
           viewModel.addConnection(connection)
           showAddSheet = false
+        },
+      )
+
+      YtdlpInstallPromptDialog(
+        isOpen = showYtdlpInstallPrompt,
+        onInstall = {
+          showYtdlpInstallPrompt = false
+          ytdlpInstallError = null
+          ytdlpInstallLastLog = ""
+          showYtdlpInstallProgress = true
+          ytdlpInstallJob =
+            coroutineScope.launch {
+              val success =
+                YtdlpManager.runInstall(context) { log ->
+                  // runInstall logs from an IO dispatcher; hop back to Main before touching state.
+                  coroutineScope.launch(Dispatchers.Main) {
+                    ytdlpInstallLastLog = log
+                  }
+                }
+              if (success) {
+                showYtdlpInstallProgress = false
+                pendingYtdlpUrl?.let { proceedToPlay(it) }
+                pendingYtdlpUrl = null
+              } else {
+                // Leave the progress dialog open so the error is visible; Cancel dismisses it.
+                ytdlpInstallError = context.getString(R.string.ytdlp_install_failed)
+              }
+            }
+        },
+        onConfigure = {
+          showYtdlpInstallPrompt = false
+          pendingYtdlpUrl = null
+          backstack.add(YtdlpSettingsScreen)
+        },
+        onDismiss = {
+          showYtdlpInstallPrompt = false
+          pendingYtdlpUrl = null
+        },
+      )
+
+      YtdlpInstallProgressDialog(
+        isOpen = showYtdlpInstallProgress,
+        lastLogLine = ytdlpInstallLastLog,
+        error = ytdlpInstallError,
+        onCancel = {
+          ytdlpInstallJob?.cancel()
+          ytdlpInstallJob = null
+          showYtdlpInstallProgress = false
+          pendingYtdlpUrl = null
+        },
+      )
+
+      AddMediaDialog(
+        isOpen = showAddMediaDialog,
+        onDismiss = { showAddMediaDialog = false },
+        onSubmit = { url ->
+          val playableSource = normalizeTorrentSource(url) ?: url.trim()
+          if (isTorrentSource(playableSource)) {
+            showTorrentPicker = true
+            torrentPickerViewModel.open(TorrentSelectionInput(source = playableSource))
+          } else {
+            viewModel.saveLinkToMedia(playableSource)
+            MediaUtils.playFile(playableSource, context, "network_stream")
+          }
         },
       )
 
@@ -480,22 +670,128 @@ object NetworkStreamingScreen : Screen {
 }
 
 @Composable
+private fun AddMediaDialog(
+  isOpen: Boolean,
+  onDismiss: () -> Unit,
+  onSubmit: (String) -> Unit,
+) {
+  if (!isOpen) return
+  var inputUrl by remember { mutableStateOf("") }
+  val context = LocalContext.current
+  val clipboard = androidx.compose.ui.platform.LocalClipboard.current
+  val coroutineScope = rememberCoroutineScope()
+
+  androidx.compose.material3.AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.ui_saved_media)) },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          text = "Paste a torrent magnet link, direct video stream (HLS, MP4, MKV), or YouTube URL to save and play.",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+          value = inputUrl,
+          onValueChange = { inputUrl = it },
+          label = { Text("Stream or Magnet URL") },
+          placeholder = { Text("magnet:?xt=... or https://...") },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          trailingIcon = {
+            if (inputUrl.isBlank()) {
+              IconButton(
+                onClick = {
+                  coroutineScope.launch {
+                    val clipData = clipboard.getClipEntry()?.clipData
+                    if (clipData != null && clipData.itemCount > 0) {
+                      val clip = clipData.getItemAt(0).coerceToText(context)?.toString()?.trim()
+                      if (!clip.isNullOrBlank()) inputUrl = clip
+                    }
+                  }
+                },
+              ) {
+                Icon(Icons.RoundedFilled.ContentPaste, contentDescription = "Paste")
+              }
+            } else {
+              IconButton(onClick = { inputUrl = "" }) {
+                Icon(Icons.RoundedFilled.Close, contentDescription = "Clear")
+              }
+            }
+          },
+        )
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = {
+          if (inputUrl.isNotBlank()) {
+            onSubmit(inputUrl.trim())
+            onDismiss()
+          }
+        },
+        enabled = inputUrl.isNotBlank(),
+      ) {
+        Text(stringResource(R.string.ui_play_now))
+      }
+    },
+    dismissButton = {
+      androidx.compose.material3.TextButton(onClick = onDismiss) {
+        Text(stringResource(R.string.generic_cancel))
+      }
+    },
+  )
+}
+
+@Composable
 private fun LocalNetworkContent(
   connections: List<NetworkConnection>,
+  bookmarks: List<ResolvedNetworkFolderBookmark>,
   connectionStatuses: Map<Long, ConnectionStatus>,
+  recentLinks: List<NetworkStreamEntryEntity>,
+  isPreparingLink: Boolean,
+  onPlayLink: (String) -> Unit,
+  onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
+  onSaveToMedia: (NetworkStreamEntryEntity) -> Unit,
+  onDeleteRecent: (String) -> Unit,
   onConnect: (NetworkConnection) -> Unit,
   onDisconnect: (NetworkConnection) -> Unit,
   onEdit: (NetworkConnection) -> Unit,
   onDelete: (NetworkConnection) -> Unit,
   onBrowse: (NetworkConnection, ConnectionStatus?) -> Unit,
   onAutoConnectChange: (NetworkConnection, Boolean) -> Unit,
+  onOpenBookmark: (ResolvedNetworkFolderBookmark) -> Unit,
+  onManageBookmarks: () -> Unit,
 ) {
-  val navBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
+  val navBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
-    verticalArrangement = Arrangement.spacedBy(0.dp),
+    verticalArrangement = Arrangement.spacedBy(16.dp),
   ) {
+    // 1. Stream Link Section (URL input & recent streams with Save to Media action)
+    item {
+      StreamLinkSection(
+        recentLinks = recentLinks,
+        isPreparing = isPreparingLink,
+        onPlayLink = onPlayLink,
+        onPlayRecent = onPlayRecent,
+        onSaveToTorrent = onSaveToMedia,
+        onDeleteRecent = onDeleteRecent,
+      )
+    }
+
+    if (bookmarks.isNotEmpty()) {
+      item {
+        NetworkBookmarkSection(
+          bookmarks = bookmarks,
+          onOpen = onOpenBookmark,
+          onManage = onManageBookmarks,
+        )
+      }
+    }
+
+    // 2. Saved Network Connections Section
     if (connections.isEmpty()) {
       item {
         EmptyStateCard(
@@ -518,7 +814,7 @@ private fun LocalNetworkContent(
           isConnected = status?.isConnected ?: false,
           isConnecting = status?.isConnecting ?: false,
           error = status?.error,
-          modifier = Modifier.padding(bottom = 16.dp),
+          modifier = Modifier.padding(bottom = 0.dp),
         )
       }
     }
@@ -531,38 +827,164 @@ private fun SyncPlayContent() {
 }
 
 @Composable
-private fun TorrentContent(
-  torrentGroups: List<VisibleTorrentGroup>,
+private fun MediaContent(
+  mediaGroups: List<MediaStreamGroup>,
   searchQuery: String,
-  onPlayTorrent: (NetworkStreamEntryEntity) -> Unit,
-  onDeleteTorrentFile: (String) -> Unit,
-  onDeleteTorrentGroup: (VisibleTorrentGroup) -> Unit,
+  onPlayMedia: (NetworkStreamEntryEntity) -> Unit,
+  onDeleteMediaFile: (String) -> Unit,
+  onDeleteMediaGroup: (MediaStreamGroup) -> Unit,
 ) {
-  val navBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
-  LazyColumn(
-    modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
-    verticalArrangement = Arrangement.spacedBy(14.dp),
-  ) {
-    if (torrentGroups.isNotEmpty()) {
-      items(torrentGroups, key = { "torrent-group:${it.group.id}" }) { result ->
-        AnimeTorrentCard(
-          group = result.group,
-          visibleFiles = result.visibleFiles,
-          forceExpanded = searchQuery.isNotBlank(),
-          onPlay = { onPlayTorrent(it) },
-          onDeleteFile = onDeleteTorrentFile,
-          onDeleteGroup = { onDeleteTorrentGroup(result) },
-        )
+  val context = LocalContext.current
+  val viewedPreferences =
+    remember(context) {
+      context.getSharedPreferences(VIEWED_TORRENT_FILES_PREFS, Context.MODE_PRIVATE)
+    }
+
+  var selectedDetailGroup by remember { mutableStateOf<MediaStreamGroup?>(null) }
+  val navBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
+
+  val heroGroups =
+    remember(mediaGroups) {
+      mediaGroups.filter { !it.backdropUrl.isNullOrBlank() || !it.posterUrl.isNullOrBlank() }
+        .ifEmpty { mediaGroups }
+    }
+
+  val recentViewedFiles =
+    remember(mediaGroups) {
+      mediaGroups.flatMap { group ->
+        val infoHash = group.infoHash
+        val viewed = if (infoHash != null) loadViewedFileIndices(viewedPreferences, infoHash) else emptySet()
+        group.files.filter { it.fileIndex in viewed || group.groupType != MediaGroupType.TORRENT }
+      }.sortedByDescending { it.updatedAt }
+        .distinctBy { it.stableKey }
+    }
+
+  val onPlayWithHistory: (NetworkStreamEntryEntity, String?) -> Unit = { file, infoHash ->
+    val fileIdx = file.fileIndex ?: 0
+    if (infoHash != null) {
+      val viewed = loadViewedFileIndices(viewedPreferences, infoHash)
+      saveViewedFileIndices(viewedPreferences, infoHash, viewed + fileIdx)
+    }
+    onPlayMedia(file)
+  }
+
+  Box(modifier = Modifier.fillMaxSize()) {
+    if (mediaGroups.isEmpty()) {
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
+      ) {
+        item {
+          EmptyStateCard(
+            icon = Icons.RoundedFilled.Movie,
+            title = stringResource(R.string.ui_no_saved_media_title),
+            subtitle = stringResource(R.string.ui_no_saved_media_description),
+          )
+        }
       }
     } else {
-      item {
-        EmptyStateCard(
-          icon = Icons.RoundedFilled.CloudDownload,
-          title = stringResource(R.string.ui_no_torrents_title),
-          subtitle = stringResource(R.string.ui_no_torrents_description),
-        )
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = navBarHeight + 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+      ) {
+        // 1. Featured Hero Carousel Banner
+        if (heroGroups.isNotEmpty() && searchQuery.isBlank()) {
+          item {
+            TorrentHeroBanner(
+              groups = heroGroups,
+              onPlay = { group ->
+                val infoHash = group.infoHash
+                val viewed = if (infoHash != null) loadViewedFileIndices(viewedPreferences, infoHash) else emptySet()
+                val targetFile = group.files.firstOrNull { it.fileIndex !in viewed } ?: group.files.firstOrNull()
+                if (targetFile != null) {
+                  onPlayWithHistory(targetFile, infoHash)
+                }
+              },
+              onDetails = { group -> selectedDetailGroup = group },
+            )
+          }
+        }
+
+        // 2. Continue Watching (Recently Played Saved Links)
+        if (recentViewedFiles.isNotEmpty() && searchQuery.isBlank()) {
+          item {
+            Column(
+              modifier = Modifier.fillMaxWidth(),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              TorrentSectionHeader(
+                title = "Continue Watching",
+                subtitle = "Resume your recent streams and torrents",
+              )
+              androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+              ) {
+                items(recentViewedFiles, key = { it.stableKey }) { entry ->
+                  TorrentResumeCard(
+                    entry = entry,
+                    onClick = { onPlayWithHistory(entry, entry.infoHash) },
+                    onLongClick = {
+                      val group = mediaGroups.find { it.infoHash == entry.infoHash || it.canonicalSourceUri == entry.canonicalSourceUri }
+                      if (group != null) selectedDetailGroup = group
+                    },
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        // 3. Saved Links Section Header
+        item {
+          TorrentSectionHeader(
+            title = if (searchQuery.isNotBlank()) "Search Results (${mediaGroups.size})" else "Saved Links (${mediaGroups.size})",
+            subtitle = if (searchQuery.isNotBlank()) null else "Stream instantly with high-speed hardware acceleration",
+          )
+        }
+
+        // 4. Saved Links Posters
+        if (mediaGroups.isNotEmpty()) {
+          item {
+            androidx.compose.foundation.lazy.LazyRow(
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+              contentPadding = PaddingValues(horizontal = 16.dp),
+            ) {
+              items(mediaGroups, key = { it.id }) { group ->
+                TorrentPosterCard(
+                  group = group,
+                  onClick = { selectedDetailGroup = group },
+                  onLongClick = { selectedDetailGroup = group },
+                )
+              }
+            }
+          }
+        }
       }
+    }
+
+    // 5. Cinematic Media Detail Sheet
+    selectedDetailGroup?.let { group ->
+      val infoHash = group.infoHash
+      val viewed =
+        remember(infoHash) {
+          if (infoHash != null) loadViewedFileIndices(viewedPreferences, infoHash) else emptySet()
+        }
+
+      TorrentDetailSheet(
+        group = group,
+        viewedFileIndices = viewed,
+        onDismiss = { selectedDetailGroup = null },
+        onPlayFile = { file ->
+          onPlayWithHistory(file, group.infoHash)
+        },
+        onDeleteGroup = { grp ->
+          onDeleteMediaGroup(grp)
+          selectedDetailGroup = null
+        },
+        onDeleteFile = onDeleteMediaFile,
+      )
     }
   }
 }
@@ -612,661 +1034,18 @@ private fun EmptyStateCard(
   }
 }
 
-private data class VisibleTorrentGroup(
-  val group: TorrentStreamGroup,
-  val visibleFiles: List<NetworkStreamEntryEntity>,
-)
-
-@Composable
-private fun AnimeTorrentCard(
-  group: TorrentStreamGroup,
-  visibleFiles: List<NetworkStreamEntryEntity>,
-  forceExpanded: Boolean,
-  onPlay: (NetworkStreamEntryEntity) -> Unit,
-  onDeleteFile: (String) -> Unit,
-  onDeleteGroup: () -> Unit,
-) {
-  val context = LocalContext.current
-  val viewedPreferences =
-    remember(context) {
-      context.getSharedPreferences(VIEWED_TORRENT_FILES_PREFS, Context.MODE_PRIVATE)
-    }
-  var viewedFileIndices by
-    remember(group.infoHash) {
-      mutableStateOf(group.infoHash?.let { loadViewedFileIndices(viewedPreferences, it) } ?: emptySet())
-    }
-
-  var expanded by rememberSaveable(group.id) { mutableStateOf(false) }
-  var overviewExpanded by rememberSaveable(group.id) { mutableStateOf(false) }
-  var overviewOverflow by remember(group.id) { mutableStateOf(false) }
-  var isSearchOpen by rememberSaveable(group.id) { mutableStateOf(false) }
-  var episodeSearchQuery by rememberSaveable(group.id) { mutableStateOf("") }
-  var sortDescending by rememberSaveable(group.id) { mutableStateOf(false) }
-  val showFiles = forceExpanded || expanded || (isSearchOpen && episodeSearchQuery.isNotBlank())
-  var showDashboard by rememberSaveable(group.id) { mutableStateOf(false) }
-
-  val fileCountLabel =
-    pluralStringResource(
-      R.plurals.ui_torrent_group_file_count,
-      group.files.size,
-      group.files.size,
-    )
-
-  val mediaTypeLabel =
-    when {
-      group.mediaType?.contains("anime", ignoreCase = true) == true -> stringResource(R.string.ui_torrent_media_anime)
-      group.mediaType?.contains("tv", ignoreCase = true) == true -> stringResource(R.string.ui_torrent_media_series)
-      group.mediaType?.contains("movie", ignoreCase = true) == true -> stringResource(R.string.ui_torrent_media_movie)
-      group.files.any { it.fileName.contains("anime", ignoreCase = true) } -> stringResource(R.string.ui_torrent_media_anime)
-      group.files.size > 1 -> stringResource(R.string.ui_torrent_media_series)
-      else -> stringResource(R.string.ui_torrent_media_torrent)
-    }
-
-  val firstPlayableFile =
-    remember(group.files, viewedFileIndices) {
-      group.files.firstOrNull { file -> file.fileIndex !in viewedFileIndices } ?: group.files.firstOrNull()
-    }
-
-  Card(
-    modifier =
-      Modifier
-        .fillMaxWidth()
-        .animateContentSize()
-        .clickable { showDashboard = true },
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    shape = RoundedCornerShape(20.dp),
-  ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-      // 2. Main Card Content (Header & Info)
-      Column(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(14.dp),
-          verticalAlignment = Alignment.Top,
-        ) {
-          if (group.posterUrl != null) {
-            val posterUrl = group.posterUrl
-            Box(
-              modifier =
-                Modifier
-                  .width(72.dp)
-                  .aspectRatio(2f / 3f)
-                  .clip(RoundedCornerShape(12.dp)),
-            ) {
-              RemoteImage(
-                url = posterUrl,
-                contentDescription = group.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-              )
-            }
-          } else {
-            Surface(
-              modifier = Modifier.size(52.dp),
-              shape = RoundedCornerShape(14.dp),
-              color = MaterialTheme.colorScheme.primaryContainer,
-            ) {
-              Box(contentAlignment = Alignment.Center) {
-                Icon(
-                  imageVector = Icons.RoundedFilled.Movie,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                  modifier = Modifier.size(28.dp),
-                )
-              }
-            }
-          }
-
-          Column(modifier = Modifier.weight(1f)) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-              ) {
-                Text(
-                  text = mediaTypeLabel.uppercase(),
-                  style = MaterialTheme.typography.labelSmall,
-                  fontWeight = FontWeight.Bold,
-                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-              }
-
-              IconButton(
-                onClick = onDeleteGroup,
-                modifier = Modifier.size(28.dp),
-              ) {
-                Icon(
-                  imageVector = Icons.RoundedFilled.Delete,
-                  contentDescription = stringResource(R.string.ui_delete_torrent_group),
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                  modifier = Modifier.size(18.dp),
-                )
-              }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-              text = group.title,
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(
-              horizontalArrangement = Arrangement.spacedBy(6.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              group.releaseYear?.takeIf(String::isNotBlank)?.let { year ->
-                MetaChip(text = year)
-              }
-              if (group.totalSize > 0L) {
-                MetaChip(text = formatTorrentBytes(group.totalSize))
-              }
-              MetaChip(text = fileCountLabel)
-            }
-          }
-        }
-
-        // Synopsis / Description (if available)
-        if (group.overview != null) {
-          val overview = group.overview
-          Column(
-            modifier =
-              Modifier
-                .fillMaxWidth()
-                .clickable { overviewExpanded = !overviewExpanded },
-          ) {
-            Text(
-              text = overview,
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = if (overviewExpanded) Int.MAX_VALUE else 2,
-              overflow = TextOverflow.Ellipsis,
-              onTextLayout = { result -> overviewOverflow = result.hasVisualOverflow },
-            )
-            if (overviewExpanded || overviewOverflow) {
-              Text(
-                text = stringResource(if (overviewExpanded) R.string.ui_show_less else R.string.ui_show_more),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(top = 2.dp),
-              )
-            }
-          }
-        }
-
-        // Card Action Row
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          if (firstPlayableFile != null) {
-            Button(
-              onClick = {
-                val fileIdx = firstPlayableFile.fileIndex ?: 0
-                val infoHash = group.infoHash
-                if (infoHash != null) {
-                  val updated = viewedFileIndices + fileIdx
-                  viewedFileIndices = updated
-                  saveViewedFileIndices(viewedPreferences, infoHash, updated)
-                }
-                onPlay(firstPlayableFile)
-              },
-              shape = RoundedCornerShape(12.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-            ) {
-              Icon(
-                imageVector = Icons.RoundedFilled.PlayArrow,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(
-                text = stringResource(if (viewedFileIndices.isEmpty()) R.string.ui_play_now else R.string.ui_resume_playback),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-              )
-            }
-          }
-
-          Spacer(modifier = Modifier.weight(1f))
-
-          if (visibleFiles.size > 1) {
-            IconButton(
-              onClick = {
-                isSearchOpen = !isSearchOpen
-                if (isSearchOpen && !expanded) {
-                  expanded = true
-                }
-              },
-            ) {
-              Icon(
-                imageVector = Icons.RoundedFilled.Search,
-                contentDescription = stringResource(R.string.ui_search_episodes),
-                tint =
-                  if (isSearchOpen || episodeSearchQuery.isNotBlank()) {
-                    MaterialTheme.colorScheme.primary
-                  } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                  },
-              )
-            }
-
-            IconButton(
-              onClick = { sortDescending = !sortDescending },
-            ) {
-              Icon(
-                imageVector = Icons.RoundedFilled.SwapVert,
-                contentDescription =
-                  stringResource(
-                    if (sortDescending) R.string.ui_sort_descending else R.string.ui_sort_ascending,
-                  ),
-                tint =
-                  if (sortDescending) {
-                    MaterialTheme.colorScheme.primary
-                  } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                  },
-              )
-            }
-          }
-
-          Button(
-            onClick = { expanded = !expanded },
-            enabled = !forceExpanded,
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.filledTonalButtonColors(),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-          ) {
-            Text(
-              text = stringResource(R.string.ui_episodes),
-              style = MaterialTheme.typography.labelMedium,
-              fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-              imageVector = if (showFiles) Icons.RoundedFilled.ExpandLess else Icons.RoundedFilled.ExpandMore,
-              contentDescription = null,
-              modifier = Modifier.size(18.dp),
-            )
-          }
-        }
-      }
-
-      // 3. Expandable Episodes / Files Section
-      AnimatedVisibility(
-        visible = showFiles,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically(),
-      ) {
-        val displayedFiles =
-          remember(visibleFiles, episodeSearchQuery, sortDescending) {
-            val baseList =
-              visibleFiles.sortedWith { e1, e2 ->
-                MediaInfoParser.compareMediaFiles(e1.fileName, e1.fileIndex, e2.fileName, e2.fileIndex)
-              }
-            val filtered =
-              if (episodeSearchQuery.isBlank()) {
-                baseList
-              } else {
-                val query = episodeSearchQuery.trim()
-                baseList.filter { file ->
-                  file.fileName.contains(query, ignoreCase = true) ||
-                    file.filePath?.contains(query, ignoreCase = true) == true ||
-                    (file.fileIndex != null && (file.fileIndex + 1).toString() == query)
-                }
-              }
-            if (sortDescending) filtered.reversed() else filtered
-          }
-
-        Column(
-          modifier =
-            Modifier
-              .fillMaxWidth()
-              .background(MaterialTheme.colorScheme.surfaceContainerLow)
-              .padding(vertical = 4.dp),
-        ) {
-          HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-
-          if (isSearchOpen && visibleFiles.size > 1) {
-            OutlinedTextField(
-              value = episodeSearchQuery,
-              onValueChange = { episodeSearchQuery = it },
-              modifier =
-                Modifier
-                  .fillMaxWidth()
-                  .padding(horizontal = 16.dp, vertical = 6.dp),
-              placeholder = {
-                Text(
-                  stringResource(R.string.ui_search_episodes),
-                  style = MaterialTheme.typography.bodySmall,
-                )
-              },
-              leadingIcon = {
-                Icon(
-                  imageVector = Icons.RoundedFilled.Search,
-                  contentDescription = null,
-                  modifier = Modifier.size(18.dp),
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              },
-              trailingIcon = {
-                if (episodeSearchQuery.isNotBlank()) {
-                  IconButton(onClick = { episodeSearchQuery = "" }) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.Close,
-                      contentDescription = "Clear",
-                      modifier = Modifier.size(18.dp),
-                    )
-                  }
-                }
-              },
-              singleLine = true,
-              shape = RoundedCornerShape(12.dp),
-              textStyle = MaterialTheme.typography.bodySmall,
-            )
-          }
-
-          if (displayedFiles.isEmpty()) {
-            Box(
-              modifier =
-                Modifier
-                  .fillMaxWidth()
-                  .padding(24.dp),
-              contentAlignment = Alignment.Center,
-            ) {
-              Text(
-                text = stringResource(R.string.ui_no_matching_episodes),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-          } else {
-            displayedFiles.forEachIndexed { index, entry ->
-              val isViewed = entry.fileIndex in viewedFileIndices
-              EpisodeCardRow(
-                entry = entry,
-                position = index,
-                viewed = isViewed,
-                onPlay = {
-                  val fileIdx = entry.fileIndex ?: 0
-                  val infoHash = group.infoHash
-                  if (infoHash != null) {
-                    val updated = viewedFileIndices + fileIdx
-                    viewedFileIndices = updated
-                    saveViewedFileIndices(viewedPreferences, infoHash, updated)
-                  }
-                  onPlay(entry)
-                },
-              )
-              if (index < displayedFiles.lastIndex) {
-                HorizontalDivider(
-                  modifier = Modifier.padding(start = 64.dp),
-                  color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
-                )
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  if (showDashboard) {
-    TorrentDashboardDialog(
-      group = group,
-      firstPlayableFile = firstPlayableFile,
-      viewedFileIndices = viewedFileIndices,
-      onDismiss = { showDashboard = false },
-      onPlay = { entry ->
-        showDashboard = false
-        val fileIdx = entry.fileIndex ?: 0
-        val infoHash = group.infoHash
-        if (infoHash != null) {
-          val updated = viewedFileIndices + fileIdx
-          viewedFileIndices = updated
-          saveViewedFileIndices(viewedPreferences, infoHash, updated)
-        }
-        onPlay(entry)
-      },
-      onDelete = {
-        showDashboard = false
-        onDeleteGroup()
-      },
-    )
-  }
-}
-
-@Composable
-private fun TorrentDashboardDialog(
-  group: TorrentStreamGroup,
-  firstPlayableFile: NetworkStreamEntryEntity?,
-  viewedFileIndices: Set<Int>,
-  onDismiss: () -> Unit,
-  onPlay: (NetworkStreamEntryEntity) -> Unit,
-  onDelete: () -> Unit,
-) {
-  Dialog(onDismissRequest = onDismiss) {
-    Surface(
-      modifier = Modifier.fillMaxWidth(),
-      shape = RoundedCornerShape(28.dp),
-      color = MaterialTheme.colorScheme.surface,
-      tonalElevation = 8.dp,
-    ) {
-      LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(bottom = 20.dp),
-      ) {
-        item {
-          Box(modifier = Modifier.fillMaxWidth().height(240.dp)) {
-            group.backdropUrl?.let { backdrop ->
-              RemoteImage(url = backdrop, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            }
-            Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface))))
-            IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-              Icon(imageVector = Icons.RoundedFilled.Close, contentDescription = "Close")
-            }
-            Row(
-              modifier = Modifier.align(Alignment.BottomStart).padding(20.dp),
-              horizontalArrangement = Arrangement.spacedBy(14.dp),
-              verticalAlignment = Alignment.Bottom,
-            ) {
-              group.posterUrl?.let { poster ->
-                RemoteImage(url = poster, contentDescription = group.title, contentScale = ContentScale.Crop, modifier = Modifier.width(112.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(14.dp)))
-              }
-              Column(modifier = Modifier.weight(1f)) {
-                MetaChip(text = (group.mediaType ?: "TORRENT").uppercase())
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(group.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
-              }
-            }
-          }
-        }
-        item {
-          Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              group.releaseYear?.let { MetaChip(it) }
-              if (group.totalSize > 0) MetaChip(formatTorrentBytes(group.totalSize))
-              MetaChip("${group.files.size} file${if (group.files.size == 1) "" else "s"}")
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-              firstPlayableFile?.let { entry ->
-                Button(onClick = { onPlay(entry) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(18.dp)) {
-                  Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = null)
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text(if (entry.fileIndex in viewedFileIndices) "Resume" else "Watch Now")
-                }
-              }
-              IconButton(onClick = onDelete) { Icon(imageVector = Icons.RoundedFilled.Delete, contentDescription = "Delete torrent") }
-            }
-            group.overview?.takeIf { it.isNotBlank() }?.let {
-              Text("Storyline", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-              Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 5, overflow = TextOverflow.Ellipsis)
-            }
-            Text("Files & Episodes (${group.files.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-          }
-        }
-        items(group.files, key = { it.stableKey }) { entry ->
-          Row(
-            modifier = Modifier.fillMaxWidth().clickable { onPlay(entry) }.padding(horizontal = 20.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-          ) {
-            Surface(modifier = Modifier.size(44.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-              Box(contentAlignment = Alignment.Center) { Text("${(entry.fileIndex ?: 0) + 1}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer) }
-            }
-            Column(modifier = Modifier.weight(1f)) {
-              Text(entry.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-              Text(formatTorrentBytes(entry.fileSize), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = "Play ${entry.fileName}", tint = MaterialTheme.colorScheme.primary)
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun MetaChip(text: String) {
-  Surface(
-    shape = RoundedCornerShape(6.dp),
-    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-  ) {
-    Text(
-      text = text,
-      style = MaterialTheme.typography.labelSmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-    )
-  }
-}
-
-@Composable
-private fun EpisodeCardRow(
-  entry: NetworkStreamEntryEntity,
-  position: Int,
-  viewed: Boolean,
-  onPlay: () -> Unit,
-) {
-  val epInfo = remember(entry.fileName, entry.filePath) { parseEpisodeDetails(entry.fileName, entry.filePath) }
-
-  Row(
-    modifier =
-      Modifier
-        .fillMaxWidth()
-        .clickable(onClick = onPlay)
-        .padding(horizontal = 16.dp, vertical = 10.dp),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(12.dp),
-  ) {
-    // Episode Number Badge
-    Surface(
-      modifier = Modifier.size(width = 44.dp, height = 36.dp),
-      shape = RoundedCornerShape(8.dp),
-      color = if (viewed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-      contentColor = if (viewed) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-    ) {
-      Box(contentAlignment = Alignment.Center) {
-        Text(
-          text = epInfo.badge.ifBlank { (position + 1).toString().padStart(2, '0') },
-          style = MaterialTheme.typography.labelSmall,
-          fontWeight = FontWeight.Bold,
-          maxLines = 1,
-        )
-      }
-    }
-
-    // Episode Title & Tags
-    Column(
-      modifier = Modifier.weight(1f),
-      verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      Text(
-        text = epInfo.cleanTitle,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Medium,
-        maxLines = 1,
-        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = 2000),
-      )
-
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        epInfo.quality?.let { q ->
-          Text(
-            text = q,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-          )
-        }
-        epInfo.format?.let { f ->
-          Text(
-            text = f,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-        if (entry.fileSize > 0L) {
-          Text(
-            text = "•  ${formatTorrentBytes(entry.fileSize)}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-      }
-    }
-
-    if (viewed) {
-      Icon(
-        imageVector = Icons.RoundedFilled.CheckCircle,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(20.dp),
-      )
-    }
-
-    IconButton(
-      onClick = onPlay,
-      modifier = Modifier.size(36.dp),
-    ) {
-      Icon(
-        imageVector = Icons.RoundedFilled.PlayArrow,
-        contentDescription = stringResource(R.string.ui_play),
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(22.dp),
-      )
-    }
-  }
-}
-
 @Composable
 private fun StreamLinkSection(
   recentLinks: List<NetworkStreamEntryEntity>,
-  showDialog: Boolean,
-  onShowDialogChange: (Boolean) -> Unit,
+  isPreparing: Boolean,
   onPlayLink: (String) -> Unit,
   onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
+  onSaveToTorrent: (NetworkStreamEntryEntity) -> Unit,
   onDeleteRecent: (String) -> Unit,
 ) {
   val context = LocalContext.current
   val keyboardController = LocalSoftwareKeyboardController.current
+  val playStreamContentDescription = stringResource(R.string.ui_play_stream)
   var linkUrl by rememberSaveable { mutableStateOf("") }
 
   fun pasteFromClipboard() {
@@ -1282,13 +1061,13 @@ private fun StreamLinkSection(
           ?.trim()
           .orEmpty()
       if (text.isNotBlank()) {
-        linkUrl = text
+        linkUrl = SharedUrlExtractor.normalizeInput(text)
       }
     }
   }
 
   fun playCurrentLink() {
-    val sanitizedUrl = linkUrl.trim()
+    val sanitizedUrl = SharedUrlExtractor.normalizeInput(linkUrl)
     if (sanitizedUrl.isBlank()) return
 
     keyboardController?.hide()
@@ -1303,50 +1082,110 @@ private fun StreamLinkSection(
         .padding(horizontal = 16.dp, vertical = 6.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    if (showDialog) {
-      AlertDialog(
-        onDismissRequest = { onShowDialogChange(false) },
-        title = { Text(stringResource(R.string.ui_stream_url_dialog_title)) },
-        text = {
-          OutlinedTextField(
-            value = linkUrl,
-            onValueChange = { linkUrl = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.ui_enter_stream_url)) },
-            leadingIcon = { Icon(Icons.RoundedFilled.Link, contentDescription = null) },
-            trailingIcon = {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { pasteFromClipboard() }) {
-                  Icon(Icons.RoundedFilled.ContentPaste, contentDescription = stringResource(R.string.ui_paste_stream_url))
-                }
-                if (linkUrl.isNotBlank()) {
-                  IconButton(onClick = { linkUrl = "" }) {
-                    Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.ui_clear_stream_url))
-                  }
+    // 1. Stream URL Input Box
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      colors =
+        CardDefaults.cardColors(
+          containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
+      shape = RoundedCornerShape(16.dp),
+    ) {
+      Row(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        OutlinedTextField(
+          value = linkUrl,
+          onValueChange = { linkUrl = it },
+          enabled = !isPreparing,
+          modifier = Modifier.weight(1f),
+          placeholder = {
+            Text(
+              text = stringResource(R.string.ui_enter_stream_url),
+              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            )
+          },
+          leadingIcon = {
+            Icon(
+              imageVector = Icons.RoundedFilled.Link,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+              modifier = Modifier.size(20.dp),
+            )
+          },
+          trailingIcon = {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              IconButton(onClick = { pasteFromClipboard() }, enabled = !isPreparing) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.ContentPaste,
+                  contentDescription = stringResource(R.string.ui_paste_stream_url),
+                  modifier = Modifier.size(18.dp),
+                )
+              }
+              if (linkUrl.isNotBlank()) {
+                IconButton(onClick = { linkUrl = "" }, enabled = !isPreparing) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.Close,
+                    contentDescription = stringResource(R.string.ui_clear_stream_url),
+                    modifier = Modifier.size(18.dp),
+                  )
                 }
               }
+            }
+          },
+          singleLine = true,
+          shape = RoundedCornerShape(14.dp),
+          colors =
+            OutlinedTextFieldDefaults.colors(
+              focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+              unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+              focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+              unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ),
+          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+          keyboardActions =
+            KeyboardActions(
+              onGo = { playCurrentLink() },
+            ),
+        )
+        Spacer(modifier = Modifier.size(6.dp))
+        Button(
+          onClick = { playCurrentLink() },
+          enabled = linkUrl.isNotBlank() && !isPreparing,
+          contentPadding = PaddingValues(12.dp),
+          shape = RoundedCornerShape(14.dp),
+          colors =
+            ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.primary,
+            ),
+          modifier =
+            Modifier.semantics {
+              contentDescription = playStreamContentDescription
             },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-            keyboardActions = KeyboardActions(onGo = { playCurrentLink() }),
-          )
-        },
-        confirmButton = {
-          Button(onClick = { playCurrentLink(); onShowDialogChange(false) }, enabled = linkUrl.isNotBlank()) {
-            Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(stringResource(R.string.ui_play))
+        ) {
+          if (isPreparing) {
+            CircularProgressIndicator(
+              modifier = Modifier.size(20.dp),
+              strokeWidth = 2.dp,
+            )
+          } else {
+            Icon(
+              imageVector = Icons.RoundedFilled.PlayArrow,
+              contentDescription = null,
+              modifier = Modifier.size(20.dp),
+            )
           }
-        },
-        dismissButton = {
-          TextButton(onClick = { onShowDialogChange(false) }) {
-            Text(stringResource(R.string.generic_cancel))
-          }
-        },
-      )
+        }
+      }
     }
 
-    // Recent Stream Links with Quick Autofill
+    // 2. Top 3 Recent Stream Links with Quick Autofill & Torrent Save
     val topRecent = remember(recentLinks) { recentLinks.take(3) }
     if (topRecent.isNotEmpty()) {
       Column(
@@ -1379,7 +1218,6 @@ private fun StreamLinkSection(
                 .fillMaxWidth()
                 .clickable {
                   linkUrl = entry.canonicalSourceUri
-                  onShowDialogChange(true)
                 },
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1387,7 +1225,7 @@ private fun StreamLinkSection(
             Row(
               modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
               verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
               Icon(
                 imageVector = Icons.RoundedFilled.Link,
@@ -1413,6 +1251,17 @@ private fun StreamLinkSection(
                   color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
+                )
+              }
+              IconButton(
+                onClick = { onSaveToTorrent(entry) },
+                modifier = Modifier.size(32.dp),
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Download,
+                  contentDescription = stringResource(R.string.downloads_download),
+                  tint = MaterialTheme.colorScheme.secondary,
+                  modifier = Modifier.size(18.dp),
                 )
               }
               IconButton(
@@ -1465,101 +1314,3 @@ private fun saveViewedFileIndices(
     .putStringSet(infoHash, indices.map(Int::toString).toSet())
     .apply()
 }
-
-private data class ParsedEpisodeInfo(
-  val badge: String,
-  val season: Int? = null,
-  val episode: Int? = null,
-  val cleanTitle: String,
-  val quality: String? = null,
-  val format: String? = null,
-)
-
-private val seasonEpisodeRegex = Regex("(?i)(?:^|[^a-z0-9])s(\\d{1,2})[ ._:-]*e(\\d{1,4})(?:[^a-z0-9]|$)")
-private val crossFormatEpisodeRegex = Regex("(?i)(?:^|[^a-z0-9])(\\d{1,2})x(\\d{1,4})(?:[^a-z0-9]|$)")
-private val epNumRegex = Regex("(?i)(?:^|[^a-z0-9])(?:episode|ep)[ ._:-]*(\\d{1,4})(?:[^a-z0-9]|$)")
-private val animeDashNumRegex = Regex("(?i)-\\s*(\\d{1,4})(?:v\\d+)?(?:\\s|\\[|\\(|\\.)")
-private val qualityRegex = Regex("(?i)\\b(2160p|4K|1080p|720p|480p|HDR|HDRip|WEBRip|BluRay|BRRip|DVDRip)\\b")
-
-private fun parseEpisodeDetails(
-  fileName: String,
-  filePath: String?,
-): ParsedEpisodeInfo {
-  val sourceText = fileName.ifBlank { filePath.orEmpty().substringAfterLast('/') }
-  val extension = sourceText.substringAfterLast('.', "").uppercase().take(5)
-  val quality = qualityRegex.find(sourceText)?.value?.uppercase()
-
-  // 1. Check Season + Episode (S01E02, S1:E1)
-  seasonEpisodeRegex.find(sourceText)?.let { match ->
-    val season = match.groupValues[1].toIntOrNull() ?: 1
-    val episode = match.groupValues[2].toIntOrNull() ?: 1
-    return ParsedEpisodeInfo(
-      badge = "S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}",
-      season = season,
-      episode = episode,
-      cleanTitle = cleanEpisodeTitle(sourceText),
-      quality = quality,
-      format = extension.takeIf { it.isNotBlank() },
-    )
-  }
-
-  // 2. Check Cross Format (1x02)
-  crossFormatEpisodeRegex.find(sourceText)?.let { match ->
-    val season = match.groupValues[1].toIntOrNull() ?: 1
-    val episode = match.groupValues[2].toIntOrNull() ?: 1
-    return ParsedEpisodeInfo(
-      badge = "S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}",
-      season = season,
-      episode = episode,
-      cleanTitle = cleanEpisodeTitle(sourceText),
-      quality = quality,
-      format = extension.takeIf { it.isNotBlank() },
-    )
-  }
-
-  // 3. Check "Episode 01" / "EP 01"
-  epNumRegex.find(sourceText)?.let { match ->
-    val episode = match.groupValues[1].toIntOrNull() ?: 1
-    return ParsedEpisodeInfo(
-      badge = "EP ${episode.toString().padStart(2, '0')}",
-      season = null,
-      episode = episode,
-      cleanTitle = cleanEpisodeTitle(sourceText),
-      quality = quality,
-      format = extension.takeIf { it.isNotBlank() },
-    )
-  }
-
-  // 4. Check Anime Dash numbering: " - 01 "
-  animeDashNumRegex.find(sourceText)?.let { match ->
-    val episode = match.groupValues[1].toIntOrNull() ?: 1
-    return ParsedEpisodeInfo(
-      badge = "EP ${episode.toString().padStart(2, '0')}",
-      season = null,
-      episode = episode,
-      cleanTitle = cleanEpisodeTitle(sourceText),
-      quality = quality,
-      format = extension.takeIf { it.isNotBlank() },
-    )
-  }
-
-  return ParsedEpisodeInfo(
-    badge = extension.ifBlank { "PLAY" },
-    season = null,
-    episode = null,
-    cleanTitle = cleanEpisodeTitle(sourceText),
-    quality = quality,
-    format = extension.takeIf { it.isNotBlank() },
-  )
-}
-
-private fun cleanEpisodeTitle(name: String): String =
-  name
-    .substringBeforeLast('.')
-    .replace(Regex("^\\[[^\\]]+\\]\\s*"), "")
-    .replace(Regex("\\[[^\\]]+\\]"), "")
-    .replace(Regex("\\([^\\)]+\\)"), "")
-    .replace(Regex("[._]"), " ")
-    .replace(Regex("\\s+"), " ")
-    .trim(' ', '-', '_')
-    .ifBlank { name }

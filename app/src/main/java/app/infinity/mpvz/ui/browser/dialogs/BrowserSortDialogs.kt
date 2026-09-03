@@ -7,27 +7,27 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.dialogs
+package app.gyrolet.mpvrx.ui.browser.dialogs
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.BrowserPreferences
-import app.infinity.mpvz.preferences.FolderSortType
-import app.infinity.mpvz.preferences.FolderViewMode
-import app.infinity.mpvz.preferences.MediaLayoutMode
-import app.infinity.mpvz.preferences.NetworkSortType
-import app.infinity.mpvz.preferences.SortOrder
-import app.infinity.mpvz.preferences.VideoSortType
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.browser.music.MusicSortField
-import app.infinity.mpvz.ui.browser.music.MusicSortOrder
-import app.infinity.mpvz.ui.browser.music.MusicViewMode
-import app.infinity.mpvz.ui.icons.Icons
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.preferences.FolderSortType
+import app.gyrolet.mpvrx.preferences.FolderViewMode
+import app.gyrolet.mpvrx.preferences.MediaLayoutMode
+import app.gyrolet.mpvrx.preferences.NetworkSortType
+import app.gyrolet.mpvrx.preferences.SortOrder
+import app.gyrolet.mpvrx.preferences.VideoSortType
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.ui.browser.music.MusicSortField
+import app.gyrolet.mpvrx.ui.browser.music.MusicSortOrder
+import app.gyrolet.mpvrx.ui.browser.music.MusicViewMode
+import app.gyrolet.mpvrx.ui.icons.Icons
 import org.koin.compose.koinInject
 
 @Composable
@@ -332,6 +332,7 @@ fun VideoSortDialog(
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
@@ -569,6 +570,13 @@ fun VideoSortDialog(
         )
         add(
           VisibilityToggle(
+            label = "Codec support",
+            checked = showCodecSupportIndicator,
+            onCheckedChange = { browserPreferences.showCodecSupportIndicator.set(it) },
+          ),
+        )
+        add(
+          VisibilityToggle(
             label = "Date",
             checked = showDateChip,
             onCheckedChange = { browserPreferences.showDateChip.set(it) },
@@ -632,6 +640,7 @@ fun FileSystemSortDialog(
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
@@ -853,6 +862,13 @@ fun FileSystemSortDialog(
             label = "Framerate",
             checked = showFramerateInResolution,
             onCheckedChange = { browserPreferences.showFramerateInResolution.set(it) },
+          ),
+        )
+        add(
+          VisibilityToggle(
+            label = "Codec support",
+            checked = showCodecSupportIndicator,
+            onCheckedChange = { browserPreferences.showCodecSupportIndicator.set(it) },
           ),
         )
         add(
@@ -1140,3 +1156,87 @@ fun MusicSortDialog(
       },
   )
 }
+
+@Composable
+fun JellyfinSortDialog(
+  isOpen: Boolean,
+  onDismiss: () -> Unit,
+  sortBy: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy,
+  onSortByChange: (app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy) -> Unit,
+  sortOrder: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder,
+  onSortOrderChange: (app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder) -> Unit,
+  isUnplayedOnly: Boolean,
+  onUnplayedOnlyChange: (Boolean) -> Unit,
+  layoutMode: MediaLayoutMode = MediaLayoutMode.GRID,
+  onLayoutModeChange: (MediaLayoutMode) -> Unit = {},
+) {
+  SortDialog(
+    isOpen = isOpen,
+    onDismiss = onDismiss,
+    title = stringResource(R.string.sort_view_options),
+    sortType = sortBy.displayName,
+    onSortTypeChange = { typeName ->
+      app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.entries
+        .find { it.displayName == typeName }
+        ?.let(onSortByChange)
+    },
+    sortOrderAsc = sortOrder == app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.ASCENDING,
+    onSortOrderChange = { isAsc ->
+      onSortOrderChange(
+        if (isAsc) {
+          app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.ASCENDING
+        } else {
+          app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.DESCENDING
+        },
+      )
+    },
+    types =
+      listOf(
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.NAME.displayName,
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.DATE_ADDED.displayName,
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.PREMIERE_DATE.displayName,
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.RATING.displayName,
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.RUNTIME.displayName,
+      ),
+    icons =
+      listOf(
+        Icons.RoundedFilled.Title,
+        Icons.RoundedFilled.CalendarToday,
+        Icons.RoundedFilled.Movie,
+        Icons.RoundedFilled.SwapVert,
+        Icons.RoundedFilled.AccessTime,
+      ),
+    getLabelForType = { type, _ ->
+      when (type) {
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.NAME.displayName -> Pair("A-Z", "Z-A")
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.DATE_ADDED.displayName -> Pair("Oldest", "Newest")
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.PREMIERE_DATE.displayName -> Pair("Oldest", "Newest")
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.RATING.displayName -> Pair("Lowest", "Highest")
+        app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.RUNTIME.displayName -> Pair("Shortest", "Longest")
+        else -> Pair("Asc", "Desc")
+      }
+    },
+    visibilityToggles =
+      listOf(
+        VisibilityToggle(
+          label = "Unplayed Only",
+          checked = isUnplayedOnly,
+          onCheckedChange = onUnplayedOnlyChange,
+        ),
+      ),
+    layoutModeSelector =
+      ViewModeSelector(
+        label = "Layout",
+        firstOptionLabel = "List",
+        secondOptionLabel = "Grid",
+        firstOptionIcon = Icons.RoundedFilled.ViewList,
+        secondOptionIcon = Icons.RoundedFilled.GridView,
+        isFirstOptionSelected = layoutMode == MediaLayoutMode.LIST,
+        onViewModeChange = { isList ->
+          onLayoutModeChange(if (isList) MediaLayoutMode.LIST else MediaLayoutMode.GRID)
+        },
+      ),
+    showSortOptions = true,
+  )
+}
+

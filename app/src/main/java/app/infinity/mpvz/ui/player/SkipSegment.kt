@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player
+package app.gyrolet.mpvrx.ui.player
 
 import androidx.compose.ui.graphics.Color
 

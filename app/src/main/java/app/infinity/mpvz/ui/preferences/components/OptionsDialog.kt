@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences.components
+package app.gyrolet.mpvrx.ui.preferences.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -86,7 +86,7 @@ fun <T> OptionsDialog(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+              .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
         )
       }
     },

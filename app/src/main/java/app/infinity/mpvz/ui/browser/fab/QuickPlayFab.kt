@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.fab
+package app.gyrolet.mpvrx.ui.browser.fab
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -36,17 +36,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.utils.history.RecentlyPlayedOps
-import app.infinity.mpvz.ui.player.PlaybackSession
-import app.infinity.mpvz.utils.media.MediaUtils
-import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
+import app.gyrolet.mpvrx.utils.media.MediaUtils
 import kotlinx.coroutines.launch
 
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 
 /**
@@ -69,9 +67,7 @@ fun QuickPlayFab(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val lastPlayedEntity by RecentlyPlayedOps.observeLastPlayedEntity().collectAsState(initial = null)
-  val playbackQueue by PlaybackSession.queue.collectAsState()
   val hasRecentlyPlayed = lastPlayedEntity != null
-  val hasTemporaryQueue = playbackQueue.isTemporaryQueue && playbackQueue.hasItems
   var isPressed by remember { mutableStateOf(false) }
 
   // Pulse animation scale
@@ -85,7 +81,7 @@ fun QuickPlayFab(
   )
 
   AnimatedVisibility(
-    visible = visible && (hasRecentlyPlayed || hasTemporaryQueue) && showQuickPlayFab,
+    visible = visible && hasRecentlyPlayed && showQuickPlayFab,
     enter = scaleIn(
       animationSpec = spring(
         dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -104,25 +100,21 @@ fun QuickPlayFab(
       onClick = {
         isPressed = true
         coroutineScope.launch {
-          if (hasTemporaryQueue) {
-            TemporaryPlaybackQueue.start(context)
+          val validEntity = RecentlyPlayedOps.getLastPlayedEntity()
+          if (validEntity != null) {
+            MediaUtils.playFile(
+              source = validEntity.filePath,
+              context = context,
+              launchSource = "quick_play_fab",
+              title = validEntity.videoTitle?.takeIf { it.isNotBlank() }
+                ?: validEntity.fileName.takeIf { it.isNotBlank() },
+            )
           } else {
-            val validEntity = RecentlyPlayedOps.getLastPlayedEntity()
-            if (validEntity != null) {
-              MediaUtils.playFile(
-                source = validEntity.filePath,
-                context = context,
-                launchSource = "quick_play_fab",
-                title = validEntity.videoTitle?.takeIf { it.isNotBlank() }
-                  ?: validEntity.fileName.takeIf { it.isNotBlank() },
-              )
-            } else {
-              android.widget.Toast.makeText(
-                context,
-                R.string.toast_file_not_found,
-                android.widget.Toast.LENGTH_SHORT,
-              ).show()
-            }
+            android.widget.Toast.makeText(
+              context,
+              R.string.toast_file_not_found,
+              android.widget.Toast.LENGTH_SHORT,
+            ).show()
           }
           isPressed = false
         }

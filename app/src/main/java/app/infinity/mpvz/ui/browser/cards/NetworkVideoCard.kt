@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.cards
+package app.gyrolet.mpvrx.ui.browser.cards
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
@@ -43,21 +43,19 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.domain.network.NetworkConnection
-import app.infinity.mpvz.domain.network.NetworkFile
-import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.BrowserPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.domain.network.NetworkConnection
+import app.gyrolet.mpvrx.domain.network.NetworkFile
+import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.text.style.TextAlign
@@ -87,14 +85,21 @@ fun NetworkVideoCard(
   val displayThumb = showVideoThumbnails && showNetworkThumbs
   val maxLines = if (unlimitedNameLines) Int.MAX_VALUE else 2
 
-  val thumbSizeDp = 64.dp
+  val thumbSizeDp = 128.dp
   val density = LocalDensity.current
   val thumbSizePx = with(density) { thumbSizeDp.roundToPx() }
 
   val thumbnailKey =
-    remember(file.path, thumbSizePx, displayThumb) {
+    remember(file.path, file.size, file.lastModified, connection, thumbSizePx, displayThumb) {
       if (displayThumb) {
-        thumbnailRepository.thumbnailKeyForNetworkPath(file.path, thumbSizePx, thumbSizePx)
+        thumbnailRepository.thumbnailKeyForNetworkPath(
+          path = file.path,
+          widthPx = thumbSizePx,
+          heightPx = thumbSizePx,
+          connection = connection,
+          fileSize = file.size,
+          lastModified = file.lastModified,
+        )
       } else {
         null
       }
@@ -109,7 +114,15 @@ fun NetworkVideoCard(
         if (key == thumbnailKey) {
           thumbnail =
             withContext(Dispatchers.IO) {
-              thumbnailRepository.getThumbnailForNetworkPath(file.path, thumbSizePx, thumbSizePx, connection)
+              thumbnailRepository.getThumbnailForNetworkPath(
+                path = file.path,
+                widthPx = thumbSizePx,
+                heightPx = thumbSizePx,
+                connection = connection,
+                fileSize = file.size,
+                mimeType = file.mimeType,
+                lastModified = file.lastModified,
+              )
             }
         }
       }
@@ -119,10 +132,22 @@ fun NetworkVideoCard(
   LaunchedEffect(thumbnailKey, displayThumb) {
     if (thumbnailKey == null || !displayThumb) return@LaunchedEffect
     if (thumbnail != null) return@LaunchedEffect
-    thumbnail =
-      withContext(Dispatchers.IO) {
-        thumbnailRepository.getThumbnailForNetworkPath(file.path, thumbSizePx, thumbSizePx, connection)
-      }
+    repeat(2) { attempt ->
+      thumbnail =
+        withContext(Dispatchers.IO) {
+          thumbnailRepository.getThumbnailForNetworkPath(
+            path = file.path,
+            widthPx = thumbSizePx,
+            heightPx = thumbSizePx,
+            connection = connection,
+            fileSize = file.size,
+            mimeType = file.mimeType,
+            lastModified = file.lastModified,
+          )
+        }
+      if (thumbnail != null) return@LaunchedEffect
+      if (attempt == 0) delay(30_000L)
+    }
   }
 
   val displayName = if (showExtensionField) file.name else file.name.substringBeforeLast('.', file.name)
@@ -131,22 +156,34 @@ fun NetworkVideoCard(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(AppShapeScale.large)
         .combinedClickable(
           onClick = onClick,
           onLongClick = onLongClick,
         ),
+    shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
-    if (isGridMode) {
-      Column(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .background(
-              if (isSelected) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f) else Color.Transparent,
-            ).padding(8.dp),
-        horizontalAlignment = if (centerGridTitles) Alignment.CenterHorizontally else Alignment.Start,
-      ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+      if (isSelected) {
+        Box(
+          modifier =
+            Modifier
+              .matchParentSize()
+              .padding(2.dp)
+              .clip(AppShapeScale.large)
+              .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)),
+        )
+      }
+
+      if (isGridMode) {
+        Column(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .padding(12.dp),
+          horizontalAlignment = if (centerGridTitles) Alignment.CenterHorizontally else Alignment.Start,
+        ) {
         Box(
           modifier =
             Modifier
@@ -162,7 +199,7 @@ fun NetworkVideoCard(
               bitmap = thumbnailBitmap,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
               modifier = Modifier.matchParentSize(),
               contentScale = ContentScale.Crop,
             )
@@ -171,7 +208,7 @@ fun NetworkVideoCard(
               Icons.RoundedFilled.PlayArrow,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_play),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
               modifier = Modifier.size(48.dp),
               tint = MaterialTheme.colorScheme.secondary,
             )
@@ -222,26 +259,21 @@ fun NetworkVideoCard(
             )
           }
         }
-      }
-    } else {
-      Row(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .background(
-              if (isSelected) {
-                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)
-              } else {
-                Color.Transparent
-              },
-            ).padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        // Square thumbnail
+        }
+      } else {
+        Row(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .padding(16.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+        // Match the normal video list thumbnail footprint.
         Box(
           modifier =
             Modifier
-              .size(thumbSizeDp)
+              .width(thumbSizeDp)
+              .aspectRatio(16f / 9f)
               .clip(AppShapeScale.medium)
               .background(MaterialTheme.colorScheme.surfaceContainerHigh)
               .combinedClickable(
@@ -256,7 +288,7 @@ fun NetworkVideoCard(
               bitmap = listThumbnailBitmap,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
               modifier = Modifier.matchParentSize(),
               contentScale = ContentScale.Crop,
             )
@@ -265,7 +297,7 @@ fun NetworkVideoCard(
               Icons.RoundedFilled.PlayArrow,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_play),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
               modifier = Modifier.size(48.dp),
               tint = MaterialTheme.colorScheme.secondary,
             )
@@ -318,6 +350,7 @@ fun NetworkVideoCard(
               )
             }
           }
+          }
         }
       }
     }
@@ -332,8 +365,12 @@ private fun formatFileSize(bytes: Long): String =
     else -> String.format("%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0))
   }
 
-private fun formatDate(timestamp: Long): String {
-  val date = Date(timestamp)
-  val format = SimpleDateFormat("MMM dd", Locale.getDefault())
-  return format.format(date)
-}
+// Hoisted because a card formats a date on every recomposition and SimpleDateFormat construction
+// parses the pattern and clones a Calendar each time.
+private val NETWORK_CARD_DATE_FORMATTER: java.time.format.DateTimeFormatter =
+  java.time.format.DateTimeFormatter
+    .ofPattern("MMM dd")
+    .withZone(java.time.ZoneId.systemDefault())
+
+private fun formatDate(timestamp: Long): String =
+  NETWORK_CARD_DATE_FORMATTER.format(java.time.Instant.ofEpochMilli(timestamp))

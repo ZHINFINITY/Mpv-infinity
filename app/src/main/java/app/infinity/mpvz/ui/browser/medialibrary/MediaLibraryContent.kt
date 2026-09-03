@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.medialibrary
+package app.gyrolet.mpvrx.ui.browser.medialibrary
 
 import android.content.Intent
 import android.os.Environment
@@ -17,8 +17,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
+import app.gyrolet.mpvrx.ui.components.InlineSearchBar
+import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -33,11 +40,8 @@ import androidx.compose.material3.FloatingActionButtonMenu
 import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -65,6 +69,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
@@ -72,43 +78,44 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.BuildConfig
-import app.infinity.mpvz.R
-import app.infinity.mpvz.database.repository.SecureFolderRepository
-import app.infinity.mpvz.domain.media.model.Video
-import app.infinity.mpvz.preferences.BrowserPreferences
-import app.infinity.mpvz.preferences.MediaLibraryType
-import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.SecureFolderPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.browser.MainScreen
-import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
-import app.infinity.mpvz.ui.browser.NavigationBarState
-import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
-import app.infinity.mpvz.ui.browser.components.BrowserTopBar
-import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
-import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
-import app.infinity.mpvz.ui.browser.dialogs.FileOperationProgressDialog
-import app.infinity.mpvz.ui.browser.dialogs.FolderPickerDialog
-import app.infinity.mpvz.ui.browser.dialogs.RenameDialog
-import app.infinity.mpvz.ui.browser.dialogs.VideoCompressorOverlay
-import app.infinity.mpvz.ui.browser.dialogs.VideoSortDialog
-import app.infinity.mpvz.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
-import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
-import app.infinity.mpvz.ui.browser.states.EmptyState
-import app.infinity.mpvz.ui.browser.videolist.VideoListContent
-import app.infinity.mpvz.ui.browser.videolist.VideoWithPlaybackInfo
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.utils.history.RecentlyPlayedOps
-import app.infinity.mpvz.utils.media.CopyPasteOps
-import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
-import app.infinity.mpvz.utils.media.MediaUtils
-import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
-import app.infinity.mpvz.utils.sort.SortUtils
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.database.repository.SecureFolderRepository
+import app.gyrolet.mpvrx.domain.media.model.Video
+import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.preferences.MediaLibraryType
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.ui.browser.MainScreen
+import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
+import app.gyrolet.mpvrx.ui.browser.NavigationBarState
+import app.gyrolet.mpvrx.ui.browser.components.BrowserBottomBar
+import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
+import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
+import app.gyrolet.mpvrx.ui.browser.dialogs.DeleteConfirmationDialog
+import app.gyrolet.mpvrx.ui.browser.dialogs.FileOperationProgressDialog
+import app.gyrolet.mpvrx.ui.browser.dialogs.FolderPickerDialog
+import app.gyrolet.mpvrx.ui.browser.dialogs.RenameDialog
+import app.gyrolet.mpvrx.ui.browser.dialogs.VideoCompressorOverlay
+import app.gyrolet.mpvrx.ui.browser.dialogs.VideoSortDialog
+import app.gyrolet.mpvrx.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
+import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
+import app.gyrolet.mpvrx.ui.browser.states.EmptyState
+import app.gyrolet.mpvrx.ui.browser.videolist.VideoListContent
+import app.gyrolet.mpvrx.ui.browser.videolist.VideoWithPlaybackInfo
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
+import app.gyrolet.mpvrx.ui.player.PlaybackItem
+import app.gyrolet.mpvrx.ui.player.PreparedPlaybackLaunchStore
+import app.gyrolet.mpvrx.ui.player.PlayerActivity
+import app.gyrolet.mpvrx.ui.securefolder.SecureFolderGateScreen
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
+import app.gyrolet.mpvrx.utils.media.CopyPasteOps
+import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.gyrolet.mpvrx.utils.media.OpenDocumentTreeContract
+import app.gyrolet.mpvrx.utils.sort.SortUtils
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import java.io.File
@@ -120,7 +127,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   val coroutineScope = rememberCoroutineScope()
   val backstack = LocalBackStack.current
   val browserPreferences = koinInject<BrowserPreferences>()
-  val appearancePreferences = koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
+  val appearancePreferences = koinInject<app.gyrolet.mpvrx.preferences.AppearancePreferences>()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
   val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -133,7 +140,8 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   val videos by viewModel.videos.collectAsState()
   val videosWithPlaybackInfo by viewModel.videosWithPlaybackInfo.collectAsState()
   val isLoading by viewModel.isLoading.collectAsState()
-    val recentlyPlayedFilePath by viewModel.recentlyPlayedFilePath.collectAsState()
+  val recentlyPlayedFilePath by viewModel.recentlyPlayedFilePath.collectAsState()
+
   val videoSortType by browserPreferences.videoSortType.collectAsState()
   val videoSortOrder by browserPreferences.videoSortOrder.collectAsState()
   val mediaLayoutMode by browserPreferences.mediaLayoutMode.collectAsState()
@@ -141,10 +149,13 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   val savedMediaType by browserPreferences.mediaLibraryType.collectAsState()
   val playlistMode by playerPreferences.playlistMode.collectAsState()
   val mediaType = if (forceAudio) MediaLibraryType.Audio else if (includeAudioBrowser) savedMediaType else MediaLibraryType.Video
+  val sortedVideos =
+    remember(videos, videoSortType, videoSortOrder) {
+      SortUtils.sortVideos(videos, videoSortType, videoSortOrder)
+    }
   val sortedVideosWithInfo =
-    remember(videosWithPlaybackInfo, videoSortType, videoSortOrder) {
+    remember(sortedVideos, videosWithPlaybackInfo) {
       val infoById = videosWithPlaybackInfo.associateBy { it.video.path }
-      val sortedVideos = SortUtils.sortVideos(videosWithPlaybackInfo.map { it.video }, videoSortType, videoSortOrder)
       sortedVideos.map { video ->
         infoById[video.path] ?: VideoWithPlaybackInfo(video)
       }
@@ -317,27 +328,44 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
     }
 
     val playlistVideos = mediaTypeVideosWithInfo.map { it.video }
-    lastPlayRequestIndex.intValue =
-      playlistVideos.indexOfFirst { it.path == video.path }
+    val index = playlistVideos.indexOfFirst { it.path == video.path }.coerceAtLeast(0)
+    lastPlayRequestIndex.intValue = index
+
+    val queueItems = playlistVideos.map { item ->
+      PlaybackItem.fromUri(
+        uri = item.uri.toString(),
+        stableId = PlaybackIdentity.forLocalPath(item.path),
+        title = item.displayName,
+        mimeType = item.mimeType,
+      )
+    }
+    val launchToken = PreparedPlaybackLaunchStore.stage(
+      items = queueItems,
+      currentIndex = index,
+      isExplicitQueue = true,
+    )
 
     val intent =
       android.content.Intent(android.content.Intent.ACTION_VIEW, video.uri).apply {
         setClass(context, PlayerActivity::class.java)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         putExtra("internal_launch", true)
+        putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
+        putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
         putExtra("playlist_id", ALL_VIDEOS_PLAYLIST_ID)
-        putExtra("playlist_index", lastPlayRequestIndex.intValue.coerceAtLeast(0))
+        putExtra("playlist_index", index)
         putExtra("launch_source", "media_library")
         putExtra("media_library_audio", mediaType == MediaLibraryType.Audio)
         putExtra("is_audio", video.isAudio)
-        putParcelableArrayListExtra("playlist", ArrayList(playlistVideos.map { it.uri }))
         putExtra("title", video.displayName)
+        putExtra("local_media_path", video.path)
       }
     context.startActivity(intent)
   }
 
-  BackHandler(enabled = selectionManager.isInSelectionMode || isSearching) {
+  BackHandler(enabled = selectionManager.isInSelectionMode || isSearching || (isFabExpanded.value && !quickPlayFabDirect)) {
     when {
+      isFabExpanded.value && !quickPlayFabDirect -> isFabExpanded.value = false
       selectionManager.isInSelectionMode -> selectionManager.clear()
       isSearching -> {
         isSearching = false
@@ -362,70 +390,62 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   Scaffold(
     topBar = {
       if (isSearching) {
-        SearchBar(
-          inputField = {
-            SearchBarDefaults.InputField(
-              query = searchQuery,
-              onQueryChange = { searchQuery = it },
-              onSearch = { },
-              expanded = false,
-              onExpandedChange = { },
-              placeholder = {
-                Text(
-                  if (mediaType ==
-                    MediaLibraryType.Audio
-                  ) {
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_search_audio)
-                  } else {
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_search_videos)
-                  },
-                )
-              },
-              leadingIcon = {
-                Icon(
-                  imageVector = Icons.RoundedFilled.Search,
-                  contentDescription =
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.settings_search_title,
-                    ),
-                )
-              },
-              trailingIcon = {
-                IconButton(
-                  onClick = {
-                    isSearching = false
-                    searchQuery = ""
-                  },
-                ) {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Close,
-                    contentDescription =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.generic_cancel,
-                      ),
-                  )
-                }
-              },
-              modifier = Modifier.focusRequester(focusRequester),
-            )
-          },
-          expanded = false,
-          onExpandedChange = { },
+        InlineSearchBar(
+          query = searchQuery,
+          onQueryChange = { searchQuery = it },
+          onSearch = { },
           modifier =
             Modifier
               .fillMaxWidth()
               .padding(horizontal = 16.dp, vertical = 8.dp),
-        ) { }
+          inputFieldModifier = Modifier.focusRequester(focusRequester),
+          placeholder = {
+            Text(
+              if (mediaType ==
+                MediaLibraryType.Audio
+              ) {
+                androidx.compose.ui.res
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_search_audio)
+              } else {
+                androidx.compose.ui.res
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_search_videos)
+              },
+            )
+          },
+          leadingIcon = {
+            Icon(
+              imageVector = Icons.RoundedFilled.Search,
+              contentDescription =
+                androidx.compose.ui.res.stringResource(
+                  app.gyrolet.mpvrx.R.string.settings_search_title,
+                ),
+            )
+          },
+          trailingIcon = {
+            IconButton(
+              onClick = {
+                isSearching = false
+                searchQuery = ""
+              },
+            ) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Close,
+                contentDescription =
+                  androidx.compose.ui.res.stringResource(
+                    app.gyrolet.mpvrx.R.string.generic_cancel,
+                  ),
+              )
+            }
+          },
+        )
       } else {
         BrowserTopBar(
           title =
             if (forceAudio) {
-              androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_music)
+              androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music)
             } else {
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.pref_media_library_section)
+                .stringResource(app.gyrolet.mpvrx.R.string.pref_media_library_section)
             },
           isInSelectionMode = selectionManager.isInSelectionMode,
           selectedCount = selectionManager.selectedCount,
@@ -435,7 +455,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
           onSortClick = { sortDialogOpen.value = true },
           onSearchClick = { isSearching = true },
           onSettingsClick = {
-            backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
+            backstack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
           },
           onTitleDoubleTap = { backstack.add(SecureFolderGateScreen) },
           onTitleLongPress = { backstack.add(SecureFolderGateScreen) },
@@ -444,7 +464,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
             if (selectionManager.isSingleSelection) {
               val video = selectionManager.getSelectedItems().firstOrNull()
               if (video != null) {
-                val intent = Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java)
+                val intent = Intent(context, app.gyrolet.mpvrx.ui.mediainfo.MediaInfoActivity::class.java)
                 intent.action = Intent.ACTION_VIEW
                 intent.data = video.uri
                 context.startActivity(intent)
@@ -466,50 +486,47 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
               moveToSecureConfirmOpen.value = true
             }
           },
-          onAddToPlaylistClick =
-            if (!BuildConfig.ENABLE_UPDATE_FEATURE) {
-              { addToPlaylistDialogOpen.value = true }
-            } else {
-              null
-            },
+          onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
         )
       }
     },
     floatingActionButton = {
-      if (filteredVideosWithInfo.isNotEmpty()) {
-        FloatingActionButtonMenu(
-          modifier = Modifier.padding(bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp)),
-          expanded = isFabExpanded.value && !quickPlayFabDirect,
-          button = {
-            TooltipBox(
-              positionProvider =
-                TooltipDefaults.rememberTooltipPositionProvider(
-                  if (isFabExpanded.value && !quickPlayFabDirect) {
-                    TooltipAnchorPosition.Start
-                  } else {
-                    TooltipAnchorPosition.Above
-                  },
+      val isFabShouldBeVisible =
+        filteredVideosWithInfo.isNotEmpty() &&
+          showQuickPlayFab &&
+          !selectionManager.isInSelectionMode &&
+          isFabVisible.value &&
+          !MainScreen.getPermissionDeniedState()
+
+      FloatingActionButtonMenu(
+        modifier = Modifier.padding(bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp)),
+        expanded = isFabExpanded.value && !quickPlayFabDirect,
+        button = {
+          TooltipBox(
+            positionProvider =
+              TooltipDefaults.rememberTooltipPositionProvider(
+                if (isFabExpanded.value && !quickPlayFabDirect) {
+                  TooltipAnchorPosition.Start
+                } else {
+                  TooltipAnchorPosition.Above
+                },
+              ),
+            tooltip = {
+              PlainTooltip {
+                Text(
+                  androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_toggle_menu),
+                )
+              }
+            },
+            state = rememberTooltipState(),
+          ) {
+            ToggleFloatingActionButton(
+              modifier =
+                Modifier.animateFloatingActionButton(
+                  visible = isFabShouldBeVisible,
+                  alignment = Alignment.BottomEnd,
                 ),
-              tooltip = {
-                PlainTooltip {
-                  Text(
-                    androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_toggle_menu),
-                  )
-                }
-              },
-              state = rememberTooltipState(),
-            ) {
-              ToggleFloatingActionButton(
-                modifier =
-                  Modifier.animateFloatingActionButton(
-                    visible =
-                      showQuickPlayFab &&
-                        !selectionManager.isInSelectionMode &&
-                        isFabVisible.value &&
-                        !MainScreen.getPermissionDeniedState(),
-                    alignment = Alignment.BottomEnd,
-                  ),
-                checked = isFabExpanded.value && !quickPlayFabDirect,
+              checked = isFabExpanded.value && !quickPlayFabDirect,
                 onCheckedChange = {
                   if (quickPlayFabDirect) {
                     coroutineScope.launch {
@@ -553,20 +570,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
               text = {
                 Text(
                   text =
-                    androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_open_file),
-                )
-              },
-            )
-
-            FloatingActionButtonMenuItem(
-              onClick = {
-                isFabExpanded.value = false
-                TemporaryPlaybackQueue.start(context)
-              },
-              icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
-              text = {
-                Text(
-                  text = androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_queue),
+                    androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_open_file),
                 )
               },
             )
@@ -592,18 +596,17 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
                 Text(
                   text =
                     if (mediaType == MediaLibraryType.Audio) {
-                      androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_recent_or_first_audio)
+                      androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_recent_or_first_audio)
                     } else {
-                      androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_recent_or_first_video)
+                      androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_recent_or_first_video)
                     },
                 )
               },
             )
           }
         }
-      }
-    },
-  ) { padding ->
+      },
+    ) { padding ->
     val autoScrollToLastPlayed by browserPreferences.autoScrollToLastPlayed.collectAsState()
     val videosWereDeletedOrMoved = false
 
@@ -631,11 +634,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
                   }
                 },
                 shape = SegmentedButtonDefaults.itemShape(index, MediaLibraryType.entries.size),
-                colors =
-                  SegmentedButtonDefaults.colors(
-                    activeContentColor = MaterialTheme.colorScheme.primary,
-                    activeBorderColor = MaterialTheme.colorScheme.primary,
-                  ),
+                colors = themedSegmentedButtonColors(),
               ) {
                 Text(type.name)
               }
@@ -656,10 +655,10 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
                     MediaLibraryType.Audio
                   ) {
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_no_audio_found)
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_no_audio_found)
                   } else {
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_no_videos_found)
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_no_videos_found)
                   },
                 message = "Try a different search term",
               )
@@ -690,10 +689,17 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
               modifier = Modifier.fillMaxSize(),
               showFloatingBottomBar = showFloatingBottomBar,
               mediaLayoutMode = mediaLayoutMode,
+              isFabExpanded = isFabExpanded.value,
+              onFabExpandedChange = { isFabExpanded.value = it },
             )
           }
         }
       }
+
+      FabScrollHelper.FabScrim(
+        visible = isFabExpanded.value && !quickPlayFabDirect,
+        onDismiss = { isFabExpanded.value = false },
+      )
 
       AnimatedVisibility(
         visible = showFloatingBottomBar,
@@ -731,28 +737,10 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
           onRenameClick = { renameDialogOpen.value = true },
           onDeleteClick = { deleteDialogOpen.value = true },
           onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
-          onAddToTemporaryQueueClick = {
-            TemporaryPlaybackQueue.add(context, selectionManager.getSelectedItems())
-          },
-          onInfoClick = {
-            if (selectionManager.isSingleSelection) {
-              selectionManager.getSelectedItems().firstOrNull()?.let { video ->
-                context.startActivity(
-                  Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java).apply {
-                    action = Intent.ACTION_VIEW
-                    data = video.uri
-                  },
-                )
-                selectionManager.clear()
-              }
-            }
-          },
-          showInfo = selectionManager.isSingleSelection,
           showCopy = true,
           showMove = true,
           showDownscale = selectionManager.getSelectedItems().let { items -> items.isNotEmpty() && items.none { it.isAudio } },
           showRename = selectionManager.selectedCount > 0,
-          showAddToTemporaryQueue = selectionManager.selectedCount > 0,
           modifier =
             Modifier.padding(
               bottom = if (NavigationBarState.shouldHideNavigationBar) 0.dp else navigationBarHeight,
@@ -916,7 +904,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
     }
 
     // Move to Secure Folder — confirm (skippable via "don't ask again"), then progress
-    app.infinity.mpvz.ui.securefolder.SecureConfirmDialog(
+    app.gyrolet.mpvrx.ui.securefolder.SecureConfirmDialog(
       isOpen = moveToSecureConfirmOpen.value,
       title = stringResource(R.string.secure_folder_move_items_title, selectionManager.selectedCount),
       subtitle = stringResource(R.string.secure_folder_move_items_subtitle),
@@ -928,7 +916,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
       onDismiss = { moveToSecureConfirmOpen.value = false },
     )
 
-    app.infinity.mpvz.ui.securefolder.SecureFolderProgressDialog(
+    app.gyrolet.mpvrx.ui.securefolder.SecureFolderProgressDialog(
       isOpen = moveToSecureProgressOpen.value,
       progress = secureFolderProgress,
       label = stringResource(R.string.secure_folder_moving_progress),

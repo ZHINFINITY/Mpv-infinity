@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import android.Manifest
 import android.content.Intent
@@ -42,23 +42,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AudioChannels
-import app.infinity.mpvz.preferences.AudioPlayerOrientation
-import app.infinity.mpvz.preferences.AudioPreferences
-import app.infinity.mpvz.preferences.AudioVisualizerStyle
-import app.infinity.mpvz.preferences.BrowserPreferences
-import app.infinity.mpvz.preferences.MediaLibraryType
-import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.preferences.components.SwitchPreference
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
-import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.utils.media.MediaLibraryEvents
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AudioChannels
+import app.gyrolet.mpvrx.preferences.AudioPlayerOrientation
+import app.gyrolet.mpvrx.preferences.AudioPreferences
+import app.gyrolet.mpvrx.preferences.LyricsTranslationDisplayMode
+import app.gyrolet.mpvrx.data.lyrics.LyricsLanguageOptions
+import app.gyrolet.mpvrx.preferences.AudioVisualizerStyle
+import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.preferences.MediaLibraryType
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
+import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
@@ -74,7 +77,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import app.infinity.mpvz.ui.browser.music.MusicTab
+import app.gyrolet.mpvrx.ui.browser.music.MusicTab
 
 @Serializable
 object AudioPreferencesScreen : Screen {
@@ -85,6 +88,7 @@ object AudioPreferencesScreen : Screen {
     val resources = LocalResources.current
     val backstack = LocalBackStack.current
     val preferences = koinInject<AudioPreferences>()
+    val configOwnedOptions = currentMpvConfigOverrideOptions()
     val browserPreferences = koinInject<BrowserPreferences>()
     val playerPreferences = koinInject<PlayerPreferences>()
     val notificationPermissionLauncher =
@@ -141,6 +145,7 @@ object AudioPreferencesScreen : Screen {
             PreferenceCard {
               val includeAudioBrowser by browserPreferences.includeAudioBrowser.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_include_audio_files),
                 value = includeAudioBrowser,
                 onValueChange = { enabled ->
                   browserPreferences.includeAudioBrowser.set(enabled)
@@ -154,13 +159,13 @@ object AudioPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_include_audio_files),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_include_audio_files),
                   )
                 },
                 summary = {
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_show_audio_files_in_the_browser,
+                      app.gyrolet.mpvrx.R.string.ui_show_audio_files_in_the_browser,
                     ),
                     color = MaterialTheme.colorScheme.outline,
                   )
@@ -185,12 +190,13 @@ object AudioPreferencesScreen : Screen {
               Column(
                 modifier =
                   Modifier
+                    .settingsSearchTarget(R.string.ui_minimum_audio_duration)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
               ) {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_minimum_audio_duration),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_minimum_audio_duration),
                   style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
@@ -242,12 +248,13 @@ object AudioPreferencesScreen : Screen {
               Column(
                 modifier =
                   Modifier
+                    .settingsSearchTarget(R.string.pref_music_tabs_title)
                     .fillMaxWidth()
                     .clickable { showMusicTabsDialog = true }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
               ) {
                 Text(
-                  text = "Music Library Tabs",
+                  text = stringResource(R.string.pref_music_tabs_title),
                   style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(
@@ -333,12 +340,28 @@ object AudioPreferencesScreen : Screen {
               PreferenceDivider()
               val audioAmbientMode by preferences.audioAmbientMode.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_ambient_mode_title),
                 value = audioAmbientMode,
                 onValueChange = { preferences.audioAmbientMode.set(it) },
                 title = { Text(stringResource(R.string.pref_audio_ambient_mode_title)) },
                 summary = {
                   Text(
                     stringResource(R.string.pref_audio_ambient_mode_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+              val audioWavySeekbar by preferences.audioWavySeekbar.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_wavy_seekbar_title),
+                value = audioWavySeekbar,
+                onValueChange = { preferences.audioWavySeekbar.set(it) },
+                title = { Text(stringResource(R.string.pref_audio_wavy_seekbar_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_audio_wavy_seekbar_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
@@ -356,6 +379,7 @@ object AudioPreferencesScreen : Screen {
               TextFieldPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_preferred_languages),
                 value = preferredLanguages,
+                enabled = "alang" !in configOwnedOptions,
                 onValueChange = { preferences.preferredLanguages.set(it) },
                 textToValue = { input ->
                   input
@@ -395,6 +419,7 @@ object AudioPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_audio_pitch_correction_title),
                 value = audioPitchCorrection,
+                enabled = "audio-pitch-correction" !in configOwnedOptions,
                 onValueChange = { preferences.audioPitchCorrection.set(it) },
                 title = { Text(stringResource(R.string.pref_audio_pitch_correction_title)) },
                 summary = {
@@ -410,6 +435,7 @@ object AudioPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_audio_volume_normalization_title),
                 value = volumeNormalization,
+                enabled = "af" !in configOwnedOptions,
                 onValueChange = { preferences.volumeNormalization.set(it) },
                 title = { Text(stringResource(R.string.pref_audio_volume_normalization_title)) },
                 summary = {
@@ -423,7 +449,9 @@ object AudioPreferencesScreen : Screen {
               PreferenceDivider()
               val drcEnabled by preferences.drcEnabled.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_drc_title),
                 value = drcEnabled,
+                enabled = "af" !in configOwnedOptions,
                 onValueChange = { preferences.drcEnabled.set(it) },
                 title = { Text(stringResource(R.string.pref_audio_drc_title)) },
                 summary = {
@@ -484,6 +512,7 @@ object AudioPreferencesScreen : Screen {
                 value = audioChannel,
                 onValueChange = { preferences.audioChannels.set(it) },
                 values = AudioChannels.entries,
+                enabled = setOf("audio-channels", "af").none(configOwnedOptions::contains),
                 valueToText = { AnnotatedString(resources.getString(it.title)) },
                 title = { Text(text = stringResource(id = R.string.pref_audio_channels)) },
                 summary = {
@@ -499,6 +528,7 @@ object AudioPreferencesScreen : Screen {
               SliderPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_audio_volume_boost_cap),
                 value = volumeBoostCap.toFloat(),
+                enabled = "volume-max" !in configOwnedOptions,
                 onValueChange = { preferences.volumeBoostCap.set(it.toInt()) },
                 title = { Text(stringResource(R.string.pref_audio_volume_boost_cap)) },
                 valueRange = 0f..200f,
@@ -514,6 +544,63 @@ object AudioPreferencesScreen : Screen {
                 },
                 onSliderValueChange = { preferences.volumeBoostCap.set(it.toInt()) },
                 sliderValue = volumeBoostCap.toFloat(),
+              )
+
+              PreferenceDivider()
+              Text(
+                text = stringResource(R.string.pref_lyrics_translation_category),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+              )
+
+              val lyricsAutoTranslate by preferences.lyricsAutoTranslate.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_lyrics_auto_translate),
+                value = lyricsAutoTranslate,
+                onValueChange = { preferences.lyricsAutoTranslate.set(it) },
+                title = { Text(stringResource(R.string.pref_lyrics_auto_translate)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_lyrics_auto_translate_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+              val lyricsTargetLanguage by preferences.lyricsTargetLanguage.collectAsState()
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_lyrics_target_language),
+                value = lyricsTargetLanguage,
+                onValueChange = { preferences.lyricsTargetLanguage.set(it) },
+                values = LyricsLanguageOptions.ALL_LANGUAGES.map { it.code },
+                valueToText = { AnnotatedString(LyricsLanguageOptions.getDisplayName(it)) },
+                title = { Text(stringResource(R.string.pref_lyrics_target_language)) },
+                summary = {
+                  Text(
+                    text = LyricsLanguageOptions.getDisplayName(lyricsTargetLanguage),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+              val lyricsDisplayMode by preferences.lyricsTranslationDisplayMode.collectAsState()
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_lyrics_display_mode),
+                value = lyricsDisplayMode,
+                onValueChange = { preferences.lyricsTranslationDisplayMode.set(it) },
+                values = LyricsTranslationDisplayMode.entries,
+                valueToText = { AnnotatedString(resources.getString(it.title)) },
+                title = { Text(stringResource(R.string.pref_lyrics_display_mode)) },
+                summary = {
+                  Text(
+                    text = stringResource(lyricsDisplayMode.title),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
               )
             }
           }
@@ -531,7 +618,7 @@ object AudioPreferencesScreen : Screen {
 
       AlertDialog(
         onDismissRequest = { showMusicTabsDialog = false },
-        title = { Text("Music Library Tabs") },
+        title = { Text(stringResource(R.string.pref_music_tabs_title)) },
         text = {
           Column {
             Text(

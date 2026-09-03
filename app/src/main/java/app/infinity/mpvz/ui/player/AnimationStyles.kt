@@ -7,14 +7,17 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player
+package app.gyrolet.mpvrx.ui.player
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -39,7 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.theme.AppMotion
 import kotlinx.coroutines.delay
 
 /** Which style to use when player controls appear/disappear. */
@@ -104,7 +107,7 @@ fun buildControlsEnterH(
     style == ControlsAnimationStyle.None -> EnterTransition.None
 
     style == ControlsAnimationStyle.Minimal ->
-      fadeIn(spring(stiffness = AppMotion.Spatial.Snappy.stiffness))
+      fadeIn(tween(durationMillis = enterMs, easing = LinearOutSlowInEasing))
 
     style == ControlsAnimationStyle.Cinematic ->
       scaleIn(
@@ -138,20 +141,14 @@ fun buildControlsEnterH(
 
     !reduceMotion ->
       slideInHorizontally(
-        spring(
-          dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-          stiffness = AppMotion.Spatial.Standard.stiffness,
-        ),
+        tween(durationMillis = enterMs, easing = LinearOutSlowInEasing),
         offsetX,
       ) +
         fadeIn(
-          spring(
-            dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-            stiffness = AppMotion.Spatial.Standard.stiffness,
-          ),
+          tween(durationMillis = enterMs, easing = LinearOutSlowInEasing),
         )
 
-    else -> fadeIn(spring(stiffness = AppMotion.Spatial.Standard.stiffness))
+    else -> fadeIn(tween(durationMillis = enterMs, easing = LinearOutSlowInEasing))
   }
 
 fun buildControlsExitH(
@@ -164,7 +161,7 @@ fun buildControlsExitH(
     style == ControlsAnimationStyle.None -> ExitTransition.None
 
     style == ControlsAnimationStyle.Minimal ->
-      fadeOut(spring(stiffness = AppMotion.Spatial.Snappy.stiffness))
+      fadeOut(tween(durationMillis = exitMs, easing = FastOutSlowInEasing))
 
     style == ControlsAnimationStyle.Cinematic ->
       scaleOut(
@@ -207,20 +204,14 @@ fun buildControlsExitH(
 
     !reduceMotion ->
       slideOutHorizontally(
-        spring(
-          dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-          stiffness = AppMotion.Spatial.Standard.stiffness,
-        ),
+        tween(durationMillis = exitMs, easing = FastOutSlowInEasing),
         offsetX,
       ) +
         fadeOut(
-          spring(
-            dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-            stiffness = AppMotion.Spatial.Standard.stiffness,
-          ),
+          tween(durationMillis = exitMs, easing = FastOutSlowInEasing),
         )
 
-    else -> fadeOut(spring(stiffness = AppMotion.Spatial.Standard.stiffness))
+    else -> fadeOut(tween(durationMillis = exitMs, easing = FastOutSlowInEasing))
   }
 
 /**
@@ -238,7 +229,7 @@ fun buildControlsEnterV(
     style == ControlsAnimationStyle.None -> EnterTransition.None
 
     style == ControlsAnimationStyle.Minimal ->
-      fadeIn(spring(stiffness = AppMotion.Spatial.Snappy.stiffness))
+      fadeIn(tween(durationMillis = enterMs, easing = LinearOutSlowInEasing))
 
     style == ControlsAnimationStyle.Cinematic ->
       scaleIn(
@@ -272,20 +263,14 @@ fun buildControlsEnterV(
 
     !reduceMotion ->
       slideInVertically(
-        spring(
-          dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-          stiffness = AppMotion.Spatial.Standard.stiffness,
-        ),
+        tween(durationMillis = enterMs, easing = LinearOutSlowInEasing),
         offsetY,
       ) +
         fadeIn(
-          spring(
-            dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-            stiffness = AppMotion.Spatial.Standard.stiffness,
-          ),
+          tween(durationMillis = enterMs, easing = LinearOutSlowInEasing),
         )
 
-    else -> fadeIn(spring(stiffness = AppMotion.Spatial.Standard.stiffness))
+    else -> fadeIn(tween(durationMillis = enterMs, easing = LinearOutSlowInEasing))
   }
 
 fun buildControlsExitV(
@@ -298,7 +283,7 @@ fun buildControlsExitV(
     style == ControlsAnimationStyle.None -> ExitTransition.None
 
     style == ControlsAnimationStyle.Minimal ->
-      fadeOut(spring(stiffness = AppMotion.Spatial.Snappy.stiffness))
+      fadeOut(tween(durationMillis = exitMs, easing = FastOutSlowInEasing))
 
     style == ControlsAnimationStyle.Cinematic ->
       scaleOut(
@@ -341,20 +326,14 @@ fun buildControlsExitV(
 
     !reduceMotion ->
       slideOutVertically(
-        spring(
-          dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-          stiffness = AppMotion.Spatial.Standard.stiffness,
-        ),
+        tween(durationMillis = exitMs, easing = FastOutSlowInEasing),
         offsetY,
       ) +
         fadeOut(
-          spring(
-            dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-            stiffness = AppMotion.Spatial.Standard.stiffness,
-          ),
+          tween(durationMillis = exitMs, easing = FastOutSlowInEasing),
         )
 
-    else -> fadeOut(spring(stiffness = AppMotion.Spatial.Standard.stiffness))
+    else -> fadeOut(tween(durationMillis = exitMs, easing = FastOutSlowInEasing))
   }
 
 // ────────────────────────────────────────────────────────────────────────────

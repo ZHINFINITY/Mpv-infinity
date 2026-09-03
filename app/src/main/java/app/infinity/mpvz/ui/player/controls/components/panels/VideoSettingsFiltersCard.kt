@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.panels
+package app.gyrolet.mpvrx.ui.player.controls.components.panels
 
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,18 +26,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.DecoderPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.preferences.preference.deleteAndGet
-import app.infinity.mpvz.presentation.components.ExpandableCard
-import app.infinity.mpvz.presentation.components.SliderItem
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.VideoFilters
-import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
-import app.infinity.mpvz.ui.player.controls.panelCardsColors
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.DecoderPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.preferences.preference.deleteAndGet
+import app.gyrolet.mpvrx.presentation.components.ExpandableCard
+import app.gyrolet.mpvrx.presentation.components.SliderItem
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.VideoFilters
+import app.gyrolet.mpvrx.ui.player.controls.CARDS_MAX_WIDTH
+import app.gyrolet.mpvrx.ui.player.controls.panelCardsColors
+import app.gyrolet.mpvrx.ui.theme.spacing
+import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
 import me.zhanghai.compose.preference.FooterPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
@@ -45,6 +46,8 @@ import org.koin.compose.koinInject
 @Composable
 fun VideoSettingsFiltersCard(modifier: Modifier = Modifier) {
   val decoderPreferences = koinInject<DecoderPreferences>()
+  val configOwnedOptions = currentMpvConfigOverrideOptions()
+  val hasOwnedFilter = VideoFilters.entries.any { it.mpvProperty in configOwnedOptions }
   var isExpanded by remember { mutableStateOf(true) }
 
   ExpandableCard(
@@ -64,6 +67,7 @@ fun VideoSettingsFiltersCard(modifier: Modifier = Modifier) {
     ProvidePreferenceLocals {
       Column {
         TextButton(
+          enabled = !hasOwnedFilter,
           onClick = {
             VideoFilters.entries.forEach {
               PlaybackSession.setPropertyInt(it.mpvProperty, it.preference(decoderPreferences).deleteAndGet())
@@ -85,6 +89,7 @@ fun VideoSettingsFiltersCard(modifier: Modifier = Modifier) {
             },
             max = filter.max,
             min = filter.min,
+            enabled = filter.mpvProperty !in configOwnedOptions,
           )
         }
 

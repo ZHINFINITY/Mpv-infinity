@@ -7,10 +7,8 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player
+package app.gyrolet.mpvrx.ui.player
 
-import android.net.Uri
-import app.infinity.mpvz.utils.media.HttpUtils
 import java.net.URI
 
 object M3uPlaybackPolicy {
@@ -28,17 +26,11 @@ object M3uPlaybackPolicy {
     hasPlaylistId: Boolean,
   ): Boolean {
     if (hasExistingPlaylist || hasPlaylistId) return false
-
-    // A direct remote manifest is already the media item. Do not treat a signed
-    // `.m3u8?token=...` URL as an in-app M3U playlist: expanding it attempts to
-    // parse the stream as a local playlist and loses the direct-player request
-    // context (including Referer and other HTTP headers).
-    if (listOfNotNull(playableUri, originalUri).any(::isDirectHlsUrl)) return false
-
     if (!looksLikeM3uForPlayback(playableUri, originalUri, fileName, mimeType)) return false
 
-    // Remote M3U/HLS URLs that are playlist containers should still use the
-    // existing in-app expansion path. Direct HLS manifests are handled above.
+    // Remote M3U/HLS URLs often need mpv's own HTTP stack, ytdl hook, cookies,
+    // headers, redirects, and stream-specific playlist handling.
+    // For IPTV-style links, we should still expand them in-app even when they are remote.
     return true
   }
 
@@ -57,9 +49,6 @@ object M3uPlaybackPolicy {
         m3uMimeTypes.contains(type)
       } == true
   }
-
-  private fun isDirectHlsUrl(value: String): Boolean =
-    runCatching { HttpUtils.isDirectMediaUrl(Uri.parse(value)) }.getOrDefault(false)
 
   private fun hasM3uMarker(value: String): Boolean {
     val uriParts =

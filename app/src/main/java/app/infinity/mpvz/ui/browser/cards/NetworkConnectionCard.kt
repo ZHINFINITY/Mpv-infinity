@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.cards
+package app.gyrolet.mpvrx.ui.browser.cards
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -37,11 +37,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.domain.network.NetworkConnection
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.theme.AppMotion
-import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.domain.network.NetworkConnection
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 
 @Composable
 fun NetworkConnectionCard(
@@ -120,7 +120,7 @@ fun NetworkConnectionCard(
               Icons.RoundedFilled.Edit,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_edit),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_edit),
               tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
@@ -129,7 +129,7 @@ fun NetworkConnectionCard(
               Icons.RoundedFilled.Delete,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.delete),
+                  .stringResource(app.gyrolet.mpvrx.R.string.delete),
               tint = MaterialTheme.colorScheme.error,
             )
           }
@@ -182,7 +182,7 @@ fun NetworkConnectionCard(
         Text(
           text =
             androidx.compose.ui.res.stringResource(
-              app.infinity.mpvz.R.string.ui_connect_automatically_on_app_launch,
+              app.gyrolet.mpvrx.R.string.ui_connect_automatically_on_app_launch,
             ),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -214,7 +214,7 @@ fun NetworkConnectionCard(
                 )
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_connecting),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_connecting),
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                 )
               }
@@ -240,7 +240,7 @@ fun NetworkConnectionCard(
                 )
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_browse),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_browse),
                 )
               }
 
@@ -259,7 +259,7 @@ fun NetworkConnectionCard(
                 )
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_disconnect),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_disconnect),
                 )
               }
             }
@@ -281,7 +281,7 @@ fun NetworkConnectionCard(
               )
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_connect),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_connect),
               )
             }
           }

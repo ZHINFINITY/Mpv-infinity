@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,24 +47,23 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.PlayerButton
-import app.infinity.mpvz.preferences.PlayerClockFormat
-import app.infinity.mpvz.preferences.PlayerControlsStyle
-import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
-import app.infinity.mpvz.preferences.SeekbarStyle
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.controls.components.SeekbarStyleLivePreview
-import app.infinity.mpvz.ui.preferences.components.PlayerButtonChip
-import app.infinity.mpvz.ui.preferences.components.SwitchPreference
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
-import app.infinity.mpvz.ui.utils.popSafely
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.PlayerButton
+import app.gyrolet.mpvrx.preferences.PlayerClockFormat
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.PortraitPlaybackControlsPosition
+import app.gyrolet.mpvrx.preferences.SeekbarStyle
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.controls.components.SeekbarStyleLivePreview
+import app.gyrolet.mpvrx.ui.preferences.components.PlayerButtonChip
+import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
@@ -213,7 +212,10 @@ object PlayerControlsPreferencesScreen : Screen {
 
           // Seekbar Section
           item {
-            PreferenceSectionHeader(title = stringResource(R.string.pref_section_seekbar_style))
+            PreferenceSectionHeader(
+              title = stringResource(R.string.pref_section_seekbar_style),
+              modifier = Modifier.settingsSearchTarget(R.string.pref_section_seekbar_style),
+            )
           }
 
           item {
@@ -223,7 +225,7 @@ object PlayerControlsPreferencesScreen : Screen {
             PreferenceCard {
               SeekbarStyle.entries.forEachIndexed { index, style ->
                 ListItem(
-                  headlineContent = {
+                  content = {
                     Text(text = style.name)
                   },
                   supportingContent = {
@@ -264,8 +266,7 @@ object PlayerControlsPreferencesScreen : Screen {
 
           item {
             val hidePlayerButtonsBackground by appearancePrefs.hidePlayerButtonsBackground.collectAsState()
-            val playerControlsStyle by appearancePrefs.playerControlsStyle.collectAsState()
-            val showSeekbarContainer by appearancePrefs.showSeekbarContainer.collectAsState()
+            val forceDarkPlayerButtonsBackground by appearancePrefs.forceDarkPlayerButtonsBackground.collectAsState()
             val portraitPlaybackControlsPosition by
               appearancePrefs.portraitPlaybackControlsPosition.collectAsState()
             val playerTimeToDisappear by playerPrefs.playerTimeToDisappear.collectAsState()
@@ -278,37 +279,7 @@ object PlayerControlsPreferencesScreen : Screen {
 
             PreferenceCard {
               ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_player_controls_style_title),
-                value = playerControlsStyle,
-                onValueChange = { appearancePrefs.playerControlsStyle.set(it) },
-                values = PlayerControlsStyle.entries,
-                valueToText = { AnnotatedString(it.displayName) },
-                title = {
-                  Text(text = stringResource(R.string.pref_appearance_player_controls_style_title))
-                },
-                summary = {
-                  Text(
-                    text =
-                      stringResource(
-                        R.string.pref_appearance_player_controls_style_summary,
-                      ) + " · " + playerControlsStyle.displayName,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_show_seekbar_container_title),
-                value = showSeekbarContainer,
-                onValueChange = { appearancePrefs.showSeekbarContainer.set(it) },
-                title = { Text(stringResource(R.string.pref_appearance_show_seekbar_container_title)) },
-                summary = { Text(stringResource(R.string.pref_appearance_show_seekbar_container_summary)) },
-              )
-
-              PreferenceDivider()
-
-              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_portrait_playback_buttons),
                 value = portraitPlaybackControlsPosition,
                 onValueChange = { appearancePrefs.portraitPlaybackControlsPosition.set(it) },
                 values = PortraitPlaybackControlsPosition.entries,
@@ -316,7 +287,7 @@ object PlayerControlsPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_portrait_playback_buttons),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_portrait_playback_buttons),
                   )
                 },
                 summary = { Text(portraitPlaybackControlsPosition.displayName) },
@@ -336,6 +307,27 @@ object PlayerControlsPreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = stringResource(id = R.string.pref_appearance_hide_player_buttons_background_summary),
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier =
+                  Modifier.settingsSearchTarget(
+                    R.string.pref_appearance_force_dark_player_buttons_background_title,
+                  ),
+                value = forceDarkPlayerButtonsBackground,
+                onValueChange = { appearancePrefs.forceDarkPlayerButtonsBackground.set(it) },
+                title = {
+                  Text(
+                    text = stringResource(R.string.pref_appearance_force_dark_player_buttons_background_title),
+                  )
+                },
+                summary = {
+                  Text(
+                    text = stringResource(R.string.pref_appearance_force_dark_player_buttons_background_summary),
                   )
                 },
               )
@@ -377,6 +369,7 @@ object PlayerControlsPreferencesScreen : Screen {
               PreferenceDivider()
 
               ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_time_network_clock),
                 value = clockFormat,
                 onValueChange = { playerPrefs.clockFormat.set(it) },
                 values = PlayerClockFormat.entries,
@@ -384,7 +377,7 @@ object PlayerControlsPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_time_network_clock),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_time_network_clock),
                   )
                 },
                 summary = { Text(clockFormat.displayName) },

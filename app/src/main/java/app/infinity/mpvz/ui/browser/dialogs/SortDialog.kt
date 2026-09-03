@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.dialogs
+package app.gyrolet.mpvrx.ui.browser.dialogs
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -61,10 +61,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import app.infinity.mpvz.ui.icons.AppIcon
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
+import app.gyrolet.mpvrx.ui.icons.AppIcon
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -143,11 +144,7 @@ fun SortDialog(
                   selected = option.isSelected,
                   onClick = { if (enableViewModeOptions) option.onClick() },
                   shape = SegmentedButtonDefaults.itemShape(index = index, count = viewModeSelector.options.size),
-                  colors =
-                    SegmentedButtonDefaults.colors(
-                      activeContentColor = MaterialTheme.colorScheme.primary,
-                      activeBorderColor = MaterialTheme.colorScheme.primary,
-                    ),
+                  colors = themedSegmentedButtonColors(),
                 ) {
                   Text(text = option.label)
                 }
@@ -166,11 +163,7 @@ fun SortDialog(
                 selected = isFirstSelected,
                 onClick = { if (enableLayoutModeOptions) layoutModeSelector.onViewModeChange(true) },
                 shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                colors =
-                  SegmentedButtonDefaults.colors(
-                    activeContentColor = MaterialTheme.colorScheme.primary,
-                    activeBorderColor = MaterialTheme.colorScheme.primary,
-                  ),
+                colors = themedSegmentedButtonColors(),
                 icon = {
                   Icon(
                     imageVector = layoutModeSelector.firstOptionIcon,
@@ -185,11 +178,7 @@ fun SortDialog(
                 selected = !isFirstSelected,
                 onClick = { if (enableLayoutModeOptions) layoutModeSelector.onViewModeChange(false) },
                 shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                colors =
-                  SegmentedButtonDefaults.colors(
-                    activeContentColor = MaterialTheme.colorScheme.primary,
-                    activeBorderColor = MaterialTheme.colorScheme.primary,
-                  ),
+                colors = themedSegmentedButtonColors(),
                 icon = {
                   Icon(
                     imageVector = layoutModeSelector.secondOptionIcon,
@@ -257,7 +246,7 @@ fun SortDialog(
                 Text(
                   text =
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_fields),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_fields),
                   style = MaterialTheme.typography.titleSmall,
                 )
                 Icon(
@@ -302,7 +291,7 @@ fun SortDialog(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_done),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_done),
         )
       }
     },
@@ -411,11 +400,7 @@ private fun SortOrderSelector(
         selected = index == selectedIndex,
         onClick = { onSortOrderChange(index == 0) },
         shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-        colors =
-          SegmentedButtonDefaults.colors(
-            activeContentColor = MaterialTheme.colorScheme.primary,
-            activeBorderColor = MaterialTheme.colorScheme.primary,
-          ),
+        colors = themedSegmentedButtonColors(),
         icon = {
           Icon(
             imageVector =

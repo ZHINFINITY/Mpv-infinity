@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,19 +32,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AudioChannels
-import app.infinity.mpvz.preferences.AudioPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.components.PlayerSheet
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.TrackNode
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AudioChannels
+import app.gyrolet.mpvrx.preferences.AudioPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.TrackNode
+import app.gyrolet.mpvrx.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 import org.koin.compose.koinInject
 
@@ -55,10 +54,12 @@ fun AudioTracksSheet(
   onAddAudioTrack: () -> Unit,
   onOpenDelayPanel: () -> Unit,
   onOpenEqualizerSheet: (() -> Unit)? = null,
-  isMedia3Active: Boolean = false,
-  onMedia3AudioChannels: ((AudioChannels) -> Unit)? = null,
-  onMedia3AudioProcessing: ((Boolean, Boolean) -> Unit)? = null,
   onDismissRequest: () -> Unit,
+  delayControlEnabled: Boolean = true,
+  equalizerControlEnabled: Boolean = true,
+  audioChannelsEnabled: Boolean = true,
+  reverseStereoEnabled: Boolean = true,
+  audioEffectsEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   val audioPreferences = koinInject<AudioPreferences>()
@@ -71,11 +72,11 @@ fun AudioTracksSheet(
         onAddAudioTrack,
         actions = {
           if (onOpenEqualizerSheet != null) {
-            IconButton(onClick = onOpenEqualizerSheet) {
+            IconButton(onClick = onOpenEqualizerSheet, enabled = equalizerControlEnabled) {
               Icon(Icons.RoundedFilled.Equalizer, stringResource(R.string.btn_label_equalizer))
             }
           }
-          IconButton(onClick = onOpenDelayPanel) {
+          IconButton(onClick = onOpenDelayPanel, enabled = delayControlEnabled) {
             Icon(Icons.RoundedFilled.AvTimer, null)
           }
         },
@@ -84,14 +85,10 @@ fun AudioTracksSheet(
       LazyColumn {
         items(tracks, key = { it.id }) {
           AudioTrackRow(
-            title =
-              buildString {
-                append(getTrackTitle(it))
-                if (it.supported == false) append(" (unsupported)")
-              },
+            title = getTrackTitle(it),
+            details = audioTrackDetails(it),
             isSelected = it.isSelected,
             onClick = { onSelect(it) },
-            enabled = it.supported != false,
           )
         }
         item {
@@ -114,11 +111,10 @@ fun AudioTracksSheet(
               items(AudioChannels.entries, key = { it.name }) {
                 FilterChip(
                   selected = audioChannels == it,
+                  enabled = if (it == AudioChannels.ReverseStereo) reverseStereoEnabled else audioChannelsEnabled,
                   onClick = {
                     audioPreferences.audioChannels.set(it)
-                    if (isMedia3Active) {
-                      onMedia3AudioChannels?.invoke(it)
-                    } else if (it == AudioChannels.ReverseStereo) {
+                    if (it == AudioChannels.ReverseStereo) {
                       PlaybackSession.setPropertyString(AudioChannels.AutoSafe.property, AudioChannels.AutoSafe.value)
                     } else {
                       PlaybackSession.setPropertyString(it.property, it.value)
@@ -140,25 +136,14 @@ fun AudioTracksSheet(
               color = MaterialTheme.colorScheme.primary,
             )
             Spacer(modifier = Modifier.height(MaterialTheme.spacing.smaller))
-            if (isMedia3Active) {
-              Text(
-                text = "Native effects apply to PCM audio; passthrough or offload may bypass them.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = MaterialTheme.spacing.smaller),
-              )
-            }
             LazyRow(
               horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
             ) {
               item {
                 FilterChip(
                   selected = volumeNormalization,
-                  onClick = {
-                    val enabled = !volumeNormalization
-                    audioPreferences.volumeNormalization.set(enabled)
-                    if (isMedia3Active) onMedia3AudioProcessing?.invoke(enabled, drcEnabled)
-                  },
+                  enabled = audioEffectsEnabled,
+                  onClick = { audioPreferences.volumeNormalization.set(!volumeNormalization) },
                   label = { Text(text = stringResource(id = R.string.pref_audio_volume_normalization_title)) },
                   leadingIcon = null,
                 )
@@ -166,11 +151,8 @@ fun AudioTracksSheet(
               item {
                 FilterChip(
                   selected = drcEnabled,
-                  onClick = {
-                    val enabled = !drcEnabled
-                    audioPreferences.drcEnabled.set(enabled)
-                    if (isMedia3Active) onMedia3AudioProcessing?.invoke(volumeNormalization, enabled)
-                  },
+                  enabled = audioEffectsEnabled,
+                  onClick = { audioPreferences.drcEnabled.set(!drcEnabled) },
                   label = { Text(text = stringResource(id = R.string.pref_audio_drc_title)) },
                   leadingIcon = null,
                 )
@@ -190,7 +172,7 @@ fun AudioTrackRow(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
-  textColor: Color = MaterialTheme.colorScheme.onSurface,
+  details: String? = null,
 ) {
   Row(
     modifier =
@@ -206,11 +188,31 @@ fun AudioTrackRow(
       onClick = onClick,
       enabled = enabled,
     )
-    Text(
-      title,
-      fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
-      fontStyle = if (isSelected) FontStyle.Italic else FontStyle.Normal,
-      color = textColor,
-    )
+    Column(modifier = Modifier.weight(1f)) {
+      Text(
+        title,
+        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
+        fontStyle = if (isSelected) FontStyle.Italic else FontStyle.Normal,
+      )
+      details?.let { value ->
+        Text(
+          text = value,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
   }
+}
+
+private fun audioTrackDetails(track: TrackNode): String? {
+  val codec = track.codecDesc?.takeIf(String::isNotBlank) ?: track.codec?.takeIf(String::isNotBlank)
+  val bitrate =
+    track.effectiveBitrate
+      ?.takeIf { it > 0L }
+      ?.let { bitsPerSecond -> "${bitsPerSecond / 1_000L} kbps" }
+  return listOfNotNull(track.ytdlFormatId?.let { "#$it" }, codec, bitrate)
+    .distinct()
+    .joinToString(" • ")
+    .takeIf(String::isNotBlank)
 }

@@ -9,9 +9,10 @@
 
 @file:Suppress("ktlint:standard:no-wildcard-imports")
 
-package app.infinity.mpvz.ui.player.controls.components.panels
+package app.gyrolet.mpvrx.ui.player.controls.components.panels
 
 import android.content.res.Configuration
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
@@ -36,14 +37,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.player.controls.panelCardsColors
-import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.ui.player.controls.panelCardsColors
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import kotlin.math.roundToInt
 
 /**
@@ -57,6 +61,11 @@ import kotlin.math.roundToInt
 fun DraggablePanel(
   modifier: Modifier = Modifier,
   header: (@Composable () -> Unit)? = null,
+  shape: Shape? = null,
+  containerColor: Color? = null,
+  tonalElevation: Dp = 0.dp,
+  shadowElevation: Dp = 0.dp,
+  border: BorderStroke? = null,
   content: @Composable () -> Unit,
 ) {
   var offsetX by remember { mutableFloatStateOf(0f) }
@@ -89,10 +98,12 @@ fun DraggablePanel(
           .onSizeChanged { panelWidth = it.width }
           .widthIn(max = 380.dp)
           .heightIn(max = panelMaxHeight),
-      shape = MaterialTheme.shapes.extraLarge,
-      color = colors.containerColor,
+      shape = shape ?: MaterialTheme.shapes.extraLarge,
+      color = containerColor ?: colors.containerColor,
       contentColor = colors.contentColor,
-      tonalElevation = 0.dp,
+      tonalElevation = tonalElevation,
+      shadowElevation = shadowElevation,
+      border = border,
     ) {
       Column {
         // Drag Handle & Indicator

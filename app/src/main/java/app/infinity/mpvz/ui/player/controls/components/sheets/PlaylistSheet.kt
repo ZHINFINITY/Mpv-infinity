@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
 import android.net.Uri
 import androidx.compose.animation.core.LinearEasing
@@ -43,6 +43,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -63,14 +64,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.infinity.mpvz.domain.media.model.Video
-import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.components.PlayerSheet
-import app.infinity.mpvz.presentation.components.RemoteImage
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.theme.spacing
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.res.stringResource
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.domain.media.model.Video
+import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
+import app.gyrolet.mpvrx.presentation.components.RemoteImage
+import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.controls.components.MiniAudioVisualizer
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
@@ -80,9 +87,40 @@ import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
+fun PlaylistItem.toVideo(): Video {
+  val cleanPath =
+    if (path.startsWith("file://", ignoreCase = true)) {
+      runCatching { Uri.parse(path).path }.getOrNull() ?: path.removePrefix("file://")
+    } else {
+      path.ifBlank { uri.path.orEmpty().ifBlank { uri.toString() } }
+    }
+  return Video(
+    id = uri.toString().hashCode().toLong(),
+    title = title,
+    displayName = title,
+    path = cleanPath,
+    uri = uri,
+    duration = 0L,
+    durationFormatted = duration,
+    size = 0L,
+    sizeFormatted = "",
+    dateModified = 0L,
+    dateAdded = 0L,
+    mimeType = if (isAudio) "audio/*" else "video/*",
+    bucketId = "",
+    bucketDisplayName = "",
+    width = 0,
+    height = 0,
+    fps = 0f,
+    resolution = resolution,
+    isAudio = isAudio,
+  )
+}
+
 data class PlaylistItem(
   val uri: Uri,
   val title: String,
+  val artist: String = "",
   val index: Int,
   val isPlaying: Boolean,
   val progressPercent: Float = 0f, // 0-100, progress of video watched
@@ -92,6 +130,8 @@ data class PlaylistItem(
   val resolution: String = "", // Resolution (e.g., "1920x1080")
   val isAudio: Boolean = false,
   val tvgLogo: String = "", // M3U channel logo URL for fallback
+  val networkConnectionId: Long? = null,
+  val networkPath: String = "",
 )
 
 @Composable
@@ -102,8 +142,23 @@ private fun PlaylistThumbnail(
   modifier: Modifier = Modifier,
   contentScale: ContentScale = ContentScale.Crop,
 ) {
+  val hasArtwork = item.tvgLogo.isNotBlank()
+  val isYouTubeArtwork =
+    remember(item.tvgLogo) {
+      val host = runCatching { Uri.parse(item.tvgLogo).host.orEmpty().lowercase() }.getOrDefault("")
+      host == "i.ytimg.com" || host.endsWith(".ytimg.com")
+    }
+  val cleanPath =
+    remember(item.path, item.uri) {
+      val raw = item.path.ifBlank { item.uri.toString() }
+      if (raw.startsWith("file://", ignoreCase = true)) {
+        runCatching { Uri.parse(raw).path }.getOrNull() ?: raw.removePrefix("file://")
+      } else {
+        raw
+      }
+    }
   val video =
-    remember(item.uri, item.path, item.title) {
+    remember(item.uri, cleanPath, item.title) {
       Video(
         id =
           item.uri
@@ -112,7 +167,7 @@ private fun PlaylistThumbnail(
             .toLong(),
         title = item.title,
         displayName = item.title,
-        path = item.path.ifBlank { item.uri.toString() },
+        path = cleanPath,
         uri = item.uri,
         duration = 0L,
         durationFormatted = item.duration,
@@ -134,46 +189,56 @@ private fun PlaylistThumbnail(
       if (item.isAudio) 512 to 512 else PLAYLIST_THUMBNAIL_WIDTH to PLAYLIST_THUMBNAIL_HEIGHT
     }
   val thumbnailKey =
-    remember(video, thumbWidth, thumbHeight) {
-      thumbnailRepository.thumbnailKey(video, thumbWidth, thumbHeight)
+    remember(video, item.networkConnectionId, item.networkPath, thumbWidth, thumbHeight) {
+      if (item.networkConnectionId != null && item.networkPath.isNotBlank()) {
+        "network-playlist|${item.networkConnectionId}|${item.networkPath}|$thumbWidth|$thumbHeight"
+      } else {
+        thumbnailRepository.thumbnailKey(video, thumbWidth, thumbHeight)
+      }
     }
   var bitmap by remember(thumbnailKey) {
     mutableStateOf(
-      thumbnailRepository.getThumbnailFromMemory(
-        video,
-        thumbWidth,
-        thumbHeight,
-      ),
+      if (!hasArtwork && (item.networkConnectionId == null || item.networkPath.isBlank())) {
+        thumbnailRepository.getThumbnailFromMemory(video, thumbWidth, thumbHeight)
+      } else {
+        null
+      },
     )
   }
 
   LaunchedEffect(thumbnailKey) {
-    if (bitmap == null) {
+    if (!hasArtwork && bitmap == null) {
       bitmap =
         withContext(Dispatchers.IO) {
-          thumbnailRepository.getThumbnail(
-            video,
-            thumbWidth,
-            thumbHeight,
-          )
+          val connectionId = item.networkConnectionId
+          if (connectionId != null && item.networkPath.isNotBlank()) {
+            thumbnailRepository.getThumbnailForNetworkSource(
+              connectionId = connectionId,
+              path = item.networkPath,
+              widthPx = thumbWidth,
+              heightPx = thumbHeight,
+            )
+          } else {
+            thumbnailRepository.getThumbnail(video, thumbWidth, thumbHeight)
+          }
         }
     }
   }
 
   val currentImageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
-  if (currentImageBitmap != null) {
+  if (hasArtwork) {
+    RemoteImage(
+      url = item.tvgLogo,
+      contentDescription = contentDescription,
+      contentScale = if (isYouTubeArtwork) ContentScale.Crop else contentScale,
+      modifier = if (isYouTubeArtwork) modifier else modifier.padding(4.dp),
+    )
+  } else if (currentImageBitmap != null) {
     androidx.compose.foundation.Image(
       bitmap = currentImageBitmap,
       contentDescription = contentDescription,
       modifier = modifier,
       contentScale = contentScale,
-    )
-  } else if (item.tvgLogo.isNotBlank()) {
-    RemoteImage(
-      url = item.tvgLogo,
-      contentDescription = contentDescription,
-      contentScale = ContentScale.Fit,
-      modifier = modifier.padding(4.dp),
     )
   }
 }
@@ -187,10 +252,9 @@ fun PlaylistSheet(
   onDismissRequest: () -> Unit,
   onItemClick: (PlaylistItem) -> Unit,
   onReorder: ((Int, Int) -> Unit)? = null,
-  onRemove: ((PlaylistItem) -> Unit)? = null,
   totalCount: Int = playlist.size,
   isM3UPlaylist: Boolean = false,
-  playerPreferences: app.infinity.mpvz.preferences.PlayerPreferences,
+  playerPreferences: app.gyrolet.mpvrx.preferences.PlayerPreferences,
   isSwipeActive: Boolean = false,
   swipeOffset: Float = 0f,
   isAudioOnly: Boolean = false,
@@ -250,6 +314,8 @@ fun PlaylistSheet(
       screenWidth * 0.85f
     }
 
+  var showAddToPlaylistDialog by rememberSaveable { mutableStateOf(false) }
+
   PlayerSheet(
     onDismissRequest = onDismissRequest,
     modifier = Modifier.fillMaxWidth(),
@@ -299,7 +365,7 @@ fun PlaylistSheet(
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_now_playing),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_now_playing),
                 style =
                   MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.Bold,
@@ -319,16 +385,31 @@ fun PlaylistSheet(
             )
           }
 
-          // Toggle button for list/grid view (only in landscape)
-          if (!isPortrait) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
             IconButton(
-              onClick = { isListMode = !isListMode },
+              onClick = { showAddToPlaylistDialog = true },
             ) {
               Icon(
-                imageVector = if (isListMode) Icons.RoundedFilled.GridView else Icons.RoundedFilled.ViewList,
-                contentDescription = if (isListMode) "Switch to Grid View" else "Switch to List View",
+                imageVector = Icons.RoundedFilled.PlaylistAdd,
+                contentDescription = stringResource(R.string.save_queue_as_playlist),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
               )
+            }
+
+            // Toggle button for list/grid view (only in landscape)
+            if (!isPortrait) {
+              IconButton(
+                onClick = { isListMode = !isListMode },
+              ) {
+                Icon(
+                  imageVector = if (isListMode) Icons.RoundedFilled.GridView else Icons.RoundedFilled.ViewList,
+                  contentDescription = if (isListMode) "Switch to Grid View" else "Switch to List View",
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
             }
           }
         }
@@ -364,10 +445,10 @@ fun PlaylistSheet(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(bottom = 16.dp),
           ) {
-            items(displayPlaylist.size, key = { index -> displayPlaylist[index].uri.toString() }) { index ->
+            items(displayPlaylist.size, key = { index -> displayPlaylist[index].index }) { index ->
               val item = displayPlaylist[index]
               if (showDragHandle) {
-                ReorderableItem(reorderableLazyListState, key = item.uri.toString()) { isDragging ->
+                ReorderableItem(reorderableLazyListState, key = item.index) { isDragging ->
                   val isDraggingPrev = remember { mutableStateOf(false) }
                   LaunchedEffect(isDragging) {
                     if (isDraggingPrev.value && !isDragging) {
@@ -390,11 +471,6 @@ fun PlaylistSheet(
                     dragHandle = {
                       DragHandle(scope = this, isDragging = isDragging)
                     },
-                    removeAction = if (onRemove != null && !item.isPlaying) {
-                      { onRemove(item) }
-                    } else {
-                      null
-                    },
                   )
                 }
               } else {
@@ -405,11 +481,6 @@ fun PlaylistSheet(
                   skipThumbnail = false,
                   accentColor = accentColor,
                   isAudioOnly = isAudioOnly,
-                  removeAction = if (onRemove != null && !item.isPlaying) {
-                    { onRemove(item) }
-                  } else {
-                    null
-                  },
                 )
               }
             }
@@ -425,7 +496,7 @@ fun PlaylistSheet(
               ),
             horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
           ) {
-            items(playlist, key = { it.uri.toString() }) { item ->
+              items(playlist, key = { it.index }) { item ->
               PlaylistTrackGridItem(
                 item = item,
                 thumbnailRepository = thumbnailRepository,
@@ -440,6 +511,16 @@ fun PlaylistSheet(
         }
       }
     }
+  }
+
+  if (showAddToPlaylistDialog && playlist.isNotEmpty()) {
+    val queueVideos = remember(playlist) { playlist.map { it.toVideo() } }
+    AddToPlaylistDialog(
+      isOpen = true,
+      videos = queueVideos,
+      onDismiss = { showAddToPlaylistDialog = false },
+      onSuccess = { showAddToPlaylistDialog = false },
+    )
   }
 }
 
@@ -492,7 +573,6 @@ fun PlaylistTrackListItem(
   isAudioOnly: Boolean = false,
   modifier: Modifier = Modifier,
   dragHandle: @Composable () -> Unit = {},
-  removeAction: (() -> Unit)? = null,
 ) {
   val isAudioItem = item.isAudio
   val effectiveItem =
@@ -566,7 +646,7 @@ fun PlaylistTrackListItem(
             thumbnailRepository = thumbnailRepository,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop,
           )
@@ -617,6 +697,16 @@ fun PlaylistTrackListItem(
           maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
+
+        if (item.artist.isNotBlank()) {
+          Text(
+            text = item.artist,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
 
         // Duration and resolution chips - always show with loading state if empty
         Row(
@@ -681,32 +771,23 @@ fun PlaylistTrackListItem(
       // Status badges
       when {
         item.isPlaying -> {
+          val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+          val isPlaybackActive = paused != true
           Surface(
             color = accentColor.copy(alpha = 0.15f),
             shape = RoundedCornerShape(16.dp),
           ) {
-            Text(
-              text =
-                androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.notification_playing),
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-              style =
-                MaterialTheme.typography.labelSmall.copy(
-                  fontWeight = FontWeight.SemiBold,
-                  color = accentColor,
-                ),
-            )
+            Box(
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              MiniAudioVisualizer(
+                isPlaying = isPlaybackActive,
+                color = accentColor,
+                modifier = Modifier.size(width = 16.dp, height = 14.dp),
+              )
+            }
           }
-        }
-      }
-
-      if (removeAction != null) {
-        IconButton(onClick = removeAction) {
-          Icon(
-            imageVector = Icons.RoundedFilled.Delete,
-            contentDescription = androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_remove_from_queue),
-            tint = MaterialTheme.colorScheme.error,
-          )
         }
       }
 
@@ -787,7 +868,7 @@ fun PlaylistTrackGridItem(
             thumbnailRepository = thumbnailRepository,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop,
           )
@@ -893,6 +974,16 @@ fun PlaylistTrackGridItem(
           overflow = TextOverflow.Ellipsis,
         )
 
+        if (item.artist.isNotBlank()) {
+          Text(
+            text = item.artist,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+
         // Resolution and status
         Row(
           horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -926,22 +1017,22 @@ fun PlaylistTrackGridItem(
           }
 
           if (item.isPlaying) {
+            val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+            val isPlaybackActive = paused != true
             Surface(
               color = accentColor.copy(alpha = 0.15f),
               shape = RoundedCornerShape(4.dp),
             ) {
-              Text(
-                text =
-                  androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.notification_playing),
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                style =
-                  MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = accentColor,
-                  ),
-              )
+              Box(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                MiniAudioVisualizer(
+                  isPlaying = isPlaybackActive,
+                  color = accentColor,
+                  modifier = Modifier.size(width = 14.dp, height = 12.dp),
+                )
+              }
             }
           }
         }

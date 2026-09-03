@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.securefolder
+package app.gyrolet.mpvrx.ui.securefolder
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -27,14 +27,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.preference.Preference
-import app.infinity.mpvz.presentation.components.ConfirmDialog
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.preference.Preference
+import app.gyrolet.mpvrx.presentation.components.ConfirmDialog
 
 /**
  * Confirm-before-destructive-action dialog used in front of restore/delete-forever/move-to-secure,
  * with an optional "don't ask again" checkbox that persists into a [Preference] flag
- * (one of [app.infinity.mpvz.preferences.SecureFolderPreferences.dontAskBeforeMove]/
+ * (one of [app.gyrolet.mpvrx.preferences.SecureFolderPreferences.dontAskBeforeMove]/
  * `dontAskBeforeRestore`/`dontAskBeforeDelete]`).
  *
  * Callers are expected to check `dontAskAgain.get()` themselves before opening this dialog at

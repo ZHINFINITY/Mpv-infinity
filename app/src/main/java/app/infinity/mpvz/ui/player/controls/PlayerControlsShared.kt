@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls
+package app.gyrolet.mpvrx.ui.player.controls
 
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import android.content.Context
 import android.content.Intent
@@ -49,39 +49,46 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.preferences.AdvancedPreferences
-import app.infinity.mpvz.preferences.AudioPreferences
-import app.infinity.mpvz.preferences.PlayerButton
-import app.infinity.mpvz.preferences.PlayerClockFormat
-import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.cast.CastPlayerButton
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.Panels
-import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.player.PlayerViewModel
-import app.infinity.mpvz.ui.player.Sheets
-import app.infinity.mpvz.ui.player.VideoAspect
-import app.infinity.mpvz.ui.player.controls.components.AbLoopIcon
-import app.infinity.mpvz.ui.player.controls.components.ControlsButton
-import app.infinity.mpvz.ui.player.controls.components.CurrentChapter
-import app.infinity.mpvz.ui.theme.controlColor
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AdvancedPreferences
+import app.gyrolet.mpvrx.preferences.AudioPreferences
+import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
+import app.gyrolet.mpvrx.preferences.PlayerButton
+import app.gyrolet.mpvrx.preferences.PlayerClockFormat
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.ui.cast.CastPlayerButton
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.Panels
+import app.gyrolet.mpvrx.ui.player.PlayerActivity
+import app.gyrolet.mpvrx.ui.player.PlayerViewModel
+import app.gyrolet.mpvrx.ui.player.clip.ClipOverlayView
+import app.gyrolet.mpvrx.ui.player.Sheets
+import app.gyrolet.mpvrx.ui.player.VideoAspect
+import app.gyrolet.mpvrx.ui.player.controls.components.AbLoopIcon
+import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
+import app.gyrolet.mpvrx.ui.player.controls.components.CurrentChapter
+import app.gyrolet.mpvrx.ui.theme.controlColor as defaultControlColor
+import app.gyrolet.mpvrx.ui.theme.spacing
+import app.gyrolet.mpvrx.ui.utils.isAnyMpvOptionOwnedByConfig
+import app.gyrolet.mpvrx.ui.utils.isMpvOptionOwnedByConfig
 import dev.vivvvek.seeker.Segment
 import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import app.infinity.mpvz.ui.icons.Icon as AppSymbolIcon
+import app.gyrolet.mpvrx.ui.icons.Icon as AppSymbolIcon
 
 @Composable
 fun RenderPlayerButton(
@@ -94,7 +101,7 @@ fun RenderPlayerButton(
   aspect: VideoAspect,
   mediaTitle: String?,
   hideBackground: Boolean,
-  decoder: app.infinity.mpvz.ui.player.Decoder,
+  decoder: app.gyrolet.mpvrx.ui.player.Decoder,
   playbackSpeed: Float,
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,
@@ -102,12 +109,16 @@ fun RenderPlayerButton(
   viewModel: PlayerViewModel,
   activity: PlayerActivity,
   buttonSize: Dp = 40.dp,
+  compact: Boolean = false,
 ) {
-  val clickEvent = LocalPlayerButtonsClickEvent.current
-  val advancedPreferences = koinInject<AdvancedPreferences>()
-  val playerPreferences = koinInject<PlayerPreferences>()
-  val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
-  when (button) {
+  PlayerButtonContentTheme {
+    val controlColor =
+      if (compact) androidx.compose.material3.LocalContentColor.current else defaultControlColor
+    val clickEvent = LocalPlayerButtonsClickEvent.current
+    val advancedPreferences = koinInject<AdvancedPreferences>()
+    val playerPreferences = koinInject<PlayerPreferences>()
+    val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
+    when (button) {
     PlayerButton.BACK_ARROW -> {
       ControlsButton(
         icon = Icons.RoundedFilled.ArrowBack,
@@ -118,8 +129,7 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.VIDEO_TITLE -> {
-      // Keep the folder queue card reachable even when the playlist preference is disabled.
-      val playlistModeEnabled = viewModel.hasPlaylistSupport() || viewModel.getPlaylistInfo() != null
+      val playlistModeEnabled = viewModel.hasPlaylistSupport()
 
       val titleInteractionSource = remember { MutableInteractionSource() }
 
@@ -157,6 +167,7 @@ fun RenderPlayerButton(
                 ),
               enabled = playlistModeEnabled,
               onClick = {
+                clickEvent()
                 onOpenSheet(Sheets.Playlist)
               },
             ),
@@ -201,7 +212,9 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.PLAYBACK_SPEED -> {
-      if (isSpeedNonOne) {
+      val configOwned = isMpvOptionOwnedByConfig("speed")
+      val disabledColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+      if (isSpeedNonOne && !compact) {
         Surface(
           shape = CircleShape,
           color =
@@ -212,7 +225,8 @@ fun RenderPlayerButton(
                 alpha = 0.55f,
               )
             },
-          contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+          contentColor =
+            if (configOwned) disabledColor else if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
           tonalElevation = 0.dp,
           shadowElevation = 0.dp,
           border =
@@ -229,6 +243,7 @@ fun RenderPlayerButton(
               .height(buttonSize)
               .clip(CircleShape)
               .clickable(
+                enabled = !configOwned,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(bounded = true),
                 onClick = {
@@ -250,8 +265,8 @@ fun RenderPlayerButton(
               imageVector = Icons.RoundedFilled.Speed,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_playback_speed),
-              tint = MaterialTheme.colorScheme.primary,
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_playback_speed),
+              tint = if (configOwned) disabledColor else MaterialTheme.colorScheme.primary,
               modifier = Modifier.size(20.dp),
             )
             Text(
@@ -266,68 +281,88 @@ fun RenderPlayerButton(
           icon = Icons.RoundedFilled.Speed,
           onClick = { onOpenSheet(Sheets.PlaybackSpeed) },
           color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+          enabled = !configOwned,
           modifier = Modifier.size(buttonSize),
         )
       }
     }
 
     PlayerButton.DECODER -> {
-      Surface(
-        shape = CircleShape,
-        color =
-          if (hideBackground) {
-            Color.Transparent
-          } else {
-            MaterialTheme.colorScheme.surfaceContainer.copy(
-              alpha = 0.55f,
-            )
-          },
-        contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        border =
-          if (hideBackground) {
-            null
-          } else {
-            BorderStroke(
-              1.dp,
-              MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-            )
-          },
-        modifier =
-          Modifier
-            .height(buttonSize)
-            .clip(CircleShape)
-            .clickable(
-              interactionSource = remember { MutableInteractionSource() },
-              indication = ripple(bounded = true),
-              onClick = {
-                clickEvent()
-                onOpenSheet(Sheets.Decoders)
-              },
-            ),
-      ) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
+      val configOwned = isAnyMpvOptionOwnedByConfig(MpvConfigControlledFeatures.HARDWARE_DECODER)
+      if (compact) {
+        ControlsButton(
+          icon = Icons.RoundedFilled.DeveloperBoard,
+          onClick = { onOpenSheet(Sheets.Decoders) },
+          enabled = !configOwned,
+          modifier = Modifier.size(buttonSize),
+        )
+      } else {
+        Surface(
+          shape = CircleShape,
+          color =
+            if (hideBackground) {
+              Color.Transparent
+            } else {
+              MaterialTheme.colorScheme.surfaceContainer.copy(
+                alpha = 0.55f,
+              )
+            },
+          contentColor =
+            if (configOwned) {
+              MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            } else if (hideBackground) {
+              controlColor
+            } else {
+              MaterialTheme.colorScheme.onSurface
+            },
+          tonalElevation = 0.dp,
+          shadowElevation = 0.dp,
+          border =
+            if (hideBackground) {
+              null
+            } else {
+              BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+              )
+            },
           modifier =
             Modifier
-              .padding(
-                horizontal = MaterialTheme.spacing.medium,
-                vertical = MaterialTheme.spacing.small,
+              .height(buttonSize)
+              .clip(CircleShape)
+              .clickable(
+                enabled = !configOwned,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = true),
+                onClick = {
+                  clickEvent()
+                  onOpenSheet(Sheets.Decoders)
+                },
               ),
         ) {
-          Text(
-            text = decoder.title,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyMedium,
-          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier =
+              Modifier
+                .padding(
+                  horizontal = MaterialTheme.spacing.medium,
+                  vertical = MaterialTheme.spacing.small,
+                ),
+          ) {
+            Text(
+              text = decoder.title,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              style = MaterialTheme.typography.bodyMedium,
+            )
+          }
         }
       }
     }
 
     PlayerButton.HDR_MODE -> {
       val isHdrEnabled by viewModel.isHdrScreenOutputEnabled.collectAsState()
+      val configOwned = isAnyMpvOptionOwnedByConfig(MpvConfigControlledFeatures.HDR_OUTPUT)
       ControlsButton(
         icon = if (isHdrEnabled) Icons.RoundedFilled.HdrOn else Icons.RoundedFilled.HdrOff,
         onClick = viewModel::toggleHdrScreenOutput,
@@ -338,6 +373,7 @@ fun RenderPlayerButton(
           } else {
             if (isHdrEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
           },
+          enabled = !configOwned,
         modifier = Modifier.size(buttonSize),
       )
     }
@@ -357,7 +393,7 @@ fun RenderPlayerButton(
       val context = LocalContext.current
 
       AnimatedContent(
-        targetState = isExpanded,
+        targetState = isExpanded && !compact,
         transitionSpec = {
           (fadeIn(animationSpec = tween(200)) + expandHorizontally(animationSpec = tween(250)))
             .togetherWith(fadeOut(animationSpec = tween(200)) + shrinkHorizontally(animationSpec = tween(250)))
@@ -403,7 +439,7 @@ fun RenderPlayerButton(
                     imageVector = Icons.RoundedFilled.FastRewind,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_previous_frame,
+                        app.gyrolet.mpvrx.R.string.ui_previous_frame,
                       ),
                     tint = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp),
@@ -450,7 +486,7 @@ fun RenderPlayerButton(
                       imageVector = Icons.RoundedFilled.Aperture,
                       contentDescription =
                         androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_take_screenshot,
+                          app.gyrolet.mpvrx.R.string.ui_take_screenshot,
                         ),
                       tint = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
                       modifier = Modifier.size(20.dp),
@@ -477,7 +513,7 @@ fun RenderPlayerButton(
                     imageVector = Icons.RoundedFilled.FastForward,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_next_frame,
+                        app.gyrolet.mpvrx.R.string.ui_next_frame,
                       ),
                     tint = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp),
@@ -490,7 +526,13 @@ fun RenderPlayerButton(
           // Collapsed: Show camera icon button
           ControlsButton(
             icon = Icons.RoundedFilled.CameraAlt,
-            onClick = viewModel::toggleFrameNavigationExpanded,
+            onClick = {
+              if (compact) {
+                onOpenSheet(Sheets.FrameNavigation)
+              } else {
+                viewModel.toggleFrameNavigationExpanded()
+              }
+            },
             onLongClick = { onOpenSheet(Sheets.FrameNavigation) },
             color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(buttonSize),
@@ -500,7 +542,11 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.VIDEO_ZOOM -> {
-      if (kotlin.math.abs(currentZoom) >= 0.005f) {
+      val zoomConfigOwned = isMpvOptionOwnedByConfig("video-zoom")
+      val panXConfigOwned = isMpvOptionOwnedByConfig("video-pan-x")
+      val panYConfigOwned = isMpvOptionOwnedByConfig("video-pan-y")
+      val geometryControlsAvailable = !zoomConfigOwned || !panXConfigOwned || !panYConfigOwned
+      if (kotlin.math.abs(currentZoom) >= 0.005f && !compact) {
         @OptIn(ExperimentalFoundationApi::class)
         Surface(
           shape = CircleShape,
@@ -529,6 +575,7 @@ fun RenderPlayerButton(
               .height(buttonSize)
               .clip(CircleShape)
               .combinedClickable(
+                enabled = geometryControlsAvailable,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(bounded = true),
                 onClick = {
@@ -554,9 +601,14 @@ fun RenderPlayerButton(
               imageVector = Icons.RoundedFilled.ZoomIn,
               contentDescription =
                 androidx.compose.ui.res.stringResource(
-                  app.infinity.mpvz.R.string.player_sheets_zoom_slider_label,
+                  app.gyrolet.mpvrx.R.string.player_sheets_zoom_slider_label,
                 ),
-              tint = MaterialTheme.colorScheme.primary,
+              tint =
+                if (geometryControlsAvailable) {
+                  MaterialTheme.colorScheme.primary
+                } else {
+                  MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                },
               modifier = Modifier.size(20.dp),
             )
             Text(
@@ -575,6 +627,7 @@ fun RenderPlayerButton(
           },
           onLongClick = { viewModel.resetVideoZoom() },
           color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+          enabled = geometryControlsAvailable,
           modifier = Modifier.size(buttonSize),
         )
       }
@@ -596,10 +649,13 @@ fun RenderPlayerButton(
       CastPlayerButton(
         hideBackground = hideBackground,
         buttonSize = buttonSize,
+        onInvoked = clickEvent,
+        contentColor = if (hideBackground) controlColor else null,
       )
     }
 
     PlayerButton.ASPECT_RATIO -> {
+      val configOwned = isAnyMpvOptionOwnedByConfig(MpvConfigControlledFeatures.VIDEO_ASPECT)
       ControlsButton(
         icon =
           when (aspect) {
@@ -616,6 +672,7 @@ fun RenderPlayerButton(
         },
         onLongClick = { onOpenSheet(Sheets.AspectRatios) },
         color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+        enabled = !configOwned,
         modifier = Modifier.size(buttonSize),
       )
     }
@@ -629,21 +686,37 @@ fun RenderPlayerButton(
       )
     }
 
+    PlayerButton.VIDEO_QUALITY -> {
+      val showVideoQualitySelector by viewModel.showVideoQualitySelector.collectAsState()
+      if (showVideoQualitySelector) {
+        ControlsButton(
+          icon = button.icon,
+          onClick = { onOpenSheet(Sheets.VideoQuality) },
+          title = stringResource(R.string.player_video_quality_button),
+          color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+          modifier = Modifier.size(buttonSize),
+        )
+      }
+    }
+
     PlayerButton.AUDIO_TRACK -> {
+      val outputConfigOwned = isMpvOptionOwnedByConfig("audio-delay")
       ControlsButton(
         Icons.RoundedFilled.Audiotrack,
         onClick = { onOpenSheet(Sheets.AudioTracks) },
-        onLongClick = { onOpenPanel(Panels.AudioDelay) },
+        onLongClick = { if (!outputConfigOwned) onOpenPanel(Panels.AudioDelay) },
         color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.size(buttonSize),
       )
     }
 
     PlayerButton.SUBTITLES -> {
+      val timingConfigOwned =
+        isMpvOptionOwnedByConfig("sub-delay") && isMpvOptionOwnedByConfig("sub-speed")
       ControlsButton(
         Icons.RoundedFilled.Subtitles,
         onClick = { onOpenSheet(Sheets.SubtitleTracks) },
-        onLongClick = { onOpenPanel(Panels.SubtitleDelay) },
+        onLongClick = { if (!timingConfigOwned) onOpenPanel(Panels.SubtitleDelay) },
         color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.size(buttonSize),
       )
@@ -659,17 +732,40 @@ fun RenderPlayerButton(
       )
     }
 
+    PlayerButton.CLIP -> {
+      val clipOverlay = remember(activity) { ClipOverlayView.ensureAttached(activity) }
+      ControlsButton(
+        icon = button.icon,
+        onClick = {
+          if (clipOverlay.openClip()) onOpenPanel(Panels.Clip)
+        },
+        title = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.clip_action),
+        color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.size(buttonSize),
+      )
+    }
+
     PlayerButton.EQUALIZER -> {
+      val configOwned = isMpvOptionOwnedByConfig("af")
       ControlsButton(
         Icons.RoundedFilled.Equalizer,
         onClick = { onOpenSheet(Sheets.Equalizer) },
         color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+        enabled = !configOwned,
         modifier = Modifier.size(buttonSize),
       )
     }
 
     PlayerButton.CURRENT_CHAPTER -> {
       if (isPortrait) {
+      } else if (compact) {
+        if (chapters.getOrNull(currentChapter ?: 0) != null) {
+          ControlsButton(
+            icon = Icons.RoundedFilled.Bookmarks,
+            onClick = { onOpenSheet(Sheets.Chapters) },
+            modifier = Modifier.size(buttonSize),
+          )
+        }
       } else {
         AnimatedVisibility(
           chapters.getOrNull(currentChapter ?: 0) != null,
@@ -690,9 +786,9 @@ fun RenderPlayerButton(
       val repeatMode by viewModel.repeatMode.collectAsState()
       val icon =
         when (repeatMode) {
-          app.infinity.mpvz.ui.player.RepeatMode.OFF -> Icons.RoundedFilled.Repeat
-          app.infinity.mpvz.ui.player.RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
-          app.infinity.mpvz.ui.player.RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
+          app.gyrolet.mpvrx.ui.player.RepeatMode.OFF -> Icons.RoundedFilled.Repeat
+          app.gyrolet.mpvrx.ui.player.RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
+          app.gyrolet.mpvrx.ui.player.RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
         }
       ControlsButton(
         icon = icon,
@@ -700,12 +796,12 @@ fun RenderPlayerButton(
         color =
           if (hideBackground) {
             when (repeatMode) {
-              app.infinity.mpvz.ui.player.RepeatMode.OFF -> controlColor
+              app.gyrolet.mpvrx.ui.player.RepeatMode.OFF -> controlColor
               else -> MaterialTheme.colorScheme.primary
             }
           } else {
             when (repeatMode) {
-              app.infinity.mpvz.ui.player.RepeatMode.OFF -> MaterialTheme.colorScheme.onSurface
+              app.gyrolet.mpvrx.ui.player.RepeatMode.OFF -> MaterialTheme.colorScheme.onSurface
               else -> MaterialTheme.colorScheme.primary
             }
           },
@@ -714,7 +810,7 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.CUSTOM_SKIP -> {
-      val playerPreferences = org.koin.compose.koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
+      val playerPreferences = org.koin.compose.koinInject<app.gyrolet.mpvrx.preferences.PlayerPreferences>()
       ControlsButton(
         icon = Icons.RoundedFilled.FastForward,
         onClick = { viewModel.seekBy(playerPreferences.customSkipDuration.get()) },
@@ -724,8 +820,8 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.SHUFFLE -> {
-      // Show shuffle for any multi-item playback queue, including ordinary folders.
-      if (viewModel.hasPlaylistSupport() || viewModel.getPlaylistInfo() != null) {
+      // Only show shuffle button if there's a playlist (more than one video)
+      if (viewModel.hasPlaylistSupport()) {
         val shuffleEnabled by viewModel.shuffleEnabled.collectAsState()
         ControlsButton(
           icon = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
@@ -743,6 +839,7 @@ fun RenderPlayerButton(
 
     PlayerButton.MIRROR -> {
       val transform by viewModel.transformState.collectAsState()
+      val configOwned = isMpvOptionOwnedByConfig("vf")
       ControlsButton(
         icon = Icons.RoundedFilled.Flip,
         onClick = viewModel::toggleMirroring,
@@ -752,12 +849,14 @@ fun RenderPlayerButton(
           } else {
             if (transform.isMirrored) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
           },
+          enabled = !configOwned,
         modifier = Modifier.size(buttonSize),
       )
     }
 
     PlayerButton.VERTICAL_FLIP -> {
       val transform by viewModel.transformState.collectAsState()
+      val configOwned = isMpvOptionOwnedByConfig("vf")
       val isVerticalFlipped = transform.isVerticalFlipped
       val vFlipColor =
         if (hideBackground) {
@@ -789,15 +888,21 @@ fun RenderPlayerButton(
           Modifier
             .size(buttonSize)
             .clip(CircleShape)
-            .clickable(onClick = viewModel::toggleVerticalFlip),
+            .clickable(
+              enabled = !configOwned,
+              onClick = {
+                clickEvent()
+                viewModel.toggleVerticalFlip()
+              },
+            ),
       ) {
         Box(contentAlignment = Alignment.Center) {
           AppSymbolIcon(
             imageVector = Icons.RoundedFilled.Flip,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_vertical_flip),
-            tint = vFlipColor,
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_vertical_flip),
+            tint = if (configOwned) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else vFlipColor,
             modifier =
               Modifier
                 .padding(MaterialTheme.spacing.small)
@@ -815,7 +920,7 @@ fun RenderPlayerButton(
       val loopB = abLoop.b
 
       AnimatedContent(
-        targetState = isExpanded,
+        targetState = isExpanded && !compact,
         transitionSpec = {
           (fadeIn(animationSpec = tween(200)) + expandHorizontally(animationSpec = tween(250)))
             .togetherWith(fadeOut(animationSpec = tween(200)) + shrinkHorizontally(animationSpec = tween(250)))
@@ -888,7 +993,7 @@ fun RenderPlayerButton(
                     imageVector = Icons.RoundedFilled.Close,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_clear_loop,
+                        app.gyrolet.mpvrx.R.string.ui_clear_loop,
                       ),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(16.dp),
@@ -948,7 +1053,20 @@ fun RenderPlayerButton(
               Modifier
                 .size(buttonSize)
                 .clip(CircleShape)
-                .clickable(onClick = viewModel::toggleABLoopExpanded),
+                .clickable(
+                  onClick = {
+                    clickEvent()
+                    if (compact) {
+                      when {
+                        loopA == null -> viewModel.setLoopA()
+                        loopB == null -> viewModel.setLoopB()
+                        else -> viewModel.clearABLoop()
+                      }
+                    } else {
+                      viewModel.toggleABLoopExpanded()
+                    }
+                  },
+                ),
           ) {
             Box(contentAlignment = Alignment.Center) {
               AbLoopIcon(
@@ -990,6 +1108,7 @@ fun RenderPlayerButton(
 
     PlayerButton.AMBIENT_MODE -> {
       val isAmbientEnabled by viewModel.isAmbientEnabled.collectAsState()
+      val configOwned = isAnyMpvOptionOwnedByConfig(MpvConfigControlledFeatures.AMBIENT)
       @OptIn(ExperimentalFoundationApi::class)
       Surface(
         shape = CircleShape,
@@ -1021,6 +1140,7 @@ fun RenderPlayerButton(
             .size(buttonSize)
             .clip(CircleShape)
             .combinedClickable(
+              enabled = !configOwned,
               interactionSource = remember { MutableInteractionSource() },
               indication = ripple(bounded = true),
               onClick = {
@@ -1038,8 +1158,17 @@ fun RenderPlayerButton(
             imageVector = if (isAmbientEnabled) Icons.RoundedFilled.BlurOn else Icons.RoundedFilled.BlurOff,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_ambience_mode),
-            tint = if (isAmbientEnabled) MaterialTheme.colorScheme.primary else (if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_ambience_mode),
+            tint =
+              if (configOwned) {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+              } else if (isAmbientEnabled) {
+                MaterialTheme.colorScheme.primary
+              } else if (hideBackground) {
+                controlColor
+              } else {
+                MaterialTheme.colorScheme.onSurface
+              },
             modifier = Modifier.size(24.dp),
           )
         }
@@ -1049,79 +1178,89 @@ fun RenderPlayerButton(
     PlayerButton.TIME_NETWORK -> {
       val clockFormat by playerPreferences.clockFormat.collectAsState()
       val stat by rememberTimeAndNetworkStat(clockFormat)
-      Surface(
-        shape = CircleShape,
-        color =
-          if (hideBackground) {
-            Color.Transparent
-          } else {
-            MaterialTheme.colorScheme.surfaceContainer.copy(
-              alpha = 0.55f,
-            )
-          },
-        contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-        border =
-          if (hideBackground) {
-            null
-          } else {
-            BorderStroke(
-              1.dp,
-              MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-            )
-          },
-        modifier =
-          Modifier
-            .height(buttonSize)
-            .clip(CircleShape)
-            .clickable(
-              interactionSource = remember { MutableInteractionSource() },
-              indication = ripple(bounded = true),
-              onClick = {
-                clickEvent()
-                if (!activity.isMedia3Active()) {
-                  if (PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true) {
-                    PlaybackSession.command("script-message-to", "console", "disable")
-                  }
-                  if (statisticsPage in 1..5) {
-                    PlaybackSession.command("script-binding", "stats/display-stats-toggle")
-                  }
-                }
-                if (statisticsPage == 6) {
-                  advancedPreferences.enabledStatisticsPage.set(0)
-                } else {
-                  advancedPreferences.enabledStatisticsPage.set(6)
-                }
-                onOpenSheet(Sheets.None)
-              },
-            ),
-      ) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+      val toggleTimeAndNetwork = {
+        if (PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true) {
+          PlaybackSession.command("script-message-to", "console", "disable")
+        }
+        if (statisticsPage == 6) {
+          advancedPreferences.enabledStatisticsPage.set(0)
+        } else {
+          if (statisticsPage in 1..5) {
+            PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+          }
+          advancedPreferences.enabledStatisticsPage.set(6)
+        }
+        onOpenSheet(Sheets.None)
+      }
+      if (compact) {
+        ControlsButton(
+          icon = Icons.RoundedFilled.AccessTime,
+          onClick = toggleTimeAndNetwork,
+          modifier = Modifier.size(buttonSize),
+        )
+      } else {
+        Surface(
+          shape = CircleShape,
+          color =
+            if (hideBackground) {
+              Color.Transparent
+            } else {
+              MaterialTheme.colorScheme.surfaceContainer.copy(
+                alpha = 0.55f,
+              )
+            },
+          contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+          border =
+            if (hideBackground) {
+              null
+            } else {
+              BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+              )
+            },
           modifier =
             Modifier
-              .widthIn(min = 176.dp)
-              .padding(horizontal = MaterialTheme.spacing.small),
+              .height(buttonSize)
+              .clip(CircleShape)
+              .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = true),
+                onClick = {
+                  clickEvent()
+                  toggleTimeAndNetwork()
+                },
+              ),
         ) {
-          AppSymbolIcon(
-            imageVector = Icons.RoundedFilled.AccessTime,
-            contentDescription =
-              androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_time_and_network),
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp),
-          )
-          Text(
-            text = "${stat.time} • ${stat.network}",
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
+            modifier =
+              Modifier
+                .widthIn(min = 176.dp)
+                .padding(horizontal = MaterialTheme.spacing.small),
+          ) {
+            AppSymbolIcon(
+              imageVector = Icons.RoundedFilled.AccessTime,
+              contentDescription =
+                androidx.compose.ui.res
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_time_and_network),
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(18.dp),
+            )
+            Text(
+              text = "${stat.time} • ${stat.network}",
+              style = MaterialTheme.typography.bodySmall,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
         }
       }
     }
 
-    PlayerButton.NONE -> { // Do nothing
+      PlayerButton.NONE -> { // Do nothing
+      }
     }
   }
 }

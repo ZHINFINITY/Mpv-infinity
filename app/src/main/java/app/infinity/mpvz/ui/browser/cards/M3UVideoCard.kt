@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.cards
+package app.gyrolet.mpvrx.ui.browser.cards
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,13 +45,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.domain.media.model.Video
-import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.components.RemoteImage
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
+import app.gyrolet.mpvrx.domain.media.model.Video
+import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
+import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.components.RemoteImage
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.withContext
@@ -80,11 +83,18 @@ fun M3UVideoCard(
   val thumbnailRepository = koinInject<ThumbnailRepository>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
-  var thumbnail by remember(url) { mutableStateOf<android.graphics.Bitmap?>(null) }
+  var thumbnail by remember(url, logoUrl) { mutableStateOf<android.graphics.Bitmap?>(null) }
+  val networkReference = remember(url) { NetworkPlaybackUri.parse(url) }
+  val isYouTubeArtwork =
+    remember(logoUrl) {
+      val host = runCatching { android.net.Uri.parse(logoUrl).host.orEmpty().lowercase() }.getOrDefault("")
+      host == "i.ytimg.com" || host.endsWith(".ytimg.com")
+    }
 
   val isNetwork =
-    remember(url) {
-      url.startsWith("http://", ignoreCase = true) ||
+    remember(url, networkReference) {
+      networkReference != null ||
+        url.startsWith("http://", ignoreCase = true) ||
         url.startsWith("https://", ignoreCase = true) ||
         url.startsWith("rtmp://", ignoreCase = true) ||
         url.startsWith("rtsp://", ignoreCase = true) ||
@@ -93,7 +103,7 @@ fun M3UVideoCard(
         url.startsWith("smb://", ignoreCase = true)
     }
 
-  if (!isNetwork || showNetworkThumbnails) {
+  if (!isYouTubeArtwork && (!isNetwork || showNetworkThumbnails)) {
     val density = LocalDensity.current
     val targetThumbnailSize = 128.dp
     val thumbWidthPx = with(density) { targetThumbnailSize.toPx().roundToInt() }
@@ -125,7 +135,9 @@ fun M3UVideoCard(
 
     val thumbnailKey =
       remember(actualVideo.id, thumbWidthPx, thumbHeightPx, isNetwork) {
-        if (isNetwork) {
+        if (networkReference != null) {
+          "network-m3u|${networkReference.connectionId}|${networkReference.path.value}|$thumbWidthPx|$thumbHeightPx"
+        } else if (isNetwork) {
           thumbnailRepository.thumbnailKeyForNetworkPath(url, thumbWidthPx, thumbHeightPx)
         } else {
           thumbnailRepository.thumbnailKey(actualVideo, thumbWidthPx, thumbHeightPx)
@@ -135,11 +147,22 @@ fun M3UVideoCard(
     LaunchedEffect(thumbnailKey) {
       thumbnailRepository.thumbnailReadyKeys.filter { it == thumbnailKey }.collect {
         thumbnail =
-          thumbnailRepository.getThumbnailFromMemory(
-            actualVideo,
-            thumbWidthPx,
-            thumbHeightPx,
-          )
+          if (networkReference != null) {
+            thumbnailRepository.getThumbnailForNetworkSource(
+              connectionId = networkReference.connectionId,
+              path = networkReference.path.value,
+              widthPx = thumbWidthPx,
+              heightPx = thumbHeightPx,
+            )
+          } else if (isNetwork) {
+            thumbnailRepository.getThumbnailForNetworkPath(url, thumbWidthPx, thumbHeightPx)
+          } else {
+            thumbnailRepository.getThumbnailFromMemory(
+              actualVideo,
+              thumbWidthPx,
+              thumbHeightPx,
+            )
+          }
       }
     }
 
@@ -147,7 +170,14 @@ fun M3UVideoCard(
       if (thumbnail == null) {
         thumbnail =
           withContext(Dispatchers.IO) {
-            if (isNetwork) {
+            if (networkReference != null) {
+              thumbnailRepository.getThumbnailForNetworkSource(
+                connectionId = networkReference.connectionId,
+                path = networkReference.path.value,
+                widthPx = thumbWidthPx,
+                heightPx = thumbHeightPx,
+              )
+            } else if (isNetwork) {
               thumbnailRepository.getThumbnailForNetworkPath(url, thumbWidthPx, thumbHeightPx)
             } else {
               thumbnailRepository.getThumbnail(actualVideo, thumbWidthPx, thumbHeightPx)
@@ -160,35 +190,44 @@ fun M3UVideoCard(
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
   val maxLines = if (unlimitedNameLines) Int.MAX_VALUE else 2
 
-  val thumbSizeDp = 72.dp
+  val thumbnailWidth = 128.dp
 
   Card(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(AppShapeScale.large)
         .combinedClickable(
           onClick = onClick,
           onLongClick = onLongClick,
         ),
+    shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
-    Row(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .background(
-            if (isSelected) {
-              MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)
-            } else {
-              Color.Transparent
-            },
-          ).padding(16.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+      if (isSelected) {
+        Box(
+          modifier =
+            Modifier
+              .matchParentSize()
+              .padding(2.dp)
+              .clip(AppShapeScale.large)
+              .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)),
+        )
+      }
+
+      Row(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
       Box(
         modifier =
           Modifier
-            .size(thumbSizeDp)
+            .width(thumbnailWidth)
+            .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .combinedClickable(
@@ -209,11 +248,15 @@ fun M3UVideoCard(
           RemoteImage(
             url = logoUrl,
             contentDescription = null,
-            contentScale = ContentScale.Fit,
+            contentScale = if (isYouTubeArtwork) ContentScale.Crop else ContentScale.Fit,
             modifier =
-              Modifier
-                .matchParentSize()
-                .padding(8.dp),
+              if (isYouTubeArtwork) {
+                Modifier.matchParentSize()
+              } else {
+                Modifier
+                  .matchParentSize()
+                  .padding(8.dp)
+              },
           )
         } else {
           Icon(
@@ -288,19 +331,20 @@ fun M3UVideoCard(
         }
       }
 
-      if (onFavoriteClick != null) {
-        Spacer(modifier = Modifier.width(8.dp))
-        IconButton(onClick = onFavoriteClick) {
-          Icon(
-            imageVector = Icons.RoundedFilled.Bookmarks,
-            contentDescription = if (isFavorite) "Unsave stream" else "Save stream",
-            tint =
-              if (isFavorite) {
-                MaterialTheme.colorScheme.primary
-              } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-              },
-          )
+        if (onFavoriteClick != null) {
+          Spacer(modifier = Modifier.width(8.dp))
+          IconButton(onClick = onFavoriteClick) {
+            Icon(
+              imageVector = Icons.RoundedFilled.Bookmarks,
+              contentDescription = if (isFavorite) "Unsave stream" else "Save stream",
+              tint =
+                if (isFavorite) {
+                  MaterialTheme.colorScheme.primary
+                } else {
+                  MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+          }
         }
       }
     }

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,9 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Divider
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -33,7 +31,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,12 +43,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.presentation.components.PlayerSheet
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.TrackNode
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.TrackNode
+import app.gyrolet.mpvrx.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
@@ -88,7 +85,6 @@ fun SubtitlesSheet(
   translationProgress: Float,
   translationStatus: String,
   translationEnabled: Boolean,
-  embeddedTranslationEnabled: Boolean = translationEnabled,
   isGeneratingSubtitles: Boolean,
   subtitleGenerationProgress: Float,
   subtitleGenerationStatus: String,
@@ -99,9 +95,7 @@ fun SubtitlesSheet(
   realtimeSubsEnabled: Boolean = true,
   subtitlesOff: Boolean = false,
   onDisableSubtitles: () -> Unit = {},
-  onToggleEmbeddedTranslation: () -> Unit = {},
-  embeddedTranslationLanguage: String = "",
-  onEmbeddedTranslationLanguageChange: (String) -> Unit = {},
+  delayControlEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   val items =
@@ -261,7 +255,7 @@ fun SubtitlesSheet(
       title = {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_translate_to),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_translate_to),
         )
       },
       text = {
@@ -272,7 +266,7 @@ fun SubtitlesSheet(
             placeholder = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_search_language),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_search_language),
               )
             },
             singleLine = true,
@@ -297,7 +291,7 @@ fun SubtitlesSheet(
               item {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_no_languages_found),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_no_languages_found),
                   color = MaterialTheme.colorScheme.outline,
                   modifier = Modifier.padding(MaterialTheme.spacing.medium),
                 )
@@ -313,7 +307,7 @@ fun SubtitlesSheet(
         }) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+              .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
           )
         }
       },
@@ -337,49 +331,11 @@ fun SubtitlesSheet(
           IconButton(onClick = onOpenSubtitleSettings) {
             Icon(Icons.RoundedFilled.Palette, null)
           }
-          IconButton(onClick = onOpenSubtitleDelay) {
+          IconButton(onClick = onOpenSubtitleDelay, enabled = delayControlEnabled) {
             Icon(Icons.RoundedFilled.AvTimer, null)
           }
         },
       )
-
-      if (tracks.any { it.external != true }) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.small),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text("Translate embedded subtitles", style = MaterialTheme.typography.titleSmall)
-            Text(
-              "Show an AI translation over soft embedded subtitles",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          }
-          Switch(checked = embeddedTranslationEnabled, onCheckedChange = { onToggleEmbeddedTranslation() })
-        }
-        if (embeddedTranslationEnabled && configuredLanguages.size >= 2) {
-          Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
-            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
-          ) {
-            Text(
-              "Translation language",
-              style = MaterialTheme.typography.labelLarge,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
-              configuredLanguages.take(2).forEach { code ->
-                FilterChip(
-                  selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
-                  onClick = { onEmbeddedTranslationLanguageChange(code) },
-                  label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
-                )
-              }
-            }
-          }
-        }
-      }
 
       if (aiEnabled && isTranslating) {
         Column(
@@ -418,7 +374,7 @@ fun SubtitlesSheet(
                 imageVector = Icons.RoundedFilled.Close,
                 contentDescription =
                   androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.ui_cancel_translation,
+                    app.gyrolet.mpvrx.R.string.ui_cancel_translation,
                   ),
                 modifier = Modifier.size(20.dp),
               )
@@ -523,7 +479,7 @@ fun SubtitlesSheet(
               }
             }
             SubtitleItem.Divider -> {
-              Divider(
+              HorizontalDivider(
                 modifier =
                   Modifier.padding(
                     horizontal = MaterialTheme.spacing.medium,
@@ -564,9 +520,7 @@ fun SubtitleTrackRow(
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
   ) {
-    // The whole row owns the toggle action. Leaving the checkbox callback null prevents one
-    // checkbox tap from invoking onToggle twice (row click + checkbox change).
-    Checkbox(checked = isSelected, onCheckedChange = null)
+    Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
     Text(title, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
 
     if (selectionIndicator != null) {
@@ -598,7 +552,7 @@ fun SubtitleTrackRow(
             Icons.RoundedFilled.Translate,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_translate),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_translate),
           )
         }
       }

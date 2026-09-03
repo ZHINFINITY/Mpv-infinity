@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -53,18 +54,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.rememberNavBackStack
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.SecureFolderPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.ui.icons.AppIcon
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
-import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
-import app.infinity.mpvz.ui.utils.popSafely
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.ui.icons.AppIcon
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.securefolder.SecureFolderGateScreen
+import app.gyrolet.mpvrx.ui.theme.LocalEmphasizedTypography
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
@@ -240,6 +241,12 @@ object PreferencesScreen : Screen {
               icon = Icons.RoundedFilled.Audiotrack,
               screen = AudioPreferencesScreen,
             ),
+            SettingsDestination(
+              title = stringResource(R.string.pref_subtitles),
+              summary = stringResource(R.string.pref_subtitles_summary),
+              icon = Icons.RoundedFilled.Subtitles,
+              screen = SubtitlesPreferencesScreen,
+            ),
           ),
       ),
       SettingsSection(
@@ -258,19 +265,6 @@ object PreferencesScreen : Screen {
               summary = stringResource(R.string.pref_layout_summary),
               icon = Icons.RoundedFilled.GridView,
               screen = PlayerControlsPreferencesScreen,
-            ),
-          ),
-      ),
-      SettingsSection(
-        title = stringResource(R.string.pref_section_subtitles),
-        tint = colorScheme.onSurfaceVariant,
-        items =
-          listOf(
-            SettingsDestination(
-              title = stringResource(R.string.pref_subtitles),
-              summary = stringResource(R.string.pref_subtitles_summary),
-              icon = Icons.RoundedFilled.Subtitles,
-              screen = SubtitlesPreferencesScreen,
             ),
           ),
       ),
@@ -361,6 +355,7 @@ private fun SettingsSearchEntry(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(MaterialTheme.shapes.extraExtraLarge)
         .clickable(onClick = onClick),
     shape = MaterialTheme.shapes.extraExtraLarge,
     color = MaterialTheme.colorScheme.secondaryContainer,

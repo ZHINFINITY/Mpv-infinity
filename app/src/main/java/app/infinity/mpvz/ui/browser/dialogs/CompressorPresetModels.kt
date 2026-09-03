@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.dialogs
+package app.gyrolet.mpvrx.ui.browser.dialogs
 
 import android.content.SharedPreferences
 import androidx.media3.common.MimeTypes

@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls
+package app.gyrolet.mpvrx.ui.player.controls
 
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -65,26 +65,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AudioPreferences
-import app.infinity.mpvz.preferences.GesturePreferences
-import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.SubtitlesPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.components.LeftSideOvalShape
-import app.infinity.mpvz.presentation.components.RightSideOvalShape
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.Panels
-import app.infinity.mpvz.ui.player.PlayerUpdates
-import app.infinity.mpvz.ui.player.PlayerViewModel
-import app.infinity.mpvz.ui.player.Sheets
-import app.infinity.mpvz.ui.player.SingleActionGesture
-import app.infinity.mpvz.ui.player.getSubtitleHitboxBounds
-import app.infinity.mpvz.ui.player.getTrackSelectionId
-import app.infinity.mpvz.ui.theme.AppMotion
-import app.infinity.mpvz.ui.theme.playerRippleConfiguration
-import kotlinx.coroutines.CancellationException
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AudioPreferences
+import app.gyrolet.mpvrx.preferences.GesturePreferences
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.components.LeftSideOvalShape
+import app.gyrolet.mpvrx.presentation.components.RightSideOvalShape
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.Panels
+import app.gyrolet.mpvrx.ui.player.PlayerUpdates
+import app.gyrolet.mpvrx.ui.player.PlayerViewModel
+import app.gyrolet.mpvrx.ui.player.Sheets
+import app.gyrolet.mpvrx.ui.player.SingleActionGesture
+import app.gyrolet.mpvrx.ui.player.getSubtitleHitboxBounds
+import app.gyrolet.mpvrx.ui.player.getTrackSelectionId
+import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.theme.playerRippleConfiguration
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -97,6 +96,17 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 private val holdSpeedPresets = listOf(0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f)
+private const val SPEED_HOLD_INTENT_THRESHOLD_MS = 250L
+
+private enum class GestureOwner {
+  SPEED,
+  VERTICAL,
+  SUBTITLE_VERTICAL,
+  PLAYLIST,
+  PINCH,
+  HORIZONTAL_SEEK,
+  SUBTITLE_SEEK,
+}
 
 private fun nearestHoldSpeedPreset(speed: Float): Float =
   holdSpeedPresets.minByOrNull { abs(it - speed) } ?: holdSpeedPresets.first()
@@ -107,6 +117,8 @@ fun GestureHandler(
   viewModel: PlayerViewModel,
   interactionSource: MutableInteractionSource,
   modifier: Modifier = Modifier,
+  externalPanelShown: Boolean = false,
+  onDismissExternalPanel: () -> Unit = {},
 ) {
   val playerPreferences = koinInject<PlayerPreferences>()
   val audioPreferences = koinInject<AudioPreferences>()
@@ -147,15 +159,20 @@ fun GestureHandler(
         val videoScale = 2f.pow(zoom)
         val videoPanY = videoPanYState?.toFloat() ?: 0f
         val screenCenterY = height / 2f
-        val subtitleScreenY = screenCenterY + (subPos / 150f - 0.5f + videoPanY) * videoHeight * videoScale
+        val subtitleScreenY = screenCenterY + (subPos / 100f - 0.5f + videoPanY) * videoHeight * videoScale
         return subtitleScreenY.coerceIn(0f, height)
       }
     }
-    return (height * (subPos / 150f)).coerceIn(0f, height)
+    return (height * (subPos / 100f)).coerceIn(0f, height)
   }
 
   val panelShown by viewModel.panelShown.collectAsState()
+  val anyPanelShown = panelShown != Panels.None || externalPanelShown
   val allowGesturesInPanels by playerPreferences.allowGesturesInPanels.collectAsState()
+  val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+  val duration by PlaybackSession.propInt["duration"].collectAsState()
+  val position by PlaybackSession.propInt["time-pos"].collectAsState()
+  val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val controlsShown by viewModel.controlsShown.collectAsState()
   val areControlsLocked by viewModel.areControlsLocked.collectAsState()
   val seekState by viewModel.seekState.collectAsState()
@@ -188,15 +205,46 @@ fun GestureHandler(
   val panAndZoomEnabled by playerPreferences.panAndZoomEnabled.collectAsState()
   val horizontalSwipeToSeek by playerPreferences.horizontalSwipeToSeek.collectAsState()
   val horizontalSwipeSensitivity by playerPreferences.horizontalSwipeSensitivity.collectAsState()
-  val useThumbFastSeekPreview by playerPreferences.useThumbFastSeekPreview.collectAsState()
   var isLongPressing by remember { mutableStateOf(false) }
   var isDynamicSpeedControlActive by remember { mutableStateOf(false) }
   var dynamicSpeedStartX by remember { mutableStateOf(0f) }
   var dynamicSpeedStartValue by remember { mutableStateOf(2f) }
   var lastAppliedSpeed by remember { mutableStateOf(2f) }
   var hasSwipedEnough by remember { mutableStateOf(false) }
+  var isSpeedLocked by remember { mutableStateOf(false) }
   var longPressTriggeredDuringTouch by remember { mutableStateOf(false) }
   var isVerticalGestureActive by remember { mutableStateOf(false) }
+  var gestureOwner by remember { mutableStateOf<GestureOwner?>(null) }
+  var gesturePointerId by remember { mutableStateOf<Long?>(null) }
+  var gestureDownTimeMillis by remember { mutableStateOf<Long?>(null) }
+  var gestureClaimedForPointer by remember { mutableStateOf(false) }
+  var speedHoldPending by remember { mutableStateOf(false) }
+  var suppressHorizontalSeekForPointer by remember { mutableStateOf(false) }
+
+  fun beginGesture(
+    pointerId: Long,
+    downTimeMillis: Long,
+  ) {
+    if (gesturePointerId == pointerId && gestureDownTimeMillis == downTimeMillis) return
+    gesturePointerId = pointerId
+    gestureDownTimeMillis = downTimeMillis
+    gestureOwner = null
+    gestureClaimedForPointer = false
+    speedHoldPending = false
+    suppressHorizontalSeekForPointer = false
+  }
+
+  fun claimGesture(owner: GestureOwner): Boolean {
+    if (gestureOwner != null && gestureOwner != owner) return false
+    gestureOwner = owner
+    gestureClaimedForPointer = true
+    return true
+  }
+
+  fun releaseGesture(owner: GestureOwner) {
+    if (gestureOwner == owner) gestureOwner = null
+  }
+
   val currentVolumePercent by viewModel.currentVolumePercent.collectAsState()
   val currentMPVVolume by PlaybackSession.propInt["volume"].collectAsState()
   val currentBrightness by viewModel.currentBrightness.collectAsState()
@@ -242,8 +290,9 @@ fun GestureHandler(
         if (useSingleTapForCenter && isCenterTap) {
           viewModel.handleCenterSingleTap()
         } else {
-          if (panelShown != Panels.None && !allowGesturesInPanels) {
-            viewModel.panelShown.update { Panels.None }
+          if (anyPanelShown && !allowGesturesInPanels) {
+            if (panelShown != Panels.None) viewModel.panelShown.update { Panels.None }
+            if (externalPanelShown) onDismissExternalPanel()
           }
           if (controlsShown) {
             viewModel.hideControls()
@@ -281,6 +330,7 @@ fun GestureHandler(
           if (isVerticalGestureActive) return@pointerInput
           awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            beginGesture(down.id.value, down.uptimeMillis)
             val downPosition = down.position
             val downTime = System.currentTimeMillis()
 
@@ -298,10 +348,12 @@ fun GestureHandler(
             // Track for potential drag
             var isDrag = false
             var wasConsumedByTapGesture = false
+            var wasOwnedByAnotherGesture = gestureOwner != null
 
             do {
               val event = awaitPointerEvent()
               val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+              if (gestureOwner != null) wasOwnedByAnotherGesture = true
 
               // Check if this is a drag (not a tap)
               val distance =
@@ -317,7 +369,12 @@ fun GestureHandler(
 
               if (!pointer.pressed) {
                 // Pointer lifted - this is a tap if it wasn't a drag
-                if (!isDrag && !wasConsumedByTapGesture) {
+                if (
+                  !isDrag &&
+                  !wasConsumedByTapGesture &&
+                  !wasOwnedByAnotherGesture &&
+                  !gestureClaimedForPointer
+                ) {
                   val timeSinceLastTap = downTime - lastTapTime
                   val positionChange =
                     sqrt(
@@ -349,9 +406,6 @@ fun GestureHandler(
                     pendingSingleTapPosition = null
                     wasConsumedByTapGesture = true
                     pointer.consume()
-                    // A double tap is an active command; keep the shared controls visible while
-                    // the seek feedback is shown instead of allowing an older hide coroutine to win.
-                    viewModel.showControls()
 
                     when (region) {
                       "right" -> {
@@ -440,6 +494,7 @@ fun GestureHandler(
           volumeGesture,
           centerVerticalSubtitlePositionGesture,
           enableCenterSwipeUpGesture,
+          externalPanelShown,
         ) {
           if (
             (
@@ -455,6 +510,7 @@ fun GestureHandler(
 
           awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            beginGesture(down.id.value, down.uptimeMillis)
             val startPosition = down.position
             val isVerticalGestureDeadZone =
               startPosition.y <= topGestureDeadZonePx ||
@@ -467,6 +523,7 @@ fun GestureHandler(
                 !isVerticalGestureDeadZone &&
                 hasActiveSubtitle &&
                 startPosition.x in (size.width / 3f)..(size.width * 2f / 3f)
+            speedHoldPending = paused == false && multipleSpeedGesture > 0f && !isCenterSubtitleTouch
 
             // Reset long press tracking at the start of each gesture
             longPressTriggeredDuringTouch = false
@@ -490,7 +547,7 @@ fun GestureHandler(
             val subtitlePositionGestureSens = 0.08f
 
             // Original speed for long press
-            var originalSpeed = viewModel.playbackSpeedForGesture()
+            var originalSpeed = playbackSpeed ?: 1f
 
             // Track long press separately
             var longPressTriggered = false
@@ -507,7 +564,7 @@ fun GestureHandler(
                     )
                   // Only trigger if still within tap threshold
                   if (distance < 10f) {
-                    if (isCenterSubtitleTouch) {
+                    if (isCenterSubtitleTouch && claimGesture(GestureOwner.SUBTITLE_VERTICAL)) {
                       longPressTriggered = true
                       isSubtitleHoldActive = true
                       longPressTriggeredDuringTouch = true
@@ -519,12 +576,17 @@ fun GestureHandler(
                           context.getString(R.string.player_move_subtitles_hint),
                         )
                       }
-                    } else if (viewModel.isPlayingForGesture() && multipleSpeedGesture > 0f) {
+                    } else if (
+                      paused == false &&
+                      multipleSpeedGesture > 0f &&
+                      claimGesture(GestureOwner.SPEED)
+                    ) {
+                      speedHoldPending = false
                       longPressTriggered = true
                       isLongPressing = true
                       longPressTriggeredDuringTouch = true
                       haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                      originalSpeed = viewModel.playbackSpeedForGesture()
+                      originalSpeed = playbackSpeed ?: 1f
                       // Ramp speed up incrementally to avoid audio filter stutter
                       val startSpeed = originalSpeed
                       val targetSpeed = nearestHoldSpeedPreset(multipleSpeedGesture)
@@ -533,7 +595,7 @@ fun GestureHandler(
                       for (i in 1..steps) {
                         val t = i.toFloat() / steps
                         val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
-                        viewModel.setPlaybackSpeed(intermediateSpeed)
+                        PlaybackSession.setPropertyFloat("speed", intermediateSpeed)
                         if (i < steps) delay(stepDelay)
                       }
 
@@ -573,17 +635,38 @@ fun GestureHandler(
                           return@forEach
                         }
                       } else {
+                        if (
+                          speedHoldPending &&
+                          isHorizontalDrag &&
+                          change.uptimeMillis - down.uptimeMillis >= SPEED_HOLD_INTENT_THRESHOLD_MS
+                        ) {
+                          suppressHorizontalSeekForPointer = true
+                        }
+                        speedHoldPending = false
                         val isCenterTouch =
                           enableCenterSwipeUpGesture && startPosition.x in (size.width * 0.35f)..(size.width * 0.65f)
-                        if (isCenterTouch && isVerticalDrag) {
+                        if (
+                          isLongPressing &&
+                            isDynamicSpeedControlActive &&
+                            gestureOwner == GestureOwner.SPEED &&
+                            (abs(deltaX) > 10f || abs(deltaY) > 10f)
+                        ) {
                           longPressJob.cancel()
-                          if (deltaY < -20f && viewModel.getPlaylistInfo() != null) {
+                          gestureType = "speed_control"
+                        } else if (isCenterTouch && isVerticalDrag) {
+                          longPressJob.cancel()
+                          if (
+                            deltaY < -20f &&
+                            viewModel.hasPlaylistSupport() &&
+                            claimGesture(GestureOwner.PLAYLIST)
+                          ) {
                             gestureType = "playlist_swipe"
                             viewModel.isPlaylistSwipeActive.value = true
                             viewModel.playlistSwipeOffset.value = deltaY
                             viewModel.sheetShown.update { Sheets.Playlist }
-                            viewModel.showControls()
+                            viewModel.hideControls()
                             viewModel.panelShown.update { Panels.None }
+                            if (externalPanelShown) onDismissExternalPanel()
                           } else {
                             return@forEach
                           }
@@ -597,13 +680,22 @@ fun GestureHandler(
                           longPressJob.cancel()
 
                           // Check if we're in long press mode with dynamic speed control
-                          if (isLongPressing && isDynamicSpeedControlActive && abs(deltaX) > 10f) {
+                          if (
+                            isLongPressing &&
+                            isDynamicSpeedControlActive &&
+                            gestureOwner == GestureOwner.SPEED &&
+                            abs(deltaX) > 10f
+                          ) {
                             gestureType = "speed_control"
                           } else {
                             gestureType =
                               if (isHorizontalDrag) {
                                 "horizontal"
-                              } else if (isVerticalDrag && !isVerticalGestureDeadZone) {
+                              } else if (
+                                isVerticalDrag &&
+                                !isVerticalGestureDeadZone &&
+                                claimGesture(GestureOwner.VERTICAL)
+                              ) {
                                 "vertical"
                               } else {
                                 null
@@ -616,7 +708,7 @@ fun GestureHandler(
                       when (gestureType) {
                         "speed_control" -> {
                           dynamicSpeedStartX = currentPosition.x
-                          dynamicSpeedStartValue = viewModel.playbackSpeedForGesture()
+                          dynamicSpeedStartValue = PlaybackSession.getPropertyFloat("speed") ?: multipleSpeedGesture
                         }
                         "vertical" -> {
                           if ((brightnessGesture || volumeGesture) && !isLongPressing) {
@@ -651,14 +743,34 @@ fun GestureHandler(
                         change.consume()
                       }
                       "speed_control" -> {
-                        if (isLongPressing && isDynamicSpeedControlActive && viewModel.isPlayingForGesture()) {
+                        if (isLongPressing && isDynamicSpeedControlActive && paused == false) {
                           change.consume()
 
                           val speedPresets = holdSpeedPresets
                           val screenWidth = size.width.toFloat()
 
                           val deltaX = currentPosition.x - dynamicSpeedStartX
+                          val deltaY = currentPosition.y - startPosition.y
                           val swipeDetectionThreshold = 10.dp.toPx()
+                          val speedLockThreshold = 60.dp.toPx()
+
+                          if (deltaY < -speedLockThreshold && !isSpeedLocked) {
+                            isSpeedLocked = true
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.playerUpdate.update {
+                              PlayerUpdates.ShowText(context.getString(R.string.player_speed_gesture_locked))
+                            }
+                          } else if (deltaY > speedLockThreshold && isSpeedLocked) {
+                            isSpeedLocked = false
+                            isDynamicSpeedControlActive = false
+                            originalSpeed = 1f
+                            PlaybackSession.setPropertyFloat("speed", originalSpeed)
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.playerUpdate.update {
+                              PlayerUpdates.ShowText(context.getString(R.string.player_speed_gesture_restored))
+                            }
+                            return@forEach
+                          }
 
                           if (!hasSwipedEnough && abs(deltaX) >= swipeDetectionThreshold) {
                             hasSwipedEnough = true
@@ -684,7 +796,7 @@ fun GestureHandler(
                             if (abs(lastAppliedSpeed - newSpeed) > 0.01f) {
                               haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                               lastAppliedSpeed = newSpeed
-                              viewModel.setPlaybackSpeed(newSpeed)
+                              PlaybackSession.setPropertyFloat("speed", newSpeed)
                               viewModel.playerUpdate.update { PlayerUpdates.DynamicSpeedControl(newSpeed) }
                             }
                           }
@@ -803,6 +915,7 @@ fun GestureHandler(
                 }
               } else if (pointerCount > 1) {
                 // Multi-finger gesture detected
+                speedHoldPending = false
                 longPressJob.cancel()
                 if (gestureType != null) {
                   when (gestureType) {
@@ -823,28 +936,39 @@ fun GestureHandler(
                   }
                   gestureType = null
                 }
+                when (gestureOwner) {
+                  GestureOwner.SPEED,
+                  GestureOwner.VERTICAL,
+                  GestureOwner.SUBTITLE_VERTICAL,
+                  GestureOwner.PLAYLIST,
+                  -> gestureOwner = null
+                  else -> Unit
+                }
                 break
               }
             } while (event.changes.any { it.pressed })
 
             // Handle gesture end
+            speedHoldPending = false
             longPressJob.cancel()
 
             if (isLongPressing) {
               isLongPressing = false
               isDynamicSpeedControlActive = false
               hasSwipedEnough = false
-              // Ramp speed back down incrementally to avoid audio filter stutter
-              val currentSpeed = viewModel.playbackSpeedForGesture()
-              val targetSpeed = originalSpeed
-              val steps = 5
-              val stepDelay = 16L
-              coroutineScope.launch {
-                for (i in 1..steps) {
-                  val t = i.toFloat() / steps
-                  val intermediateSpeed = currentSpeed + (targetSpeed - currentSpeed) * t
-                  viewModel.setPlaybackSpeed(intermediateSpeed)
-                  if (i < steps) delay(stepDelay)
+              if (!isSpeedLocked) {
+                // Ramp speed back down incrementally to avoid audio filter stutter
+                val currentSpeed = PlaybackSession.getPropertyFloat("speed") ?: multipleSpeedGesture
+                val targetSpeed = originalSpeed
+                val steps = 5
+                val stepDelay = 16L
+                coroutineScope.launch {
+                  for (i in 1..steps) {
+                    val t = i.toFloat() / steps
+                    val intermediateSpeed = currentSpeed + (targetSpeed - currentSpeed) * t
+                    PlaybackSession.setPropertyFloat("speed", intermediateSpeed)
+                    if (i < steps) delay(stepDelay)
+                  }
                 }
               }
               viewModel.playerUpdate.update { PlayerUpdates.None }
@@ -871,6 +995,15 @@ fun GestureHandler(
                   lastBrightnessValue = currentBrightness
                 }
               }
+            }
+
+            when (gestureOwner) {
+              GestureOwner.SPEED,
+              GestureOwner.VERTICAL,
+              GestureOwner.SUBTITLE_VERTICAL,
+              GestureOwner.PLAYLIST,
+              -> gestureOwner = null
+              else -> Unit
             }
           }
         }.pointerInput(
@@ -904,13 +1037,15 @@ fun GestureHandler(
             var sw = 0f
             var sh = 0f
 
-            awaitFirstDown(requireUnconsumed = false)
+            val down = awaitFirstDown(requireUnconsumed = false)
+            beginGesture(down.id.value, down.uptimeMillis)
 
             do {
               val event = awaitPointerEvent()
               val pressed = event.changes.filter { it.pressed }
 
               if (pressed.size == 2) {
+                if (!claimGesture(GestureOwner.PINCH)) continue
                 val p1 = pressed[0].position
                 val p2 = pressed[1].position
                 val dx = p2.x - p1.x
@@ -931,20 +1066,16 @@ fun GestureHandler(
                   currentPanX = viewModel.videoPanX.value
                   currentPanY = viewModel.videoPanY.value
 
-                  val hasActiveSub = viewModel.hasActiveSubtitleForGesture()
+                  val hasActiveSub = getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
                   val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
                   val subtitleScreenY = getSubtitleScreenY(subPos, sw, sh)
                   val isCenterPinchX = midX in (sw * 0.2f)..(sw * 0.8f)
-                  val (_, upperBound) = getSubtitleHitboxBounds(sw, sh)
-                  // The subtitle anchor is usually below the visible subtitle glyphs.
-                  // Compare absolute distance so pinching just below the anchor is not
-                  // misclassified as a video-zoom gesture.
-                  val subtitleDistance = abs(subtitleScreenY - midY)
-                  val isSubtitlePinch = isCenterPinchX && subtitleDistance <= upperBound
+                  val (lowerBound, upperBound) = getSubtitleHitboxBounds(sw, sh)
+                  val isSubtitlePinch = isCenterPinchX && (subtitleScreenY - midY) in lowerBound..upperBound
 
                   if (pinchToZoomSubtitles && hasActiveSub && isSubtitlePinch) {
                     isSubZoomMode = true
-                    initialSubScale = viewModel.subtitleScaleForGesture()
+                    initialSubScale = PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
                     initialDist = dist
                     lastCalculatedSubScale = initialSubScale
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
@@ -962,7 +1093,7 @@ fun GestureHandler(
                     if (gestureStarted && initialDist > 0f) {
                       val currentSubScale = (initialSubScale * (dist / initialDist)).coerceIn(0.1f, 5.0f)
                       lastCalculatedSubScale = currentSubScale
-                      viewModel.setSubtitleScaleForGesture(currentSubScale)
+                      PlaybackSession.setPropertyFloat("sub-scale", currentSubScale)
                       viewModel.playerUpdate.update { PlayerUpdates.SubtitleZoom(currentSubScale) }
                     }
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
@@ -973,9 +1104,6 @@ fun GestureHandler(
 
                     if (!gestureStarted && (distDelta > 5f || (panAndZoomEnabled && (midDeltaX > 3f || midDeltaY > 3f)))) {
                       gestureStarted = true
-                      // Pinch zoom is an active player interaction; prevent a queued auto-hide
-                      // coroutine from removing the shared controls during the gesture.
-                      viewModel.showControls()
                       if (pinchToZoomGesture && distDelta > 5f) {
                         viewModel.playerUpdate.update { PlayerUpdates.VideoZoom }
                       }
@@ -1023,16 +1151,17 @@ fun GestureHandler(
               subtitlesPreferences.subScale.set(lastCalculatedSubScale)
             }
 
+            releaseGesture(GestureOwner.PINCH)
             viewModel.playerUpdate.update { PlayerUpdates.None }
           }
         }.pointerInput(
           horizontalSwipeToSeek,
-          useThumbFastSeekPreview,
           areControlsLocked,
           gesturePreferences,
           isVerticalGestureActive,
           swipeSubtitlesToSeekDialog,
           isSwipeSubtitlesInverted,
+          anyPanelShown,
         ) {
           if ((!horizontalSwipeToSeek && !swipeSubtitlesToSeekDialog) ||
             areControlsLocked ||
@@ -1043,10 +1172,11 @@ fun GestureHandler(
 
           awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            beginGesture(down.id.value, down.uptimeMillis)
             val startPosition = down.position
             val startTime = System.currentTimeMillis()
 
-            val hasActiveSubtitle = viewModel.hasActiveSubtitleForGesture()
+            val hasActiveSubtitle = getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
             val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
             val subtitleScreenY = getSubtitleScreenY(subPos, size.width.toFloat(), size.height.toFloat())
 
@@ -1058,35 +1188,13 @@ fun GestureHandler(
 
             var gestureType: String? = null
             var hasStartedSeeking = false
-            var initialVideoPosition = 0.0
-            var pendingSeekPosition: Double? = null
-            var legacySeekPreviewActive = false
+            var initialVideoPosition = 0f
+            var pendingSeekPosition: Float? = null
             // Use the sensitivity preference instead of hardcoded value
             val seekSensitivity = horizontalSwipeSensitivity
-            val media3Active = viewModel.isMedia3ActiveForGesture()
-            fun currentMediaDuration(): Double =
-              (if (media3Active) {
-                viewModel.media3GestureDurationSeconds()
-              } else {
-                PlaybackSession.getPropertyDouble("duration")
-                  ?: viewModel.preciseDuration.value.toDouble()
-              }).takeIf { it.isFinite() && it > 0.0 } ?: 0.0
-
-            var mediaDuration = currentMediaDuration()
 
             do {
-              val event =
-                try {
-                  awaitPointerEvent()
-                } catch (cancellation: CancellationException) {
-                  if (legacySeekPreviewActive) {
-                    viewModel.cancelLegacySeekPreview()
-                    legacySeekPreviewActive = false
-                  } else if (hasStartedSeeking && gestureType == "horizontal_seek") {
-                    viewModel.hideSeekThumbnailPreview()
-                  }
-                  throw cancellation
-                }
+              val event = awaitPointerEvent()
               val pointerCount = event.changes.count { it.pressed }
 
               if (pointerCount == 1) {
@@ -1097,7 +1205,13 @@ fun GestureHandler(
                     val deltaY = currentPosition.y - startPosition.y
                     val timeSinceStart = System.currentTimeMillis() - startTime
 
-                    if (gestureType == null && isSubtitleTouch && abs(deltaX) > 40f && abs(deltaX) > abs(deltaY) * 2f) {
+                    if (
+                      gestureType == null &&
+                      isSubtitleTouch &&
+                      abs(deltaX) > 40f &&
+                      abs(deltaX) > abs(deltaY) * 2f &&
+                      claimGesture(GestureOwner.SUBTITLE_SEEK)
+                    ) {
                       gestureType = "subtitle_dialog_seek"
                       hasStartedSeeking = true
                       val isForward = if (isSwipeSubtitlesInverted) deltaX < 0 else deltaX > 0
@@ -1118,17 +1232,12 @@ fun GestureHandler(
                       change.consume()
                     }
 
-                    // Re-read the live Media3 timeline at activation time. ExoPlayer can
-                    // briefly expose an unknown duration during preparation or a seek.
-                    if (media3Active) {
-                      viewModel.media3GestureDurationSeconds()
-                        .takeIf { it.isFinite() && it > 0.0 }
-                        ?.let { mediaDuration = it }
-                    }
-
                     // Only activate if this is clearly a horizontal gesture
                     // and not conflicting with other gestures
                     if (gestureType == null &&
+                      gestureOwner == null &&
+                      !speedHoldPending &&
+                      !suppressHorizontalSeekForPointer &&
                       horizontalSwipeToSeek &&
                       !isSubtitleTouch &&
                       abs(deltaX) > 30f &&
@@ -1140,51 +1249,28 @@ fun GestureHandler(
                       // Don't conflict with long press
                       !isDynamicSpeedControlActive &&
                       // Don't conflict with speed control
-                      panelShown == Panels.None &&
-                      // Refresh the timeline at activation time. Media3 can publish its duration
-                      // shortly after the finger goes down; a duration captured only at touch-down
-                      // would remain zero and permanently disable this gesture.
-                      (currentMediaDuration().also { mediaDuration = it } > 0.0) &&
-                      // Do not claim the seekbar's bottom touch target. The Seeker composable
-                      // below the gesture layer must receive horizontal scrubs there.
-                      startPosition.y < size.height - with(density) { 96.dp.toPx() }
+                      !anyPanelShown
                     ) { // Only when no panels are shown
+                      if (claimGesture(GestureOwner.HORIZONTAL_SEEK)) {
+                        gestureType = "horizontal_seek"
+                        hasStartedSeeking = true
+                        initialVideoPosition = position?.toFloat() ?: 0f
+                        pendingSeekPosition = initialVideoPosition
 
-                      gestureType = "horizontal_seek"
-                      hasStartedSeeking = true
-                      initialVideoPosition =
-                        if (media3Active) {
-                          viewModel.media3GesturePositionSeconds()
-                        } else {
-                          PlaybackSession.getPropertyDouble("time-pos")
-                            ?: viewModel.precisePosition.value.toDouble()
-                        }.takeIf { it.isFinite() } ?: 0.0
-                      pendingSeekPosition = initialVideoPosition
-                      if (!useThumbFastSeekPreview && !viewModel.isMedia3ActiveForGesture()) {
-                        viewModel.beginLegacySeekPreview()
-                        legacySeekPreviewActive = true
+                        // Show seekbar and start seeking mode (same as seekbar scrubbing)
+                        viewModel.showSeekBar()
+                        change.consume()
                       }
-
-                      // Show seekbar and start seeking mode (same as seekbar scrubbing)
-                      viewModel.showSeekBar()
-                      change.consume()
                     }
 
                     if (gestureType == "horizontal_seek" && hasStartedSeeking) {
-                      // Calculate seek amount based on horizontal movement. Refresh the duration
-                      // on every event so delayed Media3 timeline publication cannot leave the
-                      // gesture using a zero or stale upper bound.
-                      mediaDuration = currentMediaDuration()
-                      val seekAmount = (deltaX * seekSensitivity).toDouble()
-                      val targetPosition = (initialVideoPosition + seekAmount).coerceAtLeast(0.0)
-                      val clampedPosition =
-                        if (mediaDuration > 0.0) targetPosition.coerceAtMost(mediaDuration) else targetPosition
+                      // Calculate seek amount based on horizontal movement
+                      val seekAmount = deltaX * seekSensitivity
+                      val targetPosition = (initialVideoPosition + seekAmount).coerceAtLeast(0f)
+                      val maxDuration = duration?.toFloat() ?: 0f
+                      val clampedPosition = targetPosition.coerceAtMost(maxDuration)
                       pendingSeekPosition = clampedPosition
-                      if (useThumbFastSeekPreview) {
-                        viewModel.updateSeekThumbnailPreview(clampedPosition.toFloat(), mediaDuration.toFloat())
-                      } else {
-                        viewModel.updateLegacySeekPreview(clampedPosition, mediaDuration)
-                      }
+                      viewModel.seekPreviewTo(clampedPosition)
 
                       // Format and display time position updates
                       val currentPos = clampedPosition.toInt()
@@ -1214,35 +1300,20 @@ fun GestureHandler(
                 if (hasStartedSeeking) {
                   hasStartedSeeking = false
                   // Clean up seeking state without showing controls
-                  if (useThumbFastSeekPreview) {
-                    viewModel.hideSeekThumbnailPreview()
-                  } else if (legacySeekPreviewActive) {
-                    viewModel.cancelLegacySeekPreview()
-                    legacySeekPreviewActive = false
-                  }
                   viewModel.playerUpdate.update { PlayerUpdates.None }
                   if (gestureType == "horizontal_seek") {
                     viewModel.hideSeekBar()
                   }
                 }
+                releaseGesture(GestureOwner.HORIZONTAL_SEEK)
+                releaseGesture(GestureOwner.SUBTITLE_SEEK)
                 break
               }
             } while (event.changes.any { it.pressed })
 
             // Apply the final seek when gesture ends
             if (hasStartedSeeking) {
-              if (useThumbFastSeekPreview) {
-                pendingSeekPosition?.let { viewModel.seekTo(it, fast = media3Active) }
-                viewModel.hideSeekThumbnailPreview()
-              } else if (media3Active) {
-                // Media3 owns the player exclusively; never route the final gesture through the
-                // legacy MPV preview transaction, which can restore a stale zero position.
-                pendingSeekPosition?.let { viewModel.seekTo(it, fast = true) }
-                legacySeekPreviewActive = false
-              } else {
-                pendingSeekPosition?.let { viewModel.commitLegacySeekPreview(it, mediaDuration) }
-                legacySeekPreviewActive = false
-              }
+              pendingSeekPosition?.let { viewModel.seekTo(it.toInt()) }
               if (gestureType == "subtitle_dialog_seek") {
                 coroutineScope.launch {
                   delay(300)
@@ -1257,6 +1328,8 @@ fun GestureHandler(
                 }
               }
             }
+            releaseGesture(GestureOwner.HORIZONTAL_SEEK)
+            releaseGesture(GestureOwner.SUBTITLE_SEEK)
           }
         },
   )

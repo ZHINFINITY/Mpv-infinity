@@ -7,8 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.theme
+package app.gyrolet.mpvrx.ui.theme
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.view.View
@@ -21,6 +22,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.ripple.RippleAlpha
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialExpressiveTheme
@@ -55,9 +57,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.drawToBitmap
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 import kotlin.math.hypot
 
@@ -136,15 +138,8 @@ class ThemeTransitionState {
  */
 val LocalThemeTransitionState = staticCompositionLocalOf<ThemeTransitionState?> { null }
 
-/** Enables the optional translucent, glass-like treatment for shared app surfaces. */
-val LocalLiquidGlassMode = staticCompositionLocalOf { false }
-
-@Composable
-fun liquidGlassSurfaceColor(
-  color: Color,
-  alpha: Float = 0.74f,
-): Color =
-  if (LocalLiquidGlassMode.current) color.copy(alpha = alpha) else color
+/** Dark counterpart of the selected app palette, even while the app itself is using light mode. */
+internal val LocalDarkAppColorScheme = staticCompositionLocalOf<ColorScheme?> { null }
 
 @Composable
 fun rememberThemeTransitionState(): ThemeTransitionState = remember { ThemeTransitionState() }
@@ -281,7 +276,6 @@ fun MpvrxTheme(
   val darkMode by preferences.darkMode.collectAsState()
   val amoledMode by preferences.amoledMode.collectAsState()
   val appTheme by preferences.appTheme.collectAsState()
-  val liquidGlassMode by preferences.liquidGlassMode.collectAsState()
   val useSystemFont by preferences.useSystemFont.collectAsState()
   val darkTheme = isSystemInDarkTheme()
   val context = LocalContext.current
@@ -293,39 +287,32 @@ fun MpvrxTheme(
       DarkMode.System -> darkTheme
     }
 
+  val darkColorScheme =
+    resolveAppColorScheme(
+      context = context,
+      appTheme = appTheme,
+      useDarkTheme = true,
+      amoledMode = amoledMode,
+    )
   val colorScheme =
-    when {
-      appTheme.isDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-        when {
-          useDarkTheme && amoledMode -> {
-            dynamicDarkColorScheme(context).copy(
-              background = backgroundPureBlack,
-              surface = surfacePureBlack,
-              surfaceDim = surfaceDimPureBlack,
-              surfaceBright = surfaceBrightPureBlack,
-              surfaceContainerLowest = surfaceContainerLowestPureBlack,
-              surfaceContainerLow = surfaceContainerLowPureBlack,
-              surfaceContainer = surfaceContainerPureBlack,
-              surfaceContainerHigh = surfaceContainerHighPureBlack,
-              surfaceContainerHighest = surfaceContainerHighestPureBlack,
-            )
-          }
-          useDarkTheme -> dynamicDarkColorScheme(context)
-          else -> dynamicLightColorScheme(context).withComfortableLightSurfaces()
-        }
-      }
-      useDarkTheme && amoledMode -> appTheme.getAmoledColorScheme()
-      useDarkTheme -> appTheme.getDarkColorScheme()
-      else -> appTheme.getLightColorScheme()
+    if (useDarkTheme) {
+      darkColorScheme
+    } else {
+      resolveAppColorScheme(
+        context = context,
+        appTheme = appTheme,
+        useDarkTheme = false,
+        amoledMode = amoledMode,
+      )
     }
 
   // Provide theme transition state first, OUTSIDE MaterialExpressiveTheme
   CompositionLocalProvider(
     LocalSpacing provides Spacing(),
     LocalThemeTransitionState provides transitionState,
-    LocalLiquidGlassMode provides liquidGlassMode,
     LocalMotionPolicy provides rememberMotionPolicy(),
     LocalEmphasizedTypography provides AppEmphasizedTypography,
+    LocalDarkAppColorScheme provides darkColorScheme,
   ) {
     ThemeTransitionContent {
       MaterialExpressiveTheme(
@@ -338,6 +325,37 @@ fun MpvrxTheme(
     }
   }
 }
+
+private fun resolveAppColorScheme(
+  context: Context,
+  appTheme: AppTheme,
+  useDarkTheme: Boolean,
+  amoledMode: Boolean,
+): ColorScheme =
+  when {
+    appTheme.isDynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+      when {
+        useDarkTheme && amoledMode -> {
+          dynamicDarkColorScheme(context).copy(
+            background = backgroundPureBlack,
+            surface = surfacePureBlack,
+            surfaceDim = surfaceDimPureBlack,
+            surfaceBright = surfaceBrightPureBlack,
+            surfaceContainerLowest = surfaceContainerLowestPureBlack,
+            surfaceContainerLow = surfaceContainerLowPureBlack,
+            surfaceContainer = surfaceContainerPureBlack,
+            surfaceContainerHigh = surfaceContainerHighPureBlack,
+            surfaceContainerHighest = surfaceContainerHighestPureBlack,
+          )
+        }
+        useDarkTheme -> dynamicDarkColorScheme(context)
+        else -> dynamicLightColorScheme(context).withComfortableLightSurfaces()
+      }
+    }
+    useDarkTheme && amoledMode -> appTheme.getAmoledColorScheme()
+    useDarkTheme -> appTheme.getDarkColorScheme()
+    else -> appTheme.getLightColorScheme()
+  }
 
 /** Keeps wallpaper-derived accents while replacing near-white full-screen surfaces. */
 private fun androidx.compose.material3.ColorScheme.withComfortableLightSurfaces(): androidx.compose.material3.ColorScheme {

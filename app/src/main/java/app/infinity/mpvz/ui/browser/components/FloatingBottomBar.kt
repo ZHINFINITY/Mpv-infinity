@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.components
+package app.gyrolet.mpvrx.ui.browser.components
 
 import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibility
@@ -37,9 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.icons.AppIcon
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.icons.AppIcon
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
 
 private data class BarLayoutParams(
   val buttonSize: androidx.compose.ui.unit.Dp,
@@ -61,8 +61,8 @@ fun BrowserBottomBar(
   onRenameClick: () -> Unit,
   onDeleteClick: () -> Unit,
   onAddToPlaylistClick: () -> Unit,
-  onAddToTemporaryQueueClick: () -> Unit = {},
-  onInfoClick: () -> Unit = {},
+  onPlayNextClick: (() -> Unit)? = null,
+  onAddToQueueClick: (() -> Unit)? = null,
   modifier: Modifier = Modifier,
   showCopy: Boolean = true,
   showMove: Boolean = true,
@@ -70,8 +70,6 @@ fun BrowserBottomBar(
   showRename: Boolean = true,
   showDelete: Boolean = true,
   showAddToPlaylist: Boolean = true,
-  showAddToTemporaryQueue: Boolean = false,
-  showInfo: Boolean = false,
 ) {
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -83,8 +81,8 @@ fun BrowserBottomBar(
   var lastShowRename by remember { mutableStateOf(showRename) }
   var lastShowDelete by remember { mutableStateOf(showDelete) }
   var lastShowAddToPlaylist by remember { mutableStateOf(showAddToPlaylist) }
-  var lastShowAddToTemporaryQueue by remember { mutableStateOf(showAddToTemporaryQueue) }
-  var lastShowInfo by remember { mutableStateOf(showInfo) }
+  var lastShowPlayNext by remember { mutableStateOf(onPlayNextClick != null) }
+  var lastShowAddToQueue by remember { mutableStateOf(onAddToQueueClick != null) }
 
   if (isSelectionMode) {
     lastShowCopy = showCopy
@@ -93,8 +91,8 @@ fun BrowserBottomBar(
     lastShowRename = showRename
     lastShowDelete = showDelete
     lastShowAddToPlaylist = showAddToPlaylist
-    lastShowAddToTemporaryQueue = showAddToTemporaryQueue
-    lastShowInfo = showInfo
+    lastShowPlayNext = onPlayNextClick != null
+    lastShowAddToQueue = onAddToQueueClick != null
   }
 
   val effectiveShowCopy = if (isSelectionMode) showCopy else lastShowCopy
@@ -103,8 +101,8 @@ fun BrowserBottomBar(
   val effectiveShowRename = if (isSelectionMode) showRename else lastShowRename
   val effectiveShowDelete = if (isSelectionMode) showDelete else lastShowDelete
   val effectiveShowAddToPlaylist = if (isSelectionMode) showAddToPlaylist else lastShowAddToPlaylist
-  val effectiveShowAddToTemporaryQueue = if (isSelectionMode) showAddToTemporaryQueue else lastShowAddToTemporaryQueue
-  val effectiveShowInfo = if (isSelectionMode) showInfo else lastShowInfo
+  val effectiveShowPlayNext = if (isSelectionMode) onPlayNextClick != null else lastShowPlayNext
+  val effectiveShowAddToQueue = if (isSelectionMode) onAddToQueueClick != null else lastShowAddToQueue
 
   AnimatedVisibility(
     visible = isSelectionMode,
@@ -113,8 +111,8 @@ fun BrowserBottomBar(
       androidx.compose.animation.slideInVertically(
         animationSpec =
           androidx.compose.animation.core.spring(
-            dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Spatial.ExpressiveDp.dampingRatio,
-            stiffness = app.infinity.mpvz.ui.theme.AppMotion.Spatial.ExpressiveDp.stiffness,
+            dampingRatio = app.gyrolet.mpvrx.ui.theme.AppMotion.Spatial.ExpressiveDp.dampingRatio,
+            stiffness = app.gyrolet.mpvrx.ui.theme.AppMotion.Spatial.ExpressiveDp.stiffness,
           ),
         initialOffsetY = { fullHeight -> fullHeight * 2 },
       ) + fadeIn(),
@@ -136,9 +134,9 @@ fun BrowserBottomBar(
           effectiveShowMove,
           effectiveShowDownscale,
           effectiveShowRename,
+          effectiveShowPlayNext,
+          effectiveShowAddToQueue,
           effectiveShowAddToPlaylist,
-          effectiveShowAddToTemporaryQueue,
-          effectiveShowInfo,
           effectiveShowDelete,
         ).count { it }
 
@@ -196,6 +194,7 @@ fun BrowserBottomBar(
                 BarLayoutParams(48.dp, 24.dp, 10.dp, 8.dp, 4.dp, 12.dp, 6.dp), // Medium (Compact vertical)
                 BarLayoutParams(42.dp, 22.dp, 8.dp, 6.dp, 2.dp, 8.dp, 4.dp), // Small (Compact vertical)
                 BarLayoutParams(36.dp, 18.dp, 6.dp, 4.dp, 2.dp, 6.dp, 4.dp), // Tiny (Compact vertical)
+                BarLayoutParams(32.dp, 18.dp, 2.dp, 4.dp, 2.dp, 4.dp, 2.dp), // Narrow
               )
             options.firstOrNull { opt ->
               val totalWidth =
@@ -211,6 +210,7 @@ fun BrowserBottomBar(
                 BarLayoutParams(48.dp, 24.dp, 10.dp, 8.dp, 6.dp, 12.dp, 10.dp), // Medium
                 BarLayoutParams(42.dp, 22.dp, 8.dp, 6.dp, 4.dp, 8.dp, 8.dp), // Small
                 BarLayoutParams(36.dp, 18.dp, 6.dp, 4.dp, 4.dp, 6.dp, 6.dp), // Tiny
+                BarLayoutParams(32.dp, 18.dp, 2.dp, 4.dp, 4.dp, 4.dp, 4.dp), // Narrow
               )
             options.firstOrNull { opt ->
               val totalWidth =
@@ -277,26 +277,26 @@ fun BrowserBottomBar(
             layoutParams.iconSize,
           )
           BrowserBottomBarButton(
+            effectiveShowPlayNext,
+            onPlayNextClick ?: {},
+            Icons.RoundedFilled.SkipNext,
+            "Play Next",
+            layoutParams.buttonSize,
+            layoutParams.iconSize,
+          )
+          BrowserBottomBarButton(
+            effectiveShowAddToQueue,
+            onAddToQueueClick ?: {},
+            Icons.RoundedFilled.QueueMusic,
+            "Add to Queue",
+            layoutParams.buttonSize,
+            layoutParams.iconSize,
+          )
+          BrowserBottomBarButton(
             effectiveShowAddToPlaylist,
             onAddToPlaylistClick,
             Icons.RoundedFilled.PlaylistAdd,
             "Add to Playlist",
-            layoutParams.buttonSize,
-            layoutParams.iconSize,
-          )
-          BrowserBottomBarButton(
-            effectiveShowAddToTemporaryQueue,
-            onAddToTemporaryQueueClick,
-            Icons.RoundedFilled.QueueMusic,
-            "Add to temporary queue",
-            layoutParams.buttonSize,
-            layoutParams.iconSize,
-          )
-          BrowserBottomBarButton(
-            effectiveShowInfo,
-            onInfoClick,
-            Icons.RoundedFilled.Info,
-            "Properties",
             layoutParams.buttonSize,
             layoutParams.iconSize,
           )

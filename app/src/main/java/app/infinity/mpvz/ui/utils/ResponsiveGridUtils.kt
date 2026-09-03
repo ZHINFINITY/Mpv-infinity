@@ -7,14 +7,14 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.utils
+package app.gyrolet.mpvrx.ui.utils
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.preferences.BrowserPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 import kotlin.math.abs
 

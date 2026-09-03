@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.dialogs
+package app.gyrolet.mpvrx.ui.browser.dialogs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,12 +46,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.domain.media.model.Video
-import app.infinity.mpvz.preferences.AiPreferences
-import app.infinity.mpvz.repository.ai.AiService
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.domain.media.model.Video
+import app.gyrolet.mpvrx.preferences.AiPreferences
+import app.gyrolet.mpvrx.repository.ai.AiService
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -178,7 +178,7 @@ fun BulkAiRenameDialog(
           !canUseAi ->
             Text(
               androidx.compose.ui.res.stringResource(
-                app.infinity.mpvz.R.string.ui_ai_rename_is_disabled_enable_it_in_settings_ai_integration,
+                app.gyrolet.mpvrx.R.string.ui_ai_rename_is_disabled_enable_it_in_settings_ai_integration,
               ),
               color = MaterialTheme.colorScheme.error,
             )
@@ -253,7 +253,7 @@ fun BulkAiRenameDialog(
                       label = {
                         Text(
                           androidx.compose.ui.res
-                            .stringResource(app.infinity.mpvz.R.string.ui_new_name),
+                            .stringResource(app.gyrolet.mpvrx.R.string.ui_new_name),
                         )
                       },
                       suffix = { item.extension?.let { Text(it, color = MaterialTheme.colorScheme.outline) } },
@@ -295,7 +295,7 @@ fun BulkAiRenameDialog(
             Spacer(Modifier.width(8.dp))
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_generate_previews),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_generate_previews),
               fontWeight = FontWeight.Bold,
             )
           }
@@ -311,7 +311,7 @@ fun BulkAiRenameDialog(
             shape = MaterialTheme.shapes.extraLarge,
           ) {
             Icon(
-              imageVector = app.infinity.mpvz.ui.icons.Icons.RoundedFilled.DriveFileRenameOutline,
+              imageVector = app.gyrolet.mpvrx.ui.icons.Icons.RoundedFilled.DriveFileRenameOutline,
               contentDescription = null,
               modifier = Modifier.size(18.dp),
             )

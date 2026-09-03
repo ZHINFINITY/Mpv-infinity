@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.dialogs
+package app.gyrolet.mpvrx.ui.browser.dialogs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,8 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -170,7 +170,7 @@ fun DeleteConfirmationDialog(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.delete),
+              .stringResource(app.gyrolet.mpvrx.R.string.delete),
           fontWeight = FontWeight.Bold,
         )
       }
@@ -188,7 +188,7 @@ fun DeleteConfirmationDialog(
         Spacer(modifier = Modifier.width(4.dp))
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
           fontWeight = FontWeight.Medium,
         )
       }

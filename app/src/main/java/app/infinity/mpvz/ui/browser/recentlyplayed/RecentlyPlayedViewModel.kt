@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.recentlyplayed
+package app.gyrolet.mpvrx.ui.browser.recentlyplayed
 
 import android.app.Application
 import android.net.Uri
@@ -17,14 +17,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.infinity.mpvz.database.MpvRxDatabase
-import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
-import app.infinity.mpvz.database.repository.PlaylistRepository
-import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
-import app.infinity.mpvz.domain.media.model.Video
-import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
-import app.infinity.mpvz.utils.permission.PermissionUtils
-import app.infinity.mpvz.utils.storage.FileTypeUtils
+import app.gyrolet.mpvrx.database.MpvRxDatabase
+import app.gyrolet.mpvrx.database.entities.RecentlyPlayedEntity
+import app.gyrolet.mpvrx.database.repository.PlaylistRepository
+import app.gyrolet.mpvrx.database.repository.VideoMetadataCacheRepository
+import app.gyrolet.mpvrx.domain.media.model.Video
+import app.gyrolet.mpvrx.domain.recentlyplayed.repository.RecentlyPlayedRepository
+import app.gyrolet.mpvrx.utils.permission.PermissionUtils
+import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -70,7 +70,7 @@ class RecentlyPlayedViewModel(
 
   private suspend fun loadRecentVideosFromEntities(
     allRecentEntities: List<RecentlyPlayedEntity>,
-    recentPlaylists: List<app.infinity.mpvz.database.dao.RecentlyPlayedDao.RecentlyPlayedPlaylistInfo>,
+    recentPlaylists: List<app.gyrolet.mpvrx.database.dao.RecentlyPlayedDao.RecentlyPlayedPlaylistInfo>,
   ) {
     try {
       val items = mutableListOf<RecentlyPlayedItem>()
@@ -103,6 +103,11 @@ class RecentlyPlayedViewModel(
         }
       }
 
+      // Legacy/duplicate rows for the same file can still exist in the DB (e.g. from before a
+      // race-condition fix); collapse them so the LazyColumn never sees two items with the same
+      // key. allRecentEntities is ordered by timestamp DESC, so the first occurrence is the newest.
+      val distinctStandaloneVideos = standaloneVideos.distinctBy { it.first }
+
       // Create playlist items (excluding network/M3U playlists)
       for (playlistInfo in recentPlaylists) {
         val playlist = playlistRepository.getPlaylistById(playlistInfo.playlistId)
@@ -126,7 +131,7 @@ class RecentlyPlayedViewModel(
       }
 
       // Create standalone video items
-      for ((filePath, timestamp) in standaloneVideos) {
+      for ((filePath, timestamp) in distinctStandaloneVideos) {
         val entity = allRecentEntities.find { it.filePath == filePath }
 
         // Check if this is a network URL
@@ -271,12 +276,14 @@ class RecentlyPlayedViewModel(
     // Extract URI components
     val uri = Uri.parse(url)
 
-    // Prefer the title saved with the recent item so network streams keep their resolved name.
+    // Prefer non-generic title saved with the recent item so network streams keep their resolved name.
     val resolvedTitle =
-      parsedVideoTitle
-        ?.takeIf { it.isNotBlank() }
+      parsedVideoTitle?.takeIf { !isGenericStreamName(it) }
+        ?: entity?.videoTitle?.takeIf { !isGenericStreamName(it) }
+        ?: entity?.fileName?.takeIf { !isGenericStreamName(it) }
+        ?: uri.lastPathSegment?.takeIf { !isGenericStreamName(it) }
+        ?: parsedVideoTitle?.takeIf { it.isNotBlank() }
         ?: entity?.fileName?.takeIf { it.isNotBlank() }
-        ?: uri.lastPathSegment?.takeIf { it.isNotBlank() }
         ?: "Stream"
     val displayName = resolvedTitle
 
@@ -540,6 +547,19 @@ class RecentlyPlayedViewModel(
   }
 
   companion object {
+    private val GENERIC_STREAM_NAMES =
+      setOf(
+        "stream",
+        "stream.mkv",
+        "stream.mp4",
+        "stream.ts",
+        "stream.webm",
+        "stream.avi",
+      )
+
+    fun isGenericStreamName(name: String?): Boolean =
+      name.isNullOrBlank() || name.trim().lowercase() in GENERIC_STREAM_NAMES
+
     fun factory(application: Application): ViewModelProvider.Factory =
       viewModelFactory {
         initializer {

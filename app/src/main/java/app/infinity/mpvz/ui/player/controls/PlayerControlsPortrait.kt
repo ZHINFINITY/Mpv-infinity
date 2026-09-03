@@ -7,9 +7,11 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls
+package app.gyrolet.mpvrx.ui.player.controls
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,12 +19,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -30,26 +31,26 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.PlayerButton
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.Panels
-import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.player.PlayerViewModel
-import app.infinity.mpvz.ui.player.Sheets
-import app.infinity.mpvz.ui.player.VideoAspect
-import app.infinity.mpvz.ui.player.controls.components.ControlsButton
-import app.infinity.mpvz.ui.player.controls.components.ControlsGroup
-import app.infinity.mpvz.ui.player.controls.components.AnimatedPlayPauseIcon
-import app.infinity.mpvz.ui.player.controls.components.PlayerGlassSurface
-import app.infinity.mpvz.ui.theme.controlColor
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.PlayerButton
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.Panels
+import app.gyrolet.mpvrx.ui.player.PlayerActivity
+import app.gyrolet.mpvrx.ui.player.PlayerViewModel
+import app.gyrolet.mpvrx.ui.player.Sheets
+import app.gyrolet.mpvrx.ui.player.VideoAspect
+import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
+import app.gyrolet.mpvrx.ui.player.controls.components.ControlsGroup
+import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonBorderColor
+import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContainerColor
+import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContentColor
+import app.gyrolet.mpvrx.ui.theme.controlColor
+import app.gyrolet.mpvrx.ui.theme.spacing
 import dev.vivvvek.seeker.Segment
 
 @Composable
@@ -58,184 +59,154 @@ fun TopPlayerControlsPortrait(
   hideBackground: Boolean,
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,
-  onOpenPanel: (Panels) -> Unit,
   viewModel: PlayerViewModel,
-  playbackSpeed: Float = 1f,
   isTranslatingSub: Boolean = false,
   isRealtimeSubsActive: Boolean = false,
   realtimeSubsLanguage: String = "",
   translationStatus: String = "",
   translatingTrackName: String = "",
 ) {
-  // Keep the folder episode card reachable even when the playlist preference is disabled.
-  // This condition is local to the portrait top-bar pill; other playlist controls are unchanged.
-  val playlistModeEnabled = viewModel.hasPlaylistSupport() || viewModel.getPlaylistInfo() != null
-  val clickEvent = LocalPlayerButtonsClickEvent.current
+  PlayerButtonTheme(hideBackground) {
+    val playlistModeEnabled = viewModel.hasPlaylistSupport()
+    val clickEvent = LocalPlayerButtonsClickEvent.current
 
-  Column(
-    modifier =
-      Modifier
-        .fillMaxWidth()
-        .padding(top = MaterialTheme.spacing.medium)
-        .padding(horizontal = MaterialTheme.spacing.medium),
-  ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically,
+    Column(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .padding(top = MaterialTheme.spacing.medium)
+          .padding(horizontal = MaterialTheme.spacing.medium),
     ) {
-      ControlsGroup(
-        modifier = Modifier.weight(1f),
-        hideBackground = hideBackground,
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
       ) {
-        ControlsButton(
-          icon = Icons.RoundedFilled.ArrowBack,
-          onClick = onBackPress,
-          color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-          modifier = Modifier.size(45.dp),
-        )
+        ControlsGroup {
+          ControlsButton(
+            icon = Icons.RoundedFilled.ArrowBack,
+            onClick = onBackPress,
+            color = if (hideBackground) controlColor else playerButtonContentColor(),
+            modifier = Modifier.size(45.dp),
+          )
 
-        Column(
-          modifier = Modifier.weight(1f).padding(start = 4.dp),
-        ) {
-          PlayerGlassSurface(
-            shape = CircleShape,
-            hideBackground = hideBackground,
-            contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-            modifier =
-              Modifier
-                .height(45.dp)
-                .clip(CircleShape)
-                .clickable(
-                  enabled = playlistModeEnabled,
-                  onClick = {
-                    onOpenSheet(Sheets.Playlist)
-                  },
-                ),
+          Column(
+            modifier = Modifier.padding(start = 4.dp),
           ) {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              modifier = Modifier.padding(horizontal = 14.dp),
+            val titleInteractionSource =
+              remember {
+                androidx.compose.foundation.interaction
+                  .MutableInteractionSource()
+              }
+
+            Surface(
+              shape = CircleShape,
+              color =
+                if (hideBackground) {
+                  Color.Transparent
+                } else {
+                  playerButtonContainerColor()
+                },
+              contentColor = if (hideBackground) controlColor else playerButtonContentColor(),
+              onClick = {
+                clickEvent()
+                onOpenSheet(Sheets.Playlist)
+              },
+              enabled = playlistModeEnabled,
+              border =
+                if (hideBackground) {
+                  null
+                } else {
+                  BorderStroke(1.dp, playerButtonBorderColor())
+                },
+              modifier = Modifier.height(45.dp),
             ) {
-              Text(
-                mediaTitle ?: "",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f, fill = false),
-              )
-              viewModel.getPlaylistInfo()?.let { playlistInfo ->
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 14.dp),
+              ) {
                 Text(
-                  " • $playlistInfo",
+                  mediaTitle ?: "",
                   maxLines = 1,
-                  style = MaterialTheme.typography.bodySmall,
-                  color = LocalContentColor.current.copy(alpha = 0.7f),
+                  overflow = TextOverflow.Ellipsis,
+                  style = MaterialTheme.typography.bodyMedium,
+                  modifier = Modifier.weight(1f, fill = false),
                 )
+                viewModel.getPlaylistInfo()?.let { playlistInfo ->
+                  Text(
+                    " • $playlistInfo",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = LocalContentColor.current.copy(alpha = 0.7f),
+                  )
+                }
               }
             }
           }
         }
+      }
 
-        PlayerGlassSurface(
-          shape = RoundedCornerShape(24.dp),
-          hideBackground = hideBackground,
-          contentColor = Color.White,
-          modifier = Modifier.height(45.dp),
+      androidx.compose.animation.AnimatedVisibility(
+        visible = isTranslatingSub || isRealtimeSubsActive,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it },
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { -it },
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.padding(start = 14.dp, top = 12.dp),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 8.dp),
-          ) {
-            Text(
-              text =
-                if (kotlin.math.abs(playbackSpeed - playbackSpeed.toInt()) < 0.001f) {
-                  "${playbackSpeed.toInt()}x"
-                } else {
-                  "%.2fx".format(playbackSpeed)
-                },
-              style = MaterialTheme.typography.labelLarge,
-              color = Color.White,
-              modifier = Modifier.clickable { onOpenSheet(Sheets.PlaybackSpeed) }.padding(horizontal = 6.dp),
-            )
-            ControlsButton(
-              icon = Icons.RoundedFilled.LockOpen,
-              onClick = viewModel::lockControls,
-              color = Color.White,
-              modifier = Modifier.size(38.dp),
-            )
-            ControlsButton(
-              icon = Icons.RoundedFilled.Audiotrack,
-              onClick = { onOpenSheet(Sheets.AudioTracks) },
-              onLongClick = { onOpenPanel(Panels.AudioDelay) },
-              color = Color.White,
-              modifier = Modifier.size(38.dp),
-            )
-          }
+          Icon(
+            imageVector = Icons.RoundedFilled.Translate,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.tertiary,
+          )
+          Text(
+            text =
+              if (isRealtimeSubsActive) {
+                "Real-time subs: ${realtimeSubsLanguage.ifBlank { "?" }} ${translationStatus.ifBlank { "" }}"
+              } else {
+                "Translating ${translatingTrackName.ifBlank { "subs" }} ${translationStatus.ifBlank { "" }}"
+              },
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.tertiary,
+          )
         }
       }
-    }
 
-    androidx.compose.animation.AnimatedVisibility(
-      visible = isTranslatingSub || isRealtimeSubsActive,
-      enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it },
-      exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { -it },
-    ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(start = 14.dp, top = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+      val syncplayManager = org.koin.compose.koinInject<app.gyrolet.mpvrx.domain.syncplay.SyncplayManager>()
+      val syncplayState by syncplayManager.state.collectAsState()
+
+      androidx.compose.animation.AnimatedVisibility(
+        visible = syncplayState.isConnected,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it },
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { -it },
       ) {
-        Icon(
-          imageVector = Icons.RoundedFilled.Translate,
-          contentDescription = null,
-          modifier = Modifier.size(14.dp),
-          tint = MaterialTheme.colorScheme.tertiary,
-        )
-        Text(
-          text =
-            if (isRealtimeSubsActive) {
-              "Real-time subs: ${realtimeSubsLanguage.ifBlank { "?" }} ${translationStatus.ifBlank { "" }}"
-            } else {
-              "Translating ${translatingTrackName.ifBlank { "subs" }} ${translationStatus.ifBlank { "" }}"
-            },
-          style = MaterialTheme.typography.labelSmall,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          color = MaterialTheme.colorScheme.tertiary,
-        )
-      }
-    }
-
-    val syncplayManager = org.koin.compose.koinInject<app.infinity.mpvz.domain.syncplay.SyncplayManager>()
-    val syncplayState by syncplayManager.state.collectAsState()
-
-    androidx.compose.animation.AnimatedVisibility(
-      visible = syncplayState.isConnected,
-      enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it },
-      exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { -it },
-    ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(start = 14.dp, top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        Icon(
-          imageVector = Icons.RoundedFilled.CloudDownload,
-          contentDescription = null,
-          modifier = Modifier.size(14.dp),
-          tint = MaterialTheme.colorScheme.tertiary,
-        )
-        Text(
-          text =
-            stringResource(
-              R.string.syncplay_player_status,
-              syncplayState.room.orEmpty(),
-              syncplayState.users.size,
-            ),
-          style = MaterialTheme.typography.labelSmall,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          color = MaterialTheme.colorScheme.tertiary,
-        )
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.padding(start = 14.dp, top = 8.dp),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Icon(
+            imageVector = Icons.RoundedFilled.CloudDownload,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.tertiary,
+          )
+          Text(
+            text =
+              stringResource(
+                R.string.syncplay_player_status,
+                syncplayState.room.orEmpty(),
+                syncplayState.users.size,
+              ),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.tertiary,
+          )
+        }
       }
     }
   }
@@ -244,7 +215,7 @@ fun TopPlayerControlsPortrait(
 @Composable
 fun BottomPlayerControlsPortrait(
   buttons: List<PlayerButton>,
-  isPlaying: Boolean,
+  showVideoQualitySelector: Boolean,
   chapters: List<Segment>,
   currentChapter: Int?,
   isSpeedNonOne: Boolean,
@@ -252,7 +223,7 @@ fun BottomPlayerControlsPortrait(
   aspect: VideoAspect,
   mediaTitle: String?,
   hideBackground: Boolean,
-  decoder: app.infinity.mpvz.ui.player.Decoder,
+  decoder: app.gyrolet.mpvrx.ui.player.Decoder,
   playbackSpeed: Float,
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,
@@ -260,88 +231,44 @@ fun BottomPlayerControlsPortrait(
   viewModel: PlayerViewModel,
   activity: PlayerActivity,
 ) {
-  PlayerGlassSurface(
-    modifier =
-      Modifier
-        .fillMaxWidth()
-        .padding(horizontal = MaterialTheme.spacing.medium),
-    shape = RoundedCornerShape(28.dp),
-    hideBackground = hideBackground,
-    contentColor = Color.White,
-  ) {
-    Column(
-      modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
+  PlayerButtonTheme(hideBackground) {
+    Row(
+      modifier =
+        Modifier
+          .fillMaxWidth()
+          .horizontalScroll(rememberScrollState())
+          .padding(bottom = MaterialTheme.spacing.medium),
+      horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium, Alignment.CenterHorizontally),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceEvenly,
-      ) {
-        ControlsButton(
-          icon = Icons.RoundedFilled.SkipPrevious,
-          onClick = { if (viewModel.hasPrevious()) viewModel.playPrevious() },
-          title = stringResource(R.string.pref_gesture_media_previous),
-          modifier = Modifier.size(54.dp),
-        )
-        PlayerGlassSurface(
-          modifier =
-            Modifier
-              .size(66.dp)
-              .clip(CircleShape)
-              .clickable { viewModel.pauseUnpause() },
-          shape = CircleShape,
+      buttons.forEach { button ->
+        RenderPlayerButton(
+          button = button,
+          chapters = chapters,
+          currentChapter = currentChapter,
+          isPortrait = true,
+          isSpeedNonOne = isSpeedNonOne,
+          currentZoom = currentZoom,
+          aspect = aspect,
+          mediaTitle = mediaTitle,
           hideBackground = hideBackground,
-          contentColor = Color.White,
-        ) {
-          AnimatedPlayPauseIcon(
-            isPlaying = isPlaying,
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            tint = LocalContentColor.current,
-          )
-        }
-        ControlsButton(
-          icon = Icons.RoundedFilled.SkipNext,
-          onClick = { if (viewModel.hasNext()) viewModel.playNext() },
-          title = stringResource(R.string.pref_gesture_media_next),
-          modifier = Modifier.size(54.dp),
+          onBackPress = onBackPress,
+          onOpenSheet = onOpenSheet,
+          onOpenPanel = onOpenPanel,
+          viewModel = viewModel,
+          activity = activity,
+          decoder = decoder,
+          playbackSpeed = playbackSpeed,
+          buttonSize = 44.dp, // Slightly more compact size
         )
       }
-
-      // Keep every selected secondary feature, but place it in one compact bottom rail. The rail
-      // scrolls horizontally like mpvRx instead of expanding the portrait panel into a tall grid.
-      if (buttons.isNotEmpty()) {
-        Row(
-          modifier =
-            Modifier
-              .fillMaxWidth()
-              .padding(top = 8.dp)
-              .horizontalScroll(rememberScrollState()),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          buttons.forEach { button ->
-            RenderPlayerButton(
-              button = button,
-              chapters = chapters,
-              currentChapter = currentChapter,
-              isPortrait = true,
-              isSpeedNonOne = isSpeedNonOne,
-              currentZoom = currentZoom,
-              aspect = aspect,
-              mediaTitle = mediaTitle,
-              hideBackground = hideBackground,
-              onBackPress = onBackPress,
-              onOpenSheet = onOpenSheet,
-              onOpenPanel = onOpenPanel,
-              viewModel = viewModel,
-              activity = activity,
-              decoder = decoder,
-              playbackSpeed = playbackSpeed,
-              buttonSize = 40.dp,
-            )
-          }
-        }
+      if (showVideoQualitySelector) {
+        ControlsButton(
+          icon = Icons.RoundedFilled.Hd,
+          onClick = { onOpenSheet(Sheets.VideoQuality) },
+          title = stringResource(R.string.player_video_quality_button),
+          modifier = Modifier.size(44.dp),
+        )
       }
     }
   }

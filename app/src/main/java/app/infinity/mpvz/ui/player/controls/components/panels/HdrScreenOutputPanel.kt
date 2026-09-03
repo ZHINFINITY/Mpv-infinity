@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components.panels
+package app.gyrolet.mpvrx.ui.player.controls.components.panels
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -36,12 +36,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.HdrScreenMode
-import app.infinity.mpvz.ui.player.PlayerViewModel
-import app.infinity.mpvz.ui.theme.AppShapeScale
-import app.infinity.mpvz.ui.theme.spacing
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.HdrScreenMode
+import app.gyrolet.mpvrx.ui.player.PlayerViewModel
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.ui.theme.spacing
 
 @Composable
 fun HdrScreenOutputPanel(
@@ -68,7 +68,7 @@ fun HdrScreenOutputPanel(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_hdr_output),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_hdr_output),
           style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.weight(1f))
@@ -139,14 +139,14 @@ private fun HdrPipelineUnavailableStatus(modifier: Modifier = Modifier) {
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_hdr_cannot_be_enabled),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_hdr_cannot_be_enabled),
           style = MaterialTheme.typography.titleLarge,
           fontWeight = FontWeight.SemiBold,
         )
         Text(
           text =
             androidx.compose.ui.res.stringResource(
-              app.infinity.mpvz.R.string.ui_enable_gpu_next_and_vulkan_before_using_hdr_modes,
+              app.gyrolet.mpvrx.R.string.ui_enable_gpu_next_and_vulkan_before_using_hdr_modes,
             ),
           style = MaterialTheme.typography.bodySmall,
           color = contentColor.copy(alpha = 0.78f),

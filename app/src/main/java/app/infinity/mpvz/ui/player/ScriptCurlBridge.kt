@@ -7,35 +7,34 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player
+package app.gyrolet.mpvrx.ui.player
 
 import android.util.Log
+import app.gyrolet.mpvrx.network.SharedHttpClient
+import app.gyrolet.mpvrx.network.awaitResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.TimeUnit
 
 class ScriptCurlBridge(
   private val scope: CoroutineScope,
 ) {
-  private external fun nativeExecute(
-    url: String,
-    method: String,
-    headerKeys: Array<String>?,
-    headerValues: Array<String>?,
-    body: String?,
-    contentType: String?,
-    timeout: Int,
-  ): String
-
   companion object {
     private const val TAG = "ScriptCurlBridge"
     private const val RESPONSE_PROPERTY = "user-data/mpvrx/curl_response"
@@ -44,9 +43,20 @@ class ScriptCurlBridge(
     private const val MAX_TIMEOUT_SECONDS = 120L
     private const val MAX_JSON_UNWRAP_DEPTH = 8
 
-    init {
-      System.loadLibrary("curl_bridge")
-    }
+    private const val MAX_HEADER_COUNT = 64
+    private const val MAX_BODY_BYTES = 8L * 1024 * 1024
+    private const val MAX_CONCURRENT_REQUESTS = 4
+    private const val MAX_PENDING_REQUESTS = 32
+    private const val USER_AGENT = "mpvRx-script-curl/1.0"
+
+    private val ALLOWED_METHODS = setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE")
+    private val METHODS_WITH_BODY = setOf("POST", "PUT", "PATCH")
+
+    /** Header names must be RFC 7230 tokens; this also blocks CRLF request splitting. */
+    private fun isValidHeaderName(name: String): Boolean =
+      name.isNotEmpty() && name.all { it.code in 33..126 && it != ':' }
+
+    private fun containsCrlf(value: String): Boolean = value.any { it == '\r' || it == '\n' }
   }
 
   private val json =
@@ -56,6 +66,8 @@ class ScriptCurlBridge(
       encodeDefaults = true
       explicitNulls = false
     }
+  private val requestSemaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
+  private val pendingRequestCount = AtomicInteger()
 
   @Serializable
   private data class CurlRequest(
@@ -115,15 +127,22 @@ class ScriptCurlBridge(
         MAX_TIMEOUT_SECONDS.toInt(),
       )
 
-    scope.launch(Dispatchers.IO) {
-      val response =
-        executeRequest(
-          finalRequest,
-          timeoutSec,
-        )
-
-      writeResponse(response)
+    if (pendingRequestCount.incrementAndGet() > MAX_PENDING_REQUESTS) {
+      pendingRequestCount.decrementAndGet()
+      writeErrorResponse(requestId, "Too many pending script HTTP requests")
+      return
     }
+    scope
+      .launch(Dispatchers.IO) {
+        val response =
+          requestSemaphore.withPermit {
+            executeRequest(
+              finalRequest,
+              timeoutSec,
+            )
+          }
+        writeResponse(response)
+      }.invokeOnCompletion { pendingRequestCount.decrementAndGet() }
   }
 
   private fun parseRequest(rawJson: String): CurlRequest {
@@ -263,101 +282,72 @@ class ScriptCurlBridge(
     )
   }
 
-  private fun executeRequest(
+  private suspend fun executeRequest(
     request: CurlRequest,
     timeoutSec: Int,
   ): CurlResponse {
-    val nativeJson =
-      try {
-        nativeExecute(
-          url = request.url,
-          method = request.method.uppercase(),
-          headerKeys =
-            if (request.headers.isNotEmpty()) {
-              request.headers.keys.toTypedArray()
-            } else {
-              null
-            },
-          headerValues =
-            if (request.headers.isNotEmpty()) {
-              request.headers.values.toTypedArray()
-            } else {
-              null
-            },
-          body = request.body,
-          contentType =
-            request.content_type.ifBlank {
-              null
-            },
-          timeout = timeoutSec,
-        )
-      } catch (e: Exception) {
-        Log.e(
-          TAG,
-          "Request failed",
-          e,
-        )
+    val id = request.id ?: "unknown"
 
-        return CurlResponse(
-          id = request.id ?: "unknown",
-          status = 0,
-          body = "",
-          headers = emptyMap(),
-          error =
-            e.message
-              ?: "Native curl error",
-        )
+    fun fail(error: String) = CurlResponse(id = id, status = 0, body = "", headers = emptyMap(), error = error)
+
+    val method = request.method.uppercase()
+    if (method !in ALLOWED_METHODS) return fail("Unsupported HTTP method")
+
+    // Restricting the scheme keeps scripts off file://, ftp:// and other local-reach protocols.
+    val url = request.url.toHttpUrlOrNull() ?: return fail("Invalid or non-HTTP(S) URL")
+
+    if (request.headers.size > MAX_HEADER_COUNT) return fail("Too many headers")
+    if (containsCrlf(request.content_type)) return fail("Invalid content type")
+    request.headers.forEach { (name, value) ->
+      if (!isValidHeaderName(name) || containsCrlf(value)) return fail("Invalid header")
+    }
+
+    val body =
+      when {
+        method !in METHODS_WITH_BODY -> null
+        else ->
+          (request.body ?: "").toByteArray()
+            .toRequestBody(request.content_type.ifBlank { null }?.toMediaTypeOrNull())
       }
 
-    return runCatching {
-      val obj =
-        json
-          .parseToJsonElement(
-            nativeJson,
-          ).jsonObject
+    val httpRequest =
+      Request
+        .Builder()
+        .url(url)
+        .method(method, body)
+        .header("User-Agent", USER_AGENT)
+        .apply { request.headers.forEach { (name, value) -> header(name, value) } }
+        .build()
 
-      CurlResponse(
-        id = request.id ?: "unknown",
-        status =
-          obj["status"]
-            ?.jsonPrimitive
-            ?.content
-            ?.toIntOrNull()
-            ?: 0,
-        body =
-          obj["body"]
-            ?.jsonPrimitive
-            ?.content
-            ?: "",
-        headers =
-          obj["headers"]
-            ?.jsonObject
-            ?.mapValues { (_, v) ->
-              v.jsonPrimitive.content
-            }
-            ?: emptyMap(),
-        error =
-          when (
-            val e = obj["error"]
-          ) {
-            null,
-            is JsonNull,
-            -> null
+    val client =
+      SharedHttpClient.derive {
+        connectTimeout(timeoutSec.toLong(), TimeUnit.SECONDS)
+        readTimeout(timeoutSec.toLong(), TimeUnit.SECONDS)
+        callTimeout(timeoutSec.toLong(), TimeUnit.SECONDS)
+      }
 
-            else ->
-              e.jsonPrimitive.content
-          },
-      )
-    }.getOrElse { e ->
-
-      CurlResponse(
-        id = request.id ?: "unknown",
-        status = 0,
-        body = "",
-        headers = emptyMap(),
-        error =
-          "Failed to parse native response: ${e.message}",
-      )
+    return try {
+      client.newCall(httpRequest).awaitResponse().use { response ->
+        // Buffer at most the cap so a hostile endpoint cannot stream an unbounded body into memory.
+        val source = response.body.source()
+        source.request(MAX_BODY_BYTES + 1)
+        val bodyText = source.buffer.readUtf8(minOf(source.buffer.size, MAX_BODY_BYTES))
+        CurlResponse(
+          id = id,
+          status = response.code,
+          body = bodyText,
+          headers = response.headers.names().associateWith { response.headers.values(it).joinToString(", ") },
+          error = null,
+        )
+      }
+    } catch (cancellation: CancellationException) {
+      throw cancellation
+    } catch (e: IOException) {
+      Log.e(TAG, "Request failed", e)
+      fail(e.message ?: "Network error")
+    } catch (e: IllegalArgumentException) {
+      Log.e(TAG, "Request rejected", e)
+      fail(e.message ?: "Invalid request")
     }
   }
 

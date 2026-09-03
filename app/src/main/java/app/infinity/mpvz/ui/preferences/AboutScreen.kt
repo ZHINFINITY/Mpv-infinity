@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import android.app.ActivityManager
 import android.content.Context
@@ -26,6 +26,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -46,9 +49,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import app.infinity.mpvz.ui.components.IconSwitch
+import app.gyrolet.mpvrx.ui.components.IconSwitch
+import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +64,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -69,17 +77,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.BuildConfig
-import app.infinity.mpvz.R
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.presentation.crash.CrashActivity.Companion.collectDeviceInfo
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
-import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.utils.clipboard.SafeClipboard
-import app.infinity.mpvz.utils.update.UpdateViewModel
+import app.gyrolet.mpvrx.BuildConfig
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.domain.update.AppUpdateChannel
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.presentation.crash.CrashActivity.Companion.collectDeviceInfo
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
+import app.gyrolet.mpvrx.ui.update.UpdateViewModel
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
 
@@ -94,12 +104,11 @@ object AboutScreen : Screen {
     val packageManager: PackageManager = context.packageManager
     val packageInfo = packageManager.getPackageInfo(context.packageName, 0)
     val versionName =
-      packageInfo.versionName?.substringBefore('-') ?: packageInfo.versionName ?: BuildConfig.VERSION_NAME
+      packageInfo.versionName
+        ?.let { value -> if (BuildConfig.IS_PREVIEW_BUILD) value else value.substringBefore('-') }
+        ?: BuildConfig.VERSION_NAME
     val buildType = BuildConfig.BUILD_TYPE
-    val githubRepoUrl = "https://github.com/ZHINFINITY/Mpv-infinity"
-    val koFiUrl = "https://ko-fi.com/zhinfinity"
-    val paypalUrl = "https://paypal.me/InfinityxEternity"
-    val upiId = "zhjjk001-1@oksbi"
+    val githubRepoUrl = stringResource(R.string.github_repo_url)
     val settingsScrollState = rememberScrollState()
     val settingsHighlight =
       rememberSettingsSearchHighlight(AboutScreen, settingsScrollState, MaterialTheme.colorScheme.primary)
@@ -126,7 +135,7 @@ object AboutScreen : Screen {
         Toast
           .makeText(
             context,
-            context.getString(app.infinity.mpvz.R.string.ui_already_using_latest_version),
+            context.getString(app.gyrolet.mpvrx.R.string.ui_already_using_latest_version),
             Toast.LENGTH_SHORT,
           ).show()
         updateViewModel.dismissNoUpdate()
@@ -227,7 +236,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.app_name),
+                        .stringResource(app.gyrolet.mpvrx.R.string.app_name),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = cs.onPrimaryContainer,
@@ -244,7 +253,9 @@ object AboutScreen : Screen {
                     color = cs.primary.copy(alpha = 0.16f),
                   ) {
                     Text(
-                      text = "By ZHINFINITY",
+                      text =
+                        androidx.compose.ui.res
+                          .stringResource(app.gyrolet.mpvrx.R.string.ui_by_ritesh_pandit),
                       modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                       style = MaterialTheme.typography.titleSmall,
                       fontWeight = FontWeight.SemiBold,
@@ -317,7 +328,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.ui_github),
+                        .stringResource(app.gyrolet.mpvrx.R.string.ui_github),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                   )
@@ -330,6 +341,7 @@ object AboutScreen : Screen {
                 modifier =
                   Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .clickable {
                       SafeClipboard.copyPlainText(context, "mpvrx_device_info", collectDeviceInfo())
                     },
@@ -342,7 +354,7 @@ object AboutScreen : Screen {
                     imageVector = Icons.RoundedFilled.Info,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_device_info,
+                        app.gyrolet.mpvrx.R.string.ui_device_info,
                       ),
                     modifier = Modifier.size(20.dp),
                     tint = cs.onPrimaryContainer,
@@ -351,7 +363,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.ui_device_info),
+                        .stringResource(app.gyrolet.mpvrx.R.string.ui_device_info),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = cs.onPrimaryContainer,
@@ -384,7 +396,7 @@ object AboutScreen : Screen {
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_buy_me_a_coffee),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_buy_me_a_coffee),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = cs.onSurface,
@@ -394,7 +406,7 @@ object AboutScreen : Screen {
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.infinity.mpvz.R.string.ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit,
+                  app.gyrolet.mpvrx.R.string.ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit,
                 ),
               style = MaterialTheme.typography.bodyMedium,
               color = cs.onSurfaceVariant,
@@ -409,17 +421,17 @@ object AboutScreen : Screen {
                 modifier =
                   Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = upiId.isNotBlank()) {
+                    .clickable {
                       SafeClipboard.copyPlainText(
                         context = context,
-                        label = "mpvz_upi_id",
-                        text = upiId,
+                        label = "mpvrx_upi_id",
+                        text = "panditritesh2001@okhdfcbank",
                         showToast = false,
                       )
                       Toast
                         .makeText(
                           context,
-                          context.getString(app.infinity.mpvz.R.string.ui_upi_id_copied),
+                          context.getString(app.gyrolet.mpvrx.R.string.ui_upi_id_copied),
                           Toast.LENGTH_SHORT,
                         ).show()
                     }.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -430,13 +442,16 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.ui_upi_id),
+                        .stringResource(app.gyrolet.mpvrx.R.string.ui_upi_id),
                     style = MaterialTheme.typography.labelSmall,
                     color = cs.outline,
                   )
                   Spacer(Modifier.height(2.dp))
                   Text(
-                    text = upiId,
+                    text =
+                      androidx.compose.ui.res.stringResource(
+                        app.gyrolet.mpvrx.R.string.ui_panditritesh2001_okhdfcbank,
+                      ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     color = cs.onSurface,
@@ -446,7 +461,7 @@ object AboutScreen : Screen {
                   imageVector = Icons.RoundedFilled.ContentCopy,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_copy_upi_id,
+                      app.gyrolet.mpvrx.R.string.ui_copy_upi_id,
                     ),
                   modifier = Modifier.size(20.dp),
                   tint = cs.primary,
@@ -455,54 +470,39 @@ object AboutScreen : Screen {
             }
             Spacer(Modifier.height(12.dp))
             Button(
-              enabled = upiId.isNotBlank(),
               onClick = {
                 try {
                   val upiIntent =
                     Intent(
                       Intent.ACTION_VIEW,
-                      "upi://pay?pa=$upiId&pn=ZHINFINITY&cu=INR".toUri(),
+                      "upi://pay?pa=panditritesh2001@okhdfcbank&pn=Ritesh%20Pandit&cu=INR".toUri(),
                     )
                   context.startActivity(upiIntent)
                 } catch (_: Exception) {
                   Toast
                     .makeText(
                       context,
-                      context.getString(app.infinity.mpvz.R.string.ui_no_upi_app_found),
+                      context.getString(app.gyrolet.mpvrx.R.string.ui_no_upi_app_found),
                       Toast.LENGTH_SHORT,
                     ).show()
                 }
               },
               modifier = Modifier.fillMaxWidth().height(50.dp),
               shape = RoundedCornerShape(12.dp),
-              colors = ButtonDefaults.buttonColors(containerColor = cs.error, contentColor = cs.onError),
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = cs.error,
+                  contentColor = cs.onError,
+                ),
               elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
             ) {
               Icon(Icons.RoundedFilled.MonetizationOn, null, modifier = Modifier.size(18.dp))
               Spacer(Modifier.width(8.dp))
               Text(
-                androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_send_love),
+                androidx.compose.ui.res
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_send_love),
                 fontWeight = FontWeight.SemiBold,
               )
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-              Button(
-                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, koFiUrl.toUri())) },
-                modifier = Modifier.weight(1f).height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = cs.tertiaryContainer, contentColor = cs.onTertiaryContainer),
-              ) {
-                Text("Ko-fi", fontWeight = FontWeight.SemiBold)
-              }
-              Button(
-                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, paypalUrl.toUri())) },
-                modifier = Modifier.weight(1f).height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = cs.primaryContainer, contentColor = cs.onPrimaryContainer),
-              ) {
-                Text("PayPal", fontWeight = FontWeight.SemiBold)
-              }
             }
           }
         }
@@ -514,6 +514,7 @@ object AboutScreen : Screen {
           PreferenceSectionHeader(title = stringResource(R.string.pref_section_updates))
           PreferenceCard {
             val isAutoUpdateEnabled by updateViewModel.isAutoUpdateEnabled.collectAsState()
+            val updateChannel by updateViewModel.updateChannel.collectAsState()
             Column {
               Row(
                 modifier =
@@ -530,7 +531,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_auto_check_for_updates,
+                        app.gyrolet.mpvrx.R.string.ui_auto_check_for_updates,
                       ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -540,7 +541,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_check_on_startup,
+                        app.gyrolet.mpvrx.R.string.ui_check_on_startup,
                       ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = cs.outline,
@@ -550,6 +551,45 @@ object AboutScreen : Screen {
                   checked = isAutoUpdateEnabled,
                   onCheckedChange = { updateViewModel.toggleAutoUpdate(it) },
                 )
+              }
+
+              PreferenceDivider()
+
+              Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+              ) {
+                Text(
+                  text = stringResource(R.string.ui_update_channel),
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.SemiBold,
+                  color = cs.onSurface,
+                )
+                Text(
+                  text = stringResource(R.string.ui_preview_builds_summary),
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = cs.outline,
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                  AppUpdateChannel.entries.forEachIndexed { index, channel ->
+                    SegmentedButton(
+                      selected = updateChannel == channel,
+                      onClick = { updateViewModel.setUpdateChannel(channel) },
+                      shape = SegmentedButtonDefaults.itemShape(index, AppUpdateChannel.entries.size),
+                      colors = themedSegmentedButtonColors(),
+                      label = {
+                        Text(
+                          stringResource(
+                            when (channel) {
+                              AppUpdateChannel.STABLE -> R.string.ui_stable_releases
+                              AppUpdateChannel.PREVIEW -> R.string.ui_preview_builds
+                            },
+                          ),
+                        )
+                      },
+                    )
+                  }
+                }
               }
 
               PreferenceDivider()
@@ -570,7 +610,7 @@ object AboutScreen : Screen {
                   Spacer(Modifier.width(8.dp))
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_check_for_updates_now,
+                      app.gyrolet.mpvrx.R.string.ui_check_for_updates_now,
                     ),
                     fontWeight = FontWeight.SemiBold,
                   )
@@ -730,29 +770,34 @@ object LibrariesScreen : Screen {
         )
       },
     ) { paddingValues ->
-      Column(
+      LazyColumn(
         modifier =
           Modifier
             .fillMaxSize()
-            .padding(paddingValues)
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(paddingValues),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Text(
-          text =
-            androidx.compose.ui.res.stringResource(
-              app.infinity.mpvz.R.string.ui_core_open_source_dependencies_used_by_mpvrx,
-            ),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        item(key = "libraries-introduction") {
+          Text(
+            text =
+              androidx.compose.ui.res.stringResource(
+                app.gyrolet.mpvrx.R.string.ui_core_open_source_dependencies_used_by_mpvrx,
+              ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
 
-        OPEN_SOURCE_LIBRARIES.forEach { library ->
+        items(
+          items = OPEN_SOURCE_LIBRARIES,
+          key = OpenSourceLibrary::artifact,
+        ) { library ->
           Card(
             modifier =
               Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
                 .clickable {
                   context.startActivity(
                     Intent(Intent.ACTION_VIEW, library.url.toUri()),
@@ -815,6 +860,13 @@ private val OPEN_SOURCE_LIBRARIES =
       url = "https://developer.android.com/jetpack/compose",
     ),
     OpenSourceLibrary(
+      name = "AndroidX Activity",
+      artifact = "androidx.activity:activity-compose",
+      descriptionRes = R.string.oss_androidx_activity_description,
+      license = "Apache-2.0",
+      url = "https://developer.android.com/jetpack/androidx/releases/activity",
+    ),
+    OpenSourceLibrary(
       name = "Material 3",
       artifact = "androidx.compose.material3:material3",
       descriptionRes = R.string.oss_material_3_description,
@@ -867,7 +919,7 @@ private val OPEN_SOURCE_LIBRARIES =
       name = "MediaInfo Android",
       artifact = "com.github.marlboro-advance:mediainfoAndroid",
       descriptionRes = R.string.oss_mediainfo_android_description,
-      license = "Open source",
+      license = "BSD-2-Clause",
       url = "https://github.com/marlboro-advance/mediainfoAndroid",
     ),
     OpenSourceLibrary(
@@ -953,13 +1005,6 @@ private val OPEN_SOURCE_LIBRARIES =
       descriptionRes = R.string.oss_media3_description,
       license = "Apache-2.0",
       url = "https://developer.android.com/jetpack/androidx/releases/media3",
-    ),
-    OpenSourceLibrary(
-      name = "Jellyfin Media3 FFmpeg Decoder",
-      artifact = "org.jellyfin.media3:media3-ffmpeg-decoder",
-      descriptionRes = R.string.oss_jellyfin_media3_ffmpeg_description,
-      license = "GPL-3.0",
-      url = "https://github.com/jellyfin/jellyfin-androidx-media",
     ),
     OpenSourceLibrary(
       name = "Jsoup",
@@ -1066,4 +1111,60 @@ private val OPEN_SOURCE_LIBRARIES =
       license = "Apache-2.0",
       url = "https://github.com/google/desugar_jdk_libs",
     ),
-  )
+    OpenSourceLibrary(
+      name = "AndroidX Biometric",
+      artifact = "androidx.biometric:biometric",
+      descriptionRes = R.string.oss_androidx_biometric_description,
+      license = "Apache-2.0",
+      url = "https://developer.android.com/jetpack/androidx/releases/biometric",
+    ),
+    OpenSourceLibrary(
+      name = "JSch",
+      artifact = "com.github.mwiede:jsch",
+      descriptionRes = R.string.oss_jsch_description,
+      license = "BSD-3-Clause",
+      url = "https://github.com/mwiede/jsch",
+    ),
+    OpenSourceLibrary(
+      name = "libarchive-android",
+      artifact = "me.zhanghai.android.libarchive:library",
+      descriptionRes = R.string.oss_libarchive_android_description,
+      license = "Apache-2.0",
+      url = "https://github.com/zhanghai/libarchive-android",
+    ),
+    OpenSourceLibrary(
+      name = "libtorrent4j",
+      artifact = "org.libtorrent4j:libtorrent4j",
+      descriptionRes = R.string.oss_libtorrent4j_description,
+      license = "MIT",
+      url = "https://github.com/aldenml/libtorrent4j",
+    ),
+    OpenSourceLibrary(
+      name = "Multiplatform Markdown Renderer",
+      artifact = "com.mikepenz:multiplatform-markdown-renderer-m3",
+      descriptionRes = R.string.oss_markdown_renderer_description,
+      license = "Apache-2.0",
+      url = "https://github.com/mikepenz/multiplatform-markdown-renderer",
+    ),
+    OpenSourceLibrary(
+      name = "mpv",
+      artifact = "libmpv",
+      descriptionRes = R.string.oss_mpv_description,
+      license = "GPL-2.0-or-later / LGPL-2.1-or-later",
+      url = "https://github.com/mpv-player/mpv",
+    ),
+    OpenSourceLibrary(
+      name = "mpvlib Android",
+      artifact = "mpvlib.aar / mpvlib-no-vulkun.aar / mpvlib-fongmi.aar",
+      descriptionRes = R.string.oss_mpvlib_android_description,
+      license = "MIT",
+      url = "https://github.com/Riteshp2001/mpvlibAndroid",
+    ),
+    OpenSourceLibrary(
+      name = "QuickJS-NG",
+      artifact = "app/src/main/cpp/third_party/quickjs",
+      descriptionRes = R.string.oss_quickjs_ng_description,
+      license = "MIT",
+      url = "https://github.com/quickjs-ng/quickjs",
+    ),
+  ).sortedBy { library -> library.name.lowercase(Locale.ROOT) }

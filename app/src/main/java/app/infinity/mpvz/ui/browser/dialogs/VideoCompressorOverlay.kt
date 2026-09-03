@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.dialogs
+package app.gyrolet.mpvrx.ui.browser.dialogs
 
 import android.app.Application
 import android.content.ClipData
@@ -79,7 +79,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import app.infinity.mpvz.ui.components.IconSwitch
+import app.gyrolet.mpvrx.ui.components.IconSwitch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -111,12 +111,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.R
-import app.infinity.mpvz.domain.media.model.Video
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.theme.AppShapeScale
-import app.infinity.mpvz.utils.clipboard.SafeClipboard
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.domain.media.model.Video
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -421,7 +421,7 @@ private fun CompressorConfigSurface(
         androidx.compose.material3.CircularProgressIndicator()
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_loading_video_info),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_loading_video_info),
         )
       }
     }
@@ -436,7 +436,7 @@ private fun CompressorConfigSurface(
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_compressor),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_compressor),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
           )
@@ -447,7 +447,7 @@ private fun CompressorConfigSurface(
               Icons.RoundedFilled.Close,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_close),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_close),
             )
           }
         },
@@ -457,7 +457,7 @@ private fun CompressorConfigSurface(
               Icons.RoundedFilled.Settings,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_settings),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_settings),
             )
           }
           IconButton(onClick = onShowInfo) {
@@ -465,7 +465,7 @@ private fun CompressorConfigSurface(
               Icons.RoundedFilled.Info,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.info),
+                  .stringResource(app.gyrolet.mpvrx.R.string.info),
             )
           }
         },
@@ -625,7 +625,7 @@ private fun CompressorDestinationCard(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_save_to),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_save_to),
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.SemiBold,
         )
@@ -648,7 +648,7 @@ private fun CompressorDestinationCard(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_current_folder),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_current_folder),
             )
           },
         )
@@ -658,7 +658,7 @@ private fun CompressorDestinationCard(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_movies_compressor),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_movies_compressor),
             )
           },
         )
@@ -775,7 +775,7 @@ private fun CompressorInfoCard(state: VideoCompressorUiState) {
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_estimated),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_estimated),
           style = MaterialTheme.typography.labelMedium,
           color = MaterialTheme.colorScheme.primary,
         )
@@ -845,7 +845,7 @@ private fun CompressorPresetsTab(
   ) {
     Text(
       androidx.compose.ui.res
-        .stringResource(app.infinity.mpvz.R.string.ui_change_video_quality),
+        .stringResource(app.gyrolet.mpvrx.R.string.ui_change_video_quality),
       style = MaterialTheme.typography.titleMedium,
       fontWeight = FontWeight.SemiBold,
     )
@@ -900,7 +900,7 @@ private fun CompressorPresetsTab(
               Icons.RoundedFilled.Edit,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_settings),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_settings),
             )
           }
         }
@@ -915,7 +915,7 @@ private fun CompressorPresetsTab(
       if (sizePresets.isNotEmpty()) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_target_size_presets),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_target_size_presets),
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.SemiBold,
         )
@@ -972,14 +972,14 @@ private fun CompressorVideoTab(
   ) {
     Text(
       androidx.compose.ui.res
-        .stringResource(app.infinity.mpvz.R.string.ui_advanced_options),
+        .stringResource(app.gyrolet.mpvrx.R.string.ui_advanced_options),
       style = MaterialTheme.typography.titleMedium,
       fontWeight = FontWeight.SemiBold,
     )
 
     Text(
       androidx.compose.ui.res
-        .stringResource(app.infinity.mpvz.R.string.ui_target_size),
+        .stringResource(app.gyrolet.mpvrx.R.string.ui_target_size),
       style = MaterialTheme.typography.labelLarge,
     )
     Text(
@@ -998,7 +998,7 @@ private fun CompressorVideoTab(
 
     Text(
       androidx.compose.ui.res
-        .stringResource(app.infinity.mpvz.R.string.ui_encoding),
+        .stringResource(app.gyrolet.mpvrx.R.string.ui_encoding),
       style = MaterialTheme.typography.labelLarge,
     )
     Row(
@@ -1012,7 +1012,7 @@ private fun CompressorVideoTab(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_av1),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_av1),
             )
           },
         )
@@ -1024,7 +1024,7 @@ private fun CompressorVideoTab(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_h_265),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_h_265),
             )
           },
         )
@@ -1035,7 +1035,7 @@ private fun CompressorVideoTab(
         label = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_h_264),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_h_264),
           )
         },
       )
@@ -1043,7 +1043,7 @@ private fun CompressorVideoTab(
 
     Text(
       androidx.compose.ui.res
-        .stringResource(app.infinity.mpvz.R.string.ui_resolution),
+        .stringResource(app.gyrolet.mpvrx.R.string.ui_resolution),
       style = MaterialTheme.typography.labelLarge,
     )
     val originalShortSide = minOf(state.originalWidth, state.originalHeight)
@@ -1088,7 +1088,7 @@ private fun CompressorVideoTab(
 
     Text(
       androidx.compose.ui.res
-        .stringResource(app.infinity.mpvz.R.string.ui_framerate),
+        .stringResource(app.gyrolet.mpvrx.R.string.ui_framerate),
       style = MaterialTheme.typography.labelLarge,
     )
     Row(
@@ -1112,7 +1112,7 @@ private fun CompressorVideoTab(
         label = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_60fps),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_60fps),
           )
         },
       )
@@ -1122,7 +1122,7 @@ private fun CompressorVideoTab(
         label = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_30fps),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_30fps),
           )
         },
       )
@@ -1132,7 +1132,7 @@ private fun CompressorVideoTab(
         label = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_24fps),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_24fps),
           )
         },
       )
@@ -1157,7 +1157,7 @@ private fun CompressorAudioTab(
   ) {
     Text(
       androidx.compose.ui.res
-        .stringResource(app.infinity.mpvz.R.string.ui_audio_options),
+        .stringResource(app.gyrolet.mpvrx.R.string.ui_audio_options),
       style = MaterialTheme.typography.titleMedium,
       fontWeight = FontWeight.SemiBold,
     )
@@ -1169,7 +1169,7 @@ private fun CompressorAudioTab(
     ) {
       Text(
         androidx.compose.ui.res
-          .stringResource(app.infinity.mpvz.R.string.ui_remove_audio),
+          .stringResource(app.gyrolet.mpvrx.R.string.ui_remove_audio),
         style = MaterialTheme.typography.bodyLarge,
       )
       IconSwitch(checked = state.removeAudio, onCheckedChange = { onToggleRemoveAudio() })
@@ -1179,7 +1179,7 @@ private fun CompressorAudioTab(
       Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_audio_bitrate),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_audio_bitrate),
           style = MaterialTheme.typography.labelLarge,
         )
         Row(
@@ -1209,7 +1209,7 @@ private fun CompressorAudioTab(
 
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.compressor_volume),
+            .stringResource(app.gyrolet.mpvrx.R.string.compressor_volume),
           style = MaterialTheme.typography.labelLarge,
         )
         Row(
@@ -1233,7 +1233,7 @@ private fun CompressorAudioTab(
         }
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.compressor_volume_hint),
+            .stringResource(app.gyrolet.mpvrx.R.string.compressor_volume_hint),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1306,7 +1306,7 @@ private fun CompressorProgressSurface(
         ) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_compressing_video),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_compressing_video),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -1371,7 +1371,7 @@ private fun CompressorProgressSurface(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
         )
       }
     }
@@ -1399,7 +1399,7 @@ private fun CompressorResultSurface(
         title = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_compressor),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_compressor),
             fontWeight = FontWeight.Bold,
           )
         },
@@ -1409,7 +1409,7 @@ private fun CompressorResultSurface(
               Icons.RoundedFilled.Close,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_close),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_close),
             )
           }
         },
@@ -1486,7 +1486,7 @@ private fun CompressorResultSurface(
           ) {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_saved_to),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_saved_to),
               fontWeight = FontWeight.SemiBold,
             )
             Text(
@@ -1508,7 +1508,7 @@ private fun CompressorResultSurface(
             ) {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_warnings),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_warnings),
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onErrorContainer,
               )
@@ -1533,7 +1533,7 @@ private fun CompressorResultSurface(
               Spacer(modifier = Modifier.width(8.dp))
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.generic_share),
+                  .stringResource(app.gyrolet.mpvrx.R.string.generic_share),
               )
             }
             FilledTonalButton(
@@ -1543,7 +1543,7 @@ private fun CompressorResultSurface(
             ) {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_save_copy),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_save_copy),
               )
             }
           }
@@ -1552,7 +1552,7 @@ private fun CompressorResultSurface(
         TextButton(onClick = onClose) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_back_to_list),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_back_to_list),
           )
         }
       }
@@ -1576,7 +1576,7 @@ private fun CompressorIssueSurface(
         title = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_compressor),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_compressor),
             fontWeight = FontWeight.Bold,
           )
         },
@@ -1586,7 +1586,7 @@ private fun CompressorIssueSurface(
               Icons.RoundedFilled.Close,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_close),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_close),
             )
           }
         },
@@ -1633,7 +1633,7 @@ private fun CompressorIssueSurface(
             OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f)) {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_close),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_close),
               )
             }
             Button(onClick = onAction, modifier = Modifier.weight(1f)) {
@@ -2148,7 +2148,7 @@ private fun DefaultVideoConfigEditor(
             onClick = { codec = androidx.media3.common.MimeTypes.VIDEO_H265 },
             label = {
               Text(
-                stringResource(app.infinity.mpvz.R.string.ui_h_265),
+                stringResource(app.gyrolet.mpvrx.R.string.ui_h_265),
               )
             },
           )
@@ -2157,7 +2157,7 @@ private fun DefaultVideoConfigEditor(
             onClick = { codec = androidx.media3.common.MimeTypes.VIDEO_H264 },
             label = {
               Text(
-                stringResource(app.infinity.mpvz.R.string.ui_h_264),
+                stringResource(app.gyrolet.mpvrx.R.string.ui_h_264),
               )
             },
           )
@@ -2317,7 +2317,7 @@ private fun CompressorInfoDialog(
       Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_device_and_app_info),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_device_and_app_info),
           style = MaterialTheme.typography.titleLarge,
         )
         Text(
@@ -2349,7 +2349,7 @@ private fun CompressorInfoDialog(
         ) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_show_bitrate),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_show_bitrate),
           )
           IconSwitch(checked = state.showBitrate, onCheckedChange = { onToggleShowBitrate() })
         }
@@ -2361,7 +2361,7 @@ private fun CompressorInfoDialog(
           ) {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_use_mbps),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_use_mbps),
             )
             IconSwitch(checked = state.useMbps, onCheckedChange = { onToggleBitrateUnit() })
           }
@@ -2373,14 +2373,14 @@ private fun CompressorInfoDialog(
         ) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_preserve_metadata),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_preserve_metadata),
           )
           IconSwitch(checked = state.preserveMetadata, onCheckedChange = { onTogglePreserveMetadata() })
         }
         HorizontalDivider()
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_supported_codecs),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_supported_codecs),
           style = MaterialTheme.typography.labelLarge,
           color = MaterialTheme.colorScheme.primary,
         )
@@ -2396,7 +2396,7 @@ private fun CompressorInfoDialog(
         ) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.generic_share),
+              .stringResource(app.gyrolet.mpvrx.R.string.generic_share),
           )
         }
         TextButton(
@@ -2404,7 +2404,7 @@ private fun CompressorInfoDialog(
         ) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_copy),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_copy),
           )
         }
       }
@@ -2413,7 +2413,7 @@ private fun CompressorInfoDialog(
       TextButton(onClick = onDismiss) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_close),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_close),
         )
       }
     },

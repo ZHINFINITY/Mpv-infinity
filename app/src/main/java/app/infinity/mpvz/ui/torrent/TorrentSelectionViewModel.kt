@@ -2,18 +2,18 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.infinity.mpvz.ui.torrent
+package app.gyrolet.mpvrx.ui.torrent
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
-import app.infinity.mpvz.domain.torrent.TorrentCatalog
-import app.infinity.mpvz.domain.torrent.TorrentFileItem
-import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
-import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
-import app.infinity.mpvz.repository.wyzie.WyzieTmdbResult
-import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
+import app.gyrolet.mpvrx.domain.torrent.TorrentCatalog
+import app.gyrolet.mpvrx.domain.torrent.TorrentFileItem
+import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
+import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
+import app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult
+import app.gyrolet.mpvrx.utils.media.MediaInfoParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
@@ -63,22 +63,22 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AiPreferences
-import app.infinity.mpvz.preferences.AiProvider
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.repository.ai.AiModelInfo
-import app.infinity.mpvz.repository.ai.AiService
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.preferences.PreferenceCard
-import app.infinity.mpvz.ui.preferences.PreferenceDivider
-import app.infinity.mpvz.ui.preferences.PreferenceSectionHeader
-import app.infinity.mpvz.ui.preferences.components.SwitchPreference
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
-import app.infinity.mpvz.ui.utils.popSafely
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AiPreferences
+import app.gyrolet.mpvrx.preferences.AiProvider
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.repository.ai.AiModelInfo
+import app.gyrolet.mpvrx.repository.ai.AiService
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.preferences.PreferenceCard
+import app.gyrolet.mpvrx.ui.preferences.PreferenceDivider
+import app.gyrolet.mpvrx.ui.preferences.PreferenceSectionHeader
+import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -167,9 +167,6 @@ object AiIntegrationScreen : Screen {
     val subtitleGenerationOutputFormat by preferences.subtitleGenerationOutputFormat.collectAsState()
     val autoTranslateLanguages by preferences.autoTranslateLanguages.collectAsState()
     val realtimeSubsEnabled by preferences.realtimeSubsEnabled.collectAsState()
-    val embeddedTranslationProvider by preferences.embeddedSubtitleTranslationProvider.collectAsState()
-    val embeddedTranslationEndpoint by preferences.embeddedSubtitleTranslationEndpoint.collectAsState()
-    val embeddedTranslationApiKey by preferences.embeddedSubtitleTranslationApiKey.collectAsState()
 
     var models by remember { mutableStateOf<List<AiModelInfo>>(emptyList()) }
     var isLoadingModels by remember { mutableStateOf(false) }
@@ -184,6 +181,7 @@ object AiIntegrationScreen : Screen {
     val json = koinInject<Json>()
 
     fun loadModels() {
+      if (isLoadingModels) return
       val requestedProvider = provider
       scope.launch {
         isLoadingModels = true
@@ -230,7 +228,7 @@ object AiIntegrationScreen : Screen {
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.pref_section_ai_title),
+                  .stringResource(app.gyrolet.mpvrx.R.string.pref_section_ai_title),
               style = MaterialTheme.typography.headlineSmall,
               fontWeight = FontWeight.ExtraBold,
               color = MaterialTheme.colorScheme.primary,
@@ -276,7 +274,7 @@ object AiIntegrationScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.pref_ai_enabled_title),
+                      .stringResource(app.gyrolet.mpvrx.R.string.pref_ai_enabled_title),
                   )
                 },
                 summary = {
@@ -309,7 +307,7 @@ object AiIntegrationScreen : Screen {
                   title = {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.pref_ai_provider_title),
+                        .stringResource(app.gyrolet.mpvrx.R.string.pref_ai_provider_title),
                     )
                   },
                   summary = {
@@ -394,7 +392,7 @@ val apiKeyInfo =
                         } else {
                           Text(
                             androidx.compose.ui.res
-                              .stringResource(app.infinity.mpvz.R.string.pref_api_key_saved),
+                              .stringResource(app.gyrolet.mpvrx.R.string.pref_api_key_saved),
                             color = MaterialTheme.colorScheme.outline,
                           )
                         }
@@ -477,7 +475,7 @@ val apiKeyInfo =
                         } else {
                           Text(
                             androidx.compose.ui.res
-                              .stringResource(app.infinity.mpvz.R.string.pref_verify_key),
+                              .stringResource(app.gyrolet.mpvrx.R.string.pref_verify_key),
                           )
                         }
                       }
@@ -529,7 +527,7 @@ val apiKeyInfo =
                       Text(
                         text =
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.pref_available_models_header,
+                            app.gyrolet.mpvrx.R.string.pref_available_models_header,
                           ),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
@@ -554,7 +552,7 @@ val apiKeyInfo =
                             imageVector = Icons.RoundedFilled.Refresh,
                             contentDescription =
                               androidx.compose.ui.res.stringResource(
-                                app.infinity.mpvz.R.string.ui_refresh,
+                                app.gyrolet.mpvrx.R.string.ui_refresh,
                               ),
                             modifier = Modifier.size(18.dp),
                           )
@@ -562,7 +560,7 @@ val apiKeyInfo =
                         Spacer(modifier = Modifier.size(4.dp))
                         Text(
                           androidx.compose.ui.res
-                            .stringResource(app.infinity.mpvz.R.string.pref_fetch_models),
+                            .stringResource(app.gyrolet.mpvrx.R.string.pref_fetch_models),
                         )
                       }
                     }
@@ -598,7 +596,7 @@ val apiKeyInfo =
                             Text(
                               text =
                                 androidx.compose.ui.res.stringResource(
-                                  app.infinity.mpvz.R.string.pref_model_section,
+                                  app.gyrolet.mpvrx.R.string.pref_model_section,
                                 ),
                               style = MaterialTheme.typography.labelLarge,
                               fontWeight = FontWeight.Bold,
@@ -658,7 +656,7 @@ val apiKeyInfo =
                       Text(
                         text =
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.pref_verify_model_header,
+                            app.gyrolet.mpvrx.R.string.pref_verify_model_header,
                           ),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
@@ -696,7 +694,7 @@ val apiKeyInfo =
                         }
                         Text(
                           androidx.compose.ui.res
-                            .stringResource(app.infinity.mpvz.R.string.pref_check_model_access),
+                            .stringResource(app.gyrolet.mpvrx.R.string.pref_check_model_access),
                         )
                       }
 
@@ -765,13 +763,13 @@ val apiKeyInfo =
                   title = {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.pref_ai_rename_title),
+                        .stringResource(app.gyrolet.mpvrx.R.string.pref_ai_rename_title),
                     )
                   },
                   summary = {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.pref_ai_rename_summary),
+                        .stringResource(app.gyrolet.mpvrx.R.string.pref_ai_rename_summary),
                       color = MaterialTheme.colorScheme.outline,
                     )
                   },
@@ -786,13 +784,13 @@ val apiKeyInfo =
                   title = {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.pref_ai_search_title),
+                        .stringResource(app.gyrolet.mpvrx.R.string.pref_ai_search_title),
                     )
                   },
                   summary = {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.pref_ai_search_summary),
+                        .stringResource(app.gyrolet.mpvrx.R.string.pref_ai_search_summary),
                       color = MaterialTheme.colorScheme.outline,
                     )
                   },
@@ -819,13 +817,13 @@ val apiKeyInfo =
                     title = {
                       Text(
                         androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.pref_stt_title),
+                          .stringResource(app.gyrolet.mpvrx.R.string.pref_stt_title),
                       )
                     },
                     summary = {
                       Text(
                         androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.pref_stt_summary),
+                          .stringResource(app.gyrolet.mpvrx.R.string.pref_stt_summary),
                         color = MaterialTheme.colorScheme.outline,
                       )
                     },
@@ -844,7 +842,7 @@ val apiKeyInfo =
                     title = {
                       Text(
                         androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.pref_stt_output_format_title),
+                          .stringResource(app.gyrolet.mpvrx.R.string.pref_stt_output_format_title),
                       )
                     },
                     summary = {
@@ -871,13 +869,13 @@ val apiKeyInfo =
                     title = {
                       Text(
                         androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.pref_stt_provider_title),
+                          .stringResource(app.gyrolet.mpvrx.R.string.pref_stt_provider_title),
                       )
                     },
                     summary = {
                       Text(
                         androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.pref_stt_provider_summary),
+                          .stringResource(app.gyrolet.mpvrx.R.string.pref_stt_provider_summary),
                         color = MaterialTheme.colorScheme.outline,
                       )
                     },
@@ -947,7 +945,7 @@ val apiKeyInfo =
                     title = {
                       Text(
                         androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.pref_audio_language_title),
+                          .stringResource(app.gyrolet.mpvrx.R.string.pref_audio_language_title),
                       )
                     },
                     summary = {
@@ -960,7 +958,12 @@ val apiKeyInfo =
                 }
               }
 
-              item { PreferenceSectionHeader(title = stringResource(R.string.pref_translation_section)) }
+              item {
+                PreferenceSectionHeader(
+                  title = stringResource(R.string.pref_translation_section),
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_translation_section),
+                )
+              }
 
               item {
                 PreferenceCard {
@@ -975,13 +978,13 @@ val apiKeyInfo =
                     title = {
                       Text(
                         androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.pref_enable_translation_title),
+                          .stringResource(app.gyrolet.mpvrx.R.string.pref_enable_translation_title),
                       )
                     },
                     summary = {
                       Text(
                         androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.pref_enable_translation_summary,
+                          app.gyrolet.mpvrx.R.string.pref_enable_translation_summary,
                         ),
                         color = MaterialTheme.colorScheme.outline,
                       )
@@ -994,66 +997,6 @@ val apiKeyInfo =
                     languages = autoTranslateLanguages,
                     onLanguagesChange = { preferences.autoTranslateLanguages.set(it) },
                   )
-
-                  PreferenceDivider()
-
-                  ListPreference(
-                    value = embeddedTranslationProvider,
-                    onValueChange = { preferences.embeddedSubtitleTranslationProvider.set(it) },
-                    values = listOf("Google Translate", "OpenAI-compatible", "DeepL", "Gemini"),
-                    valueToText = { androidx.compose.ui.text.AnnotatedString(it) },
-                    title = { Text("Embedded soft-subtitle provider") },
-                    summary = {
-                      Text(
-                        if (embeddedTranslationProvider == "Google Translate") {
-                          "Free default; no API key required"
-                        } else {
-                          "Uses the endpoint and key below"
-                        },
-                        color = MaterialTheme.colorScheme.outline,
-                      )
-                    },
-                  )
-
-                  PreferenceDivider()
-
-                  TextFieldPreference(
-                    value = embeddedTranslationEndpoint,
-                    onValueChange = { preferences.embeddedSubtitleTranslationEndpoint.set(it.trim()) },
-                    textToValue = { it.trim() },
-                    title = { Text("Subtitle translation endpoint") },
-                    summary = { Text("Used for real-time embedded subtitle translation", color = MaterialTheme.colorScheme.outline) },
-                    textField = { value, onValueChange, _ ->
-                      TextField(
-                        value = value,
-                        onValueChange = onValueChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("https://...") },
-                        singleLine = true,
-                      )
-                    },
-                  )
-
-                  if (embeddedTranslationProvider != "Google Translate") {
-                    PreferenceDivider()
-                    TextFieldPreference(
-                      value = embeddedTranslationApiKey,
-                      onValueChange = { preferences.embeddedSubtitleTranslationApiKey.set(it.trim()) },
-                      textToValue = { it.trim() },
-                      title = { Text("Subtitle translation API key") },
-                      summary = { Text("Optional; stored in app preferences", color = MaterialTheme.colorScheme.outline) },
-                      textField = { value, onValueChange, _ ->
-                        TextField(
-                          value = value,
-                          onValueChange = onValueChange,
-                          modifier = Modifier.fillMaxWidth(),
-                          placeholder = { Text("API key") },
-                          singleLine = true,
-                          visualTransformation = PasswordVisualTransformation(),
-                        )
-                      },
-                    )
-                  }
                 }
               }
 
@@ -1072,7 +1015,7 @@ val apiKeyInfo =
                   title = {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.pref_override_instructions_title),
+                        .stringResource(app.gyrolet.mpvrx.R.string.pref_override_instructions_title),
                     )
                   },
                   summary = {
@@ -1100,7 +1043,7 @@ val apiKeyInfo =
                     Text(
                       text =
                         androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.pref_custom_prompts_header,
+                          app.gyrolet.mpvrx.R.string.pref_custom_prompts_header,
                         ),
                       style = MaterialTheme.typography.labelLarge,
                       fontWeight = FontWeight.Bold,
@@ -1109,7 +1052,7 @@ val apiKeyInfo =
                     Text(
                       text =
                         androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.pref_custom_prompts_description,
+                          app.gyrolet.mpvrx.R.string.pref_custom_prompts_description,
                         ),
                       style = MaterialTheme.typography.bodySmall,
                       color = MaterialTheme.colorScheme.outline,
@@ -1125,14 +1068,14 @@ val apiKeyInfo =
                       label = {
                         Text(
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.pref_custom_rename_prompt_label,
+                            app.gyrolet.mpvrx.R.string.pref_custom_rename_prompt_label,
                           ),
                         )
                       },
                       placeholder = {
                         Text(
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.ui_instructions_for_ai_file_renaming,
+                            app.gyrolet.mpvrx.R.string.ui_instructions_for_ai_file_renaming,
                           ),
                         )
                       },
@@ -1149,14 +1092,14 @@ val apiKeyInfo =
                       label = {
                         Text(
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.pref_custom_translation_prompt_label,
+                            app.gyrolet.mpvrx.R.string.pref_custom_translation_prompt_label,
                           ),
                         )
                       },
                       placeholder = {
                         Text(
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.ui_instructions_for_ai_subtitle_translation,
+                            app.gyrolet.mpvrx.R.string.ui_instructions_for_ai_subtitle_translation,
                           ),
                         )
                       },
@@ -1173,14 +1116,14 @@ val apiKeyInfo =
                       label = {
                         Text(
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.pref_custom_format_prompt_label,
+                            app.gyrolet.mpvrx.R.string.pref_custom_format_prompt_label,
                           ),
                         )
                       },
                       placeholder = {
                         Text(
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.ui_instructions_for_formatting_subtitle_search_queries,
+                            app.gyrolet.mpvrx.R.string.ui_instructions_for_formatting_subtitle_search_queries,
                           ),
                         )
                       },
@@ -1191,7 +1134,7 @@ val apiKeyInfo =
                       Text(
                         text =
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.pref_legacy_prompt_info,
+                            app.gyrolet.mpvrx.R.string.pref_legacy_prompt_info,
                           ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
@@ -1214,13 +1157,13 @@ val apiKeyInfo =
           title = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.pref_translation_section),
+                .stringResource(app.gyrolet.mpvrx.R.string.pref_translation_section),
             )
           },
           text = {
             Text(
               androidx.compose.ui.res.stringResource(
-                app.infinity.mpvz.R.string.ui_subtitle_translation_can_be_a_bit_messy,
+                app.gyrolet.mpvrx.R.string.ui_subtitle_translation_can_be_a_bit_messy,
               ) +
                 "For best results, use better models and don't rant that subs aren't working properly.",
             )
@@ -1232,7 +1175,7 @@ val apiKeyInfo =
             }) {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.got_it),
+                  .stringResource(app.gyrolet.mpvrx.R.string.got_it),
               )
             }
           },
@@ -1267,6 +1210,7 @@ val apiKeyInfo =
 
     Surface(
       onClick = {
+        if (isLoadingStt) return@Surface
         val cached = cachedModels.value
         if (cached != null) {
           sttModels = cached
@@ -1310,7 +1254,7 @@ val apiKeyInfo =
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_real_time_model),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_real_time_model),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
           )
@@ -1364,14 +1308,14 @@ val apiKeyInfo =
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_auto_translate_target_languages),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_auto_translate_target_languages),
         style = MaterialTheme.typography.labelLarge,
         fontWeight = FontWeight.Bold,
       )
       Text(
         text =
           androidx.compose.ui.res.stringResource(
-            app.infinity.mpvz.R.string.ui_when_translating_subtitles_if_1_language_is_configured_it_transl,
+            app.gyrolet.mpvrx.R.string.ui_when_translating_subtitles_if_1_language_is_configured_it_transl,
           ),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.outline,
@@ -1381,7 +1325,7 @@ val apiKeyInfo =
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_no_target_languages_configured),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_no_target_languages_configured),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
         )
@@ -1437,7 +1381,7 @@ val apiKeyInfo =
           placeholder = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_search_languages),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_search_languages),
             )
           },
           singleLine = true,

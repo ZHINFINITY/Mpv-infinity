@@ -2,12 +2,12 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.infinity.mpvz.ui.player
+package app.gyrolet.mpvrx.ui.player
 
 import android.content.Context
 import android.util.AttributeSet
 import androidx.constraintlayout.widget.ConstraintLayout
-import app.infinity.mpvz.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -51,7 +51,10 @@ class StretchAwarePlayerLayout @JvmOverloads constructor(
           w.toDouble() / h.toDouble()
         }
 
-      PlaybackSession.setPropertyDouble("video-aspect-override", viewportRatio)
+      PlaybackSession.setPropertyDouble(
+        "video-aspect-override",
+        VideoAspectGeometry.stretchAspectOverride(viewportRatio),
+      )
       PlaybackSession.setPropertyDouble("panscan", 0.0)
     }
   }

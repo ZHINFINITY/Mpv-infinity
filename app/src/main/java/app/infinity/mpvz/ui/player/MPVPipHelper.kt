@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player
+package app.gyrolet.mpvrx.ui.player
 
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
@@ -24,9 +24,9 @@ import android.util.Rational
 import android.view.View
 import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AppCompatActivity
-import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.utils.media.resolveSeekMode
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.utils.media.resolveSeekMode
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -38,17 +38,13 @@ private const val PIP_PLAY = 1
 private const val PIP_PAUSE = 2
 private const val PIP_REWIND = 3
 private const val PIP_FORWARD = 4
+private const val PIP_CLOSE = 5
 
 class MPVPipHelper(
   private val activity: AppCompatActivity,
   private val videoViewProvider: (() -> View?)? = null,
   private val isAudioPlayer: () -> Boolean = { false },
   private val isVideoLoaded: () -> Boolean = { false },
-  private val isMedia3Active: () -> Boolean = { false },
-  private val isMedia3Playing: () -> Boolean = { false },
-  private val media3VideoSize: () -> Pair<Int, Int>? = { null },
-  private val media3PlayWhenReady: ((Boolean) -> Unit)? = null,
-  private val media3SeekBy: ((Long) -> Unit)? = null,
 ) : KoinComponent {
 
   constructor(
@@ -56,22 +52,7 @@ class MPVPipHelper(
     mpvView: MPVView,
     isAudioPlayer: () -> Boolean = { false },
     isVideoLoaded: () -> Boolean = { false },
-    isMedia3Active: () -> Boolean = { false },
-    isMedia3Playing: () -> Boolean = { false },
-    media3VideoSize: () -> Pair<Int, Int>? = { null },
-    media3PlayWhenReady: ((Boolean) -> Unit)? = null,
-    media3SeekBy: ((Long) -> Unit)? = null,
-  ) : this(
-    activity,
-    { mpvView },
-    isAudioPlayer,
-    isVideoLoaded,
-    isMedia3Active,
-    isMedia3Playing,
-    media3VideoSize,
-    media3PlayWhenReady,
-    media3SeekBy,
-  )
+  ) : this(activity, { mpvView }, isAudioPlayer, isVideoLoaded)
 
   private val playerPreferences: PlayerPreferences by inject()
   private var pipReceiver: BroadcastReceiver? = null
@@ -94,10 +75,15 @@ class MPVPipHelper(
         ) {
           val seekMode = resolveSeekMode(playerPreferences)
           when (intent?.getIntExtra(PIP_INTENT_ACTION, 0)) {
-            PIP_PLAY -> if (isMedia3Active()) media3PlayWhenReady?.invoke(true) else PlaybackSession.setPropertyBoolean("pause", false)
-            PIP_PAUSE -> if (isMedia3Active()) media3PlayWhenReady?.invoke(false) else PlaybackSession.setPropertyBoolean("pause", true)
-            PIP_REWIND -> if (isMedia3Active()) media3SeekBy?.invoke(-10_000L) else PlaybackSession.command("seek", "-10", seekMode)
-            PIP_FORWARD -> if (isMedia3Active()) media3SeekBy?.invoke(10_000L) else PlaybackSession.command("seek", "10", seekMode)
+            PIP_PLAY -> PlaybackSession.setPropertyBoolean("pause", false)
+            PIP_PAUSE -> PlaybackSession.setPropertyBoolean("pause", true)
+            PIP_REWIND -> PlaybackSession.command("seek", "-10", seekMode)
+            PIP_FORWARD -> PlaybackSession.command("seek", "10", seekMode)
+            PIP_CLOSE -> {
+              MediaPlaybackService.stopForTerminalDismissal()
+              activity.finishAndRemoveTask()
+              return
+            }
           }
           updatePictureInPictureParams()
         }
@@ -138,17 +124,19 @@ class MPVPipHelper(
           setSeamlessResizeEnabled(!isAudioPlayer())
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+          setCloseAction(createRemoteAction("close", Icons.Platform.Stop, PIP_CLOSE))
+        }
+
         setActions(createPipActions())
       }.build()
 
   private fun getVideoAspectRatio(): Rational? {
-    if (isMedia3Active()) {
-      val (width, height) = media3VideoSize()?.takeIf { it.first > 0 && it.second > 0 } ?: return null
-      return Rational(width, height).takeIf { it.toFloat() in 0.5f..2.39f }
-    }
     val width = PlaybackSession.getPropertyInt("video-out-params/dw") ?: 0
     val height = PlaybackSession.getPropertyInt("video-out-params/dh") ?: 0
+
     if (width == 0 || height == 0) return null
+
     return Rational(width, height).takeIf { it.toFloat() in 0.5f..2.39f }
   }
 
@@ -178,16 +166,16 @@ class MPVPipHelper(
   }
 
   private fun createPipActions(): List<RemoteAction> {
-    val isPlaying = if (isMedia3Active()) isMedia3Playing() else PlaybackSession.getPropertyBoolean("pause") == false
+    val isPlaying = PlaybackSession.getPropertyBoolean("pause") == false
 
     return listOf(
-      createRemoteAction("rewind", Icons.Platform.FastRewind, PIP_REWIND),
+      createRemoteAction("rewind 10 seconds", Icons.Platform.Replay10, PIP_REWIND),
       if (isPlaying) {
         createRemoteAction("pause", Icons.Platform.Pause, PIP_PAUSE)
       } else {
         createRemoteAction("play", Icons.Platform.Play, PIP_PLAY)
       },
-      createRemoteAction("forward", Icons.Platform.FastForward, PIP_FORWARD),
+      createRemoteAction("forward 10 seconds", Icons.Platform.Forward10, PIP_FORWARD),
     )
   }
 
@@ -218,16 +206,22 @@ class MPVPipHelper(
     )
   }
 
-  fun enterPipMode() {
+  /**
+   * Requests Picture-in-Picture and reports whether Android accepted the transition.
+   *
+   * Callers use the result to fall back to background playback or a normal close instead of
+   * leaving the full-screen player stranded with hidden controls when PiP is unavailable.
+   */
+  fun enterPipMode(): Boolean {
     if (isAudioPlayer() || !isVideoLoaded()) {
       Log.d("MPVPipHelper", "PiP mode is disabled: audio=${isAudioPlayer()}, videoLoaded=${isVideoLoaded()}")
-      return
+      return false
     }
-    runCatching {
+    return runCatching {
       activity.enterPictureInPictureMode(buildPipParams())
     }.onFailure {
       Log.e("MPVPipHelper", "Failed to enter PiP mode", it)
-    }
+    }.getOrDefault(false)
   }
 
   fun onStop() {

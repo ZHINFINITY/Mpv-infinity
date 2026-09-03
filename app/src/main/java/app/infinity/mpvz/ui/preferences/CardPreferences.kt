@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,8 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
-import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
+import app.gyrolet.mpvrx.ui.theme.LocalEmphasizedTypography
 
 /**
  * A card container for grouping related preferences, mimicking modern Android settings UI.
@@ -47,7 +46,7 @@ fun PreferenceCard(
     shape = MaterialTheme.shapes.extraLargeIncreased,
     colors =
       CardDefaults.cardColors(
-        containerColor = liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainerLow, alpha = 0.68f),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
       ),
     elevation =
       CardDefaults.cardElevation(

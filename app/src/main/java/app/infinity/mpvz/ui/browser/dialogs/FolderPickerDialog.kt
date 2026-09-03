@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.dialogs
+package app.gyrolet.mpvrx.ui.browser.dialogs
 
 import android.content.Context
 import android.os.Environment
@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -40,13 +41,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.utils.storage.StorageVolumeUtils
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.utils.storage.StorageVolumeUtils
 import java.io.File
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -127,7 +129,7 @@ fun FolderPickerDialog(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_select_folder),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_select_folder),
           style = MaterialTheme.typography.headlineMedium,
           fontWeight = FontWeight.Bold,
         )
@@ -144,7 +146,7 @@ fun FolderPickerDialog(
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_cannot_select_the_same_folder),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_cannot_select_the_same_folder),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.error,
@@ -181,7 +183,7 @@ fun FolderPickerDialog(
                 imageVector = Icons.RoundedFilled.ArrowBack,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_go_back),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_go_back),
               )
             }
           }
@@ -202,7 +204,7 @@ fun FolderPickerDialog(
               imageVector = Icons.RoundedFilled.Home,
               contentDescription =
                 androidx.compose.ui.res.stringResource(
-                  app.infinity.mpvz.R.string.ui_go_to_internal_storage,
+                  app.gyrolet.mpvrx.R.string.ui_go_to_internal_storage,
                 ),
             )
           }
@@ -222,7 +224,7 @@ fun FolderPickerDialog(
               imageVector = Icons.RoundedFilled.CreateNewFolder,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_create_folder),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_create_folder),
             )
           }
         }
@@ -254,7 +256,7 @@ fun FolderPickerDialog(
                 Text(
                   text =
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_no_storage_devices_found),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_no_storage_devices_found),
                   style = MaterialTheme.typography.bodyLarge,
                   fontWeight = FontWeight.Medium,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -276,7 +278,7 @@ fun FolderPickerDialog(
                 Text(
                   text =
                     androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_no_subfolders),
+                      .stringResource(app.gyrolet.mpvrx.R.string.ui_no_subfolders),
                   style = MaterialTheme.typography.bodyLarge,
                   fontWeight = FontWeight.Medium,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -300,7 +302,7 @@ fun FolderPickerDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_select),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_select),
           fontWeight = FontWeight.Bold,
         )
       }
@@ -312,7 +314,7 @@ fun FolderPickerDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
           fontWeight = FontWeight.Medium,
         )
       }
@@ -348,6 +350,7 @@ private fun StorageVolumeItem(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
         .clickable(onClick = onClick)
         .padding(horizontal = 12.dp, vertical = 12.dp),
     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -427,7 +430,7 @@ private fun CreateFolderDialog(
     title = {
       Text(
         androidx.compose.ui.res
-          .stringResource(app.infinity.mpvz.R.string.ui_create_new_folder),
+          .stringResource(app.gyrolet.mpvrx.R.string.ui_create_new_folder),
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.Bold,
       )
@@ -443,7 +446,7 @@ private fun CreateFolderDialog(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_folder_name),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_folder_name),
               fontWeight = FontWeight.Medium,
             )
           },
@@ -500,7 +503,7 @@ private fun CreateFolderDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_create),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_create),
           fontWeight = FontWeight.Bold,
         )
       }
@@ -512,7 +515,7 @@ private fun CreateFolderDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
           fontWeight = FontWeight.Medium,
         )
       }

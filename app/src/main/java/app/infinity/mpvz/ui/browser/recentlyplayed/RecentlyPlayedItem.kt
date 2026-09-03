@@ -7,10 +7,10 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.recentlyplayed
+package app.gyrolet.mpvrx.ui.browser.recentlyplayed
 
-import app.infinity.mpvz.database.entities.PlaylistEntity
-import app.infinity.mpvz.domain.media.model.Video
+import app.gyrolet.mpvrx.database.entities.PlaylistEntity
+import app.gyrolet.mpvrx.domain.media.model.Video
 
 sealed class RecentlyPlayedItem {
   abstract val timestamp: Long

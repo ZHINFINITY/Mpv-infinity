@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import android.content.Intent
 import android.net.Uri
@@ -46,23 +46,24 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.BuildConfig
-import app.infinity.mpvz.R
-import app.infinity.mpvz.domain.anime4k.Anime4KManager
-import app.infinity.mpvz.preferences.DecoderPreferences
-import app.infinity.mpvz.preferences.MPVDecoderMode
-import app.infinity.mpvz.preferences.PlaybackEngineMode
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.Debanding
-import app.infinity.mpvz.ui.player.MPVProfile
-import app.infinity.mpvz.ui.preferences.components.SwitchPreference
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
-import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.utils.device.VulkanCapabilities
+import app.gyrolet.mpvrx.BuildConfig
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
+import app.gyrolet.mpvrx.preferences.AdvancedPreferences
+import app.gyrolet.mpvrx.preferences.DecoderPreferences
+import app.gyrolet.mpvrx.preferences.MpvConfigOverride
+import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.Debanding
+import app.gyrolet.mpvrx.ui.player.MPVProfile
+import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.gyrolet.mpvrx.utils.device.VulkanCapabilities
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
@@ -74,6 +75,18 @@ object DecoderPreferencesScreen : Screen {
   @Composable
   override fun Content() {
     val preferences = koinInject<DecoderPreferences>()
+    val advancedPreferences = koinInject<AdvancedPreferences>()
+    val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
+    val configOwnedOptions =
+      remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
+    val profileConfigOwned = "profile" in configOwnedOptions
+    val rendererBackendConfigOwned = setOf("gpu-api", "gpu-context").any(configOwnedOptions::contains)
+    val decoderConfigOwned = MpvConfigControlledFeatures.HARDWARE_DECODER.any(configOwnedOptions::contains)
+    val shadersConfigOwned = MpvConfigControlledFeatures.ANIME4K.any(configOwnedOptions::contains)
+    val debandingConfigOwned =
+      setOf("vf", "deband", "deband-iterations", "deband-threshold", "deband-range", "deband-grain")
+        .any(configOwnedOptions::contains)
+    val yuv420ConfigOwned = "vf" in configOwnedOptions
     val backstack = LocalBackStack.current
     val context = LocalContext.current
     val isDeviceVulkanSupported = remember { VulkanCapabilities.isDeviceSupported(context) }
@@ -127,11 +140,12 @@ object DecoderPreferencesScreen : Screen {
             PreferenceCard {
               val profile by preferences.profile.collectAsState()
               val currentProfile = MPVProfile.fromValue(profile)
-              val playbackEngine by preferences.playbackEngine.collectAsState()
               ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_profile_title),
                 value = currentProfile,
                 onValueChange = { preferences.profile.set(it.value) },
                 values = MPVProfile.entries,
+                enabled = !profileConfigOwned,
                 title = { Text(stringResource(R.string.pref_decoder_profile_title)) },
                 summary = {
                   Text(
@@ -143,45 +157,11 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_playback_engine_title),
-                value = playbackEngine,
-                onValueChange = { preferences.playbackEngine.set(it) },
-                values = PlaybackEngineMode.entries,
-                valueToText = { AnnotatedString(it.displayName) },
-                title = { Text(stringResource(R.string.pref_decoder_playback_engine_title)) },
-                summary = {
-                  Text(
-                    text = playbackEngine.summary,
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              val mpvDecoderMode by preferences.mpvDecoderMode.collectAsState()
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpv_mode_title),
-                value = mpvDecoderMode,
-                onValueChange = { preferences.mpvDecoderMode.set(it) },
-                values = MPVDecoderMode.entries,
-                valueToText = { AnnotatedString(it.displayName) },
-                title = { Text(stringResource(R.string.pref_decoder_mpv_mode_title)) },
-                summary = {
-                  Text(
-                    text = stringResource(R.string.pref_decoder_mpv_mode_summary, mpvDecoderMode.displayName),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
               val tryHWDecoding by preferences.tryHWDecoding.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_try_hw_dec_title),
                 value = tryHWDecoding,
+                enabled = !decoderConfigOwned,
                 onValueChange = {
                   preferences.tryHWDecoding.set(it)
                 },
@@ -278,7 +258,7 @@ object DecoderPreferencesScreen : Screen {
                     }
                   }
                 },
-                enabled = isVulkanSupported,
+                enabled = isVulkanSupported && !rendererBackendConfigOwned,
                 title = { Text(stringResource(R.string.pref_decoder_vulkan_experimental_title)) },
                 summary = {
                   Text(
@@ -310,6 +290,7 @@ object DecoderPreferencesScreen : Screen {
                 value = debanding,
                 onValueChange = { preferences.debanding.set(it) },
                 values = Debanding.entries,
+                enabled = !debandingConfigOwned,
                 title = { Text(stringResource(R.string.pref_decoder_debanding_title)) },
                 summary = {
                   Text(
@@ -325,6 +306,7 @@ object DecoderPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_yuv420p_title),
                 value = useYUV420p,
+                enabled = !yuv420ConfigOwned,
                 onValueChange = {
                   preferences.useYUV420P.set(it)
                 },
@@ -343,6 +325,7 @@ object DecoderPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_anime4k_title),
                 value = enableAnime4K,
+                enabled = !shadersConfigOwned,
                 onValueChange = { enabled ->
                   preferences.enableAnime4K.set(enabled)
                   if (enabled && !useVulkan) {
@@ -362,7 +345,7 @@ object DecoderPreferencesScreen : Screen {
                     Text(
                       text =
                         androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.pref_anime4k_link),
+                          .stringResource(app.gyrolet.mpvrx.R.string.pref_anime4k_link),
                       color = MaterialTheme.colorScheme.primary,
                       style = MaterialTheme.typography.bodySmall,
                       textDecoration = TextDecoration.Underline,
@@ -376,7 +359,7 @@ object DecoderPreferencesScreen : Screen {
                 },
               )
 
-              if (enableAnime4K) {
+              if (enableAnime4K && !shadersConfigOwned) {
                 val rotationState by animateFloatAsState(
                   targetValue = if (anime4kExpanded) 180f else 0f,
                   label = "anime4k_chevron_rotation",
@@ -405,7 +388,7 @@ object DecoderPreferencesScreen : Screen {
                       Text(
                         text =
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.ui_anime4k_shaders_options,
+                            app.gyrolet.mpvrx.R.string.ui_anime4k_shaders_options,
                           ),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,

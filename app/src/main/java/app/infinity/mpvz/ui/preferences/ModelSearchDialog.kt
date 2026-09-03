@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,7 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.repository.ai.AiModelInfo
+import app.gyrolet.mpvrx.repository.ai.AiModelInfo
 
 @Composable
 fun ModelSearchDialog(
@@ -69,7 +69,7 @@ fun ModelSearchDialog(
         placeholder = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_search_models),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_search_models),
           )
         },
         singleLine = true,
@@ -118,7 +118,7 @@ fun ModelSearchDialog(
       TextButton(onClick = onDismiss) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
         )
       }
     },
@@ -186,7 +186,7 @@ fun FreeTag() {
     Text(
       text =
         androidx.compose.ui.res
-          .stringResource(app.infinity.mpvz.R.string.pref_player_orientation_free),
+          .stringResource(app.gyrolet.mpvrx.R.string.pref_player_orientation_free),
       modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
       color = MaterialTheme.colorScheme.onPrimary,
       style = MaterialTheme.typography.labelSmall,

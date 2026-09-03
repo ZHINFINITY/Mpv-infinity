@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.controls.components
+package app.gyrolet.mpvrx.ui.player.controls.components
 
 internal data class SeekbarTrackSegment(
   val start: Float,

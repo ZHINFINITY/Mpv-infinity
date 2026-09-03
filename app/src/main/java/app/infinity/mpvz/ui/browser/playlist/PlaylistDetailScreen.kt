@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.playlist
+package app.gyrolet.mpvrx.ui.browser.playlist
 
 import android.content.Intent
 import android.net.Uri
@@ -40,8 +40,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,34 +56,37 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.R
-import app.infinity.mpvz.database.entities.PlaylistEntity
-import app.infinity.mpvz.database.entities.PlaylistItemEntity
-import app.infinity.mpvz.domain.media.model.Video
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.GesturePreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
-import app.infinity.mpvz.ui.browser.cards.M3UVideoCard
-import app.infinity.mpvz.ui.browser.cards.VideoCard
-import app.infinity.mpvz.ui.browser.cards.VideoCardUiConfig
-import app.infinity.mpvz.ui.browser.components.BrowserTopBar
-import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
-import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
-import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.utils.clipboard.SafeClipboard
-import app.infinity.mpvz.utils.media.MediaInfoOps
-import app.infinity.mpvz.utils.media.MediaUtils
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.database.entities.PlaylistEntity
+import app.gyrolet.mpvrx.database.entities.PlaylistItemEntity
+import app.gyrolet.mpvrx.database.repository.PlaylistRepository
+import app.gyrolet.mpvrx.domain.media.model.Video
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.GesturePreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
+import app.gyrolet.mpvrx.ui.browser.cards.M3UVideoCard
+import app.gyrolet.mpvrx.ui.browser.cards.VideoCard
+import app.gyrolet.mpvrx.ui.browser.cards.VideoCardUiConfig
+import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
+import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
+import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
+import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
+import app.gyrolet.mpvrx.ui.components.InlineSearchBar
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.PlayerActivity
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
+import app.gyrolet.mpvrx.utils.media.MediaInfoOps
+import app.gyrolet.mpvrx.utils.media.MediaUtils
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
@@ -136,6 +137,13 @@ data class PlaylistDetailScreen(
     val videos = videoItems.map { it.video }
     val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing = remember { mutableStateOf(false) }
+    val playlistTitle =
+      when {
+        playlist?.name?.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true) != true ->
+          playlist?.name ?: stringResource(R.string.ui_playlist)
+        playlist?.isAudio == true -> stringResource(R.string.playlist_favorite_songs)
+        else -> stringResource(R.string.playlist_favorite_videos)
+      }
 
     // Search state
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -238,11 +246,18 @@ data class PlaylistDetailScreen(
       item: PlaylistVideoItem,
       startIndex: Int,
     ) {
+      val fallbackUri = Uri.parse(item.video.path)
+      val playUri =
+        item.video.uri.takeIf { it != Uri.EMPTY && it.toString().isNotBlank() }
+          ?: fallbackUri.takeIf { !it.scheme.isNullOrBlank() }
+          ?: Uri.fromFile(java.io.File(item.video.path))
+
       val intent =
         Intent(context, PlayerActivity::class.java).apply {
           action = Intent.ACTION_VIEW
-          data = item.video.uri
+          data = playUri
           putExtra("internal_launch", true)
+          putExtra("local_media_path", item.video.path)
           putExtra("playlist_index", startIndex)
           putExtra("playlist_id", playlistId)
           putExtra("launch_source", if (playlist?.isM3uPlaylist == true) "m3u_playlist" else "playlist")
@@ -257,62 +272,52 @@ data class PlaylistDetailScreen(
       topBar = {
         if (isSearching) {
           // Search mode - show search bar
-          SearchBar(
-            inputField = {
-              SearchBarDefaults.InputField(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                onSearch = { },
-                expanded = false,
-                onExpandedChange = { },
-                placeholder = {
-                  Text(
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_search_videos),
-                  )
-                },
-                leadingIcon = {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Search,
-                    contentDescription =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.settings_search_title,
-                      ),
-                  )
-                },
-                trailingIcon = {
-                  IconButton(
-                    onClick = {
-                      isSearching = false
-                      searchQuery = ""
-                    },
-                  ) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.Close,
-                      contentDescription =
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.generic_cancel,
-                        ),
-                    )
-                  }
-                },
-                modifier = Modifier.focusRequester(focusRequester),
-              )
-            },
-            expanded = false,
-            onExpandedChange = { },
+          InlineSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            onSearch = { },
             modifier =
               Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
+            inputFieldModifier = Modifier.focusRequester(focusRequester),
+            placeholder = {
+              Text(
+                androidx.compose.ui.res
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_search_videos),
+              )
+            },
+            leadingIcon = {
+              Icon(
+                imageVector = Icons.RoundedFilled.Search,
+                contentDescription =
+                  androidx.compose.ui.res.stringResource(
+                    app.gyrolet.mpvrx.R.string.settings_search_title,
+                  ),
+              )
+            },
+            trailingIcon = {
+              IconButton(
+                onClick = {
+                  isSearching = false
+                  searchQuery = ""
+                },
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Close,
+                  contentDescription =
+                    androidx.compose.ui.res.stringResource(
+                      app.gyrolet.mpvrx.R.string.generic_cancel,
+                    ),
+                )
+              }
+            },
             shape = RoundedCornerShape(28.dp),
             tonalElevation = 6.dp,
-          ) {
-            // Empty content for SearchBar
-          }
+          )
         } else {
           BrowserTopBar(
-            title = playlist?.name ?: stringResource(R.string.ui_playlist),
+            title = playlistTitle,
             isInSelectionMode = selectionManager.isInSelectionMode,
             selectedCount = selectionManager.selectedCount,
             totalCount = videos.size,
@@ -338,7 +343,7 @@ data class PlaylistDetailScreen(
                       selectionManager.clear()
                     } else {
                       // For regular playlists, show MediaInfo activity
-                      val intent = Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java)
+                      val intent = Intent(context, app.gyrolet.mpvrx.ui.mediainfo.MediaInfoActivity::class.java)
                       intent.action = Intent.ACTION_VIEW
                       intent.data = item.video.uri
                       context.startActivity(intent)
@@ -375,7 +380,7 @@ data class PlaylistDetailScreen(
                       imageVector = Icons.RoundedFilled.Check,
                       contentDescription =
                         androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_done_reordering,
+                          app.gyrolet.mpvrx.R.string.ui_done_reordering,
                         ),
                       tint = MaterialTheme.colorScheme.primary,
                     )
@@ -394,7 +399,7 @@ data class PlaylistDetailScreen(
                         imageVector = Icons.RoundedFilled.Search,
                         contentDescription =
                           androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.ui_search_videos_2,
+                            app.gyrolet.mpvrx.R.string.ui_search_videos_2,
                           ),
                         tint = MaterialTheme.colorScheme.onSurface,
                       )
@@ -410,7 +415,7 @@ data class PlaylistDetailScreen(
                           imageVector = Icons.RoundedFilled.SwapVert,
                           contentDescription =
                             androidx.compose.ui.res.stringResource(
-                              app.infinity.mpvz.R.string.ui_reorder_playlist,
+                              app.gyrolet.mpvrx.R.string.ui_reorder_playlist,
                             ),
                           tint = MaterialTheme.colorScheme.onSurface,
                         )
@@ -459,7 +464,7 @@ data class PlaylistDetailScreen(
                         Text(
                           text =
                             androidx.compose.ui.res
-                              .stringResource(app.infinity.mpvz.R.string.ui_play),
+                              .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
                           style = MaterialTheme.typography.labelLarge,
                           fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                         )
@@ -477,7 +482,7 @@ data class PlaylistDetailScreen(
           val isAudioPlaylist = playlist?.isAudio == true || videoItems.any { it.video.isAudio }
           ExtendedFloatingActionButton(
             modifier =
-              Modifier.padding(bottom = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance),
+              Modifier.padding(bottom = app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance),
             onClick = { backStack.add(PlaylistAddVideosScreen(playlistId, isAudio = isAudioPlaylist)) },
             icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
             text = { Text(if (isAudioPlaylist) "Add Songs" else stringResource(R.string.playlist_add_videos)) },
@@ -507,14 +512,14 @@ data class PlaylistDetailScreen(
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_no_videos_found),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_no_videos_found),
               style = MaterialTheme.typography.titleMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_try_a_different_search_term),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_try_a_different_search_term),
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -538,7 +543,7 @@ data class PlaylistDetailScreen(
                   Toast
                     .makeText(
                       context,
-                      context.getString(app.infinity.mpvz.R.string.playlist_refresh_success),
+                      context.getString(app.gyrolet.mpvrx.R.string.playlist_refresh_success),
                       Toast.LENGTH_SHORT,
                     ).show()
                 }.onFailure { error ->
@@ -641,7 +646,7 @@ data class PlaylistDetailScreen(
 private fun PlaylistVideoListContent(
   videoItems: List<PlaylistVideoItem>,
   isLoading: Boolean,
-  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<PlaylistVideoItem, Int>,
+  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<PlaylistVideoItem, Int>,
   isReorderMode: Boolean,
   onReorder: (Int, Int) -> Unit,
   onToggleFavorite: ((PlaylistVideoItem) -> Unit)?,
@@ -653,7 +658,7 @@ private fun PlaylistVideoListContent(
   isAudio: Boolean = false,
 ) {
   val gesturePreferences = koinInject<GesturePreferences>()
-  val browserPreferences = koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
+  val browserPreferences = koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val tapThumbnailToSelect by gesturePreferences.tapThumbnailToSelect.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
@@ -664,11 +669,16 @@ private fun PlaylistVideoListContent(
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
   val unplayedOldVideoDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
   val showDurationField by browserPreferences.showDurationField.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val musicCoverArtSize by browserPreferences.musicCoverArtSize.collectAsState()
+  val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
+  val density = LocalDensity.current
+  val audioThumbnailSizePx = with(density) { musicCoverArtSize.dp.roundToPx() }
   val videoCardUiConfig =
     remember(
       unlimitedNameLines,
@@ -676,6 +686,7 @@ private fun PlaylistVideoListContent(
       showSizeChip,
       showResolutionChip,
       showFramerateInResolution,
+      showCodecSupportIndicator,
       showProgressBar,
       showDateChip,
       showUnplayedOldVideoLabel,
@@ -683,6 +694,7 @@ private fun PlaylistVideoListContent(
       showExtensionField,
       showDurationField,
       centerGridTitles,
+      thumbnailQuality,
     ) {
       VideoCardUiConfig(
         unlimitedNameLines = unlimitedNameLines,
@@ -690,6 +702,7 @@ private fun PlaylistVideoListContent(
         showSizeChip = showSizeChip,
         showResolutionChip = showResolutionChip,
         showFramerateInResolution = showFramerateInResolution,
+        showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
@@ -697,6 +710,7 @@ private fun PlaylistVideoListContent(
         showExtensionField = showExtensionField,
         showDurationField = showDurationField,
         centerGridTitles = centerGridTitles,
+        thumbnailQuality = thumbnailQuality,
       )
     }
 
@@ -741,14 +755,14 @@ private fun PlaylistVideoListContent(
           Text(
             text =
               if (isAudio) "No songs in playlist"
-              else androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_no_videos_in_playlist),
+              else androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_videos_in_playlist),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Text(
             text =
               if (isAudio) "Add songs to get started"
-              else androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_add_videos_to_get_started),
+              else androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_videos_to_get_started),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -765,8 +779,8 @@ private fun PlaylistVideoListContent(
         targetValue = if (!hasEnoughItems) 0f else 1f,
         animationSpec =
           androidx.compose.animation.core.spring(
-            dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
-            stiffness = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.stiffness,
+            dampingRatio = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
+            stiffness = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.stiffness,
           ),
         label = "scrollbarAlpha",
       )
@@ -823,7 +837,7 @@ private fun PlaylistVideoListContent(
                   )
                 } else {
                   VideoCard(
-                    video = item.video,
+                    video = if (isAudio && !item.video.isAudio) item.video.copy(isAudio = true) else item.video,
                     progressPercentage = progressPercentage,
                     isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
                     isSelected = selectionManager.isSelected(item),
@@ -836,6 +850,8 @@ private fun PlaylistVideoListContent(
                         { onVideoItemClick(item) }
                       },
                     showSubtitleIndicator = showSubtitleIndicator,
+                    thumbnailWidthPx = if (isAudio) audioThumbnailSizePx else null,
+                    thumbnailHeightPx = if (isAudio) audioThumbnailSizePx else null,
                     modifier = Modifier.weight(1f),
                     uiConfig = videoCardUiConfig,
                   )
@@ -853,7 +869,7 @@ private fun PlaylistVideoListContent(
                       imageVector = Icons.RoundedFilled.DragHandle,
                       contentDescription =
                         androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_drag_to_reorder,
+                          app.gyrolet.mpvrx.R.string.ui_drag_to_reorder,
                         ),
                       tint = MaterialTheme.colorScheme.primary,
                     )
@@ -901,7 +917,7 @@ private fun M3UPlaylistFilterRow(
         label = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.pref_all_sources),
+              .stringResource(app.gyrolet.mpvrx.R.string.pref_all_sources),
           )
         },
       )
@@ -915,7 +931,7 @@ private fun M3UPlaylistFilterRow(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.infinity.mpvz.R.string.ui_saved),
+                .stringResource(app.gyrolet.mpvrx.R.string.ui_saved),
             )
           },
         )
@@ -957,7 +973,7 @@ private fun StreamUrlDialog(
     title = {
       Text(
         androidx.compose.ui.res
-          .stringResource(app.infinity.mpvz.R.string.ui_stream_url),
+          .stringResource(app.gyrolet.mpvrx.R.string.ui_stream_url),
       )
     },
     text = {
@@ -981,7 +997,7 @@ private fun StreamUrlDialog(
         )
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_copy),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_copy),
         )
       }
     },
@@ -989,7 +1005,7 @@ private fun StreamUrlDialog(
       androidx.compose.material3.TextButton(onClick = onDismiss) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_close),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_close),
         )
       }
     },
@@ -1055,7 +1071,7 @@ private fun RemoveFromPlaylistDialog(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_remove_from_playlist),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_remove_from_playlist),
           fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
         )
       }
@@ -1067,7 +1083,7 @@ private fun RemoveFromPlaylistDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
           fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
         )
       }

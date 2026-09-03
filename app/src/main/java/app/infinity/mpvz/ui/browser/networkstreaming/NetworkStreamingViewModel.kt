@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.networkstreaming
+package app.gyrolet.mpvrx.ui.browser.networkstreaming
 
 import android.app.Application
 import android.util.Log
@@ -16,20 +16,27 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.infinity.mpvz.database.entities.NetworkStreamEntryEntity
-import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
-import app.infinity.mpvz.domain.network.ConnectionStatus
-import app.infinity.mpvz.domain.network.NetworkConnection
-import app.infinity.mpvz.domain.torrent.isTorrentSource
-import app.infinity.mpvz.domain.torrent.parseMagnet
-import app.infinity.mpvz.repository.NetworkRepository
-import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
-import app.infinity.mpvz.repository.wyzie.WyzieTmdbResult
-import app.infinity.mpvz.repository.wyzie.bestTmdbResult
-import app.infinity.mpvz.utils.media.MediaInfoParser
-import app.infinity.mpvz.utils.media.MediaUtils
+import app.gyrolet.mpvrx.database.entities.NetworkStreamEntryEntity
+import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
+import app.gyrolet.mpvrx.domain.network.ConnectionStatus
+import app.gyrolet.mpvrx.domain.network.NetworkConnection
+import app.gyrolet.mpvrx.domain.torrent.isTorrentSource
+import app.gyrolet.mpvrx.domain.torrent.parseMagnet
+import app.gyrolet.mpvrx.repository.JellyfinRepository
+import app.gyrolet.mpvrx.repository.NetworkRepository
+import app.gyrolet.mpvrx.preferences.NetworkBookmarkPreferences
+import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
+import app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult
+import app.gyrolet.mpvrx.repository.wyzie.bestTmdbResult
+import app.gyrolet.mpvrx.data.jellyfin.JellyfinClient
+import app.gyrolet.mpvrx.utils.media.HttpUtils
+import app.gyrolet.mpvrx.utils.media.MediaInfoParser
+import app.gyrolet.mpvrx.utils.media.MediaUtils
+import android.net.Uri
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -37,9 +44,16 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.net.URI
 
-data class TorrentStreamGroup(
+enum class MediaGroupType {
+  TORRENT,
+  STREAM,
+  YOUTUBE,
+}
+
+data class MediaStreamGroup(
   val id: String,
-  val infoHash: String?,
+  val groupType: MediaGroupType = MediaGroupType.TORRENT,
+  val infoHash: String? = null,
   val title: String,
   val canonicalSourceUri: String,
   val files: List<NetworkStreamEntryEntity>,
@@ -52,6 +66,8 @@ data class TorrentStreamGroup(
   val mediaType: String? = null,
 )
 
+typealias TorrentStreamGroup = MediaStreamGroup
+
 /**
  * ViewModel for managing network connections and streaming media references.
  * Follows MVVM pattern with proper separation of concerns.
@@ -63,6 +79,8 @@ class NetworkStreamingViewModel(
   private val repository: NetworkRepository by inject()
   private val streamEntryRepository: NetworkStreamEntryRepository by inject()
   private val wyzieSearchRepository: WyzieSearchRepository by inject()
+  private val jellyfinRepository: JellyfinRepository by inject()
+  private val bookmarkPreferences: NetworkBookmarkPreferences by inject()
 
   private val enrichmentAttempts = mutableMapOf<String, Long>()
 
@@ -110,6 +128,34 @@ class NetworkStreamingViewModel(
         initialValue = emptyList(),
       )
 
+  val allMediaGroups: StateFlow<List<MediaStreamGroup>> =
+    combine(torrentGroups, recentLinks) { torrents, recents ->
+      val savedStreams =
+        recents.map { entry ->
+          val isYt = HttpUtils.isYouTubeUrl(entry.canonicalSourceUri)
+          MediaStreamGroup(
+            id = "stream:${entry.stableKey}",
+            groupType = if (isYt) MediaGroupType.YOUTUBE else MediaGroupType.STREAM,
+            infoHash = null,
+            title = entry.fileName,
+            canonicalSourceUri = entry.canonicalSourceUri,
+            files = listOf(entry),
+            totalSize = entry.fileSize,
+            updatedAt = entry.updatedAt,
+            posterUrl = entry.posterUrl,
+            backdropUrl = entry.backdropUrl ?: entry.posterUrl,
+            overview = entry.overview,
+            releaseYear = entry.releaseYear,
+            mediaType = if (isYt) "YouTube" else "Stream",
+          )
+        }
+      (torrents + savedStreams).sortedByDescending { it.updatedAt }
+    }.stateIn(
+      scope = viewModelScope,
+      started = SharingStarted.WhileSubscribed(5000),
+      initialValue = emptyList(),
+    )
+
   init {
     viewModelScope.launch {
       torrentGroups.collect { groups ->
@@ -137,6 +183,14 @@ class NetworkStreamingViewModel(
     val infoHash = group.infoHash ?: return
     viewModelScope.launch {
       val rawTitle = group.title
+
+      // Too vague to search meaningfully (raw hash/garbage title) — leave it alone rather
+      // than burning API calls on a query that can't possibly match anything.
+      if (looksLikeHash(rawTitle) || looksLikeGarbage(rawTitle)) {
+        logTorrentEnrichment(rawTitle, "", null, null, null, error = "skipped-vague-title")
+        return@launch
+      }
+
       val parsed = MediaInfoParser.parse(rawTitle)
       val queryCandidates = mutableListOf<String>()
 
@@ -157,11 +211,18 @@ class NetworkStreamingViewModel(
         queryCandidates.add(cleanedBeforeColon)
       }
 
+      // Drop candidates that are themselves vague (e.g. cleanup left only a hash/garbage token).
+      queryCandidates.retainAll { it.length >= MIN_SEARCH_LENGTH && !looksLikeHash(it) && !looksLikeGarbage(it) }
+
+      if (queryCandidates.isEmpty()) {
+        logTorrentEnrichment(rawTitle, "", parsed.year, null, null, error = "skipped-vague-title")
+        return@launch
+      }
+
       var results: List<WyzieTmdbResult>? = null
       var successfulQuery = ""
 
       for (query in queryCandidates) {
-        if (query.length < MIN_SEARCH_LENGTH) continue
         val search = wyzieSearchRepository.searchMedia(query)
         val candidateResults = search.getOrNull()
         if (!candidateResults.isNullOrEmpty()) {
@@ -171,20 +232,9 @@ class NetworkStreamingViewModel(
         }
       }
 
-      if (results == null) {
-        logTorrentEnrichment(
-          rawTitle = rawTitle,
-          query = queryCandidates.firstOrNull().orEmpty(),
-          year = parsed.year,
-          results = null,
-          match = null,
-          error = "search-failed",
-        )
-        return@launch
-      }
+      val match = results?.let { bestTmdbResult(it, parsed.year) }
+      logTorrentEnrichment(rawTitle, successfulQuery.ifBlank { queryCandidates.first() }, parsed.year, results, match)
 
-      val match = bestTmdbResult(results, parsed.year)
-      logTorrentEnrichment(rawTitle, successfulQuery, parsed.year, results, match)
       if (match != null) {
         val poster = tmdbImageUrl(match.poster, "w500")
         val backdrop = tmdbImageUrl(match.backdrop, "w1280")
@@ -197,6 +247,64 @@ class NetworkStreamingViewModel(
           releaseYear = match.releaseYear,
           mediaType = match.mediaType,
         )
+        return@launch
+      }
+
+      // TMDB/Wyzie came back empty — fall back to any connected Jellyfin server's own
+      // library metadata (poster/backdrop/overview) if the title matches something there.
+      tryJellyfinArtworkFallback(infoHash, group.title, queryCandidates)
+    }
+  }
+
+  /** Fallback artwork/metadata source: search the user's connected Jellyfin servers by title. */
+  private suspend fun tryJellyfinArtworkFallback(
+    infoHash: String,
+    fallbackTitle: String,
+    queryCandidates: List<String>,
+  ) {
+    val servers = runCatching { jellyfinRepository.allServers.first() }.getOrNull().orEmpty()
+    if (servers.isEmpty()) return
+
+    for (server in servers) {
+      for (query in queryCandidates) {
+        val page =
+          jellyfinRepository
+            .getItems(
+              server = server,
+              searchTerm = query,
+              includeItemTypes = "Movie,Series",
+              limit = 5,
+            ).getOrNull()
+        val jellyfinMatch = page?.items?.firstOrNull() ?: continue
+
+        val poster =
+          JellyfinClient.getImageUrl(
+            serverUrl = server.serverUrl,
+            itemId = jellyfinMatch.id,
+            imageTag = jellyfinMatch.primaryImageTag,
+            maxWidth = 500,
+            token = server.accessToken,
+          )
+        val backdrop =
+          JellyfinClient.getBackdropUrl(
+            serverUrl = server.serverUrl,
+            itemId = jellyfinMatch.id,
+            imageTag = jellyfinMatch.backdropImageTag,
+            maxWidth = 1280,
+            token = server.accessToken,
+          )
+
+        streamEntryRepository.updateTorrentArtwork(
+          infoHash = infoHash,
+          title = jellyfinMatch.name.takeIf(String::isNotBlank) ?: fallbackTitle,
+          posterUrl = poster,
+          backdropUrl = backdrop,
+          overview = jellyfinMatch.overview?.take(MAX_DESCRIPTION_LENGTH),
+          releaseYear = jellyfinMatch.productionYear?.toString(),
+          mediaType = if (jellyfinMatch.isSeries) "tv" else "movie",
+        )
+        Log.d(ENRICHMENT_TAG, "artwork fallback (jellyfin) raw=\"$fallbackTitle\" query=\"$query\" match=\"${jellyfinMatch.name}\"")
+        return
       }
     }
   }
@@ -225,10 +333,39 @@ class NetworkStreamingViewModel(
     val source = url.trim()
     if (source.isBlank() || isTorrentSource(source) || !MediaUtils.isURLValid(source)) return
     viewModelScope.launch {
+      val uri = runCatching { Uri.parse(source) }.getOrNull()
+      val initialTitle = MediaInfoParser.parseStreamTitle(source)
       streamEntryRepository.saveNormalEntry(
         canonicalSourceUri = source,
-        fileName = MediaInfoParser.parseStreamTitle(source),
+        fileName = initialTitle,
       )
+
+      // Asynchronously enrich title and thumbnail for YouTube and network streams
+      if (HttpUtils.isYouTubeUrl(uri)) {
+        val ytMeta = HttpUtils.fetchYouTubeMetadata(source)
+        if (ytMeta != null && ytMeta.title.isNotBlank()) {
+          streamEntryRepository.saveNormalEntry(
+            canonicalSourceUri = source,
+            fileName = ytMeta.title,
+            posterUrl = ytMeta.thumbnailUrl,
+            backdropUrl = ytMeta.thumbnailUrl,
+          )
+        }
+      } else {
+        val betterTitle = HttpUtils.extractFilenameFromUrl(source)
+        if (betterTitle != null && !HttpUtils.isLikelyJunkTitle(betterTitle) && betterTitle != initialTitle && betterTitle != uri?.host) {
+          streamEntryRepository.saveNormalEntry(
+            canonicalSourceUri = source,
+            fileName = betterTitle,
+          )
+        }
+      }
+    }
+  }
+
+  fun recordExistingLinkPlayed(stableKey: String) {
+    viewModelScope.launch {
+      streamEntryRepository.touchNormalEntry(stableKey)
     }
   }
 
@@ -237,12 +374,48 @@ class NetworkStreamingViewModel(
   }
 
   fun deleteTorrentGroup(group: TorrentStreamGroup) {
+    deleteMediaGroup(group)
+  }
+
+  fun deleteMediaGroup(group: MediaStreamGroup) {
     viewModelScope.launch {
       val infoHash = group.infoHash
       if (infoHash != null) {
         streamEntryRepository.deleteTorrentGroup(infoHash)
       } else {
         group.files.forEach { streamEntryRepository.delete(it.stableKey) }
+      }
+    }
+  }
+
+  fun saveLinkToMedia(url: String, customTitle: String? = null) {
+    val source = url.trim()
+    if (source.isBlank()) return
+    viewModelScope.launch {
+      val uri = runCatching { Uri.parse(source) }.getOrNull()
+      val initialTitle = customTitle?.takeIf(String::isNotBlank) ?: MediaInfoParser.parseStreamTitle(source)
+      streamEntryRepository.saveNormalEntry(
+        canonicalSourceUri = source,
+        fileName = initialTitle,
+      )
+      if (HttpUtils.isYouTubeUrl(uri)) {
+        val ytMeta = HttpUtils.fetchYouTubeMetadata(source)
+        if (ytMeta != null && ytMeta.title.isNotBlank()) {
+          streamEntryRepository.saveNormalEntry(
+            canonicalSourceUri = source,
+            fileName = ytMeta.title,
+            posterUrl = ytMeta.thumbnailUrl,
+            backdropUrl = ytMeta.thumbnailUrl,
+          )
+        }
+      } else {
+        val betterTitle = HttpUtils.extractFilenameFromUrl(source)
+        if (betterTitle != null && !HttpUtils.isLikelyJunkTitle(betterTitle) && betterTitle != initialTitle && betterTitle != uri?.host) {
+          streamEntryRepository.saveNormalEntry(
+            canonicalSourceUri = source,
+            fileName = betterTitle,
+          )
+        }
       }
     }
   }
@@ -274,6 +447,7 @@ class NetworkStreamingViewModel(
   fun deleteConnection(connection: NetworkConnection) {
     viewModelScope.launch {
       repository.deleteConnection(connection)
+      bookmarkPreferences.removeForConnection(connection.id)
     }
   }
 

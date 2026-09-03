@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.icons
+package app.gyrolet.mpvrx.ui.icons
 
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable

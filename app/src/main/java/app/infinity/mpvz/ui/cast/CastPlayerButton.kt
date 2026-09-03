@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.cast
+package app.gyrolet.mpvrx.ui.cast
 
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -25,9 +25,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.mediarouter.app.MediaRouteButton
-import app.infinity.mpvz.preferences.PlayerButton
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.theme.controlColor
+import app.gyrolet.mpvrx.preferences.PlayerButton
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.theme.controlColor
 import com.google.android.gms.cast.framework.CastButtonFactory
 import androidx.compose.ui.graphics.Color as ComposeColor
 
@@ -36,10 +36,12 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 fun CastPlayerButton(
   hideBackground: Boolean,
   buttonSize: Dp,
+  onInvoked: () -> Unit = {},
+  contentColor: ComposeColor? = null,
 ) {
   val castContentDescription =
     androidx.compose.ui.res
-      .stringResource(app.infinity.mpvz.R.string.ui_cast)
+      .stringResource(app.gyrolet.mpvrx.R.string.ui_cast)
   Surface(
     shape = CircleShape,
     color =
@@ -48,7 +50,9 @@ fun CastPlayerButton(
       } else {
         MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
       },
-    contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
+    // Callers pass the surrounding content color (e.g. drawer tiles) so the icon
+    // matches its sibling buttons instead of staying fixed white.
+    contentColor = contentColor ?: if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
     border =
       if (hideBackground) {
         null
@@ -66,6 +70,9 @@ fun CastPlayerButton(
             CastButtonFactory.setUpMediaRouteButton(context.applicationContext, this)
             setRemoteIndicatorDrawable(ColorDrawable(Color.TRANSPARENT))
           }
+        },
+        update = { button ->
+          button.setOnClickListener { onInvoked() }
         },
         modifier = Modifier.fillMaxSize(),
       )

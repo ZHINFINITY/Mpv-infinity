@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player
+package app.gyrolet.mpvrx.ui.player
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -15,8 +15,8 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
-import app.infinity.mpvz.domain.network.NetworkPlaybackUri
-import app.infinity.mpvz.ui.player.PlayerActivity.Companion.TAG
+import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
+import app.gyrolet.mpvrx.ui.player.PlayerActivity.Companion.TAG
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
 import kotlinx.serialization.json.Json
@@ -56,7 +56,7 @@ internal fun Uri.extractLocalPath(): String? {
     if (index != -1) {
       val rawPath = decoded.substring(index)
       val path = rawPath.substringBefore('?').substringBefore('#')
-      if (File(path).exists()) {
+      if (File(path).canRead()) {
         return path
       }
     }
@@ -64,25 +64,50 @@ internal fun Uri.extractLocalPath(): String? {
   return null
 }
 
-internal fun Uri.resolveLocalFilePath(context: Context): String? =
+internal fun Uri.openContentFd(
+  context: Context,
+  allowFdFallback: Boolean = true,
+): String? =
   extractLocalPath()
-    ?: tryFileDescriptorPath(context)
+    ?: tryFileDescriptorPath(context, allowFdFallback)
     ?: tryMediaStoreQuery(context)
     ?: tryDocumentUriParsing(context)
+    ?: (if (allowFdFallback) tryFileDescriptorFallback(context) else null)
 
-internal fun Uri.openContentFd(context: Context): String? =
-  resolveLocalFilePath(context) ?: tryFileDescriptorFallback(context)
+/** Resolves identity only; unlike [openContentFd], this never detaches a file descriptor. */
+internal fun Uri.resolveLocalPath(context: Context): String? =
+  when (scheme?.lowercase()) {
+    "file" -> path
+    "content" -> extractLocalPath() ?: tryMediaStoreQuery(context) ?: tryDocumentUriParsing(context)
+    else -> null
+  }
 
 /**
  * Method 1: Extract real filesystem path from file descriptor.
  * Works best for most content URIs on modern Android.
+ * If the resolved path is not readable directly (e.g. 0 permissions granted),
+ * returns the detached file descriptor so MPV can play via fd:// directly.
+ * Callers that persist the result must pass [allowFdFallback] = false: a detached
+ * descriptor is single-use and cannot be replayed later.
  */
-private fun Uri.tryFileDescriptorPath(context: Context): String? =
+private fun Uri.tryFileDescriptorPath(
+  context: Context,
+  allowFdFallback: Boolean = true,
+): String? =
   runCatching {
-    context.contentResolver.openFileDescriptor(this, "r")?.use { pfd ->
-      Utils.findRealPath(pfd.fd)?.also {
-        Log.d(TAG, "Resolved via file descriptor: $it")
-      }
+    val pfd = context.contentResolver.openFileDescriptor(this, "r") ?: return null
+    val path = Utils.findRealPath(pfd.fd)
+    if (path != null && File(path).canRead()) {
+      pfd.close()
+      Log.d(TAG, "Resolved via file descriptor: $path")
+      path
+    } else if (allowFdFallback) {
+      val fd = pfd.detachFd()
+      Log.d(TAG, "Using file descriptor fallback (fd://$fd) for $this")
+      "fd://$fd"
+    } else {
+      pfd.close()
+      null
     }
   }.getOrNull()
 
@@ -101,7 +126,7 @@ private fun Uri.tryMediaStoreQuery(context: Context): String? =
             cursor
               .getString(columnIndex)
               ?.takeIf { path ->
-                path.isNotBlank() && File(path).exists()
+                path.isNotBlank() && File(path).canRead()
               }?.also {
                 Log.d(TAG, "Resolved via MediaStore: $it")
               }
@@ -154,14 +179,14 @@ private fun Uri.tryDocumentUriParsing(context: Context): String? {
 private fun tryPrimaryStoragePath(docId: String): String? {
   val path = docId.substringAfter(StoragePaths.PRIMARY_PREFIX)
   val fullPath = "${StoragePaths.PRIMARY_STORAGE}/$path"
-  return fullPath.takeIf { File(it).exists() }?.also {
+  return fullPath.takeIf { File(it).canRead() }?.also {
     Log.d(TAG, "Resolved document URI to primary storage: $it")
   }
 }
 
 private fun tryRawPath(docId: String): String? {
   val rawPath = docId.substringAfter(StoragePaths.RAW_PREFIX)
-  return rawPath.takeIf { File(it).exists() }?.also {
+  return rawPath.takeIf { File(it).canRead() }?.also {
     Log.d(TAG, "Resolved document URI from raw path: $it")
   }
 }
@@ -182,7 +207,7 @@ private fun tryExternalStoragePaths(docId: String): String? {
       "${StoragePaths.MEDIA_RW}/$path",
     )
 
-  return possiblePaths.firstOrNull { File(it).exists() }?.also {
+  return possiblePaths.firstOrNull { File(it).canRead() }?.also {
     Log.d(TAG, "Resolved document URI to: $it")
   }
 }
@@ -207,7 +232,10 @@ private fun Uri.tryFileDescriptorFallback(context: Context): String? =
  *
  * Returns null if URI scheme is null or unsupported.
  */
-internal fun Uri.resolveUri(context: Context): String? {
+internal fun Uri.resolveUri(
+  context: Context,
+  allowFdFallback: Boolean = true,
+): String? {
   if (scheme == null) {
     Log.e(TAG, "URI has null scheme: $this")
     return null
@@ -215,7 +243,9 @@ internal fun Uri.resolveUri(context: Context): String? {
 
   return when (scheme) {
     "file" -> path
-    "content" -> openContentFd(context)
+    "content" ->
+      openContentFd(context, allowFdFallback = allowFdFallback)
+        ?: if (allowFdFallback) null else toString()
     "data" -> "data://$schemeSpecificPart"
     "magnet", "torrent" -> toString()
     NetworkPlaybackUri.SCHEME -> toString()

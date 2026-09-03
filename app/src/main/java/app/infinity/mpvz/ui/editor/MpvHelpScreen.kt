@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.editor
+package app.gyrolet.mpvrx.ui.editor
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
@@ -28,20 +28,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -62,16 +58,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.utils.clipboard.SafeClipboard
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -150,7 +145,7 @@ data class MpvHelpScreen(
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.infinity.mpvz.R.string.ui_mpv_documentation,
+                  app.gyrolet.mpvrx.R.string.ui_mpv_documentation,
                 ),
               style = MaterialTheme.typography.headlineSmall,
               fontWeight = FontWeight.ExtraBold,
@@ -175,19 +170,18 @@ data class MpvHelpScreen(
             .fillMaxSize()
             .padding(padding),
       ) {
-        OutlinedTextField(
-          value = searchQuery,
-          onValueChange = { searchQuery = it },
-          modifier =
-            Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 8.dp)
-              .focusRequester(focusRequester),
+        app.gyrolet.mpvrx.ui.components.InlineSearchBar(
+          query = searchQuery,
+          onQueryChange = { searchQuery = it },
+          onSearch = { keyboardController?.hide() },
+          modifier = Modifier.padding(horizontal = 16.dp),
+          inputFieldModifier = Modifier.focusRequester(focusRequester),
+          windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
           placeholder = {
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.infinity.mpvz.R.string.ui_search_commands_options_properties,
+                  app.gyrolet.mpvrx.R.string.ui_search_commands_options_properties,
                 ),
               color = MaterialTheme.colorScheme.outline,
             )
@@ -210,27 +204,13 @@ data class MpvHelpScreen(
                   imageVector = Icons.RoundedFilled.Clear,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.pref_clear_content_desc,
+                      app.gyrolet.mpvrx.R.string.pref_clear_content_desc,
                     ),
                   tint = MaterialTheme.colorScheme.outline,
                 )
               }
             }
           },
-          singleLine = true,
-          shape = RoundedCornerShape(28.dp),
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = MaterialTheme.colorScheme.primary,
-              unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-              focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-              unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-          keyboardActions =
-            KeyboardActions(
-              onSearch = { keyboardController?.hide() },
-            ),
         )
 
         Row(
@@ -247,7 +227,7 @@ data class MpvHelpScreen(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.pref_all_sources),
+                  .stringResource(app.gyrolet.mpvrx.R.string.pref_all_sources),
               )
             },
             colors = filterChipColors(),
@@ -282,7 +262,7 @@ data class MpvHelpScreen(
               Text(
                 text =
                   androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.ui_no_results_found,
+                    app.gyrolet.mpvrx.R.string.ui_no_results_found,
                   ),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.outline,
@@ -301,11 +281,13 @@ data class MpvHelpScreen(
                   CategoryHeader(category.name)
                 }
               }
-              items(
+              itemsIndexed(
                 items = entries,
-                key = { "${it.kind}:${it.name}" },
-                contentType = { "help_entry_card" },
-              ) { entry ->
+                key = { index, entry ->
+                  "entry:${category?.name.orEmpty()}:$index:${entry.kind}:${entry.name}"
+                },
+                contentType = { _, _ -> "help_entry_card" },
+              ) { _, entry ->
                 HelpEntryCard(
                   entry = entry,
                   onClick = { copyToClipboard(entry) },
@@ -388,7 +370,7 @@ private fun HelpEntryCard(
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_no_android),
+                  .stringResource(app.gyrolet.mpvrx.R.string.ui_no_android),
               style = MaterialTheme.typography.labelSmall,
               fontWeight = FontWeight.Bold,
               color = colors.error,

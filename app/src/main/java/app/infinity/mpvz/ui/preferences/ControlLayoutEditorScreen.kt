@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.preferences
+package app.gyrolet.mpvrx.ui.preferences
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
@@ -44,24 +44,24 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.R
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.PlayerButton
-import app.infinity.mpvz.preferences.allPlayerButtons
-import app.infinity.mpvz.preferences.preference.Preference
-import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.presentation.components.ConfirmDialog
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.controls.components.AbLoopIcon
-import app.infinity.mpvz.ui.preferences.components.PlayerButtonChip
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.popSafely
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.PlayerButton
+import app.gyrolet.mpvrx.preferences.allPlayerButtons
+import app.gyrolet.mpvrx.preferences.preference.Preference
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.presentation.components.ConfirmDialog
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.controls.components.AbLoopIcon
+import app.gyrolet.mpvrx.ui.preferences.components.PlayerButtonChip
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
-import app.infinity.mpvz.ui.icons.Icon as AppSymbolIcon
+import app.gyrolet.mpvrx.ui.icons.Icon as AppSymbolIcon
 
 @Serializable
 data class ControlLayoutEditorScreen(
@@ -199,7 +199,7 @@ data class ControlLayoutEditorScreen(
                 Icons.RoundedFilled.ArrowBack,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.back),
+                    .stringResource(app.gyrolet.mpvrx.R.string.back),
               )
             }
           },
@@ -209,7 +209,7 @@ data class ControlLayoutEditorScreen(
                 Icons.RoundedFilled.Refresh,
                 contentDescription =
                   androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.pref_layout_reset_default,
+                    app.gyrolet.mpvrx.R.string.pref_layout_reset_default,
                   ),
               )
             }
@@ -254,7 +254,7 @@ data class ControlLayoutEditorScreen(
             androidx.compose.material3.Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.infinity.mpvz.R.string.ui_long_press_to_reorder_items_tap_the_icon_to_remove_them,
+                  app.gyrolet.mpvrx.R.string.ui_long_press_to_reorder_items_tap_the_icon_to_remove_them,
                 ),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -297,7 +297,7 @@ data class ControlLayoutEditorScreen(
                   androidx.compose.material3.Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_drop_zone_is_empty,
+                        app.gyrolet.mpvrx.R.string.ui_drop_zone_is_empty,
                       ),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
@@ -306,7 +306,7 @@ data class ControlLayoutEditorScreen(
                   androidx.compose.material3.Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_tap_buttons_from_the_available_palette_below,
+                        app.gyrolet.mpvrx.R.string.ui_tap_buttons_from_the_available_palette_below,
                       ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -415,7 +415,7 @@ data class ControlLayoutEditorScreen(
                     androidx.compose.material3.Text(
                       text =
                         androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_all_available_buttons_are_in_use,
+                          app.gyrolet.mpvrx.R.string.ui_all_available_buttons_are_in_use,
                         ),
                       style = MaterialTheme.typography.bodySmall,
                       color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -468,7 +468,7 @@ private fun IconsLegend() {
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_icons_legend),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_icons_legend),
           style = MaterialTheme.typography.titleMedium,
           fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
           color = MaterialTheme.colorScheme.onSurface,
@@ -476,7 +476,7 @@ private fun IconsLegend() {
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_what_is_each_icon_for),
+              .stringResource(app.gyrolet.mpvrx.R.string.ui_what_is_each_icon_for),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -521,7 +521,7 @@ private fun IconsLegend() {
 
             Text(
               text =
-                app.infinity.mpvz.preferences
+                app.gyrolet.mpvrx.preferences
                   .getPlayerButtonLabel(button),
               style = MaterialTheme.typography.labelMedium,
               color = MaterialTheme.colorScheme.onSurface,

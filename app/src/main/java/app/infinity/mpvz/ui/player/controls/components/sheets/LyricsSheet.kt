@@ -2,9 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.infinity.mpvz.ui.player.controls.components.sheets
+package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -48,11 +48,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.infinity.mpvz.domain.lyrics.LyricsSourceType
-import app.infinity.mpvz.domain.lyrics.SyncedLine
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType
+import app.gyrolet.mpvrx.domain.lyrics.SyncedLine
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 
 @Composable
 fun LyricsSheet(
@@ -238,12 +238,7 @@ fun LyricsSheet(
                   label = "LyricTextColor",
                 )
 
-                Text(
-                  text = line.line,
-                  color = textColor,
-                  fontSize = if (isActive) 20.sp else 16.sp,
-                  fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                  textAlign = TextAlign.Center,
+                Column(
                   modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
@@ -252,7 +247,29 @@ fun LyricsSheet(
                       PlaybackSession.command("seek", targetSeconds.toString(), "absolute+exact")
                     }
                     .padding(vertical = 4.dp, horizontal = 8.dp),
-                )
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                  Text(
+                    text = line.line,
+                    color = textColor,
+                    fontSize = if (isActive) 20.sp else 16.sp,
+                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                  )
+                  val trans = line.translation?.trim()
+                  if (!trans.isNullOrBlank() && !trans.equals(line.line.trim(), ignoreCase = true)) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = trans,
+                      color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f),
+                      fontSize = if (isActive) 15.sp else 13.sp,
+                      fontWeight = FontWeight.Medium,
+                      textAlign = TextAlign.Center,
+                      modifier = Modifier.fillMaxWidth(),
+                    )
+                  }
+                }
               }
             }
           }

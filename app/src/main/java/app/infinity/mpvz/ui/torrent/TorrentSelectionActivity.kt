@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.infinity.mpvz.ui.torrent
+package app.gyrolet.mpvrx.ui.torrent
 
 import android.content.Intent
 import android.net.Uri
@@ -15,12 +15,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
-import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
-import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
-import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.theme.MpvrxTheme
-import app.infinity.mpvz.utils.media.MediaUtils
+import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
+import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
+import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
+import app.gyrolet.mpvrx.ui.player.PlayerActivity
+import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
+import app.gyrolet.mpvrx.utils.media.MediaUtils
 import org.koin.android.ext.android.inject
 
 class TorrentSelectionActivity : AppCompatActivity() {

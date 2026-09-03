@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.player.visualizer
+package app.gyrolet.mpvrx.ui.player.visualizer
 
 import android.content.Context
 import android.graphics.PixelFormat
@@ -16,7 +16,7 @@ import android.view.MotionEvent
 
 internal class BlobVisualizerView(
   context: Context,
-  features: AudioFeatures = AudioFeatures(),
+  features: AudioFeatures,
   palette: VisualizerPalette,
   reducedMotion: Boolean = false,
 ) : GLSurfaceView(context),

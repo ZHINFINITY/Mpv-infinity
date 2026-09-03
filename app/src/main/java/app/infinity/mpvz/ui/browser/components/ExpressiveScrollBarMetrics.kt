@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.components
+package app.gyrolet.mpvrx.ui.browser.components
 
 internal class AxisObservationTracker {
   private var trackedTotalItemsCount = -1

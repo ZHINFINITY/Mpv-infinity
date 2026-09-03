@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.cards
+package app.gyrolet.mpvrx.ui.browser.cards
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -46,15 +46,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.domain.media.model.VideoFolder
-import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.BrowserPreferences
-import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.icons.AppIcon
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.domain.media.model.VideoFolder
+import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.ui.icons.AppIcon
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
@@ -114,7 +114,7 @@ fun FolderCard(
     if (isGridMode && showFolderThumbnails) {
       withContext(Dispatchers.IO) {
         val videos =
-          app.infinity.mpvz.repository.MediaFileRepository
+          app.gyrolet.mpvrx.repository.MediaFileRepository
             .getVideosInFolder(context, folder.bucketId)
         if (videos.isNotEmpty()) {
           val configuration = context.resources.configuration
@@ -181,7 +181,7 @@ fun FolderCard(
         imageVector = Icons.RoundedFilled.PushPin,
         contentDescription =
           androidx.compose.ui.res
-            .stringResource(app.infinity.mpvz.R.string.ui_pinned_folder),
+            .stringResource(app.gyrolet.mpvrx.R.string.ui_pinned_folder),
         modifier =
           Modifier
             .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -196,6 +196,7 @@ fun FolderCard(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(cardShape)
         .combinedClickable(
           onClick = onClick,
           onLongClick = onLongClick,
@@ -301,7 +302,7 @@ fun FolderCard(
                 customIcon ?: Icons.RoundedFilled.Folder,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_folder),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_folder),
                 modifier = Modifier.size(56.dp),
                 tint = MaterialTheme.colorScheme.secondary,
               )
@@ -415,7 +416,7 @@ fun FolderCard(
                 customIcon ?: Icons.RoundedFilled.Folder,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_folder),
+                    .stringResource(app.gyrolet.mpvrx.R.string.ui_folder),
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.secondary,
               )
@@ -586,7 +587,12 @@ private fun formatFileSize(bytes: Long): String {
   return String.format(java.util.Locale.getDefault(), "%.1f %s", value, units[digitGroups])
 }
 
-private fun formatDate(timestampSeconds: Long): String {
-  val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
-  return sdf.format(java.util.Date(timestampSeconds * 1000))
-}
+// Hoisted because a card formats a date on every recomposition and SimpleDateFormat construction
+// parses the pattern and clones a Calendar each time.
+private val FOLDER_DATE_FORMATTER: java.time.format.DateTimeFormatter =
+  java.time.format.DateTimeFormatter
+    .ofPattern("MMM dd, yyyy")
+    .withZone(java.time.ZoneId.systemDefault())
+
+private fun formatDate(timestampSeconds: Long): String =
+  FOLDER_DATE_FORMATTER.format(java.time.Instant.ofEpochSecond(timestampSeconds))

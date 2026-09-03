@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.infinity.mpvz.ui.browser.videolist
+package app.gyrolet.mpvrx.ui.browser.videolist
 
 import android.app.Application
 import android.util.Log
@@ -15,16 +15,16 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import app.infinity.mpvz.database.entities.PlaybackStateEntity
-import app.infinity.mpvz.domain.media.model.Video
-import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
-import app.infinity.mpvz.repository.MediaFileRepository
-import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
-import app.infinity.mpvz.ui.player.PlaybackIdentity
-import app.infinity.mpvz.utils.media.MediaLibraryEvents
-import app.infinity.mpvz.utils.media.MetadataRetrieval
-import app.infinity.mpvz.utils.media.PlaybackStateEvents
-import app.infinity.mpvz.utils.storage.FolderViewScanner
+import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
+import app.gyrolet.mpvrx.domain.media.model.Video
+import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
+import app.gyrolet.mpvrx.repository.MediaFileRepository
+import app.gyrolet.mpvrx.ui.browser.base.BaseBrowserViewModel
+import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
+import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
+import app.gyrolet.mpvrx.utils.media.MetadataRetrieval
+import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
+import app.gyrolet.mpvrx.utils.storage.FolderViewScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,6 +50,45 @@ data class VideoWithPlaybackInfo(
   val isWatched: Boolean = false, // true once the configured watched threshold is reached
 )
 
+internal fun videoPlaybackIdentifiers(video: Video): Set<String> =
+  linkedSetOf(
+    PlaybackIdentity.forLocalPath(video.path),
+    PlaybackIdentity.forUri(video.uri.toString()),
+    PlaybackIdentity.forUri(video.path),
+    PlaybackIdentity.forUri("file://${video.path}"),
+  )
+
+internal fun buildVideoWithPlaybackInfo(
+  video: Video,
+  playbackState: PlaybackStateEntity?,
+  currentTimeMillis: Long,
+  newLabelDays: Int,
+  watchedThreshold: Int,
+): VideoWithPlaybackInfo {
+  val durationSeconds = video.duration / 1000L
+  val progressValue =
+    if (playbackState != null && durationSeconds > 0L) {
+      val watchedSeconds = durationSeconds - playbackState.timeRemaining.toLong()
+      (watchedSeconds.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
+    } else {
+      null
+    }
+  val isWatched =
+    playbackState?.hasBeenWatched == true ||
+      (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f)
+  val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
+  val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
+  val isWithinNewLabelWindow = newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
+
+  return VideoWithPlaybackInfo(
+    video = video,
+    timeRemaining = playbackState?.timeRemaining?.toLong(),
+    progressPercentage = progressValue?.takeIf { it in 0.01f..0.99f },
+    isOldAndUnplayed = !isWatched && isWithinNewLabelWindow,
+    isWatched = isWatched,
+  )
+}
+
 class VideoListViewModel(
   application: Application,
   private val bucketId: String,
@@ -57,9 +96,9 @@ class VideoListViewModel(
 ) : BaseBrowserViewModel(application),
   KoinComponent {
   private val playbackStateRepository: PlaybackStateRepository by inject()
-  private val appearancePreferences: app.infinity.mpvz.preferences.AppearancePreferences by inject()
-  private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
-  private val recentlyPlayedRepository: app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
+  private val appearancePreferences: app.gyrolet.mpvrx.preferences.AppearancePreferences by inject()
+  private val browserPreferences: app.gyrolet.mpvrx.preferences.BrowserPreferences by inject()
+  private val recentlyPlayedRepository: app.gyrolet.mpvrx.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
   // Using MediaFileRepository singleton directly
 
   private val _videos = MutableStateFlow<List<Video>>(emptyList())
@@ -101,6 +140,7 @@ class VideoListViewModel(
 
   // Track previous video count to detect if folder became empty
   private var previousVideoCount = 0
+  private var playbackIndexByIdentifier: Map<String, Int> = emptyMap()
 
   private val tag = "VideoListViewModel"
 
@@ -117,9 +157,9 @@ class VideoListViewModel(
     // Playback persistence emits this event whenever a position/watched state is saved. Re-read
     // the affected playback metadata so NEW/progress/watched UI updates without a hard refresh.
     viewModelScope.launch(Dispatchers.IO) {
-      PlaybackStateEvents.changes.collectLatest {
+      PlaybackStateEvents.changes.collectLatest { mediaIdentifier ->
         if (_videos.value.isNotEmpty()) {
-          loadPlaybackInfo(_videos.value)
+          updatePlaybackInfo(mediaIdentifier)
         }
       }
     }
@@ -245,74 +285,67 @@ class VideoListViewModel(
    * existing histories continue to work without a destructive database migration.
    */
   private suspend fun findPlaybackState(video: Video): PlaybackStateEntity? {
-    val identifiers =
-      linkedSetOf(
-        PlaybackIdentity.forUri(video.uri.toString()),
-        PlaybackIdentity.forUri(video.path),
-        PlaybackIdentity.forUri("file://${video.path}"),
-      )
-
-    for (identifier in identifiers) {
+    for (identifier in videoPlaybackIdentifiers(video)) {
       playbackStateRepository.getVideoDataByTitle(identifier)?.let { return it }
     }
     return null
   }
 
-  private fun canonicalPlaybackIdentifier(video: Video): String = PlaybackIdentity.forUri(video.uri.toString())
+  private fun canonicalPlaybackIdentifier(video: Video): String = PlaybackIdentity.forLocalPath(video.path)
 
   private suspend fun loadPlaybackInfo(videos: List<Video>) {
+    val playbackByIdentifier = playbackStateRepository.getAllPlaybackStates().associateBy { it.mediaTitle }
     val watchedThreshold = browserPreferences.watchedThreshold.get()
     val newLabelDays = appearancePreferences.unplayedOldVideoDays.get()
-    val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
     val now = System.currentTimeMillis()
+    playbackIndexByIdentifier =
+      buildMap(videos.size * 4) {
+        videos.forEachIndexed { index, video ->
+          videoPlaybackIdentifiers(video).forEach { identifier -> put(identifier, index) }
+        }
+      }
     val videosWithInfo =
       videos.map { video ->
-        val playbackState = findPlaybackState(video)
-
-        // Calculate watch progress (0.0 to 1.0)
-        val progress =
-          if (playbackState != null && video.duration > 0) {
-            // Duration is in milliseconds, convert to seconds
-            val durationSeconds = video.duration / 1000
-            val timeRemaining = playbackState.timeRemaining.toLong()
-            val watched = durationSeconds - timeRemaining
-            val progressValue = (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
-
-            // Only show progress for videos that are 1-99% complete
-            if (progressValue in 0.01f..0.99f) progressValue else null
-          } else {
-            null
-          }
-
-        // Check if the video has been watched (reached the watched threshold).
-        // A threshold of 0 ("Infinitely") means it is never considered watched by progress.
-        val isWatched =
-          playbackState?.hasBeenWatched == true ||
-            if (playbackState != null && video.duration > 0) {
-              val durationSeconds = video.duration / 1000
-              val timeRemaining = playbackState.timeRemaining.toLong()
-              val watched = durationSeconds - timeRemaining
-              val progressValue = (watched.toFloat() / durationSeconds.toFloat()).coerceIn(0f, 1f)
-              watchedThreshold > 0 && progressValue >= (watchedThreshold / 100f)
-            } else {
-              false
-            }
-
-        // "NEW" badge shows while the video is recent AND not yet watched. It is removed
-        // once the video is watched to the configured threshold percentage.
-        val videoAge = now - (video.dateModified * 1000L)
-        val isWithinNewLabelWindow = newLabelDays == 0 || videoAge <= newLabelWindowMillis
-        val isOldAndUnplayed = !isWatched && isWithinNewLabelWindow
-
-        VideoWithPlaybackInfo(
+        buildVideoWithPlaybackInfo(
           video = video,
-          timeRemaining = playbackState?.timeRemaining?.toLong(),
-          progressPercentage = progress,
-          isOldAndUnplayed = isOldAndUnplayed,
-          isWatched = isWatched,
+          playbackState = videoPlaybackIdentifiers(video).firstNotNullOfOrNull(playbackByIdentifier::get),
+          currentTimeMillis = now,
+          newLabelDays = newLabelDays,
+          watchedThreshold = watchedThreshold,
         )
       }
     _videosWithPlaybackInfo.value = videosWithInfo
+  }
+
+  private suspend fun updatePlaybackInfo(mediaIdentifier: String) {
+    if (mediaIdentifier.isBlank()) {
+      loadPlaybackInfo(_videos.value)
+      return
+    }
+
+    val index = playbackIndexByIdentifier[mediaIdentifier] ?: return
+    val videos = _videos.value
+    val video = videos.getOrNull(index) ?: return
+    val currentItems = _videosWithPlaybackInfo.value
+    if (currentItems.size != videos.size || currentItems.getOrNull(index)?.video?.path != video.path) {
+      loadPlaybackInfo(videos)
+      return
+    }
+
+    val updatedItem =
+      buildVideoWithPlaybackInfo(
+        video = video,
+        playbackState = playbackStateRepository.getVideoDataByTitle(mediaIdentifier),
+        currentTimeMillis = System.currentTimeMillis(),
+        newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
+        watchedThreshold = browserPreferences.watchedThreshold.get(),
+      )
+    if (currentItems[index] == updatedItem) return
+
+    _videosWithPlaybackInfo.value =
+      currentItems.toMutableList().apply {
+        this[index] = updatedItem
+      }
   }
 
   fun setWatched(
