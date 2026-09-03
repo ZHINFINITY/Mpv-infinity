@@ -64,6 +64,9 @@ import androidx.compose.ui.text.style.TextAlign
 fun NetworkVideoCard(
   file: NetworkFile,
   connection: NetworkConnection? = null,
+  fileSize: Long = 0L,
+  mimeType: String? = null,
+  lastModified: Long = 0L,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   onLongClick: (() -> Unit)? = null,

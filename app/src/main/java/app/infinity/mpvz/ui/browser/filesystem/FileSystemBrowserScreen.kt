@@ -327,7 +327,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
   var isPermissionSetupCompleted by androidx.compose.runtime.saveable.rememberSaveable {
     androidx.compose.runtime.mutableStateOf(
       permissionState.status == com.google.accompanist.permissions.PermissionStatus.Granted ||
-        browserPreferences.onboardingCompleted.get(),
+        appearancePreferences.onboardingCompleted == true,
     )
   }
 
@@ -1317,7 +1317,6 @@ private fun FileSystemBrowserContent(
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
-  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
   val unplayedOldVideoDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
@@ -1338,7 +1337,6 @@ private fun FileSystemBrowserContent(
       showExtensionField,
       showDurationField,
       centerGridTitles,
-      showCodecSupportIndicator,
       thumbnailQuality,
     ) {
       VideoCardUiConfig(
@@ -1347,7 +1345,6 @@ private fun FileSystemBrowserContent(
         showSizeChip = showSizeChip,
         showResolutionChip = showResolutionChip,
         showFramerateInResolution = showFramerateInResolution,
-        showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
@@ -1771,7 +1768,6 @@ private fun FileSystemSearchContent(
       showExtensionField,
       showDurationField,
       centerGridTitles,
-      showCodecSupportIndicator,
       thumbnailQuality,
     ) {
       VideoCardUiConfig(
@@ -1780,7 +1776,6 @@ private fun FileSystemSearchContent(
         showSizeChip = showSizeChip,
         showResolutionChip = showResolutionChip,
         showFramerateInResolution = showFramerateInResolution,
-        showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,

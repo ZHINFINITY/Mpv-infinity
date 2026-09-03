@@ -181,6 +181,8 @@ class PlaylistRepository(
 
   fun observePlaylistItemCount(playlistId: Int): Flow<Int> = playlistDao.observePlaylistItemCount(playlistId)
 
+  fun isProtectedPlaylist(playlist: Any?): Boolean = false
+
   fun isProtectedPlaylist(name: String): Boolean = false
 
   suspend fun getPlaylistItemCount(playlistId: Int): Int = playlistDao.getPlaylistItemCount(playlistId)
