@@ -21,6 +21,9 @@ class AdvancedPreferences(
   val mpvConf = preferenceStore.getString("mpv.conf")
   val inputConf = preferenceStore.getString("input.conf")
 
+  /** mpv option names owned by the user's mpv.conf instead of the in-app settings. */
+  val mpvConfOverrides = preferenceStore.getStringSet("mpv_conf_overrides", emptySet())
+
   val verboseLogging = preferenceStore.getBoolean("verbose_logging", BuildConfig.BUILD_TYPE != "release")
 
   val enabledStatisticsPage = preferenceStore.getInt("enabled_stats_page", 0)
