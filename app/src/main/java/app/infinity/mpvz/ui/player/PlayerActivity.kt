@@ -521,6 +521,8 @@ class PlayerActivity :
   private var media3PreparedItemId: String? = null
   /** True when MPV was fully stopped so Media3 could exclusively own the current item. */
   private var mpvStoppedForMedia3 = false
+  /** Re-select MPV's audio track after a Native-to-MPV handoff and saved-state restoration. */
+  @Volatile private var forceMpvAudioTrackAutoOnNextLoad = false
   private var media3VideoFrameRendered = false
   private var media3AutoFallbackItemId: String? = null
   private var activePlaybackItem: PlaybackItem? = null
@@ -2185,6 +2187,7 @@ class PlayerActivity :
       )
     }
 
+    forceMpvAudioTrackAutoOnNextLoad = playbackEngine == PlaybackEngine.MEDIA3
     AppDebugLog.info(
       TAG,
       "Playback engine selected engine=MPV " +
@@ -2246,6 +2249,9 @@ class PlayerActivity :
           // A seek started during the handoff can nest a second mute guard inside the replacement
           // guard. Complete both in one place so MPV does not remain silent after Media3 stops.
           PlaybackSession.restorePlaybackAudioAfterTransition()
+          // Media3 can leave MPV muted while it owns the audio output. Explicitly reopen MPV audio
+          // after the handoff so the old muted state cannot survive into the new engine session.
+          runCatching { PlaybackSession.setPropertyBoolean("mute", false) }
           AppDebugLog.info(
             TAG,
             "MPV handoff resumed item=${currentItem.stableId} positionMs=$resumePositionMs audioRestored=true",
@@ -4875,6 +4881,13 @@ class PlayerActivity :
           loadGeneration = loadGeneration,
         )
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
+
+      // Native and MPV use different audio-track identifiers. Saved state is loaded asynchronously
+      // and can otherwise overwrite the MPV handoff's automatic track with a Native-only id.
+      if (playbackEngine == PlaybackEngine.MPV && forceMpvAudioTrackAutoOnNextLoad) {
+        runCatching { PlaybackSession.setPropertyString("aid", "auto") }
+        forceMpvAudioTrackAutoOnNextLoad = false
+      }
 
       if (!isAudioLoad) {
         // Apply track selection logic (defaults only apply when no saved state)
