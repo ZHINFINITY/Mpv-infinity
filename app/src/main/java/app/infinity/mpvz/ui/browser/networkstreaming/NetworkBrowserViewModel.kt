@@ -45,7 +45,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import java.net.URI
 
 /**
  * ViewModel for browsing files on a network share
@@ -264,7 +263,9 @@ class NetworkBrowserViewModel(
     connection: NetworkConnection,
   ): NetworkPath? =
     runCatching {
-      val uri = URI(rawUri)
+      // Android Uri accepts literal spaces and decodes percent-encoded path segments. Java URI
+      // rejects a WebDAV filename containing a literal space before we can normalize it.
+      val uri = Uri.parse(rawUri)
       val expectedScheme =
         when (connection.protocol) {
           NetworkProtocol.SMB -> "smb"
@@ -273,8 +274,8 @@ class NetworkBrowserViewModel(
         }
       if (!uri.scheme.equals(expectedScheme, ignoreCase = true) ||
         !uri.host.equals(connection.host.trim('[', ']'), ignoreCase = true) ||
-        uri.rawQuery != null ||
-        uri.rawFragment != null
+        uri.query != null ||
+        uri.fragment != null
       ) {
         return@runCatching null
       }

@@ -4892,6 +4892,11 @@ class PlayerActivity :
       if (!isAudioLoad) {
         // Apply track selection logic (defaults only apply when no saved state)
         trackSelector.onFileLoaded(hasState)
+        // A previous MPV session can leave the process-wide mute property enabled. Reactivate
+        // audio after saved state and track selection so reopening the same video is audible.
+        if (playbackEngine == PlaybackEngine.MPV) {
+          runCatching { PlaybackSession.setPropertyBoolean("mute", false) }
+        }
 
         // Apply default zoom only if there's no saved state
         if (!hasState) {
