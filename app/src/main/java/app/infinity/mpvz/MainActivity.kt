@@ -333,7 +333,7 @@ class MainActivity : AppCompatActivity() {
                     height: Int,
                   ) {
                     if (holder.surface.isValid) {
-                      PlaybackSession.resizeSurface(width, height)
+                      PlaybackSession.resizeSurface(width, height, owner = this@apply)
                     }
                   }
 

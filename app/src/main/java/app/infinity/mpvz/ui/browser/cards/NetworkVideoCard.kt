@@ -63,7 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 @Composable
 fun NetworkVideoCard(
   file: NetworkFile,
-  connection: NetworkConnection,
+  connection: NetworkConnection? = null,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   onLongClick: (() -> Unit)? = null,
@@ -91,7 +91,7 @@ fun NetworkVideoCard(
 
   val thumbnailKey =
     remember(file.path, file.size, file.lastModified, connection, thumbSizePx, displayThumb) {
-      if (displayThumb) {
+      if (displayThumb && connection != null) {
         thumbnailRepository.thumbnailKeyForNetworkPath(
           path = file.path,
           widthPx = thumbSizePx,
@@ -108,7 +108,7 @@ fun NetworkVideoCard(
 
   // Subscribe to ready-keys so folder-level prefetch also updates this card
   LaunchedEffect(thumbnailKey) {
-    if (thumbnailKey == null) return@LaunchedEffect
+    if (thumbnailKey == null || connection == null) return@LaunchedEffect
     thumbnailRepository.thumbnailReadyKeys
       .collect { key ->
         if (key == thumbnailKey) {
@@ -130,7 +130,7 @@ fun NetworkVideoCard(
 
   // On-demand generation
   LaunchedEffect(thumbnailKey, displayThumb) {
-    if (thumbnailKey == null || !displayThumb) return@LaunchedEffect
+    if (thumbnailKey == null || !displayThumb || connection == null) return@LaunchedEffect
     if (thumbnail != null) return@LaunchedEffect
     repeat(2) { attempt ->
       thumbnail =
