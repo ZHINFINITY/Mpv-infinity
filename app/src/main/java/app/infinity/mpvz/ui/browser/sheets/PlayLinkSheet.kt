@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.sheets
+package app.infinity.mpvz.ui.browser.sheets
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,17 +44,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
-import app.gyrolet.mpvrx.domain.torrent.isTorrentSource
-import app.gyrolet.mpvrx.domain.torrent.normalizeTorrentSource
-import app.gyrolet.mpvrx.preferences.YtdlPreferences
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
-import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
-import app.gyrolet.mpvrx.utils.media.MediaInfoParser
-import app.gyrolet.mpvrx.utils.media.MediaUtils
-import app.gyrolet.mpvrx.utils.media.SharedUrlExtractor
+import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
+import app.infinity.mpvz.domain.torrent.isTorrentSource
+import app.infinity.mpvz.domain.torrent.normalizeTorrentSource
+import app.infinity.mpvz.preferences.YtdlPreferences
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.SharedUrlExtractor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -116,8 +116,8 @@ fun PlayLinkSheet(
               )
 
               val uri = runCatching { android.net.Uri.parse(selectedSource) }.getOrNull()
-              if (firstEntry == null && app.gyrolet.mpvrx.utils.media.HttpUtils.isYouTubeUrl(uri)) {
-                val ytMeta = app.gyrolet.mpvrx.utils.media.HttpUtils.fetchYouTubeMetadata(playableSource)
+              if (firstEntry == null && app.infinity.mpvz.utils.media.HttpUtils.isYouTubeUrl(uri)) {
+                val ytMeta = app.infinity.mpvz.utils.media.HttpUtils.fetchYouTubeMetadata(playableSource)
                 if (ytMeta != null && ytMeta.title.isNotBlank()) {
                   RecentlyPlayedOps.updateVideoMetadata(
                     filePath = selectedSource,
@@ -174,7 +174,7 @@ fun PlayLinkSheet(
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_play_link),
+            .stringResource(app.infinity.mpvz.R.string.ui_play_link),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Medium,
         color = MaterialTheme.colorScheme.onSurface,
@@ -195,7 +195,7 @@ fun PlayLinkSheet(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_enter_url),
+                .stringResource(app.infinity.mpvz.R.string.ui_enter_url),
             )
           },
           placeholder = { Text("https://example.com/video.mp4") },
@@ -213,7 +213,7 @@ fun PlayLinkSheet(
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_unsupported_url_protocol),
+                .stringResource(app.infinity.mpvz.R.string.ui_unsupported_url_protocol),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
@@ -230,12 +230,12 @@ fun PlayLinkSheet(
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+                .stringResource(app.infinity.mpvz.R.string.generic_cancel),
             fontWeight = FontWeight.Medium,
           )
         }
         Spacer(modifier = Modifier.width(8.dp))
-        val linkDownloadCoordinator = koinInject<app.gyrolet.mpvrx.domain.download.LinkDownloadCoordinator>()
+        val linkDownloadCoordinator = koinInject<app.infinity.mpvz.domain.download.LinkDownloadCoordinator>()
         OutlinedButton(
           onClick = {
             val url = normalizedInput
@@ -246,13 +246,13 @@ fun PlayLinkSheet(
                 onPlayLink(playableSource)
               } else {
                 when (linkDownloadCoordinator.enqueue(playableSource, MediaInfoParser.parseStreamTitle(playableSource))) {
-                  app.gyrolet.mpvrx.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED ->
+                  app.infinity.mpvz.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED ->
                     android.widget.Toast
-                      .makeText(context, app.gyrolet.mpvrx.R.string.downloads_location_invalid, android.widget.Toast.LENGTH_SHORT)
+                      .makeText(context, app.infinity.mpvz.R.string.downloads_location_invalid, android.widget.Toast.LENGTH_SHORT)
                       .show()
                   else ->
                     android.widget.Toast
-                      .makeText(context, app.gyrolet.mpvrx.R.string.downloads_started, android.widget.Toast.LENGTH_SHORT)
+                      .makeText(context, app.infinity.mpvz.R.string.downloads_started, android.widget.Toast.LENGTH_SHORT)
                       .show()
                 }
               }
@@ -264,7 +264,7 @@ fun PlayLinkSheet(
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.downloads_download),
+                .stringResource(app.infinity.mpvz.R.string.downloads_download),
             fontWeight = FontWeight.Medium,
           )
         }
@@ -284,7 +284,7 @@ fun PlayLinkSheet(
             )
           } else {
             Text(
-              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play),
+              text = androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play),
               fontWeight = FontWeight.SemiBold,
             )
           }
@@ -303,7 +303,7 @@ private fun ValidationIcon(isValid: Boolean) {
       Icons.RoundedFilled.Check,
       contentDescription =
         androidx.compose.ui.res
-          .stringResource(app.gyrolet.mpvrx.R.string.ui_valid_url),
+          .stringResource(app.infinity.mpvz.R.string.ui_valid_url),
       tint = MaterialTheme.colorScheme.primary,
     )
   } else {
@@ -311,7 +311,7 @@ private fun ValidationIcon(isValid: Boolean) {
       Icons.RoundedFilled.Close,
       contentDescription =
         androidx.compose.ui.res
-          .stringResource(app.gyrolet.mpvrx.R.string.ui_invalid_url),
+          .stringResource(app.infinity.mpvz.R.string.ui_invalid_url),
       tint = MaterialTheme.colorScheme.error,
     )
   }

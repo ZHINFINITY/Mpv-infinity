@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin
+package app.infinity.mpvz.ui.browser.jellyfin
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -88,18 +88,18 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.data.jellyfin.JellyfinClient
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinItem
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.R
+import app.infinity.mpvz.data.jellyfin.JellyfinClient
+import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 import kotlin.math.roundToInt
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.gyrolet.mpvrx.ui.browser.music.SharedMusicTrackListItem
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

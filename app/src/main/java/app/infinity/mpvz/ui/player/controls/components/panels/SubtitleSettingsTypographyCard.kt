@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.panels
+package app.infinity.mpvz.ui.player.controls.components.panels
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.annotation.SuppressLint
 import androidx.annotation.StringRes
@@ -44,20 +44,20 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.SubtitleJustification
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.preferences.preference.deleteAndGet
-import app.gyrolet.mpvrx.presentation.components.ExpandableCard
-import app.gyrolet.mpvrx.presentation.components.ExposedTextDropDownMenu
-import app.gyrolet.mpvrx.presentation.components.SliderItem
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.controls.CARDS_MAX_WIDTH
-import app.gyrolet.mpvrx.ui.player.controls.panelCardsColors
-import app.gyrolet.mpvrx.ui.theme.spacing
-import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.SubtitleJustification
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.preference.deleteAndGet
+import app.infinity.mpvz.presentation.components.ExpandableCard
+import app.infinity.mpvz.presentation.components.ExposedTextDropDownMenu
+import app.infinity.mpvz.presentation.components.SliderItem
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
+import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import com.github.k1rakishou.fsaf.FileManager
 import com.yubyf.truetypeparser.TTFFile
 import kotlinx.collections.immutable.toImmutableList

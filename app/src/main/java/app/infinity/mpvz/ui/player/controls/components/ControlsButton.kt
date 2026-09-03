@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components
+package app.infinity.mpvz.ui.player.controls.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -31,12 +31,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.controls.LocalPlayerButtonsClickEvent
-import app.gyrolet.mpvrx.ui.theme.LocalDarkAppColorScheme
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.ui.icons.AppIcon
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.controls.LocalPlayerButtonsClickEvent
+import app.infinity.mpvz.ui.theme.LocalDarkAppColorScheme
+import app.infinity.mpvz.ui.theme.spacing
 
 @Suppress("CompositionLocalAllowlist")
 internal val LocalForceDarkPlayerButtonsBackground = staticCompositionLocalOf { false }

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.cards
+package app.infinity.mpvz.ui.browser.cards
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
@@ -43,15 +43,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.network.NetworkFile
-import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.network.NetworkFile
+import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -199,7 +199,7 @@ fun NetworkVideoCard(
               bitmap = thumbnailBitmap,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
+                  .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
               modifier = Modifier.matchParentSize(),
               contentScale = ContentScale.Crop,
             )
@@ -208,7 +208,7 @@ fun NetworkVideoCard(
               Icons.RoundedFilled.PlayArrow,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
+                  .stringResource(app.infinity.mpvz.R.string.ui_play),
               modifier = Modifier.size(48.dp),
               tint = MaterialTheme.colorScheme.secondary,
             )
@@ -288,7 +288,7 @@ fun NetworkVideoCard(
               bitmap = listThumbnailBitmap,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
+                  .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
               modifier = Modifier.matchParentSize(),
               contentScale = ContentScale.Crop,
             )
@@ -297,7 +297,7 @@ fun NetworkVideoCard(
               Icons.RoundedFilled.PlayArrow,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
+                  .stringResource(app.infinity.mpvz.R.string.ui_play),
               modifier = Modifier.size(48.dp),
               tint = MaterialTheme.colorScheme.secondary,
             )

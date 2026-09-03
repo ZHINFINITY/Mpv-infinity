@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.panels
+package app.infinity.mpvz.ui.player.controls.components.panels
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
@@ -38,13 +38,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.presentation.components.OutlinedNumericChooser
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.spacing
-import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.presentation.components.OutlinedNumericChooser
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
@@ -157,7 +157,7 @@ fun DelayCardContent( // Renamed from DelayCard and removed the Card wrapper
       suffix = {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_s),
+            .stringResource(app.infinity.mpvz.R.string.ui_s),
         )
       },
       increaseIcon = Icons.RoundedFilled.Add,

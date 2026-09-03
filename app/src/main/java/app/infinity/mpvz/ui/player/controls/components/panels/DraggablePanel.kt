@@ -9,7 +9,7 @@
 
 @file:Suppress("ktlint:standard:no-wildcard-imports")
 
-package app.gyrolet.mpvrx.ui.player.controls.components.panels
+package app.infinity.mpvz.ui.player.controls.components.panels
 
 import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
@@ -46,8 +46,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.ui.player.controls.panelCardsColors
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlin.math.roundToInt
 
 /**

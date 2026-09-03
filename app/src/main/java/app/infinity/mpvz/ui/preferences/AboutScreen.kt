@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.app.ActivityManager
 import android.content.Context
@@ -54,8 +54,8 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import app.gyrolet.mpvrx.ui.components.IconSwitch
-import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
+import app.infinity.mpvz.ui.components.IconSwitch
+import app.infinity.mpvz.ui.components.themedSegmentedButtonColors
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -77,18 +77,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.update.AppUpdateChannel
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.crash.CrashActivity.Companion.collectDeviceInfo
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
-import app.gyrolet.mpvrx.ui.update.UpdateViewModel
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.update.AppUpdateChannel
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.crash.CrashActivity.Companion.collectDeviceInfo
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.clipboard.SafeClipboard
+import app.infinity.mpvz.ui.update.UpdateViewModel
 import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
@@ -135,7 +135,7 @@ object AboutScreen : Screen {
         Toast
           .makeText(
             context,
-            context.getString(app.gyrolet.mpvrx.R.string.ui_already_using_latest_version),
+            context.getString(app.infinity.mpvz.R.string.ui_already_using_latest_version),
             Toast.LENGTH_SHORT,
           ).show()
         updateViewModel.dismissNoUpdate()
@@ -236,7 +236,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.app_name),
+                        .stringResource(app.infinity.mpvz.R.string.app_name),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = cs.onPrimaryContainer,
@@ -255,7 +255,7 @@ object AboutScreen : Screen {
                     Text(
                       text =
                         androidx.compose.ui.res
-                          .stringResource(app.gyrolet.mpvrx.R.string.ui_by_ritesh_pandit),
+                          .stringResource(app.infinity.mpvz.R.string.ui_by_ritesh_pandit),
                       modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                       style = MaterialTheme.typography.titleSmall,
                       fontWeight = FontWeight.SemiBold,
@@ -328,7 +328,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.ui_github),
+                        .stringResource(app.infinity.mpvz.R.string.ui_github),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                   )
@@ -354,7 +354,7 @@ object AboutScreen : Screen {
                     imageVector = Icons.RoundedFilled.Info,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_device_info,
+                        app.infinity.mpvz.R.string.ui_device_info,
                       ),
                     modifier = Modifier.size(20.dp),
                     tint = cs.onPrimaryContainer,
@@ -363,7 +363,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.ui_device_info),
+                        .stringResource(app.infinity.mpvz.R.string.ui_device_info),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = cs.onPrimaryContainer,
@@ -396,7 +396,7 @@ object AboutScreen : Screen {
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_buy_me_a_coffee),
+                    .stringResource(app.infinity.mpvz.R.string.ui_buy_me_a_coffee),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = cs.onSurface,
@@ -406,7 +406,7 @@ object AboutScreen : Screen {
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit,
+                  app.infinity.mpvz.R.string.ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit,
                 ),
               style = MaterialTheme.typography.bodyMedium,
               color = cs.onSurfaceVariant,
@@ -431,7 +431,7 @@ object AboutScreen : Screen {
                       Toast
                         .makeText(
                           context,
-                          context.getString(app.gyrolet.mpvrx.R.string.ui_upi_id_copied),
+                          context.getString(app.infinity.mpvz.R.string.ui_upi_id_copied),
                           Toast.LENGTH_SHORT,
                         ).show()
                     }.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -442,7 +442,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.ui_upi_id),
+                        .stringResource(app.infinity.mpvz.R.string.ui_upi_id),
                     style = MaterialTheme.typography.labelSmall,
                     color = cs.outline,
                   )
@@ -450,7 +450,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_panditritesh2001_okhdfcbank,
+                        app.infinity.mpvz.R.string.ui_panditritesh2001_okhdfcbank,
                       ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
@@ -461,7 +461,7 @@ object AboutScreen : Screen {
                   imageVector = Icons.RoundedFilled.ContentCopy,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_copy_upi_id,
+                      app.infinity.mpvz.R.string.ui_copy_upi_id,
                     ),
                   modifier = Modifier.size(20.dp),
                   tint = cs.primary,
@@ -482,7 +482,7 @@ object AboutScreen : Screen {
                   Toast
                     .makeText(
                       context,
-                      context.getString(app.gyrolet.mpvrx.R.string.ui_no_upi_app_found),
+                      context.getString(app.infinity.mpvz.R.string.ui_no_upi_app_found),
                       Toast.LENGTH_SHORT,
                     ).show()
                 }
@@ -500,7 +500,7 @@ object AboutScreen : Screen {
               Spacer(Modifier.width(8.dp))
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_send_love),
+                  .stringResource(app.infinity.mpvz.R.string.ui_send_love),
                 fontWeight = FontWeight.SemiBold,
               )
             }
@@ -531,7 +531,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_auto_check_for_updates,
+                        app.infinity.mpvz.R.string.ui_auto_check_for_updates,
                       ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -541,7 +541,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_check_on_startup,
+                        app.infinity.mpvz.R.string.ui_check_on_startup,
                       ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = cs.outline,
@@ -610,7 +610,7 @@ object AboutScreen : Screen {
                   Spacer(Modifier.width(8.dp))
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_check_for_updates_now,
+                      app.infinity.mpvz.R.string.ui_check_for_updates_now,
                     ),
                     fontWeight = FontWeight.SemiBold,
                   )
@@ -782,7 +782,7 @@ object LibrariesScreen : Screen {
           Text(
             text =
               androidx.compose.ui.res.stringResource(
-                app.gyrolet.mpvrx.R.string.ui_core_open_source_dependencies_used_by_mpvrx,
+                app.infinity.mpvz.R.string.ui_core_open_source_dependencies_used_by_mpvrx,
               ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components
+package app.infinity.mpvz.ui.player.controls.components
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -16,7 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 import kotlinx.coroutines.delay
 
 /** A stall must persist this long before the spinner appears, so ordinary seeks never flash it. */

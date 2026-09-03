@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,9 +27,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.theme.spacing
 import dev.vivvvek.seeker.Segment
 import `is`.xyz.mpv.Utils
 import kotlinx.collections.immutable.ImmutableList

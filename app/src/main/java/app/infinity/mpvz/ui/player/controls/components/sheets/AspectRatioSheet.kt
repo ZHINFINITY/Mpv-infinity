@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,11 +41,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.ui.player.AutoCropState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.player.AutoCropState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.spacing
 
 data class AspectRatio(
   val label: String,
@@ -90,7 +90,7 @@ fun AspectRatioSheet(
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_aspect_ratio),
+            .stringResource(app.infinity.mpvz.R.string.ui_aspect_ratio),
         style = MaterialTheme.typography.headlineSmall,
         modifier =
           Modifier
@@ -100,18 +100,18 @@ fun AspectRatioSheet(
 
       val autoCropSummary =
         when {
-          !autoCropControlEnabled -> app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars_managed
-          !autoCropEnabled -> app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars_summary
-          autoCropState == AutoCropState.ANALYZING -> app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars_analyzing
-          autoCropState == AutoCropState.APPLIED -> app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars_applied
-          autoCropState == AutoCropState.NO_BARS -> app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars_none
-          autoCropState == AutoCropState.UNSUPPORTED -> app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars_unsupported
-          autoCropState == AutoCropState.ERROR -> app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars_failed
-          else -> app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars_summary
+          !autoCropControlEnabled -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_managed
+          !autoCropEnabled -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_summary
+          autoCropState == AutoCropState.ANALYZING -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_analyzing
+          autoCropState == AutoCropState.APPLIED -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_applied
+          autoCropState == AutoCropState.NO_BARS -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_none
+          autoCropState == AutoCropState.UNSUPPORTED -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_unsupported
+          autoCropState == AutoCropState.ERROR -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_failed
+          else -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_summary
         }
       ListItem(
         content = {
-          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_auto_crop_black_bars))
+          Text(androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_auto_crop_black_bars))
         },
         supportingContent = { Text(androidx.compose.ui.res.stringResource(autoCropSummary)) },
         trailingContent = {
@@ -131,7 +131,7 @@ fun AspectRatioSheet(
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_presets),
+            .stringResource(app.infinity.mpvz.R.string.ui_presets),
         style = MaterialTheme.typography.titleSmall,
         modifier =
           Modifier
@@ -159,7 +159,7 @@ fun AspectRatioSheet(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.pref_gesture_double_tap_custom),
+              .stringResource(app.infinity.mpvz.R.string.pref_gesture_double_tap_custom),
           style = MaterialTheme.typography.titleSmall,
           modifier =
             Modifier
@@ -218,7 +218,7 @@ private fun AddCustomRatioRow(
     Text(
       text =
         androidx.compose.ui.res
-          .stringResource(app.gyrolet.mpvrx.R.string.ui_add_custom_ratio_e_g_16_9),
+          .stringResource(app.infinity.mpvz.R.string.ui_add_custom_ratio_e_g_16_9),
       style = MaterialTheme.typography.titleSmall,
       modifier = Modifier.padding(bottom = MaterialTheme.spacing.small),
     )
@@ -238,7 +238,7 @@ private fun AddCustomRatioRow(
         label = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_width),
+              .stringResource(app.infinity.mpvz.R.string.ui_width),
           )
         },
         isError = errorMessage != null,
@@ -269,7 +269,7 @@ private fun AddCustomRatioRow(
         label = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_height),
+              .stringResource(app.infinity.mpvz.R.string.ui_height),
           )
         },
         isError = errorMessage != null,
@@ -314,7 +314,7 @@ private fun AddCustomRatioRow(
           Icons.RoundedFilled.Add,
           contentDescription =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_add),
+              .stringResource(app.infinity.mpvz.R.string.ui_add),
         )
       }
     }

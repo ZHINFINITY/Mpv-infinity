@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences.components
+package app.infinity.mpvz.ui.preferences.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -22,7 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.ui.components.IconSwitch
+import app.infinity.mpvz.ui.components.IconSwitch
 
 @Composable
 fun SwitchPreference(

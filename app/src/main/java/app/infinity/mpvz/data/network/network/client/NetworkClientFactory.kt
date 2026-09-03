@@ -7,10 +7,10 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.client
+package app.infinity.mpvz.data.network.client
 
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.network.NetworkProtocol
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.network.NetworkProtocol
 
 object NetworkClientFactory {
   fun createClient(connection: NetworkConnection): NetworkClient =

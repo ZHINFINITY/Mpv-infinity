@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.playlist
+package app.infinity.mpvz.ui.browser.playlist
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -54,24 +54,24 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.MediaLayoutMode
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
-import app.gyrolet.mpvrx.ui.browser.cards.PlaylistCard
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
-import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
-import app.gyrolet.mpvrx.ui.browser.dialogs.DeleteConfirmationDialog
-import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
-import app.gyrolet.mpvrx.ui.browser.sheets.PlaylistActionSheet
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.cards.PlaylistCard
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.browser.sheets.PlaylistActionSheet
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
@@ -162,7 +162,7 @@ object PlaylistScreen : Screen {
 
     // Synchronize NavigationBarState when selection mode changes
     SideEffect {
-      app.gyrolet.mpvrx.ui.browser.NavigationBarState.updateSelectionState(
+      app.infinity.mpvz.ui.browser.NavigationBarState.updateSelectionState(
         inSelectionMode = selectionManager.isInSelectionMode,
         onlyVideos = true,
       )
@@ -170,7 +170,7 @@ object PlaylistScreen : Screen {
 
     // Track scroll for FAB visibility
     val mediaLayoutMode by browserPreferences.mediaLayoutMode.collectAsState()
-    app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper.trackScrollForFabVisibility(
+    app.infinity.mpvz.ui.browser.fab.FabScrollHelper.trackScrollForFabVisibility(
       listState = listState,
       gridState = if (mediaLayoutMode == MediaLayoutMode.GRID) gridState else null,
       isFabVisible = isFabVisible,
@@ -194,7 +194,7 @@ object PlaylistScreen : Screen {
             placeholder = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_search_playlists),
+                  .stringResource(app.infinity.mpvz.R.string.ui_search_playlists),
               )
             },
             leadingIcon = {
@@ -202,7 +202,7 @@ object PlaylistScreen : Screen {
                 imageVector = Icons.RoundedFilled.Search,
                 contentDescription =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.settings_search_title,
+                    app.infinity.mpvz.R.string.settings_search_title,
                   ),
               )
             },
@@ -217,7 +217,7 @@ object PlaylistScreen : Screen {
                   imageVector = Icons.RoundedFilled.Close,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.generic_cancel,
+                      app.infinity.mpvz.R.string.generic_cancel,
                     ),
                 )
               }
@@ -236,7 +236,7 @@ object PlaylistScreen : Screen {
             isSingleSelection = selectionManager.isSingleSelection,
             onSearchClick = { isSearching = true },
             onSettingsClick = {
-              backStack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
+              backStack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
             },
             onRenameClick =
               if (selectionManager.isSingleSelection && !hasProtectedSelection) {
@@ -252,7 +252,7 @@ object PlaylistScreen : Screen {
         }
       },
       floatingActionButton = {
-        val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+        val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
         if (!selectionManager.isInSelectionMode && isFabVisible.value) {
           ExtendedFloatingActionButton(
             onClick = { showPlaylistActionSheet = true },
@@ -260,7 +260,7 @@ object PlaylistScreen : Screen {
             text = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_create_playlist),
+                  .stringResource(app.infinity.mpvz.R.string.ui_create_playlist),
               )
             },
             modifier = Modifier.padding(bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp)),
@@ -347,7 +347,7 @@ object PlaylistScreen : Screen {
           title = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_rename_playlist),
+                .stringResource(app.infinity.mpvz.R.string.ui_rename_playlist),
             )
           },
           text = {
@@ -357,7 +357,7 @@ object PlaylistScreen : Screen {
               label = {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_playlist_name),
+                    .stringResource(app.infinity.mpvz.R.string.ui_playlist_name),
                 )
               },
               singleLine = true,
@@ -379,7 +379,7 @@ object PlaylistScreen : Screen {
             ) {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.rename),
+                  .stringResource(app.infinity.mpvz.R.string.rename),
               )
             }
           },
@@ -389,7 +389,7 @@ object PlaylistScreen : Screen {
             ) {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+                  .stringResource(app.infinity.mpvz.R.string.generic_cancel),
               )
             }
           },
@@ -419,13 +419,13 @@ object PlaylistScreen : Screen {
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
     isRefreshing: androidx.compose.runtime.MutableState<Boolean>,
     onRefresh: suspend () -> Unit,
-    selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<PlaylistWithCount, Int>,
+    selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<PlaylistWithCount, Int>,
     onPlaylistClick: (PlaylistWithCount) -> Unit,
     onPlaylistLongClick: (PlaylistWithCount) -> Unit,
     modifier: Modifier = Modifier,
     isInSelectionMode: Boolean = false,
   ) {
-    val browserPreferences = koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
+    val browserPreferences = koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
     val mediaLayoutMode by browserPreferences.mediaLayoutMode.collectAsState()
     val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
     val folderGridColumnsPortrait by browserPreferences.folderGridColumnsPortrait.collectAsState()
@@ -441,8 +441,8 @@ object PlaylistScreen : Screen {
       targetValue = if (hasEnoughItems) 1f else 0f,
       animationSpec =
         androidx.compose.animation.core.spring(
-          dampingRatio = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
-          stiffness = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.stiffness,
+          dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
+          stiffness = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.stiffness,
         ),
       label = "scrollbarAlpha",
     )
@@ -455,7 +455,7 @@ object PlaylistScreen : Screen {
     ) {
       if (isGridMode) {
         // Grid layout
-        val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+        val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
         BoxWithConstraints(
           modifier =
             Modifier
@@ -520,7 +520,7 @@ object PlaylistScreen : Screen {
         }
       } else {
         // List layout
-        val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+        val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
         Box(
           modifier =
             Modifier

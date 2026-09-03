@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.domain.seerr
+package app.infinity.mpvz.domain.seerr
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

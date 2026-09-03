@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.content.Intent
 import android.net.Uri
@@ -62,29 +62,29 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.repository.subtitle.OnlineSubtitleSearchMode
-import app.gyrolet.mpvrx.repository.subtitlehub.MpvRxSubtitleHubSources
-import app.gyrolet.mpvrx.repository.wyzie.WyzieEncodings
-import app.gyrolet.mpvrx.repository.wyzie.WyzieFormats
-import app.gyrolet.mpvrx.repository.wyzie.WyzieLanguages
-import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
-import app.gyrolet.mpvrx.repository.wyzie.WyzieSourceItem
-import app.gyrolet.mpvrx.repository.wyzie.WyzieSources
-import app.gyrolet.mpvrx.repository.wyzie.WyzieSourcesResponse
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.media.copyFontsFromDirectory
-import app.gyrolet.mpvrx.utils.media.loadCustomFontEntries
-import app.gyrolet.mpvrx.utils.media.resolveSubtitleStorageDirectory
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchMode
+import app.infinity.mpvz.repository.subtitlehub.MpvRxSubtitleHubSources
+import app.infinity.mpvz.repository.wyzie.WyzieEncodings
+import app.infinity.mpvz.repository.wyzie.WyzieFormats
+import app.infinity.mpvz.repository.wyzie.WyzieLanguages
+import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
+import app.infinity.mpvz.repository.wyzie.WyzieSourceItem
+import app.infinity.mpvz.repository.wyzie.WyzieSources
+import app.infinity.mpvz.repository.wyzie.WyzieSourcesResponse
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.media.copyFontsFromDirectory
+import app.infinity.mpvz.utils.media.loadCustomFontEntries
+import app.infinity.mpvz.utils.media.resolveSubtitleStorageDirectory
 import com.github.k1rakishou.fsaf.FileManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -679,7 +679,7 @@ object SubtitlesPreferencesScreen : Screen {
                             imageVector = Icons.RoundedFilled.Refresh,
                             contentDescription =
                               androidx.compose.ui.res.stringResource(
-                                app.gyrolet.mpvrx.R.string.ui_refresh,
+                                app.infinity.mpvz.R.string.ui_refresh,
                               ),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.primary,
@@ -765,7 +765,7 @@ object SubtitlesPreferencesScreen : Screen {
                               Text(
                                 text =
                                   androidx.compose.ui.res.stringResource(
-                                    app.gyrolet.mpvrx.R.string.ui_free_sources,
+                                    app.infinity.mpvz.R.string.ui_free_sources,
                                   ),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
@@ -827,7 +827,7 @@ object SubtitlesPreferencesScreen : Screen {
                               Text(
                                 text =
                                   androidx.compose.ui.res.stringResource(
-                                    app.gyrolet.mpvrx.R.string.ui_paid_sources,
+                                    app.infinity.mpvz.R.string.ui_paid_sources,
                                   ),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
@@ -895,7 +895,7 @@ object SubtitlesPreferencesScreen : Screen {
                                     Text(
                                       text =
                                         androidx.compose.ui.res.stringResource(
-                                          app.gyrolet.mpvrx.R.string.ui_restricted_requires_paid_api_key,
+                                          app.infinity.mpvz.R.string.ui_restricted_requires_paid_api_key,
                                         ),
                                       style = MaterialTheme.typography.bodySmall,
                                       color = MaterialTheme.colorScheme.error,
@@ -908,7 +908,7 @@ object SubtitlesPreferencesScreen : Screen {
                                     imageVector = Icons.RoundedFilled.Lock,
                                     contentDescription =
                                       androidx.compose.ui.res.stringResource(
-                                        app.gyrolet.mpvrx.R.string.ui_restricted,
+                                        app.infinity.mpvz.R.string.ui_restricted,
                                       ),
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(16.dp),

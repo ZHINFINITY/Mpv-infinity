@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.dialogs
+package app.infinity.mpvz.ui.browser.dialogs
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -61,11 +61,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
-import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.components.themedSegmentedButtonColors
+import app.infinity.mpvz.ui.icons.AppIcon
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -246,7 +246,7 @@ fun SortDialog(
                 Text(
                   text =
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_fields),
+                      .stringResource(app.infinity.mpvz.R.string.ui_fields),
                   style = MaterialTheme.typography.titleSmall,
                 )
                 Icon(
@@ -291,7 +291,7 @@ fun SortDialog(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_done),
+              .stringResource(app.infinity.mpvz.R.string.ui_done),
         )
       }
     },

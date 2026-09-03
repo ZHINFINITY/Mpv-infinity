@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.clip
+package app.infinity.mpvz.ui.player.clip
 
 import android.content.ContentValues
 import android.content.Context
@@ -16,10 +16,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import app.gyrolet.mpvrx.data.network.proxy.NetworkStreamingProxy
-import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
-import app.gyrolet.mpvrx.ui.player.PlaybackItem
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
+import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.ui.player.PlaybackItem
+import app.infinity.mpvz.ui.player.PlaybackSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart

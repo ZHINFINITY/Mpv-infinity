@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -15,8 +15,8 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
-import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
-import app.gyrolet.mpvrx.ui.player.PlayerActivity.Companion.TAG
+import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.ui.player.PlayerActivity.Companion.TAG
 import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
 import kotlinx.serialization.json.Json

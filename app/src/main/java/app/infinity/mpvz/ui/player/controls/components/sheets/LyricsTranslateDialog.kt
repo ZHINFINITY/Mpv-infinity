@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -46,15 +46,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.data.lyrics.LyricsLanguageOptions
-import app.gyrolet.mpvrx.data.lyrics.SupportedLanguage
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.LyricsTranslationDisplayMode
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
+import app.infinity.mpvz.R
+import app.infinity.mpvz.data.lyrics.LyricsLanguageOptions
+import app.infinity.mpvz.data.lyrics.SupportedLanguage
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.LyricsTranslationDisplayMode
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlayerViewModel
 import org.koin.compose.koinInject
 
 @Composable

@@ -7,11 +7,11 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.util.Log
-import app.gyrolet.mpvrx.network.SharedHttpClient
-import app.gyrolet.mpvrx.network.awaitResponse
+import app.infinity.mpvz.network.SharedHttpClient
+import app.infinity.mpvz.network.awaitResponse
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

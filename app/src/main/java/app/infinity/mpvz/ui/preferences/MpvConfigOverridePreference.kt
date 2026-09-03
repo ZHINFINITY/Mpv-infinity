@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -16,11 +16,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.MpvConfigOverride
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.MpvConfigOverride
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.utils.LocalBackStack
 import me.zhanghai.compose.preference.Preference
 
 /** Entry row in Advanced settings; the ownership choices live on [MpvConfOwnershipScreen]. */

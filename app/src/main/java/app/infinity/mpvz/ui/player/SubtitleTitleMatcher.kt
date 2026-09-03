@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 /** Selects a subtitle title by applying comma-separated preferences from left to right. */
 internal object SubtitleTitleMatcher {

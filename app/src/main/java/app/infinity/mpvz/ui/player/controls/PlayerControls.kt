@@ -7,15 +7,15 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls
+package app.infinity.mpvz.ui.player.controls
 
-import app.gyrolet.mpvrx.ui.player.DeclaredPlaybackMediaKind
-import app.gyrolet.mpvrx.ui.player.PlaybackPhase
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.player.declaredMediaKind
-import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingState
-import app.gyrolet.mpvrx.domain.torrent.formatTorrentBytes
-import app.gyrolet.mpvrx.domain.torrent.formatTorrentSpeed
+import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
+import app.infinity.mpvz.ui.player.PlaybackPhase
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.declaredMediaKind
+import app.infinity.mpvz.domain.torrent.TorrentStreamingState
+import app.infinity.mpvz.domain.torrent.formatTorrentBytes
+import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import android.os.Debug
@@ -118,50 +118,50 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AiPreferences
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.PlayerButton
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.PortraitPlaybackControlsPosition
-import app.gyrolet.mpvrx.preferences.allPlayerButtons
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.preferences.preference.deleteAndGet
-import app.gyrolet.mpvrx.preferences.preference.minusAssign
-import app.gyrolet.mpvrx.preferences.preference.plusAssign
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.Decoder.Companion.getDecoderFromValue
-import app.gyrolet.mpvrx.ui.player.Panels
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.player.PlayerUpdates
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.Sheets
-import app.gyrolet.mpvrx.ui.player.VideoOpenAnimationOverlay
-import app.gyrolet.mpvrx.ui.player.buildControlsEnterH
-import app.gyrolet.mpvrx.ui.player.buildControlsEnterV
-import app.gyrolet.mpvrx.ui.player.buildControlsExitH
-import app.gyrolet.mpvrx.ui.player.buildControlsExitV
-import app.gyrolet.mpvrx.ui.player.controls.components.AnimatedPlayPauseIcon
-import app.gyrolet.mpvrx.ui.player.controls.components.BrightnessSlider
-import app.gyrolet.mpvrx.ui.player.controls.components.LocalForceDarkPlayerButtonsBackground
-import app.gyrolet.mpvrx.ui.player.controls.components.LocalHidePlayerButtonsBackground
-import app.gyrolet.mpvrx.ui.player.controls.components.MultipleSpeedPlayerUpdate
-import app.gyrolet.mpvrx.ui.player.controls.components.SeekPlayerUpdate
-import app.gyrolet.mpvrx.ui.player.controls.components.SeekbarWithTimers
-import app.gyrolet.mpvrx.ui.player.controls.components.SlideToUnlock
-import app.gyrolet.mpvrx.ui.player.controls.components.TextPlayerUpdate
-import app.gyrolet.mpvrx.ui.player.controls.components.VolumeSlider
-import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonBorderColor
-import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContainerColor
-import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContentColor
-import app.gyrolet.mpvrx.ui.player.controls.components.rememberBufferingState
-import app.gyrolet.mpvrx.ui.player.controls.components.sheets.toFixed
-import app.gyrolet.mpvrx.ui.theme.controlColor
-import app.gyrolet.mpvrx.ui.theme.playerRippleConfiguration
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AiPreferences
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
+import app.infinity.mpvz.preferences.allPlayerButtons
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.preferences.preference.deleteAndGet
+import app.infinity.mpvz.preferences.preference.minusAssign
+import app.infinity.mpvz.preferences.preference.plusAssign
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.Decoder.Companion.getDecoderFromValue
+import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlayerUpdates
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.Sheets
+import app.infinity.mpvz.ui.player.VideoOpenAnimationOverlay
+import app.infinity.mpvz.ui.player.buildControlsEnterH
+import app.infinity.mpvz.ui.player.buildControlsEnterV
+import app.infinity.mpvz.ui.player.buildControlsExitH
+import app.infinity.mpvz.ui.player.buildControlsExitV
+import app.infinity.mpvz.ui.player.controls.components.AnimatedPlayPauseIcon
+import app.infinity.mpvz.ui.player.controls.components.BrightnessSlider
+import app.infinity.mpvz.ui.player.controls.components.LocalForceDarkPlayerButtonsBackground
+import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBackground
+import app.infinity.mpvz.ui.player.controls.components.MultipleSpeedPlayerUpdate
+import app.infinity.mpvz.ui.player.controls.components.SeekPlayerUpdate
+import app.infinity.mpvz.ui.player.controls.components.SeekbarWithTimers
+import app.infinity.mpvz.ui.player.controls.components.SlideToUnlock
+import app.infinity.mpvz.ui.player.controls.components.TextPlayerUpdate
+import app.infinity.mpvz.ui.player.controls.components.VolumeSlider
+import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
+import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
+import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
+import app.infinity.mpvz.ui.player.controls.components.rememberBufferingState
+import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
+import app.infinity.mpvz.ui.theme.controlColor
+import app.infinity.mpvz.ui.theme.playerRippleConfiguration
+import app.infinity.mpvz.ui.theme.spacing
 import dev.vivvvek.seeker.Segment
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -443,7 +443,7 @@ fun PlayerControls(
       bottomRightControlsPref,
       bottomLeftControlsPref,
     ) {
-      val usedButtons = mutableSetOf<app.gyrolet.mpvrx.preferences.PlayerButton>()
+      val usedButtons = mutableSetOf<app.infinity.mpvz.preferences.PlayerButton>()
       val topR = appearancePreferences.parseButtons(topRightControlsPref, usedButtons)
       val bottomR = appearancePreferences.parseButtons(bottomRightControlsPref, usedButtons)
       val bottomL = appearancePreferences.parseButtons(bottomLeftControlsPref, usedButtons)
@@ -915,9 +915,9 @@ fun PlayerControls(
                 val mode = (currentPlayerUpdate as PlayerUpdates.RepeatMode).mode
                 val text =
                   when (mode) {
-                    app.gyrolet.mpvrx.ui.player.RepeatMode.OFF -> "Repeat: Off"
-                    app.gyrolet.mpvrx.ui.player.RepeatMode.ONE -> "Repeat: Current file"
-                    app.gyrolet.mpvrx.ui.player.RepeatMode.ALL -> {
+                    app.infinity.mpvz.ui.player.RepeatMode.OFF -> "Repeat: Off"
+                    app.infinity.mpvz.ui.player.RepeatMode.ONE -> "Repeat: Current file"
+                    app.infinity.mpvz.ui.player.RepeatMode.ALL -> {
                       if (playlistMode && playlistItems.isNotEmpty()) {
                         "Repeat: All playlist"
                       } else {
@@ -1296,7 +1296,7 @@ fun PlayerControls(
                   }
                   isTorrentStreaming -> {
                     val streamState = torrentState as TorrentStreamingState.Streaming
-                    val speed = app.gyrolet.mpvrx.domain.torrent.formatTorrentSpeed(streamState.downloadSpeed)
+                    val speed = app.infinity.mpvz.domain.torrent.formatTorrentSpeed(streamState.downloadSpeed)
                     val peers = "${streamState.peers} peers"
                     val progress = "${(streamState.bufferProgress * 100).toInt()}%"
                     "$speed | $peers | $progress"
@@ -1402,7 +1402,7 @@ fun PlayerControls(
                     imageVector = Icons.RoundedFilled.SkipPrevious,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.pref_gesture_media_previous,
+                        app.infinity.mpvz.R.string.pref_gesture_media_previous,
                       ),
                     tint =
                       if (viewModel.hasPrevious()) {
@@ -1503,7 +1503,7 @@ fun PlayerControls(
                     imageVector = Icons.RoundedFilled.SkipNext,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.pref_gesture_media_next,
+                        app.infinity.mpvz.R.string.pref_gesture_media_next,
                       ),
                     tint =
                       if (viewModel.hasNext()) {
@@ -1946,7 +1946,7 @@ fun PlayerControls(
         buildSet {
           if (isSpeedNonOne) add(PlayerButton.PLAYBACK_SPEED)
           if (kotlin.math.abs(currentZoom) >= 0.005f) add(PlayerButton.VIDEO_ZOOM)
-          if (repeatMode != app.gyrolet.mpvrx.ui.player.RepeatMode.OFF) add(PlayerButton.REPEAT_MODE)
+          if (repeatMode != app.infinity.mpvz.ui.player.RepeatMode.OFF) add(PlayerButton.REPEAT_MODE)
           if (shuffleEnabled) add(PlayerButton.SHUFFLE)
           if (transformState.isMirrored) add(PlayerButton.MIRROR)
           if (transformState.isVerticalFlipped) add(PlayerButton.VERTICAL_FLIP)

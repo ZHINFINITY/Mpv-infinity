@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.dialogs
+package app.infinity.mpvz.ui.browser.dialogs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -41,10 +41,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.preferences.AiPreferences
-import app.gyrolet.mpvrx.repository.ai.AiService
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.preferences.AiPreferences
+import app.infinity.mpvz.repository.ai.AiService
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
@@ -119,7 +119,7 @@ fun RenameDialog(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_new_name),
+                .stringResource(app.infinity.mpvz.R.string.ui_new_name),
               fontWeight = FontWeight.Medium,
             )
           },
@@ -176,7 +176,7 @@ fun RenameDialog(
               Spacer(modifier = Modifier.width(8.dp))
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_ai_is_thinking),
+                  .stringResource(app.infinity.mpvz.R.string.ui_ai_is_thinking),
               )
             } else {
               Icon(
@@ -187,7 +187,7 @@ fun RenameDialog(
               Spacer(modifier = Modifier.width(8.dp))
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_ai_rename),
+                  .stringResource(app.infinity.mpvz.R.string.ui_ai_rename),
                 fontWeight = FontWeight.Medium,
               )
             }
@@ -208,7 +208,7 @@ fun RenameDialog(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.rename),
+              .stringResource(app.infinity.mpvz.R.string.rename),
           fontWeight = FontWeight.Bold,
         )
       }
@@ -220,7 +220,7 @@ fun RenameDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
           fontWeight = FontWeight.Medium,
         )
       }

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin
+package app.infinity.mpvz.ui.browser.jellyfin
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -34,7 +34,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.MediaUtils
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -83,14 +83,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.data.jellyfin.JellyfinClient
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinItem
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.LocalDarkAppColorScheme
+import app.infinity.mpvz.R
+import app.infinity.mpvz.data.jellyfin.JellyfinClient
+import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.LocalDarkAppColorScheme
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 

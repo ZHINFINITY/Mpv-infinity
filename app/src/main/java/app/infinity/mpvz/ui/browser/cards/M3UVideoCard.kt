@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.cards
+package app.infinity.mpvz.ui.browser.cards
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -45,15 +45,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
-import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.withContext

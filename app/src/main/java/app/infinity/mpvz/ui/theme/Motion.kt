@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.theme
+package app.infinity.mpvz.ui.theme
 
 import android.animation.ValueAnimator
 import androidx.compose.animation.core.FiniteAnimationSpec

@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
-import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
 
 internal const val PLAYBACK_STATE_MILLISECONDS_TO_SECONDS = 1000
 internal const val DEFAULT_PLAYBACK_STATE_SPEED = 1.0

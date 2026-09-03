@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.network
+package app.infinity.mpvz.network
 
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call

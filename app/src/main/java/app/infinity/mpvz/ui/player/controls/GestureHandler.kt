@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls
+package app.infinity.mpvz.ui.player.controls
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -65,25 +65,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.GesturePreferences
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.components.LeftSideOvalShape
-import app.gyrolet.mpvrx.presentation.components.RightSideOvalShape
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.Panels
-import app.gyrolet.mpvrx.ui.player.PlayerUpdates
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.Sheets
-import app.gyrolet.mpvrx.ui.player.SingleActionGesture
-import app.gyrolet.mpvrx.ui.player.getSubtitleHitboxBounds
-import app.gyrolet.mpvrx.ui.player.getTrackSelectionId
-import app.gyrolet.mpvrx.ui.theme.AppMotion
-import app.gyrolet.mpvrx.ui.theme.playerRippleConfiguration
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.LeftSideOvalShape
+import app.infinity.mpvz.presentation.components.RightSideOvalShape
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlayerUpdates
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.Sheets
+import app.infinity.mpvz.ui.player.SingleActionGesture
+import app.infinity.mpvz.ui.player.getSubtitleHitboxBounds
+import app.infinity.mpvz.ui.player.getTrackSelectionId
+import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.theme.playerRippleConfiguration
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch

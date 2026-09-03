@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.editor
+package app.infinity.mpvz.ui.editor
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
@@ -60,13 +60,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
+import app.infinity.mpvz.R
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -145,7 +145,7 @@ data class MpvHelpScreen(
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.ui_mpv_documentation,
+                  app.infinity.mpvz.R.string.ui_mpv_documentation,
                 ),
               style = MaterialTheme.typography.headlineSmall,
               fontWeight = FontWeight.ExtraBold,
@@ -170,7 +170,7 @@ data class MpvHelpScreen(
             .fillMaxSize()
             .padding(padding),
       ) {
-        app.gyrolet.mpvrx.ui.components.InlineSearchBar(
+        app.infinity.mpvz.ui.components.InlineSearchBar(
           query = searchQuery,
           onQueryChange = { searchQuery = it },
           onSearch = { keyboardController?.hide() },
@@ -181,7 +181,7 @@ data class MpvHelpScreen(
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.ui_search_commands_options_properties,
+                  app.infinity.mpvz.R.string.ui_search_commands_options_properties,
                 ),
               color = MaterialTheme.colorScheme.outline,
             )
@@ -204,7 +204,7 @@ data class MpvHelpScreen(
                   imageVector = Icons.RoundedFilled.Clear,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.pref_clear_content_desc,
+                      app.infinity.mpvz.R.string.pref_clear_content_desc,
                     ),
                   tint = MaterialTheme.colorScheme.outline,
                 )
@@ -227,7 +227,7 @@ data class MpvHelpScreen(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.pref_all_sources),
+                  .stringResource(app.infinity.mpvz.R.string.pref_all_sources),
               )
             },
             colors = filterChipColors(),
@@ -262,7 +262,7 @@ data class MpvHelpScreen(
               Text(
                 text =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_no_results_found,
+                    app.infinity.mpvz.R.string.ui_no_results_found,
                   ),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.outline,
@@ -370,7 +370,7 @@ private fun HelpEntryCard(
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_no_android),
+                  .stringResource(app.infinity.mpvz.R.string.ui_no_android),
               style = MaterialTheme.typography.labelSmall,
               fontWeight = FontWeight.Bold,
               color = colors.error,

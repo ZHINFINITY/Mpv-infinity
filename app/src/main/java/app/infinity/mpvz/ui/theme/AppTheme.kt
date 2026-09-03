@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.theme
+package app.infinity.mpvz.ui.theme
 
 import androidx.annotation.StringRes
 import androidx.compose.material3.ColorScheme
@@ -16,8 +16,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.ui.player.visualizer.VisualizerPalette
+import app.infinity.mpvz.R
+import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
 
 /**
  * App themes inspired by Aniyomi design

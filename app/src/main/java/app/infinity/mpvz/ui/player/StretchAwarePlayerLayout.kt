@@ -2,12 +2,12 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.content.Context
 import android.util.AttributeSet
 import androidx.constraintlayout.widget.ConstraintLayout
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.PlayerPreferences
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 

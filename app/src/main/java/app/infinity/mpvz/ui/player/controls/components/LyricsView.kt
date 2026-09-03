@@ -2,9 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components
+package app.infinity.mpvz.ui.player.controls.components
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -53,7 +53,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.infinity.mpvz.preferences.preference.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,17 +76,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.data.lyrics.LyricsLanguageOptions
-import app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType
-import app.gyrolet.mpvrx.domain.lyrics.SyncedLine
-import app.gyrolet.mpvrx.domain.lyrics.SyncedWord
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.LyricsTranslationDisplayMode
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.controls.components.sheets.LyricsTranslateDialog
+import app.infinity.mpvz.R
+import app.infinity.mpvz.data.lyrics.LyricsLanguageOptions
+import app.infinity.mpvz.domain.lyrics.LyricsSourceType
+import app.infinity.mpvz.domain.lyrics.SyncedLine
+import app.infinity.mpvz.domain.lyrics.SyncedWord
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.LyricsTranslationDisplayMode
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.controls.components.sheets.LyricsTranslateDialog
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalLayoutApi::class)

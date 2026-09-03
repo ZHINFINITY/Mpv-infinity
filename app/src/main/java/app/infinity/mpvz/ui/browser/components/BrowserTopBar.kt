@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.components
+package app.infinity.mpvz.ui.browser.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -50,13 +50,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.DarkMode
-import app.gyrolet.mpvrx.ui.theme.LocalThemeTransitionState
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.DarkMode
+import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -311,7 +311,7 @@ private fun NormalTopBar(
             Icons.RoundedFilled.Search,
             contentDescription =
               androidx.compose.ui.res.stringResource(
-                app.gyrolet.mpvrx.R.string.settings_search_title,
+                app.infinity.mpvz.R.string.settings_search_title,
               ),
             modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.secondary,
@@ -327,7 +327,7 @@ private fun NormalTopBar(
             Icons.RoundedFilled.Explore,
             contentDescription =
               androidx.compose.ui.res.stringResource(
-                app.gyrolet.mpvrx.R.string.seerr_discover,
+                app.infinity.mpvz.R.string.seerr_discover,
               ),
             modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.secondary,
@@ -357,7 +357,7 @@ private fun NormalTopBar(
             Icons.RoundedFilled.Settings,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_settings),
+                .stringResource(app.infinity.mpvz.R.string.ui_settings),
             modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.secondary,
           )
@@ -499,7 +499,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.PlayArrow,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
+                .stringResource(app.infinity.mpvz.R.string.ui_play),
             modifier = Modifier.size(28.dp),
             tint = MaterialTheme.colorScheme.primary,
           )
@@ -515,7 +515,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.PushPin,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_pin_folders),
+                .stringResource(app.infinity.mpvz.R.string.ui_pin_folders),
             modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.secondary,
           )
@@ -532,7 +532,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.PlaylistAdd,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_add_to_playlist),
+                .stringResource(app.infinity.mpvz.R.string.ui_add_to_playlist),
             modifier = Modifier.size(28.dp),
             tint = MaterialTheme.colorScheme.secondary,
           )

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.browser.music
+package app.infinity.mpvz.ui.browser.music
 
 import android.net.Uri
 import android.text.format.DateUtils
@@ -38,13 +38,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.player.controls.components.MiniAudioVisualizer
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.icons.AppIcon
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import app.infinity.mpvz.ui.theme.AppShapeScale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

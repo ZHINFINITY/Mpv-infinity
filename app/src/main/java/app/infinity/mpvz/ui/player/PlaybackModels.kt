@@ -7,10 +7,10 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
-import app.gyrolet.mpvrx.utils.media.fileExtension
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
+import app.infinity.mpvz.utils.media.fileExtension
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Locale

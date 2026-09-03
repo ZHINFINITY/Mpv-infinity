@@ -2,20 +2,20 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.browser.music
+package app.infinity.mpvz.ui.browser.music
 
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.database.entities.PlaylistEntity
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
-import app.gyrolet.mpvrx.ui.player.PlaybackItem
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.player.PreparedPlaybackLaunchStore
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.ui.player.PlaybackItem
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -29,16 +29,16 @@ import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
-import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import kotlinx.coroutines.flow.collectLatest
 
 class MusicLibraryViewModel : ViewModel(), KoinComponent {
 
   private val context: Context by inject()
   private val playlistRepository: PlaylistRepository by inject()
-  private val browserPreferences: app.gyrolet.mpvrx.preferences.BrowserPreferences by inject()
-  private val audioPreferences: app.gyrolet.mpvrx.preferences.AudioPreferences by inject()
-  private val foldersPreferences: app.gyrolet.mpvrx.preferences.FoldersPreferences by inject()
+  private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
+  private val audioPreferences: app.infinity.mpvz.preferences.AudioPreferences by inject()
+  private val foldersPreferences: app.infinity.mpvz.preferences.FoldersPreferences by inject()
 
   val visibleTabs: StateFlow<List<MusicTab>> = combine(
     audioPreferences.musicTabOrder.changes(),
@@ -383,7 +383,7 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
 
   suspend fun deleteSongs(context: Context, songsToDelete: List<MusicSong>): Pair<Int, Int> {
     val videos = songsToDelete.map { song ->
-      app.gyrolet.mpvrx.domain.media.model.Video(
+      app.infinity.mpvz.domain.media.model.Video(
         id = song.id,
         title = song.title,
         displayName = song.title,
@@ -405,7 +405,7 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
         isAudio = true
       )
     }
-    val result = app.gyrolet.mpvrx.utils.permission.PermissionUtils.StorageOps.deleteVideos(context.applicationContext as android.app.Application, videos)
+    val result = app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps.deleteVideos(context.applicationContext as android.app.Application, videos)
     refreshLibrary(context)
     return result
   }

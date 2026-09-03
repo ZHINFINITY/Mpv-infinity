@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls
+package app.infinity.mpvz.ui.player.controls
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -99,13 +99,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.palette.graphics.Palette
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
-import app.gyrolet.mpvrx.repository.JellyfinRepository
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
-import app.gyrolet.mpvrx.ui.player.resolveUri
-import app.gyrolet.mpvrx.ui.player.controls.components.MiniAudioVisualizer
-import app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem
+import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.repository.JellyfinRepository
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
+import app.infinity.mpvz.ui.player.resolveUri
+import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistItem
 import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -140,35 +140,35 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.core.content.ContextCompat
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.AudioVisualizerStyle
-import app.gyrolet.mpvrx.preferences.GesturePreferences
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.Panels
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.RepeatMode
-import app.gyrolet.mpvrx.ui.player.Sheets
-import app.gyrolet.mpvrx.ui.player.controls.components.AbLoopIcon
-import app.gyrolet.mpvrx.ui.player.controls.components.SeekbarWithTimers
-import app.gyrolet.mpvrx.ui.player.visualizer.AudioFeatures
-import app.gyrolet.mpvrx.ui.player.visualizer.AudioSpectrumAnalyzer
-import app.gyrolet.mpvrx.ui.player.visualizer.BlobOverlay
-import app.gyrolet.mpvrx.ui.player.visualizer.CuboidOverlay
-import app.gyrolet.mpvrx.ui.player.visualizer.GalaxyOverlay
-import app.gyrolet.mpvrx.ui.player.visualizer.ParticleOverlay
-import app.gyrolet.mpvrx.ui.player.visualizer.VisualizerPalette
-import app.gyrolet.mpvrx.ui.player.visualizer.rememberAudioVisualizerFeatures
-import app.gyrolet.mpvrx.ui.utils.isMpvOptionOwnedByConfig
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.AudioVisualizerStyle
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.RepeatMode
+import app.infinity.mpvz.ui.player.Sheets
+import app.infinity.mpvz.ui.player.controls.components.AbLoopIcon
+import app.infinity.mpvz.ui.player.controls.components.SeekbarWithTimers
+import app.infinity.mpvz.ui.player.visualizer.AudioFeatures
+import app.infinity.mpvz.ui.player.visualizer.AudioSpectrumAnalyzer
+import app.infinity.mpvz.ui.player.visualizer.BlobOverlay
+import app.infinity.mpvz.ui.player.visualizer.CuboidOverlay
+import app.infinity.mpvz.ui.player.visualizer.GalaxyOverlay
+import app.infinity.mpvz.ui.player.visualizer.ParticleOverlay
+import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
+import app.infinity.mpvz.ui.player.visualizer.rememberAudioVisualizerFeatures
+import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 
-import app.gyrolet.mpvrx.utils.media.fileExtension
+import app.infinity.mpvz.utils.media.fileExtension
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
@@ -1028,7 +1028,7 @@ fun AudioPlayerControls(
         val currentOffset = animatableOffsetX.value
 
         if (showInPlaceLyrics && !isTabletLandscape) {
-          app.gyrolet.mpvrx.ui.player.controls.components.LyricsView(
+          app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
             isLyricsFullscreen = isLyricsFullscreen,
@@ -1995,7 +1995,7 @@ private fun DualPaneSidePanel(
           playlist = playlist,
         )
       } else {
-        app.gyrolet.mpvrx.ui.player.controls.components.LyricsView(
+        app.infinity.mpvz.ui.player.controls.components.LyricsView(
           viewModel = viewModel,
           showTitleHeader = false,
         )

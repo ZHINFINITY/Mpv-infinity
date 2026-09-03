@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.networkstreaming
+package app.infinity.mpvz.ui.browser.networkstreaming
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -61,13 +61,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.database.entities.NetworkStreamEntryEntity
-import app.gyrolet.mpvrx.domain.torrent.formatTorrentBytes
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.utils.media.MediaInfoParser
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.database.entities.NetworkStreamEntryEntity
+import app.infinity.mpvz.domain.torrent.formatTorrentBytes
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.delay
 
 /**

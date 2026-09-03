@@ -7,15 +7,15 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.base
+package app.infinity.mpvz.ui.browser.base
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.database.repository.VideoMetadataCacheRepository
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
-import app.gyrolet.mpvrx.utils.permission.PermissionUtils.StorageOps
+import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn

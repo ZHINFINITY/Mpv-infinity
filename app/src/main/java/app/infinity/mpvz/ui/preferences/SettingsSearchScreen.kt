@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -57,15 +57,15 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.LocalEmphasizedTypography
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -94,7 +94,7 @@ object SettingsSearchScreen : Screen {
       focusRequester.requestFocus()
     }
 
-    val preferenceStore = org.koin.compose.koinInject<app.gyrolet.mpvrx.preferences.preference.PreferenceStore>()
+    val preferenceStore = org.koin.compose.koinInject<app.infinity.mpvz.preferences.preference.PreferenceStore>()
     val searchHistoryPref = remember { preferenceStore.getString("settings_search_history", "") }
     val searchHistoryRaw by searchHistoryPref.collectAsState()
     val searchHistory =
@@ -171,7 +171,7 @@ object SettingsSearchScreen : Screen {
                   imageVector = Icons.RoundedFilled.Clear,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.pref_clear_content_desc,
+                      app.infinity.mpvz.R.string.pref_clear_content_desc,
                     ),
                   tint = MaterialTheme.colorScheme.outline,
                 )
@@ -201,7 +201,7 @@ object SettingsSearchScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_search_history,
+                        app.infinity.mpvz.R.string.ui_search_history,
                       ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -211,7 +211,7 @@ object SettingsSearchScreen : Screen {
                       imageVector = Icons.RoundedFilled.Delete,
                       contentDescription =
                         androidx.compose.ui.res.stringResource(
-                          app.gyrolet.mpvrx.R.string.ui_clear_history,
+                          app.infinity.mpvz.R.string.ui_clear_history,
                         ),
                       tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -262,7 +262,7 @@ object SettingsSearchScreen : Screen {
                 Text(
                   text =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_search_suggestions,
+                      app.infinity.mpvz.R.string.ui_search_suggestions,
                     ),
                   style = MaterialTheme.typography.titleMedium,
                   fontWeight = FontWeight.SemiBold,

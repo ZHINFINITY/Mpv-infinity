@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.videolist
+package app.infinity.mpvz.ui.browser.videolist
 
 import android.content.Intent
 import android.os.Environment
@@ -73,54 +73,54 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.repository.SecureFolderRepository
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.GesturePreferences
-import app.gyrolet.mpvrx.preferences.MediaLayoutMode
-import app.gyrolet.mpvrx.preferences.SortOrder
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
-import app.gyrolet.mpvrx.ui.browser.cards.SwipeableVideoActions
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCard
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCardUiConfig
-import app.gyrolet.mpvrx.ui.browser.components.BrowserBottomBar
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
-import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
-import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.DeleteConfirmationDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.FileOperationProgressDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.FolderPickerDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.LoadingDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.RenameDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.VideoCompressorOverlay
-import app.gyrolet.mpvrx.ui.browser.dialogs.VideoSortDialog
-import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
-import app.gyrolet.mpvrx.ui.browser.selection.SelectionManager
-import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.securefolder.SecureConfirmDialog
-import app.gyrolet.mpvrx.ui.securefolder.SecureFolderGateScreen
-import app.gyrolet.mpvrx.ui.securefolder.SecureFolderProgressDialog
-import app.gyrolet.mpvrx.ui.theme.AppMotion
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
-import app.gyrolet.mpvrx.utils.media.CopyPasteOps
-import app.gyrolet.mpvrx.utils.media.MediaUtils
-import app.gyrolet.mpvrx.utils.media.MediaSearchEngine
-import app.gyrolet.mpvrx.utils.media.OpenDocumentTreeContract
-import app.gyrolet.mpvrx.utils.sort.SortUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.repository.SecureFolderRepository
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.SortOrder
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SecureFolderPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.cards.SwipeableVideoActions
+import app.infinity.mpvz.ui.browser.cards.VideoCard
+import app.infinity.mpvz.ui.browser.cards.VideoCardUiConfig
+import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
+import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
+import app.infinity.mpvz.ui.browser.dialogs.FileOperationProgressDialog
+import app.infinity.mpvz.ui.browser.dialogs.FolderPickerDialog
+import app.infinity.mpvz.ui.browser.dialogs.LoadingDialog
+import app.infinity.mpvz.ui.browser.dialogs.RenameDialog
+import app.infinity.mpvz.ui.browser.dialogs.VideoCompressorOverlay
+import app.infinity.mpvz.ui.browser.dialogs.VideoSortDialog
+import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
+import app.infinity.mpvz.ui.browser.selection.SelectionManager
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.securefolder.SecureConfirmDialog
+import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
+import app.infinity.mpvz.ui.securefolder.SecureFolderProgressDialog
+import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.CopyPasteOps
+import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.MediaSearchEngine
+import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
+import app.infinity.mpvz.utils.sort.SortUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -146,12 +146,12 @@ data class VideoListScreen(
     val coroutineScope = rememberCoroutineScope()
     val backstack = LocalBackStack.current
     val browserPreferences = koinInject<BrowserPreferences>()
-    val appearancePreferences = koinInject<app.gyrolet.mpvrx.preferences.AppearancePreferences>()
+    val appearancePreferences = koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
     val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
     val playerPreferences = koinInject<PlayerPreferences>()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
-    val navBarState = app.gyrolet.mpvrx.ui.browser.NavigationBarState
+    val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
+    val navBarState = app.infinity.mpvz.ui.browser.NavigationBarState
 
     // ViewModel
     val viewModel: VideoListViewModel =
@@ -400,7 +400,7 @@ data class VideoListScreen(
             if (isDualPane) {
               null
             } else {
-              { backstack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen) }
+              { backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen) }
             },
           onTitleDoubleTap = { backstack.add(SecureFolderGateScreen) },
           onTitleLongPress = { backstack.add(SecureFolderGateScreen) },
@@ -409,7 +409,7 @@ data class VideoListScreen(
             if (selectionManager.isSingleSelection) {
               val video = selectionManager.getSelectedItems().firstOrNull()
               if (video != null) {
-                val intent = Intent(context, app.gyrolet.mpvrx.ui.mediainfo.MediaInfoActivity::class.java)
+                val intent = Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java)
                 intent.action = Intent.ACTION_VIEW
                 intent.data = video.uri
                 context.startActivity(intent)
@@ -436,8 +436,8 @@ data class VideoListScreen(
         }
       },
       floatingActionButton = {
-        val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
-        val miniPlayerClearance = app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance
+        val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
+        val miniPlayerClearance = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance
         if (sortedVideosWithInfo.isNotEmpty()) {
           val isFabShouldBeVisible =
             showQuickPlayFab && !selectionManager.isInSelectionMode && isFabVisible.value
@@ -448,7 +448,7 @@ data class VideoListScreen(
               PlainTooltip {
                 Text(
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_play_recently_played_or_first_video,
+                    app.infinity.mpvz.R.string.ui_play_recently_played_or_first_video,
                   ),
                 )
               }
@@ -490,7 +490,7 @@ data class VideoListScreen(
                 Icons.RoundedFilled.PlayArrow,
                 contentDescription =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_play_recently_played_or_first_video,
+                    app.infinity.mpvz.R.string.ui_play_recently_played_or_first_video,
                   ),
               )
             }
@@ -570,47 +570,47 @@ data class VideoListScreen(
 
       // Sort Dialog
       if (isAudio) {
-        app.gyrolet.mpvrx.ui.browser.dialogs.MusicSortDialog(
+        app.infinity.mpvz.ui.browser.dialogs.MusicSortDialog(
           isOpen = sortDialogOpen.value,
           onDismiss = { sortDialogOpen.value = false },
           sortField =
             when (videoSortType) {
-              app.gyrolet.mpvrx.preferences.VideoSortType.Duration -> app.gyrolet.mpvrx.ui.browser.music.MusicSortField.DURATION
-              app.gyrolet.mpvrx.preferences.VideoSortType.Date -> app.gyrolet.mpvrx.ui.browser.music.MusicSortField.DATE_ADDED
-              else -> app.gyrolet.mpvrx.ui.browser.music.MusicSortField.TITLE
+              app.infinity.mpvz.preferences.VideoSortType.Duration -> app.infinity.mpvz.ui.browser.music.MusicSortField.DURATION
+              app.infinity.mpvz.preferences.VideoSortType.Date -> app.infinity.mpvz.ui.browser.music.MusicSortField.DATE_ADDED
+              else -> app.infinity.mpvz.ui.browser.music.MusicSortField.TITLE
             },
           sortOrder =
             if (videoSortOrder.isAscending) {
-              app.gyrolet.mpvrx.ui.browser.music.MusicSortOrder.ASCENDING
+              app.infinity.mpvz.ui.browser.music.MusicSortOrder.ASCENDING
             } else {
-              app.gyrolet.mpvrx.ui.browser.music.MusicSortOrder.DESCENDING
+              app.infinity.mpvz.ui.browser.music.MusicSortOrder.DESCENDING
             },
-          viewMode = if (mediaLayoutMode == MediaLayoutMode.GRID) app.gyrolet.mpvrx.ui.browser.music.MusicViewMode.GRID else app.gyrolet.mpvrx.ui.browser.music.MusicViewMode.LIST,
+          viewMode = if (mediaLayoutMode == MediaLayoutMode.GRID) app.infinity.mpvz.ui.browser.music.MusicViewMode.GRID else app.infinity.mpvz.ui.browser.music.MusicViewMode.LIST,
           // VideoSortType has no Artist/Album, so only offer the fields it can actually persist
           // (Title/Duration/Date Added) instead of silently collapsing Artist/Album back to Title.
           availableFields =
             listOf(
-              app.gyrolet.mpvrx.ui.browser.music.MusicSortField.TITLE,
-              app.gyrolet.mpvrx.ui.browser.music.MusicSortField.DURATION,
-              app.gyrolet.mpvrx.ui.browser.music.MusicSortField.DATE_ADDED,
+              app.infinity.mpvz.ui.browser.music.MusicSortField.TITLE,
+              app.infinity.mpvz.ui.browser.music.MusicSortField.DURATION,
+              app.infinity.mpvz.ui.browser.music.MusicSortField.DATE_ADDED,
             ),
           onSortFieldChange = { field ->
             val mapped =
               when (field) {
-                app.gyrolet.mpvrx.ui.browser.music.MusicSortField.DURATION -> app.gyrolet.mpvrx.preferences.VideoSortType.Duration
-                app.gyrolet.mpvrx.ui.browser.music.MusicSortField.DATE_ADDED -> app.gyrolet.mpvrx.preferences.VideoSortType.Date
-                else -> app.gyrolet.mpvrx.preferences.VideoSortType.Title
+                app.infinity.mpvz.ui.browser.music.MusicSortField.DURATION -> app.infinity.mpvz.preferences.VideoSortType.Duration
+                app.infinity.mpvz.ui.browser.music.MusicSortField.DATE_ADDED -> app.infinity.mpvz.preferences.VideoSortType.Date
+                else -> app.infinity.mpvz.preferences.VideoSortType.Title
               }
             browserPreferences.videoSortType.set(mapped)
           },
           onSortOrderChange = { order ->
             browserPreferences.videoSortOrder.set(
-              if (order == app.gyrolet.mpvrx.ui.browser.music.MusicSortOrder.ASCENDING) SortOrder.Ascending else SortOrder.Descending,
+              if (order == app.infinity.mpvz.ui.browser.music.MusicSortOrder.ASCENDING) SortOrder.Ascending else SortOrder.Descending,
             )
           },
           onViewModeChange = { mode ->
             browserPreferences.folderViewVideoLayoutMode.set(
-              if (mode == app.gyrolet.mpvrx.ui.browser.music.MusicViewMode.GRID) MediaLayoutMode.GRID else MediaLayoutMode.LIST,
+              if (mode == app.infinity.mpvz.ui.browser.music.MusicViewMode.GRID) MediaLayoutMode.GRID else MediaLayoutMode.LIST,
             )
           },
         )
@@ -670,7 +670,7 @@ data class VideoListScreen(
             )
           }
         } else if (selectionManager.selectedCount > 1) {
-          app.gyrolet.mpvrx.ui.browser.dialogs.BulkAiRenameDialog(
+          app.infinity.mpvz.ui.browser.dialogs.BulkAiRenameDialog(
             isOpen = true,
             onDismiss = { renameDialogOpen.value = false },
             onConfirm = { updates -> selectionManager.renameBulk(updates) },
@@ -790,7 +790,7 @@ data class VideoListScreen(
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_moved_to_private_space),
+                  .stringResource(app.infinity.mpvz.R.string.ui_moved_to_private_space),
               style = MaterialTheme.typography.headlineSmall,
             )
           },
@@ -808,7 +808,7 @@ data class VideoListScreen(
             ) {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_close),
+                  .stringResource(app.infinity.mpvz.R.string.ui_close),
               )
             }
           },
@@ -868,7 +868,7 @@ internal fun VideoListContent(
   isFabVisible: androidx.compose.runtime.MutableState<Boolean>,
   modifier: Modifier = Modifier,
   showFloatingBottomBar: Boolean = false,
-  mediaLayoutMode: app.gyrolet.mpvrx.preferences.MediaLayoutMode,
+  mediaLayoutMode: app.infinity.mpvz.preferences.MediaLayoutMode,
   isAudio: Boolean = false,
   musicCoverArtSize: Int = 48,
   isFabExpanded: Boolean = false,
@@ -881,8 +881,8 @@ internal fun VideoListContent(
   val configuration = androidx.compose.ui.platform.LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val density = LocalDensity.current
-  val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
-  val miniPlayerClearance = app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance
+  val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
+  val miniPlayerClearance = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance
   val bottomPadding =
     if (showFloatingBottomBar) {
       if (isTablet) 108.dp else 88.dp
@@ -1146,8 +1146,8 @@ internal fun VideoListContent(
           targetValue = if (hasEnoughItems) 1f else 0f,
           animationSpec =
             androidx.compose.animation.core.spring(
-              dampingRatio = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
-              stiffness = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.stiffness,
+              dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
+              stiffness = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.stiffness,
             ),
           label = "scrollbarAlpha",
         )

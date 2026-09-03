@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.networkstreaming
+package app.infinity.mpvz.ui.browser.networkstreaming
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,8 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.syncplay.SyncplayManager
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.syncplay.SyncplayManager
 import org.koin.compose.koinInject
 
 /**
@@ -57,7 +57,7 @@ fun SyncplayPanel(syncplayManager: SyncplayManager = koinInject()) {
   var room by remember(syncplayManager) { mutableStateOf(savedCredentials.room) }
   var password by remember(syncplayManager) { mutableStateOf(savedCredentials.password) }
 
-  val navBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
+  val navBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = navBarHeight + 16.dp),

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.content.Intent
 import android.widget.Toast
@@ -43,18 +43,18 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.ConfirmDialog
-import app.gyrolet.mpvrx.ui.editor.MpvHelpScreen
-import app.gyrolet.mpvrx.ui.editor.MpvScriptEditor
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.ConfirmDialog
+import app.infinity.mpvz.ui.editor.MpvHelpScreen
+import app.infinity.mpvz.ui.editor.MpvScriptEditor
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -130,7 +130,7 @@ data class LuaScriptEditorScreen(
         Toast
           .makeText(
             context,
-            context.getString(app.gyrolet.mpvrx.R.string.ui_please_enter_a_file_name),
+            context.getString(app.infinity.mpvz.R.string.ui_please_enter_a_file_name),
             Toast.LENGTH_SHORT,
           ).show()
         return
@@ -145,7 +145,7 @@ data class LuaScriptEditorScreen(
               Toast
                 .makeText(
                   context,
-                  context.getString(app.gyrolet.mpvrx.R.string.ui_no_storage_location_set),
+                  context.getString(app.infinity.mpvz.R.string.ui_no_storage_location_set),
                   Toast.LENGTH_LONG,
                 ).show()
             }
@@ -158,7 +158,7 @@ data class LuaScriptEditorScreen(
               Toast
                 .makeText(
                   context,
-                  context.getString(app.gyrolet.mpvrx.R.string.ui_no_storage_location_set),
+                  context.getString(app.infinity.mpvz.R.string.ui_no_storage_location_set),
                   Toast.LENGTH_LONG,
                 ).show()
             }
@@ -186,7 +186,7 @@ data class LuaScriptEditorScreen(
                 Toast
                   .makeText(
                     context,
-                    context.getString(app.gyrolet.mpvrx.R.string.ui_failed_to_create_file),
+                    context.getString(app.infinity.mpvz.R.string.ui_failed_to_create_file),
                     Toast.LENGTH_LONG,
                   ).show()
               }
@@ -201,7 +201,7 @@ data class LuaScriptEditorScreen(
               Toast
                 .makeText(
                   context,
-                  context.getString(app.gyrolet.mpvrx.R.string.ui_failed_to_open_output_stream),
+                  context.getString(app.infinity.mpvz.R.string.ui_failed_to_open_output_stream),
                   Toast.LENGTH_LONG,
                 ).show()
             }
@@ -245,7 +245,7 @@ data class LuaScriptEditorScreen(
         Toast
           .makeText(
             context,
-            context.getString(app.gyrolet.mpvrx.R.string.ui_save_the_script_first_before_sharing),
+            context.getString(app.infinity.mpvz.R.string.ui_save_the_script_first_before_sharing),
             Toast.LENGTH_SHORT,
           ).show()
         return
@@ -383,7 +383,7 @@ data class LuaScriptEditorScreen(
                     Text(
                       text =
                         androidx.compose.ui.res
-                          .stringResource(app.gyrolet.mpvrx.R.string.ui_script_name),
+                          .stringResource(app.infinity.mpvz.R.string.ui_script_name),
                       style =
                         MaterialTheme.typography.headlineSmall.copy(
                           fontWeight = FontWeight.ExtraBold,
@@ -424,7 +424,7 @@ data class LuaScriptEditorScreen(
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_unsaved_changes),
+                    .stringResource(app.infinity.mpvz.R.string.ui_unsaved_changes),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
               )
@@ -437,7 +437,7 @@ data class LuaScriptEditorScreen(
               Icons.RoundedFilled.ArrowBack,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.back),
+                  .stringResource(app.infinity.mpvz.R.string.back),
               tint = MaterialTheme.colorScheme.secondary,
             )
           }
@@ -456,7 +456,7 @@ data class LuaScriptEditorScreen(
               imageVector = Icons.RoundedFilled.Info,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_help),
+                  .stringResource(app.infinity.mpvz.R.string.ui_help),
             )
           }
 
@@ -479,7 +479,7 @@ data class LuaScriptEditorScreen(
                 Icons.RoundedFilled.Share,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.generic_share),
+                    .stringResource(app.infinity.mpvz.R.string.generic_share),
               )
             }
           }
@@ -503,7 +503,7 @@ data class LuaScriptEditorScreen(
                 Icons.RoundedFilled.Delete,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.delete),
+                    .stringResource(app.infinity.mpvz.R.string.delete),
               )
             }
           }
@@ -539,7 +539,7 @@ data class LuaScriptEditorScreen(
               imageVector = Icons.RoundedFilled.Check,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_save),
+                  .stringResource(app.infinity.mpvz.R.string.ui_save),
             )
           }
         },

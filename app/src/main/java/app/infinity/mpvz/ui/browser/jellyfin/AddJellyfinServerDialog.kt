@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin
+package app.infinity.mpvz.ui.browser.jellyfin
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -67,11 +67,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinAuthMode
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.domain.jellyfin.JellyfinAuthMode
+import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.ui.components.themedSegmentedButtonColors
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

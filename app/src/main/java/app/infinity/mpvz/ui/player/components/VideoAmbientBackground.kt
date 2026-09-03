@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.player.components
+package app.infinity.mpvz.ui.player.components
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -34,7 +34,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.palette.graphics.Palette
-import app.gyrolet.mpvrx.ui.player.HdrScreenMode
+import app.infinity.mpvz.ui.player.HdrScreenMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext

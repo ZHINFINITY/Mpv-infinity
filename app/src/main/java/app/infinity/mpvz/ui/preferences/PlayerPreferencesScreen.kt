@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.Manifest
 import android.content.ComponentName
@@ -45,23 +45,23 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.IntroSegmentProvider
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.NotificationStyle
-import app.gyrolet.mpvrx.ui.player.PlayerOrientation
-import app.gyrolet.mpvrx.ui.player.screenshot.ScreenshotFormat
-import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.IntroSegmentProvider
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.NotificationStyle
+import app.infinity.mpvz.ui.player.PlayerOrientation
+import app.infinity.mpvz.ui.player.screenshot.ScreenshotFormat
+import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.Preference
@@ -395,7 +395,7 @@ object PlayerPreferencesScreen : Screen {
                 value = enableMediaInfoIntent,
                 onValueChange = { enabled ->
                   preferences.enableMediaInfoIntent.set(enabled)
-                  val componentName = ComponentName(context, "app.gyrolet.mpvrx.ui.mediainfo.MediaInfoActivityAlias")
+                  val componentName = ComponentName(context, "app.infinity.mpvz.ui.mediainfo.MediaInfoActivityAlias")
                   val newState =
                     if (enabled) {
                       PackageManager.COMPONENT_ENABLED_STATE_ENABLED
@@ -415,13 +415,13 @@ object PlayerPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_show_media_info_in_chooser),
+                      .stringResource(app.infinity.mpvz.R.string.ui_show_media_info_in_chooser),
                   )
                 },
                 summary = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_show_media_info_in_system),
+                      .stringResource(app.infinity.mpvz.R.string.ui_show_media_info_in_system),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
@@ -435,7 +435,7 @@ object PlayerPreferencesScreen : Screen {
                 value = enableWebStreamLinkIntents,
                 onValueChange = { enabled ->
                   preferences.enableWebStreamLinkIntents.set(enabled)
-                  val componentName = ComponentName(context, "app.gyrolet.mpvrx.ui.player.WebStreamLinksActivityAlias")
+                  val componentName = ComponentName(context, "app.infinity.mpvz.ui.player.WebStreamLinksActivityAlias")
                   val newState =
                     if (enabled) {
                       PackageManager.COMPONENT_ENABLED_STATE_ENABLED
@@ -640,7 +640,7 @@ object PlayerPreferencesScreen : Screen {
                           placeholder = {
                             Text(
                               androidx.compose.ui.res
-                                .stringResource(app.gyrolet.mpvrx.R.string.ui_e_g_intro_opening_op),
+                                .stringResource(app.infinity.mpvz.R.string.ui_e_g_intro_opening_op),
                             )
                           },
                           singleLine = true,
@@ -690,7 +690,7 @@ object PlayerPreferencesScreen : Screen {
                           placeholder = {
                             Text(
                               androidx.compose.ui.res
-                                .stringResource(app.gyrolet.mpvrx.R.string.ui_e_g_outro_ending_ed),
+                                .stringResource(app.infinity.mpvz.R.string.ui_e_g_outro_ending_ed),
                             )
                           },
                           singleLine = true,
@@ -851,7 +851,7 @@ object PlayerPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_image_format),
+                      .stringResource(app.infinity.mpvz.R.string.ui_image_format),
                   )
                 },
                 summary = {
@@ -872,7 +872,7 @@ object PlayerPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_include_subtitles_in_screenshots,
+                      app.infinity.mpvz.R.string.ui_include_subtitles_in_screenshots,
                     ),
                   )
                 },
@@ -886,7 +886,7 @@ object PlayerPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_filename_template),
+                      .stringResource(app.infinity.mpvz.R.string.ui_filename_template),
                   )
                 },
                 summary = { Text(screenshotTemplate, color = MaterialTheme.colorScheme.outline) },
@@ -906,7 +906,7 @@ object PlayerPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_jpeg_webp_quality),
+                      .stringResource(app.infinity.mpvz.R.string.ui_jpeg_webp_quality),
                   )
                 },
                 valueRange = 1f..100f,
@@ -925,7 +925,7 @@ object PlayerPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_png_compression),
+                      .stringResource(app.infinity.mpvz.R.string.ui_png_compression),
                   )
                 },
                 valueRange = 0f..9f,
@@ -944,13 +944,13 @@ object PlayerPreferencesScreen : Screen {
                   title = {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.ui_webp_lossless),
+                        .stringResource(app.infinity.mpvz.R.string.ui_webp_lossless),
                     )
                   },
                   summary = {
                     Text(
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_uses_mpv_native_lossless_output_android_fallback_uses_lossless_o,
+                        app.infinity.mpvz.R.string.ui_uses_mpv_native_lossless_output_android_fallback_uses_lossless_o,
                       ),
                       color = MaterialTheme.colorScheme.outline,
                     )
@@ -1134,7 +1134,7 @@ object PlayerPreferencesScreen : Screen {
         title = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_filename_template),
+              .stringResource(app.infinity.mpvz.R.string.ui_filename_template),
           )
         },
         text = {
@@ -1145,7 +1145,7 @@ object PlayerPreferencesScreen : Screen {
               label = {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_template),
+                    .stringResource(app.infinity.mpvz.R.string.ui_template),
                 )
               },
               modifier = Modifier.fillMaxWidth(),
@@ -1153,7 +1153,7 @@ object PlayerPreferencesScreen : Screen {
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.ui_use_placeholders_to_customize_the_screenshot_filename_n,
+                  app.infinity.mpvz.R.string.ui_use_placeholders_to_customize_the_screenshot_filename_n,
                 ) +
                   "• %f — Video title or filename\n" +
                   "• %p — Playback position (seconds)\n" +
@@ -1174,7 +1174,7 @@ object PlayerPreferencesScreen : Screen {
           ) {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_save),
+                .stringResource(app.infinity.mpvz.R.string.ui_save),
             )
           }
         },
@@ -1182,7 +1182,7 @@ object PlayerPreferencesScreen : Screen {
           TextButton(onClick = { showTemplateDialog = false }) {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+                .stringResource(app.infinity.mpvz.R.string.generic_cancel),
             )
           }
         },

@@ -7,26 +7,26 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.medialibrary
+package app.infinity.mpvz.ui.browser.medialibrary
 
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.repository.MediaFileRepository
-import app.gyrolet.mpvrx.ui.browser.base.BaseBrowserViewModel
-import app.gyrolet.mpvrx.ui.browser.videolist.VideoWithPlaybackInfo
-import app.gyrolet.mpvrx.ui.browser.videolist.buildVideoWithPlaybackInfo
-import app.gyrolet.mpvrx.ui.browser.videolist.videoPlaybackIdentifiers
-import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
-import app.gyrolet.mpvrx.utils.media.MetadataRetrieval
-import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.repository.MediaFileRepository
+import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
+import app.infinity.mpvz.ui.browser.videolist.VideoWithPlaybackInfo
+import app.infinity.mpvz.ui.browser.videolist.buildVideoWithPlaybackInfo
+import app.infinity.mpvz.ui.browser.videolist.videoPlaybackIdentifiers
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.utils.media.MetadataRetrieval
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

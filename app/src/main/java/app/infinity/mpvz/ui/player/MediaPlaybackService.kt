@@ -9,7 +9,7 @@
 
 @file:Suppress("DEPRECATION")
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -42,20 +42,20 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.media.MediaBrowserServiceCompat
 import androidx.media.session.MediaButtonReceiver
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
-import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
-import app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver
-import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.GesturePreferences
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
+import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.CoroutineScope
@@ -101,14 +101,14 @@ class MediaPlaybackService :
     private const val VIDEO_CONTENT_INTENT_REQUEST_CODE = 1100
     private const val AUDIO_CONTENT_INTENT_REQUEST_CODE = 1101
     private val DEFAULT_ACCENT_COLOR = Color.rgb(214, 220, 228)
-    const val ACTION_OPEN_PLAYER = "app.gyrolet.mpvrx.action.OPEN_PLAYER_FROM_NOTIFICATION"
-    const val ACTION_NOTIFICATION_PREVIOUS = "app.gyrolet.mpvrx.action.NOTIFICATION_PREVIOUS"
-    const val ACTION_NOTIFICATION_PLAY_PAUSE = "app.gyrolet.mpvrx.action.NOTIFICATION_PLAY_PAUSE"
-    const val ACTION_NOTIFICATION_NEXT = "app.gyrolet.mpvrx.action.NOTIFICATION_NEXT"
-    const val ACTION_NOTIFICATION_FAVORITE = "app.gyrolet.mpvrx.action.NOTIFICATION_FAVORITE"
-    const val ACTION_NOTIFICATION_MEDIA_FAVORITE = "app.gyrolet.mpvrx.action.NOTIFICATION_MEDIA_FAVORITE"
-    const val ACTION_NOTIFICATION_CLOSE = "app.gyrolet.mpvrx.action.NOTIFICATION_CLOSE"
-    const val ACTION_NOTIFICATION_STOP = "app.gyrolet.mpvrx.action.NOTIFICATION_STOP"
+    const val ACTION_OPEN_PLAYER = "app.infinity.mpvz.action.OPEN_PLAYER_FROM_NOTIFICATION"
+    const val ACTION_NOTIFICATION_PREVIOUS = "app.infinity.mpvz.action.NOTIFICATION_PREVIOUS"
+    const val ACTION_NOTIFICATION_PLAY_PAUSE = "app.infinity.mpvz.action.NOTIFICATION_PLAY_PAUSE"
+    const val ACTION_NOTIFICATION_NEXT = "app.infinity.mpvz.action.NOTIFICATION_NEXT"
+    const val ACTION_NOTIFICATION_FAVORITE = "app.infinity.mpvz.action.NOTIFICATION_FAVORITE"
+    const val ACTION_NOTIFICATION_MEDIA_FAVORITE = "app.infinity.mpvz.action.NOTIFICATION_MEDIA_FAVORITE"
+    const val ACTION_NOTIFICATION_CLOSE = "app.infinity.mpvz.action.NOTIFICATION_CLOSE"
+    const val ACTION_NOTIFICATION_STOP = "app.infinity.mpvz.action.NOTIFICATION_STOP"
 
     @Volatile
     internal var thumbnail: Bitmap? = null

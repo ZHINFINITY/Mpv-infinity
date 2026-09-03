@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.components.expressive
+package app.infinity.mpvz.ui.player.components.expressive
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring

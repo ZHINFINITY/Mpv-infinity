@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.ytdlp
+package app.infinity.mpvz.ui.player.ytdlp
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -29,13 +29,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import app.gyrolet.mpvrx.R
+import app.infinity.mpvz.R
 
 /**
  * Progress UI shown while [YtdlpManager.runInstall] runs, triggered from
  * [YtdlpInstallPromptDialog]'s Install action. There's no byte-level progress from the
  * installer, so this shows an indeterminate bar plus the latest log line, same idea as
- * [app.gyrolet.mpvrx.ui.securefolder.SecureFolderProgressDialog] but without a percentage.
+ * [app.infinity.mpvz.ui.securefolder.SecureFolderProgressDialog] but without a percentage.
  *
  * Not dismissable by back-press or outside-tap — [onCancel] is the only way out while busy,
  * same as the secure-folder progress dialog.

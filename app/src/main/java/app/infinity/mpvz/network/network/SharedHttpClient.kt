@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.network
+package app.infinity.mpvz.network
 
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher

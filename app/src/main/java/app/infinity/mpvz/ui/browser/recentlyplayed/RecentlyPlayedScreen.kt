@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.recentlyplayed
+package app.infinity.mpvz.ui.browser.recentlyplayed
 
 import android.content.Intent
 import android.widget.Toast
@@ -19,8 +19,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
-import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
+import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
+import app.infinity.mpvz.ui.components.themedSegmentedButtonColors
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -78,35 +78,35 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.media.model.VideoFolder
-import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.GesturePreferences
-import app.gyrolet.mpvrx.preferences.MediaLayoutMode
-import app.gyrolet.mpvrx.preferences.MediaLibraryType
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.ConfirmDialog
-import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
-import app.gyrolet.mpvrx.ui.browser.cards.FolderCard
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCard
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCardUiConfig
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
-import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
-import app.gyrolet.mpvrx.ui.browser.playlist.PlaylistDetailScreen
-import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
-import app.gyrolet.mpvrx.ui.browser.sheets.PlayLinkSheet
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.calculateResponsiveGridSpans
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.media.model.VideoFolder
+import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.MediaLibraryType
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.ConfirmDialog
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.cards.FolderCard
+import app.infinity.mpvz.ui.browser.cards.VideoCard
+import app.infinity.mpvz.ui.browser.cards.VideoCardUiConfig
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.playlist.PlaylistDetailScreen
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.browser.sheets.PlayLinkSheet
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.calculateResponsiveGridSpans
+import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
@@ -146,7 +146,7 @@ object RecentlyPlayedScreen : Screen {
     val enableRecentlyPlayed by advancedPreferences.enableRecentlyPlayed.collectAsState()
     val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
-    val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+    val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
 
     // FAB visibility for scroll-based hiding
     val isFabVisible = remember { mutableStateOf(true) }
@@ -190,7 +190,7 @@ object RecentlyPlayedScreen : Screen {
     // Handle back button during selection mode or FAB menu expanded
     // Synchronize NavigationBarState when selection mode changes
     SideEffect {
-      app.gyrolet.mpvrx.ui.browser.NavigationBarState.updateSelectionState(
+      app.infinity.mpvz.ui.browser.NavigationBarState.updateSelectionState(
         inSelectionMode = selectionManager.isInSelectionMode,
         onlyVideos = true,
       )
@@ -229,7 +229,7 @@ object RecentlyPlayedScreen : Screen {
     val gridState = if (recentlyPlayedFilter == MediaLibraryType.Audio) audioGridState else videoGridState
     val browserPreferences = koinInject<BrowserPreferences>()
     val mediaLayoutMode by browserPreferences.mediaLayoutMode.collectAsState()
-    app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper.trackScrollForFabVisibility(
+    app.infinity.mpvz.ui.browser.fab.FabScrollHelper.trackScrollForFabVisibility(
       listState = listState,
       gridState = if (mediaLayoutMode == MediaLayoutMode.GRID) gridState else null,
       isFabVisible = isFabVisible,
@@ -265,7 +265,7 @@ object RecentlyPlayedScreen : Screen {
           onCancelSelection = { selectionManager.clear() },
           onSortClick = null, // No sorting in recently played
           onSettingsClick = {
-            backStack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
+            backStack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
           },
           isSingleSelection = selectionManager.isSingleSelection,
           onInfoClick = null, // No info in recently played
@@ -300,7 +300,7 @@ object RecentlyPlayedScreen : Screen {
                 PlainTooltip {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_toggle_menu),
+                      .stringResource(app.infinity.mpvz.R.string.ui_toggle_menu),
                   )
                 }
               },
@@ -318,7 +318,7 @@ object RecentlyPlayedScreen : Screen {
                   if (quickPlayFabDirect) {
                     coroutineScope.launch {
                       val lastPlayed =
-                        app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
+                        app.infinity.mpvz.utils.history.RecentlyPlayedOps
                           .getLastPlayedEntity()
                       if (lastPlayed != null) {
                         MediaUtils.playFile(
@@ -361,7 +361,7 @@ object RecentlyPlayedScreen : Screen {
                 Text(
                   text =
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_open_file),
+                      .stringResource(app.infinity.mpvz.R.string.ui_open_file),
                 )
               },
             )
@@ -371,7 +371,7 @@ object RecentlyPlayedScreen : Screen {
                 isFabExpanded.value = false
                 coroutineScope.launch {
                   val lastPlayed =
-                    app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
+                    app.infinity.mpvz.utils.history.RecentlyPlayedOps
                       .getLastPlayedEntity()
                   if (lastPlayed != null) {
                     MediaUtils.playFile(
@@ -390,7 +390,7 @@ object RecentlyPlayedScreen : Screen {
                 Text(
                   text =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.pref_advanced_enable_recently_played_title,
+                      app.infinity.mpvz.R.string.pref_advanced_enable_recently_played_title,
                     ),
                 )
               },
@@ -406,7 +406,7 @@ object RecentlyPlayedScreen : Screen {
                 Text(
                   text =
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_open_link),
+                      .stringResource(app.infinity.mpvz.R.string.ui_open_link),
                 )
               },
             )
@@ -528,7 +528,7 @@ object RecentlyPlayedScreen : Screen {
                       Toast
                         .makeText(
                           context,
-                          context.getString(app.gyrolet.mpvrx.R.string.ui_recent_file_no_longer_exists),
+                          context.getString(app.infinity.mpvz.R.string.ui_recent_file_no_longer_exists),
                           Toast.LENGTH_SHORT,
                         ).show()
                     }
@@ -593,7 +593,7 @@ object RecentlyPlayedScreen : Screen {
               androidx.compose.material3.Text(
                 text =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_also_delete_original_file_s,
+                    app.infinity.mpvz.R.string.ui_also_delete_original_file_s,
                   ),
                 modifier = Modifier.padding(start = 8.dp),
                 style = MaterialTheme.typography.bodyMedium,
@@ -631,7 +631,7 @@ object RecentlyPlayedScreen : Screen {
 @Composable
 private fun RecentItemsContent(
   recentItems: List<RecentlyPlayedItem>,
-  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<RecentlyPlayedItem, String>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<RecentlyPlayedItem, String>,
   onVideoClick: (Video) -> Unit,
   onPlaylistClick: suspend (RecentlyPlayedItem.PlaylistItem) -> Unit,
   modifier: Modifier = Modifier,
@@ -641,7 +641,7 @@ private fun RecentItemsContent(
   gridState: LazyGridState,
 ) {
   val gesturePreferences = koinInject<GesturePreferences>()
-  val browserPreferences = koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
+  val browserPreferences = koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val thumbnailRepository = koinInject<ThumbnailRepository>()
   val density = LocalDensity.current
@@ -764,8 +764,8 @@ private fun RecentItemsContent(
     targetValue = if (!hasEnoughItems) 0f else 1f,
     animationSpec =
       androidx.compose.animation.core.spring(
-        dampingRatio = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
-        stiffness = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.stiffness,
+        dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
+        stiffness = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.stiffness,
       ),
     label = "scrollbarAlpha",
   )
@@ -777,7 +777,7 @@ private fun RecentItemsContent(
     modifier = modifier.fillMaxSize(),
   ) {
     if (isGridMode) {
-      val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+      val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
       BoxWithConstraints(
         modifier =
           Modifier
@@ -920,7 +920,7 @@ private fun RecentItemsContent(
         }
       }
     } else {
-      val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+      val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
       Box(
         modifier =
           Modifier

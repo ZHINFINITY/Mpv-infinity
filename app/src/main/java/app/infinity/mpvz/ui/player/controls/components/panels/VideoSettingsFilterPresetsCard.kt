@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.panels
+package app.infinity.mpvz.ui.player.controls.components.panels
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,16 +31,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.preferences.DecoderPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.components.ExpandableCard
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.FilterPreset
-import app.gyrolet.mpvrx.ui.player.controls.CARDS_MAX_WIDTH
-import app.gyrolet.mpvrx.ui.player.controls.panelCardsColors
-import app.gyrolet.mpvrx.ui.theme.spacing
-import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
+import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.ExpandableCard
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.FilterPreset
+import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
+import app.infinity.mpvz.ui.player.controls.panelCardsColors
+import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -83,7 +83,7 @@ fun VideoSettingsFilterPresetsCard(modifier: Modifier = Modifier) {
         Icon(Icons.RoundedFilled.AutoAwesome, null)
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_filter_presets),
+            .stringResource(app.infinity.mpvz.R.string.ui_filter_presets),
         )
       }
     },

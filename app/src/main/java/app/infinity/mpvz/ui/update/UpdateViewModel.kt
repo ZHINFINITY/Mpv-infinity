@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.update
+package app.infinity.mpvz.ui.update
 
 import android.app.Application
 import android.content.Context
@@ -15,10 +15,10 @@ import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.domain.update.AppUpdateChannel
-import app.gyrolet.mpvrx.domain.update.Release
-import app.gyrolet.mpvrx.domain.update.UpdateManager
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.domain.update.AppUpdateChannel
+import app.infinity.mpvz.domain.update.Release
+import app.infinity.mpvz.domain.update.UpdateManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay

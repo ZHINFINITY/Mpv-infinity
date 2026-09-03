@@ -7,13 +7,13 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.anime4k
+package app.infinity.mpvz.ui.player.anime4k
 
 import android.content.Context
 import android.util.Log
-import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.player.ThermalMonitor
+import app.infinity.mpvz.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.ThermalMonitor
 
 internal data class Anime4KSelection(
   val mode: Anime4KManager.Mode,

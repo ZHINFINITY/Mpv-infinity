@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.Manifest
 import android.animation.ValueAnimator
@@ -72,60 +72,60 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
-import app.gyrolet.mpvrx.database.entities.PlaylistEntity
-import app.gyrolet.mpvrx.database.entities.PlaylistItemEntity
-import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
-import app.gyrolet.mpvrx.databinding.PlayerLayoutBinding
-import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
-import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
-import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
-import app.gyrolet.mpvrx.domain.torrent.TorrentStreamRequest
-import app.gyrolet.mpvrx.domain.torrent.TorrentStreamException
-import app.gyrolet.mpvrx.domain.torrent.TorrentStreamResult
-import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
-import app.gyrolet.mpvrx.domain.torrent.canonicalInfoHash
-import app.gyrolet.mpvrx.domain.torrent.isTorrentSource
-import app.gyrolet.mpvrx.network.AndroidCookieJar
-import app.gyrolet.mpvrx.network.NetworkUserAgent
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.AudioChannels
-import app.gyrolet.mpvrx.preferences.AudioPlayerOrientation
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.DecoderPreferences
-import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.preferences.VideoSortType
-import app.gyrolet.mpvrx.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
-import app.gyrolet.mpvrx.ui.browser.playlist.buildAllVideosPlaylistEntity
-import app.gyrolet.mpvrx.ui.browser.playlist.isAllVideosPlaylist
-import app.gyrolet.mpvrx.ui.cast.CastMediaSnapshot
-import app.gyrolet.mpvrx.ui.cast.CastPlaybackController
-import app.gyrolet.mpvrx.ui.player.controls.PlayerControls
-import app.gyrolet.mpvrx.ui.player.components.VideoAmbientBackground
-import app.gyrolet.mpvrx.ui.player.components.rememberVideoAmbientFrame
-import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
-import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
-import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionActivity
-import app.gyrolet.mpvrx.utils.device.VulkanCapabilities
-import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
-import app.gyrolet.mpvrx.utils.media.HttpUtils
-import app.gyrolet.mpvrx.utils.media.JellyfinSessionReporter
-import app.gyrolet.mpvrx.utils.media.MediaUtils
-import app.gyrolet.mpvrx.utils.media.fileExtension
-import app.gyrolet.mpvrx.utils.media.resolveSeekMode
-import app.gyrolet.mpvrx.utils.media.M3UParseResult
-import app.gyrolet.mpvrx.utils.media.M3UParser
-import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
-import app.gyrolet.mpvrx.utils.media.SharedUrlExtractor
-import app.gyrolet.mpvrx.utils.media.SubtitleOps
-import app.gyrolet.mpvrx.utils.media.listTreeFilesSafely
-import app.gyrolet.mpvrx.utils.media.openPersistedTreeDocument
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.database.entities.PlaylistItemEntity
+import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
+import app.infinity.mpvz.databinding.PlayerLayoutBinding
+import app.infinity.mpvz.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.domain.torrent.TorrentStreamRequest
+import app.infinity.mpvz.domain.torrent.TorrentStreamException
+import app.infinity.mpvz.domain.torrent.TorrentStreamResult
+import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
+import app.infinity.mpvz.domain.torrent.canonicalInfoHash
+import app.infinity.mpvz.domain.torrent.isTorrentSource
+import app.infinity.mpvz.network.AndroidCookieJar
+import app.infinity.mpvz.network.NetworkUserAgent
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.AudioChannels
+import app.infinity.mpvz.preferences.AudioPlayerOrientation
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.VideoSortType
+import app.infinity.mpvz.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
+import app.infinity.mpvz.ui.browser.playlist.buildAllVideosPlaylistEntity
+import app.infinity.mpvz.ui.browser.playlist.isAllVideosPlaylist
+import app.infinity.mpvz.ui.cast.CastMediaSnapshot
+import app.infinity.mpvz.ui.cast.CastPlaybackController
+import app.infinity.mpvz.ui.player.controls.PlayerControls
+import app.infinity.mpvz.ui.player.components.VideoAmbientBackground
+import app.infinity.mpvz.ui.player.components.rememberVideoAmbientFrame
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import app.infinity.mpvz.ui.theme.MpvrxTheme
+import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
+import app.infinity.mpvz.utils.device.VulkanCapabilities
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.HttpUtils
+import app.infinity.mpvz.utils.media.JellyfinSessionReporter
+import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.fileExtension
+import app.infinity.mpvz.utils.media.resolveSeekMode
+import app.infinity.mpvz.utils.media.M3UParseResult
+import app.infinity.mpvz.utils.media.M3UParser
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
+import app.infinity.mpvz.utils.media.SharedUrlExtractor
+import app.infinity.mpvz.utils.media.SubtitleOps
+import app.infinity.mpvz.utils.media.listTreeFilesSafely
+import app.infinity.mpvz.utils.media.openPersistedTreeDocument
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import com.github.k1rakishou.fsaf.FileManager
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
@@ -230,7 +230,7 @@ class PlayerActivity :
   /**
    * Repository for managing playlists.
    */
-  private val playlistRepository: app.gyrolet.mpvrx.database.repository.PlaylistRepository by inject()
+  private val playlistRepository: app.infinity.mpvz.database.repository.PlaylistRepository by inject()
 
   /**
    * Preferences for player settings.
@@ -7025,7 +7025,7 @@ class PlayerActivity :
         delay(150)
         val generatedThumbnail =
           withContext(Dispatchers.IO) {
-            app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
+            app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
               this@PlayerActivity,
               currentQueueItem?.artworkUri,
             ) ?: runCatching { PlaybackSession.grabThumbnail(480) }.getOrNull() ?: runCatching {
@@ -7046,7 +7046,7 @@ class PlayerActivity :
                 } else {
                   retriever.setDataSource(this@PlayerActivity, parsedUri)
                 }
-                val art = app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
+                val art = app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
                 retriever.release()
                 art
               } else {
@@ -7489,7 +7489,7 @@ class PlayerActivity :
 
   private fun naturalSortFiles(files: List<File>): List<File> =
     files.sortedWith { first, second ->
-      app.gyrolet.mpvrx.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT
+      app.infinity.mpvz.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT
         .compare(first.name, second.name)
     }
 
@@ -7505,10 +7505,10 @@ class PlayerActivity :
         VideoSortType.Duration -> {
           val fileByPath = files.associateBy { normalizePlaylistFilePath(it.absolutePath) }
           val sortedVideos =
-            app.gyrolet.mpvrx.repository.MediaFileRepository
+            app.infinity.mpvz.repository.MediaFileRepository
               .getVideosFromFiles(this@PlayerActivity, files)
               .let { videos ->
-                app.gyrolet.mpvrx.utils.sort.SortUtils
+                app.infinity.mpvz.utils.sort.SortUtils
                   .sortVideos(videos, sortType, sortOrder)
               }
           val resolvedFiles = sortedVideos.mapNotNull { video -> fileByPath[normalizePlaylistFilePath(video.path)] }
@@ -7562,10 +7562,10 @@ class PlayerActivity :
     val currentFilePath = normalizePlaylistFilePath(currentFile.absolutePath)
     val fileByPath = directMediaFiles.associateBy { normalizePlaylistFilePath(it.absolutePath) }
     val sortedFromLibrary =
-      app.gyrolet.mpvrx.repository.MediaFileRepository
+      app.infinity.mpvz.repository.MediaFileRepository
         .getVideosInFolder(context, normalizePlaylistFilePath(parentFolder.absolutePath))
         .let { videos ->
-          app.gyrolet.mpvrx.utils.sort.SortUtils.sortVideos(
+          app.infinity.mpvz.utils.sort.SortUtils.sortVideos(
             videos,
             browserPreferences.videoSortType.get(),
             browserPreferences.videoSortOrder.get(),
@@ -7590,8 +7590,8 @@ class PlayerActivity :
       val mediaLibraryAudio = sourceIntent.getBooleanExtra("media_library_audio", false) || isAudioTarget
       val isMediaLibraryLaunch = sourceIntent.getStringExtra("launch_source") == "media_library" || isAudioTarget
       val allVideos =
-        app.gyrolet.mpvrx.utils.sort.SortUtils.sortVideos(
-          app.gyrolet.mpvrx.repository.MediaFileRepository
+        app.infinity.mpvz.utils.sort.SortUtils.sortVideos(
+          app.infinity.mpvz.repository.MediaFileRepository
             .getAllVideos(
               context = this@PlayerActivity,
               includeAudioOverride = if (isMediaLibraryLaunch || isAudioTarget) true else null,
@@ -7880,7 +7880,7 @@ class PlayerActivity :
     /**
      * Intent action used to return playback result data to the calling activity.
      */
-    private const val RESULT_INTENT = "app.gyrolet.mpvrx.ui.player.PlayerActivity.result"
+    private const val RESULT_INTENT = "app.infinity.mpvz.ui.player.PlayerActivity.result"
 
     /**
      * Constant for "brightness not set".

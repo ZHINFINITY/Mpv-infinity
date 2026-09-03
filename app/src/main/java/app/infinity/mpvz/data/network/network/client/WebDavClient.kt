@@ -7,13 +7,13 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.client
+package app.infinity.mpvz.data.network.client
 
 import android.net.Uri
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.network.NetworkFile
-import app.gyrolet.mpvrx.domain.network.NetworkPath
-import app.gyrolet.mpvrx.network.SharedHttpClient
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.network.NetworkFile
+import app.infinity.mpvz.domain.network.NetworkPath
+import app.infinity.mpvz.network.SharedHttpClient
 import com.thegrizzlylabs.sardineandroid.DavResource
 import com.thegrizzlylabs.sardineandroid.Sardine
 import com.thegrizzlylabs.sardineandroid.impl.OkHttpSardine

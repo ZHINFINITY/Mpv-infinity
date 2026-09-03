@@ -2,11 +2,11 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.browser.music
+package app.infinity.mpvz.ui.browser.music
 
 import android.os.SystemClock
 import android.util.LruCache
-import app.gyrolet.mpvrx.network.awaitResponse
+import app.infinity.mpvz.network.awaitResponse
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart

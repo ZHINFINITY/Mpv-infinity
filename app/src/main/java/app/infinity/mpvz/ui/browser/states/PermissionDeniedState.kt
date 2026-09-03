@@ -9,7 +9,7 @@
 
 @file:Suppress("DEPRECATION")
 
-package app.gyrolet.mpvrx.ui.browser.states
+package app.infinity.mpvz.ui.browser.states
 
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -84,13 +84,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
-import app.gyrolet.mpvrx.utils.permission.PermissionUtils
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.utils.permission.PermissionUtils
 import org.koin.compose.koinInject
 
 private fun checkFilePermission(context: Context): Boolean {
@@ -683,7 +683,7 @@ private fun PermissionSectionCard(
   title: String,
   description: String,
   isGranted: Boolean,
-  icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
+  icon: app.infinity.mpvz.ui.icons.AppIcon,
   onClick: () -> Unit,
 ) {
   val cardBgColor by animateColorAsState(

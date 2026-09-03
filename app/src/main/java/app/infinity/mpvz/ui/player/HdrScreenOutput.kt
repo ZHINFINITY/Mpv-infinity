@@ -7,11 +7,11 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import androidx.annotation.StringRes
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.hdr.HdrToysProfile
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.hdr.HdrToysProfile
 
 /**
  * Available HDR screen output modes.

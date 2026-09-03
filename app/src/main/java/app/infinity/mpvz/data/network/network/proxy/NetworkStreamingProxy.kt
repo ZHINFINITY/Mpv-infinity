@@ -7,14 +7,14 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.proxy
+package app.infinity.mpvz.data.network.proxy
 
 import android.util.Log
-import app.gyrolet.mpvrx.data.network.client.NetworkClient
-import app.gyrolet.mpvrx.data.network.client.NetworkMimeTypes
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.network.NetworkPath
-import app.gyrolet.mpvrx.repository.NetworkRepository
+import app.infinity.mpvz.data.network.client.NetworkClient
+import app.infinity.mpvz.data.network.client.NetworkMimeTypes
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.network.NetworkPath
+import app.infinity.mpvz.repository.NetworkRepository
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

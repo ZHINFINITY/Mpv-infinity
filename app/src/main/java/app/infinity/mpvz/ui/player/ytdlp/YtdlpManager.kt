@@ -7,18 +7,18 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.ytdlp
+package app.infinity.mpvz.ui.player.ytdlp
 
 import android.content.Context
 import android.net.Uri
 import android.system.Os
 import android.util.Log
-import app.gyrolet.mpvrx.network.AndroidCookieJar
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.preferences.YtdlPreferences
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.utils.media.HttpUtils
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.network.AndroidCookieJar
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.YtdlPreferences
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.utils.media.HttpUtils
+import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async

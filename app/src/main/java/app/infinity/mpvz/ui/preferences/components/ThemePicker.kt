@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences.components
+package app.infinity.mpvz.ui.preferences.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,8 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.ui.theme.AppTheme
+import app.infinity.mpvz.R
+import app.infinity.mpvz.ui.theme.AppTheme
 
 /**
  * A horizontal scrollable theme picker with preview cards.

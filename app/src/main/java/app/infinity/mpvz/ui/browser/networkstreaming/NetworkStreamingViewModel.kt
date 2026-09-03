@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.networkstreaming
+package app.infinity.mpvz.ui.browser.networkstreaming
 
 import android.app.Application
 import android.util.Log
@@ -16,22 +16,22 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.gyrolet.mpvrx.database.entities.NetworkStreamEntryEntity
-import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
-import app.gyrolet.mpvrx.domain.network.ConnectionStatus
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.torrent.isTorrentSource
-import app.gyrolet.mpvrx.domain.torrent.parseMagnet
-import app.gyrolet.mpvrx.repository.JellyfinRepository
-import app.gyrolet.mpvrx.repository.NetworkRepository
-import app.gyrolet.mpvrx.preferences.NetworkBookmarkPreferences
-import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
-import app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult
-import app.gyrolet.mpvrx.repository.wyzie.bestTmdbResult
-import app.gyrolet.mpvrx.data.jellyfin.JellyfinClient
-import app.gyrolet.mpvrx.utils.media.HttpUtils
-import app.gyrolet.mpvrx.utils.media.MediaInfoParser
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.database.entities.NetworkStreamEntryEntity
+import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
+import app.infinity.mpvz.domain.network.ConnectionStatus
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.torrent.isTorrentSource
+import app.infinity.mpvz.domain.torrent.parseMagnet
+import app.infinity.mpvz.repository.JellyfinRepository
+import app.infinity.mpvz.repository.NetworkRepository
+import app.infinity.mpvz.preferences.NetworkBookmarkPreferences
+import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
+import app.infinity.mpvz.repository.wyzie.WyzieTmdbResult
+import app.infinity.mpvz.repository.wyzie.bestTmdbResult
+import app.infinity.mpvz.data.jellyfin.JellyfinClient
+import app.infinity.mpvz.utils.media.HttpUtils
+import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.utils.media.MediaUtils
 import android.net.Uri
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow

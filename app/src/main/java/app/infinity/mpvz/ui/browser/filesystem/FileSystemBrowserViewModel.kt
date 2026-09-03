@@ -7,29 +7,29 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.filesystem
+package app.infinity.mpvz.ui.browser.filesystem
 
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.domain.browser.FileSystemItem
-import app.gyrolet.mpvrx.domain.browser.PathComponent
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.repository.MediaFileRepository
-import app.gyrolet.mpvrx.ui.browser.base.BaseBrowserViewModel
-import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
-import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
-import app.gyrolet.mpvrx.utils.media.MetadataRetrieval
-import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
-import app.gyrolet.mpvrx.utils.permission.PermissionUtils.StorageOps
-import app.gyrolet.mpvrx.utils.sort.SortUtils
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
-import app.gyrolet.mpvrx.utils.storage.FolderViewScanner
-import app.gyrolet.mpvrx.utils.storage.TreeViewScanner
+import app.infinity.mpvz.domain.browser.FileSystemItem
+import app.infinity.mpvz.domain.browser.PathComponent
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.repository.MediaFileRepository
+import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
+import app.infinity.mpvz.utils.media.MetadataRetrieval
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
+import app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps
+import app.infinity.mpvz.utils.sort.SortUtils
+import app.infinity.mpvz.utils.storage.FileTypeUtils
+import app.infinity.mpvz.utils.storage.FolderViewScanner
+import app.infinity.mpvz.utils.storage.TreeViewScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,7 +53,7 @@ class FileSystemBrowserViewModel(
   KoinComponent {
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val browserPreferences: BrowserPreferences by inject()
-  private val appearancePreferences: app.gyrolet.mpvrx.preferences.AppearancePreferences by inject()
+  private val appearancePreferences: app.infinity.mpvz.preferences.AppearancePreferences by inject()
 
   // Special marker for "show storage volumes" mode
   // Similar to Fossify's root/home folder detection
@@ -607,7 +607,7 @@ class FileSystemBrowserViewModel(
         if (state.mediaTitle in identifiers) state else null
       }
       playbackStateRepository.upsert(
-        (existing ?: app.gyrolet.mpvrx.database.entities.PlaybackStateEntity(
+        (existing ?: app.infinity.mpvz.database.entities.PlaybackStateEntity(
           mediaTitle = PlaybackIdentity.forLocalPath(video.path),
           lastPosition = 0,
           playbackSpeed = 1.0,

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.components
+package app.infinity.mpvz.ui.browser.components
 
 import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibility
@@ -37,9 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.ui.icons.AppIcon
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 
 private data class BarLayoutParams(
   val buttonSize: androidx.compose.ui.unit.Dp,
@@ -111,8 +111,8 @@ fun BrowserBottomBar(
       androidx.compose.animation.slideInVertically(
         animationSpec =
           androidx.compose.animation.core.spring(
-            dampingRatio = app.gyrolet.mpvrx.ui.theme.AppMotion.Spatial.ExpressiveDp.dampingRatio,
-            stiffness = app.gyrolet.mpvrx.ui.theme.AppMotion.Spatial.ExpressiveDp.stiffness,
+            dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Spatial.ExpressiveDp.dampingRatio,
+            stiffness = app.infinity.mpvz.ui.theme.AppMotion.Spatial.ExpressiveDp.stiffness,
           ),
         initialOffsetY = { fullHeight -> fullHeight * 2 },
       ) + fadeIn(),

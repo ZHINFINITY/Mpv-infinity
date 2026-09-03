@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.player.clip
+package app.infinity.mpvz.ui.player.clip
 
 import android.content.Context
 import android.net.Uri

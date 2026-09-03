@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.content.Intent
 import android.net.Uri
@@ -51,26 +51,26 @@ import androidx.compose.ui.util.fastJoinToString
 import androidx.core.net.toUri
 import androidx.core.os.LocaleListCompat
 import androidx.documentfile.provider.DocumentFile
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
-import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.FoldersPreferences
-import app.gyrolet.mpvrx.preferences.SettingsManager
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.ConfirmDialog
-import app.gyrolet.mpvrx.presentation.crash.CrashActivity
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
-import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
-import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.FoldersPreferences
+import app.infinity.mpvz.preferences.SettingsManager
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.ConfirmDialog
+import app.infinity.mpvz.presentation.crash.CrashActivity
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.clipboard.SafeClipboard
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -688,7 +688,7 @@ object AdvancedPreferencesScreen : Screen {
                   )
                 },
                 onClick = {
-                  backStack.add(app.gyrolet.mpvrx.ui.preferences.CustomButtonScreen)
+                  backStack.add(app.infinity.mpvz.ui.preferences.CustomButtonScreen)
                 },
               )
             }
@@ -704,13 +704,13 @@ object AdvancedPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_yt_dlp_manager),
+                      .stringResource(app.infinity.mpvz.R.string.ui_yt_dlp_manager),
                   )
                 },
                 summary = {
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_install_and_update_yt_dlp_for_streaming_support,
+                      app.infinity.mpvz.R.string.ui_install_and_update_yt_dlp_for_streaming_support,
                     ),
                     color = MaterialTheme.colorScheme.outline,
                   )

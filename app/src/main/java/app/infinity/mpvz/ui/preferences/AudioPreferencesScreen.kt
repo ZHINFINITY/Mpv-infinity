@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.Manifest
 import android.content.Intent
@@ -42,26 +42,26 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AudioChannels
-import app.gyrolet.mpvrx.preferences.AudioPlayerOrientation
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.LyricsTranslationDisplayMode
-import app.gyrolet.mpvrx.data.lyrics.LyricsLanguageOptions
-import app.gyrolet.mpvrx.preferences.AudioVisualizerStyle
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.MediaLibraryType
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AudioChannels
+import app.infinity.mpvz.preferences.AudioPlayerOrientation
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.LyricsTranslationDisplayMode
+import app.infinity.mpvz.data.lyrics.LyricsLanguageOptions
+import app.infinity.mpvz.preferences.AudioVisualizerStyle
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.MediaLibraryType
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
@@ -77,7 +77,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import app.gyrolet.mpvrx.ui.browser.music.MusicTab
+import app.infinity.mpvz.ui.browser.music.MusicTab
 
 @Serializable
 object AudioPreferencesScreen : Screen {
@@ -159,13 +159,13 @@ object AudioPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_include_audio_files),
+                      .stringResource(app.infinity.mpvz.R.string.ui_include_audio_files),
                   )
                 },
                 summary = {
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_show_audio_files_in_the_browser,
+                      app.infinity.mpvz.R.string.ui_show_audio_files_in_the_browser,
                     ),
                     color = MaterialTheme.colorScheme.outline,
                   )
@@ -196,7 +196,7 @@ object AudioPreferencesScreen : Screen {
               ) {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_minimum_audio_duration),
+                    .stringResource(app.infinity.mpvz.R.string.ui_minimum_audio_duration),
                   style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(

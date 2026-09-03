@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin.seerr
+package app.infinity.mpvz.ui.browser.jellyfin.seerr
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
@@ -75,15 +75,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.seerr.MediaDetails
-import app.gyrolet.mpvrx.domain.seerr.MediaStatus
-import app.gyrolet.mpvrx.domain.seerr.MediaType
-import app.gyrolet.mpvrx.domain.seerr.RequestStatus
-import app.gyrolet.mpvrx.domain.seerr.SearchResultItem
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.seerr.MediaDetails
+import app.infinity.mpvz.domain.seerr.MediaStatus
+import app.infinity.mpvz.domain.seerr.MediaType
+import app.infinity.mpvz.domain.seerr.RequestStatus
+import app.infinity.mpvz.domain.seerr.SearchResultItem
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 
 data class ResolutionOption(
   val label: String,
@@ -101,8 +101,8 @@ fun SeerrDetailSheet(
   isLoading: Boolean,
   isRequesting: Boolean,
   isAdmin: Boolean,
-  radarrServers: List<app.gyrolet.mpvrx.domain.seerr.SeerrRadarrServer> = emptyList(),
-  sonarrServers: List<app.gyrolet.mpvrx.domain.seerr.SeerrSonarrServer> = emptyList(),
+  radarrServers: List<app.infinity.mpvz.domain.seerr.SeerrRadarrServer> = emptyList(),
+  sonarrServers: List<app.infinity.mpvz.domain.seerr.SeerrSonarrServer> = emptyList(),
   isLoadingServers: Boolean = false,
   onDismiss: () -> Unit,
   onRequest: (seasons: List<Int>?, is4k: Boolean, serverId: Int?, profileId: Int?, rootFolder: String?) -> Unit,

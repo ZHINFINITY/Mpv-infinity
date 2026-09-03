@@ -1,4 +1,4 @@
-package app.gyrolet.mpvrx.ui.browser.networkstreaming
+package app.infinity.mpvz.ui.browser.networkstreaming
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,19 +33,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.preferences.NetworkBookmarkPreferences
-import app.gyrolet.mpvrx.preferences.NetworkFolderBookmark
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.repository.NetworkRepository
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.preferences.NetworkBookmarkPreferences
+import app.infinity.mpvz.preferences.NetworkFolderBookmark
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.repository.NetworkRepository
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 

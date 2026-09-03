@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.dialogs
+package app.infinity.mpvz.ui.browser.dialogs
 
 import android.content.Context
 import android.content.res.Configuration
@@ -49,9 +49,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.utils.storage.StorageVolumeUtils
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.storage.StorageVolumeUtils
 import java.io.File
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -158,7 +158,7 @@ fun FilePickerDialog(
         // Use NaturalOrderComparator for better sorting (e.g., Ep 2 < Ep 10)
         val dirs =
           allFiles.filter { it.isDirectory }.sortedWith { f1, f2 ->
-            app.gyrolet.mpvrx.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT
+            app.infinity.mpvz.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT
               .compare(f1.name, f2.name)
           }
 
@@ -178,7 +178,7 @@ fun FilePickerDialog(
             } else if (!m1 && m2) {
               1
             } else {
-              app.gyrolet.mpvrx.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT
+              app.infinity.mpvz.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT
                 .compare(f1.name, f2.name)
             }
           }
@@ -212,7 +212,7 @@ fun FilePickerDialog(
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_select_subtitle),
+                    .stringResource(app.infinity.mpvz.R.string.ui_select_subtitle),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
               )
@@ -252,7 +252,7 @@ fun FilePickerDialog(
                 Text(
                   text =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_select_subtitle,
+                      app.infinity.mpvz.R.string.ui_select_subtitle,
                     ),
                   style = MaterialTheme.typography.headlineMedium,
                   fontWeight = FontWeight.Bold,
@@ -311,7 +311,7 @@ fun FilePickerDialog(
                 item {
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_no_storage_devices_found,
+                      app.infinity.mpvz.R.string.ui_no_storage_devices_found,
                     ),
                     modifier = Modifier.padding(16.dp),
                   )
@@ -336,7 +336,7 @@ fun FilePickerDialog(
                 item {
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_no_folders_or_supported_files,
+                      app.infinity.mpvz.R.string.ui_no_folders_or_supported_files,
                     ),
                     modifier = Modifier.padding(16.dp),
                   )
@@ -358,7 +358,7 @@ fun FilePickerDialog(
           ) {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+                .stringResource(app.infinity.mpvz.R.string.generic_cancel),
               fontWeight = FontWeight.Medium,
             )
           }

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.mediainfo
+package app.infinity.mpvz.ui.mediainfo
 
 import android.content.Intent
 import android.net.Uri
@@ -80,16 +80,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.resolveLocalPath
-import app.gyrolet.mpvrx.ui.theme.DarkMode
-import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
-import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
-import app.gyrolet.mpvrx.utils.media.MediaInfoOps
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.resolveLocalPath
+import app.infinity.mpvz.ui.theme.DarkMode
+import app.infinity.mpvz.ui.theme.MpvrxTheme
+import app.infinity.mpvz.utils.clipboard.SafeClipboard
+import app.infinity.mpvz.utils.media.MediaInfoOps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -231,7 +231,7 @@ class MediaInfoActivity : AppCompatActivity() {
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_media_info),
+                    .stringResource(app.infinity.mpvz.R.string.ui_media_info),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
               )
@@ -250,7 +250,7 @@ class MediaInfoActivity : AppCompatActivity() {
                 Icons.RoundedFilled.ArrowBack,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.back),
+                    .stringResource(app.infinity.mpvz.R.string.back),
               )
             }
           },
@@ -273,7 +273,7 @@ class MediaInfoActivity : AppCompatActivity() {
                     imageVector = Icons.RoundedFilled.ContentCopy,
                     contentDescription =
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.ui_copy),
+                        .stringResource(app.infinity.mpvz.R.string.ui_copy),
                   )
                 }
 
@@ -295,7 +295,7 @@ class MediaInfoActivity : AppCompatActivity() {
                     imageVector = Icons.RoundedFilled.Share,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.generic_share,
+                        app.infinity.mpvz.R.string.generic_share,
                       ),
                   )
                 }
@@ -360,7 +360,7 @@ class MediaInfoActivity : AppCompatActivity() {
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_analyzing_media_file),
+              .stringResource(app.infinity.mpvz.R.string.ui_analyzing_media_file),
           style = MaterialTheme.typography.bodyLarge,
           fontWeight = FontWeight.Medium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -634,7 +634,7 @@ class MediaInfoActivity : AppCompatActivity() {
   private fun QuickStatCard(
     title: String,
     value: String,
-    icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
+    icon: app.infinity.mpvz.ui.icons.AppIcon,
     accentColor: Color,
     modifier: Modifier = Modifier,
   ) {
@@ -982,7 +982,7 @@ class MediaInfoActivity : AppCompatActivity() {
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_media_tracks_summary),
+                  .stringResource(app.infinity.mpvz.R.string.ui_media_tracks_summary),
               style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
               color = MaterialTheme.colorScheme.primary,
             )
@@ -1029,7 +1029,7 @@ class MediaInfoActivity : AppCompatActivity() {
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_container_metadata),
+                  .stringResource(app.infinity.mpvz.R.string.ui_container_metadata),
               style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
               color = MaterialTheme.colorScheme.primary,
             )
@@ -1056,7 +1056,7 @@ class MediaInfoActivity : AppCompatActivity() {
   private fun TrackSummaryItem(
     count: Int,
     label: String,
-    icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
+    icon: app.infinity.mpvz.ui.icons.AppIcon,
     color: Color,
   ) {
     Column(
@@ -1085,7 +1085,7 @@ class MediaInfoActivity : AppCompatActivity() {
   private fun StreamCard(
     title: String,
     badge: String?,
-    icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
+    icon: app.infinity.mpvz.ui.icons.AppIcon,
     headerBgColor: Color,
     headerTextColor: Color,
     properties: List<Pair<String, String>>,
@@ -1153,7 +1153,7 @@ class MediaInfoActivity : AppCompatActivity() {
                     Toast
                       .makeText(
                         context,
-                        context.getString(app.gyrolet.mpvrx.R.string.ui_copied_specifications_to_clipboard),
+                        context.getString(app.infinity.mpvz.R.string.ui_copied_specifications_to_clipboard),
                         Toast.LENGTH_SHORT,
                       ).show()
                   }
@@ -1164,7 +1164,7 @@ class MediaInfoActivity : AppCompatActivity() {
               imageVector = Icons.RoundedFilled.ContentCopy,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_copy_all),
+                  .stringResource(app.infinity.mpvz.R.string.ui_copy_all),
               tint = headerTextColor.copy(alpha = 0.8f),
               modifier = Modifier.size(16.dp),
             )
@@ -1322,7 +1322,7 @@ class MediaInfoActivity : AppCompatActivity() {
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_video_chapters_timeline),
+                .stringResource(app.infinity.mpvz.R.string.ui_video_chapters_timeline),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
             color = MaterialTheme.colorScheme.primary,
           )

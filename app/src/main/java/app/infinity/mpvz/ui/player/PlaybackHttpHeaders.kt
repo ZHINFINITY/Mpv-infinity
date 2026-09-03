@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 /** Header parsing and serialization shared by every HTTP playback entry point. */
 internal object PlaybackHttpHeaders {

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
@@ -36,16 +36,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.editor.MpvHelpScreen
-import app.gyrolet.mpvrx.ui.editor.MpvScriptEditor
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.editor.MpvHelpScreen
+import app.infinity.mpvz.ui.editor.MpvScriptEditor
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -128,7 +128,7 @@ data class ConfigEditorScreen(
                 Toast
                   .makeText(
                     context,
-                    context.getString(app.gyrolet.mpvrx.R.string.ui_no_storage_location_set),
+                    context.getString(app.infinity.mpvz.R.string.ui_no_storage_location_set),
                     Toast.LENGTH_LONG,
                   ).show()
               }
@@ -142,7 +142,7 @@ data class ConfigEditorScreen(
                   Toast
                     .makeText(
                       context,
-                      context.getString(app.gyrolet.mpvrx.R.string.ui_failed_to_create_file),
+                      context.getString(app.infinity.mpvz.R.string.ui_failed_to_create_file),
                       Toast.LENGTH_LONG,
                     ).show()
                 }
@@ -192,7 +192,7 @@ data class ConfigEditorScreen(
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_unsaved_changes),
+                    .stringResource(app.infinity.mpvz.R.string.ui_unsaved_changes),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
               )
@@ -205,7 +205,7 @@ data class ConfigEditorScreen(
               Icons.RoundedFilled.ArrowBack,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.back),
+                  .stringResource(app.infinity.mpvz.R.string.back),
               tint = MaterialTheme.colorScheme.secondary,
             )
           }
@@ -225,7 +225,7 @@ data class ConfigEditorScreen(
               imageVector = Icons.RoundedFilled.Info,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_help),
+                  .stringResource(app.infinity.mpvz.R.string.ui_help),
             )
           }
           IconButton(
@@ -255,7 +255,7 @@ data class ConfigEditorScreen(
               imageVector = Icons.RoundedFilled.Check,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_save),
+                  .stringResource(app.infinity.mpvz.R.string.ui_save),
             )
           }
         },

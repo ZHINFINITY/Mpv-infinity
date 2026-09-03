@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.screenshot
+package app.infinity.mpvz.ui.player.screenshot
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.ContentValues
 import android.content.Context
@@ -20,7 +20,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.PlayerPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext

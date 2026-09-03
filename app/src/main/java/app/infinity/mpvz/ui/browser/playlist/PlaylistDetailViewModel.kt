@@ -7,24 +7,24 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.playlist
+package app.infinity.mpvz.ui.browser.playlist
 
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.database.entities.PlaylistEntity
-import app.gyrolet.mpvrx.database.entities.PlaylistItemEntity
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
+import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.database.entities.PlaylistItemEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
 import android.net.Uri
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.repository.MediaFileRepository
-import app.gyrolet.mpvrx.ui.browser.base.BaseBrowserViewModel
-import app.gyrolet.mpvrx.ui.player.extractLocalPath
-import app.gyrolet.mpvrx.ui.player.resolveUri
-import app.gyrolet.mpvrx.utils.media.M3UParser
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.repository.MediaFileRepository
+import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
+import app.infinity.mpvz.ui.player.extractLocalPath
+import app.infinity.mpvz.ui.player.resolveUri
+import app.infinity.mpvz.utils.media.M3UParser
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

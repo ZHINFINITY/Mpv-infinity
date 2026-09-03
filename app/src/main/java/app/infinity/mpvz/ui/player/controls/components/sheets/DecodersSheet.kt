@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,12 +15,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.ui.player.Decoder
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.player.RendererBackendPolicy
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.R
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.player.Decoder
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.RendererBackendPolicy
 
 @Composable
 fun DecodersSheet(

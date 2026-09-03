@@ -7,29 +7,29 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.repository
+package app.infinity.mpvz.repository
 
 import android.util.Log
-import app.gyrolet.mpvrx.domain.seerr.ApproveRequestBody
-import app.gyrolet.mpvrx.domain.seerr.CreateRequestBody
-import app.gyrolet.mpvrx.domain.seerr.DiscoverSlider
-import app.gyrolet.mpvrx.domain.seerr.Genre
-import app.gyrolet.mpvrx.domain.seerr.JellyseerrRequest
-import app.gyrolet.mpvrx.domain.seerr.JellyseerrSearchResult
-import app.gyrolet.mpvrx.domain.seerr.JellyseerrUser
-import app.gyrolet.mpvrx.domain.seerr.MediaDetails
-import app.gyrolet.mpvrx.domain.seerr.MediaResultsResponse
-import app.gyrolet.mpvrx.domain.seerr.MediaType
-import app.gyrolet.mpvrx.domain.seerr.PublicSettings
-import app.gyrolet.mpvrx.domain.seerr.RequestsResponse
-import app.gyrolet.mpvrx.domain.seerr.SearchResultItem
-import app.gyrolet.mpvrx.domain.seerr.SeerrRadarrServer
-import app.gyrolet.mpvrx.domain.seerr.SeerrRadarrServerResponse
-import app.gyrolet.mpvrx.domain.seerr.SeerrSonarrServer
-import app.gyrolet.mpvrx.domain.seerr.SeerrSonarrServerResponse
-import app.gyrolet.mpvrx.domain.seerr.UserQuotaResponse
-import app.gyrolet.mpvrx.network.awaitResponse
-import app.gyrolet.mpvrx.preferences.SeerrPreferences
+import app.infinity.mpvz.domain.seerr.ApproveRequestBody
+import app.infinity.mpvz.domain.seerr.CreateRequestBody
+import app.infinity.mpvz.domain.seerr.DiscoverSlider
+import app.infinity.mpvz.domain.seerr.Genre
+import app.infinity.mpvz.domain.seerr.JellyseerrRequest
+import app.infinity.mpvz.domain.seerr.JellyseerrSearchResult
+import app.infinity.mpvz.domain.seerr.JellyseerrUser
+import app.infinity.mpvz.domain.seerr.MediaDetails
+import app.infinity.mpvz.domain.seerr.MediaResultsResponse
+import app.infinity.mpvz.domain.seerr.MediaType
+import app.infinity.mpvz.domain.seerr.PublicSettings
+import app.infinity.mpvz.domain.seerr.RequestsResponse
+import app.infinity.mpvz.domain.seerr.SearchResultItem
+import app.infinity.mpvz.domain.seerr.SeerrRadarrServer
+import app.infinity.mpvz.domain.seerr.SeerrRadarrServerResponse
+import app.infinity.mpvz.domain.seerr.SeerrSonarrServer
+import app.infinity.mpvz.domain.seerr.SeerrSonarrServerResponse
+import app.infinity.mpvz.domain.seerr.UserQuotaResponse
+import app.infinity.mpvz.network.awaitResponse
+import app.infinity.mpvz.preferences.SeerrPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async

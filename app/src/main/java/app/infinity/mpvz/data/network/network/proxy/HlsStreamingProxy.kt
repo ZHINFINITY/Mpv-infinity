@@ -7,11 +7,11 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.proxy
+package app.infinity.mpvz.data.network.proxy
 
 import android.net.Uri
 import android.util.Log
-import app.gyrolet.mpvrx.network.SharedHttpClient
+import app.infinity.mpvz.network.SharedHttpClient
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

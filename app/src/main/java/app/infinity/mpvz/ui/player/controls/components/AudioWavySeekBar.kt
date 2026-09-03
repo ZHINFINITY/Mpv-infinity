@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components
+package app.infinity.mpvz.ui.player.controls.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -49,9 +49,9 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.preferences.SeekbarStyle
-import app.gyrolet.mpvrx.ui.player.controls.LocalPlayerButtonsClickEvent
-import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.infinity.mpvz.preferences.SeekbarStyle
+import app.infinity.mpvz.ui.player.controls.LocalPlayerButtonsClickEvent
+import app.infinity.mpvz.ui.theme.AppMotion
 import dev.vivvvek.seeker.Segment
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf

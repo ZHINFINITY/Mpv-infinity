@@ -7,15 +7,15 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.utils
+package app.infinity.mpvz.ui.utils
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.MpvConfigOverride
-import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.MpvConfigOverride
+import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 
 @Composable

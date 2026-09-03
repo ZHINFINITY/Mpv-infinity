@@ -7,11 +7,11 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import androidx.annotation.StringRes
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.presentation.Screen
+import app.infinity.mpvz.R
+import app.infinity.mpvz.presentation.Screen
 import java.text.Normalizer
 import kotlin.math.abs
 import kotlin.math.min

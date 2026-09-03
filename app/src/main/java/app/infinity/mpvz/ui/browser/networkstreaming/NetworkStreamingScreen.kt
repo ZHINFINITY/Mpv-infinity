@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.networkstreaming
+package app.infinity.mpvz.ui.browser.networkstreaming
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -87,40 +87,40 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.entities.NetworkStreamEntryEntity
-import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
-import app.gyrolet.mpvrx.domain.network.ConnectionStatus
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
-import app.gyrolet.mpvrx.domain.torrent.formatTorrentBytes
-import app.gyrolet.mpvrx.domain.torrent.isTorrentSource
-import app.gyrolet.mpvrx.domain.torrent.normalizeTorrentSource
-import app.gyrolet.mpvrx.preferences.YtdlPreferences
-import app.gyrolet.mpvrx.preferences.NetworkBookmarkPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
-import app.gyrolet.mpvrx.utils.media.MediaInfoParser
-import app.gyrolet.mpvrx.ui.browser.cards.NetworkConnectionCard
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.dialogs.AddConnectionSheet
-import app.gyrolet.mpvrx.ui.browser.dialogs.EditConnectionSheet
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpInstallPromptDialog
-import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpInstallProgressDialog
-import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
-import app.gyrolet.mpvrx.ui.preferences.YtdlpSettingsScreen
-import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionInput
-import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionScreen
-import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionViewModel
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.utils.media.SharedUrlExtractor
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.entities.NetworkStreamEntryEntity
+import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
+import app.infinity.mpvz.domain.network.ConnectionStatus
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
+import app.infinity.mpvz.domain.torrent.formatTorrentBytes
+import app.infinity.mpvz.domain.torrent.isTorrentSource
+import app.infinity.mpvz.domain.torrent.normalizeTorrentSource
+import app.infinity.mpvz.preferences.YtdlPreferences
+import app.infinity.mpvz.preferences.NetworkBookmarkPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
+import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.ui.browser.cards.NetworkConnectionCard
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.dialogs.AddConnectionSheet
+import app.infinity.mpvz.ui.browser.dialogs.EditConnectionSheet
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.AppIcon
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpInstallPromptDialog
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpInstallProgressDialog
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import app.infinity.mpvz.ui.preferences.YtdlpSettingsScreen
+import app.infinity.mpvz.ui.torrent.TorrentSelectionInput
+import app.infinity.mpvz.ui.torrent.TorrentSelectionScreen
+import app.infinity.mpvz.ui.torrent.TorrentSelectionViewModel
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.utils.media.SharedUrlExtractor
+import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -149,7 +149,7 @@ object NetworkStreamingScreen : Screen {
     val ytdlPreferences = koinInject<YtdlPreferences>()
     val bookmarkPreferences = koinInject<NetworkBookmarkPreferences>()
     val wyzieSearchRepository = koinInject<WyzieSearchRepository>()
-    val linkDownloadCoordinator = koinInject<app.gyrolet.mpvrx.domain.download.LinkDownloadCoordinator>()
+    val linkDownloadCoordinator = koinInject<app.infinity.mpvz.domain.download.LinkDownloadCoordinator>()
     val torrentPickerViewModel: TorrentSelectionViewModel =
       viewModel(
         key = "network_torrent_picker",
@@ -170,7 +170,7 @@ object NetworkStreamingScreen : Screen {
     var showAddMediaDialog by remember { mutableStateOf(false) }
     var editingConnection by remember { mutableStateOf<NetworkConnection?>(null) }
     var showTorrentPicker by remember { mutableStateOf(false) }
-    val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+    val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
     val coroutineScope = rememberCoroutineScope()
 
     // yt-dlp install gate for the "paste link -> Play" flow: instead of silently installing
@@ -360,7 +360,7 @@ object NetworkStreamingScreen : Screen {
                 onSortClick = null,
                 onSearchClick = null,
                 onSettingsClick = {
-                  backstack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
+                  backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
                 },
                 onDeleteClick = null,
                 onRenameClick = null,
@@ -373,7 +373,7 @@ object NetworkStreamingScreen : Screen {
                 onDeselectAll = null,
                 additionalActions = {
                   IconButton(
-                    onClick = { backstack.add(app.gyrolet.mpvrx.ui.downloads.DownloadsScreen) },
+                    onClick = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
                     modifier = Modifier.padding(horizontal = 2.dp),
                   ) {
                     Icon(
@@ -492,7 +492,7 @@ object NetworkStreamingScreen : Screen {
                     torrentPickerViewModel.open(TorrentSelectionInput(source = playableSource, title = entry.fileName))
                   } else {
                     when (linkDownloadCoordinator.enqueue(playableSource, entry.fileName)) {
-                      app.gyrolet.mpvrx.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED ->
+                      app.infinity.mpvz.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED ->
                         android.widget.Toast
                           .makeText(context, R.string.downloads_location_invalid, android.widget.Toast.LENGTH_SHORT)
                           .show()
@@ -763,7 +763,7 @@ private fun LocalNetworkContent(
   onOpenBookmark: (ResolvedNetworkFolderBookmark) -> Unit,
   onManageBookmarks: () -> Unit,
 ) {
-  val navBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
+  val navBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
@@ -841,7 +841,7 @@ private fun MediaContent(
     }
 
   var selectedDetailGroup by remember { mutableStateOf<MediaStreamGroup?>(null) }
-  val navBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
+  val navBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
 
   val heroGroups =
     remember(mediaGroups) {

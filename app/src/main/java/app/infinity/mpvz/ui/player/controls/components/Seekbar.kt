@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components
+package app.infinity.mpvz.ui.player.controls.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -82,15 +82,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.preferences.SeekbarStyle
-import app.gyrolet.mpvrx.ui.player.SkipSegment
-import app.gyrolet.mpvrx.ui.player.clip.ClipEditorUiState
-import app.gyrolet.mpvrx.ui.player.controls.LocalPlayerButtonsClickEvent
-import app.gyrolet.mpvrx.ui.player.visualizer.AudioFeatures
-import app.gyrolet.mpvrx.ui.player.visualizer.VisualizerPalette
-import app.gyrolet.mpvrx.ui.player.visualizer.WaveVisualizerOverlay
-import app.gyrolet.mpvrx.ui.theme.AppMotion
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.preferences.SeekbarStyle
+import app.infinity.mpvz.ui.player.SkipSegment
+import app.infinity.mpvz.ui.player.clip.ClipEditorUiState
+import app.infinity.mpvz.ui.player.controls.LocalPlayerButtonsClickEvent
+import app.infinity.mpvz.ui.player.visualizer.AudioFeatures
+import app.infinity.mpvz.ui.player.visualizer.VisualizerPalette
+import app.infinity.mpvz.ui.player.visualizer.WaveVisualizerOverlay
+import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.theme.spacing
 import dev.vivvvek.seeker.Seeker
 import dev.vivvvek.seeker.SeekerDefaults
 import dev.vivvvek.seeker.Segment

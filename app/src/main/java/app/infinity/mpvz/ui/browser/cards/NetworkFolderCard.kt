@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.cards
+package app.infinity.mpvz.ui.browser.cards
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -33,18 +33,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.domain.network.NetworkFile
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.domain.network.NetworkFile
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
 import org.koin.compose.koinInject
 
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.text.style.TextAlign
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
 
 @Composable
 fun NetworkFolderCard(
@@ -106,7 +106,7 @@ fun NetworkFolderCard(
             Icons.RoundedFilled.Folder,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_folder),
+                .stringResource(app.infinity.mpvz.R.string.ui_folder),
             modifier = Modifier.size(56.dp),
             tint = MaterialTheme.colorScheme.secondary,
           )
@@ -142,7 +142,7 @@ fun NetworkFolderCard(
             Icons.RoundedFilled.Folder,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_folder),
+                .stringResource(app.infinity.mpvz.R.string.ui_folder),
             modifier = Modifier.size(48.dp),
             tint = MaterialTheme.colorScheme.secondary,
           )

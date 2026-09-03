@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.selection
+package app.infinity.mpvz.ui.browser.selection
 
 import android.content.Context
 import android.widget.Toast
@@ -20,9 +20,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -139,14 +139,14 @@ class SelectionManager<T, ID>(
           Toast
             .makeText(
               context,
-              context.getString(app.gyrolet.mpvrx.R.string.ui_deleted_successfully),
+              context.getString(app.infinity.mpvz.R.string.ui_deleted_successfully),
               Toast.LENGTH_SHORT,
             ).show()
         } else if (failed > 0) {
           Toast
             .makeText(
               context,
-              context.getString(app.gyrolet.mpvrx.R.string.ui_failed_to_delete),
+              context.getString(app.infinity.mpvz.R.string.ui_failed_to_delete),
               Toast.LENGTH_SHORT,
             ).show()
         }
@@ -182,7 +182,7 @@ class SelectionManager<T, ID>(
             Toast
               .makeText(
                 context,
-                context.getString(app.gyrolet.mpvrx.R.string.ui_renamed_successfully),
+                context.getString(app.infinity.mpvz.R.string.ui_renamed_successfully),
                 Toast.LENGTH_SHORT,
               ).show()
           }.onFailure { error ->

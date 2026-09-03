@@ -10,7 +10,7 @@
  * https://codepen.io/NiklasKnaack/pen/WyWqja
  */
 
-package app.gyrolet.mpvrx.ui.player.visualizer
+package app.infinity.mpvz.ui.player.visualizer
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize

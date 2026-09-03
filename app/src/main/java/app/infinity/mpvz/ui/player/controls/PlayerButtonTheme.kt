@@ -7,14 +7,14 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls
+package app.infinity.mpvz.ui.player.controls
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import app.gyrolet.mpvrx.ui.player.controls.components.LocalForceDarkPlayerButtonsBackground
-import app.gyrolet.mpvrx.ui.player.controls.components.LocalHidePlayerButtonsBackground
-import app.gyrolet.mpvrx.ui.theme.LocalDarkAppColorScheme
+import app.infinity.mpvz.ui.player.controls.components.LocalForceDarkPlayerButtonsBackground
+import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBackground
+import app.infinity.mpvz.ui.theme.LocalDarkAppColorScheme
 
 /**
  * Carries the background visibility choice through every player-button implementation.

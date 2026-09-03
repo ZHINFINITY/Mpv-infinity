@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import android.net.Uri
 import androidx.compose.animation.core.LinearEasing
@@ -66,18 +66,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.res.stringResource
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.player.controls.components.MiniAudioVisualizer
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
@@ -254,7 +254,7 @@ fun PlaylistSheet(
   onReorder: ((Int, Int) -> Unit)? = null,
   totalCount: Int = playlist.size,
   isM3UPlaylist: Boolean = false,
-  playerPreferences: app.gyrolet.mpvrx.preferences.PlayerPreferences,
+  playerPreferences: app.infinity.mpvz.preferences.PlayerPreferences,
   isSwipeActive: Boolean = false,
   swipeOffset: Float = 0f,
   isAudioOnly: Boolean = false,
@@ -365,7 +365,7 @@ fun PlaylistSheet(
               Text(
                 text =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_now_playing),
+                    .stringResource(app.infinity.mpvz.R.string.ui_now_playing),
                 style =
                   MaterialTheme.typography.titleSmall.copy(
                     fontWeight = FontWeight.Bold,
@@ -646,7 +646,7 @@ fun PlaylistTrackListItem(
             thumbnailRepository = thumbnailRepository,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
+                .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop,
           )
@@ -868,7 +868,7 @@ fun PlaylistTrackGridItem(
             thumbnailRepository = thumbnailRepository,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
+                .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
             modifier = Modifier.matchParentSize(),
             contentScale = ContentScale.Crop,
           )

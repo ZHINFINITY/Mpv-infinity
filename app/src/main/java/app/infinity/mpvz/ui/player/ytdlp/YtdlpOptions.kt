@@ -7,10 +7,10 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.ytdlp
+package app.infinity.mpvz.ui.player.ytdlp
 
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.preferences.YtdlPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.YtdlPreferences
 
 enum class YtdlCodecPreference(
   val title: String,

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.content.Context
 import android.os.Environment
@@ -16,26 +16,26 @@ import android.util.Log
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.core.view.WindowInsetsCompat
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
-import app.gyrolet.mpvrx.domain.hdr.HdrToysManager
-import app.gyrolet.mpvrx.network.AndroidCookieJar
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.DecoderPreferences
-import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
-import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.preferences.YtdlPreferences
-import app.gyrolet.mpvrx.ui.player.PlayerActivity.Companion.TAG
-import app.gyrolet.mpvrx.ui.player.anime4k.applyAnime4KShaderChain
-import app.gyrolet.mpvrx.ui.player.anime4k.applyAnime4KStabilityOptions
-import app.gyrolet.mpvrx.ui.player.anime4k.clearAnime4KShaders
-import app.gyrolet.mpvrx.ui.player.anime4k.selectRuntimeStableAnime4K
-import app.gyrolet.mpvrx.ui.player.controls.components.panels.toColorHexString
-import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
-import app.gyrolet.mpvrx.utils.device.VulkanCapabilities
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.domain.hdr.HdrToysManager
+import app.infinity.mpvz.network.AndroidCookieJar
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.YtdlPreferences
+import app.infinity.mpvz.ui.player.PlayerActivity.Companion.TAG
+import app.infinity.mpvz.ui.player.anime4k.applyAnime4KShaderChain
+import app.infinity.mpvz.ui.player.anime4k.applyAnime4KStabilityOptions
+import app.infinity.mpvz.ui.player.anime4k.clearAnime4KShaders
+import app.infinity.mpvz.ui.player.anime4k.selectRuntimeStableAnime4K
+import app.infinity.mpvz.ui.player.controls.components.panels.toColorHexString
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import app.infinity.mpvz.utils.device.VulkanCapabilities
 import `is`.xyz.mpv.BaseMPVView
 import `is`.xyz.mpv.KeyMapping
 import `is`.xyz.mpv.MPVLib

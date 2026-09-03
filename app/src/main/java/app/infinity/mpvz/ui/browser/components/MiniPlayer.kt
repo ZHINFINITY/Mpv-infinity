@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.components
+package app.infinity.mpvz.ui.browser.components
 
 import android.app.Activity
 import android.content.Context
@@ -78,22 +78,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.browser.NavigationBarState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.DeclaredPlaybackMediaKind
-import app.gyrolet.mpvrx.ui.player.MediaPlaybackService
-import app.gyrolet.mpvrx.ui.player.PlaybackPhase
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.player.TrackNode
-import app.gyrolet.mpvrx.ui.player.declaredMediaKind
-import app.gyrolet.mpvrx.ui.player.toObject
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.browser.NavigationBarState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
+import app.infinity.mpvz.ui.player.MediaPlaybackService
+import app.infinity.mpvz.ui.player.PlaybackPhase
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.TrackNode
+import app.infinity.mpvz.ui.player.declaredMediaKind
+import app.infinity.mpvz.ui.player.toObject
+import app.infinity.mpvz.ui.utils.LocalBackStack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -113,8 +113,8 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
   val backstack = LocalBackStack.current
   val currentScreen = backstack.lastOrNull()
   val isSettingsScreen = currentScreen != null &&
-    (currentScreen.javaClass.name.startsWith("app.gyrolet.mpvrx.ui.preferences") ||
-     currentScreen.javaClass.name.startsWith("app.gyrolet.mpvrx.ui.editor"))
+    (currentScreen.javaClass.name.startsWith("app.infinity.mpvz.ui.preferences") ||
+     currentScreen.javaClass.name.startsWith("app.infinity.mpvz.ui.editor"))
 
   val currentItem = sessionState.currentItem
   val trackListNode by PlaybackSession.propNode["track-list"].collectAsStateWithLifecycle()

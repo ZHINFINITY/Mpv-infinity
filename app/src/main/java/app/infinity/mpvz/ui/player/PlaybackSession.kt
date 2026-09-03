@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -16,10 +16,10 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Surface
-import app.gyrolet.mpvrx.data.network.proxy.HlsStreamingProxy
-import app.gyrolet.mpvrx.data.network.proxy.NetworkStreamingProxy
-import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
-import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.data.network.proxy.HlsStreamingProxy
+import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
+import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.flow.MutableStateFlow

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.dialogs
+package app.infinity.mpvz.ui.browser.dialogs
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
@@ -49,10 +49,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -118,7 +118,7 @@ fun AddToPlaylistDialog(
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_add_to_playlist),
+            .stringResource(app.infinity.mpvz.R.string.ui_add_to_playlist),
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.Bold,
       )
@@ -155,7 +155,7 @@ fun AddToPlaylistDialog(
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_create_new_playlist),
+                .stringResource(app.infinity.mpvz.R.string.ui_create_new_playlist),
             fontWeight = FontWeight.Medium,
           )
         }
@@ -165,7 +165,7 @@ fun AddToPlaylistDialog(
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_existing_playlists),
+                .stringResource(app.infinity.mpvz.R.string.ui_existing_playlists),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -224,7 +224,7 @@ fun AddToPlaylistDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_done),
+            .stringResource(app.infinity.mpvz.R.string.ui_done),
           fontWeight = FontWeight.Bold,
         )
       }
@@ -236,7 +236,7 @@ fun AddToPlaylistDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
           fontWeight = FontWeight.Medium,
         )
       }
@@ -327,7 +327,7 @@ private fun EmptyPlaylistsMessage() {
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_no_playlists_yet),
+            .stringResource(app.infinity.mpvz.R.string.ui_no_playlists_yet),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -335,7 +335,7 @@ private fun EmptyPlaylistsMessage() {
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_create_your_first_playlist_above),
+            .stringResource(app.infinity.mpvz.R.string.ui_create_your_first_playlist_above),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
@@ -356,7 +356,7 @@ private fun CreatePlaylistDialog(
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_create_new_playlist),
+            .stringResource(app.infinity.mpvz.R.string.ui_create_new_playlist),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
       )
@@ -368,7 +368,7 @@ private fun CreatePlaylistDialog(
         label = {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_playlist_name),
+              .stringResource(app.infinity.mpvz.R.string.ui_playlist_name),
           )
         },
         singleLine = true,
@@ -388,7 +388,7 @@ private fun CreatePlaylistDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_create),
+            .stringResource(app.infinity.mpvz.R.string.ui_create),
           fontWeight = FontWeight.Bold,
         )
       }
@@ -400,7 +400,7 @@ private fun CreatePlaylistDialog(
       ) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
           fontWeight = FontWeight.Medium,
         )
       }

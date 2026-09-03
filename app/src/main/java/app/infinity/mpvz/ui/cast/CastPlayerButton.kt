@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.cast
+package app.infinity.mpvz.ui.cast
 
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -25,9 +25,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.mediarouter.app.MediaRouteButton
-import app.gyrolet.mpvrx.preferences.PlayerButton
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.theme.controlColor
+import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.theme.controlColor
 import com.google.android.gms.cast.framework.CastButtonFactory
 import androidx.compose.ui.graphics.Color as ComposeColor
 
@@ -41,7 +41,7 @@ fun CastPlayerButton(
 ) {
   val castContentDescription =
     androidx.compose.ui.res
-      .stringResource(app.gyrolet.mpvrx.R.string.ui_cast)
+      .stringResource(app.infinity.mpvz.R.string.ui_cast)
   Surface(
     shape = CircleShape,
     color =

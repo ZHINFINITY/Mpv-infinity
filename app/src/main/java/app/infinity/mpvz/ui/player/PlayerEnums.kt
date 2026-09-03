@@ -7,12 +7,12 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import androidx.annotation.StringRes
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.DecoderPreferences
-import app.gyrolet.mpvrx.preferences.preference.Preference
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.preference.Preference
 
 enum class PlayerOrientation(
   @StringRes val titleRes: Int,
@@ -172,7 +172,7 @@ sealed class PlayerUpdates {
   ) : PlayerUpdates()
 
   data class RepeatMode(
-    val mode: app.gyrolet.mpvrx.ui.player.RepeatMode,
+    val mode: app.infinity.mpvz.ui.player.RepeatMode,
   ) : PlayerUpdates()
 
   data class Shuffle(

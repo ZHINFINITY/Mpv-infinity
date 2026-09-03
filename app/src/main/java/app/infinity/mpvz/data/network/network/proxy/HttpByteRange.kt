@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.proxy
+package app.infinity.mpvz.data.network.proxy
 
 internal data class HttpByteRange(
   val start: Long,

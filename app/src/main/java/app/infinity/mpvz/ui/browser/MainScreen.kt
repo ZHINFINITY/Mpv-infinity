@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser
+package app.infinity.mpvz.ui.browser
 
 import android.annotation.SuppressLint
 import android.content.res.Configuration
@@ -91,18 +91,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.util.lerp
 import kotlin.math.roundToInt
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.browser.folderlist.FolderListScreen
-import app.gyrolet.mpvrx.ui.browser.music.MusicLibraryContent
-import app.gyrolet.mpvrx.ui.browser.networkstreaming.NetworkStreamingScreen
-import app.gyrolet.mpvrx.ui.browser.playlist.PlaylistScreen
-import app.gyrolet.mpvrx.ui.browser.recentlyplayed.RecentlyPlayedScreen
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
+import app.infinity.mpvz.ui.browser.music.MusicLibraryContent
+import app.infinity.mpvz.ui.browser.networkstreaming.NetworkStreamingScreen
+import app.infinity.mpvz.ui.browser.playlist.PlaylistScreen
+import app.infinity.mpvz.ui.browser.recentlyplayed.RecentlyPlayedScreen
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppMotion
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -351,10 +351,10 @@ object MainScreen : Screen {
     val miniPlayerNavClearance = if (isMiniPlayerVisible && isPortrait && !isTablet) 96.dp else 0.dp
     val contentBottomPadding = remember(miniPlayerNavClearance) { 88.dp + miniPlayerNavClearance }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val jellyfinViewModel: app.gyrolet.mpvrx.ui.browser.jellyfin.JellyfinViewModel =
+    val jellyfinViewModel: app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel =
       androidx.lifecycle.viewmodel.compose.viewModel(
         factory =
-          app.gyrolet.mpvrx.ui.browser.jellyfin.JellyfinViewModel.factory(
+          app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel.factory(
             context.applicationContext as android.app.Application,
           ),
       )
@@ -390,7 +390,7 @@ object MainScreen : Screen {
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
-                MainTab.JELLYFIN -> app.gyrolet.mpvrx.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
+                MainTab.JELLYFIN -> app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
               }
             }
           }

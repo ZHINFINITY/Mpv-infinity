@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin.seerr
+package app.infinity.mpvz.ui.browser.jellyfin.seerr
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -67,14 +67,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.domain.seerr.MediaType
-import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.domain.seerr.MediaType
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -190,7 +190,7 @@ fun SeerrContent(
                 }
 
                 if (avatarUrl != null) {
-                  app.gyrolet.mpvrx.presentation.components.RemoteImage(
+                  app.infinity.mpvz.presentation.components.RemoteImage(
                     url = avatarUrl,
                     contentDescription = stringResource(R.string.seerr_connect_server),
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,

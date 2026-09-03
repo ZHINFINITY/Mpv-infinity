@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import android.content.res.Configuration
 import androidx.compose.animation.AnimatedVisibility
@@ -49,19 +49,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.presentation.components.SliderItem
-import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.AmbientShaderPresets
-import app.gyrolet.mpvrx.ui.player.AmbientStyle
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.components.expressive.SectionHeader
-import app.gyrolet.mpvrx.ui.player.matchesGlowPreset
-import app.gyrolet.mpvrx.ui.theme.AppMotion
-import app.gyrolet.mpvrx.ui.theme.spacing
-import app.gyrolet.mpvrx.ui.icons.Icon as AppSymbolIcon
+import app.infinity.mpvz.R
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.presentation.components.SliderItem
+import app.infinity.mpvz.ui.components.themedSegmentedButtonColors
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.AmbientShaderPresets
+import app.infinity.mpvz.ui.player.AmbientStyle
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.components.expressive.SectionHeader
+import app.infinity.mpvz.ui.player.matchesGlowPreset
+import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.icons.Icon as AppSymbolIcon
 
 @Composable
 fun AmbientSheet(
@@ -120,7 +120,7 @@ fun AmbientSheet(
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_ambience_mode),
+            .stringResource(app.infinity.mpvz.R.string.ui_ambience_mode),
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurface,

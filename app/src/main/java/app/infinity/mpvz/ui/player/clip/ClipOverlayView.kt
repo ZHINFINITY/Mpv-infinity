@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.clip
+package app.infinity.mpvz.ui.player.clip
 
 import android.content.Context
 import android.graphics.Canvas
@@ -76,16 +76,16 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.findViewTreeViewModelStoreOwner
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.ui.icons.Icon as AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.Panels
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.controls.components.panels.DraggablePanel
-import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.ui.icons.Icon as AppIcon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.controls.components.panels.DraggablePanel
+import app.infinity.mpvz.ui.theme.MpvrxTheme
+import app.infinity.mpvz.ui.theme.spacing
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -966,7 +966,7 @@ private fun formatEditableTime(seconds: Float): String {
 
 @Composable
 private fun ClipMetadata(
-  icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
+  icon: app.infinity.mpvz.ui.icons.AppIcon,
   text: String,
   modifier: Modifier = Modifier,
 ) {

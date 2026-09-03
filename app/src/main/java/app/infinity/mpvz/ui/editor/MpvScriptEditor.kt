@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.editor
+package app.infinity.mpvz.ui.editor
 
 import android.content.Context
 import android.graphics.Typeface
@@ -28,7 +28,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
+import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language

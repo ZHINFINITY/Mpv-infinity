@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.cards
+package app.infinity.mpvz.ui.browser.cards
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
@@ -17,13 +17,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.entities.PlaylistEntity
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
-import app.gyrolet.mpvrx.domain.media.model.VideoFolder
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.domain.media.model.VideoFolder
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import app.infinity.mpvz.ui.theme.AppShapeScale
 
 /**
  * Card for displaying a playlist item

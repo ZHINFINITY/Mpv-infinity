@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin
+package app.infinity.mpvz.ui.browser.jellyfin
 
 import android.app.Application
 import android.content.Context
@@ -18,24 +18,24 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.gyrolet.mpvrx.data.jellyfin.JellyfinClient
-import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
-import app.gyrolet.mpvrx.domain.download.AppDownloadManager
-import app.gyrolet.mpvrx.domain.download.DownloadLocations
-import app.gyrolet.mpvrx.domain.download.DownloadMetadata
-import app.gyrolet.mpvrx.domain.download.DownloadSources
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinAuthMode
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinItem
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinSearchCategory
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder
-import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.repository.JellyfinRepository
-import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.data.jellyfin.JellyfinClient
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.domain.download.AppDownloadManager
+import app.infinity.mpvz.domain.download.DownloadLocations
+import app.infinity.mpvz.domain.download.DownloadMetadata
+import app.infinity.mpvz.domain.download.DownloadSources
+import app.infinity.mpvz.domain.jellyfin.JellyfinAuthMode
+import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinSearchCategory
+import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.domain.jellyfin.JellyfinSortBy
+import app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.repository.JellyfinRepository
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -235,8 +235,8 @@ class JellyfinViewModel(
             jellyfinRepository.getItems(
               server = server,
               includeItemTypes = "Movie,Series",
-              sortBy = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.RATING,
-              sortOrder = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.DESCENDING,
+              sortBy = app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.RATING,
+              sortOrder = app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.DESCENDING,
               limit = 36,
             )
           }
@@ -245,8 +245,8 @@ class JellyfinViewModel(
             jellyfinRepository.getItems(
               server = server,
               includeItemTypes = "Audio,MusicAlbum",
-              sortBy = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.DATE_ADDED,
-              sortOrder = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.DESCENDING,
+              sortBy = app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.DATE_ADDED,
+              sortOrder = app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.DESCENDING,
               limit = 20,
             )
           }
@@ -256,7 +256,7 @@ class JellyfinViewModel(
               server = server,
               includeItemTypes = "Movie,Series",
               isPlayed = false,
-              sortBy = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.RANDOM,
+              sortBy = app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.RANDOM,
               limit = 15,
             )
           }
@@ -1259,9 +1259,9 @@ class JellyfinViewModel(
       val queued = enqueueJellyfinDownload(server, item)
       showDownloadToast(
         if (queued) {
-          getApplication<Application>().getString(app.gyrolet.mpvrx.R.string.downloads_started)
+          getApplication<Application>().getString(app.infinity.mpvz.R.string.downloads_started)
         } else {
-          getApplication<Application>().getString(app.gyrolet.mpvrx.R.string.downloads_already_downloaded)
+          getApplication<Application>().getString(app.infinity.mpvz.R.string.downloads_already_downloaded)
         },
       )
     }
@@ -1278,7 +1278,7 @@ class JellyfinViewModel(
         if (enqueueJellyfinDownload(server, episode)) queued++
       }
       showDownloadToast(
-        getApplication<Application>().getString(app.gyrolet.mpvrx.R.string.downloads_episodes_queued, queued),
+        getApplication<Application>().getString(app.infinity.mpvz.R.string.downloads_episodes_queued, queued),
       )
     }
   }
@@ -1302,7 +1302,7 @@ class JellyfinViewModel(
         }
       }
       showDownloadToast(
-        getApplication<Application>().getString(app.gyrolet.mpvrx.R.string.downloads_episodes_queued, queued),
+        getApplication<Application>().getString(app.infinity.mpvz.R.string.downloads_episodes_queued, queued),
       )
     }
   }

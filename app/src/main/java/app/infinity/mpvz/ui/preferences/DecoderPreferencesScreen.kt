@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.content.Intent
 import android.net.Uri
@@ -46,24 +46,24 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.DecoderPreferences
-import app.gyrolet.mpvrx.preferences.MpvConfigOverride
-import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.Debanding
-import app.gyrolet.mpvrx.ui.player.MPVProfile
-import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.device.VulkanCapabilities
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.MpvConfigOverride
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.Debanding
+import app.infinity.mpvz.ui.player.MPVProfile
+import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.device.VulkanCapabilities
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
@@ -345,7 +345,7 @@ object DecoderPreferencesScreen : Screen {
                     Text(
                       text =
                         androidx.compose.ui.res
-                          .stringResource(app.gyrolet.mpvrx.R.string.pref_anime4k_link),
+                          .stringResource(app.infinity.mpvz.R.string.pref_anime4k_link),
                       color = MaterialTheme.colorScheme.primary,
                       style = MaterialTheme.typography.bodySmall,
                       textDecoration = TextDecoration.Underline,
@@ -388,7 +388,7 @@ object DecoderPreferencesScreen : Screen {
                       Text(
                         text =
                           androidx.compose.ui.res.stringResource(
-                            app.gyrolet.mpvrx.R.string.ui_anime4k_shaders_options,
+                            app.infinity.mpvz.R.string.ui_anime4k_shaders_options,
                           ),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,

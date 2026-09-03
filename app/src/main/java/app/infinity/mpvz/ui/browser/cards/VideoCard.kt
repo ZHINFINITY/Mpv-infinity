@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.cards
+package app.infinity.mpvz.ui.browser.cards
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
@@ -51,16 +51,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.ThumbnailQuality
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.ThumbnailQuality
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flowOn
@@ -186,7 +186,7 @@ fun VideoCard(
     } else if (video.isAudio && video.title.isNotBlank()) {
       video.title
     } else {
-      app.gyrolet.mpvrx.utils.storage.FileTypeUtils.stripExtension(video.displayName)
+      app.infinity.mpvz.utils.storage.FileTypeUtils.stripExtension(video.displayName)
     }
 
   val selectionInset = 2.dp
@@ -328,7 +328,7 @@ fun VideoCard(
                   bitmap = it,
                   contentDescription =
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
+                      .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
                   modifier = Modifier.matchParentSize(),
                   contentScale = ContentScale.Crop,
                 )
@@ -337,7 +337,7 @@ fun VideoCard(
                   if (video.isAudio) Icons.RoundedFilled.Audiotrack else Icons.RoundedFilled.PlayArrow,
                   contentDescription =
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
+                      .stringResource(app.infinity.mpvz.R.string.ui_play),
                   modifier = Modifier.size(48.dp),
                   tint = MaterialTheme.colorScheme.secondary,
                 )
@@ -347,7 +347,7 @@ fun VideoCard(
                 if (video.isAudio) Icons.RoundedFilled.Audiotrack else Icons.RoundedFilled.PlayArrow,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
+                    .stringResource(app.infinity.mpvz.R.string.ui_play),
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.secondary,
               )
@@ -656,7 +656,7 @@ fun VideoCard(
                   bitmap = it,
                   contentDescription =
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
+                      .stringResource(app.infinity.mpvz.R.string.ui_thumbnail),
                   modifier = Modifier.matchParentSize(),
                   contentScale = ContentScale.Crop,
                 )
@@ -665,7 +665,7 @@ fun VideoCard(
                   if (video.isAudio) Icons.RoundedFilled.Audiotrack else Icons.RoundedFilled.PlayArrow,
                   contentDescription =
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
+                      .stringResource(app.infinity.mpvz.R.string.ui_play),
                   modifier = Modifier.size(48.dp),
                   tint = MaterialTheme.colorScheme.secondary,
                 )
@@ -675,7 +675,7 @@ fun VideoCard(
                 if (video.isAudio) Icons.RoundedFilled.Audiotrack else Icons.RoundedFilled.PlayArrow,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_play),
+                    .stringResource(app.infinity.mpvz.R.string.ui_play),
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.secondary,
               )
@@ -893,7 +893,7 @@ private fun CodecSupportIndicator(
 ) {
   val support =
     remember(video.videoCodec, video.videoCodecMimeType, video.width, video.height, video.fps) {
-      app.gyrolet.mpvrx.utils.media.VideoCodecSupportInspector.inspect(
+      app.infinity.mpvz.utils.media.VideoCodecSupportInspector.inspect(
         codecLabel = video.videoCodec,
         mimeType = video.videoCodecMimeType,
         width = video.width,
@@ -903,10 +903,10 @@ private fun CodecSupportIndicator(
     }
   val statusLabel =
     when (support.decodeSupport) {
-      app.gyrolet.mpvrx.utils.media.VideoDecodeSupport.HARDWARE -> "HW"
-      app.gyrolet.mpvrx.utils.media.VideoDecodeSupport.SOFTWARE -> "SW"
-      app.gyrolet.mpvrx.utils.media.VideoDecodeSupport.UNSUPPORTED -> if (compact) "NO" else "Unsupported"
-      app.gyrolet.mpvrx.utils.media.VideoDecodeSupport.UNKNOWN -> "Unknown"
+      app.infinity.mpvz.utils.media.VideoDecodeSupport.HARDWARE -> "HW"
+      app.infinity.mpvz.utils.media.VideoDecodeSupport.SOFTWARE -> "SW"
+      app.infinity.mpvz.utils.media.VideoDecodeSupport.UNSUPPORTED -> if (compact) "NO" else "Unsupported"
+      app.infinity.mpvz.utils.media.VideoDecodeSupport.UNKNOWN -> "Unknown"
     }
   Row(
     modifier =

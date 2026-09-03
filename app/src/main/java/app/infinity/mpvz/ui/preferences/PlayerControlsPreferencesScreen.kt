@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,23 +47,23 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.PlayerButton
-import app.gyrolet.mpvrx.preferences.PlayerClockFormat
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.PortraitPlaybackControlsPosition
-import app.gyrolet.mpvrx.preferences.SeekbarStyle
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.controls.components.SeekbarStyleLivePreview
-import app.gyrolet.mpvrx.ui.preferences.components.PlayerButtonChip
-import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.preferences.PlayerClockFormat
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
+import app.infinity.mpvz.preferences.SeekbarStyle
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.controls.components.SeekbarStyleLivePreview
+import app.infinity.mpvz.ui.preferences.components.PlayerButtonChip
+import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
@@ -287,7 +287,7 @@ object PlayerControlsPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_portrait_playback_buttons),
+                      .stringResource(app.infinity.mpvz.R.string.ui_portrait_playback_buttons),
                   )
                 },
                 summary = { Text(portraitPlaybackControlsPosition.displayName) },
@@ -377,7 +377,7 @@ object PlayerControlsPreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_time_network_clock),
+                      .stringResource(app.infinity.mpvz.R.string.ui_time_network_clock),
                   )
                 },
                 summary = { Text(clockFormat.displayName) },

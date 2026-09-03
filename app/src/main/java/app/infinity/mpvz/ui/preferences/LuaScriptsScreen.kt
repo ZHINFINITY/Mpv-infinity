@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.content.Intent
 import android.widget.Toast
@@ -35,21 +35,21 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.lua.LuaRuntimeStatusCard
-import app.gyrolet.mpvrx.ui.lua.LuaScriptToggleCard
-import app.gyrolet.mpvrx.ui.lua.LuaScriptsEmptyState
-import app.gyrolet.mpvrx.ui.lua.LuaScriptsLoadingState
-import app.gyrolet.mpvrx.ui.lua.LuaSelectionFootnote
-import app.gyrolet.mpvrx.ui.lua.rememberLuaScriptsCatalog
-import app.gyrolet.mpvrx.ui.theme.spacing
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.lua.LuaRuntimeStatusCard
+import app.infinity.mpvz.ui.lua.LuaScriptToggleCard
+import app.infinity.mpvz.ui.lua.LuaScriptsEmptyState
+import app.infinity.mpvz.ui.lua.LuaScriptsLoadingState
+import app.infinity.mpvz.ui.lua.LuaSelectionFootnote
+import app.infinity.mpvz.ui.lua.rememberLuaScriptsCatalog
+import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 import java.io.File
@@ -96,7 +96,7 @@ object LuaScriptsScreen : Screen {
         Toast
           .makeText(
             context,
-            context.getString(app.gyrolet.mpvrx.R.string.ui_no_storage_location_configured),
+            context.getString(app.infinity.mpvz.R.string.ui_no_storage_location_configured),
             Toast.LENGTH_SHORT,
           ).show()
         return
@@ -143,7 +143,7 @@ object LuaScriptsScreen : Screen {
             Toast
               .makeText(
                 context,
-                context.getString(app.gyrolet.mpvrx.R.string.ui_script_file_not_found),
+                context.getString(app.infinity.mpvz.R.string.ui_script_file_not_found),
                 Toast.LENGTH_SHORT,
               ).show()
           }
@@ -168,7 +168,7 @@ object LuaScriptsScreen : Screen {
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.pref_section_scripts),
+                  .stringResource(app.infinity.mpvz.R.string.pref_section_scripts),
               style = MaterialTheme.typography.headlineSmall,
             )
           },
@@ -178,7 +178,7 @@ object LuaScriptsScreen : Screen {
                 imageVector = Icons.RoundedFilled.ArrowBack,
                 contentDescription =
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.back),
+                    .stringResource(app.infinity.mpvz.R.string.back),
               )
             }
           },
@@ -193,7 +193,7 @@ object LuaScriptsScreen : Screen {
             imageVector = Icons.RoundedFilled.Add,
             contentDescription =
               androidx.compose.ui.res.stringResource(
-                app.gyrolet.mpvrx.R.string.ui_create_new_script,
+                app.infinity.mpvz.R.string.ui_create_new_script,
               ),
             tint = MaterialTheme.colorScheme.onPrimary,
           )
@@ -260,7 +260,7 @@ object LuaScriptsScreen : Screen {
                       imageVector = Icons.RoundedFilled.Share,
                       contentDescription =
                         androidx.compose.ui.res.stringResource(
-                          app.gyrolet.mpvrx.R.string.generic_share,
+                          app.infinity.mpvz.R.string.generic_share,
                         ),
                       tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -270,7 +270,7 @@ object LuaScriptsScreen : Screen {
                       imageVector = Icons.RoundedFilled.Edit,
                       contentDescription =
                         androidx.compose.ui.res
-                          .stringResource(app.gyrolet.mpvrx.R.string.ui_edit),
+                          .stringResource(app.infinity.mpvz.R.string.ui_edit),
                       tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                   }

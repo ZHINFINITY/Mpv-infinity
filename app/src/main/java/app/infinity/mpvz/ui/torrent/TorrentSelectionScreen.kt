@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.torrent
+package app.infinity.mpvz.ui.torrent
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -52,13 +52,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.torrent.TorrentFileItem
-import app.gyrolet.mpvrx.domain.torrent.formatTorrentBytes
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.utils.media.MediaInfoParser
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.torrent.TorrentFileItem
+import app.infinity.mpvz.domain.torrent.formatTorrentBytes
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 
 private const val VIEWED_TORRENT_FILES_PREFS = "torrent_viewed_files"
 
@@ -251,7 +251,7 @@ private fun TorrentReadyScreen(
           }
 
           if (isSearchOpen && state.catalog.playableFiles.size > 1) {
-            app.gyrolet.mpvrx.ui.components.InlineSearchBar(
+            app.infinity.mpvz.ui.components.InlineSearchBar(
               query = searchQuery,
               onQueryChange = { searchQuery = it },
               onSearch = {},

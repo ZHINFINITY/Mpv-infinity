@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.ytdlp
+package app.infinity.mpvz.ui.player.ytdlp
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -27,13 +27,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
+import app.infinity.mpvz.R
 
 /**
  * Shown instead of silently installing/updating yt-dlp in the background before playback
  * (which used to leave the player buffering with no explanation on a link's first play).
  *
- * Mirrors the layout of [app.gyrolet.mpvrx.ui.securefolder.SecureConfirmDialog] /
+ * Mirrors the layout of [app.infinity.mpvz.ui.securefolder.SecureConfirmDialog] /
  * `ConfirmDialog`, but with a third, visually separated action ([onConfigure]) pinned to the
  * start of the row so it doesn't get mistaken for a variant of confirm/cancel.
  */

@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.anime4k
+package app.infinity.mpvz.ui.player.anime4k
 
-import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.domain.anime4k.Anime4KManager
 
 data class Anime4KUiState(
   val isEnabled: Boolean = false,

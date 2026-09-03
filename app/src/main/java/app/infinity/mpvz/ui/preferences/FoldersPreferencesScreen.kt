@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.app.Application
 import android.net.Uri
@@ -38,7 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import app.gyrolet.mpvrx.ui.components.IconSwitch
+import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -55,25 +55,25 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.media.model.VideoFolder
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.media.model.VideoFolder
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.RadioButton
-import app.gyrolet.mpvrx.preferences.BlacklistScope
-import app.gyrolet.mpvrx.preferences.FoldersPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.selection.SelectionState
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
-import app.gyrolet.mpvrx.utils.storage.normalizeHiddenMarkerName
+import app.infinity.mpvz.preferences.BlacklistScope
+import app.infinity.mpvz.preferences.FoldersPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.selection.SelectionState
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
+import app.infinity.mpvz.utils.storage.normalizeHiddenMarkerName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -171,13 +171,13 @@ object FoldersPreferencesScreen : Screen {
             markerNames = hiddenFolderMarkerNames,
             onIncludeNoMediaFoldersChanged = { enabled ->
               preferences.includeNoMediaFolders.set(enabled)
-              app.gyrolet.mpvrx.repository.MediaFileRepository
+              app.infinity.mpvz.repository.MediaFileRepository
                 .clearCache()
               MediaLibraryEvents.notifyChanged()
             },
             onMarkerNamesChanged = { markerNames ->
               preferences.hiddenFolderMarkerNames.set(markerNames)
-              app.gyrolet.mpvrx.repository.MediaFileRepository
+              app.infinity.mpvz.repository.MediaFileRepository
                 .clearCache()
               MediaLibraryEvents.notifyChanged()
             },
@@ -751,7 +751,7 @@ internal fun StorageRootPickerCard(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_base_storage_folder),
+              .stringResource(app.infinity.mpvz.R.string.ui_base_storage_folder),
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
         )
@@ -775,7 +775,7 @@ internal fun StorageRootPickerCard(
             imageVector = Icons.RoundedFilled.Clear,
             contentDescription =
               androidx.compose.ui.res.stringResource(
-                app.gyrolet.mpvrx.R.string.pref_clear_content_desc,
+                app.infinity.mpvz.R.string.pref_clear_content_desc,
               ),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -793,11 +793,11 @@ internal fun getSimplifiedStoragePath(uriString: String): String =
   }
 
 private suspend fun scanAllMediaFolders(context: Application): List<VideoFolder> {
-  val repoFolders = app.gyrolet.mpvrx.repository.MediaFileRepository
+  val repoFolders = app.infinity.mpvz.repository.MediaFileRepository
     .getAllVideoFoldersFast(context = context, includeAudioOverride = true)
 
   val songs = try {
-    app.gyrolet.mpvrx.ui.browser.music.MusicLibraryScanner.scanSongs(context)
+    app.infinity.mpvz.ui.browser.music.MusicLibraryScanner.scanSongs(context)
   } catch (_: Exception) {
     emptyList()
   }

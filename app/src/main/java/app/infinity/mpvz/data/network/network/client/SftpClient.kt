@@ -7,12 +7,12 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.client
+package app.infinity.mpvz.data.network.client
 
 import android.net.Uri
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.network.NetworkFile
-import app.gyrolet.mpvrx.domain.network.NetworkPath
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.network.NetworkFile
+import app.infinity.mpvz.domain.network.NetworkPath
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session

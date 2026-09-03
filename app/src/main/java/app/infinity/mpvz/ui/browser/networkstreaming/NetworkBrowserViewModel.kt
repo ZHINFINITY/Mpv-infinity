@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.networkstreaming
+package app.infinity.mpvz.ui.browser.networkstreaming
 
 import android.app.Application
 import android.content.Intent
@@ -18,25 +18,25 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.network.NetworkFile
-import app.gyrolet.mpvrx.domain.network.NetworkPath
-import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
-import app.gyrolet.mpvrx.domain.network.NetworkProtocol
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.NetworkSortType
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.SortOrder
-import app.gyrolet.mpvrx.repository.NetworkRepository
-import app.gyrolet.mpvrx.ui.player.NetworkPlaybackSource
-import app.gyrolet.mpvrx.ui.player.PlaybackItem
-import app.gyrolet.mpvrx.ui.player.PreparedPlaybackLaunchStore
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.utils.media.M3UParseResult
-import app.gyrolet.mpvrx.utils.media.M3UParser
-import app.gyrolet.mpvrx.utils.media.M3UPlaylistItem
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
+import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.network.NetworkFile
+import app.infinity.mpvz.domain.network.NetworkPath
+import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.domain.network.NetworkProtocol
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.NetworkSortType
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SortOrder
+import app.infinity.mpvz.repository.NetworkRepository
+import app.infinity.mpvz.ui.player.NetworkPlaybackSource
+import app.infinity.mpvz.ui.player.PlaybackItem
+import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.utils.media.M3UParseResult
+import app.infinity.mpvz.utils.media.M3UParser
+import app.infinity.mpvz.utils.media.M3UPlaylistItem
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableSharedFlow

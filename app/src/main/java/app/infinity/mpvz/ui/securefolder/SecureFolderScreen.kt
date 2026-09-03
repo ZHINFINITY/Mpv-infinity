@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.securefolder
+package app.infinity.mpvz.ui.securefolder
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
@@ -53,29 +53,29 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.entities.SecureMediaEntity
-import app.gyrolet.mpvrx.database.repository.VideoMetadataCacheRepository
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.MediaLayoutMode
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCard
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCardUiConfig
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
-import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
-import app.gyrolet.mpvrx.ui.browser.dialogs.VideoSortDialog
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.media.MediaInfoOps
-import app.gyrolet.mpvrx.utils.media.MediaUtils
-import app.gyrolet.mpvrx.utils.sort.SortUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.entities.SecureMediaEntity
+import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.browser.cards.VideoCard
+import app.infinity.mpvz.ui.browser.cards.VideoCardUiConfig
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.dialogs.VideoSortDialog
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.media.MediaInfoOps
+import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.sort.SortUtils
 import android.widget.Toast
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
@@ -416,7 +416,7 @@ data object SecureFolderScreen : Screen {
             val scrollbarAlpha by animateFloatAsState(
               targetValue = if (hasEnoughItems) 1f else 0f,
               animationSpec =
-                app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.let {
+                app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.let {
                   androidx.compose.animation.core.spring(
                     dampingRatio = it.dampingRatio,
                     stiffness = it.stiffness,

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.components
+package app.infinity.mpvz.ui.components
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButtonColors

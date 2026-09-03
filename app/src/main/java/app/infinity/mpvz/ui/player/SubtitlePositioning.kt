@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
 import org.koin.core.context.GlobalContext
 import kotlin.math.roundToInt
 

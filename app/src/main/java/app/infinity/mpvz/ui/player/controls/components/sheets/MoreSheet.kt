@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.res.Configuration
 import android.text.format.DateUtils
@@ -53,16 +53,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.anime4k.Anime4KUiState
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.anime4k.Anime4KUiState
+import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.theme.spacing
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -287,7 +287,7 @@ fun MoreSheet(
           Text(
             text =
               androidx.compose.ui.res.stringResource(
-                app.gyrolet.mpvrx.R.string.ui_not_available_for_4k_8k_video,
+                app.infinity.mpvz.R.string.ui_not_available_for_4k_8k_video,
               ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
@@ -378,7 +378,7 @@ fun TimePickerDialog(
         ) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_quick_presets),
+              .stringResource(app.infinity.mpvz.R.string.ui_quick_presets),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -457,7 +457,7 @@ fun SectionHeaderWithInfo(
         imageVector = Icons.RoundedFilled.Info,
         contentDescription =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.info),
+            .stringResource(app.infinity.mpvz.R.string.info),
         tint = MaterialTheme.colorScheme.primary,
         modifier = Modifier.size(16.dp),
       )

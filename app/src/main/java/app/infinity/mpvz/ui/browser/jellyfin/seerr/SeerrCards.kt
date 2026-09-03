@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin.seerr
+package app.infinity.mpvz.ui.browser.jellyfin.seerr
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,15 +51,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.seerr.JellyseerrRequest
-import app.gyrolet.mpvrx.domain.seerr.MediaStatus
-import app.gyrolet.mpvrx.domain.seerr.MediaType
-import app.gyrolet.mpvrx.domain.seerr.RequestStatus
-import app.gyrolet.mpvrx.domain.seerr.SearchResultItem
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.seerr.JellyseerrRequest
+import app.infinity.mpvz.domain.seerr.MediaStatus
+import app.infinity.mpvz.domain.seerr.MediaType
+import app.infinity.mpvz.domain.seerr.RequestStatus
+import app.infinity.mpvz.domain.seerr.SearchResultItem
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 
 private val SeerrWarningContainer = Color(0xFFBF360C)
 private val SeerrOnWarningContainer = Color(0xFFFFF3E0)

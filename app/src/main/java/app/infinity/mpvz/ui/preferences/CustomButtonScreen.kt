@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -57,7 +57,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import app.gyrolet.mpvrx.ui.components.IconSwitch
+import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -84,15 +84,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.editor.MpvHelpScreen
-import app.gyrolet.mpvrx.ui.editor.MpvScriptEditor
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.editor.MpvHelpScreen
+import app.infinity.mpvz.ui.editor.MpvScriptEditor
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -164,7 +164,7 @@ object CustomButtonScreen : Screen {
             Toast
               .makeText(
                 context,
-                context.getString(app.gyrolet.mpvrx.R.string.ui_buttons_exported_successfully),
+                context.getString(app.infinity.mpvz.R.string.ui_buttons_exported_successfully),
                 Toast.LENGTH_SHORT,
               ).show()
           }.onFailure { e ->
@@ -263,7 +263,7 @@ object CustomButtonScreen : Screen {
                 modifier = Modifier.settingsSearchTarget(R.string.pref_custom_lua_title),
                 text =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.pref_custom_lua_title,
+                    app.infinity.mpvz.R.string.pref_custom_lua_title,
                   ),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.ExtraBold,
@@ -272,7 +272,7 @@ object CustomButtonScreen : Screen {
               Text(
                 text =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_drag_to_reorder_tap_any_slot_to_expand_edit,
+                    app.infinity.mpvz.R.string.ui_drag_to_reorder_tap_any_slot_to_expand_edit,
                   ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -285,7 +285,7 @@ object CustomButtonScreen : Screen {
                 Icons.RoundedFilled.ArrowBack,
                 contentDescription =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.back,
+                    app.infinity.mpvz.R.string.back,
                   ),
                 tint = MaterialTheme.colorScheme.secondary,
               )
@@ -336,7 +336,7 @@ object CustomButtonScreen : Screen {
                   Icons.RoundedFilled.DragHandle,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_drag_to_reorder,
+                      app.infinity.mpvz.R.string.ui_drag_to_reorder,
                     ),
                   modifier =
                     interceptModifier
@@ -379,7 +379,7 @@ object CustomButtonScreen : Screen {
               Text(
                 text =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_import_export,
+                    app.infinity.mpvz.R.string.ui_import_export,
                   ),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
@@ -389,7 +389,7 @@ object CustomButtonScreen : Screen {
               Text(
                 text =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_backup_or_share_all_your_custom_buttons_with_their_script_code_a,
+                    app.infinity.mpvz.R.string.ui_backup_or_share_all_your_custom_buttons_with_their_script_code_a,
                   ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -412,7 +412,7 @@ object CustomButtonScreen : Screen {
                   Spacer(Modifier.width(8.dp))
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_import),
+                      .stringResource(app.infinity.mpvz.R.string.ui_import),
                   )
                 }
 
@@ -433,7 +433,7 @@ object CustomButtonScreen : Screen {
                   Spacer(Modifier.width(8.dp))
                   Text(
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_export),
+                      .stringResource(app.infinity.mpvz.R.string.ui_export),
                   )
                 }
               }
@@ -617,7 +617,7 @@ fun ButtonSlotCard(
               Icons.RoundedFilled.Delete,
               contentDescription =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.delete,
+                  app.infinity.mpvz.R.string.delete,
                 ),
               modifier = Modifier.size(18.dp),
             )
@@ -643,7 +643,7 @@ fun ButtonSlotCard(
             Icons.RoundedFilled.DragHandle,
             contentDescription =
               androidx.compose.ui.res.stringResource(
-                app.gyrolet.mpvrx.R.string.ui_drag_disabled,
+                app.infinity.mpvz.R.string.ui_drag_disabled,
               ),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
@@ -767,7 +767,7 @@ fun ButtonSlotCard(
                   imageVector = Icons.RoundedFilled.Info,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_help,
+                      app.infinity.mpvz.R.string.ui_help,
                     ),
                 )
               }
@@ -776,7 +776,7 @@ fun ButtonSlotCard(
                   imageVector = Icons.RoundedFilled.Check,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_done,
+                      app.infinity.mpvz.R.string.ui_done,
                     ),
                   tint = MaterialTheme.colorScheme.primary,
                 )
@@ -853,7 +853,7 @@ fun ButtonExpandedContent(
       label = {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_button_title),
+            .stringResource(app.infinity.mpvz.R.string.ui_button_title),
         )
       },
       modifier = Modifier.fillMaxWidth(),
@@ -923,7 +923,7 @@ fun ButtonExpandedContent(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_button_enabled),
+              .stringResource(app.infinity.mpvz.R.string.ui_button_enabled),
           style = MaterialTheme.typography.titleSmall,
           fontWeight = FontWeight.Medium,
           color = MaterialTheme.colorScheme.onSurface,
@@ -948,7 +948,7 @@ fun ButtonExpandedContent(
       TextButton(onClick = onCollapse) {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+            .stringResource(app.infinity.mpvz.R.string.generic_cancel),
         )
       }
       Spacer(Modifier.width(8.dp))
@@ -1076,7 +1076,7 @@ fun LuaEditorEntryCard(
           Text(
             text =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_tap_to_write_code),
+                .stringResource(app.infinity.mpvz.R.string.ui_tap_to_write_code),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
           )
@@ -1116,7 +1116,7 @@ fun ImportSelectionScreen(
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.ui_select_buttons_to_import,
+                  app.infinity.mpvz.R.string.ui_select_buttons_to_import,
                 ),
               style = MaterialTheme.typography.titleLarge,
               fontWeight = FontWeight.Bold,
@@ -1125,7 +1125,7 @@ fun ImportSelectionScreen(
             Text(
               text =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.ui_choose_which_buttons_to_import,
+                  app.infinity.mpvz.R.string.ui_choose_which_buttons_to_import,
                 ),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1138,7 +1138,7 @@ fun ImportSelectionScreen(
               Icons.RoundedFilled.ArrowBack,
               contentDescription =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.generic_cancel,
+                  app.infinity.mpvz.R.string.generic_cancel,
                 ),
               tint = MaterialTheme.colorScheme.secondary,
             )
@@ -1163,7 +1163,7 @@ fun ImportSelectionScreen(
               Icons.RoundedFilled.FileDownload,
               contentDescription =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.ui_import,
+                  app.infinity.mpvz.R.string.ui_import,
                 ),
             )
           }
@@ -1296,7 +1296,7 @@ fun ImportSelectionScreen(
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_will_overwrite_existing_button,
+                        app.infinity.mpvz.R.string.ui_will_overwrite_existing_button,
                       ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.securefolder
+package app.infinity.mpvz.ui.securefolder
 
 import android.app.Application
 import android.widget.Toast
@@ -37,37 +37,37 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.repository.SecureFolderRepository
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.media.model.VideoFolder
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.browser.cards.FolderCard
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCard
-import app.gyrolet.mpvrx.ui.browser.cards.rememberVideoCardUiConfig
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.dialogs.FolderSortDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.VideoSortDialog
-import app.gyrolet.mpvrx.ui.browser.folderlist.FolderListViewModel
-import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.browser.videolist.VideoListViewModel
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.sort.SortUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.repository.SecureFolderRepository
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.media.model.VideoFolder
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.SecureFolderPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.browser.cards.FolderCard
+import app.infinity.mpvz.ui.browser.cards.VideoCard
+import app.infinity.mpvz.ui.browser.cards.rememberVideoCardUiConfig
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.dialogs.FolderSortDialog
+import app.infinity.mpvz.ui.browser.dialogs.VideoSortDialog
+import app.infinity.mpvz.ui.browser.folderlist.FolderListViewModel
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.browser.videolist.VideoListViewModel
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.sort.SortUtils
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
 /**
  * In-app file picker for the Secure Folder: browse storage folders (same folder browsing/sort
- * experience as [app.gyrolet.mpvrx.ui.browser.folderlist.FolderListScreen]), drill into one and
+ * experience as [app.infinity.mpvz.ui.browser.folderlist.FolderListScreen]), drill into one and
  * multi-select videos using the app's own [rememberSelectionManager] + [BrowserTopBar] (same as
- * [app.gyrolet.mpvrx.ui.browser.videolist.VideoListScreen]), then move them in — all without
+ * [app.infinity.mpvz.ui.browser.videolist.VideoListScreen]), then move them in — all without
  * leaving the Secure Folder flow. The actual move reuses [SecureFolderRepository.moveIn] and the
  * existing [SecureConfirmDialog] / [SecureFolderProgressDialog] flow.
  */

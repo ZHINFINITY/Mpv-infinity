@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.theme
+package app.infinity.mpvz.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import app.gyrolet.mpvrx.R
+import app.infinity.mpvz.R
 
 // Roboto Flex font family (variable font supporting weights 100-900)
 val RobotoFlex =

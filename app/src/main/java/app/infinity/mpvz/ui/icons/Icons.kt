@@ -1,4 +1,4 @@
-package app.gyrolet.mpvrx.ui.icons
+package app.infinity.mpvz.ui.icons
 
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.graphics.Color
@@ -495,11 +495,11 @@ object Icons {
 
     @DrawableRes val Next = MaterialSymbolsR.drawable.materialsymbols_ic_skip_next_rounded_filled
 
-    @DrawableRes val FavoriteBorder = app.gyrolet.mpvrx.R.drawable.materialsymbols_ic_favorite_rounded
+    @DrawableRes val FavoriteBorder = app.infinity.mpvz.R.drawable.materialsymbols_ic_favorite_rounded
 
     @DrawableRes val Favorite = MaterialSymbolsR.drawable.materialsymbols_ic_favorite_rounded_filled
 
-    @DrawableRes val Repeat = app.gyrolet.mpvrx.R.drawable.materialsymbols_ic_repeat_rounded
+    @DrawableRes val Repeat = app.infinity.mpvz.R.drawable.materialsymbols_ic_repeat_rounded
 
     @DrawableRes val RepeatOn = MaterialSymbolsR.drawable.materialsymbols_ic_repeat_on_rounded_filled
 

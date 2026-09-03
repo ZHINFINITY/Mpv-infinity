@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser
+package app.infinity.mpvz.ui.browser
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -36,18 +36,18 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AiPreferences
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.repository.ai.AiService
-import app.gyrolet.mpvrx.repository.subtitle.OnlineSubtitle
-import app.gyrolet.mpvrx.repository.subtitle.subdlGroupEpisodeRange
-import app.gyrolet.mpvrx.repository.subtitle.withSelectedSubdlGroupEpisode
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.spacing
-import app.gyrolet.mpvrx.utils.media.MediaInfoParser
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AiPreferences
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.repository.ai.AiService
+import app.infinity.mpvz.repository.subtitle.OnlineSubtitle
+import app.infinity.mpvz.repository.subtitle.subdlGroupEpisodeRange
+import app.infinity.mpvz.repository.subtitle.withSelectedSubdlGroupEpisode
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.utils.media.MediaInfoParser
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.launch
@@ -78,22 +78,22 @@ fun OnlineSubtitleSearchSheet(
   mediaTitle: String = "",
   showWyzieSelection: Boolean = true,
   // Autocomplete & Series Selection
-  mediaSearchResults: ImmutableList<app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult> =
-    emptyList<app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult>()
+  mediaSearchResults: ImmutableList<app.infinity.mpvz.repository.wyzie.WyzieTmdbResult> =
+    emptyList<app.infinity.mpvz.repository.wyzie.WyzieTmdbResult>()
       .toImmutableList(),
   isSearchingMedia: Boolean = false,
   onSearchMedia: (String) -> Unit = {},
-  onSelectMedia: (app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult) -> Unit = {},
-  selectedTvShow: app.gyrolet.mpvrx.repository.wyzie.WyzieTvShowDetails? = null,
+  onSelectMedia: (app.infinity.mpvz.repository.wyzie.WyzieTmdbResult) -> Unit = {},
+  selectedTvShow: app.infinity.mpvz.repository.wyzie.WyzieTvShowDetails? = null,
   isFetchingTvDetails: Boolean = false,
-  selectedSeason: app.gyrolet.mpvrx.repository.wyzie.WyzieSeason? = null,
-  onSelectSeason: (app.gyrolet.mpvrx.repository.wyzie.WyzieSeason) -> Unit = {},
-  seasonEpisodes: ImmutableList<app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode> =
-    emptyList<app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode>()
+  selectedSeason: app.infinity.mpvz.repository.wyzie.WyzieSeason? = null,
+  onSelectSeason: (app.infinity.mpvz.repository.wyzie.WyzieSeason) -> Unit = {},
+  seasonEpisodes: ImmutableList<app.infinity.mpvz.repository.wyzie.WyzieEpisode> =
+    emptyList<app.infinity.mpvz.repository.wyzie.WyzieEpisode>()
       .toImmutableList(),
   isFetchingEpisodes: Boolean = false,
-  selectedEpisode: app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode? = null,
-  onSelectEpisode: (app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode) -> Unit = {},
+  selectedEpisode: app.infinity.mpvz.repository.wyzie.WyzieEpisode? = null,
+  onSelectEpisode: (app.infinity.mpvz.repository.wyzie.WyzieEpisode) -> Unit = {},
   onClearMediaSelection: () -> Unit = {},
 ) {
   val items =
@@ -163,7 +163,7 @@ fun OnlineSubtitleSearchSheet(
           Toast
             .makeText(
               context,
-              context.getString(app.gyrolet.mpvrx.R.string.ui_search_query_is_empty),
+              context.getString(app.infinity.mpvz.R.string.ui_search_query_is_empty),
               Toast.LENGTH_SHORT,
             ).show()
           return
@@ -453,7 +453,7 @@ fun OnlineSubtitleRow(
           imageVector = Icons.RoundedFilled.Check,
           contentDescription =
             androidx.compose.ui.res.stringResource(
-              app.gyrolet.mpvrx.R.string.ui_verified_sync,
+              app.infinity.mpvz.R.string.ui_verified_sync,
             ),
           tint = MaterialTheme.colorScheme.primary,
           modifier = Modifier.size(18.dp),
@@ -572,7 +572,7 @@ fun OnlineSubtitleRow(
             Text(
               text =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_sync),
+                  .stringResource(app.infinity.mpvz.R.string.ui_sync),
               style = MaterialTheme.typography.labelSmall,
               color = MaterialTheme.colorScheme.primary,
               fontWeight = FontWeight.Bold,
@@ -598,7 +598,7 @@ fun OnlineSubtitleRow(
           imageVector = Icons.RoundedFilled.Download,
           contentDescription =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_download),
+              .stringResource(app.infinity.mpvz.R.string.ui_download),
           tint = MaterialTheme.colorScheme.primary,
           modifier = Modifier.size(20.dp),
         )
@@ -664,7 +664,7 @@ private fun SubdlEpisodeDropdown(
 
 @Composable
 fun TmdbMediaCard(
-  result: app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult,
+  result: app.infinity.mpvz.repository.wyzie.WyzieTmdbResult,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -760,7 +760,7 @@ fun TmdbMediaCard(
 
 @Composable
 fun TmdbResultRow(
-  result: app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult,
+  result: app.infinity.mpvz.repository.wyzie.WyzieTmdbResult,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -859,13 +859,13 @@ private fun tmdbPosterUrl(
 
 @Composable
 private fun SeriesSelectionControls(
-  tvShow: app.gyrolet.mpvrx.repository.wyzie.WyzieTvShowDetails,
-  selectedSeason: app.gyrolet.mpvrx.repository.wyzie.WyzieSeason?,
-  onSelectSeason: (app.gyrolet.mpvrx.repository.wyzie.WyzieSeason) -> Unit,
+  tvShow: app.infinity.mpvz.repository.wyzie.WyzieTvShowDetails,
+  selectedSeason: app.infinity.mpvz.repository.wyzie.WyzieSeason?,
+  onSelectSeason: (app.infinity.mpvz.repository.wyzie.WyzieSeason) -> Unit,
   isFetchingEpisodes: Boolean,
-  episodes: ImmutableList<app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode>,
-  selectedEpisode: app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode?,
-  onSelectEpisode: (app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode) -> Unit,
+  episodes: ImmutableList<app.infinity.mpvz.repository.wyzie.WyzieEpisode>,
+  selectedEpisode: app.infinity.mpvz.repository.wyzie.WyzieEpisode?,
+  onSelectEpisode: (app.infinity.mpvz.repository.wyzie.WyzieEpisode) -> Unit,
   onClose: () -> Unit,
 ) {
   Row(

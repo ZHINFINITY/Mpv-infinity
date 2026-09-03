@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.cards
+package app.infinity.mpvz.ui.browser.cards
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animate
@@ -42,11 +42,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppMotion
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
-import app.gyrolet.mpvrx.ui.theme.LocalMotionPolicy
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppMotion
+import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.theme.LocalMotionPolicy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -198,7 +198,7 @@ fun SwipeableVideoActions(
 @Composable
 private fun SwipePillAction(
   label: String,
-  icon: app.gyrolet.mpvrx.ui.icons.AppIcon,
+  icon: app.infinity.mpvz.ui.icons.AppIcon,
   background: Color,
   contentColor: Color,
   width: androidx.compose.ui.unit.Dp,

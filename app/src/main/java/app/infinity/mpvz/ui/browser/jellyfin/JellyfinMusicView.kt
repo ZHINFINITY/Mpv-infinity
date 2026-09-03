@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin
+package app.infinity.mpvz.ui.browser.jellyfin
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -55,20 +55,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.data.jellyfin.JellyfinClient
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinItem
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
+import app.infinity.mpvz.data.jellyfin.JellyfinClient
+import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.ui.icons.AppIcon
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.gyrolet.mpvrx.ui.browser.music.SharedMusicGridCard
-import app.gyrolet.mpvrx.ui.browser.music.SharedMusicTrackListItem
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.browser.music.SharedMusicGridCard
+import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 @Composable
 fun JellyfinMusicView(

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences.components
+package app.infinity.mpvz.ui.preferences.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,7 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.ui.theme.AppTheme
+import app.infinity.mpvz.ui.theme.AppTheme
 
 /**
  * A theme preview card that displays a mini preview of the app UI with the theme's colors.

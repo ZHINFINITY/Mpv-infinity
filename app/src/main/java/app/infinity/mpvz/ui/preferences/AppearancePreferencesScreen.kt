@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
@@ -41,31 +41,31 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.GesturePreferences
-import app.gyrolet.mpvrx.preferences.MultiChoiceSegmentedButton
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.ThumbnailMode
-import app.gyrolet.mpvrx.preferences.ThumbnailQuality
-import app.gyrolet.mpvrx.preferences.TreeFlattenDepth
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.ConfirmDialog
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.ControlsAnimationStyle
-import app.gyrolet.mpvrx.ui.player.NavigationAnimStyle
-import app.gyrolet.mpvrx.ui.player.VideoOpenAnimation
-import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
-import app.gyrolet.mpvrx.ui.preferences.components.ThemePicker
-import app.gyrolet.mpvrx.ui.theme.DarkMode
-import app.gyrolet.mpvrx.ui.theme.LocalThemeTransitionState
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.MultiChoiceSegmentedButton
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.ThumbnailMode
+import app.infinity.mpvz.preferences.ThumbnailQuality
+import app.infinity.mpvz.preferences.TreeFlattenDepth
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.ConfirmDialog
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.ControlsAnimationStyle
+import app.infinity.mpvz.ui.player.NavigationAnimStyle
+import app.infinity.mpvz.ui.player.VideoOpenAnimation
+import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.preferences.components.ThemePicker
+import app.infinity.mpvz.ui.theme.DarkMode
+import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
@@ -475,7 +475,7 @@ object AppearancePreferencesScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_dual_pane_view,
+                        app.infinity.mpvz.R.string.ui_dual_pane_view,
                       ),
                   )
                 },
@@ -483,7 +483,7 @@ object AppearancePreferencesScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_enable_dual_pane_layout_on_tablets_in_folder_view,
+                        app.infinity.mpvz.R.string.ui_enable_dual_pane_layout_on_tablets_in_folder_view,
                       ),
                     color = MaterialTheme.colorScheme.outline,
                   )
@@ -534,7 +534,7 @@ object AppearancePreferencesScreen : Screen {
                 title = {
                   Text(
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.ui_delete_folder_all_contents,
+                      app.infinity.mpvz.R.string.ui_delete_folder_all_contents,
                     ),
                   )
                 },

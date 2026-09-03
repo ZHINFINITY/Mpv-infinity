@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.cast
+package app.infinity.mpvz.ui.cast
 
 import android.content.Context
 import android.net.ConnectivityManager

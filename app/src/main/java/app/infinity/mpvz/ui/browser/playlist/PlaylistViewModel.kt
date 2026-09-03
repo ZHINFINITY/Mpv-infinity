@@ -7,16 +7,16 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.playlist
+package app.infinity.mpvz.ui.browser.playlist
 
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.database.entities.PlaylistEntity
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
-import app.gyrolet.mpvrx.repository.MediaFileRepository
+import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.repository.MediaFileRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

@@ -7,13 +7,13 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.util.Log
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
-import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.preferences.SubtitlesPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext

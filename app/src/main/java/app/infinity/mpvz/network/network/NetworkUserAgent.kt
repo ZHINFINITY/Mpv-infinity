@@ -7,13 +7,13 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.network
+package app.infinity.mpvz.network
 
 import android.content.Context
 import android.os.Build
 import android.os.Looper
 import android.webkit.WebSettings
-import app.gyrolet.mpvrx.BuildConfig
+import app.infinity.mpvz.BuildConfig
 
 /** Uses the installed Android WebView identity when available, with a truthful app fallback. */
 object NetworkUserAgent {

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.theme
+package app.infinity.mpvz.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

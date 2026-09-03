@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.networkstreaming
+package app.infinity.mpvz.ui.browser.networkstreaming
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -51,33 +51,33 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.network.NetworkFile
-import app.gyrolet.mpvrx.domain.network.NetworkPath
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.MediaLayoutMode
-import app.gyrolet.mpvrx.preferences.NetworkBookmarkPreferences
-import app.gyrolet.mpvrx.preferences.NetworkFolderBookmark
-import app.gyrolet.mpvrx.preferences.NetworkSortType
-import app.gyrolet.mpvrx.preferences.SortOrder
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
-import app.gyrolet.mpvrx.ui.browser.cards.NetworkFolderCard
-import app.gyrolet.mpvrx.ui.browser.cards.NetworkVideoCard
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
-import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
-import app.gyrolet.mpvrx.ui.browser.dialogs.NetworkSortDialog
-import app.gyrolet.mpvrx.ui.browser.playlist.PlaylistDetailScreen
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.preferences.PreferencesScreen
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.network.NetworkFile
+import app.infinity.mpvz.domain.network.NetworkPath
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.NetworkBookmarkPreferences
+import app.infinity.mpvz.preferences.NetworkFolderBookmark
+import app.infinity.mpvz.preferences.NetworkSortType
+import app.infinity.mpvz.preferences.SortOrder
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.cards.NetworkFolderCard
+import app.infinity.mpvz.ui.browser.cards.NetworkVideoCard
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.dialogs.NetworkSortDialog
+import app.infinity.mpvz.ui.browser.playlist.PlaylistDetailScreen
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.preferences.PreferencesScreen
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
@@ -402,8 +402,8 @@ private fun NetworkBrowserContent(
         targetValue = if (hasEnoughItems) 1f else 0f,
         animationSpec =
           androidx.compose.animation.core.spring(
-            dampingRatio = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
-            stiffness = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.stiffness,
+            dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
+            stiffness = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.stiffness,
           ),
         label = "scrollbarAlpha",
       )
@@ -427,7 +427,7 @@ private fun NetworkBrowserContent(
               }
             }
           }
-        val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+        val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
         Box(
           modifier =
             Modifier

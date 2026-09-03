@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.credentials
+package app.infinity.mpvz.data.network.credentials
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties

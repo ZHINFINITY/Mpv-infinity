@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.medialibrary
+package app.infinity.mpvz.ui.browser.medialibrary
 
 import android.content.Intent
 import android.os.Environment
@@ -23,9 +23,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.components.themedSegmentedButtonColors
+import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.components.themedSegmentedButtonColors
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -78,44 +78,44 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.repository.SecureFolderRepository
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.MediaLibraryType
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.browser.MainScreen
-import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
-import app.gyrolet.mpvrx.ui.browser.NavigationBarState
-import app.gyrolet.mpvrx.ui.browser.components.BrowserBottomBar
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.DeleteConfirmationDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.FileOperationProgressDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.FolderPickerDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.RenameDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.VideoCompressorOverlay
-import app.gyrolet.mpvrx.ui.browser.dialogs.VideoSortDialog
-import app.gyrolet.mpvrx.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
-import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.browser.videolist.VideoListContent
-import app.gyrolet.mpvrx.ui.browser.videolist.VideoWithPlaybackInfo
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
-import app.gyrolet.mpvrx.ui.player.PlaybackItem
-import app.gyrolet.mpvrx.ui.player.PreparedPlaybackLaunchStore
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.securefolder.SecureFolderGateScreen
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
-import app.gyrolet.mpvrx.utils.media.CopyPasteOps
-import app.gyrolet.mpvrx.utils.media.MediaUtils
-import app.gyrolet.mpvrx.utils.media.OpenDocumentTreeContract
-import app.gyrolet.mpvrx.utils.sort.SortUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.repository.SecureFolderRepository
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.MediaLibraryType
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SecureFolderPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.browser.MainScreen
+import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
+import app.infinity.mpvz.ui.browser.NavigationBarState
+import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
+import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
+import app.infinity.mpvz.ui.browser.dialogs.FileOperationProgressDialog
+import app.infinity.mpvz.ui.browser.dialogs.FolderPickerDialog
+import app.infinity.mpvz.ui.browser.dialogs.RenameDialog
+import app.infinity.mpvz.ui.browser.dialogs.VideoCompressorOverlay
+import app.infinity.mpvz.ui.browser.dialogs.VideoSortDialog
+import app.infinity.mpvz.ui.browser.playlist.ALL_VIDEOS_PLAYLIST_ID
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.browser.videolist.VideoListContent
+import app.infinity.mpvz.ui.browser.videolist.VideoWithPlaybackInfo
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.PlaybackItem
+import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.CopyPasteOps
+import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
+import app.infinity.mpvz.utils.sort.SortUtils
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import java.io.File
@@ -127,7 +127,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   val coroutineScope = rememberCoroutineScope()
   val backstack = LocalBackStack.current
   val browserPreferences = koinInject<BrowserPreferences>()
-  val appearancePreferences = koinInject<app.gyrolet.mpvrx.preferences.AppearancePreferences>()
+  val appearancePreferences = koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
   val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -405,10 +405,10 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
                 MediaLibraryType.Audio
               ) {
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_search_audio)
+                  .stringResource(app.infinity.mpvz.R.string.ui_search_audio)
               } else {
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_search_videos)
+                  .stringResource(app.infinity.mpvz.R.string.ui_search_videos)
               },
             )
           },
@@ -417,7 +417,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
               imageVector = Icons.RoundedFilled.Search,
               contentDescription =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.settings_search_title,
+                  app.infinity.mpvz.R.string.settings_search_title,
                 ),
             )
           },
@@ -432,7 +432,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
                 imageVector = Icons.RoundedFilled.Close,
                 contentDescription =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.generic_cancel,
+                    app.infinity.mpvz.R.string.generic_cancel,
                   ),
               )
             }
@@ -442,10 +442,10 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
         BrowserTopBar(
           title =
             if (forceAudio) {
-              androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music)
+              androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_music)
             } else {
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.pref_media_library_section)
+                .stringResource(app.infinity.mpvz.R.string.pref_media_library_section)
             },
           isInSelectionMode = selectionManager.isInSelectionMode,
           selectedCount = selectionManager.selectedCount,
@@ -455,7 +455,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
           onSortClick = { sortDialogOpen.value = true },
           onSearchClick = { isSearching = true },
           onSettingsClick = {
-            backstack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
+            backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
           },
           onTitleDoubleTap = { backstack.add(SecureFolderGateScreen) },
           onTitleLongPress = { backstack.add(SecureFolderGateScreen) },
@@ -464,7 +464,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
             if (selectionManager.isSingleSelection) {
               val video = selectionManager.getSelectedItems().firstOrNull()
               if (video != null) {
-                val intent = Intent(context, app.gyrolet.mpvrx.ui.mediainfo.MediaInfoActivity::class.java)
+                val intent = Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java)
                 intent.action = Intent.ACTION_VIEW
                 intent.data = video.uri
                 context.startActivity(intent)
@@ -514,7 +514,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
             tooltip = {
               PlainTooltip {
                 Text(
-                  androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_toggle_menu),
+                  androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_toggle_menu),
                 )
               }
             },
@@ -570,7 +570,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
               text = {
                 Text(
                   text =
-                    androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_open_file),
+                    androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_open_file),
                 )
               },
             )
@@ -596,9 +596,9 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
                 Text(
                   text =
                     if (mediaType == MediaLibraryType.Audio) {
-                      androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_recent_or_first_audio)
+                      androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_recent_or_first_audio)
                     } else {
-                      androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_recent_or_first_video)
+                      androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_recent_or_first_video)
                     },
                 )
               },
@@ -655,10 +655,10 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
                     MediaLibraryType.Audio
                   ) {
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_no_audio_found)
+                      .stringResource(app.infinity.mpvz.R.string.ui_no_audio_found)
                   } else {
                     androidx.compose.ui.res
-                      .stringResource(app.gyrolet.mpvrx.R.string.ui_no_videos_found)
+                      .stringResource(app.infinity.mpvz.R.string.ui_no_videos_found)
                   },
                 message = "Try a different search term",
               )
@@ -904,7 +904,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
     }
 
     // Move to Secure Folder — confirm (skippable via "don't ask again"), then progress
-    app.gyrolet.mpvrx.ui.securefolder.SecureConfirmDialog(
+    app.infinity.mpvz.ui.securefolder.SecureConfirmDialog(
       isOpen = moveToSecureConfirmOpen.value,
       title = stringResource(R.string.secure_folder_move_items_title, selectionManager.selectedCount),
       subtitle = stringResource(R.string.secure_folder_move_items_subtitle),
@@ -916,7 +916,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
       onDismiss = { moveToSecureConfirmOpen.value = false },
     )
 
-    app.gyrolet.mpvrx.ui.securefolder.SecureFolderProgressDialog(
+    app.infinity.mpvz.ui.securefolder.SecureFolderProgressDialog(
       isOpen = moveToSecureProgressOpen.value,
       progress = secureFolderProgress,
       label = stringResource(R.string.secure_folder_moving_progress),

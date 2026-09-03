@@ -7,10 +7,10 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.cast
+package app.infinity.mpvz.ui.cast
 
 import android.view.Menu
-import app.gyrolet.mpvrx.R
+import app.infinity.mpvz.R
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.media.widget.ExpandedControllerActivity
 

@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls
+package app.infinity.mpvz.ui.player.controls
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.Context
 import android.content.Intent
@@ -60,35 +60,35 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
-import app.gyrolet.mpvrx.preferences.PlayerButton
-import app.gyrolet.mpvrx.preferences.PlayerClockFormat
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.cast.CastPlayerButton
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.Panels
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.clip.ClipOverlayView
-import app.gyrolet.mpvrx.ui.player.Sheets
-import app.gyrolet.mpvrx.ui.player.VideoAspect
-import app.gyrolet.mpvrx.ui.player.controls.components.AbLoopIcon
-import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
-import app.gyrolet.mpvrx.ui.player.controls.components.CurrentChapter
-import app.gyrolet.mpvrx.ui.theme.controlColor as defaultControlColor
-import app.gyrolet.mpvrx.ui.theme.spacing
-import app.gyrolet.mpvrx.ui.utils.isAnyMpvOptionOwnedByConfig
-import app.gyrolet.mpvrx.ui.utils.isMpvOptionOwnedByConfig
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.preferences.PlayerClockFormat
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.cast.CastPlayerButton
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.clip.ClipOverlayView
+import app.infinity.mpvz.ui.player.Sheets
+import app.infinity.mpvz.ui.player.VideoAspect
+import app.infinity.mpvz.ui.player.controls.components.AbLoopIcon
+import app.infinity.mpvz.ui.player.controls.components.ControlsButton
+import app.infinity.mpvz.ui.player.controls.components.CurrentChapter
+import app.infinity.mpvz.ui.theme.controlColor as defaultControlColor
+import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.utils.isAnyMpvOptionOwnedByConfig
+import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 import dev.vivvvek.seeker.Segment
 import kotlinx.coroutines.delay
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import app.gyrolet.mpvrx.ui.icons.Icon as AppSymbolIcon
+import app.infinity.mpvz.ui.icons.Icon as AppSymbolIcon
 
 @Composable
 fun RenderPlayerButton(
@@ -101,7 +101,7 @@ fun RenderPlayerButton(
   aspect: VideoAspect,
   mediaTitle: String?,
   hideBackground: Boolean,
-  decoder: app.gyrolet.mpvrx.ui.player.Decoder,
+  decoder: app.infinity.mpvz.ui.player.Decoder,
   playbackSpeed: Float,
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,
@@ -265,7 +265,7 @@ fun RenderPlayerButton(
               imageVector = Icons.RoundedFilled.Speed,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_playback_speed),
+                  .stringResource(app.infinity.mpvz.R.string.ui_playback_speed),
               tint = if (configOwned) disabledColor else MaterialTheme.colorScheme.primary,
               modifier = Modifier.size(20.dp),
             )
@@ -439,7 +439,7 @@ fun RenderPlayerButton(
                     imageVector = Icons.RoundedFilled.FastRewind,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_previous_frame,
+                        app.infinity.mpvz.R.string.ui_previous_frame,
                       ),
                     tint = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp),
@@ -486,7 +486,7 @@ fun RenderPlayerButton(
                       imageVector = Icons.RoundedFilled.Aperture,
                       contentDescription =
                         androidx.compose.ui.res.stringResource(
-                          app.gyrolet.mpvrx.R.string.ui_take_screenshot,
+                          app.infinity.mpvz.R.string.ui_take_screenshot,
                         ),
                       tint = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
                       modifier = Modifier.size(20.dp),
@@ -513,7 +513,7 @@ fun RenderPlayerButton(
                     imageVector = Icons.RoundedFilled.FastForward,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_next_frame,
+                        app.infinity.mpvz.R.string.ui_next_frame,
                       ),
                     tint = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp),
@@ -601,7 +601,7 @@ fun RenderPlayerButton(
               imageVector = Icons.RoundedFilled.ZoomIn,
               contentDescription =
                 androidx.compose.ui.res.stringResource(
-                  app.gyrolet.mpvrx.R.string.player_sheets_zoom_slider_label,
+                  app.infinity.mpvz.R.string.player_sheets_zoom_slider_label,
                 ),
               tint =
                 if (geometryControlsAvailable) {
@@ -739,7 +739,7 @@ fun RenderPlayerButton(
         onClick = {
           if (clipOverlay.openClip()) onOpenPanel(Panels.Clip)
         },
-        title = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.clip_action),
+        title = androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.clip_action),
         color = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.size(buttonSize),
       )
@@ -786,9 +786,9 @@ fun RenderPlayerButton(
       val repeatMode by viewModel.repeatMode.collectAsState()
       val icon =
         when (repeatMode) {
-          app.gyrolet.mpvrx.ui.player.RepeatMode.OFF -> Icons.RoundedFilled.Repeat
-          app.gyrolet.mpvrx.ui.player.RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
-          app.gyrolet.mpvrx.ui.player.RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
+          app.infinity.mpvz.ui.player.RepeatMode.OFF -> Icons.RoundedFilled.Repeat
+          app.infinity.mpvz.ui.player.RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
+          app.infinity.mpvz.ui.player.RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
         }
       ControlsButton(
         icon = icon,
@@ -796,12 +796,12 @@ fun RenderPlayerButton(
         color =
           if (hideBackground) {
             when (repeatMode) {
-              app.gyrolet.mpvrx.ui.player.RepeatMode.OFF -> controlColor
+              app.infinity.mpvz.ui.player.RepeatMode.OFF -> controlColor
               else -> MaterialTheme.colorScheme.primary
             }
           } else {
             when (repeatMode) {
-              app.gyrolet.mpvrx.ui.player.RepeatMode.OFF -> MaterialTheme.colorScheme.onSurface
+              app.infinity.mpvz.ui.player.RepeatMode.OFF -> MaterialTheme.colorScheme.onSurface
               else -> MaterialTheme.colorScheme.primary
             }
           },
@@ -810,7 +810,7 @@ fun RenderPlayerButton(
     }
 
     PlayerButton.CUSTOM_SKIP -> {
-      val playerPreferences = org.koin.compose.koinInject<app.gyrolet.mpvrx.preferences.PlayerPreferences>()
+      val playerPreferences = org.koin.compose.koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
       ControlsButton(
         icon = Icons.RoundedFilled.FastForward,
         onClick = { viewModel.seekBy(playerPreferences.customSkipDuration.get()) },
@@ -901,7 +901,7 @@ fun RenderPlayerButton(
             imageVector = Icons.RoundedFilled.Flip,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_vertical_flip),
+                .stringResource(app.infinity.mpvz.R.string.ui_vertical_flip),
             tint = if (configOwned) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else vFlipColor,
             modifier =
               Modifier
@@ -993,7 +993,7 @@ fun RenderPlayerButton(
                     imageVector = Icons.RoundedFilled.Close,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.ui_clear_loop,
+                        app.infinity.mpvz.R.string.ui_clear_loop,
                       ),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(16.dp),
@@ -1158,7 +1158,7 @@ fun RenderPlayerButton(
             imageVector = if (isAmbientEnabled) Icons.RoundedFilled.BlurOn else Icons.RoundedFilled.BlurOff,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_ambience_mode),
+                .stringResource(app.infinity.mpvz.R.string.ui_ambience_mode),
             tint =
               if (configOwned) {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -1244,7 +1244,7 @@ fun RenderPlayerButton(
               imageVector = Icons.RoundedFilled.AccessTime,
               contentDescription =
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_time_and_network),
+                  .stringResource(app.infinity.mpvz.R.string.ui_time_and_network),
               tint = MaterialTheme.colorScheme.primary,
               modifier = Modifier.size(18.dp),
             )

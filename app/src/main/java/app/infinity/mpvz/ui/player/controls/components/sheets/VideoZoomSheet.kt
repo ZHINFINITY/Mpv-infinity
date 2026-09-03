@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
@@ -29,7 +29,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import app.gyrolet.mpvrx.ui.components.IconSwitch
+import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,14 +43,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.presentation.components.SliderItem
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.presentation.components.SliderItem
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.spacing
 import org.koin.compose.koinInject
 
 @Composable
@@ -153,7 +153,7 @@ private fun ZoomVideoSheet(
           Icons.RoundedFilled.Remove,
           contentDescription =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_decrease_zoom),
+              .stringResource(app.infinity.mpvz.R.string.ui_decrease_zoom),
           modifier = Modifier.size(18.dp),
         )
       }
@@ -181,7 +181,7 @@ private fun ZoomVideoSheet(
           Icons.RoundedFilled.Add,
           contentDescription =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_increase_zoom),
+              .stringResource(app.infinity.mpvz.R.string.ui_increase_zoom),
           modifier = Modifier.size(18.dp),
         )
       }
@@ -214,7 +214,7 @@ private fun ZoomVideoSheet(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_pan_zoom),
+              .stringResource(app.infinity.mpvz.R.string.ui_pan_zoom),
           style = MaterialTheme.typography.bodyMedium,
           color =
             if (!panControlEnabled) {

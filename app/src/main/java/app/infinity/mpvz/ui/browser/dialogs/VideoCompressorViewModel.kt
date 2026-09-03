@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.dialogs
+package app.infinity.mpvz.ui.browser.dialogs
 
 import android.app.Application
 import android.content.ContentValues
@@ -54,10 +54,10 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.utils.media.CopyPasteOps
-import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.utils.media.CopyPasteOps
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay

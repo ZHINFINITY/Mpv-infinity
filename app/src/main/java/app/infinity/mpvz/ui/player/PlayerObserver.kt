@@ -7,10 +7,10 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.content.pm.ActivityInfo
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.PlayerPreferences
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import org.koin.core.component.KoinComponent

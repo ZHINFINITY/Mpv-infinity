@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin
+package app.infinity.mpvz.ui.browser.jellyfin
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -93,28 +93,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinItem
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinSearchCategory
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinSearchCategory
+import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.preferences.AppearancePreferences
 import kotlinx.coroutines.launch
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.MediaLayoutMode
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
-import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
-import app.gyrolet.mpvrx.ui.browser.NavigationBarState
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
-import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
-import app.gyrolet.mpvrx.ui.browser.dialogs.JellyfinSortDialog
-import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
-import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
+import app.infinity.mpvz.ui.browser.NavigationBarState
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.dialogs.JellyfinSortDialog
+import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,10 +153,10 @@ fun JellyfinContent(
   val searchFocusRequester = remember { FocusRequester() }
   val scope = rememberCoroutineScope()
 
-  val seerrViewModel: app.gyrolet.mpvrx.ui.browser.jellyfin.seerr.SeerrViewModel =
+  val seerrViewModel: app.infinity.mpvz.ui.browser.jellyfin.seerr.SeerrViewModel =
     androidx.lifecycle.viewmodel.compose.viewModel(
       factory =
-        app.gyrolet.mpvrx.ui.browser.jellyfin.seerr.SeerrViewModel.factory(
+        app.infinity.mpvz.ui.browser.jellyfin.seerr.SeerrViewModel.factory(
           context.applicationContext as android.app.Application,
         ),
     )
@@ -216,7 +216,7 @@ fun JellyfinContent(
     rememberSelectionManager(
       items = uiState.currentItems,
       getId = { it.id },
-      onDeleteItems = { selectedItems: List<app.gyrolet.mpvrx.domain.jellyfin.JellyfinItem>, _ ->
+      onDeleteItems = { selectedItems: List<app.infinity.mpvz.domain.jellyfin.JellyfinItem>, _ ->
         val count = selectedItems.size
         viewModel.deleteItems(selectedItems.map { it.id })
         Pair(count, 0)
@@ -264,7 +264,7 @@ fun JellyfinContent(
   }
 
   if (isSeerrRequestsOpen) {
-    app.gyrolet.mpvrx.ui.browser.jellyfin.seerr.SeerrContent(
+    app.infinity.mpvz.ui.browser.jellyfin.seerr.SeerrContent(
       viewModel = seerrViewModel,
       activeJellyfinServer = uiState.activeServer,
       onBackClick = { isSeerrRequestsOpen = false },
@@ -396,12 +396,12 @@ fun JellyfinContent(
             null
           },
           onSettingsClick = {
-            backstack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
+            backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
           },
           additionalActions = {
             if (!selectionManager.isInSelectionMode) {
               IconButton(
-                onClick = { backstack.add(app.gyrolet.mpvrx.ui.downloads.DownloadsScreen) },
+                onClick = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
                 modifier = Modifier.padding(horizontal = 2.dp),
               ) {
                 Icon(

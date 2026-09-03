@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.playlist
+package app.infinity.mpvz.ui.browser.playlist
 
-import app.gyrolet.mpvrx.database.entities.PlaylistEntity
+import app.infinity.mpvz.database.entities.PlaylistEntity
 
 const val ALL_VIDEOS_PLAYLIST_ID = -2
 const val ALL_VIDEOS_PLAYLIST_NAME = "All Videos"

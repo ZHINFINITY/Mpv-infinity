@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.client
+package app.infinity.mpvz.data.network.client
 
 internal object NetworkMimeTypes {
   private val genericVideoExtensions =

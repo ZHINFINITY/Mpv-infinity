@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
@@ -24,9 +24,9 @@ import android.util.Rational
 import android.view.View
 import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AppCompatActivity
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.utils.media.resolveSeekMode
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.media.resolveSeekMode
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 

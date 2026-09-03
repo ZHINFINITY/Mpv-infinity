@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.videolist
+package app.infinity.mpvz.ui.browser.videolist
 
 import android.app.Application
 import android.util.Log
@@ -15,16 +15,16 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
-import app.gyrolet.mpvrx.repository.MediaFileRepository
-import app.gyrolet.mpvrx.ui.browser.base.BaseBrowserViewModel
-import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
-import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
-import app.gyrolet.mpvrx.utils.media.MetadataRetrieval
-import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
-import app.gyrolet.mpvrx.utils.storage.FolderViewScanner
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.repository.MediaFileRepository
+import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
+import app.infinity.mpvz.utils.media.MetadataRetrieval
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
+import app.infinity.mpvz.utils.storage.FolderViewScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,9 +96,9 @@ class VideoListViewModel(
 ) : BaseBrowserViewModel(application),
   KoinComponent {
   private val playbackStateRepository: PlaybackStateRepository by inject()
-  private val appearancePreferences: app.gyrolet.mpvrx.preferences.AppearancePreferences by inject()
-  private val browserPreferences: app.gyrolet.mpvrx.preferences.BrowserPreferences by inject()
-  private val recentlyPlayedRepository: app.gyrolet.mpvrx.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
+  private val appearancePreferences: app.infinity.mpvz.preferences.AppearancePreferences by inject()
+  private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
+  private val recentlyPlayedRepository: app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
   // Using MediaFileRepository singleton directly
 
   private val _videos = MutableStateFlow<List<Video>>(emptyList())

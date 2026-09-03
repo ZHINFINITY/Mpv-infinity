@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.preferences
+package app.infinity.mpvz.preferences
 
-import app.gyrolet.mpvrx.preferences.preference.PreferenceStore
+import app.infinity.mpvz.preferences.preference.PreferenceStore
 
 class SeerrPreferences(
   preferenceStore: PreferenceStore,

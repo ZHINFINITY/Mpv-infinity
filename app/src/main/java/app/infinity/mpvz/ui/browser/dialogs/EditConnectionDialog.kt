@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.dialogs
+package app.infinity.mpvz.ui.browser.dialogs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,8 +44,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.domain.network.NetworkConnection
-import app.gyrolet.mpvrx.domain.network.NetworkProtocol
+import app.infinity.mpvz.domain.network.NetworkConnection
+import app.infinity.mpvz.domain.network.NetworkProtocol
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,7 +97,7 @@ fun EditConnectionSheet(
       Text(
         text =
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_edit_connection),
+            .stringResource(app.infinity.mpvz.R.string.ui_edit_connection),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Medium,
       )
@@ -122,7 +122,7 @@ fun EditConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_name),
+                  .stringResource(app.infinity.mpvz.R.string.ui_name),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -144,7 +144,7 @@ fun EditConnectionSheet(
               label = {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_protocol),
+                    .stringResource(app.infinity.mpvz.R.string.ui_protocol),
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                 )
@@ -180,7 +180,7 @@ fun EditConnectionSheet(
           label = {
             Text(
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_host_ip_address),
+                .stringResource(app.infinity.mpvz.R.string.ui_host_ip_address),
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -202,7 +202,7 @@ fun EditConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_port),
+                  .stringResource(app.infinity.mpvz.R.string.ui_port),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -219,7 +219,7 @@ fun EditConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_path),
+                  .stringResource(app.infinity.mpvz.R.string.ui_path),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -242,7 +242,7 @@ fun EditConnectionSheet(
           Spacer(modifier = Modifier.width(8.dp))
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_anonymous_guest_access),
+              .stringResource(app.infinity.mpvz.R.string.ui_anonymous_guest_access),
           )
         }
 
@@ -267,7 +267,7 @@ fun EditConnectionSheet(
             Spacer(modifier = Modifier.width(8.dp))
             Text(
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_use_https_secure_connection),
+                .stringResource(app.infinity.mpvz.R.string.ui_use_https_secure_connection),
             )
           }
         }
@@ -284,7 +284,7 @@ fun EditConnectionSheet(
             label = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_username),
+                  .stringResource(app.infinity.mpvz.R.string.ui_username),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -305,7 +305,7 @@ fun EditConnectionSheet(
               Text(
                 androidx.compose.ui.res
                   .stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_new_password_keep_existing,
+                    app.infinity.mpvz.R.string.ui_new_password_keep_existing,
                   ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -334,7 +334,7 @@ fun EditConnectionSheet(
           Spacer(modifier = Modifier.width(8.dp))
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_clear_saved_password),
+              .stringResource(app.infinity.mpvz.R.string.ui_clear_saved_password),
           )
         }
       }
@@ -347,7 +347,7 @@ fun EditConnectionSheet(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_save),
+              .stringResource(app.infinity.mpvz.R.string.ui_save),
           fontWeight = FontWeight.SemiBold,
         )
       }
@@ -357,7 +357,7 @@ fun EditConnectionSheet(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+              .stringResource(app.infinity.mpvz.R.string.generic_cancel),
           fontWeight = FontWeight.Medium,
         )
       }

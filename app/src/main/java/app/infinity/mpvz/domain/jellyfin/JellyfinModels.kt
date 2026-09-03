@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.domain.jellyfin
+package app.infinity.mpvz.domain.jellyfin
 
 import androidx.compose.runtime.Immutable
 import kotlinx.serialization.Serializable

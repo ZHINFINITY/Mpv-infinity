@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.downloads
+package app.infinity.mpvz.ui.downloads
 
 import android.Manifest
 import android.content.Intent
@@ -57,18 +57,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.download.AppDownload
-import app.gyrolet.mpvrx.domain.download.AppDownloadManager
-import app.gyrolet.mpvrx.domain.download.AppDownloadStatus
-import app.gyrolet.mpvrx.domain.download.YtdlpDownloadEngine
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.media.MediaUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.download.AppDownload
+import app.infinity.mpvz.domain.download.AppDownloadManager
+import app.infinity.mpvz.domain.download.AppDownloadStatus
+import app.infinity.mpvz.domain.download.YtdlpDownloadEngine
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 import java.io.File

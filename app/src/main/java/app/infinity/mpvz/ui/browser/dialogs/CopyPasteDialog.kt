@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.dialogs
+package app.infinity.mpvz.ui.browser.dialogs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,9 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.utils.media.CopyPasteOps
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.media.CopyPasteOps
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -172,7 +172,7 @@ fun FileOperationProgressDialog(
         ) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_done),
+              .stringResource(app.infinity.mpvz.R.string.ui_done),
             fontWeight = FontWeight.Bold,
           )
         }
@@ -185,12 +185,12 @@ fun FileOperationProgressDialog(
             imageVector = Icons.RoundedFilled.Cancel,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+                .stringResource(app.infinity.mpvz.R.string.generic_cancel),
             modifier = Modifier.padding(end = 4.dp),
           )
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+              .stringResource(app.infinity.mpvz.R.string.generic_cancel),
             fontWeight = FontWeight.Medium,
           )
         }

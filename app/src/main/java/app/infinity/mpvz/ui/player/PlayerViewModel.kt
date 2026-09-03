@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -36,59 +36,59 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
-import app.gyrolet.mpvrx.domain.autocrop.AutoCropAnalyzer
-import app.gyrolet.mpvrx.domain.autocrop.AutoCropEdges
-import app.gyrolet.mpvrx.domain.hdr.HdrToysManager
-import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
-import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingState
-import app.gyrolet.mpvrx.domain.torrent.formatTorrentSpeed
-import app.gyrolet.mpvrx.domain.syncplay.SyncplayFile
-import app.gyrolet.mpvrx.domain.syncplay.SyncplayPlaybackState
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AudioChannels
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.DecoderPreferences
-import app.gyrolet.mpvrx.preferences.GesturePreferences
-import app.gyrolet.mpvrx.preferences.MpvConfigOverride
-import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
-import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
-import app.gyrolet.mpvrx.preferences.IntroSegmentProvider
-import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
-import app.gyrolet.mpvrx.repository.IntroDbLookupOutcome
-import app.gyrolet.mpvrx.repository.IntroDbLookupRequest
-import app.gyrolet.mpvrx.repository.IntroDbRepository
-import app.gyrolet.mpvrx.repository.ai.SubtitleGenerationService
-import app.gyrolet.mpvrx.repository.subtitle.OnlineSubtitle
-import app.gyrolet.mpvrx.repository.subtitle.OnlineSubtitleOrchestrator
-import app.gyrolet.mpvrx.repository.subtitle.OnlineSubtitleSearchMode
-import app.gyrolet.mpvrx.repository.subtitle.OnlineSubtitleSearchRequest
-import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
-import app.gyrolet.mpvrx.ui.player.ScriptCurlBridge
-import app.gyrolet.mpvrx.ui.player.anime4k.Anime4KUiState
-import app.gyrolet.mpvrx.ui.player.anime4k.applyAnime4KShaderChain
-import app.gyrolet.mpvrx.ui.player.anime4k.applyAnime4KStabilityOptions
-import app.gyrolet.mpvrx.ui.player.anime4k.clearAnime4KShaders
-import app.gyrolet.mpvrx.ui.player.anime4k.selectRuntimeStableAnime4K
-import app.gyrolet.mpvrx.ui.player.controls.components.sheets.EQ_MAX_DB
-import app.gyrolet.mpvrx.ui.player.controls.components.sheets.EQ_MIN_DB
-import app.gyrolet.mpvrx.ui.player.controls.components.sheets.EqualizerPreset
-import app.gyrolet.mpvrx.ui.player.controls.components.sheets.EqualizerState
-import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
-import app.gyrolet.mpvrx.ui.player.screenshot.ScreenshotSaver
-import app.gyrolet.mpvrx.ui.player.screenshot.ScreenshotSettings
-import app.gyrolet.mpvrx.ui.preferences.CustomButton
-import app.gyrolet.mpvrx.ui.preferences.CustomButtonScriptLanguage
-import app.gyrolet.mpvrx.utils.media.AudioEqualizerManager
-import app.gyrolet.mpvrx.utils.media.ChecksumUtils
-import app.gyrolet.mpvrx.utils.media.MediaInfoParser
-import app.gyrolet.mpvrx.utils.media.ParsedMediaInfo
-import app.gyrolet.mpvrx.utils.media.SubtitleHashUtils
-import app.gyrolet.mpvrx.utils.media.fileExtension
-import app.gyrolet.mpvrx.utils.media.resolveSubtitleLookupDirectories
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.domain.autocrop.AutoCropAnalyzer
+import app.infinity.mpvz.domain.autocrop.AutoCropEdges
+import app.infinity.mpvz.domain.hdr.HdrToysManager
+import app.infinity.mpvz.domain.network.NetworkPlaybackUri
+import app.infinity.mpvz.domain.torrent.TorrentStreamingState
+import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
+import app.infinity.mpvz.domain.syncplay.SyncplayFile
+import app.infinity.mpvz.domain.syncplay.SyncplayPlaybackState
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.AudioChannels
+import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.MpvConfigOverride
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
+import app.infinity.mpvz.preferences.IntroSegmentProvider
+import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.SubtitlesPreferences
+import app.infinity.mpvz.repository.IntroDbLookupOutcome
+import app.infinity.mpvz.repository.IntroDbLookupRequest
+import app.infinity.mpvz.repository.IntroDbRepository
+import app.infinity.mpvz.repository.ai.SubtitleGenerationService
+import app.infinity.mpvz.repository.subtitle.OnlineSubtitle
+import app.infinity.mpvz.repository.subtitle.OnlineSubtitleOrchestrator
+import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchMode
+import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchRequest
+import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
+import app.infinity.mpvz.ui.player.ScriptCurlBridge
+import app.infinity.mpvz.ui.player.anime4k.Anime4KUiState
+import app.infinity.mpvz.ui.player.anime4k.applyAnime4KShaderChain
+import app.infinity.mpvz.ui.player.anime4k.applyAnime4KStabilityOptions
+import app.infinity.mpvz.ui.player.anime4k.clearAnime4KShaders
+import app.infinity.mpvz.ui.player.anime4k.selectRuntimeStableAnime4K
+import app.infinity.mpvz.ui.player.controls.components.sheets.EQ_MAX_DB
+import app.infinity.mpvz.ui.player.controls.components.sheets.EQ_MIN_DB
+import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerPreset
+import app.infinity.mpvz.ui.player.controls.components.sheets.EqualizerState
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import app.infinity.mpvz.ui.player.screenshot.ScreenshotSaver
+import app.infinity.mpvz.ui.player.screenshot.ScreenshotSettings
+import app.infinity.mpvz.ui.preferences.CustomButton
+import app.infinity.mpvz.ui.preferences.CustomButtonScriptLanguage
+import app.infinity.mpvz.utils.media.AudioEqualizerManager
+import app.infinity.mpvz.utils.media.ChecksumUtils
+import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.utils.media.ParsedMediaInfo
+import app.infinity.mpvz.utils.media.SubtitleHashUtils
+import app.infinity.mpvz.utils.media.fileExtension
+import app.infinity.mpvz.utils.media.resolveSubtitleLookupDirectories
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.FastThumbnails
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -181,7 +181,7 @@ class PlayerViewModel : ViewModel(),
     val outcomeType: String,
     val imdbId: String? = null,
     val message: String = "",
-    val segments: List<app.gyrolet.mpvrx.repository.IntroDbSegment> = emptyList(),
+    val segments: List<app.infinity.mpvz.repository.IntroDbSegment> = emptyList(),
     val cachedAtMs: Long = System.currentTimeMillis(),
   )
 
@@ -190,22 +190,22 @@ class PlayerViewModel : ViewModel(),
   private val gesturePreferences: GesturePreferences by inject()
   private val audioPreferences: AudioPreferences by inject()
   private val subtitlesPreferences: SubtitlesPreferences by inject()
-  private val aiPreferences: app.gyrolet.mpvrx.preferences.AiPreferences by inject()
+  private val aiPreferences: app.infinity.mpvz.preferences.AiPreferences by inject()
   private val advancedPreferences: AdvancedPreferences by inject()
   private val decoderPreferences: DecoderPreferences by inject()
   private val anime4kManager: Anime4KManager by inject()
   private val hdrToysManager: HdrToysManager by inject()
   private val json: Json by inject()
-  private val playbackStateDao: app.gyrolet.mpvrx.database.dao.PlaybackStateDao by inject()
-  private val aiService: app.gyrolet.mpvrx.repository.ai.AiService by inject()
+  private val playbackStateDao: app.infinity.mpvz.database.dao.PlaybackStateDao by inject()
+  private val aiService: app.infinity.mpvz.repository.ai.AiService by inject()
   private val subtitleGenerationService: SubtitleGenerationService by inject()
-  private val realtimeSubtitleService: app.gyrolet.mpvrx.repository.ai.RealtimeSubtitleService by inject()
+  private val realtimeSubtitleService: app.infinity.mpvz.repository.ai.RealtimeSubtitleService by inject()
   private val wyzieRepository: WyzieSearchRepository by inject()
   private val onlineSubtitleOrchestrator: OnlineSubtitleOrchestrator by inject()
   private val introDbRepository: IntroDbRepository by inject()
-  val syncplayManager: app.gyrolet.mpvrx.domain.syncplay.SyncplayManager by inject()
-  private val lyricsRepository: app.gyrolet.mpvrx.repository.lyrics.LyricsRepository by inject()
-  private val lyricsTranslationService: app.gyrolet.mpvrx.data.lyrics.LyricsTranslationService by inject()
+  val syncplayManager: app.infinity.mpvz.domain.syncplay.SyncplayManager by inject()
+  private val lyricsRepository: app.infinity.mpvz.repository.lyrics.LyricsRepository by inject()
+  private val lyricsTranslationService: app.infinity.mpvz.data.lyrics.LyricsTranslationService by inject()
   private val introMarkerCachePrefs by lazy {
     appContext.getSharedPreferences(INTRO_MARKER_CACHE_PREFS, Context.MODE_PRIVATE)
   }
@@ -256,11 +256,11 @@ class PlayerViewModel : ViewModel(),
   // Playlist items for the playlist sheet
   private val _playlistItems =
     kotlinx.coroutines.flow
-      .MutableStateFlow<List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem>>(
+      .MutableStateFlow<List<app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistItem>>(
         emptyList(),
       )
   val playlistItems:
-    kotlinx.coroutines.flow.StateFlow<List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem>> =
+    kotlinx.coroutines.flow.StateFlow<List<app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistItem>> =
     _playlistItems
       .asStateFlow()
 
@@ -320,7 +320,7 @@ class PlayerViewModel : ViewModel(),
   private var seekBarVisibleForPolling = false
   private val skippedSegments = mutableSetOf<SkipSegment>()
   private var chapterDerivedSegments: List<SkipSegment> = emptyList()
-  private var introDbSegments: List<app.gyrolet.mpvrx.repository.IntroDbSegment> = emptyList()
+  private var introDbSegments: List<app.infinity.mpvz.repository.IntroDbSegment> = emptyList()
   private var introDbSourceKey: String = IntroSegmentProvider.INTRO_DB.sourceKey
   private var introLookupJob: Job? = null
   private val introKeywordPatterns =
@@ -457,8 +457,8 @@ class PlayerViewModel : ViewModel(),
 
   // Media Search / Autocomplete
   private val _mediaSearchResults =
-    MutableStateFlow<List<app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult>>(emptyList())
-  val mediaSearchResults: StateFlow<List<app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult>> =
+    MutableStateFlow<List<app.infinity.mpvz.repository.wyzie.WyzieTmdbResult>>(emptyList())
+  val mediaSearchResults: StateFlow<List<app.infinity.mpvz.repository.wyzie.WyzieTmdbResult>> =
     _mediaSearchResults
       .asStateFlow()
 
@@ -466,24 +466,24 @@ class PlayerViewModel : ViewModel(),
   val isSearchingMedia: StateFlow<Boolean> = _isSearchingMedia.asStateFlow()
 
   // TV Show Details
-  private val _selectedTvShow = MutableStateFlow<app.gyrolet.mpvrx.repository.wyzie.WyzieTvShowDetails?>(null)
-  val selectedTvShow: StateFlow<app.gyrolet.mpvrx.repository.wyzie.WyzieTvShowDetails?> = _selectedTvShow.asStateFlow()
+  private val _selectedTvShow = MutableStateFlow<app.infinity.mpvz.repository.wyzie.WyzieTvShowDetails?>(null)
+  val selectedTvShow: StateFlow<app.infinity.mpvz.repository.wyzie.WyzieTvShowDetails?> = _selectedTvShow.asStateFlow()
 
   private val _isFetchingTvDetails = MutableStateFlow(false)
   val isFetchingTvDetails: StateFlow<Boolean> = _isFetchingTvDetails.asStateFlow()
 
   // Season / Episode
-  private val _selectedSeason = MutableStateFlow<app.gyrolet.mpvrx.repository.wyzie.WyzieSeason?>(null)
-  val selectedSeason: StateFlow<app.gyrolet.mpvrx.repository.wyzie.WyzieSeason?> = _selectedSeason.asStateFlow()
+  private val _selectedSeason = MutableStateFlow<app.infinity.mpvz.repository.wyzie.WyzieSeason?>(null)
+  val selectedSeason: StateFlow<app.infinity.mpvz.repository.wyzie.WyzieSeason?> = _selectedSeason.asStateFlow()
 
-  private val _seasonEpisodes = MutableStateFlow<List<app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode>>(emptyList())
-  val seasonEpisodes: StateFlow<List<app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode>> = _seasonEpisodes.asStateFlow()
+  private val _seasonEpisodes = MutableStateFlow<List<app.infinity.mpvz.repository.wyzie.WyzieEpisode>>(emptyList())
+  val seasonEpisodes: StateFlow<List<app.infinity.mpvz.repository.wyzie.WyzieEpisode>> = _seasonEpisodes.asStateFlow()
 
   private val _isFetchingEpisodes = MutableStateFlow(false)
   val isFetchingEpisodes: StateFlow<Boolean> = _isFetchingEpisodes.asStateFlow()
 
-  private val _selectedEpisode = MutableStateFlow<app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode?>(null)
-  val selectedEpisode: StateFlow<app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode?> = _selectedEpisode.asStateFlow()
+  private val _selectedEpisode = MutableStateFlow<app.infinity.mpvz.repository.wyzie.WyzieEpisode?>(null)
+  val selectedEpisode: StateFlow<app.infinity.mpvz.repository.wyzie.WyzieEpisode?> = _selectedEpisode.asStateFlow()
 
   fun toggleOnlineSection() {
     _isOnlineSectionExpanded.value = !_isOnlineSectionExpanded.value
@@ -831,13 +831,13 @@ class PlayerViewModel : ViewModel(),
     val isTranslating: Boolean = false,
     val isTranslationActive: Boolean = false,
     val targetLanguage: String = "en",
-    val lyrics: app.gyrolet.mpvrx.domain.lyrics.Lyrics? = null,
-    val originalLyrics: app.gyrolet.mpvrx.domain.lyrics.Lyrics? = null,
-    val embeddedLyrics: app.gyrolet.mpvrx.domain.lyrics.Lyrics? = null,
-    val onlineLyrics: app.gyrolet.mpvrx.domain.lyrics.Lyrics? = null,
+    val lyrics: app.infinity.mpvz.domain.lyrics.Lyrics? = null,
+    val originalLyrics: app.infinity.mpvz.domain.lyrics.Lyrics? = null,
+    val embeddedLyrics: app.infinity.mpvz.domain.lyrics.Lyrics? = null,
+    val onlineLyrics: app.infinity.mpvz.domain.lyrics.Lyrics? = null,
     val activeLineIndex: Int = -1,
-    val selectedSource: app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType = app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType.EMBEDDED,
-    val availableSources: List<app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType> = emptyList(),
+    val selectedSource: app.infinity.mpvz.domain.lyrics.LyricsSourceType = app.infinity.mpvz.domain.lyrics.LyricsSourceType.EMBEDDED,
+    val availableSources: List<app.infinity.mpvz.domain.lyrics.LyricsSourceType> = emptyList(),
     val syncOffsetMs: Int = 0,
     val errorMessage: String? = null,
   )
@@ -928,7 +928,7 @@ class PlayerViewModel : ViewModel(),
         ?: PlaybackSession.getPropertyString("stream-open-filename")
       if (stillCurrentPath != path) return@launch
 
-      val activeIndex = app.gyrolet.mpvrx.utils.media.LyricsUtils.getActiveLineIndex(
+      val activeIndex = app.infinity.mpvz.utils.media.LyricsUtils.getActiveLineIndex(
         syncedLines = result.activeLyrics?.synced,
         positionMs = (precisePosition.value * 1000).toLong(),
         offsetMs = 0,
@@ -958,7 +958,7 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
-  fun switchLyricsSource(sourceType: app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType) {
+  fun switchLyricsSource(sourceType: app.infinity.mpvz.domain.lyrics.LyricsSourceType) {
     val path = PlaybackSession.getPropertyString("path") ?: PlaybackSession.getPropertyString("stream-open-filename") ?: return
     if (path.isBlank()) return
 
@@ -966,7 +966,7 @@ class PlayerViewModel : ViewModel(),
     val autoTranslate = audioPreferences.lyricsAutoTranslate.get()
     val defaultTargetLang = audioPreferences.lyricsTargetLanguage.get().ifBlank { "en" }
 
-    if (sourceType == app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType.ONLINE && current.onlineLyrics == null) {
+    if (sourceType == app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE && current.onlineLyrics == null) {
       lyricsUiState.value = current.copy(isLoading = true)
       lyricsLoadJob?.cancel()
       lyricsTranslateJob?.cancel()
@@ -987,9 +987,9 @@ class PlayerViewModel : ViewModel(),
           ?: PlaybackSession.getPropertyString("stream-open-filename")
         if (stillCurrentPath != path) return@launch
 
-        val updatedSources = (current.availableSources + app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType.ONLINE).distinct()
+        val updatedSources = (current.availableSources + app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE).distinct()
         val activeLyrics = online ?: current.embeddedLyrics
-        val activeIndex = app.gyrolet.mpvrx.utils.media.LyricsUtils.getActiveLineIndex(
+        val activeIndex = app.infinity.mpvz.utils.media.LyricsUtils.getActiveLineIndex(
           syncedLines = activeLyrics?.synced,
           positionMs = (precisePosition.value * 1000).toLong(),
           offsetMs = current.syncOffsetMs,
@@ -1002,7 +1002,7 @@ class PlayerViewModel : ViewModel(),
           onlineLyrics = online,
           lyrics = activeLyrics,
           originalLyrics = activeLyrics,
-          selectedSource = if (online != null) app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType.ONLINE else current.selectedSource,
+          selectedSource = if (online != null) app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE else current.selectedSource,
           availableSources = updatedSources,
           activeLineIndex = activeIndex,
         )
@@ -1017,7 +1017,7 @@ class PlayerViewModel : ViewModel(),
     val updatedResult = lyricsRepository.switchSource(path, sourceType)
     if (updatedResult != null) {
       val activeLyrics = updatedResult.activeLyrics
-      val activeIndex = app.gyrolet.mpvrx.utils.media.LyricsUtils.getActiveLineIndex(
+      val activeIndex = app.infinity.mpvz.utils.media.LyricsUtils.getActiveLineIndex(
         syncedLines = activeLyrics?.synced,
         positionMs = (precisePosition.value * 1000).toLong(),
         offsetMs = current.syncOffsetMs,
@@ -1053,7 +1053,7 @@ class PlayerViewModel : ViewModel(),
     val state = lyricsUiState.value
     val synced = state.lyrics?.synced ?: return
     val posMs = (precisePosition.value * 1000).toLong()
-    val index = app.gyrolet.mpvrx.utils.media.LyricsUtils.getActiveLineIndex(synced, posMs, state.syncOffsetMs)
+    val index = app.infinity.mpvz.utils.media.LyricsUtils.getActiveLineIndex(synced, posMs, state.syncOffsetMs)
     if (index != state.activeLineIndex) {
       lyricsUiState.value = state.copy(activeLineIndex = index)
     }
@@ -1088,7 +1088,7 @@ class PlayerViewModel : ViewModel(),
         ?: PlaybackSession.getPropertyString("stream-open-filename")
       if (stillCurrentPath != path) return@launch
 
-      val activeIndex = app.gyrolet.mpvrx.utils.media.LyricsUtils.getActiveLineIndex(
+      val activeIndex = app.infinity.mpvz.utils.media.LyricsUtils.getActiveLineIndex(
         syncedLines = translated.synced,
         positionMs = (precisePosition.value * 1000).toLong(),
         offsetMs = current.syncOffsetMs,
@@ -1107,7 +1107,7 @@ class PlayerViewModel : ViewModel(),
     if (current.isTranslationActive) {
       audioPreferences.lyricsAutoTranslate.set(false)
       val orig = current.originalLyrics ?: return
-      val activeIndex = app.gyrolet.mpvrx.utils.media.LyricsUtils.getActiveLineIndex(
+      val activeIndex = app.infinity.mpvz.utils.media.LyricsUtils.getActiveLineIndex(
         syncedLines = orig.synced,
         positionMs = (precisePosition.value * 1000).toLong(),
         offsetMs = current.syncOffsetMs,
@@ -1221,7 +1221,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   private val audioVisualizerToggleDebouncer =
-    app.gyrolet.mpvrx.ui.player
+    app.infinity.mpvz.ui.player
       .ToggleDebouncer()
 
   fun toggleAudioVisualizer(): Boolean {
@@ -1232,7 +1232,7 @@ class PlayerViewModel : ViewModel(),
     return true
   }
 
-  fun getAudioPropertiesData(): List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioPropertyItem> {
+  fun getAudioPropertiesData(): List<app.infinity.mpvz.ui.player.controls.components.sheets.AudioPropertyItem> {
     val title =
       currentMediaTitle.takeIf { it.isNotBlank() }
         ?: PlaybackSession.getPropertyString("metadata/by-key/Title")
@@ -1294,44 +1294,44 @@ class PlayerViewModel : ViewModel(),
 
     return buildList {
       add(
-        app.gyrolet.mpvrx.ui.player.controls.components.sheets
+        app.infinity.mpvz.ui.player.controls.components.sheets
           .AudioPropertyItem("Title", title),
       )
       add(
-        app.gyrolet.mpvrx.ui.player.controls.components.sheets
+        app.infinity.mpvz.ui.player.controls.components.sheets
           .AudioPropertyItem("Artist", artist),
       )
       add(
-        app.gyrolet.mpvrx.ui.player.controls.components.sheets
+        app.infinity.mpvz.ui.player.controls.components.sheets
           .AudioPropertyItem("Album", album),
       )
       add(
-        app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioPropertyItem(
+        app.infinity.mpvz.ui.player.controls.components.sheets.AudioPropertyItem(
           "Format / Codec",
           if (formatExt.isNotBlank()) "$formatExt ($codec)" else codec,
         ),
       )
       add(
-        app.gyrolet.mpvrx.ui.player.controls.components.sheets
+        app.infinity.mpvz.ui.player.controls.components.sheets
           .AudioPropertyItem("Sample Rate", sampleRateStr),
       )
       add(
-        app.gyrolet.mpvrx.ui.player.controls.components.sheets
+        app.infinity.mpvz.ui.player.controls.components.sheets
           .AudioPropertyItem("Bitrate", bitrateStr),
       )
       add(
-        app.gyrolet.mpvrx.ui.player.controls.components.sheets
+        app.infinity.mpvz.ui.player.controls.components.sheets
           .AudioPropertyItem("Channels", channelsStr),
       )
       if (fileSizeStr.isNotBlank()) {
         add(
-          app.gyrolet.mpvrx.ui.player.controls.components.sheets
+          app.infinity.mpvz.ui.player.controls.components.sheets
             .AudioPropertyItem("File Size", fileSizeStr),
         )
       }
       if (path.isNotBlank()) {
         add(
-          app.gyrolet.mpvrx.ui.player.controls.components.sheets
+          app.infinity.mpvz.ui.player.controls.components.sheets
             .AudioPropertyItem("File Location", path),
         )
       }
@@ -2099,7 +2099,7 @@ class PlayerViewModel : ViewModel(),
           if (jsonString.isNotBlank()) {
             try {
               // Try new slot-based format first
-              val slotsData = json.decodeFromString<app.gyrolet.mpvrx.ui.preferences.CustomButtonSlots>(jsonString)
+              val slotsData = json.decodeFromString<app.infinity.mpvz.ui.preferences.CustomButtonSlots>(jsonString)
               slotsData.slots.forEachIndexed { index, btn ->
                 if (btn != null && btn.enabled) {
                   val safeId = btn.id.replace("-", "_")
@@ -2122,7 +2122,7 @@ class PlayerViewModel : ViewModel(),
               // Fallback to old format for backward compatibility
               try {
                 val customButtonsList =
-                  json.decodeFromString<List<app.gyrolet.mpvrx.ui.preferences.CustomButton>>(
+                  json.decodeFromString<List<app.infinity.mpvz.ui.preferences.CustomButton>>(
                     jsonString,
                   )
                 customButtonsList.forEachIndexed { index, btn ->
@@ -3619,7 +3619,7 @@ class PlayerViewModel : ViewModel(),
       }
   }
 
-  fun selectMedia(result: app.gyrolet.mpvrx.repository.wyzie.WyzieTmdbResult) {
+  fun selectMedia(result: app.infinity.mpvz.repository.wyzie.WyzieTmdbResult) {
     _mediaSearchResults.value = emptyList() // Clear results after selection
     _onlineSubtitleSearchResults.value = emptyList() // Clear old subtitle results
     val fileInfo = MediaInfoParser.parse(currentMediaTitle)
@@ -3664,7 +3664,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun selectSeason(
-    season: app.gyrolet.mpvrx.repository.wyzie.WyzieSeason,
+    season: app.infinity.mpvz.repository.wyzie.WyzieSeason,
     preferredEpisode: Int? = null,
   ) {
     val tvShowId = _selectedTvShow.value?.id ?: return
@@ -3698,7 +3698,7 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
-  fun selectEpisode(episode: app.gyrolet.mpvrx.repository.wyzie.WyzieEpisode) {
+  fun selectEpisode(episode: app.infinity.mpvz.repository.wyzie.WyzieEpisode) {
     _selectedEpisode.value = episode
     val tvShowName = _selectedTvShow.value?.name ?: currentMediaTitle
     searchSubtitles(tvShowName, episode.season_number, episode.episode_number, tmdbId = _selectedTvShow.value?.id)
@@ -5247,7 +5247,7 @@ class PlayerViewModel : ViewModel(),
 
   fun getPlaylistTotalCount(): Int = PlaybackSession.queue.value.items.size
 
-  fun getPlaylistData(): List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem>? {
+  fun getPlaylistData(): List<app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistItem>? {
     val queue = PlaybackSession.queue.value
     if (!queue.isExplicitQueue || queue.items.isEmpty()) return null
 
@@ -5293,7 +5293,7 @@ class PlayerViewModel : ViewModel(),
         synchronized(metadataCache) { metadataCache[cacheKey] }
           ?: (extractedDuration to "")
 
-      app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem(
+      app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistItem(
         uri = resolvedUri,
         title = title,
         artist = item.artist.orEmpty(),
@@ -5591,7 +5591,7 @@ class PlayerViewModel : ViewModel(),
    * Skips metadata extraction for M3U playlists (network streams).
    */
   private fun loadPlaylistMetadataAsync(
-    items: List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem>,
+    items: List<app.infinity.mpvz.ui.player.controls.components.sheets.PlaylistItem>,
   ) {
     playlistMetadataJob?.cancel()
     playlistMetadataJob =

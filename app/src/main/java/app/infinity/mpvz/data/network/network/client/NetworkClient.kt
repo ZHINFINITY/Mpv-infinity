@@ -7,10 +7,10 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.network.client
+package app.infinity.mpvz.data.network.client
 
 import android.net.Uri
-import app.gyrolet.mpvrx.domain.network.NetworkFile
+import app.infinity.mpvz.domain.network.NetworkFile
 import java.io.InputStream
 
 /**
@@ -54,7 +54,7 @@ interface NetworkClient {
   /**
    * Get a credential-free origin URI for diagnostics and anonymous sources.
    *
-   * Authenticated playback must use [app.gyrolet.mpvrx.data.network.proxy.NetworkStreamingProxy]
+   * Authenticated playback must use [app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy]
    * so secrets never enter intents, playlists, history, or logs.
    */
   suspend fun getFileUri(path: String): Result<Uri>

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.browser.music
+package app.infinity.mpvz.ui.browser.music
 
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -114,41 +114,41 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.entities.PlaylistEntity
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
-import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.preferences.PreferencesScreen
-import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
-import app.gyrolet.mpvrx.ui.browser.MainScreen
-import app.gyrolet.mpvrx.ui.browser.NavigationBarState
-import app.gyrolet.mpvrx.ui.browser.cards.PlaylistCard
-import app.gyrolet.mpvrx.ui.browser.components.BrowserBottomBar
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.components.QueueInsertion
-import app.gyrolet.mpvrx.ui.browser.components.addVideosToPlaybackQueue
-import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
-import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
-import app.gyrolet.mpvrx.ui.browser.dialogs.DeleteConfirmationDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.FolderSortDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.MusicSortDialog
-import app.gyrolet.mpvrx.ui.player.controls.components.MiniAudioVisualizer
-import app.gyrolet.mpvrx.ui.browser.folderlist.FolderListScreen
-import app.gyrolet.mpvrx.ui.browser.playlist.PlaylistDetailScreen
-import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.theme.AppShapeScale
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.utils.media.MediaUtils
-import app.gyrolet.mpvrx.utils.permission.PermissionUtils
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.presentation.components.RemoteImage
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.preferences.PreferencesScreen
+import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
+import app.infinity.mpvz.ui.browser.MainScreen
+import app.infinity.mpvz.ui.browser.NavigationBarState
+import app.infinity.mpvz.ui.browser.cards.PlaylistCard
+import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.QueueInsertion
+import app.infinity.mpvz.ui.browser.components.addVideosToPlaybackQueue
+import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
+import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
+import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
+import app.infinity.mpvz.ui.browser.dialogs.FolderSortDialog
+import app.infinity.mpvz.ui.browser.dialogs.MusicSortDialog
+import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
+import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
+import app.infinity.mpvz.ui.browser.playlist.PlaylistDetailScreen
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.theme.AppShapeScale
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.permission.PermissionUtils
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
@@ -209,7 +209,7 @@ fun MusicLibraryContent(
   val isPlaybackActive by musicViewModel.isPlaybackActive.collectAsState()
 
   val browserPreferences = koinInject<BrowserPreferences>()
-  val foldersPreferences = koinInject<app.gyrolet.mpvrx.preferences.FoldersPreferences>()
+  val foldersPreferences = koinInject<app.infinity.mpvz.preferences.FoldersPreferences>()
   val folderSortType by browserPreferences.folderSortType.collectAsState()
   val folderSortOrder by browserPreferences.folderSortOrder.collectAsState()
   val coverArtSizeDp by browserPreferences.musicCoverArtSize.collectAsState()
@@ -543,7 +543,7 @@ fun MusicLibraryContent(
                   }
                 }.toSet()
                 if (selectedPaths.isNotEmpty()) {
-                  foldersPreferences.addBlacklistedFolders(selectedPaths, app.gyrolet.mpvrx.preferences.BlacklistScope.AUDIO_ONLY)
+                  foldersPreferences.addBlacklistedFolders(selectedPaths, app.infinity.mpvz.preferences.BlacklistScope.AUDIO_ONLY)
                   activeSelectionManager.clear()
                 }
               },
@@ -1347,7 +1347,7 @@ private fun SongsTabContent(
   coverArtSizeDp: Int = 48,
   onSongClick: (MusicSong) -> Unit,
   onSongLongClick: (MusicSong) -> Unit,
-  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<MusicSong, Long>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicSong, Long>,
   listState: LazyListState = rememberLazyListState(),
   gridState: LazyGridState = rememberLazyGridState(),
 ) {
@@ -1552,7 +1552,7 @@ private fun AlbumsTabContent(
   coverArtSizeDp: Int = 48,
   onAlbumClick: (MusicAlbum) -> Unit,
   onAlbumLongClick: (MusicAlbum) -> Unit,
-  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<MusicAlbum, Long>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicAlbum, Long>,
   listState: LazyListState = rememberLazyListState(),
   gridState: LazyGridState = rememberLazyGridState(),
 ) {
@@ -1776,7 +1776,7 @@ private fun ArtistsTabContent(
   coverArtSizeDp: Int = 48,
   onArtistClick: (MusicArtist) -> Unit,
   onArtistLongClick: (MusicArtist) -> Unit,
-  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<MusicArtist, Long>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicArtist, Long>,
   listState: LazyListState = rememberLazyListState(),
   gridState: LazyGridState = rememberLazyGridState(),
 ) {
@@ -2279,7 +2279,7 @@ private fun PlaylistsTabContent(
   coverArtSizeDp: Dp = 52.dp,
   onPlaylistClick: (PlaylistEntity) -> Unit,
   onPlaylistLongClick: (PlaylistEntity) -> Unit,
-  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<PlaylistEntity, Long>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<PlaylistEntity, Long>,
   listState: LazyListState = rememberLazyListState(),
   gridState: LazyGridState = rememberLazyGridState(),
 ) {

@@ -7,18 +7,18 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.data.jellyfin
+package app.infinity.mpvz.data.jellyfin
 
 import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.util.Log
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinAuthResult
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinItem
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinUser
-import app.gyrolet.mpvrx.network.awaitResponse
-import app.gyrolet.mpvrx.utils.media.PlaybackSubtitleTrack
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.domain.jellyfin.JellyfinAuthResult
+import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinUser
+import app.infinity.mpvz.network.awaitResponse
+import app.infinity.mpvz.utils.media.PlaybackSubtitleTrack
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -525,8 +525,8 @@ class JellyfinClient(
     parentId: String? = null,
     artistIds: String? = null,
     searchTerm: String? = null,
-    sortBy: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.NAME,
-    sortOrder: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.ASCENDING,
+    sortBy: app.infinity.mpvz.domain.jellyfin.JellyfinSortBy = app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.NAME,
+    sortOrder: app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder = app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.ASCENDING,
     isPlayed: Boolean? = null,
     isFavorite: Boolean? = null,
     genres: String? = null,
@@ -534,7 +534,7 @@ class JellyfinClient(
     startIndex: Int = 0,
     limit: Int = 100,
     token: String,
-  ): Result<app.gyrolet.mpvrx.domain.jellyfin.JellyfinQueryResult> =
+  ): Result<app.infinity.mpvz.domain.jellyfin.JellyfinQueryResult> =
     withContext(Dispatchers.IO) {
       runCatching {
         val base = normalizeUrl(serverUrl)
@@ -592,7 +592,7 @@ class JellyfinClient(
             } else {
               items
             }
-          app.gyrolet.mpvrx.domain.jellyfin.JellyfinQueryResult(
+          app.infinity.mpvz.domain.jellyfin.JellyfinQueryResult(
             items = sortedItems,
             totalRecordCount = if (totalRecordCount > 0) totalRecordCount else items.size,
             startIndex = startIndex,
@@ -605,13 +605,13 @@ class JellyfinClient(
     serverUrl: String,
     userId: String,
     parentId: String? = null,
-    sortBy: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.NAME,
-    sortOrder: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.ASCENDING,
+    sortBy: app.infinity.mpvz.domain.jellyfin.JellyfinSortBy = app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.NAME,
+    sortOrder: app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder = app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.ASCENDING,
     startIndex: Int = 0,
     limit: Int = 500,
     token: String,
     albumArtistsOnly: Boolean = false,
-  ): Result<app.gyrolet.mpvrx.domain.jellyfin.JellyfinQueryResult> =
+  ): Result<app.infinity.mpvz.domain.jellyfin.JellyfinQueryResult> =
     withContext(Dispatchers.IO) {
       runCatching {
         val base = normalizeUrl(serverUrl)
@@ -641,7 +641,7 @@ class JellyfinClient(
           val totalRecordCount = root["TotalRecordCount"]?.jsonPrimitive?.intOrNull ?: 0
           val itemsArray = root["Items"]?.jsonArray ?: JsonArray(emptyList())
           val items = itemsArray.map { parseItem(it.jsonObject) }
-          app.gyrolet.mpvrx.domain.jellyfin.JellyfinQueryResult(
+          app.infinity.mpvz.domain.jellyfin.JellyfinQueryResult(
             items = items,
             totalRecordCount = if (totalRecordCount > 0) totalRecordCount else items.size,
             startIndex = startIndex,

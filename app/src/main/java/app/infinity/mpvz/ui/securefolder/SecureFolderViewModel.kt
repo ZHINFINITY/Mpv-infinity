@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.securefolder
+package app.infinity.mpvz.ui.securefolder
 
 import android.app.Application
 import android.util.Log
@@ -17,10 +17,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.entities.SecureMediaEntity
-import app.gyrolet.mpvrx.database.repository.SecureFolderRepository
-import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
+import app.infinity.mpvz.R
+import app.infinity.mpvz.database.entities.SecureMediaEntity
+import app.infinity.mpvz.database.repository.SecureFolderRepository
+import app.infinity.mpvz.preferences.SecureFolderPreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted

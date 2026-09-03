@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.folderlist
+package app.infinity.mpvz.ui.browser.folderlist
 
 import android.content.Context
 import android.content.Intent
@@ -20,7 +20,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
+import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -88,55 +88,55 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.browser.FileSystemItem
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.media.model.VideoFolder
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.FolderViewMode
-import app.gyrolet.mpvrx.preferences.FoldersPreferences
-import app.gyrolet.mpvrx.preferences.GesturePreferences
-import app.gyrolet.mpvrx.preferences.MediaLayoutMode
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
-import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
-import app.gyrolet.mpvrx.ui.browser.cards.FolderCard
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCard
-import app.gyrolet.mpvrx.ui.browser.cards.VideoCardUiConfig
-import app.gyrolet.mpvrx.ui.browser.components.BrowserBottomBar
-import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
-import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
-import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
-import app.gyrolet.mpvrx.ui.browser.dialogs.DeleteConfirmationDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.FileOperationProgressDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.FolderPickerDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.FolderSortDialog
-import app.gyrolet.mpvrx.ui.browser.dialogs.RenameDialog
-import app.gyrolet.mpvrx.ui.browser.filesystem.FileSystemBrowserRootScreen
-import app.gyrolet.mpvrx.ui.browser.medialibrary.MediaLibraryContent
-import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
-import app.gyrolet.mpvrx.ui.browser.sheets.PlayLinkSheet
-import app.gyrolet.mpvrx.ui.browser.states.EmptyState
-import app.gyrolet.mpvrx.ui.browser.states.LoadingState
-import app.gyrolet.mpvrx.ui.browser.states.PermissionDeniedState
-import app.gyrolet.mpvrx.ui.browser.videolist.VideoListScreen
-import app.gyrolet.mpvrx.ui.components.InlineSearchBar
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.securefolder.SecureFolderGateScreen
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.calculateResponsiveGridSpans
-import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
-import app.gyrolet.mpvrx.utils.media.CopyPasteOps
-import app.gyrolet.mpvrx.utils.media.MediaSearchEngine
-import app.gyrolet.mpvrx.utils.media.MediaUtils
-import app.gyrolet.mpvrx.utils.media.OpenDocumentTreeContract
-import app.gyrolet.mpvrx.utils.permission.PermissionUtils
-import app.gyrolet.mpvrx.utils.sort.SortUtils
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
+import app.infinity.mpvz.BuildConfig
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.browser.FileSystemItem
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.media.model.VideoFolder
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.FolderViewMode
+import app.infinity.mpvz.preferences.FoldersPreferences
+import app.infinity.mpvz.preferences.GesturePreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
+import app.infinity.mpvz.ui.browser.cards.FolderCard
+import app.infinity.mpvz.ui.browser.cards.VideoCard
+import app.infinity.mpvz.ui.browser.cards.VideoCardUiConfig
+import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
+import app.infinity.mpvz.ui.browser.dialogs.FileOperationProgressDialog
+import app.infinity.mpvz.ui.browser.dialogs.FolderPickerDialog
+import app.infinity.mpvz.ui.browser.dialogs.FolderSortDialog
+import app.infinity.mpvz.ui.browser.dialogs.RenameDialog
+import app.infinity.mpvz.ui.browser.filesystem.FileSystemBrowserRootScreen
+import app.infinity.mpvz.ui.browser.medialibrary.MediaLibraryContent
+import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.browser.sheets.PlayLinkSheet
+import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.browser.states.LoadingState
+import app.infinity.mpvz.ui.browser.states.PermissionDeniedState
+import app.infinity.mpvz.ui.browser.videolist.VideoListScreen
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.calculateResponsiveGridSpans
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.CopyPasteOps
+import app.infinity.mpvz.utils.media.MediaSearchEngine
+import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
+import app.infinity.mpvz.utils.permission.PermissionUtils
+import app.infinity.mpvz.utils.sort.SortUtils
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import kotlinx.coroutines.Job
@@ -182,7 +182,7 @@ object FolderListScreen : Screen {
     val browserPreferences = koinInject<BrowserPreferences>()
     val gesturePreferences = koinInject<GesturePreferences>()
     val foldersPreferences = koinInject<FoldersPreferences>()
-    val advancedPreferences = koinInject<app.gyrolet.mpvrx.preferences.AdvancedPreferences>()
+    val advancedPreferences = koinInject<app.infinity.mpvz.preferences.AdvancedPreferences>()
     val appearancePreferences = koinInject<AppearancePreferences>()
     val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
@@ -224,7 +224,7 @@ object FolderListScreen : Screen {
     val listState = rememberLazyListState()
     val gridState = rememberLazyGridState()
     val navigationBarHeight = LocalNavigationBarHeight.current
-    val navBarState = app.gyrolet.mpvrx.ui.browser.NavigationBarState
+    val navBarState = app.infinity.mpvz.ui.browser.NavigationBarState
     val isRefreshing = remember { mutableStateOf(false) }
     val sortDialogOpen = rememberSaveable { mutableStateOf(false) }
     var pendingDeleteFolders by remember { mutableStateOf<List<VideoFolder>>(emptyList()) }
@@ -236,8 +236,8 @@ object FolderListScreen : Screen {
     val operationProgress by CopyPasteOps.operationProgress.collectAsState()
 
     // Move-to-Secure-Folder state (moves every video inside the selected folders)
-    val secureFolderRepository = koinInject<app.gyrolet.mpvrx.database.repository.SecureFolderRepository>()
-    val secureFolderPreferences = koinInject<app.gyrolet.mpvrx.preferences.SecureFolderPreferences>()
+    val secureFolderRepository = koinInject<app.infinity.mpvz.database.repository.SecureFolderRepository>()
+    val secureFolderPreferences = koinInject<app.infinity.mpvz.preferences.SecureFolderPreferences>()
     val moveToSecureConfirmOpen = rememberSaveable { mutableStateOf(false) }
     val moveToSecureProgressOpen = rememberSaveable { mutableStateOf(false) }
     val secureFolderProgress by secureFolderRepository.progress.collectAsState()
@@ -252,7 +252,7 @@ object FolderListScreen : Screen {
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
     var searchIndexJob by remember { mutableStateOf<Job?>(null) }
-    val foldersBlacklistedMessage = stringResource(app.gyrolet.mpvrx.R.string.pref_folders_blacklisted)
+    val foldersBlacklistedMessage = stringResource(app.infinity.mpvz.R.string.pref_folders_blacklisted)
 
     LaunchedEffect(internalIsSearching) {
       if (internalIsSearching) focusRequester.requestFocus()
@@ -291,7 +291,7 @@ object FolderListScreen : Screen {
                   totalDuration = folder.totalDuration,
                 )
               }
-              val matchingAudioFiles = app.gyrolet.mpvrx.repository.MediaFileRepository
+              val matchingAudioFiles = app.infinity.mpvz.repository.MediaFileRepository
                 .searchAudio(context, effectiveSearchQuery)
                 .map { audio ->
                   FileSystemItem.VideoFile(
@@ -361,7 +361,7 @@ object FolderListScreen : Screen {
           if (deleteAll) {
             val ids = setOf(folder.bucketId)
             val videos =
-              app.gyrolet.mpvrx.repository.MediaFileRepository
+              app.infinity.mpvz.repository.MediaFileRepository
                 .getVideosForBuckets(context, ids, includeAudioOverride = if (audioOnly) true else null)
             if (videos.isNotEmpty()) {
               val (d, f) = viewModel.deleteVideos(videos)
@@ -422,7 +422,7 @@ object FolderListScreen : Screen {
       moveToSecureProgressOpen.value = true
       coroutineScope.launch {
         val allVideos =
-          app.gyrolet.mpvrx.repository.MediaFileRepository
+          app.infinity.mpvz.repository.MediaFileRepository
             .getVideosForBuckets(context, selectedIds, includeAudioOverride = if (audioOnly) true else null)
         if (allVideos.isNotEmpty()) {
           val result = secureFolderRepository.moveIn(context, allVideos)
@@ -461,7 +461,7 @@ object FolderListScreen : Screen {
           val selectedFolders = selectionManager.getSelectedItems()
           val selectedVideos =
             selectedFolders.flatMap { folder ->
-              app.gyrolet.mpvrx.repository.MediaFileRepository
+              app.infinity.mpvz.repository.MediaFileRepository
                 .getVideosForBuckets(context, setOf(folder.bucketId), includeAudioOverride = if (audioOnly) true else null)
             }
           if (selectedVideos.isNotEmpty()) {
@@ -489,7 +489,7 @@ object FolderListScreen : Screen {
 
     // After onboarding the app is fully usable; missing storage only shows an in-place prompt.
     LaunchedEffect(permissionState.status, isPermissionSetupCompleted) {
-      app.gyrolet.mpvrx.ui.browser.MainScreen.updatePermissionState(
+      app.infinity.mpvz.ui.browser.MainScreen.updatePermissionState(
         isDenied = !isPermissionSetupCompleted,
       )
     }
@@ -543,7 +543,7 @@ object FolderListScreen : Screen {
     }
 
     // FAB scroll tracking
-    app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper.trackScrollForFabVisibility(
+    app.infinity.mpvz.ui.browser.fab.FabScrollHelper.trackScrollForFabVisibility(
       listState = listState,
       gridState = if (mediaLayoutMode == MediaLayoutMode.GRID) gridState else null,
       isFabVisible = isFabVisible,
@@ -571,7 +571,7 @@ object FolderListScreen : Screen {
               placeholder = {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_search_folders_and_videos),
+                    .stringResource(app.infinity.mpvz.R.string.ui_search_folders_and_videos),
                 )
               },
               leadingIcon = {
@@ -579,7 +579,7 @@ object FolderListScreen : Screen {
                   imageVector = Icons.RoundedFilled.Search,
                   contentDescription =
                     androidx.compose.ui.res.stringResource(
-                      app.gyrolet.mpvrx.R.string.settings_search_title,
+                      app.infinity.mpvz.R.string.settings_search_title,
                     ),
                 )
               },
@@ -594,7 +594,7 @@ object FolderListScreen : Screen {
                     imageVector = Icons.RoundedFilled.Close,
                     contentDescription =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.generic_cancel,
+                        app.infinity.mpvz.R.string.generic_cancel,
                       ),
                   )
                 }
@@ -604,7 +604,7 @@ object FolderListScreen : Screen {
             )
           } else {
             BrowserTopBar(
-              title = stringResource(app.gyrolet.mpvrx.R.string.app_name),
+              title = stringResource(app.infinity.mpvz.R.string.app_name),
               isInSelectionMode = selectionManager.isInSelectionMode,
               selectedCount = selectionManager.selectedCount,
               totalCount = videoFolders.size,
@@ -616,7 +616,7 @@ object FolderListScreen : Screen {
                 if (!internalIsSearching) internalSearchQuery = ""
               },
               onSettingsClick = {
-                backstack.add(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
+                backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
               },
               onTitleDoubleTap = { backstack.add(SecureFolderGateScreen) },
               onTitleLongPress = { backstack.add(SecureFolderGateScreen) },
@@ -628,7 +628,7 @@ object FolderListScreen : Screen {
                 coroutineScope.launch {
                   val selectedIds = selectionManager.getSelectedItems().map { it.bucketId }.toSet()
                   val allVideos =
-                    app.gyrolet.mpvrx.repository.MediaFileRepository
+                    app.infinity.mpvz.repository.MediaFileRepository
                       .getVideosForBuckets(context, selectedIds, includeAudioOverride = if (audioOnly) true else null)
                   if (allVideos.isNotEmpty()) {
                     MediaUtils.shareVideos(context, allVideos)
@@ -639,7 +639,7 @@ object FolderListScreen : Screen {
                 coroutineScope.launch {
                   val selectedIds = selectionManager.getSelectedItems().map { it.bucketId }.toSet()
                   val allVideos =
-                    app.gyrolet.mpvrx.repository.MediaFileRepository
+                    app.infinity.mpvz.repository.MediaFileRepository
                       .getVideosForBuckets(context, selectedIds, includeAudioOverride = if (audioOnly) true else null)
                   if (allVideos.isNotEmpty()) {
                     if (allVideos.size == 1) {
@@ -672,7 +672,7 @@ object FolderListScreen : Screen {
                 coroutineScope.launch {
                   val selectedFolders = selectionManager.getSelectedItems()
                   val paths = selectedFolders.map { it.path }.toSet()
-                  val scope = if (audioOnly) app.gyrolet.mpvrx.preferences.BlacklistScope.AUDIO_ONLY else app.gyrolet.mpvrx.preferences.BlacklistScope.VIDEO_ONLY
+                  val scope = if (audioOnly) app.infinity.mpvz.preferences.BlacklistScope.AUDIO_ONLY else app.infinity.mpvz.preferences.BlacklistScope.VIDEO_ONLY
                   foldersPreferences.addBlacklistedFolders(paths, scope)
                   selectionManager.clear()
                   viewModel.refresh()
@@ -705,7 +705,7 @@ object FolderListScreen : Screen {
             showQuickPlayFab &&
               !selectionManager.isInSelectionMode &&
               isFabVisible.value &&
-              !app.gyrolet.mpvrx.ui.browser.MainScreen
+              !app.infinity.mpvz.ui.browser.MainScreen
                 .getPermissionDeniedState() &&
               !(isDualPaneActive && selectedFolderBucketId != null)
 
@@ -726,7 +726,7 @@ object FolderListScreen : Screen {
                   PlainTooltip {
                     Text(
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.ui_toggle_menu),
+                        .stringResource(app.infinity.mpvz.R.string.ui_toggle_menu),
                     )
                   }
                 },
@@ -743,7 +743,7 @@ object FolderListScreen : Screen {
                     if (quickPlayFabDirect) {
                       coroutineScope.launch {
                         val lastPlayed =
-                          app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
+                          app.infinity.mpvz.utils.history.RecentlyPlayedOps
                             .getLastPlayedEntity()
                         if (lastPlayed != null) {
                           MediaUtils.playFile(
@@ -786,7 +786,7 @@ object FolderListScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.ui_open_file),
+                        .stringResource(app.infinity.mpvz.R.string.ui_open_file),
                   )
                 },
               )
@@ -807,7 +807,7 @@ object FolderListScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.gyrolet.mpvrx.R.string.pref_advanced_enable_recently_played_title,
+                        app.infinity.mpvz.R.string.pref_advanced_enable_recently_played_title,
                       ),
                   )
                 },
@@ -823,7 +823,7 @@ object FolderListScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.gyrolet.mpvrx.R.string.ui_open_link),
+                        .stringResource(app.infinity.mpvz.R.string.ui_open_link),
                   )
                 },
               )
@@ -867,7 +867,7 @@ object FolderListScreen : Screen {
                           }
                         } else {
                           backstack.add(
-                            app.gyrolet.mpvrx.ui.browser.videolist
+                            app.infinity.mpvz.ui.browser.videolist
                               .VideoListScreen(folder.bucketId, folder.name, isAudio = audioOnly),
                           )
                         }
@@ -906,7 +906,7 @@ object FolderListScreen : Screen {
                         selectedFolderName = folder.name
                       } else {
                         backstack.add(
-                          app.gyrolet.mpvrx.ui.browser.videolist
+                          app.infinity.mpvz.ui.browser.videolist
                             .VideoListScreen(folder.bucketId, folder.name, isAudio = audioOnly),
                         )
                       }
@@ -929,7 +929,7 @@ object FolderListScreen : Screen {
                 )
               }
           } else if (isPermissionSetupCompleted) {
-            app.gyrolet.mpvrx.ui.browser.states.StoragePermissionPrompt(
+            app.infinity.mpvz.ui.browser.states.StoragePermissionPrompt(
               onRequestPermission = { permissionState.launchPermissionRequest() },
             )
           } else {
@@ -996,7 +996,7 @@ object FolderListScreen : Screen {
         Box(modifier = Modifier.weight(0.6f)) {
           key(selectedFolderBucketId) {
             CompositionLocalProvider(
-              app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight provides 0.dp,
+              app.infinity.mpvz.ui.browser.LocalNavigationBarHeight provides 0.dp,
             ) {
               VideoListScreen(
                 bucketId = selectedFolderBucketId!!,
@@ -1045,7 +1045,7 @@ object FolderListScreen : Screen {
                     progressDialogOpen.value = true
                     for (folder in needFallback) {
                       val videos =
-                        app.gyrolet.mpvrx.repository.MediaFileRepository.getVideosForBuckets(
+                        app.infinity.mpvz.repository.MediaFileRepository.getVideosForBuckets(
                           context,
                           setOf(folder.bucketId),
                           includeAudioOverride = if (audioOnly) true else null,
@@ -1064,7 +1064,7 @@ object FolderListScreen : Screen {
                   progressDialogOpen.value = true
                   for (folder in selectedFolders) {
                     val videos =
-                      app.gyrolet.mpvrx.repository.MediaFileRepository.getVideosForBuckets(
+                      app.infinity.mpvz.repository.MediaFileRepository.getVideosForBuckets(
                         context,
                         setOf(folder.bucketId),
                         includeAudioOverride = if (audioOnly) true else null,
@@ -1098,7 +1098,7 @@ object FolderListScreen : Screen {
     }
 
     // Move to Secure Folder — confirm (skippable via "don't ask again"), then progress
-    app.gyrolet.mpvrx.ui.securefolder.SecureConfirmDialog(
+    app.infinity.mpvz.ui.securefolder.SecureConfirmDialog(
       isOpen = moveToSecureConfirmOpen.value,
       title = stringResource(R.string.secure_folder_move_folders_title, selectionManager.selectedCount),
       subtitle = stringResource(R.string.secure_folder_move_folders_subtitle),
@@ -1110,7 +1110,7 @@ object FolderListScreen : Screen {
       onDismiss = { moveToSecureConfirmOpen.value = false },
     )
 
-    app.gyrolet.mpvrx.ui.securefolder.SecureFolderProgressDialog(
+    app.infinity.mpvz.ui.securefolder.SecureFolderProgressDialog(
       isOpen = moveToSecureProgressOpen.value,
       progress = secureFolderProgress,
       label = stringResource(R.string.secure_folder_moving_progress),
@@ -1131,7 +1131,7 @@ object FolderListScreen : Screen {
                 android.widget.Toast
                   .makeText(
                     context,
-                    context.getString(app.gyrolet.mpvrx.R.string.ui_rename_failed),
+                    context.getString(app.infinity.mpvz.R.string.ui_rename_failed),
                     android.widget.Toast.LENGTH_SHORT,
                   ).show()
               }
@@ -1169,14 +1169,14 @@ object FolderListScreen : Screen {
                 android.widget.Toast
                   .makeText(
                     context,
-                    context.getString(app.gyrolet.mpvrx.R.string.ui_deleted_successfully),
+                    context.getString(app.infinity.mpvz.R.string.ui_deleted_successfully),
                     android.widget.Toast.LENGTH_SHORT,
                   ).show()
               } else if (failed > 0) {
                 android.widget.Toast
                   .makeText(
                     context,
-                    context.getString(app.gyrolet.mpvrx.R.string.ui_failed_to_delete),
+                    context.getString(app.infinity.mpvz.R.string.ui_failed_to_delete),
                     android.widget.Toast.LENGTH_SHORT,
                   ).show()
               }
@@ -1206,7 +1206,7 @@ object FolderListScreen : Screen {
 @Composable
 private fun FolderListContent(
   folders: List<VideoFolder>,
-  foldersWithNewCount: List<app.gyrolet.mpvrx.ui.browser.folderlist.FolderWithNewCount>,
+  foldersWithNewCount: List<app.infinity.mpvz.ui.browser.folderlist.FolderWithNewCount>,
   pinnedFolderPaths: Set<String>,
   recentlyPlayedFilePath: String?,
   isLoading: Boolean,
@@ -1219,7 +1219,7 @@ private fun FolderListContent(
   listState: LazyListState,
   gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
   isRefreshing: androidx.compose.runtime.MutableState<Boolean>,
-  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<VideoFolder, String>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<VideoFolder, String>,
   onRefresh: suspend () -> Unit,
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
@@ -1236,8 +1236,8 @@ private fun FolderListContent(
     targetValue = if (hasEnoughItems) 1f else 0f,
     animationSpec =
       androidx.compose.animation.core.spring(
-        dampingRatio = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
-        stiffness = app.gyrolet.mpvrx.ui.theme.AppMotion.Effect.Alpha.stiffness,
+        dampingRatio = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.dampingRatio,
+        stiffness = app.infinity.mpvz.ui.theme.AppMotion.Effect.Alpha.stiffness,
       ),
     label = "scrollbarAlpha",
   )
@@ -1310,14 +1310,14 @@ private fun FolderListContent(
 @Composable
 private fun GridContent(
   folders: List<VideoFolder>,
-  foldersWithNewCount: List<app.gyrolet.mpvrx.ui.browser.folderlist.FolderWithNewCount>,
+  foldersWithNewCount: List<app.infinity.mpvz.ui.browser.folderlist.FolderWithNewCount>,
   pinnedFolderPaths: Set<String>,
   recentlyPlayedFilePath: String?,
   tapThumbnailToSelect: Boolean,
   navigationBarHeight: androidx.compose.ui.unit.Dp,
   gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
   scrollbarAlpha: Float,
-  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<VideoFolder, String>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<VideoFolder, String>,
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
   onTogglePin: (VideoFolder) -> Unit,
@@ -1331,7 +1331,7 @@ private fun GridContent(
   val recentlyPlayedParent = remember(recentlyPlayedFilePath) { recentlyPlayedFilePath?.let(::File)?.parent }
 
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val browserPreferences = org.koin.compose.koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
+    val browserPreferences = org.koin.compose.koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
     val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
     val folderGridColumnsPortrait by browserPreferences.folderGridColumnsPortrait.collectAsState()
     val folderGridColumnsLandscape by browserPreferences.folderGridColumnsLandscape.collectAsState()
@@ -1431,7 +1431,7 @@ private fun ListContent(
   navigationBarHeight: androidx.compose.ui.unit.Dp,
   listState: LazyListState,
   scrollbarAlpha: Float,
-  selectionManager: app.gyrolet.mpvrx.ui.browser.selection.SelectionManager<VideoFolder, String>,
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<VideoFolder, String>,
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
   onTogglePin: (VideoFolder) -> Unit,
@@ -1440,7 +1440,7 @@ private fun ListContent(
 ) {
   val configuration = androidx.compose.ui.platform.LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
-  val browserPreferences = org.koin.compose.koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
+  val browserPreferences = org.koin.compose.koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
   val dualPaneForTablet by browserPreferences.dualPaneForTablet.collectAsState()
   val isDualPaneActive = isTablet && dualPaneForTablet
   val newCountByBucketId =
@@ -1492,7 +1492,7 @@ private fun ListContent(
               {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_pinned),
+                    .stringResource(app.infinity.mpvz.R.string.ui_pinned),
                   style = MaterialTheme.typography.labelSmall,
                   modifier =
                     Modifier
@@ -1537,13 +1537,13 @@ private fun ListContent(
 private fun SearchResultsContent(
   searchResults: List<FileSystemItem>,
   navigationBarHeight: androidx.compose.ui.unit.Dp,
-  onFolderClick: (app.gyrolet.mpvrx.domain.media.model.VideoFolder) -> Unit,
-  onVideoClick: (app.gyrolet.mpvrx.domain.media.model.Video) -> Unit,
-  mediaLayoutMode: app.gyrolet.mpvrx.preferences.MediaLayoutMode,
+  onFolderClick: (app.infinity.mpvz.domain.media.model.VideoFolder) -> Unit,
+  onVideoClick: (app.infinity.mpvz.domain.media.model.Video) -> Unit,
+  mediaLayoutMode: app.infinity.mpvz.preferences.MediaLayoutMode,
 ) {
   val folders =
     searchResults.filterIsInstance<FileSystemItem.Folder>().map { folder ->
-      app.gyrolet.mpvrx.domain.media.model.VideoFolder(
+      app.infinity.mpvz.domain.media.model.VideoFolder(
         bucketId = folder.path, // Use path as bucketId since FileSystemItem.Folder doesn't have bucketId
         name = folder.name,
         path = folder.path,
@@ -1606,7 +1606,7 @@ private fun SearchResultsContent(
       )
     }
 
-  val isGridMode = mediaLayoutMode == app.gyrolet.mpvrx.preferences.MediaLayoutMode.GRID
+  val isGridMode = mediaLayoutMode == app.infinity.mpvz.preferences.MediaLayoutMode.GRID
 
   Box(modifier = Modifier.fillMaxSize()) {
     if (isGridMode) {
@@ -1737,7 +1737,7 @@ private suspend fun buildSearchIndex(
   val videosByFolder =
     folders.associate { folder ->
       folder.bucketId to
-        app.gyrolet.mpvrx.repository.MediaFileRepository
+        app.infinity.mpvz.repository.MediaFileRepository
           .getVideosInFolder(
             context,
             folder.bucketId,

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.preferences
+package app.infinity.mpvz.ui.preferences
 
 import android.content.Context
 import android.media.MediaCodecInfo
@@ -71,15 +71,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
-import app.gyrolet.mpvrx.ui.utils.popSafely
-import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
+import app.infinity.mpvz.R
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.icons.AppIcon
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import kotlinx.serialization.Serializable
 
 enum class CodecFilter {
@@ -785,7 +785,7 @@ object CodecCapabilitiesScreen : Screen {
         // Search Field & Filter Chips
         item {
           Column {
-            app.gyrolet.mpvrx.ui.components.InlineSearchBar(
+            app.infinity.mpvz.ui.components.InlineSearchBar(
               query = searchQuery,
               onQueryChange = { searchQuery = it },
               onSearch = {},

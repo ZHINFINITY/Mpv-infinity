@@ -2,15 +2,15 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-package app.gyrolet.mpvrx.ui.browser.components
+package app.infinity.mpvz.ui.browser.components
 
 import android.content.Context
 import android.widget.Toast
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
-import app.gyrolet.mpvrx.ui.player.PlaybackItem
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
+import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.PlaybackItem
+import app.infinity.mpvz.ui.player.PlaybackSession
 
 enum class QueueInsertion {
   PlayNext,

@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.recentlyplayed
+package app.infinity.mpvz.ui.browser.recentlyplayed
 
 import android.app.Application
 import android.net.Uri
@@ -17,14 +17,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.gyrolet.mpvrx.database.MpvRxDatabase
-import app.gyrolet.mpvrx.database.entities.RecentlyPlayedEntity
-import app.gyrolet.mpvrx.database.repository.PlaylistRepository
-import app.gyrolet.mpvrx.database.repository.VideoMetadataCacheRepository
-import app.gyrolet.mpvrx.domain.media.model.Video
-import app.gyrolet.mpvrx.domain.recentlyplayed.repository.RecentlyPlayedRepository
-import app.gyrolet.mpvrx.utils.permission.PermissionUtils
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
+import app.infinity.mpvz.database.MpvRxDatabase
+import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
+import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
+import app.infinity.mpvz.utils.permission.PermissionUtils
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -70,7 +70,7 @@ class RecentlyPlayedViewModel(
 
   private suspend fun loadRecentVideosFromEntities(
     allRecentEntities: List<RecentlyPlayedEntity>,
-    recentPlaylists: List<app.gyrolet.mpvrx.database.dao.RecentlyPlayedDao.RecentlyPlayedPlaylistInfo>,
+    recentPlaylists: List<app.infinity.mpvz.database.dao.RecentlyPlayedDao.RecentlyPlayedPlaylistInfo>,
   ) {
     try {
       val items = mutableListOf<RecentlyPlayedItem>()

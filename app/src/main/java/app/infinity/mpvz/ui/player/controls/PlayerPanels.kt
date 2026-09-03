@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls
+package app.infinity.mpvz.ui.player.controls
 
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
@@ -26,20 +26,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
-import app.gyrolet.mpvrx.ui.player.Panels
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.clip.ClipOverlayView
-import app.gyrolet.mpvrx.ui.player.controls.components.MpvConfigOwnedPanel
-import app.gyrolet.mpvrx.ui.player.controls.components.panels.AudioDelayPanel
-import app.gyrolet.mpvrx.ui.player.controls.components.panels.HdrScreenOutputPanel
-import app.gyrolet.mpvrx.ui.player.controls.components.panels.LuaScriptsPanel
-import app.gyrolet.mpvrx.ui.player.controls.components.panels.SubtitleDelayPanel
-import app.gyrolet.mpvrx.ui.player.controls.components.panels.SubtitleSettingsPanel
-import app.gyrolet.mpvrx.ui.player.controls.components.panels.VideoSettingsPanel
-import app.gyrolet.mpvrx.ui.utils.isAnyMpvOptionOwnedByConfig
-import app.gyrolet.mpvrx.ui.utils.isMpvOptionOwnedByConfig
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.clip.ClipOverlayView
+import app.infinity.mpvz.ui.player.controls.components.MpvConfigOwnedPanel
+import app.infinity.mpvz.ui.player.controls.components.panels.AudioDelayPanel
+import app.infinity.mpvz.ui.player.controls.components.panels.HdrScreenOutputPanel
+import app.infinity.mpvz.ui.player.controls.components.panels.LuaScriptsPanel
+import app.infinity.mpvz.ui.player.controls.components.panels.SubtitleDelayPanel
+import app.infinity.mpvz.ui.player.controls.components.panels.SubtitleSettingsPanel
+import app.infinity.mpvz.ui.player.controls.components.panels.VideoSettingsPanel
+import app.infinity.mpvz.ui.utils.isAnyMpvOptionOwnedByConfig
+import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 
 @Composable
 fun PlayerPanels(

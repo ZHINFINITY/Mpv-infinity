@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.sheets
+package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,12 +43,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.presentation.components.PlayerSheet
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.TrackNode
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.TrackNode
+import app.infinity.mpvz.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
@@ -255,7 +255,7 @@ fun SubtitlesSheet(
       title = {
         Text(
           androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.ui_translate_to),
+            .stringResource(app.infinity.mpvz.R.string.ui_translate_to),
         )
       },
       text = {
@@ -266,7 +266,7 @@ fun SubtitlesSheet(
             placeholder = {
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.gyrolet.mpvrx.R.string.ui_search_language),
+                  .stringResource(app.infinity.mpvz.R.string.ui_search_language),
               )
             },
             singleLine = true,
@@ -291,7 +291,7 @@ fun SubtitlesSheet(
               item {
                 Text(
                   androidx.compose.ui.res
-                    .stringResource(app.gyrolet.mpvrx.R.string.ui_no_languages_found),
+                    .stringResource(app.infinity.mpvz.R.string.ui_no_languages_found),
                   color = MaterialTheme.colorScheme.outline,
                   modifier = Modifier.padding(MaterialTheme.spacing.medium),
                 )
@@ -307,7 +307,7 @@ fun SubtitlesSheet(
         }) {
           Text(
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.generic_cancel),
+              .stringResource(app.infinity.mpvz.R.string.generic_cancel),
           )
         }
       },
@@ -374,7 +374,7 @@ fun SubtitlesSheet(
                 imageVector = Icons.RoundedFilled.Close,
                 contentDescription =
                   androidx.compose.ui.res.stringResource(
-                    app.gyrolet.mpvrx.R.string.ui_cancel_translation,
+                    app.infinity.mpvz.R.string.ui_cancel_translation,
                   ),
                 modifier = Modifier.size(20.dp),
               )
@@ -552,7 +552,7 @@ fun SubtitleTrackRow(
             Icons.RoundedFilled.Translate,
             contentDescription =
               androidx.compose.ui.res
-                .stringResource(app.gyrolet.mpvrx.R.string.ui_translate),
+                .stringResource(app.infinity.mpvz.R.string.ui_translate),
           )
         }
       }

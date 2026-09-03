@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls
+package app.infinity.mpvz.ui.player.controls
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
@@ -35,22 +35,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.PlayerButton
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.player.Panels
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import app.gyrolet.mpvrx.ui.player.Sheets
-import app.gyrolet.mpvrx.ui.player.VideoAspect
-import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
-import app.gyrolet.mpvrx.ui.player.controls.components.ControlsGroup
-import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonBorderColor
-import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContainerColor
-import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContentColor
-import app.gyrolet.mpvrx.ui.theme.controlColor
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.PlayerButton
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.Sheets
+import app.infinity.mpvz.ui.player.VideoAspect
+import app.infinity.mpvz.ui.player.controls.components.ControlsButton
+import app.infinity.mpvz.ui.player.controls.components.ControlsGroup
+import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
+import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
+import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
+import app.infinity.mpvz.ui.theme.controlColor
+import app.infinity.mpvz.ui.theme.spacing
 import dev.vivvvek.seeker.Segment
 
 @Composable
@@ -175,7 +175,7 @@ fun TopPlayerControlsPortrait(
         }
       }
 
-      val syncplayManager = org.koin.compose.koinInject<app.gyrolet.mpvrx.domain.syncplay.SyncplayManager>()
+      val syncplayManager = org.koin.compose.koinInject<app.infinity.mpvz.domain.syncplay.SyncplayManager>()
       val syncplayState by syncplayManager.state.collectAsState()
 
       androidx.compose.animation.AnimatedVisibility(
@@ -223,7 +223,7 @@ fun BottomPlayerControlsPortrait(
   aspect: VideoAspect,
   mediaTitle: String?,
   hideBackground: Boolean,
-  decoder: app.gyrolet.mpvrx.ui.player.Decoder,
+  decoder: app.infinity.mpvz.ui.player.Decoder,
   playbackSpeed: Float,
   onBackPress: () -> Unit,
   onOpenSheet: (Sheets) -> Unit,

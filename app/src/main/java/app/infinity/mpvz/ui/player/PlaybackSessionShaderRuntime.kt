@@ -7,9 +7,9 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player
+package app.infinity.mpvz.ui.player
 
-import app.gyrolet.mpvrx.domain.hdr.MpvShaderRuntime
+import app.infinity.mpvz.domain.hdr.MpvShaderRuntime
 
 /** Bridges the domain-layer shader pipeline contract onto the process-wide playback session. */
 object PlaybackSessionShaderRuntime : MpvShaderRuntime {

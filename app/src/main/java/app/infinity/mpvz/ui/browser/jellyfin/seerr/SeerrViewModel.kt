@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.browser.jellyfin.seerr
+package app.infinity.mpvz.ui.browser.jellyfin.seerr
 
 import android.app.Application
 import android.util.Log
@@ -15,15 +15,15 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import app.gyrolet.mpvrx.domain.seerr.JellyseerrRequest
-import app.gyrolet.mpvrx.domain.seerr.JellyseerrUser
-import app.gyrolet.mpvrx.domain.seerr.MediaDetails
-import app.gyrolet.mpvrx.domain.seerr.MediaStatus
-import app.gyrolet.mpvrx.domain.seerr.MediaType
-import app.gyrolet.mpvrx.domain.seerr.RequestStatus
-import app.gyrolet.mpvrx.domain.seerr.SearchResultItem
-import app.gyrolet.mpvrx.preferences.SeerrPreferences
-import app.gyrolet.mpvrx.repository.SeerrRepository
+import app.infinity.mpvz.domain.seerr.JellyseerrRequest
+import app.infinity.mpvz.domain.seerr.JellyseerrUser
+import app.infinity.mpvz.domain.seerr.MediaDetails
+import app.infinity.mpvz.domain.seerr.MediaStatus
+import app.infinity.mpvz.domain.seerr.MediaType
+import app.infinity.mpvz.domain.seerr.RequestStatus
+import app.infinity.mpvz.domain.seerr.SearchResultItem
+import app.infinity.mpvz.preferences.SeerrPreferences
+import app.infinity.mpvz.repository.SeerrRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -68,8 +68,8 @@ data class SeerrUiState(
   val isDetailLoading: Boolean = false,
   val isDetailSheetOpen: Boolean = false,
   val isRequesting: Boolean = false,
-  val radarrServers: List<app.gyrolet.mpvrx.domain.seerr.SeerrRadarrServer> = emptyList(),
-  val sonarrServers: List<app.gyrolet.mpvrx.domain.seerr.SeerrSonarrServer> = emptyList(),
+  val radarrServers: List<app.infinity.mpvz.domain.seerr.SeerrRadarrServer> = emptyList(),
+  val sonarrServers: List<app.infinity.mpvz.domain.seerr.SeerrSonarrServer> = emptyList(),
   val isLoadingServers: Boolean = false,
   val actionMessage: String? = null,
 )
@@ -431,7 +431,7 @@ class SeerrViewModel(
               } else {
                 s
               }
-            } ?: seasons?.map { app.gyrolet.mpvrx.domain.seerr.MediaInfoSeason(seasonNumber = it, status = MediaStatus.PROCESSING.value) },
+            } ?: seasons?.map { app.infinity.mpvz.domain.seerr.MediaInfoSeason(seasonNumber = it, status = MediaStatus.PROCESSING.value) },
           )
 
           _uiState.update { state ->

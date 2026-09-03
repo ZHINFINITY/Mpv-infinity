@@ -7,16 +7,16 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.repository
+package app.infinity.mpvz.repository
 
-import app.gyrolet.mpvrx.data.jellyfin.JellyfinClient
-import app.gyrolet.mpvrx.database.dao.JellyfinServerDao
-import app.gyrolet.mpvrx.database.entities.JellyfinServerEntity
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinAuthResult
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinItem
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.domain.jellyfin.JellyfinUser
-import app.gyrolet.mpvrx.utils.media.PlaybackSubtitleTrack
+import app.infinity.mpvz.data.jellyfin.JellyfinClient
+import app.infinity.mpvz.database.dao.JellyfinServerDao
+import app.infinity.mpvz.database.entities.JellyfinServerEntity
+import app.infinity.mpvz.domain.jellyfin.JellyfinAuthResult
+import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.domain.jellyfin.JellyfinUser
+import app.infinity.mpvz.utils.media.PlaybackSubtitleTrack
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -99,15 +99,15 @@ class JellyfinRepository(
     parentId: String? = null,
     artistIds: String? = null,
     searchTerm: String? = null,
-    sortBy: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.NAME,
-    sortOrder: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.ASCENDING,
+    sortBy: app.infinity.mpvz.domain.jellyfin.JellyfinSortBy = app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.NAME,
+    sortOrder: app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder = app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.ASCENDING,
     isPlayed: Boolean? = null,
     isFavorite: Boolean? = null,
     genres: String? = null,
     includeItemTypes: String? = null,
     startIndex: Int = 0,
     limit: Int = 100,
-  ): Result<app.gyrolet.mpvrx.domain.jellyfin.JellyfinQueryResult> =
+  ): Result<app.infinity.mpvz.domain.jellyfin.JellyfinQueryResult> =
     client.getItems(
       serverUrl = server.serverUrl,
       userId = server.userId,
@@ -128,12 +128,12 @@ class JellyfinRepository(
   suspend fun getArtists(
     server: JellyfinServer,
     parentId: String? = null,
-    sortBy: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortBy.NAME,
-    sortOrder: app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder = app.gyrolet.mpvrx.domain.jellyfin.JellyfinSortOrder.ASCENDING,
+    sortBy: app.infinity.mpvz.domain.jellyfin.JellyfinSortBy = app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.NAME,
+    sortOrder: app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder = app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.ASCENDING,
     startIndex: Int = 0,
     limit: Int = 500,
     albumArtistsOnly: Boolean = false,
-  ): Result<app.gyrolet.mpvrx.domain.jellyfin.JellyfinQueryResult> =
+  ): Result<app.infinity.mpvz.domain.jellyfin.JellyfinQueryResult> =
     client.getArtists(
       serverUrl = server.serverUrl,
       userId = server.userId,

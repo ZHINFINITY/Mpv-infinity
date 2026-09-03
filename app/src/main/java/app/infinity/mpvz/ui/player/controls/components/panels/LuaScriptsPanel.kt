@@ -7,7 +7,7 @@
  * (at your option) any later version.
  */
 
-package app.gyrolet.mpvrx.ui.player.controls.components.panels
+package app.infinity.mpvz.ui.player.controls.components.panels
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
@@ -29,18 +29,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.lua.LuaRuntimeStatusCard
-import app.gyrolet.mpvrx.ui.lua.LuaScriptToggleCard
-import app.gyrolet.mpvrx.ui.lua.LuaScriptsEmptyState
-import app.gyrolet.mpvrx.ui.lua.LuaScriptsLoadingState
-import app.gyrolet.mpvrx.ui.lua.LuaSelectionFootnote
-import app.gyrolet.mpvrx.ui.lua.rememberLuaScriptsCatalog
-import app.gyrolet.mpvrx.ui.theme.spacing
+import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.lua.LuaRuntimeStatusCard
+import app.infinity.mpvz.ui.lua.LuaScriptToggleCard
+import app.infinity.mpvz.ui.lua.LuaScriptsEmptyState
+import app.infinity.mpvz.ui.lua.LuaScriptsLoadingState
+import app.infinity.mpvz.ui.lua.LuaSelectionFootnote
+import app.infinity.mpvz.ui.lua.rememberLuaScriptsCatalog
+import app.infinity.mpvz.ui.theme.spacing
 import org.koin.compose.koinInject
 
 @Composable
@@ -94,7 +94,7 @@ fun LuaScriptsPanel(
         Text(
           text =
             androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.pref_section_scripts),
+              .stringResource(app.infinity.mpvz.R.string.pref_section_scripts),
           style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.weight(1f))
