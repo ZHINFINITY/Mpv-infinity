@@ -2230,6 +2230,9 @@ class PlayerActivity :
         // same delayed boundary used for the handoff seek so the visible MPV surface is live.
         delay(300L)
         if (playbackEngine == PlaybackEngine.MPV) {
+          // Native and MPV use different track identifiers. Re-select MPV's automatic audio
+          // track after a Native handoff so an invalid Native track id cannot leave MPV silent.
+          runCatching { PlaybackSession.setPropertyString("aid", "auto") }
           runCatching { PlaybackSession.setPropertyBoolean("pause", false) }
           if (resumePositionMs > 0L) {
             runCatching {
