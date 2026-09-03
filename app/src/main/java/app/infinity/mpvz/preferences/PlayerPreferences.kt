@@ -10,9 +10,13 @@
 package app.infinity.mpvz.preferences
 
 import app.infinity.mpvz.preferences.preference.DependentBooleanPreference
+
+/** Ambient visual mode for the player background. */
+enum class AmbientVisualMode {
+  OFF, SUBTLE, FULL
+}
 import app.infinity.mpvz.preferences.preference.PreferenceStore
 import app.infinity.mpvz.preferences.preference.getEnum
-import app.infinity.mpvz.ui.player.AmbientVisualMode
 import app.infinity.mpvz.ui.player.ControlsAnimationStyle
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.player.PlayerOrientation

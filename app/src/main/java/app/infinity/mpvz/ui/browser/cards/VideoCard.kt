@@ -75,7 +75,6 @@ data class VideoCardUiConfig(
   val showSizeChip: Boolean,
   val showResolutionChip: Boolean,
   val showFramerateInResolution: Boolean,
-  val showCodecSupportIndicator: Boolean,
   val showProgressBar: Boolean,
   val showDateChip: Boolean,
   val showUnplayedOldVideoLabel: Boolean,
@@ -97,7 +96,6 @@ fun rememberVideoCardUiConfig(): VideoCardUiConfig {
   val showSizeChipPref by browserPreferences.showSizeChip.collectAsState()
   val showResolutionChipPref by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolutionConfig by browserPreferences.showFramerateInResolution.collectAsState()
-  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showProgressBarConfig by browserPreferences.showProgressBar.collectAsState()
   val showDateChipConfig by browserPreferences.showDateChip.collectAsState()
   val showUnplayedOldVideoLabelConfig by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
@@ -113,7 +111,6 @@ fun rememberVideoCardUiConfig(): VideoCardUiConfig {
     showSizeChipPref,
     showResolutionChipPref,
     showFramerateInResolutionConfig,
-    showCodecSupportIndicator,
     showProgressBarConfig,
     showDateChipConfig,
     showUnplayedOldVideoLabelConfig,
@@ -129,7 +126,6 @@ fun rememberVideoCardUiConfig(): VideoCardUiConfig {
       showSizeChip = showSizeChipPref,
       showResolutionChip = showResolutionChipPref,
       showFramerateInResolution = showFramerateInResolutionConfig,
-      showCodecSupportIndicator = showCodecSupportIndicator,
       showProgressBar = showProgressBarConfig,
       showDateChip = showDateChipConfig,
       showUnplayedOldVideoLabel = showUnplayedOldVideoLabelConfig,
@@ -174,7 +170,6 @@ fun VideoCard(
   val showThumbnails = resolvedUiConfig.showThumbnails
   val thumbnailQuality = resolvedUiConfig.thumbnailQuality
   val showFramerateInResolution = resolvedUiConfig.showFramerateInResolution
-  val showCodecSupportIndicator = resolvedUiConfig.showCodecSupportIndicator
   val showProgressBar = resolvedUiConfig.showProgressBar
   val showDateChip = resolvedUiConfig.showDateChip
   val showUnplayedOldVideoLabel = resolvedUiConfig.showUnplayedOldVideoLabel
@@ -383,14 +378,6 @@ fun VideoCard(
               }
             }
 
-            if (showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()) {
-              CodecSupportIndicator(
-                video = video,
-                compact = true,
-                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
-              )
-            }
-
             // Duration overlay
             if (showDurationField) {
               Box(
@@ -475,9 +462,6 @@ fun VideoCard(
                 androidx.compose.foundation.layout.Arrangement
                   .spacedBy(4.dp),
             ) {
-              if (showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()) {
-                CodecSupportIndicator(video = video)
-              }
               if (showSubtitleIndicator && !video.isAudio) {
                 if (video.hasEmbeddedSubtitles && video.subtitleCodec.isNotBlank()) {
                   video.subtitleCodec.split(" ").forEach { codec ->
@@ -791,9 +775,6 @@ fun VideoCard(
                 androidx.compose.foundation.layout.Arrangement
                   .spacedBy(4.dp),
             ) {
-              if (showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()) {
-                CodecSupportIndicator(video = video)
-              }
               if (showSubtitleIndicator && !video.isAudio) {
                 if (video.hasEmbeddedSubtitles && video.subtitleCodec.isNotBlank()) {
                   video.subtitleCodec.split(" ").forEach { codec ->
@@ -882,48 +863,6 @@ fun VideoCard(
         }
       }
     }
-  }
-}
-
-@Composable
-private fun CodecSupportIndicator(
-  video: Video,
-  modifier: Modifier = Modifier,
-  compact: Boolean = false,
-) {
-  val support =
-    remember(video.videoCodec, video.videoCodecMimeType, video.width, video.height, video.fps) {
-      app.infinity.mpvz.utils.media.VideoCodecSupportInspector.inspect(
-        codecLabel = video.videoCodec,
-        mimeType = video.videoCodecMimeType,
-        width = video.width,
-        height = video.height,
-        frameRate = video.fps,
-      )
-    }
-  val statusLabel =
-    when (support.decodeSupport) {
-      app.infinity.mpvz.utils.media.VideoDecodeSupport.HARDWARE -> "HW"
-      app.infinity.mpvz.utils.media.VideoDecodeSupport.SOFTWARE -> "SW"
-      app.infinity.mpvz.utils.media.VideoDecodeSupport.UNSUPPORTED -> if (compact) "NO" else "Unsupported"
-      app.infinity.mpvz.utils.media.VideoDecodeSupport.UNKNOWN -> "Unknown"
-    }
-  Row(
-    modifier =
-      modifier
-        .clip(AppShapeScale.small)
-        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-        .padding(horizontal = if (compact) 6.dp else 8.dp, vertical = if (compact) 3.dp else 4.dp),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Text(
-      text = "${support.codecLabel} · $statusLabel",
-      style = MaterialTheme.typography.labelSmall,
-      fontWeight = FontWeight.Bold,
-      color = MaterialTheme.colorScheme.onSurface,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
-    )
   }
 }
 

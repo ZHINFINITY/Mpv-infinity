@@ -26,6 +26,9 @@ class PlaylistRepository(
   private val playlistDao: PlaylistDao,
   private val httpClient: OkHttpClient,
 ) {
+  companion object {
+    const val FAVORITES_PLAYLIST_NAME = "Favorites"
+  }
   // Playlist operations
   suspend fun createPlaylist(
     name: String,

@@ -1821,4 +1821,11 @@
   <string name="player_video_quality">Video Quality</string>
   <string name="player_video_quality_summary">Select the video track resolution</string>
   <string name="player_video_quality_button">Video quality</string>
+  <!-- Jellyfin -->
+  <string name="ui_jellyfin">Jellyfin</string>
+
+  <!-- Playlist favorites -->
+  <string name="playlist_favorite_songs">Favorite Songs</string>
+  <string name="playlist_favorite_videos">Favorite Videos</string>
+  <string name="playlist_online_badge">Online</string>
 </resources>

@@ -46,6 +46,7 @@ enum class NetworkProtocol(
 ) {
   SMB("SMB", 445),
   FTP("FTP", 21),
+  SFTP("SFTP", 22),
   WEBDAV("WebDAV", 80),
 }
 
