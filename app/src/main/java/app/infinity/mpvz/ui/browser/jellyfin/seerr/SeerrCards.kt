@@ -192,7 +192,7 @@ fun SeerrStatusChip(
   status: MediaStatus,
   modifier: Modifier = Modifier,
 ) {
-  val (bgColor, textColor, textRes) = when (status) {
+  val (bgColor, textColor, textRes): Triple<Color, Color, Int> = when (status) {
     MediaStatus.AVAILABLE -> Triple(
       Color(0xFF1B5E20).copy(alpha = 0.85f),
       Color(0xFFE8F5E9),
@@ -251,7 +251,7 @@ fun SeerrRequestStatusChip(
   status: RequestStatus,
   modifier: Modifier = Modifier,
 ) {
-  val (bgColor, textColor, textRes) = when (status) {
+  val (bgColor, textColor, textRes): Triple<Color, Color, Int> = when (status) {
     RequestStatus.COMPLETED -> Triple(
       Color(0xFF1B5E20).copy(alpha = 0.85f),
       Color(0xFFE8F5E9),

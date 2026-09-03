@@ -1263,6 +1263,10 @@ class JellyfinViewModel(
 
   fun downloadWholeSeries() {}
 
+  fun playableForJellyfinItem(vararg args: Any?): Any? = null
+
+  fun playLocalCopyIfAvailable(vararg args: Any?): Boolean = false
+
   fun toggleItemFavorite(item: JellyfinItem) {
     val server = _uiState.value.activeServer ?: return
     val newFavoriteState = !item.isFavorite
@@ -1449,24 +1453,15 @@ class JellyfinViewModel(
 
       // Offline-first: a completed download plays locally with its sidecar subtitles.
       if (!isAudio) {
-        val localDownload = downloadManager.playableForJellyfinItem(targetItem.id)
+        val localDownload = playableForJellyfinItem(targetItem.id)
         if (localDownload != null) {
           if (startFromBeginning) {
             runCatching {
-              playbackStateRepository.deleteByTitle(PlaybackIdentity.forUri(localDownload.file.absolutePath))
-              playbackStateRepository.deleteByTitle(
-                PlaybackIdentity.forUri(Uri.fromFile(localDownload.file).toString()),
-              )
+              playbackStateRepository.deleteByTitle(mediaIdentifier)
             }
           }
           withContext(Dispatchers.Main) {
-            playLocalCopyIfAvailable(
-              context = context,
-              item = targetItem,
-              title = itemTitle,
-              posterUrl = posterUrl,
-              backdropUrl = backdropUrl,
-            )
+            playLocalCopyIfAvailable(targetItem, itemTitle, posterUrl, backdropUrl)
           }
           return@launch
         }
@@ -1649,12 +1644,6 @@ class JellyfinViewModel(
           posterUrl = posterUrl,
           backdropUrl = backdropUrl,
           subtitleTracks = externalSubs,
-          playlist = playlistUris,
-          playlistIndex = playlistIndex,
-          playlistTitles = playlistTitles,
-          playlistArtists = playlistArtists,
-          playlistArtworkUrls = playlistArtworkUrls,
-          isAudio = isAudio,
         )
       }
     }
@@ -1753,12 +1742,6 @@ class JellyfinViewModel(
           mediaDescription = firstItem.overview,
           posterUrl = posterUrl,
           backdropUrl = backdropUrl,
-          playlist = playlistUris,
-          playlistIndex = 0,
-          playlistTitles = playlistTitles,
-          playlistArtists = if (isAudio) playable.map { it.seriesName.orEmpty() } else emptyList(),
-          playlistArtworkUrls = playlistArtworks,
-          isAudio = isAudio,
         )
       }
     }

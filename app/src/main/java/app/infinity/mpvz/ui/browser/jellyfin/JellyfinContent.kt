@@ -1189,8 +1189,8 @@ fun JellyfinContent(
       viewModel.toggleUnplayedOnly()
     },
     layoutMode = layoutMode,
-    onLayoutModeChange = { newMode ->
-      browserPreferences.jellyfinLayoutMode.set(newMode)
+    onLayoutModeChange = { _ ->
+      jellyfinLayoutMode
     },
   )
 

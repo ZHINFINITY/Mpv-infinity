@@ -367,7 +367,7 @@ class FolderListViewModel(
     calculateNewVideoCounts(_videoFolders.value)
   }
 
-  suspend fun renameFolder(vararg args: Any?) {}
+  fun renameFolder(folder: Any?, newName: String) {}
 
   suspend fun renameFolder(
     folder: VideoFolder,
