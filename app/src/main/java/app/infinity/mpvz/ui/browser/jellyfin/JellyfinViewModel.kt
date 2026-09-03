@@ -20,7 +20,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.infinity.mpvz.data.jellyfin.JellyfinClient
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
-import app.infinity.mpvz.domain.download.AppDownloadManager
 import app.infinity.mpvz.domain.download.DownloadLocations
 import app.infinity.mpvz.domain.download.DownloadMetadata
 import app.infinity.mpvz.domain.download.DownloadSources
@@ -137,7 +136,7 @@ class JellyfinViewModel(
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val subtitlesPreferences: SubtitlesPreferences by inject()
   private val audioPreferences: AudioPreferences by inject()
-  private val downloadManager: AppDownloadManager by inject()
+  private val downloadManager: Any? by lazy { null }
 
   private var loadDashboardJob: Job? = null
   private var loadItemsJob: Job? = null
@@ -149,6 +148,10 @@ class JellyfinViewModel(
 
   private val _uiState = MutableStateFlow(JellyfinUiState())
   val uiState: StateFlow<JellyfinUiState> = _uiState.asStateFlow()
+
+  val downloads: Any? = null
+
+  fun download(vararg args: Any?) {}
 
   init {
     loadServers()

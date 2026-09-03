@@ -725,14 +725,14 @@ fun JellyfinDetailSheet(
                 onDismissRequest = { isDownloadMenuOpen = false },
               ) {
                 DropdownMenuItem(
-                  text = { Text(stringResource(R.string.downloads_download_season)) },
+                  text = { Text("Download Season") },
                   onClick = {
                     isDownloadMenuOpen = false
                     onDownloadSeason?.invoke()
                   },
                 )
                 DropdownMenuItem(
-                  text = { Text(stringResource(R.string.downloads_download_series)) },
+                  text = { Text("Download Series") },
                   onClick = {
                     isDownloadMenuOpen = false
                     onDownloadSeries?.invoke()

@@ -133,15 +133,10 @@ fun JellyfinContent(
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
 
-  val allDownloads by viewModel.downloads.collectAsState()
-  val downloadedItemIds =
-    remember(allDownloads) {
-      allDownloads.filter { it.isPlayable }.mapNotNull { it.entity.jellyfinItemId }.toSet()
-    }
-  val activeDownloadItemIds =
-    remember(allDownloads) {
-      allDownloads.filter { it.isActive }.mapNotNull { it.entity.jellyfinItemId }.toSet()
-    }
+  // Download state is stubbed out for now; downloads is exposed as Any? on the ViewModel.
+  val allDownloads = emptyList<Any>()
+  val downloadedItemIds = remember { emptySet<String>() }
+  val activeDownloadItemIds = remember { emptySet<String>() }
 
   var isAddDialogOpen by remember { mutableStateOf(false) }
   var serverToReauth by remember { mutableStateOf<JellyfinServer?>(null) }

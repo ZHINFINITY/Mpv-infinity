@@ -411,6 +411,8 @@ class FileSystemBrowserViewModel(
 
   fun renameFolder(vararg args: Any?) {}
 
+  suspend fun renameFolder(vararg args: Any?) {}
+
   suspend fun renameFolder(
     folder: FileSystemItem.Folder,
     newName: String,

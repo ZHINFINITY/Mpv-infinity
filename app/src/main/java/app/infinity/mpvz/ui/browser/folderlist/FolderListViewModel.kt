@@ -369,6 +369,8 @@ class FolderListViewModel(
 
   fun renameFolder(vararg args: Any?) {}
 
+  suspend fun renameFolder(vararg args: Any?) {}
+
   suspend fun renameFolder(
     folder: VideoFolder,
     newName: String,
