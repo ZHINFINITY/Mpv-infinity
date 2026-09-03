@@ -409,8 +409,6 @@ class FileSystemBrowserViewModel(
 
   fun playFiles(files: List<Any>) {}
 
-  fun renameFolder(vararg args: Any?) {}
-
   suspend fun renameFolder(vararg args: Any?) {}
 
   suspend fun renameFolder(
