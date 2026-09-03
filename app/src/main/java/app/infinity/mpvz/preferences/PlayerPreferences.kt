@@ -13,7 +13,7 @@ import app.infinity.mpvz.preferences.preference.DependentBooleanPreference
 
 /** Ambient visual mode for the player background. */
 enum class AmbientVisualMode {
-  OFF, SUBTLE, FULL
+  OFF, SUBTLE, FULL, GLOW
 }
 import app.infinity.mpvz.preferences.preference.PreferenceStore
 import app.infinity.mpvz.preferences.preference.getEnum

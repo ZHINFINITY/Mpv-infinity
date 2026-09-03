@@ -1828,4 +1828,12 @@
   <string name="playlist_favorite_songs">Favorite Songs</string>
   <string name="playlist_favorite_videos">Favorite Videos</string>
   <string name="playlist_online_badge">Online</string>
+<string name="ui_beta_badge_suffix"> (Beta)</string>
+  <string name="seerr_discover">Discover</string>
+  <string name="queue_requires_playback">Playback must be active to modify queue</string>
+  <string name="queue_added_next">Added next to queue</string>
+  <string name="queue_added_end">Added to end of queue</string>
+  <string name="downloads_download">Download</string>
+  <string name="downloads_downloaded">Downloaded</string>
+  <string name="downloads_open_downloads">Open Downloads</string>
 </resources>

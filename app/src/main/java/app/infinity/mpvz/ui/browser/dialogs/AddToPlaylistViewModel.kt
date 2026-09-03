@@ -148,6 +148,8 @@ class AddToPlaylistViewModel :
     return video.id.toString()
   }
 
+  fun isProtectedPlaylist(name: String): Boolean = false
+
   private fun List<Video>.asPlaylistItems(): List<Pair<String, String>> =
     map { video -> video.path to video.displayName }
 }

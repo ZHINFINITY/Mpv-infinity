@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 /*
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
