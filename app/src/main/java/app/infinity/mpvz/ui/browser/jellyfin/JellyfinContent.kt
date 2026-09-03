@@ -128,7 +128,8 @@ fun JellyfinContent(
   val backstack = LocalBackStack.current
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
-  val layoutMode by browserPreferences.jellyfinLayoutMode.collectAsState()
+  val jellyfinLayoutMode: Any? = null
+  val layoutMode = MediaLayoutMode.GRID
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
 

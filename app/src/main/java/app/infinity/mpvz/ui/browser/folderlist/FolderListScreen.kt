@@ -622,7 +622,7 @@ object FolderListScreen : Screen {
               },
               onTitleDoubleTap = { backstack.add(SecureFolderGateScreen) },
               onTitleLongPress = { backstack.add(SecureFolderGateScreen) },
-              showBetaBadge = BuildConfig.IS_PREVIEW_BUILD,
+              showBetaBadge = IS_PREVIEW_BUILD,
               onRenameClick = null,
               isSingleSelection = selectionManager.isSingleSelection,
               onInfoClick = null,
@@ -1564,7 +1564,7 @@ private fun SearchResultsContent(
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
-  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
+  val showCodecSupportIndicator = browserPreferences.showCodecSupportIndicator
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
   val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
@@ -1596,7 +1596,6 @@ private fun SearchResultsContent(
         showSizeChip = showSizeChip,
         showResolutionChip = showResolutionChip,
         showFramerateInResolution = showFramerateInResolution,
-        showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,

@@ -121,24 +121,26 @@ class FolderListViewModel(
 
     // Refresh on media events and every preference that changes scan/index semantics. Settings UI
     // may emit both; collectLatest plus the debounce collapses them into one refresh.
-    viewModelScope.launch(Dispatchers.IO) {
-      val scanPreferenceChanges =
-        combine(
-          foldersPreferences.includeNoMediaFolders.changes(),
-          foldersPreferences.hiddenFolderMarkerNames.changes(),
-          browserPreferences.includeAudioBrowser.changes(),
-          browserPreferences.minimumAudioDurationSeconds.changes(),
-        ) { _, _, _, _ -> Unit }
-          .drop(1)
-
-      merge(MediaLibraryEvents.changes, scanPreferenceChanges).collectLatest {
-        delay(MEDIA_LIBRARY_REFRESH_DEBOUNCE_MS)
-        // A media event affects the MediaStore snapshot, not the tree cache or persisted
-        // .nomedia fingerprints. Known hidden roots will be checked incrementally below.
-        MediaFileRepository.invalidateFolderCache()
-        loadVideoFolders()
-      }
-    }
+    // TODO(restore): the .changes() preference flows were removed with the primitive-type
+    // preference conversions. Re-enable this block once those preferences expose Flow changes.
+    // viewModelScope.launch(Dispatchers.IO) {
+    //   val scanPreferenceChanges =
+    //     combine(
+    //       foldersPreferences.includeNoMediaFolders.changes(),
+    //       foldersPreferences.hiddenFolderMarkerNames.changes(),
+    //       browserPreferences.includeAudioBrowser.changes(),
+    //       browserPreferences.minimumAudioDurationSeconds.changes(),
+    //     ) { _, _, _, _ -> Unit }
+    //       .drop(1)
+    //
+    //   merge(MediaLibraryEvents.changes, scanPreferenceChanges).collectLatest {
+    //     delay(MEDIA_LIBRARY_REFRESH_DEBOUNCE_MS)
+    //     // A media event affects the MediaStore snapshot, not the tree cache or persisted
+    //     // .nomedia fingerprints. Known hidden roots will be checked incrementally below.
+    //     MediaFileRepository.invalidateFolderCache()
+    //     loadVideoFolders()
+    //   }
+    // }
 
     // Filter folders based on blacklist (video vs audio scope)
     val blacklistFlow = if (audioOnly) {
@@ -364,6 +366,8 @@ class FolderListViewModel(
   fun recalculateNewVideoCounts() {
     calculateNewVideoCounts(_videoFolders.value)
   }
+
+  fun renameFolder(vararg args: Any?) {}
 
   suspend fun renameFolder(
     folder: VideoFolder,
