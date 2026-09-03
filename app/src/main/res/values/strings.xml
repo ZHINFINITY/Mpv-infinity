@@ -1779,4 +1779,46 @@
   <string name="lyrics_source_embedded">Embedded</string>
   <string name="lyrics_source_online">Online</string>
   <string name="lyrics_source_local">Local (.lrc)</string>
+
+  <!-- yt-dlp Manager actions -->
+  <string name="ui_release_channel">Release Channel</string>
+  <string name="ui_automatic">Automatic</string>
+  <string name="ui_install_stable">Install Stable</string>
+  <string name="ui_update_stable">Update Stable</string>
+  <string name="ui_switch_to_stable">Switch to Stable</string>
+  <string name="ui_update_nightly">Update Nightly</string>
+  <string name="ui_switch_to_nightly">Switch to Nightly</string>
+
+  <!-- Ambient sheet -->
+  <string name="ambient_youtube_auto_hint">Ambient effects are controlled by the active YouTube Auto preset.</string>
+
+  <!-- Aspect ratio auto-crop -->
+  <string name="ui_auto_crop_black_bars">Auto Crop Black Bars</string>
+  <string name="ui_auto_crop_black_bars_managed">Managed by mpv.conf</string>
+  <string name="ui_auto_crop_black_bars_summary">Automatically crop black bars from the video</string>
+  <string name="ui_auto_crop_black_bars_analyzing">Analyzing…</string>
+  <string name="ui_auto_crop_black_bars_applied">Black bars cropped</string>
+  <string name="ui_auto_crop_black_bars_none">No black bars detected</string>
+  <string name="ui_auto_crop_black_bars_unsupported">Not supported for this video</string>
+  <string name="ui_auto_crop_black_bars_failed">Failed to detect black bars</string>
+
+  <!-- Lyrics translation -->
+  <string name="lyrics_translate_title">Translate</string>
+  <string name="lyrics_translation_off">Show original language without translation</string>
+  <string name="pref_lyrics_translation_category">Subtitle Translation</string>
+  <string name="pref_lyrics_auto_translate">Auto-Translate Lyrics</string>
+  <string name="pref_lyrics_auto_translate_summary">Translate synced lyrics to your preferred language</string>
+  <string name="pref_lyrics_target_language">Target Language</string>
+  <string name="pref_lyrics_display_mode">Display Mode</string>
+  <string name="lyrics_display_mode_off">Off</string>
+  <string name="lyrics_display_mode_replace">Replace Original</string>
+  <string name="lyrics_display_mode_bilingual">Bilingual</string>
+
+  <!-- Playlist sheet -->
+  <string name="save_queue_as_playlist">Save queue as playlist</string>
+
+  <!-- Video quality sheet -->
+  <string name="player_video_quality">Video Quality</string>
+  <string name="player_video_quality_summary">Select the video track resolution</string>
+  <string name="player_video_quality_button">Video quality</string>
 </resources>

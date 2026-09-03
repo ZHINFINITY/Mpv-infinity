@@ -163,8 +163,8 @@ fun LyricsTranslateDialog(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           FilterChip(
-            selected = displayMode == LyricsTranslationDisplayMode.DualLine,
-            onClick = { audioPreferences.lyricsTranslationDisplayMode.set(LyricsTranslationDisplayMode.DualLine) },
+            selected = displayMode == LyricsTranslationDisplayMode.BILINGUAL,
+            onClick = { audioPreferences.lyricsTranslationDisplayMode.set(LyricsTranslationDisplayMode.BILINGUAL) },
             label = { Text("Dual-Line", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
             modifier = Modifier.weight(1f),
             colors = FilterChipDefaults.filterChipColors(

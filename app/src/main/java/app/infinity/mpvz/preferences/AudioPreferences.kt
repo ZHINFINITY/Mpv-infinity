@@ -46,6 +46,12 @@ class AudioPreferences(
       parsed + missing
     },
   )
+  val lyricsAutoTranslate = preferenceStore.getBoolean("lyrics_auto_translate", false)
+  val lyricsTargetLanguage = preferenceStore.getString("lyrics_target_language")
+  val lyricsTranslationDisplayMode = preferenceStore.getEnum(
+    "lyrics_translation_display_mode",
+    LyricsTranslationDisplayMode.BILINGUAL,
+  )
 
   init {
     // Consolidate the old audio-only screen-lock switch into the single global setting.

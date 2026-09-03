@@ -165,7 +165,6 @@ private fun ZoomVideoSheet(
         onChange = onZoomChange,
         max = 3f,
         min = -1f,
-        enabled = zoomControlEnabled,
         modifier = Modifier.weight(1f),
       )
 

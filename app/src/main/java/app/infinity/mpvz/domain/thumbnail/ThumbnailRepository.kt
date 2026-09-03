@@ -21,6 +21,7 @@ import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.preferences.ThumbnailMode
+import app.infinity.mpvz.repository.NetworkRepository
 import `is`.xyz.mpv.FastThumbnails
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -66,6 +67,9 @@ class ThumbnailRepository(
     KoinJavaComponent.get<app.infinity.mpvz.preferences.BrowserPreferences>(
       app.infinity.mpvz.preferences.BrowserPreferences::class.java,
     )
+  }
+  private val networkRepository by lazy {
+    KoinJavaComponent.get<NetworkRepository>(NetworkRepository::class.java)
   }
 
   private val memoryCache: LruCache<String, Bitmap>
@@ -847,6 +851,22 @@ class ThumbnailRepository(
       _thumbnailReadyKeys.tryEmit(memKey)
       bitmap
     }
+
+  /**
+   * Retrieve a thumbnail for a raw network file path identified by a stored network connection id
+   * (used by playlist and M3U network sources). Resolves the [NetworkConnection] by id and
+   * delegates to [getThumbnailForNetworkPath], falling back to connection-less generation when the
+   * connection cannot be resolved.
+   */
+  suspend fun getThumbnailForNetworkSource(
+    connectionId: Long,
+    path: String,
+    widthPx: Int,
+    heightPx: Int,
+  ): Bitmap? {
+    val connection = runCatching { networkRepository.getConnectionById(connectionId) }.getOrNull()
+    return getThumbnailForNetworkPath(path, widthPx, heightPx, connection)
+  }
 
   private suspend fun getNonHttpNetworkThumbnail(
     path: String,

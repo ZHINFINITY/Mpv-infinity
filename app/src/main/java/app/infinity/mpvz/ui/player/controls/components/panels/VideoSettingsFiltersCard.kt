@@ -89,7 +89,6 @@ fun VideoSettingsFiltersCard(modifier: Modifier = Modifier) {
             },
             max = filter.max,
             min = filter.min,
-            enabled = filter.mpvProperty !in configOwnedOptions,
           )
         }
 
