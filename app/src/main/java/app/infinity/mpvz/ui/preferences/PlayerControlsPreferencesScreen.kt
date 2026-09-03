@@ -225,7 +225,7 @@ object PlayerControlsPreferencesScreen : Screen {
             PreferenceCard {
               SeekbarStyle.entries.forEachIndexed { index, style ->
                 ListItem(
-                  content = {
+                  headlineContent = {
                     Text(text = style.name)
                   },
                   supportingContent = {

@@ -110,7 +110,7 @@ fun AspectRatioSheet(
           else -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_summary
         }
       ListItem(
-        content = {
+        headlineContent = {
           Text(androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_auto_crop_black_bars))
         },
         supportingContent = { Text(androidx.compose.ui.res.stringResource(autoCropSummary)) },

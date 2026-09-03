@@ -495,45 +495,7 @@ fun JellyfinArtistsRowSection(
   }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun JellyfinMusicCard(
-  item: JellyfinItem,
-  server: JellyfinServer,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-  onLongClick: (() -> Unit)? = null,
-  cardWidth: Dp = 145.dp,
-) {
-  val imageUrl = remember(server.serverUrl, item.id, item.primaryImageTag, server.accessToken) {
-    JellyfinClient.getImageUrl(
-      serverUrl = server.serverUrl,
-      itemId = item.id,
-      imageTag = item.primaryImageTag,
-      maxWidth = 300,
-      token = server.accessToken,
-    )
-  }
-  val isArtist = item.type == "MusicArtist" || item.type == "Artist" || item.type == "AlbumArtist"
-  val subtitle = if (isArtist) "" else (item.seriesName ?: item.overview ?: "")
-
-  SharedMusicGridCard(
-    title = item.name,
-    subtitle = subtitle,
-    artworkUrl = if (!item.primaryImageTag.isNullOrBlank()) imageUrl else null,
-    fallbackIcon = when {
-      item.id == "virtual_favorites_playlist" || item.id == "favorites" -> Icons.RoundedFilled.Favorite
-      item.type == "MusicArtist" || item.type == "Artist" || item.type == "AlbumArtist" -> Icons.RoundedFilled.Person
-      item.type == "Playlist" -> Icons.RoundedFilled.QueueMusic
-      else -> Icons.RoundedFilled.Audiotrack
-    },
-    isCircular = item.type == "MusicArtist" || item.type == "Artist" || item.type == "AlbumArtist",
-    cardWidth = cardWidth,
-    onClick = onClick,
-    onLongClick = onLongClick,
-    modifier = modifier,
-  )
-}
+// JellyfinMusicCard is defined in JellyfinCards.kt
 
 @Composable
 fun JellyfinMusicGrid(
