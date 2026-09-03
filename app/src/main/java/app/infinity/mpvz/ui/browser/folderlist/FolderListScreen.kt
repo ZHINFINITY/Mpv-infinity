@@ -9,8 +9,6 @@
 
 package app.infinity.mpvz.ui.browser.folderlist
 
-private const val IS_PREVIEW_BUILD = false
-
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -147,6 +145,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 import java.io.File
+
+private const val IS_PREVIEW_BUILD = false
 
 @Serializable
 object FolderListScreen : Screen {
@@ -485,7 +485,7 @@ object FolderListScreen : Screen {
 
     var isPermissionSetupCompleted by androidx.compose.runtime.saveable.rememberSaveable {
       androidx.compose.runtime.mutableStateOf(
-        permissionState.status == PermissionStatus.Granted || browserPreferences.onboardingCompleted.get(),
+        permissionState.status == PermissionStatus.Granted || appearancePreferences.onboardingCompleted == true,
       )
     }
 

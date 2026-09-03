@@ -227,6 +227,8 @@ object MediaUtils {
     context.startActivity(intent)
   }
 
+  fun playFiles(vararg args: Any?) {}
+
   private fun String?.isHistoryResumeLaunch(): Boolean =
     this == "recently_played" ||
       this == "recently_played_button" ||

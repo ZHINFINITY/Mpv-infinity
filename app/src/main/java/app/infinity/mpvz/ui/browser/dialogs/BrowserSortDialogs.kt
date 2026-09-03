@@ -332,7 +332,7 @@ fun VideoSortDialog(
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
-  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
+  val showCodecSupportIndicator = browserPreferences.showCodecSupportIndicator
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
@@ -572,7 +572,7 @@ fun VideoSortDialog(
           VisibilityToggle(
             label = "Codec support",
             checked = showCodecSupportIndicator,
-            onCheckedChange = { browserPreferences.showCodecSupportIndicator.set(it) },
+            onCheckedChange = { browserPreferences.showCodecSupportIndicator = it },
           ),
         )
         add(
@@ -640,7 +640,7 @@ fun FileSystemSortDialog(
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
-  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
+  val showCodecSupportIndicator = browserPreferences.showCodecSupportIndicator
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
@@ -868,7 +868,7 @@ fun FileSystemSortDialog(
           VisibilityToggle(
             label = "Codec support",
             checked = showCodecSupportIndicator,
-            onCheckedChange = { browserPreferences.showCodecSupportIndicator.set(it) },
+            onCheckedChange = { browserPreferences.showCodecSupportIndicator = it },
           ),
         )
         add(
