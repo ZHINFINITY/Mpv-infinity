@@ -36,7 +36,7 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
 import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetState
+import app.infinity.mpvz.ui.utils.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
