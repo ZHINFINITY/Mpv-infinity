@@ -329,6 +329,14 @@ class PlayerActivity :
     nativeEngine.setSpeed(speed)
   }
 
+  override fun nativeSetZoom(zoom: Float) = nativeEngine.setZoom(zoom)
+
+  override fun nativeSetPan(x: Float, y: Float) = nativeEngine.setPan(x, y)
+
+  override fun nativeSetSubtitleScale(scale: Float) = nativeEngine.setSubtitleScale(scale)
+
+  override fun nativeSetSubtitlePosition(position: Int) = nativeEngine.setSubtitlePosition(position)
+
   override fun nativeSetVideoAspect(aspect: VideoAspect) {
     nativeEngine.setVideoAspect(aspect)
   }
@@ -703,6 +711,7 @@ class PlayerActivity :
             if (useNative) {
               nativeEngine.play(Uri.parse(currentUri), outgoingPositionMs, outgoingPlaying)
             } else if (mpvInitialized) {
+              nativeEngine.stop()
               loadPlaylistItem(playlistIndex.coerceAtLeast(0))
               engineHandoffJob = lifecycleScope.launch {
                 // MPV loads asynchronously; apply the captured handoff state after the new item is
@@ -1749,6 +1758,10 @@ class PlayerActivity :
    */
   private fun silenceAudioOnClose() {
     if (!mpvInitialized || isBackgroundPlaybackSessionActive) return
+    if (activeEngineMode == PlaybackEngineMode.NATIVE) {
+      nativeEngine.setPlaying(false)
+      nativeEngine.stop()
+    }
     // Pause synchronously to freeze the resume position at the close boundary. Muting as well
     // prevents Android AudioTrack/libmpv buffers from draining a short audible tail afterward.
     PlaybackSession.setPropertyBoolean("pause", true)

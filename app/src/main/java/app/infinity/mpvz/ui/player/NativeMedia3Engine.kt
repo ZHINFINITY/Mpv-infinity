@@ -12,6 +12,7 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.pow
 
 data class NativePlaybackSnapshot(
   val isPlaying: Boolean = false,
@@ -195,3 +196,23 @@ class NativeMedia3Engine(context: Context) {
     )
   }
 }
+  fun setZoom(zoom: Float) {
+    val scale = 2f.pow(zoom.coerceIn(-1f, 3f))
+    attachedView?.scaleX = scale
+    attachedView?.scaleY = scale
+  }
+
+  fun setPan(x: Float, y: Float) {
+    attachedView?.translationX = x
+    attachedView?.translationY = y
+  }
+
+  fun setSubtitleScale(scale: Float) {
+    attachedView?.subtitleView?.setFractionalTextSize((0.053f * scale.coerceIn(0.1f, 5f)).coerceIn(0.01f, 0.2f))
+  }
+
+  fun setSubtitlePosition(position: Int) {
+    attachedView?.subtitleView?.setBottomPaddingFraction(((100 - position.coerceIn(0, 100)) / 100f).coerceIn(0f, 1f))
+  }
+
+  fun play(uri: Uri, startPositionMs: Long = 0L, autoplay: Boolean = true) {

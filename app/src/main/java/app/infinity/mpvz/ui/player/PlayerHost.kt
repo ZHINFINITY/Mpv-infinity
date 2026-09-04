@@ -85,4 +85,12 @@ interface PlayerHost {
   fun nativeSetSpeed(speed: Float) {}
 
   fun nativeSetVideoAspect(aspect: VideoAspect) {}
+
+  fun nativeSetZoom(zoom: Float) {}
+
+  fun nativeSetPan(x: Float, y: Float) {}
+
+  fun nativeSetSubtitleScale(scale: Float) {}
+
+  fun nativeSetSubtitlePosition(position: Int) {}
 }

@@ -1093,7 +1093,7 @@ fun GestureHandler(
                     if (gestureStarted && initialDist > 0f) {
                       val currentSubScale = (initialSubScale * (dist / initialDist)).coerceIn(0.1f, 5.0f)
                       lastCalculatedSubScale = currentSubScale
-                      PlaybackSession.setPropertyFloat("sub-scale", currentSubScale)
+                      viewModel.setSubtitleScale(currentSubScale)
                       viewModel.playerUpdate.update { PlayerUpdates.SubtitleZoom(currentSubScale) }
                     }
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
