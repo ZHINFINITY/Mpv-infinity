@@ -4984,11 +4984,17 @@ class PlayerActivity :
     val saveIdentifier = activeSaveMediaIdentifier.ifBlank { mediaIdentifier }
     if (saveIdentifier.isBlank()) return null
 
+    val nativeSnapshot = nativeEngine.snapshot.value
+    val nativeEngineActive = isNativeEngineActive()
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
       mediaTitle = mediaTitle,
-      currentPosition = readMpvIntSeconds("time-pos", viewModel.pos ?: 0),
-      duration = readMpvIntSeconds("duration", viewModel.duration ?: 0),
+      currentPosition =
+        if (nativeEngineActive) nativeSnapshot.positionMs.toSecondsInt()
+        else readMpvIntSeconds("time-pos", viewModel.pos ?: 0),
+      duration =
+        if (nativeEngineActive) nativeSnapshot.durationMs.toSecondsInt()
+        else readMpvIntSeconds("duration", viewModel.duration ?: 0),
       isPositionRestorePending =
         PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
       playbackSpeed = PlaybackSession.getPropertyDouble("speed") ?: DEFAULT_PLAYBACK_SPEED,
@@ -5012,6 +5018,8 @@ class PlayerActivity :
         ?: PlaybackSession.getPropertyInt(property)
         ?: fallback
     }.getOrDefault(fallback)
+
+  private fun Long.toSecondsInt(): Int = (this.coerceAtLeast(0L) / 1000L).toInt()
 
   /**
    * Loads and applies saved playback state from the database.

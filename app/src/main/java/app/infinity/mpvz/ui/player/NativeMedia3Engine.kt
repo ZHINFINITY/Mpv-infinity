@@ -350,7 +350,9 @@ class NativeMedia3Engine(context: Context) {
         group.getTrackFormat(index).metadata?.let { metadata ->
           (0 until metadata.length()).map { metadata.get(it) }
         }.orEmpty().mapNotNull { entry ->
-          if (entry.javaClass.simpleName != "Chapter") return@mapNotNull null
+          if (!entry.javaClass.simpleName.contains("chapter", ignoreCase = true)) {
+            return@mapNotNull null
+          }
           val startUs = runCatching {
             entry.javaClass.getMethod("getStartTimeUs").invoke(entry) as Number
           }.getOrNull() ?: return@mapNotNull null
