@@ -68,6 +68,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.net.toUri
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
@@ -75,6 +77,7 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.presentation.crash.CrashActivity.Companion.collectDeviceInfo
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.update.UpdateViewModel
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
@@ -98,6 +101,12 @@ object AboutScreen : Screen {
         ?: BuildConfig.VERSION_NAME
     val buildType = BuildConfig.BUILD_TYPE
     val githubRepoUrl = stringResource(R.string.github_repo_url)
+    val updateViewModel: UpdateViewModel? =
+      if (BuildConfig.ENABLE_UPDATE_FEATURE) {
+        (context as? ComponentActivity)?.let { viewModel(it) }
+      } else {
+        null
+      }
     val settingsScrollState = rememberScrollState()
     val settingsHighlight =
       rememberSettingsSearchHighlight(AboutScreen, settingsScrollState, MaterialTheme.colorScheme.primary)
@@ -223,6 +232,16 @@ object AboutScreen : Screen {
                     )
                   }
                 }
+              }
+
+              Spacer(modifier = Modifier.height(12.dp))
+              Button(
+                onClick = { updateViewModel?.checkForUpdate(manual = true) },
+                enabled = updateViewModel != null,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+              ) {
+                Text("Check for Updates")
               }
 
               Spacer(modifier = Modifier.height(20.dp))
@@ -385,7 +404,7 @@ object AboutScreen : Screen {
                       SafeClipboard.copyPlainText(
                         context = context,
                         label = "Mpv∞_support_link",
-                        text = "https://github.com/ZHINFINITY/Mpv-infinity",
+                        text = "https://ko-fi.com/ZHINFINITY",
                         showToast = false,
                       )
                       Toast
@@ -406,12 +425,9 @@ object AboutScreen : Screen {
                     style = MaterialTheme.typography.labelSmall,
                     color = cs.outline,
                   )
-                  Spacer(Modifier.height(2.dp))
+                  Spacer(Modifier.height(12.dp))
                   Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_zhinfinity_github,
-                      ),
+                    text = "https://ko-fi.com/ZHINFINITY",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     color = cs.onSurface,
@@ -435,7 +451,7 @@ object AboutScreen : Screen {
                   val supportIntent =
                     Intent(
                       Intent.ACTION_VIEW,
-                      "https://github.com/ZHINFINITY/Mpv-infinity".toUri(),
+                      "https://ko-fi.com/ZHINFINITY".toUri(),
                     )
                   context.startActivity(supportIntent)
                 } catch (_: Exception) {
@@ -464,6 +480,26 @@ object AboutScreen : Screen {
                 fontWeight = FontWeight.SemiBold,
               )
             }
+            Spacer(Modifier.height(10.dp))
+            Text(
+              text = "UPI: zhjjk001-1@oksbi",
+              style = MaterialTheme.typography.bodyMedium,
+              color = cs.onSurfaceVariant,
+              modifier = Modifier.clickable {
+                SafeClipboard.copyPlainText(context, "Mpv∞_upi", "zhjjk001-1@oksbi", showToast = true)
+              },
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+              text = "PayPal: paypal.me/InfinityxEternity",
+              style = MaterialTheme.typography.bodyMedium,
+              color = cs.onSurfaceVariant,
+              modifier = Modifier.clickable {
+                runCatching {
+                  context.startActivity(Intent(Intent.ACTION_VIEW, "https://paypal.me/InfinityxEternity".toUri()))
+                }
+              },
+            )
           }
         }
 

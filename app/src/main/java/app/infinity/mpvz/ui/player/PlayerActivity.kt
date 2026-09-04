@@ -193,6 +193,8 @@ class PlayerActivity :
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
   private val nativeEngine by lazy { NativeMedia3Engine(this) }
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
+  private var activeEngineMode = PlaybackEngineMode.MPV
+  private var engineHandoffJob: Job? = null
 
   /**
    * Observer for MPV events.
@@ -664,19 +666,47 @@ class PlayerActivity :
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         decoderPreferences.playbackEngine.changes().collect { engine ->
+          if (engine == activeEngineMode) return@collect
+          engineHandoffJob?.cancel()
+          val outgoingEngine = activeEngineMode
+          val outgoingPositionMs =
+            if (outgoingEngine == PlaybackEngineMode.NATIVE) {
+              nativeEngine.snapshot.value.positionMs
+            } else {
+              ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
+            }.coerceAtLeast(0L)
+          val outgoingPlaying =
+            if (outgoingEngine == PlaybackEngineMode.NATIVE) {
+              nativeEngine.snapshot.value.isPlaying
+            } else {
+              PlaybackSession.getPropertyBoolean("pause") == false
+            }
+
+          // Freeze the outgoing renderer before changing surfaces. This prevents both engines from
+          // decoding the same item during the handoff and makes the captured state authoritative.
+          if (outgoingEngine == PlaybackEngineMode.NATIVE) {
+            nativeEngine.setPlaying(false)
+          } else if (mpvInitialized) {
+            PlaybackSession.setPropertyBoolean("pause", true)
+          }
+
+          activeEngineMode = engine
           val useNative = engine == PlaybackEngineMode.NATIVE
           binding.media3Player.visibility = if (useNative) View.VISIBLE else View.GONE
           binding.player.visibility = if (useNative) View.GONE else View.VISIBLE
           val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
           if (currentUri != null && isReady) {
             if (useNative) {
-              nativeEngine.play(
-                Uri.parse(currentUri),
-                startPositionMs = nativeEngine.currentPlayer.currentPosition,
-                autoplay = nativeEngine.currentPlayer.isPlaying,
-              )
+              nativeEngine.play(Uri.parse(currentUri), outgoingPositionMs, outgoingPlaying)
             } else if (mpvInitialized) {
               loadPlaylistItem(playlistIndex.coerceAtLeast(0))
+              engineHandoffJob = lifecycleScope.launch {
+                // MPV loads asynchronously; apply the captured handoff state after the new item is
+                // ready, overriding any stale position or pause value from the previous session.
+                delay(350L)
+                PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
+                PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
+              }
             }
           }
         }
@@ -689,11 +719,17 @@ class PlayerActivity :
         nativeEngine.snapshot.value.subtitleTracks.getOrNull(id - 1)?.let(nativeEngine::selectTrack)
       }
     }
+    viewModel.setNativeAudioToggleListener { id ->
+      if (id <= -1001) {
+        nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let(nativeEngine::selectTrack)
+      }
+    }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        nativeEngine.snapshot.collect { snapshot ->
-          viewModel.setNativeSubtitleTracks(snapshot.subtitleTracks)
-        }
+                  nativeEngine.snapshot.collect { snapshot ->
+            viewModel.setNativeTracks(snapshot)
+          }
+
       }
     }
     setupSystemBarsAutoHide()

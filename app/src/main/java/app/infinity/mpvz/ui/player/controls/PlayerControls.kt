@@ -585,7 +585,7 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    if (statisticsPage == 6) {
+    if (statisticsPage in 1..2 || statisticsPage == 6) {
       val statsModifier =
         Modifier
           .align(Alignment.TopStart)
@@ -595,8 +595,8 @@ fun PlayerControls(
             ),
           ).padding(top = 16.dp, start = 14.dp)
       if (activity?.isNativeEngineActive() == true) {
-        NativeStatsPageOverlay(snapshot = nativeSnapshot, modifier = statsModifier)
-      } else {
+        NativeStatsPageOverlay(page = statisticsPage, snapshot = nativeSnapshot, modifier = statsModifier)
+      } else if (statisticsPage == 6) {
         CustomStatsPageSixOverlay(viewModel = viewModel, modifier = statsModifier)
       }
     }
@@ -2050,6 +2050,7 @@ private fun readProcessMemorySnapshot(): ProcessMemorySnapshot {
 
 @Composable
 private fun NativeStatsPageOverlay(
+  page: Int,
   snapshot: NativePlaybackSnapshot,
   modifier: Modifier = Modifier,
 ) {
@@ -2065,13 +2066,20 @@ private fun NativeStatsPageOverlay(
     shape = MaterialTheme.shapes.medium,
   ) {
     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-      Text("Native statistics", style = MaterialTheme.typography.titleSmall, color = Color.White)
+      Text("Native statistics — Page ${page.coerceIn(1, 2)}", style = MaterialTheme.typography.titleSmall, color = Color.White)
       Text("Engine: Native", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Video: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Output bitrate: $bitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Audio: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Subtitles: ${snapshot.subtitleTracks.size} embedded track(s)", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      if (page == 1) {
+        Text("Video output: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Output bitrate: $bitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Duration: ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      } else {
+        Text("Audio: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Channels: ${snapshot.audioChannels}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Sample rate: ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Embedded audio tracks: ${snapshot.audioTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Embedded subtitles: ${snapshot.subtitleTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      }
     }
   }
 }
