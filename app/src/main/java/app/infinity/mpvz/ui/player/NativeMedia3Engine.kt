@@ -354,10 +354,14 @@ class NativeMedia3Engine(context: Context) {
             return@mapNotNull null
           }
           val startUs = runCatching {
-            entry.javaClass.getMethod("getStartTimeUs").invoke(entry) as Number
+            entry.javaClass.methods.firstOrNull { it.name == "getStartTimeUs" }?.invoke(entry) as? Number
+          }.getOrNull() ?: runCatching {
+            entry.javaClass.getDeclaredField("startTimeUs").apply { isAccessible = true }.get(entry) as Number
           }.getOrNull() ?: return@mapNotNull null
           val title = runCatching {
-            entry.javaClass.getMethod("getTitle").invoke(entry) as? String
+            entry.javaClass.methods.firstOrNull { it.name == "getTitle" }?.invoke(entry) as? String
+          }.getOrNull() ?: runCatching {
+            entry.javaClass.getDeclaredField("title").apply { isAccessible = true }.get(entry) as? String
           }.getOrNull().orEmpty().ifBlank { "Chapter ${index + 1}" }
           NativeChapter(title, (startUs.toLong() / 1_000_000f).coerceAtLeast(0f))
         }
