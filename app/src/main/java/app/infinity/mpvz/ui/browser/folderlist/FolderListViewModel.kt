@@ -372,6 +372,14 @@ class FolderListViewModel(
 
   fun setFolderWatched(folder: VideoFolder, watched: Boolean) {
     folderWatchedOverrides.value = folderWatchedOverrides.value + (folder.bucketId to watched)
+    _foldersWithNewCount.value =
+      _foldersWithNewCount.value.map { entry ->
+        if (entry.folder.bucketId == folder.bucketId) {
+          entry.copy(newVideoCount = if (watched) 0 else folder.videoCount)
+        } else {
+          entry
+        }
+      }
     calculateNewVideoCounts(_videoFolders.value)
     viewModelScope.launch(Dispatchers.IO) {
       val videos = MediaFileRepository.getVideosInFolder(getApplication(), folder.bucketId)
