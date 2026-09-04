@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
@@ -202,8 +203,11 @@ class NativeMedia3Engine(context: Context) {
     publishSnapshot()
   }
 
-  fun setSpeed(speed: Float) {
-    player.setPlaybackSpeed(speed.coerceIn(0.25f, 4f))
+  fun setSpeed(speed: Float, pitchCorrection: Boolean = true) {
+    val clampedSpeed = speed.coerceIn(0.25f, 4f)
+    player.setPlaybackParameters(
+      PlaybackParameters(clampedSpeed, if (pitchCorrection) 1f else clampedSpeed),
+    )
     publishSnapshot()
   }
 

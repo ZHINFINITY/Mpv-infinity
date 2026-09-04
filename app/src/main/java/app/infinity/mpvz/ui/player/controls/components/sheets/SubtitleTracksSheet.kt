@@ -428,6 +428,18 @@ fun SubtitlesSheet(
           Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
           Switch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
         }
+        Text(
+          text =
+            if (configuredLanguages.isEmpty()) {
+              "Target language: choose one in AI Integration"
+            } else {
+              "Target language: " +
+                configuredLanguages.joinToString(", ") { codeToName[it] ?: it.uppercase() }
+            },
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.outline,
+          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
+        )
       }
       LazyColumn {
         items(

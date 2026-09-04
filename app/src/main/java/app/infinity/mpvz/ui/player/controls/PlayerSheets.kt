@@ -177,6 +177,8 @@ fun PlayerSheets(
       val subtitleGenerationStatus by viewModel.subtitleGenerationStatus.composeCollectAsState()
       val aiPreferences = koinInject<app.infinity.mpvz.preferences.AiPreferences>()
       val aiEnabled by aiPreferences.enabled.collectAsState()
+      val translationProvider by aiPreferences.embeddedSubtitleTranslationProvider.collectAsState()
+      val embeddedTranslationAvailable = aiEnabled || translationProvider == "Google Translate"
       val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
       val translationEnabled by aiPreferences.subtitleTranslationEnabled.collectAsState()
       val autoTranslateLanguages by aiPreferences.autoTranslateLanguages.collectAsState()
@@ -201,7 +203,7 @@ fun PlayerSheets(
         isTranslating = isTranslating,
         translationProgress = translationProgress,
         translationStatus = translationStatus,
-        translationEnabled = aiEnabled && translationEnabled,
+        translationEnabled = embeddedTranslationAvailable && translationEnabled,
         onToggleTranslation = { aiPreferences.subtitleTranslationEnabled.set(!translationEnabled) },
         isGeneratingSubtitles = isGeneratingSubtitles,
         subtitleGenerationProgress = subtitleGenerationProgress,
@@ -209,7 +211,7 @@ fun PlayerSheets(
         translatingTrackId = translatingTrackId,
         translatingTrackName = translatingTrackName,
         autoTranslateLanguages = autoTranslateLanguages,
-        aiEnabled = aiEnabled,
+        aiEnabled = embeddedTranslationAvailable,
         realtimeSubsEnabled = realtimeSubsEnabled,
         subtitlesOff = subtitlesOff,
         onDisableSubtitles = {
