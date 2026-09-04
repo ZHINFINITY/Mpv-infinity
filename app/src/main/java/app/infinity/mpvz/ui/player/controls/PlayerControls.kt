@@ -1704,6 +1704,13 @@ fun PlayerControls(
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
 
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
             SeekbarWithTimers(
               position = displayedSeekbarPosition,
               committedPosition = displayedSeekbarPosition,
@@ -1739,6 +1746,7 @@ fun PlayerControls(
               bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
               isPortrait = isPortrait,
             )
+            }
           }
 
           AnimatedVisibility(

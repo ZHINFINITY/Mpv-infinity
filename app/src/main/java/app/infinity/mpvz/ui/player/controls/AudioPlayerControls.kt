@@ -1575,6 +1575,13 @@ fun AudioPlayerControls(
       val currentPosSec = if (precisePosition > 0f) precisePosition else position?.toFloat() ?: 0f
       val isPaused = paused ?: false
 
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .clip(RoundedCornerShape(16.dp))
+          .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+          .padding(horizontal = 10.dp, vertical = 6.dp),
+      ) {
       SeekbarWithTimers(
         position = currentPosSec,
         committedPosition = currentPosSec,
@@ -1600,6 +1607,7 @@ fun AudioPlayerControls(
         applyHorizontalPadding = false,
         modifier = Modifier.fillMaxWidth(),
       )
+      }
     }
 
     val playbackControlsRow = @Composable {
