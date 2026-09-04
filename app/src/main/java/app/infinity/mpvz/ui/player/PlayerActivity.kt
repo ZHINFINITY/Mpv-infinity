@@ -332,7 +332,7 @@ class PlayerActivity :
   }
 
   override fun nativeSetSpeed(speed: Float) {
-    nativeEngine.setSpeed(speed)
+    nativeEngine.setSpeed(speed, audioPreferences.audioPitchCorrection.get())
   }
 
   override fun nativeSetZoom(zoom: Float) = nativeEngine.setZoom(zoom)
@@ -1638,7 +1638,10 @@ class PlayerActivity :
     Log.d(TAG, "PlayerActivity onDestroy")
     val ownsPlaybackSession = ownsPlaybackSession()
     val playbackWasInitialized = mpvInitialized
-    if (ownsPlaybackSession && playbackWasInitialized && wasInPipMode && !isChangingConfigurations) {
+    val nativeWasActive =
+      activeEngineMode == PlaybackEngineMode.NATIVE &&
+        (nativeEngine.currentPlayer.isPlaying || nativeEngine.snapshot.value.isReady)
+    if (ownsPlaybackSession && (playbackWasInitialized || nativeWasActive) && wasInPipMode && !isChangingConfigurations) {
       commitPipDismissal()
     }
     val pipDismissalCommitted = handledPipDismissal
@@ -1656,6 +1659,10 @@ class PlayerActivity :
       if (::castPlaybackController.isInitialized) castPlaybackController.release()
       cancelSystemBarsAutoHide()
       if (playbackWasInitialized && ownsPlaybackSession) saveVideoPlaybackState(fileName, immediate = true)
+      if (!keepBackgroundPlaybackAlive && nativeWasActive) {
+        nativeEngine.setPlaying(false)
+        nativeEngine.stop()
+      }
       nativeEngine.release()
       if (playbackWasInitialized && ownsPlaybackSession && !keepBackgroundPlaybackAlive) {
         reportJellyfinStop()
@@ -1841,8 +1848,11 @@ class PlayerActivity :
    */
   private fun silenceAudioOnClose() {
     if (isBackgroundPlaybackSessionActive) return
-    if (!mpvInitialized && activeEngineMode != PlaybackEngineMode.NATIVE) return
-    if (activeEngineMode == PlaybackEngineMode.NATIVE) {
+    val nativeActive =
+      activeEngineMode == PlaybackEngineMode.NATIVE ||
+        decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE
+    if (!mpvInitialized && !nativeActive) return
+    if (nativeActive) {
       nativeEngine.setPlaying(false)
       nativeEngine.stop()
     }
@@ -5773,6 +5783,7 @@ class PlayerActivity :
     ensureCurrentMediaRequest(requestGeneration)
     if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE && !requiresYtdlp) {
       withContext(Dispatchers.Main) {
+        activeEngineMode = PlaybackEngineMode.NATIVE
         binding.player.visibility = View.GONE
         binding.media3Player.visibility = View.VISIBLE
         nativeEngine.play(

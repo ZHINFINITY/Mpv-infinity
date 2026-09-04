@@ -24,7 +24,7 @@ data class SyncplayCredentials(
   companion object {
     const val DEFAULT_HOST = "syncplay.pl"
     const val DEFAULT_PORT = 8999
-    const val DEFAULT_USERNAME = "MpvRxUser"
+    const val DEFAULT_USERNAME = "Mpv∞user"
     const val DEFAULT_ROOM = "TestRoom"
   }
 }
@@ -42,6 +42,7 @@ class SyncplayCredentialsStore(
       port = preferences.getInt(KEY_PORT, SyncplayCredentials.DEFAULT_PORT),
       username =
         preferences.getString(KEY_USERNAME, SyncplayCredentials.DEFAULT_USERNAME)
+          ?.takeUnless { it == "MpvRxUser" }
           ?: SyncplayCredentials.DEFAULT_USERNAME,
       room =
         preferences.getString(KEY_ROOM, SyncplayCredentials.DEFAULT_ROOM)
