@@ -170,7 +170,7 @@ internal object RemoteImageLoader {
         Request
           .Builder()
           .url(httpUrl)
-          .header("User-Agent", "Mozilla/5.0 (Android) Mpv∞")
+          .header("User-Agent", "Mozilla/5.0 (Android) MpvInfinity")
           .apply { if (host.isNotBlank()) header("Referer", "https://$host") }
           .build()
       }.getOrNull() ?: return null

@@ -105,7 +105,7 @@ class SeerrRepository(
       }
       val request = Request.Builder()
         .url(cleanUrl)
-        .header("User-Agent", "Mpv∞ Android")
+        .header("User-Agent", "MpvInfinity Android")
         .get()
         .build()
       shortClient.newCall(request).awaitResponse().use { it.isSuccessful }
@@ -143,7 +143,7 @@ class SeerrRepository(
 
     val requestBuilder = Request.Builder()
       .url(httpUrlBuilder.build())
-      .header("User-Agent", "Mpv∞ Android")
+        .header("User-Agent", "MpvInfinity Android")
 
     val apiKey = preferences.apiKey.get().trim()
     if (apiKey.isNotBlank()) {

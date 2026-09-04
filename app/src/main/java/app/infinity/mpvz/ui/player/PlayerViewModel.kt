@@ -4511,6 +4511,12 @@ class PlayerViewModel : ViewModel(),
 
   fun isNativePlaying(): Boolean = host.isNativePlaying()
 
+  fun isNativeEngineActive(): Boolean = host.isNativeEngineActive()
+
+  fun activePlaybackSpeed(): Float =
+    if (host.isNativeEngineActive()) host.nativePlaybackSpeed()
+    else PlaybackSession.getPropertyFloat("speed") ?: 1f
+
   private fun syncSubtitleLayout(primaryPosition: Int = subtitlesPreferences.subPos.get()) {
     applySubtitleLayout(primaryPosition, subtitlesPreferences.overrideAssSubs.get())
   }

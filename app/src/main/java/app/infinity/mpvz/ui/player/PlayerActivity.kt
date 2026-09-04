@@ -308,6 +308,9 @@ class PlayerActivity :
   override fun isNativePlaying(): Boolean =
     isNativeEngineActive() && nativeEngine.currentPlayer.isPlaying
 
+  override fun nativePlaybackSpeed(): Float =
+    nativeEngine.currentPlayer.playbackParameters.speed
+
   override fun nativePauseUnpause() {
     nativeEngine.setPlaying(!nativeEngine.currentPlayer.isPlaying)
   }
@@ -685,6 +688,39 @@ class PlayerActivity :
       borderSize = subtitlesPreferences.borderSize.get(),
       fontSize = subtitlesPreferences.fontSize.get(),
     )
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        combine(
+          subtitlesPreferences.textColor.changes(),
+          subtitlesPreferences.backgroundColor.changes(),
+          subtitlesPreferences.borderColor.changes(),
+          subtitlesPreferences.borderSize.changes(),
+          subtitlesPreferences.fontSize.changes(),
+        ) { textColor, backgroundColor, borderColor, borderSize, fontSize ->
+          listOf(textColor, backgroundColor, borderColor, borderSize, fontSize)
+        }.collect { values ->
+          nativeEngine.setSubtitleStyle(
+            textColor = values[0],
+            backgroundColor = values[1],
+            borderColor = values[2],
+            borderSize = values[3],
+            fontSize = values[4],
+          )
+        }
+      }
+    }
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        combine(
+          subtitlesPreferences.subScale.changes(),
+          subtitlesPreferences.subPos.changes(),
+        ) { scale, position -> scale to position }
+          .collect { (scale, position) ->
+            nativeEngine.setSubtitleScale(scale)
+            nativeEngine.setSubtitlePosition(position)
+          }
+      }
+    }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         decoderPreferences.playbackEngine.changes().collect { engine ->
