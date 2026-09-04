@@ -14,7 +14,6 @@ import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.extractor.metadata.matroska.Chapter
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -422,17 +421,11 @@ class NativeMedia3Engine(context: Context) {
   private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =
     (0 until metadata.length()).mapNotNull { index ->
       val entry = metadata.get(index)
-      if (entry is Chapter) {
-        val startTimeMs = entry.getStartTimeMs()
-        if (startTimeMs == C.TIME_UNSET || startTimeMs < 0L) return@mapNotNull null
-        val title = entry.getTitle()?.value?.trim().orEmpty()
-        return@mapNotNull NativeChapter(
-          title.ifBlank { "Chapter ${index + 1}" },
-          startTimeMs / 1000f,
-        )
-      }
       if (!entry.javaClass.simpleName.contains("chapter", ignoreCase = true)) return@mapNotNull null
-      val startUs = sequenceOf("getStartTimeUs", "getChapterTimeStart")
+      val startTimeMs = runCatching {
+        entry.javaClass.methods.firstOrNull { it.name == "getStartTimeMs" }?.invoke(entry) as? Number
+      }.getOrNull()
+      val startUs = startTimeMs?.toLong()?.times(1000L) ?: sequenceOf("getStartTimeUs", "getChapterTimeStart")
         .mapNotNull { method ->
           runCatching {
             entry.javaClass.methods.firstOrNull { it.name == method }?.invoke(entry) as? Number
@@ -448,7 +441,12 @@ class NativeMedia3Engine(context: Context) {
       val title = sequenceOf("getTitle", "getChapterString")
         .mapNotNull { method ->
           runCatching {
-            entry.javaClass.methods.firstOrNull { it.name == method }?.invoke(entry) as? String
+            val value = entry.javaClass.methods.firstOrNull { it.name == method }?.invoke(entry)
+            when (value) {
+              is String -> value
+              null -> null
+              else -> value.javaClass.methods.firstOrNull { it.name == "getValue" }?.invoke(value) as? String
+            }
           }.getOrNull()
         }.firstOrNull()
         ?: sequenceOf("title", "chapterString")
