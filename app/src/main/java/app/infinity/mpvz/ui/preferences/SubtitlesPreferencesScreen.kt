@@ -291,6 +291,22 @@ object SubtitlesPreferencesScreen : Screen {
 
               PreferenceDivider()
 
+              val autoEnableEmbedded by preferences.autoEnableSubtitles.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_subtitles_embedded_enable_title),
+                value = autoEnableEmbedded,
+                onValueChange = { preferences.autoEnableSubtitles.set(it) },
+                title = { Text(stringResource(R.string.pref_subtitles_embedded_enable_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_subtitles_embedded_enable_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
               val overrideAss by preferences.overrideAssSubs.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.player_sheets_sub_override_ass),

@@ -277,6 +277,8 @@
   <string name="pref_subtitles_font_copy_failed">Could not load fonts: %1$s</string>
   <string name="pref_subtitles_autoload_title">Automatically load subtitles</string>
   <string name="pref_subtitles_autoload_summary">Automatically load external subtitles with the same name.</string>
+  <string name="pref_subtitles_embedded_enable_title">Enable embedded subtitles</string>
+  <string name="pref_subtitles_embedded_enable_summary">Automatically show the selected embedded subtitle track when playback starts.</string>
   <string name="pref_subtitles_save_location">Subtitle Save Location</string>
   <string name="pref_subtitles_search_online">Online Subtitle Search…</string>
   <string name="pref_subtitles_search_languages">Subtitle Languages</string>

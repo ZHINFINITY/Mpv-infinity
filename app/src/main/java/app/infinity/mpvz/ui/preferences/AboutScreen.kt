@@ -48,12 +48,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,7 +64,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
-import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.presentation.Screen
@@ -79,8 +74,6 @@ import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
-import app.infinity.mpvz.utils.update.UpdateViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -103,35 +96,6 @@ object AboutScreen : Screen {
     val settingsScrollState = rememberScrollState()
     val settingsHighlight =
       rememberSettingsSearchHighlight(AboutScreen, settingsScrollState, MaterialTheme.colorScheme.primary)
-
-    // Conditionally initialize update feature based on build config
-    val updateViewModel: UpdateViewModel? =
-      if (BuildConfig.ENABLE_UPDATE_FEATURE) {
-        viewModel(context as androidx.activity.ComponentActivity)
-      } else {
-        null
-      }
-    val updateState by (
-      updateViewModel?.updateState ?: MutableStateFlow(
-        UpdateViewModel.UpdateState.Idle,
-      )
-    ).collectAsState()
-
-    // Show toast when no update is available after manual check (only if update feature is enabled)
-    LaunchedEffect(updateState) {
-      if (BuildConfig.ENABLE_UPDATE_FEATURE &&
-        updateViewModel != null &&
-        updateState is UpdateViewModel.UpdateState.NoUpdate
-      ) {
-        Toast
-          .makeText(
-            context,
-            context.getString(app.infinity.mpvz.R.string.ui_already_using_latest_version),
-            Toast.LENGTH_SHORT,
-          ).show()
-        updateViewModel.dismissNoUpdate()
-      }
-    }
 
     Scaffold(
       topBar = {
@@ -508,79 +472,6 @@ object AboutScreen : Screen {
         }
 
         Spacer(Modifier.height(8.dp))
-
-        // Updates Section (only show if update feature is enabled)
-        if (BuildConfig.ENABLE_UPDATE_FEATURE && updateViewModel != null) {
-          PreferenceSectionHeader(title = stringResource(R.string.pref_section_updates))
-          PreferenceCard {
-            val isAutoUpdateEnabled by updateViewModel.isAutoUpdateEnabled.collectAsState()
-            Column {
-              Row(
-                modifier =
-                  Modifier
-                    .fillMaxWidth()
-                    .clickable { updateViewModel.toggleAutoUpdate(!isAutoUpdateEnabled) }
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-              ) {
-                Column(
-                  modifier = Modifier.weight(1f),
-                ) {
-                  Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_auto_check_for_updates,
-                      ),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = cs.onSurface,
-                  )
-                  Spacer(modifier = Modifier.height(2.dp))
-                  Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_check_on_startup,
-                      ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = cs.outline,
-                  )
-                }
-                IconSwitch(
-                  checked = isAutoUpdateEnabled,
-                  onCheckedChange = { updateViewModel.toggleAutoUpdate(it) },
-                )
-              }
-
-              PreferenceDivider()
-
-              Column(modifier = Modifier.padding(16.dp)) {
-                Button(
-                  onClick = { updateViewModel.checkForUpdate(manual = true) },
-                  modifier = Modifier.fillMaxWidth().height(50.dp),
-                  shape = RoundedCornerShape(12.dp),
-                  colors =
-                    ButtonDefaults.buttonColors(
-                      containerColor = cs.secondaryContainer,
-                      contentColor = cs.onSecondaryContainer,
-                    ),
-                  elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-                ) {
-                  Icon(Icons.RoundedFilled.Update, null, modifier = Modifier.size(18.dp))
-                  Spacer(Modifier.width(8.dp))
-                  Text(
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_check_for_updates_now,
-                    ),
-                    fontWeight = FontWeight.SemiBold,
-                  )
-                }
-              }
-            }
-          }
-
-          Spacer(Modifier.height(8.dp))
-        }
 
         // System Stats Section
         PreferenceSectionHeader(title = stringResource(R.string.pref_section_system))
