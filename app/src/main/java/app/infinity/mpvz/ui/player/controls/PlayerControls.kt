@@ -355,8 +355,9 @@ fun PlayerControls(
   val activity = LocalActivity.current as? PlayerActivity
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
-  val paused = if (playbackEngine == PlaybackEngineMode.NATIVE) !nativeSnapshot.isPlaying else (mpvPaused ?: false)
-  val playbackSpeed = if (playbackEngine == PlaybackEngineMode.NATIVE) nativeSnapshot.speed else mpvPlaybackSpeed
+  val nativeEngineActive = activity?.isNativeEngineActive() == true
+  val paused = if (nativeEngineActive) !nativeSnapshot.isPlaying else (mpvPaused ?: false)
+  val playbackSpeed = if (nativeEngineActive) nativeSnapshot.speed else mpvPlaybackSpeed
   val isSpeedNonOne = remember(playbackSpeed) {
     abs((playbackSpeed ?: 1f) - 1f) > 0.001f
   }
@@ -409,12 +410,18 @@ fun PlayerControls(
         chapter = chapters.getOrNull(currentChapter ?: 0),
         chapters = chapters.toImmutableList(),
         onSeekToChapter = {
-          PlaybackSession.setPropertyInt("chapter", it)
-          viewModel.unpause()
+          val selectedChapter = chapters.getOrNull(it)
+          if (nativeEngineActive && selectedChapter != null) {
+            activity?.nativeSeekTo((selectedChapter.start * 1000.0).toLong())
+            activity?.nativeUnpause()
+          } else {
+            PlaybackSession.setPropertyInt("chapter", it)
+            viewModel.unpause()
+          }
         },
         decoder = decoder,
         onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-        selectedEngine = playbackEngine,
+        selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
         onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
         onSpeedChange = {
@@ -436,7 +443,7 @@ fun PlayerControls(
         onStartSleepTimer = viewModel::startTimer,
         onOpenPanel = onOpenPanel,
         onShowSheet = onOpenSheet,
-        activeEngine = playbackEngine,
+        activeEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
         nativeSnapshot = nativeSnapshot,
         onDismissRequest = { onOpenSheet(Sheets.None) },
       )
@@ -1680,9 +1687,9 @@ fun PlayerControls(
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
             val displayedSeekbarPosition =
-              if (playbackEngine == PlaybackEngineMode.NATIVE) nativeSnapshot.positionMs / 1000f else precisePosition
+              if (nativeEngineActive) nativeSnapshot.positionMs / 1000f else precisePosition
             val displayedSeekbarDuration =
-              if (playbackEngine == PlaybackEngineMode.NATIVE) nativeSnapshot.durationMs / 1000f
+              if (nativeEngineActive) nativeSnapshot.durationMs / 1000f
               else if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
             // Memoize the immutable copies so they are not reallocated on every position
             // tick (this scope recomposes ~20x/sec while scrubbing).
@@ -1696,7 +1703,7 @@ fun PlayerControls(
               position = displayedSeekbarPosition,
               committedPosition = displayedSeekbarPosition,
               duration = displayedSeekbarDuration,
-              remaining = if (playbackEngine == PlaybackEngineMode.NATIVE) {
+              remaining = if (nativeEngineActive) {
                 (displayedSeekbarDuration - displayedSeekbarPosition).coerceAtLeast(0f)
               } else remaining ?: 0f,
               onValueChange = {
@@ -1981,12 +1988,18 @@ fun PlayerControls(
       chapter = chapters.getOrNull(currentChapter ?: 0),
       chapters = chapters.toImmutableList(),
       onSeekToChapter = {
-        PlaybackSession.setPropertyInt("chapter", it)
-        viewModel.unpause()
+        val selectedChapter = chapters.getOrNull(it)
+        if (nativeEngineActive && selectedChapter != null) {
+          activity?.nativeSeekTo((selectedChapter.start * 1000.0).toLong())
+          activity?.nativeUnpause()
+        } else {
+          PlaybackSession.setPropertyInt("chapter", it)
+          viewModel.unpause()
+        }
       },
       decoder = decoder,
       onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-      selectedEngine = playbackEngine,
+      selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
       onSpeedChange = {
@@ -2008,7 +2021,7 @@ fun PlayerControls(
       onStartSleepTimer = viewModel::startTimer,
       onOpenPanel = onOpenPanel,
       onShowSheet = onOpenSheet,
-      activeEngine = playbackEngine,
+      activeEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       nativeSnapshot = nativeSnapshot,
       onDismissRequest = { onOpenSheet(Sheets.None) },
     )

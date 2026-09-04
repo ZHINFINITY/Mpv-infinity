@@ -303,7 +303,8 @@ class PlayerActivity :
   }
 
   override fun isNativeEngineActive(): Boolean =
-    decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE
+    activeEngineMode == PlaybackEngineMode.NATIVE &&
+      (nativeEngine.currentPlayer.currentMediaItem != null || nativeEngine.snapshot.value.isReady)
 
   override fun isNativePlaying(): Boolean =
     isNativeEngineActive() && nativeEngine.currentPlayer.isPlaying
@@ -2134,7 +2135,7 @@ class PlayerActivity :
 
   override fun onStart() {
     super.onStart()
-    if (!mpvInitialized || !ownsPlaybackSession()) return
+    if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession()) return
     MediaPlaybackService.activityForeground = true
 
     runCatching {
@@ -3363,7 +3364,7 @@ class PlayerActivity :
 
   override fun onResume() {
     super.onResume()
-    if (!mpvInitialized || !ownsPlaybackSession()) return
+    if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession()) return
     if (!isInPictureInPictureMode && hasWindowFocus()) completePipExpansion()
     restoreForegroundVideoAndAmbientIfUnlocked()
     updateVolume()
@@ -5801,6 +5802,7 @@ class PlayerActivity :
     // switch surfaces before loading so a previous Native frame cannot leave a black player.
     withContext(Dispatchers.Main) {
       if (requiresYtdlp || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE) {
+        activeEngineMode = PlaybackEngineMode.MPV
         nativeEngine.stop()
         binding.media3Player.visibility = View.GONE
         binding.player.visibility = View.VISIBLE
@@ -6089,7 +6091,8 @@ class PlayerActivity :
   }
 
   private fun enterPipModeSmoothly(): Boolean {
-    if (viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || !isReady || isFinishing || isDestroyed) {
+    val nativeReady = isNativeEngineActive()
+    if (viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() || (!isReady && !nativeReady) || isFinishing || isDestroyed) {
       return false
     }
     binding.root.animate().cancel()
@@ -6111,7 +6114,10 @@ class PlayerActivity :
    * still respected by [startBackgroundPlayback].
    */
   private fun ensurePipPlaybackNotification() {
-    if (isUserFinishing || isFinishing || isDestroyed || !isReady) return
+    if (isUserFinishing || isFinishing || isDestroyed || (!isReady && !isNativeEngineActive())) return
+    // MediaPlaybackService is MPV-backed; native Media3 must remain owned by this Activity while
+    // in PiP or the service starts a second decoder and leaves the native surface stale on exit.
+    if (isNativeEngineActive()) return
 
     if (isBackgroundPlaybackSessionActive && MediaPlaybackService.isForegroundActive()) {
       syncBackgroundPlaybackService(updateThumbnail = true)
@@ -6682,6 +6688,30 @@ class PlayerActivity :
     if (fileName.isBlank() || !isReady) {
       Log.w(TAG, "Cannot start background playback: video not ready")
       return false
+    }
+
+    if (isNativeEngineActive()) {
+      // MediaPlaybackService is MPV-backed. Hand native playback to MPV before the service is
+      // started; otherwise the service and Media3 decode the same item independently and the
+      // Activity resumes with a stale native surface or no playable session.
+      val nativePositionMs = nativeEngine.snapshot.value.positionMs
+      val nativeWasPlaying = nativeEngine.snapshot.value.isPlaying
+      nativeEngine.setPlaying(false)
+      activeEngineMode = PlaybackEngineMode.MPV
+      decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
+      nativeEngine.stop()
+      binding.media3Player.visibility = View.GONE
+      binding.player.visibility = View.VISIBLE
+      if (mpvInitialized) {
+        loadPlaylistItem(playlistIndex.coerceAtLeast(0))
+        lifecycleScope.launch {
+          delay(350L)
+          if (ownsPlaybackSession() && mpvInitialized) {
+            PlaybackSession.setPropertyDouble("time-pos", nativePositionMs / 1000.0)
+            PlaybackSession.setPropertyBoolean("pause", !nativeWasPlaying)
+          }
+        }
+      }
     }
 
     // Prevent starting service multiple times
