@@ -45,7 +45,8 @@ class JellyfinClient(
   companion object {
     const val TICKS_PER_SECOND = 10_000_000L
     private const val TAG = "JellyfinClient"
-    private const val CLIENT_NAME = "Mpv∞"
+    // Header values must be ASCII-safe; the infinity glyph causes Jellyfin to reject the request.
+    private const val CLIENT_NAME = "MpvInfinity"
     private val DEVICE_NAME: String
       get() {
         val model = Build.MODEL.orEmpty()
@@ -76,7 +77,7 @@ class JellyfinClient(
         }
         storedId
       } else {
-        "Mpv∞-android-player"
+        "MpvInfinity-android-player"
       }
       cachedDeviceId = id
       return id
