@@ -983,8 +983,12 @@ fun AudioPlayerControls(
     }
   }
 
-  val targetTopColor = if (ambientModeEnabled) ambientColors?.first ?: Color.Transparent else Color.Transparent
-  val targetBottomColor = if (ambientModeEnabled) ambientColors?.second ?: Color.Transparent else Color.Transparent
+  val targetTopColor =
+    if (ambientModeEnabled) ambientColors?.first ?: Color.Transparent
+    else visualizerPalette.primary.copy(alpha = 0.22f)
+  val targetBottomColor =
+    if (ambientModeEnabled) ambientColors?.second ?: Color.Transparent
+    else visualizerPalette.secondary.copy(alpha = 0.22f)
 
   val animatedAmbientTop: Color by animateColorAsState(
     targetValue = targetTopColor,
@@ -1006,7 +1010,6 @@ fun AudioPlayerControls(
     modifier =
       modifier
         .fillMaxSize()
-        .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
           if (ambientModeEnabled && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop

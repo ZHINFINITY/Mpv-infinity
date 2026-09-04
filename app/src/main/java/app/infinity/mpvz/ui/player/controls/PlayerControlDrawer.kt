@@ -52,6 +52,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -63,6 +64,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.getPlayerButtonLabel
 import app.infinity.mpvz.ui.icons.Icon
@@ -71,6 +73,8 @@ import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBac
 import app.infinity.mpvz.ui.player.controls.components.panels.DraggablePanel
 import app.infinity.mpvz.ui.theme.controlColor
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.preferences.preference.collectAsState
+import org.koin.compose.koinInject
 
 @Composable
 internal fun PlayerControlDrawer(
@@ -230,15 +234,29 @@ private fun PlayerControlPanel(
 ) {
   val parentClickEvent = LocalPlayerButtonsClickEvent.current
   val parentClickEventCurrent by rememberUpdatedState(parentClickEvent)
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
 
   DraggablePanel(
     modifier = Modifier.fillMaxSize(),
     header = { PlayerControlPanelHeader(onDismissRequest) },
     shape = RoundedCornerShape(24.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f),
+    containerColor = when {
+      liquidGlassSurfaces || playerControlsTheme.name == "Glass" || playerControlsTheme.name == "Glossy" ->
+        Color.White.copy(alpha = if (liquidGlassSurfaces) 0.14f else 0.18f)
+      else -> MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f)
+    },
     tonalElevation = 2.dp,
     shadowElevation = 10.dp,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+    border = BorderStroke(
+      1.dp,
+      if (liquidGlassSurfaces || playerControlsTheme.name != "Classic") {
+        Color.White.copy(alpha = 0.28f)
+      } else {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+      },
+    ),
   ) {
     CompositionLocalProvider(
       LocalHidePlayerButtonsBackground provides true,
@@ -330,11 +348,16 @@ private fun PlayerControlTile(
   renderButton: @Composable (PlayerButton) -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val containerColor by
     animateColorAsState(
       targetValue =
         if (active) {
           MaterialTheme.colorScheme.primaryContainer
+        } else if (liquidGlassSurfaces || playerControlsTheme.name != "Classic") {
+          Color.White.copy(alpha = if (liquidGlassSurfaces) 0.10f else 0.14f)
         } else {
           MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.78f)
         },
