@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.TrackSelectionOverride
@@ -13,6 +14,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.extractor.metadata.matroska.Chapter
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -110,8 +112,14 @@ class NativeMedia3Engine(context: Context) {
   private val _snapshot = MutableStateFlow(NativePlaybackSnapshot())
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
   val currentPlayer: Player get() = player
+  private var metadataChapters: List<NativeChapter> = emptyList()
 
   private val listener = object : Player.Listener {
+    override fun onMetadata(metadata: Metadata) {
+      metadataChapters = metadataEntriesToChapters(metadata)
+      publishSnapshot()
+    }
+
     override fun onEvents(player: Player, events: Player.Events) {
       configureSubtitleView()
       publishSnapshot()
@@ -345,7 +353,7 @@ class NativeMedia3Engine(context: Context) {
 
   private fun publishSnapshot() {
     val groups = player.currentTracks.groups
-    val chapters = groups.flatMap { group ->
+    val trackChapters = groups.flatMap { group ->
       (0 until group.length).flatMap { index ->
         group.getTrackFormat(index).metadata?.let { metadata ->
           (0 until metadata.length()).map { metadata.get(it) }
@@ -366,7 +374,10 @@ class NativeMedia3Engine(context: Context) {
           NativeChapter(title, (startUs.toLong() / 1_000_000f).coerceAtLeast(0f))
         }
       }
-    }.distinctBy { it.startSeconds to it.title }.sortedBy { it.startSeconds }
+    }
+    val chapters = (metadataChapters + trackChapters)
+      .distinctBy { it.startSeconds to it.title }
+      .sortedBy { it.startSeconds }
     fun tracksOfType(type: Int, fallback: String): List<NativeTrack> =
       groups.mapIndexedNotNull { groupIndex, group ->
         if (group.type != type) return@mapIndexedNotNull null
@@ -407,6 +418,48 @@ class NativeMedia3Engine(context: Context) {
       chapters = chapters,
     )
   }
+
+  private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =
+    (0 until metadata.length()).mapNotNull { index ->
+      val entry = metadata.get(index)
+      if (entry is Chapter) {
+        val startTimeMs = entry.getStartTimeMs()
+        if (startTimeMs == C.TIME_UNSET || startTimeMs < 0L) return@mapNotNull null
+        val title = entry.getTitle()?.value?.trim().orEmpty()
+        return@mapNotNull NativeChapter(
+          title.ifBlank { "Chapter ${index + 1}" },
+          startTimeMs / 1000f,
+        )
+      }
+      if (!entry.javaClass.simpleName.contains("chapter", ignoreCase = true)) return@mapNotNull null
+      val startUs = sequenceOf("getStartTimeUs", "getChapterTimeStart")
+        .mapNotNull { method ->
+          runCatching {
+            entry.javaClass.methods.firstOrNull { it.name == method }?.invoke(entry) as? Number
+          }.getOrNull()
+        }.firstOrNull()
+        ?: sequenceOf("startTimeUs", "chapterTimeStart")
+          .mapNotNull { field ->
+            runCatching {
+              entry.javaClass.getDeclaredField(field).apply { isAccessible = true }.get(entry) as Number
+            }.getOrNull()
+          }.firstOrNull()
+        ?: return@mapNotNull null
+      val title = sequenceOf("getTitle", "getChapterString")
+        .mapNotNull { method ->
+          runCatching {
+            entry.javaClass.methods.firstOrNull { it.name == method }?.invoke(entry) as? String
+          }.getOrNull()
+        }.firstOrNull()
+        ?: sequenceOf("title", "chapterString")
+          .mapNotNull { field ->
+            runCatching {
+              entry.javaClass.getDeclaredField(field).apply { isAccessible = true }.get(entry) as? String
+            }.getOrNull()
+          }.firstOrNull()
+        ?: "Chapter ${index + 1}"
+      NativeChapter(title, (startUs.toLong() / 1_000_000f).coerceAtLeast(0f))
+    }
 
   private fun startTimelineUpdates() {
     loopHandler.removeCallbacks(timelineRunnable)
