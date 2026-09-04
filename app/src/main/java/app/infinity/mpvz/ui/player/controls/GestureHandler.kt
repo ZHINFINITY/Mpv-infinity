@@ -232,6 +232,7 @@ fun GestureHandler(
     gestureClaimedForPointer = false
     speedHoldPending = false
     suppressHorizontalSeekForPointer = false
+    isSpeedLocked = false
   }
 
   fun claimGesture(owner: GestureOwner): Boolean {
@@ -523,7 +524,8 @@ fun GestureHandler(
                 !isVerticalGestureDeadZone &&
                 hasActiveSubtitle &&
                 startPosition.x in (size.width / 3f)..(size.width * 2f / 3f)
-            speedHoldPending = paused == false && multipleSpeedGesture > 0f && !isCenterSubtitleTouch
+            val activeEnginePlaying = if (viewModel.isNativeEngineActive()) viewModel.isNativePlaying() else paused == false
+            speedHoldPending = activeEnginePlaying && multipleSpeedGesture > 0f && !isCenterSubtitleTouch
 
             // Reset long press tracking at the start of each gesture
             longPressTriggeredDuringTouch = false
@@ -586,10 +588,10 @@ fun GestureHandler(
                       isLongPressing = true
                       longPressTriggeredDuringTouch = true
                       haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                      originalSpeed = playbackSpeed ?: 1f
+                      originalSpeed = viewModel.activePlaybackSpeed()
                       // Ramp speed up incrementally to avoid audio filter stutter
                       val startSpeed = originalSpeed
-                      val targetSpeed = nearestHoldSpeedPreset(multipleSpeedGesture)
+                      val targetSpeed = 2f
                       val steps = 5
                       val stepDelay = 16L // ~one frame per step
                       for (i in 1..steps) {
@@ -743,7 +745,9 @@ fun GestureHandler(
                         change.consume()
                       }
                       "speed_control" -> {
-                        if (isLongPressing && isDynamicSpeedControlActive && paused == false) {
+                        if (isLongPressing && isDynamicSpeedControlActive &&
+                          (if (viewModel.isNativeEngineActive()) viewModel.isNativePlaying() else paused == false)
+                        ) {
                           change.consume()
 
                           val speedPresets = holdSpeedPresets
@@ -772,12 +776,12 @@ fun GestureHandler(
                             return@forEach
                           }
 
-                          if (!hasSwipedEnough && abs(deltaX) >= swipeDetectionThreshold) {
+                          if (!isSpeedLocked && !hasSwipedEnough && abs(deltaX) >= swipeDetectionThreshold) {
                             hasSwipedEnough = true
                             viewModel.playerUpdate.update { PlayerUpdates.DynamicSpeedControl(lastAppliedSpeed) }
                           }
 
-                          if (hasSwipedEnough) {
+                          if (hasSwipedEnough && !isSpeedLocked) {
                             val presetsRange = speedPresets.size - 1
                             val indexDelta = (deltaX / screenWidth) * presetsRange * 3.5f
 

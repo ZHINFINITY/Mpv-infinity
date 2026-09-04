@@ -109,6 +109,30 @@ class NativeMedia3Engine(context: Context) {
     configureSubtitleView()
   }
 
+  fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
+    val current = player.currentMediaItem?.localConfiguration ?: return false
+    val mimeType = when (uri.toString().substringAfterLast('.', "").lowercase()) {
+      "srt" -> "application/x-subrip"
+      "vtt" -> "text/vtt"
+      "ass", "ssa" -> "text/x-ssa"
+      else -> "text/plain"
+    }
+    val configuration = MediaItem.SubtitleConfiguration.Builder(uri)
+      .setMimeType(mimeType)
+      .setSelectionFlags(if (select) C.SELECTION_FLAG_DEFAULT else 0)
+      .build()
+    val wasPlaying = player.isPlaying
+    val positionMs = player.currentPosition.coerceAtLeast(0L)
+    val updated = MediaItem.Builder()
+      .setUri(current.uri)
+      .setSubtitleConfigurations(current.subtitleConfigurations + configuration)
+      .build()
+    player.setMediaItem(updated, positionMs)
+    player.prepare()
+    player.playWhenReady = wasPlaying
+    return true
+  }
+
   fun setSubtitleStyle(
     textColor: Int,
     backgroundColor: Int,

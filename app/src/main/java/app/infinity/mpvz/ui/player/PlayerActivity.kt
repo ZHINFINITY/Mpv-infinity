@@ -343,6 +343,9 @@ class PlayerActivity :
 
   override fun nativeSetSubtitlePosition(position: Int) = nativeEngine.setSubtitlePosition(position)
 
+  override fun nativeAddSubtitle(uri: Uri, select: Boolean): Boolean =
+    nativeEngine.addExternalSubtitle(uri, select)
+
   override fun nativeSetVideoAspect(aspect: VideoAspect) {
     nativeEngine.setVideoAspect(aspect)
   }
@@ -1431,6 +1434,13 @@ class PlayerActivity :
       mpvView = player,
       isAudioPlayer = { viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() },
       isVideoLoaded = { isReady },
+      isNativeEngine = { isNativeEngineActive() },
+      isPlaying = { if (isNativeEngineActive()) nativeEngine.currentPlayer.isPlaying else PlaybackSession.getPropertyBoolean("pause") == false },
+      onPlay = { if (isNativeEngineActive()) nativeEngine.setPlaying(true) else PlaybackSession.setPropertyBoolean("pause", false) },
+      onPause = { if (isNativeEngineActive()) nativeEngine.setPlaying(false) else PlaybackSession.setPropertyBoolean("pause", true) },
+      onSeekBy = { offsetMs -> if (isNativeEngineActive()) nativeEngine.seekBy(offsetMs) else PlaybackSession.command("seek", (offsetMs / 1000L).toString(), resolveSeekMode(playerPreferences)) },
+      onClose = { if (isNativeEngineActive()) nativeEngine.setPlaying(false) },
+      nativeVideoSize = { nativeEngine.snapshot.value.videoWidth to nativeEngine.snapshot.value.videoHeight },
     )
   }
 
