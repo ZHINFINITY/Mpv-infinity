@@ -1413,6 +1413,7 @@ private fun GridContent(
           isActive = isActive,
           isAudioOnly = audioOnly,
         )
+        }
       }
     }
 
