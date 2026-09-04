@@ -24,6 +24,7 @@ import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.player.Decoder
+import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.Sheets
@@ -88,6 +89,8 @@ fun PlayerSheets(
   onStartSleepTimer: (Int) -> Unit,
   onOpenPanel: (Panels) -> Unit,
   onShowSheet: (Sheets) -> Unit,
+  activeEngine: PlaybackEngineMode = PlaybackEngineMode.MPV,
+  nativeSnapshot: NativePlaybackSnapshot = NativePlaybackSnapshot(),
   onDismissRequest: () -> Unit,
 ) {
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -394,6 +397,8 @@ fun PlayerSheets(
         filtersEnabled = MpvConfigOverride.VIDEO_FILTERS.optionNames.any { it !in configOwnedOptions },
         equalizerEnabled = "af" !in configOwnedOptions,
         anime4KEnabled = MpvConfigControlledFeatures.ANIME4K.none(configOwnedOptions::contains),
+        activeEngine = activeEngine,
+        nativeSnapshot = nativeSnapshot,
       )
     }
 

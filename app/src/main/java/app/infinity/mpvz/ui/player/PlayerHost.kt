@@ -69,4 +69,18 @@ interface PlayerHost {
   fun playPreviousQueueItem()
 
   fun onQueueShuffleChanged(enabled: Boolean)
+
+  fun isNativeEngineActive(): Boolean = false
+
+  fun nativePauseUnpause() {}
+
+  fun nativePause() {}
+
+  fun nativeUnpause() {}
+
+  fun nativeSeekBy(offsetMs: Long) {}
+
+  fun nativeSeekTo(positionMs: Long) {}
+
+  fun nativeSetSpeed(speed: Float) {}
 }

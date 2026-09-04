@@ -1,19 +1,21 @@
 /*
  * SPDX-License-Identifier: AGPL-3.0-or-later
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published
- * by the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
  */
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
@@ -38,31 +40,55 @@ fun DecodersSheet(
       usesVulkan = isVulkanActive,
       buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
     )
+  var selectedTab by remember(selectedEngine) {
+    mutableIntStateOf(if (selectedEngine == PlaybackEngineMode.NATIVE) 1 else 0)
+  }
 
   PlayerSheet(onDismissRequest) {
-    LazyColumn {
-      item(key = "engine-mpv") {
-        AudioTrackRow(
-          title = "MPV",
-          isSelected = selectedEngine == PlaybackEngineMode.MPV,
-          onClick = { onSelectEngine(PlaybackEngineMode.MPV) },
+    Column {
+      ScrollableTabRow(selectedTabIndex = selectedTab) {
+        Tab(
+          selected = selectedTab == 0,
+          onClick = {
+            selectedTab = 0
+            onSelectEngine(PlaybackEngineMode.MPV)
+          },
+          text = { Text("MPV") },
+        )
+        Tab(
+          selected = selectedTab == 1,
+          onClick = {
+            selectedTab = 1
+            onSelectEngine(PlaybackEngineMode.NATIVE)
+          },
+          text = { Text("Native") },
         )
       }
-      item(key = "engine-media3") {
-        AudioTrackRow(
-          title = "Google Media3",
-          isSelected = selectedEngine == PlaybackEngineMode.MEDIA3,
-          onClick = { onSelectEngine(PlaybackEngineMode.MEDIA3) },
-        )
-      }
-      items(Decoder.entries.minusElement(Decoder.Auto), key = { it.name }) { decoder ->
-        AudioTrackRow(
-          title = stringResource(R.string.player_sheets_decoder_formatted, decoder.title, decoder.value),
-          isSelected = selectedDecoder == decoder,
-          enabled = decoder != Decoder.HWPlus || directMediaCodecAllowed,
-          onClick = { onSelect(decoder) },
-        )
+      LazyColumn {
+        if (selectedTab == 1) {
+          item(key = "native-active") {
+            AudioTrackRow(
+              title = "Native playback engine active",
+              isSelected = selectedEngine == PlaybackEngineMode.NATIVE,
+              onClick = { onSelectEngine(PlaybackEngineMode.NATIVE) },
+            )
+          }
+        } else {
+          items(Decoder.entries.minusElement(Decoder.Auto), key = { it.name }) { decoder ->
+            AudioTrackRow(
+              title = stringResource(R.string.player_sheets_decoder_formatted, decoder.title, decoder.value),
+              isSelected = selectedDecoder == decoder,
+              enabled = decoder != Decoder.HWPlus || directMediaCodecAllowed,
+              onClick = { onSelect(decoder) },
+            )
+          }
+        }
       }
     }
   }
 }
+
+private const val NATIVE_ENGINE_LABEL = "Native"
+
+@Suppress("unused")
+private fun nativeEngineLabel(): String = NATIVE_ENGINE_LABEL
