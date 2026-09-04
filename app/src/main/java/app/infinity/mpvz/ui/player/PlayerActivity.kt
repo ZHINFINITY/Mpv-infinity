@@ -1840,7 +1840,8 @@ class PlayerActivity :
    * could not start, the session is not active and the close is silenced immediately.
    */
   private fun silenceAudioOnClose() {
-    if (!mpvInitialized || isBackgroundPlaybackSessionActive) return
+    if (isBackgroundPlaybackSessionActive) return
+    if (!mpvInitialized && activeEngineMode != PlaybackEngineMode.NATIVE) return
     if (activeEngineMode == PlaybackEngineMode.NATIVE) {
       nativeEngine.setPlaying(false)
       nativeEngine.stop()
@@ -1906,7 +1907,7 @@ class PlayerActivity :
   }
 
   override fun finish() {
-    if (!mpvInitialized || !ownsPlaybackSession()) {
+    if (!hasActivePlaybackEngine() || !ownsPlaybackSession()) {
       super.finish()
       return
     }
@@ -1951,7 +1952,7 @@ class PlayerActivity :
   }
 
   override fun finishAndRemoveTask() {
-    if (!mpvInitialized || !ownsPlaybackSession()) {
+    if (!hasActivePlaybackEngine() || !ownsPlaybackSession()) {
       super.finishAndRemoveTask()
       return
     }
@@ -2052,8 +2053,16 @@ class PlayerActivity :
     }
   }
 
+  private fun hasActivePlaybackEngine(): Boolean =
+    mpvInitialized ||
+      (activeEngineMode == PlaybackEngineMode.NATIVE &&
+        (nativeEngine.currentPlayer.isPlaying || nativeEngine.snapshot.value.isReady))
+
   private fun commitPipDismissal(): Boolean {
-    if (handledPipDismissal || !mpvInitialized || !ownsPlaybackSession()) return false
+    val nativePlaybackActive =
+      activeEngineMode == PlaybackEngineMode.NATIVE &&
+        (nativeEngine.currentPlayer.isPlaying || nativeEngine.snapshot.value.isReady)
+    if (handledPipDismissal || (!mpvInitialized && !nativePlaybackActive) || !ownsPlaybackSession()) return false
 
     Log.d(TAG, "PiP dismissed; stopping terminal playback exactly once")
     pendingPipExitResolution = false

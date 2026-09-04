@@ -338,6 +338,18 @@ fun SubtitlesSheet(
           }
         },
       )
+      if (translationEnabled && configuredLanguages.isNotEmpty()) {
+        Text(
+          text =
+            "Translation language: " +
+              configuredLanguages.joinToString(", ") { codeToName[it] ?: it.uppercase() },
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.outline,
+          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
 
       if (aiEnabled && isTranslating) {
         Column(
