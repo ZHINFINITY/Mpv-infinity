@@ -9,6 +9,8 @@
 
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
+import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
+import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import android.content.res.Configuration
@@ -79,6 +81,8 @@ fun MoreSheet(
   filtersEnabled: Boolean = true,
   equalizerEnabled: Boolean = true,
   anime4KEnabled: Boolean = true,
+  activeEngine: PlaybackEngineMode = PlaybackEngineMode.MPV,
+  nativeSnapshot: NativePlaybackSnapshot = NativePlaybackSnapshot(),
   modifier: Modifier = Modifier,
 ) {
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -209,6 +213,32 @@ fun MoreSheet(
                 )
               }
             }
+          }
+        }
+      }
+      Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.medium,
+      ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small)) {
+          Text("Engine: ${activeEngine.title}", style = MaterialTheme.typography.titleSmall)
+          if (activeEngine == PlaybackEngineMode.NATIVE) {
+            val quality = if (nativeSnapshot.videoWidth > 0 && nativeSnapshot.videoHeight > 0) {
+              "${nativeSnapshot.videoWidth}×${nativeSnapshot.videoHeight}"
+            } else {
+              "Preparing output"
+            }
+            Text(
+              "Output: $quality${nativeSnapshot.videoMimeType?.let { " · $it" } ?: ""}",
+              style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+              "${if (nativeSnapshot.isPlaying) "Playing" else "Paused"} · Native statistics available",
+              style = MaterialTheme.typography.bodySmall,
+            )
+          } else {
+            Text("Output: MPV renderer", style = MaterialTheme.typography.bodySmall)
           }
         }
       }

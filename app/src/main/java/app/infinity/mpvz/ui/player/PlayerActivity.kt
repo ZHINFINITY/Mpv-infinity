@@ -191,7 +191,8 @@ class PlayerActivity :
    * Binding for the player layout.
    */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
-  private val googleMedia3Engine by lazy { GoogleMedia3Engine(this) }
+  private val nativeEngine by lazy { NativeMedia3Engine(this) }
+  val nativePlaybackSnapshot get() = nativeEngine.snapshot
 
   /**
    * Observer for MPV events.
@@ -297,6 +298,33 @@ class PlayerActivity :
         .firstOrNull { it in FileTypeUtils.AUDIO_EXTENSIONS || it in FileTypeUtils.VIDEO_EXTENSIONS }
     if (extension != null) return extension in FileTypeUtils.AUDIO_EXTENSIONS
     return isKnownAudioLaunch(intent)
+  }
+
+  override fun isNativeEngineActive(): Boolean =
+    decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE
+
+  override fun nativePauseUnpause() {
+    nativeEngine.setPlaying(!nativeEngine.currentPlayer.isPlaying)
+  }
+
+  override fun nativePause() {
+    nativeEngine.setPlaying(false)
+  }
+
+  override fun nativeUnpause() {
+    nativeEngine.setPlaying(true)
+  }
+
+  override fun nativeSeekBy(offsetMs: Long) {
+    nativeEngine.seekBy(offsetMs)
+  }
+
+  override fun nativeSeekTo(positionMs: Long) {
+    nativeEngine.seekTo(positionMs)
+  }
+
+  override fun nativeSetSpeed(speed: Float) {
+    nativeEngine.setSpeed(speed)
   }
 
   // ==================== State Management ====================
@@ -632,13 +660,39 @@ class PlayerActivity :
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
-    googleMedia3Engine.attach(binding.media3Player)
+    nativeEngine.attach(binding.media3Player)
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         decoderPreferences.playbackEngine.changes().collect { engine ->
-          val useMedia3 = engine == PlaybackEngineMode.MEDIA3
-          binding.media3Player.visibility = if (useMedia3) View.VISIBLE else View.GONE
-          binding.player.visibility = if (useMedia3) View.GONE else View.VISIBLE
+          val useNative = engine == PlaybackEngineMode.NATIVE
+          binding.media3Player.visibility = if (useNative) View.VISIBLE else View.GONE
+          binding.player.visibility = if (useNative) View.GONE else View.VISIBLE
+          val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
+          if (currentUri != null && isReady) {
+            if (useNative) {
+              nativeEngine.play(
+                Uri.parse(currentUri),
+                startPositionMs = nativeEngine.currentPlayer.currentPosition,
+                autoplay = nativeEngine.currentPlayer.isPlaying,
+              )
+            } else if (mpvInitialized) {
+              loadPlaylistItem(playlistIndex.coerceAtLeast(0))
+            }
+          }
+        }
+      }
+    }
+    viewModel.setNativeSubtitleToggleListener { id ->
+      if (id <= 0) {
+        nativeEngine.disableSubtitles()
+      } else {
+        nativeEngine.snapshot.value.subtitleTracks.getOrNull(id - 1)?.let(nativeEngine::selectTrack)
+      }
+    }
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        nativeEngine.snapshot.collect { snapshot ->
+          viewModel.setNativeSubtitleTracks(snapshot.subtitleTracks)
         }
       }
     }
@@ -1468,7 +1522,7 @@ class PlayerActivity :
       if (::castPlaybackController.isInitialized) castPlaybackController.release()
       cancelSystemBarsAutoHide()
       if (playbackWasInitialized && ownsPlaybackSession) saveVideoPlaybackState(fileName, immediate = true)
-      googleMedia3Engine.release()
+      nativeEngine.release()
       if (playbackWasInitialized && ownsPlaybackSession && !keepBackgroundPlaybackAlive) {
         reportJellyfinStop()
       }
@@ -5570,11 +5624,11 @@ class PlayerActivity :
       }
     if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
     ensureCurrentMediaRequest(requestGeneration)
-    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.MEDIA3 && !requiresYtdlp) {
+    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE && !requiresYtdlp) {
       withContext(Dispatchers.Main) {
         binding.player.visibility = View.GONE
         binding.media3Player.visibility = View.VISIBLE
-        googleMedia3Engine.play(
+        nativeEngine.play(
           item.playableUri.toUri(),
           startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),
           autoplay = true,

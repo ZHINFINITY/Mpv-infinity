@@ -599,15 +599,35 @@ class PlayerViewModel : ViewModel(),
   }
 
   // These MPV-backed state flows must be initialized before any init block collects them.
+  private val nativeSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
+  private var nativeSubtitleToggleListener: ((Int) -> Unit)? = null
+
+  fun setNativeSubtitleTracks(tracks: List<NativeTrack>) {
+    nativeSubtitleTracks.value = tracks.mapIndexed { index, track ->
+      TrackNode(
+        id = -(index + 1),
+        type = "sub",
+        title = track.label,
+        lang = track.language,
+        selected = track.selected,
+        external = false,
+      )
+    }
+  }
+
+  fun setNativeSubtitleToggleListener(listener: ((Int) -> Unit)?) {
+    nativeSubtitleToggleListener = listener
+  }
+
   private val allTracks: StateFlow<List<TrackNode>> =
     PlaybackSession.propNode["track-list"]
       .map { node -> parseTracks(node).toImmutableList() }
       .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val subtitleTracks: StateFlow<List<TrackNode>> =
-    allTracks
-      .map { tracks -> tracks.filter { it.isSubtitle }.toImmutableList() }
-      .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
+    combine(allTracks, nativeSubtitleTracks, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, engine ->
+      if (engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isSubtitle }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val audioTracks: StateFlow<List<TrackNode>> =
     allTracks
@@ -3899,6 +3919,10 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun toggleSubtitle(id: Int) {
+    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+      nativeSubtitleToggleListener?.invoke(id)
+      return
+    }
     val primarySid = getTrackSelectionId("sid")
     val secondarySid = getTrackSelectionId("secondary-sid")
 
@@ -3920,12 +3944,18 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun isSubtitleSelected(id: Int): Boolean {
+    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+      return subtitleTracks.value.firstOrNull { it.id == id }?.selected == true
+    }
     val primarySid = getTrackSelectionId("sid")
     val secondarySid = getTrackSelectionId("secondary-sid")
     return (id == primarySid && primarySid > 0) || (id == secondarySid && secondarySid > 0)
   }
 
   fun subtitleSelectionIndicator(id: Int): String? {
+    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+      return if (subtitleTracks.value.firstOrNull { it.id == id }?.selected == true) "P" else null
+    }
     val primarySid = getTrackSelectionId("sid")
     val secondarySid = getTrackSelectionId("secondary-sid")
     return when {
@@ -3953,6 +3983,10 @@ class PlayerViewModel : ViewModel(),
   // ==================== Playback Control ====================
 
   fun pauseUnpause() {
+    if (host.isNativeEngineActive()) {
+      host.nativePauseUnpause()
+      return
+    }
     viewModelScope.launch(playbackStateDispatcher) {
       val wasPaused = PlaybackSession.getPropertyBoolean("pause") ?: PlaybackSession.state.value.paused
       if (wasPaused) {
@@ -3969,6 +4003,10 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun pause() {
+    if (host.isNativeEngineActive()) {
+      host.nativePause()
+      return
+    }
     viewModelScope.launch(playbackStateDispatcher) {
       PlaybackSession.setPropertyBoolean("pause", true)
       syncplayManager.updatePlayerState(precisePosition.value.toDouble(), true, doSeek = false)
@@ -3977,6 +4015,10 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun unpause() {
+    if (host.isNativeEngineActive()) {
+      host.nativeUnpause()
+      return
+    }
     viewModelScope.launch(playbackStateDispatcher) {
       val focusGranted = withContext(Dispatchers.Main) { host.requestAudioFocus() }
       if (!focusGranted) return@launch
@@ -4063,6 +4105,10 @@ class PlayerViewModel : ViewModel(),
 
   fun seekBy(offset: Int) {
     cancelFrameSeek()
+    if (host.isNativeEngineActive()) {
+      host.nativeSeekBy(offset.toLong() * 1000L)
+      return
+    }
     coalesceSeek(offset)
   }
 
@@ -4109,6 +4155,10 @@ class PlayerViewModel : ViewModel(),
   ) {
     cancelFrameSeek()
     cancelSeekPreview()
+    if (host.isNativeEngineActive()) {
+      host.nativeSeekTo(position.toLong() * 1000L)
+      return
+    }
     viewModelScope.launch(Dispatchers.IO) {
       val maxDuration =
         (PlaybackSession.getPropertyInt("duration") ?: duration ?: _preciseDuration.value.toInt())

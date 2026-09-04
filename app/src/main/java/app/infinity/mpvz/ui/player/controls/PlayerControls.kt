@@ -135,6 +135,7 @@ import app.infinity.mpvz.preferences.preference.plusAssign
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Decoder.Companion.getDecoderFromValue
+import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerUpdates
@@ -339,6 +340,8 @@ fun PlayerControls(
 
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
   val activity = LocalActivity.current as? PlayerActivity
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
+    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val currentPlaybackItem = playbackQueue.currentItem
   val useAudioPlayer =
     when (currentPlaybackItem?.declaredMediaKind()) {
@@ -396,19 +399,27 @@ fun PlayerControls(
         selectedEngine = playbackEngine,
         onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
-        onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
+        onSpeedChange = {
+        val speed = it.toFixed(2)
+        if (activity?.isNativeEngineActive() == true) activity.nativeSetSpeed(speed.toFloat())
+        else PlaybackSession.setPropertyFloat("speed", speed)
+      },
         onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
         onAddSpeedPreset = { playerPreferences.speedPresets += it.toFixed(2).toString() },
         onRemoveSpeedPreset = { playerPreferences.speedPresets -= it.toFixed(2).toString() },
         onResetSpeedPresets = playerPreferences.speedPresets::delete,
         speedPresets = sortedSpeedPresets,
         onResetDefaultSpeed = {
-          PlaybackSession.setPropertyFloat("speed", playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
+          val speed = playerPreferences.defaultSpeed.deleteAndGet().toFixed(2)
+          if (activity?.isNativeEngineActive() == true) activity.nativeSetSpeed(speed.toFloat())
+          else PlaybackSession.setPropertyFloat("speed", speed)
         },
         sleepTimerTimeRemaining = sleepTimerTimeRemaining,
         onStartSleepTimer = viewModel::startTimer,
         onOpenPanel = onOpenPanel,
         onShowSheet = onOpenSheet,
+        activeEngine = playbackEngine,
+        nativeSnapshot = nativeSnapshot,
         onDismissRequest = { onOpenSheet(Sheets.None) },
       )
 
@@ -575,17 +586,19 @@ fun PlayerControls(
       )
     }
     if (statisticsPage == 6) {
-      CustomStatsPageSixOverlay(
-        viewModel = viewModel,
-        modifier =
-          Modifier
-            .align(Alignment.TopStart)
-            .windowInsetsPadding(
-              WindowInsets.safeDrawing.only(
-                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
-              ),
-            ).padding(top = 16.dp, start = 14.dp),
-      )
+      val statsModifier =
+        Modifier
+          .align(Alignment.TopStart)
+          .windowInsetsPadding(
+            WindowInsets.safeDrawing.only(
+              WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+            ),
+          ).padding(top = 16.dp, start = 14.dp)
+      if (activity?.isNativeEngineActive() == true) {
+        NativeStatsPageOverlay(snapshot = nativeSnapshot, modifier = statsModifier)
+      } else {
+        CustomStatsPageSixOverlay(viewModel = viewModel, modifier = statsModifier)
+      }
     }
 
     CompositionLocalProvider(
@@ -1910,20 +1923,30 @@ fun PlayerControls(
       },
       decoder = decoder,
       onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+      selectedEngine = playbackEngine,
+      onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
-      onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
+      onSpeedChange = {
+        val speed = it.toFixed(2)
+        if (activity?.isNativeEngineActive() == true) activity.nativeSetSpeed(speed.toFloat())
+        else PlaybackSession.setPropertyFloat("speed", speed)
+      },
       onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
       onAddSpeedPreset = { playerPreferences.speedPresets += it.toFixed(2).toString() },
       onRemoveSpeedPreset = { playerPreferences.speedPresets -= it.toFixed(2).toString() },
       onResetSpeedPresets = playerPreferences.speedPresets::delete,
       speedPresets = sortedSpeedPresets,
       onResetDefaultSpeed = {
-        PlaybackSession.setPropertyFloat("speed", playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
+        val speed = playerPreferences.defaultSpeed.deleteAndGet().toFixed(2)
+        if (activity?.isNativeEngineActive() == true) activity.nativeSetSpeed(speed.toFloat())
+        else PlaybackSession.setPropertyFloat("speed", speed)
       },
       sleepTimerTimeRemaining = sleepTimerTimeRemaining,
       onStartSleepTimer = viewModel::startTimer,
       onOpenPanel = onOpenPanel,
       onShowSheet = onOpenSheet,
+      activeEngine = playbackEngine,
+      nativeSnapshot = nativeSnapshot,
       onDismissRequest = { onOpenSheet(Sheets.None) },
     )
 
@@ -2023,6 +2046,34 @@ private fun readProcessMemorySnapshot(): ProcessMemorySnapshot {
     javaHeapMaxBytes = runtime.maxMemory(),
     nativeHeapBytes = Debug.getNativeHeapAllocatedSize(),
   )
+}
+
+@Composable
+private fun NativeStatsPageOverlay(
+  snapshot: NativePlaybackSnapshot,
+  modifier: Modifier = Modifier,
+) {
+  val quality = if (snapshot.videoWidth > 0 && snapshot.videoHeight > 0) {
+    "${snapshot.videoWidth}×${snapshot.videoHeight}"
+  } else {
+    "--"
+  }
+  val bitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
+  Surface(
+    modifier = modifier,
+    color = Color.Black.copy(alpha = 0.78f),
+    shape = MaterialTheme.shapes.medium,
+  ) {
+    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+      Text("Native statistics", style = MaterialTheme.typography.titleSmall, color = Color.White)
+      Text("Engine: Native", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      Text("Video: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      Text("Output bitrate: $bitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      Text("Audio: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      Text("Subtitles: ${snapshot.subtitleTracks.size} embedded track(s)", style = MaterialTheme.typography.bodySmall, color = Color.White)
+    }
+  }
 }
 
 private data class CustomStatsSnapshot(
