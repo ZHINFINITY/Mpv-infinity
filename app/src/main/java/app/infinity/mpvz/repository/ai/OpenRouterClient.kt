@@ -161,8 +161,8 @@ class OpenRouterClient(
             .Builder()
             .url("$BASE_URL/chat/completions")
             .header("Authorization", "Bearer $apiKey")
-            .header("HTTP-Referer", "https://mpvrx.app")
-            .header("X-OpenRouter-Title", "mpvRx")
+            .header("HTTP-Referer", "https://Mpv∞.app")
+            .header("X-OpenRouter-Title", "Mpv∞")
             .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 

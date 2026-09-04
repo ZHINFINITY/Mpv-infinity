@@ -13,8 +13,8 @@ import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlaybackSession
-import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
+import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,8 +29,12 @@ import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
+import app.infinity.mpvz.utils.media.MediaLibraryEvents
+import kotlinx.coroutines.flow.collectLatest
+
 class MusicLibraryViewModel : ViewModel(), KoinComponent {
 
+  private val context: Context by inject()
   private val playlistRepository: PlaylistRepository by inject()
   private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
   private val audioPreferences: app.infinity.mpvz.preferences.AudioPreferences by inject()
@@ -89,11 +93,14 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
 
   val isPlaybackActive: StateFlow<Boolean> =
     PlaybackSession.state
-      .map { session -> session.currentItem != null && !session.paused }
+      .map { session -> session.currentItem != null }
       .distinctUntilChanged()
       .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
   init {
+    viewModelScope.launch {
+      playlistRepository.getOrCreateFavoritesPlaylist(isAudio = true)
+    }
     viewModelScope.launch {
       combine(
         browserPreferences.minimumAudioDurationSeconds.changes(),
@@ -103,6 +110,14 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
       }
         .distinctUntilChanged()
         .collect { (minimumSeconds, blacklist) -> applyFilters(minimumSeconds, blacklist) }
+    }
+    viewModelScope.launch {
+      MediaLibraryEvents.changes.collectLatest {
+        refreshLibrary(context)
+      }
+    }
+    viewModelScope.launch {
+      refreshLibrary(context)
     }
   }
 
@@ -234,9 +249,9 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
       }
       .sortedBy { it.name.lowercase() }
 
-  fun scanLibrary(context: Context) {
+  fun scanLibrary(context: Context? = null) {
     viewModelScope.launch {
-      refreshLibrary(context)
+      refreshLibrary(context ?: this@MusicLibraryViewModel.context)
     }
   }
 
@@ -285,7 +300,16 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
   fun playSong(context: Context, song: MusicSong, songList: List<MusicSong> = _songs.value) {
     if (songList.isEmpty()) return
     val index = songList.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
-    val queueItems = songList.map(::toPlaybackItem)
+
+    val queueItems = songList.map { item ->
+      PlaybackItem.fromUri(
+        uri = item.uri.toString(),
+        title = item.title,
+        artist = item.artist,
+        mimeType = "audio/*",
+        artworkUri = item.albumArtUri?.toString(),
+      )
+    }
     val launchToken = PreparedPlaybackLaunchStore.stage(
       items = queueItems,
       currentIndex = index,
@@ -299,8 +323,6 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
       putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
       putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
       putExtra("playlist_index", index)
-      putParcelableArrayListExtra("playlist", ArrayList(songList.map { it.uri }))
-      putStringArrayListExtra("playlist_titles", ArrayList(songList.map { it.title }))
       putExtra("launch_source", "music_library")
       putExtra("media_library_audio", true)
       putExtra("is_audio", true)
@@ -313,8 +335,18 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
     if (songsToPlay.isEmpty()) return
     val list = if (shuffle) songsToPlay.shuffled() else songsToPlay
     val firstSong = list.first()
+
+    val queueItems = list.map { item ->
+      PlaybackItem.fromUri(
+        uri = item.uri.toString(),
+        title = item.title,
+        artist = item.artist,
+        mimeType = "audio/*",
+        artworkUri = item.albumArtUri?.toString(),
+      )
+    }
     val launchToken = PreparedPlaybackLaunchStore.stage(
-      items = list.map(::toPlaybackItem),
+      items = queueItems,
       currentIndex = 0,
       isExplicitQueue = true,
     )
@@ -326,8 +358,6 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
       putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
       putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
       putExtra("playlist_index", 0)
-      putParcelableArrayListExtra("playlist", ArrayList(list.map { it.uri }))
-      putStringArrayListExtra("playlist_titles", ArrayList(list.map { it.title }))
       putExtra("launch_source", if (shuffle) "music_shuffle" else "music_play_all")
       putExtra("media_library_audio", true)
       putExtra("is_audio", true)
@@ -335,15 +365,6 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
     }
     context.startActivity(intent)
   }
-
-  private fun toPlaybackItem(song: MusicSong): PlaybackItem =
-    PlaybackItem.fromUri(
-      uri = song.uri.toString(),
-      title = song.title,
-      artist = song.artist,
-      mimeType = "audio/*",
-      artworkUri = song.albumArtUri?.toString(),
-    )
 
   fun createPlaylist(name: String) {
     viewModelScope.launch {
@@ -354,6 +375,7 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
   }
 
   fun deletePlaylist(playlist: PlaylistEntity) {
+    if (playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)) return
     viewModelScope.launch {
       playlistRepository.deletePlaylist(playlist)
     }

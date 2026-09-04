@@ -18,7 +18,7 @@ import android.widget.FrameLayout
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 
-/** A Media3 video surface with mpvRx's black, control-free presentation defaults. */
+/** A Media3 video surface with Mpv∞'s black, control-free presentation defaults. */
 class Media3PlayerView @JvmOverloads constructor(
   context: Context,
   attrs: AttributeSet? = null,

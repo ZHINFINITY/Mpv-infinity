@@ -662,6 +662,78 @@ val MIGRATION_13_14 =
     }
   }
 
+val MIGRATION_14_15 =
+  object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `jellyfin_servers` (
+          `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          `name` TEXT NOT NULL,
+          `serverUrl` TEXT NOT NULL,
+          `userId` TEXT NOT NULL,
+          `username` TEXT NOT NULL,
+          `accessToken` TEXT NOT NULL,
+          `lastConnected` INTEGER NOT NULL DEFAULT 0
+        )
+        """.trimIndent(),
+      )
+    }
+  }
+
+val MIGRATION_15_16 =
+  object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL(
+        "CREATE INDEX IF NOT EXISTS `index_RecentlyPlayedEntity_filePath` ON `RecentlyPlayedEntity` (`filePath`)",
+      )
+      db.execSQL(
+        "CREATE INDEX IF NOT EXISTS `index_RecentlyPlayedEntity_timestamp` ON `RecentlyPlayedEntity` (`timestamp`)",
+      )
+    }
+  }
+
+val MIGRATION_16_17 =
+  object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `download_items` (
+          `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          `systemDownloadId` INTEGER NOT NULL DEFAULT -1,
+          `url` TEXT NOT NULL,
+          `dirPath` TEXT NOT NULL,
+          `fileName` TEXT NOT NULL,
+          `status` TEXT NOT NULL DEFAULT 'QUEUED',
+          `progress` INTEGER NOT NULL DEFAULT 0,
+          `totalBytes` INTEGER NOT NULL DEFAULT 0,
+          `failureReason` TEXT,
+          `timeQueued` INTEGER NOT NULL DEFAULT 0,
+          `source` TEXT NOT NULL DEFAULT 'link',
+          `title` TEXT NOT NULL DEFAULT '',
+          `posterUrl` TEXT,
+          `sourceUrl` TEXT,
+          `jellyfinServerId` TEXT,
+          `jellyfinItemId` TEXT,
+          `jellyfinSeriesName` TEXT,
+          `seasonNumber` INTEGER,
+          `episodeNumber` INTEGER,
+          `isAudio` INTEGER NOT NULL DEFAULT 0
+        )
+        """.trimIndent(),
+      )
+      db.execSQL("CREATE INDEX IF NOT EXISTS `index_download_items_systemDownloadId` ON `download_items` (`systemDownloadId`)")
+      db.execSQL("CREATE INDEX IF NOT EXISTS `index_download_items_jellyfinItemId` ON `download_items` (`jellyfinItemId`)")
+    }
+  }
+
+val MIGRATION_17_18 =
+  object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL("ALTER TABLE `download_items` ADD COLUMN `stagingPath` TEXT")
+    }
+  }
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -674,7 +746,7 @@ val DatabaseModule =
     single<MpvRxDatabase> {
       val context = androidContext()
       Room
-        .databaseBuilder(context, MpvRxDatabase::class.java, "mpvrx.db")
+        .databaseBuilder(context, MpvRxDatabase::class.java, "Mpv∞.db")
         .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
         .addMigrations(
           MIGRATION_1_2,
@@ -690,6 +762,10 @@ val DatabaseModule =
           MIGRATION_11_12,
           MIGRATION_12_13,
           MIGRATION_13_14,
+          MIGRATION_14_15,
+          MIGRATION_15_16,
+          MIGRATION_16_17,
+          MIGRATION_17_18,
         ).build()
     }
 
@@ -737,6 +813,8 @@ val DatabaseModule =
       PlaylistRepository(
         playlistDao = get<MpvRxDatabase>().playlistDao(),
         httpClient = get(),
+        applicationContext = androidContext(),
+        ytdlPreferences = get(),
       )
     }
 
@@ -747,6 +825,24 @@ val DatabaseModule =
     single {
       app.infinity.mpvz.database.repository.SecureFolderRepository(
         dao = get<MpvRxDatabase>().secureMediaDao(),
+      )
+    }
+
+    single {
+      get<MpvRxDatabase>().jellyfinServerDao()
+    }
+
+    single {
+      app.infinity.mpvz.data.jellyfin.JellyfinClient(
+        httpClient = get(),
+        json = get(),
+      )
+    }
+
+    single {
+      app.infinity.mpvz.repository.JellyfinRepository(
+        dao = get(),
+        client = get(),
       )
     }
   }

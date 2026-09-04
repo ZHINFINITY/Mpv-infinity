@@ -79,6 +79,17 @@ enum class Debanding(
   GPU(R.string.player_sheets_deband_gpu),
 }
 
+/** Visual style of the ambient area around the video. */
+enum class AmbientStyle(
+  @StringRes val titleRes: Int,
+) {
+  /** Edge-sampled glow bleeding outward from the video borders. */
+  Glow(R.string.ambient_glow),
+
+  /** Soft blurred projection of the whole frame, like YouTube's Ambient Mode. */
+  YouTube(R.string.ambient_style_youtube),
+}
+
 enum class MPVProfile(
   val displayName: String,
   val value: String,
@@ -104,6 +115,7 @@ enum class Sheets {
   SubtitleTracks,
   OnlineSubtitleSearch,
   AudioTracks,
+  VideoQuality,
   Chapters,
   Decoders,
   More,
@@ -120,6 +132,7 @@ enum class Sheets {
 
 enum class Panels {
   None,
+  Clip,
   SubtitleSettings,
   SubtitleDelay,
   AudioDelay,
@@ -151,10 +164,6 @@ sealed class PlayerUpdates {
   ) : PlayerUpdates()
 
   data class ShowText(
-    val value: String,
-  ) : PlayerUpdates()
-
-  data class TranslatedSubtitle(
     val value: String,
   ) : PlayerUpdates()
 

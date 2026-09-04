@@ -13,6 +13,7 @@ import android.app.Activity
 import android.app.Application
 import android.content.ComponentName
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -22,14 +23,15 @@ import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
 import app.infinity.mpvz.di.DatabaseModule
 import app.infinity.mpvz.di.FileManagerModule
 import app.infinity.mpvz.di.PreferencesModule
+import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.presentation.crash.CrashActivity
 import app.infinity.mpvz.presentation.crash.GlobalExceptionHandler
 import app.infinity.mpvz.repository.NetworkRepository
-import app.infinity.mpvz.ui.player.AndroidNativeCompat
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlayerActivity
 import `is`.xyz.mpv.FastThumbnails
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -64,11 +66,6 @@ class App :
   override fun onCreate() {
     super.onCreate()
 
-    // Apply this before app-owned worker threads and either native MPV entry point start. Bionic's
-    // fdsan level setter is intended for single-threaded setup, and the bundled libmpv's raw-clone
-    // subprocess path otherwise corrupts its ownership bookkeeping on Android 16.
-    AndroidNativeCompat.applyMpvSubprocessWorkaround()
-
     // Initialize Koin
     startKoin {
       androidContext(this@App)
@@ -77,6 +74,7 @@ class App :
         DatabaseModule,
         FileManagerModule,
         app.infinity.mpvz.di.domainModule,
+        app.infinity.mpvz.di.DownloadModule,
       )
     }
     if (!BuildConfig.MPV_SUPPORTS_VULKAN) {
@@ -105,6 +103,24 @@ class App :
       }.onFailure { error ->
         Log.e(TAG, "Failed to initialize MediaInfoActivityAlias setting on launch", error)
       }
+      runCatching {
+        val preferences: PlayerPreferences = getKoin().get()
+        val enableWebLinks = preferences.enableWebStreamLinkIntents.get()
+        val componentName = ComponentName(this@App, "app.infinity.mpvz.ui.player.WebStreamLinksActivityAlias")
+        val newState =
+          if (enableWebLinks) {
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+          } else {
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+          }
+        packageManager.setComponentEnabledSetting(
+          componentName,
+          newState,
+          PackageManager.DONT_KILL_APP,
+        )
+      }.onFailure { error ->
+        Log.e(TAG, "Failed to initialize WebStreamLinksActivityAlias setting on launch", error)
+      }
     }
 
     // TextMate grammar/theme assets for the script editor are initialized lazily on first use.
@@ -128,8 +144,28 @@ class App :
   override fun onActivityStopped(activity: Activity) {
     startedActivityCount = (startedActivityCount - 1).coerceAtLeast(0)
     if (startedActivityCount == 0 && !activity.isChangingConfigurations) {
+      pauseVideoWhenBackgroundPlaybackDisabled(activity)
       getKoin().get<app.infinity.mpvz.domain.syncplay.SyncplayManager>().onAppBackgrounded()
     }
+  }
+
+  private fun pauseVideoWhenBackgroundPlaybackDisabled(activity: Activity) {
+    val playerActivity = activity as? PlayerActivity ?: return
+    if (playerActivity.isCurrentMediaKnownAudio()) return
+
+    val isInPictureInPicture =
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && playerActivity.isInPictureInPictureMode
+    if (isInPictureInPicture) return
+
+    val videoBackgroundPlaybackEnabled = getKoin().get<AudioPreferences>().backgroundPlayback.get()
+    if (videoBackgroundPlaybackEnabled) return
+
+    val state = PlaybackSession.state.value
+    if (state.currentItem == null || state.phase == PlaybackPhase.IDLE || state.phase == PlaybackPhase.UNINITIALIZED) return
+
+    PlaybackSession.setPropertyBoolean("pause", true)
+    playerActivity.abandonAudioFocus()
+    Log.d(TAG, "Paused video because video background playback is disabled")
   }
 
   override fun onActivityCreated(

@@ -98,9 +98,6 @@ internal class BlobRenderer(
   private var uCompositeExposure = -1
 
   @Suppress("LocalVariableName")
-  private var uCompositeBackground = -1
-
-  @Suppress("LocalVariableName")
   private var uSpectrum = -1
 
   private var meshVao = 0
@@ -132,7 +129,6 @@ internal class BlobRenderer(
 
   @Volatile private var reducedMotionEnabled = reducedMotion
   private var appliedPalette: VisualizerPalette? = null
-  private var backgroundRgb = initialPalette.backgroundRgb()
   private var primaryRgb = initialPalette.primaryRgb()
   private var secondaryRgb = initialPalette.secondaryRgb()
   private var tertiaryRgb = initialPalette.tertiaryRgb()
@@ -534,12 +530,6 @@ internal class BlobRenderer(
       0.34f + audio.energy * 0.24f + audio.beat * 0.12f,
     )
     GLES30.glUniform1f(uCompositeExposure, 0.82f)
-    GLES30.glUniform3f(
-      uCompositeBackground,
-      backgroundRgb[0],
-      backgroundRgb[1],
-      backgroundRgb[2],
-    )
     drawQuad()
   }
 
@@ -659,13 +649,11 @@ internal class BlobRenderer(
     uCompositeBloom = GLES30.glGetUniformLocation(compositeProgram, "uBloom")
     uCompositeBloomStrength = GLES30.glGetUniformLocation(compositeProgram, "uBloomStrength")
     uCompositeExposure = GLES30.glGetUniformLocation(compositeProgram, "uExposure")
-    uCompositeBackground = GLES30.glGetUniformLocation(compositeProgram, "uBackground")
   }
 
   private fun updatePaletteIfNeeded() {
     val next = palette
     if (next == appliedPalette) return
-    backgroundRgb = next.backgroundRgb()
     primaryRgb = next.primaryRgb()
     secondaryRgb = next.secondaryRgb()
     tertiaryRgb = next.tertiaryRgb()

@@ -42,9 +42,6 @@ internal class GalaxyRenderer(
   @Volatile private var targetPitch = 0f
 
   private var appliedPalette: VisualizerPalette? = null
-  private var backgroundR = 0f
-  private var backgroundG = 0f
-  private var backgroundB = 0f
   private var primaryR = 1f
   private var primaryG = 1f
   private var primaryB = 1f
@@ -338,9 +335,6 @@ internal class GalaxyRenderer(
     if (!force && appliedPalette == palette) return
     appliedPalette = palette
 
-    backgroundR = Color.red(palette.background) / 255f
-    backgroundG = Color.green(palette.background) / 255f
-    backgroundB = Color.blue(palette.background) / 255f
     primaryR = Color.red(palette.primary) / 255f
     primaryG = Color.green(palette.primary) / 255f
     primaryB = Color.blue(palette.primary) / 255f

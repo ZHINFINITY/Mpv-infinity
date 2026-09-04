@@ -17,9 +17,10 @@ internal object SubtitleHubSearchMatcher {
       "moviesubtitles_org",
       "moviesubtitlesrt_com",
     )
+  private val episodeOnlySources = setOf(MpvRxSubtitleHubSources.BETASERIES_KEY)
 
   private val supportedSubtitleFormats = setOf("srt", "ass", "ssa", "vtt", "sub")
-  private val supportedArchiveFormats = setOf("zip")
+  private val supportedArchiveFormats = setOf("zip", "rar")
 
   fun sourcesFor(
     request: OnlineSubtitleSearchRequest,
@@ -28,7 +29,7 @@ internal object SubtitleHubSearchMatcher {
     if (request.season != null || request.episode != null) {
       selectedSources - movieOnlySources
     } else {
-      selectedSources
+      selectedSources - episodeOnlySources
     }
 
   fun matchesQueryTitle(

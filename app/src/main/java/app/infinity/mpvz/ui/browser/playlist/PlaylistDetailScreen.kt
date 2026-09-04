@@ -40,8 +40,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +56,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -65,6 +64,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.entities.PlaylistItemEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.GesturePreferences
@@ -78,6 +78,7 @@ import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
 import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlayerActivity
@@ -136,6 +137,13 @@ data class PlaylistDetailScreen(
     val videos = videoItems.map { it.video }
     val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing = remember { mutableStateOf(false) }
+    val playlistTitle =
+      when {
+        playlist?.name?.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true) != true ->
+          playlist?.name ?: stringResource(R.string.ui_playlist)
+        playlist?.isAudio == true -> stringResource(R.string.playlist_favorite_songs)
+        else -> stringResource(R.string.playlist_favorite_videos)
+      }
 
     // Search state
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -238,11 +246,18 @@ data class PlaylistDetailScreen(
       item: PlaylistVideoItem,
       startIndex: Int,
     ) {
+      val fallbackUri = Uri.parse(item.video.path)
+      val playUri =
+        item.video.uri.takeIf { it != Uri.EMPTY && it.toString().isNotBlank() }
+          ?: fallbackUri.takeIf { !it.scheme.isNullOrBlank() }
+          ?: Uri.fromFile(java.io.File(item.video.path))
+
       val intent =
         Intent(context, PlayerActivity::class.java).apply {
           action = Intent.ACTION_VIEW
-          data = item.video.uri
+          data = playUri
           putExtra("internal_launch", true)
+          putExtra("local_media_path", item.video.path)
           putExtra("playlist_index", startIndex)
           putExtra("playlist_id", playlistId)
           putExtra("launch_source", if (playlist?.isM3uPlaylist == true) "m3u_playlist" else "playlist")
@@ -257,62 +272,52 @@ data class PlaylistDetailScreen(
       topBar = {
         if (isSearching) {
           // Search mode - show search bar
-          SearchBar(
-            inputField = {
-              SearchBarDefaults.InputField(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                onSearch = { },
-                expanded = false,
-                onExpandedChange = { },
-                placeholder = {
-                  Text(
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_search_videos),
-                  )
-                },
-                leadingIcon = {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Search,
-                    contentDescription =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.settings_search_title,
-                      ),
-                  )
-                },
-                trailingIcon = {
-                  IconButton(
-                    onClick = {
-                      isSearching = false
-                      searchQuery = ""
-                    },
-                  ) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.Close,
-                      contentDescription =
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.generic_cancel,
-                        ),
-                    )
-                  }
-                },
-                modifier = Modifier.focusRequester(focusRequester),
-              )
-            },
-            expanded = false,
-            onExpandedChange = { },
+          InlineSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            onSearch = { },
             modifier =
               Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
+            inputFieldModifier = Modifier.focusRequester(focusRequester),
+            placeholder = {
+              Text(
+                androidx.compose.ui.res
+                  .stringResource(app.infinity.mpvz.R.string.ui_search_videos),
+              )
+            },
+            leadingIcon = {
+              Icon(
+                imageVector = Icons.RoundedFilled.Search,
+                contentDescription =
+                  androidx.compose.ui.res.stringResource(
+                    app.infinity.mpvz.R.string.settings_search_title,
+                  ),
+              )
+            },
+            trailingIcon = {
+              IconButton(
+                onClick = {
+                  isSearching = false
+                  searchQuery = ""
+                },
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Close,
+                  contentDescription =
+                    androidx.compose.ui.res.stringResource(
+                      app.infinity.mpvz.R.string.generic_cancel,
+                    ),
+                )
+              }
+            },
             shape = RoundedCornerShape(28.dp),
             tonalElevation = 6.dp,
-          ) {
-            // Empty content for SearchBar
-          }
+          )
         } else {
           BrowserTopBar(
-            title = playlist?.name ?: stringResource(R.string.ui_playlist),
+            title = playlistTitle,
             isInSelectionMode = selectionManager.isInSelectionMode,
             selectedCount = selectionManager.selectedCount,
             totalCount = videos.size,
@@ -664,11 +669,16 @@ private fun PlaylistVideoListContent(
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
   val unplayedOldVideoDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
   val showDurationField by browserPreferences.showDurationField.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val musicCoverArtSize by browserPreferences.musicCoverArtSize.collectAsState()
+  val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
+  val density = LocalDensity.current
+  val audioThumbnailSizePx = with(density) { musicCoverArtSize.dp.roundToPx() }
   val videoCardUiConfig =
     remember(
       unlimitedNameLines,
@@ -676,6 +686,7 @@ private fun PlaylistVideoListContent(
       showSizeChip,
       showResolutionChip,
       showFramerateInResolution,
+      showCodecSupportIndicator,
       showProgressBar,
       showDateChip,
       showUnplayedOldVideoLabel,
@@ -683,6 +694,7 @@ private fun PlaylistVideoListContent(
       showExtensionField,
       showDurationField,
       centerGridTitles,
+      thumbnailQuality,
     ) {
       VideoCardUiConfig(
         unlimitedNameLines = unlimitedNameLines,
@@ -690,6 +702,7 @@ private fun PlaylistVideoListContent(
         showSizeChip = showSizeChip,
         showResolutionChip = showResolutionChip,
         showFramerateInResolution = showFramerateInResolution,
+        showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
@@ -697,6 +710,7 @@ private fun PlaylistVideoListContent(
         showExtensionField = showExtensionField,
         showDurationField = showDurationField,
         centerGridTitles = centerGridTitles,
+        thumbnailQuality = thumbnailQuality,
       )
     }
 
@@ -823,7 +837,7 @@ private fun PlaylistVideoListContent(
                   )
                 } else {
                   VideoCard(
-                    video = item.video,
+                    video = if (isAudio && !item.video.isAudio) item.video.copy(isAudio = true) else item.video,
                     progressPercentage = progressPercentage,
                     isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
                     isSelected = selectionManager.isSelected(item),
@@ -836,6 +850,8 @@ private fun PlaylistVideoListContent(
                         { onVideoItemClick(item) }
                       },
                     showSubtitleIndicator = showSubtitleIndicator,
+                    thumbnailWidthPx = if (isAudio) audioThumbnailSizePx else null,
+                    thumbnailHeightPx = if (isAudio) audioThumbnailSizePx else null,
                     modifier = Modifier.weight(1f),
                     uiConfig = videoCardUiConfig,
                   )

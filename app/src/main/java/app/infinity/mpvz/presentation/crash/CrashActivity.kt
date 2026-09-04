@@ -69,7 +69,7 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.DarkMode
-import app.infinity.mpvz.ui.theme.MpvrxTheme
+import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import `is`.xyz.mpv.Utils
@@ -104,7 +104,7 @@ class CrashActivity : AppCompatActivity() {
           darkScrim = Color.Transparent.toArgb(),
         ) { isDarkMode },
       )
-      MpvrxTheme {
+      MpvInfinityTheme {
         if (debugLogsMode) {
           DebugLogsScreen(onNavigateBack = ::finish)
         } else {
@@ -124,9 +124,9 @@ class CrashActivity : AppCompatActivity() {
 
   private fun deleteDatabase(): Boolean =
     try {
-      val dbFile = getDatabasePath("mpvrx.db")
-      val dbWalFile = File(dbFile.parent, "mpvrx.db-wal")
-      val dbShmFile = File(dbFile.parent, "mpvrx.db-shm")
+      val dbFile = getDatabasePath("Mpv∞.db")
+      val dbWalFile = File(dbFile.parent, "Mpv∞.db-wal")
+      val dbShmFile = File(dbFile.parent, "Mpv∞.db-shm")
 
       var deleted = false
       if (dbFile.exists()) {
@@ -152,8 +152,8 @@ class CrashActivity : AppCompatActivity() {
         "database",
         "sqlite",
         "room",
-        "mpvrx.db",
-        "mpvrxDatabase",
+        "Mpv∞.db",
+        "Mpv∞Database",
         "android.database",
         "androidx.room",
         "SQLiteException",
@@ -191,7 +191,7 @@ class CrashActivity : AppCompatActivity() {
       }
 
       withContext(NonCancellable) {
-        val file = File(activity.cacheDir, "mpvrx_logs.txt")
+        val file = File(activity.cacheDir, "Mpv∞_logs.txt")
         if (file.exists()) file.delete()
         file.createNewFile()
         file.appendText(concatLogs(deviceInfo, exceptionString, logcat))
@@ -316,7 +316,7 @@ class CrashActivity : AppCompatActivity() {
               onClick = {
                 SafeClipboard.copyPlainText(
                   context = this@CrashActivity,
-                  label = "mpvrx_crash_logs",
+                  label = "Mpv∞_crash_logs",
                   text = concatLogs(collectDeviceInfo(), exceptionString, logcat),
                 )
               },

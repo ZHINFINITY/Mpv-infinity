@@ -25,6 +25,7 @@ import app.infinity.mpvz.ui.player.PlaybackIdentity
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
+import app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps
 import app.infinity.mpvz.utils.sort.SortUtils
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import app.infinity.mpvz.utils.storage.FolderViewScanner
@@ -115,8 +116,7 @@ class FileSystemBrowserViewModel(
   val itemsWereDeletedOrMoved: StateFlow<Boolean> = _itemsWereDeletedOrMoved.asStateFlow()
 
   // Track previous item count per path to detect if folder became empty
-  private var itemCountByPath = mutableMapOf<String, Int>()
-  private var lastHardRefreshElapsedMs = 0L
+  private val itemCountByPath = mutableMapOf<String, Int>()
 
   companion object {
     private const val TAG = "FileSystemBrowserVM"
@@ -216,24 +216,7 @@ class FileSystemBrowserViewModel(
    * Refresh current directory
    * Equivalent to Fossify's refreshFragment() callback
    */
-  /**
-   * Reloads the visible directory without invalidating the storage topology caches or invoking
-   * MediaScanner. Used when returning to the screen; actual media changes still use refresh().
-   */
-  fun refreshVisibleDirectory() {
-    if (_isLoading.value) return
-    Log.d(TAG, "Refreshing visible directory without clearing scanner caches: ${_currentPath.value}")
-    loadCurrentDirectory(forceFileSystemCheck = false)
-  }
-
   override fun refresh() {
-    val now = android.os.SystemClock.elapsedRealtime()
-    if (now - lastHardRefreshElapsedMs < 1_000L) {
-      Log.d(TAG, "Ignoring duplicate hard refresh request")
-      refreshVisibleDirectory()
-      return
-    }
-    lastHardRefreshElapsedMs = now
     Log.d(TAG, "Hard refreshing current directory: ${_currentPath.value}")
 
     // Set loading state
@@ -426,12 +409,8 @@ class FileSystemBrowserViewModel(
     folder: FileSystemItem.Folder,
     newName: String,
   ): Boolean {
-    val src = File(folder.path)
-    val dst = File(src.parent ?: return false, newName)
-    if (dst.exists()) return false
-    val ok = src.renameTo(dst)
+    val ok = StorageOps.renameFolder(getApplication(), folder.path, newName)
     if (ok) {
-      android.media.MediaScannerConnection.scanFile(getApplication(), arrayOf(dst.absolutePath), null, null)
       setItemsWereDeletedOrMoved()
     }
     return ok
@@ -578,6 +557,7 @@ class FileSystemBrowserViewModel(
       val video = videoFile.video
       val playbackIdentifiers =
         linkedSetOf(
+          PlaybackIdentity.forLocalPath(video.path),
           PlaybackIdentity.forUri(video.uri.toString()),
           PlaybackIdentity.forUri(video.path),
           PlaybackIdentity.forUri("file://${video.path}"),
@@ -618,6 +598,7 @@ class FileSystemBrowserViewModel(
       val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
       val identifiers =
         linkedSetOf(
+          PlaybackIdentity.forLocalPath(video.path),
           PlaybackIdentity.forUri(video.uri.toString()),
           PlaybackIdentity.forUri(video.path),
           PlaybackIdentity.forUri("file://${video.path}"),
@@ -627,7 +608,7 @@ class FileSystemBrowserViewModel(
       }
       playbackStateRepository.upsert(
         (existing ?: app.infinity.mpvz.database.entities.PlaybackStateEntity(
-          mediaTitle = PlaybackIdentity.forUri(video.uri.toString()),
+          mediaTitle = PlaybackIdentity.forLocalPath(video.path),
           lastPosition = 0,
           playbackSpeed = 1.0,
           sid = -1,
@@ -639,13 +620,13 @@ class FileSystemBrowserViewModel(
           timeRemaining = durationSeconds,
           hasBeenWatched = false,
         )).copy(
-          mediaTitle = PlaybackIdentity.forUri(video.uri.toString()),
+          mediaTitle = PlaybackIdentity.forLocalPath(video.path),
           lastPosition = 0,
           timeRemaining = if (watched) 0 else durationSeconds,
           hasBeenWatched = watched,
         ),
       )
-      PlaybackStateEvents.notifyChanged(PlaybackIdentity.forUri(video.uri.toString()))
+      PlaybackStateEvents.notifyChanged(PlaybackIdentity.forLocalPath(video.path))
     }
   }
 }

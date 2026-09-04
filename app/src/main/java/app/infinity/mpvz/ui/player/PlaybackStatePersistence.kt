@@ -29,6 +29,7 @@ internal data class PlaybackStateSnapshot(
   val aid: Int,
   val audioDelayMs: Int,
   val externalSubtitles: String,
+  val isPositionRestorePending: Boolean = false,
 )
 
 internal object PlaybackStatePersistence {
@@ -44,9 +45,10 @@ internal object PlaybackStatePersistence {
         currentPosition = snapshot.currentPosition,
         duration = snapshot.duration,
         savePositionOnQuit = savePositionOnQuit,
+        isPositionRestorePending = snapshot.isPositionRestorePending,
       )
     val duration = snapshot.duration
-    val timeRemaining = if (duration > snapshot.currentPosition) duration - snapshot.currentPosition else 0
+    val timeRemaining = if (duration > lastPosition) duration - lastPosition else 0
 
     return PlaybackStateEntity(
       mediaTitle = snapshot.mediaIdentifier,
@@ -77,20 +79,18 @@ internal object PlaybackStatePersistence {
     currentPosition: Int,
     duration: Int,
     savePositionOnQuit: Boolean,
+    isPositionRestorePending: Boolean = false,
   ): Int {
     if (!savePositionOnQuit) {
       return oldState?.lastPosition ?: 0
     }
-
-    // During Media3 prepare and engine handoff, duration can temporarily be unknown (0). Treat
-    // that sample as valid position data instead of comparing against duration - 1, which turns
-    // every such save into zero and can overwrite a previously persisted resume point. The
-    // completion reset remains unchanged when a real duration is available.
-    if (duration <= 0) {
-      return currentPosition.takeIf { it > 0 } ?: oldState?.lastPosition ?: 0
+    if (isPositionRestorePending) {
+      return oldState?.lastPosition ?: currentPosition.coerceAtLeast(0)
     }
 
-    return if (currentPosition < duration - 1) currentPosition else 0
+    if (duration <= 0) return currentPosition.takeIf { it > 0 } ?: oldState?.lastPosition ?: 0
+
+    return if (currentPosition < duration - 1) currentPosition.coerceAtLeast(0) else 0
   }
 
   private fun isWatched(

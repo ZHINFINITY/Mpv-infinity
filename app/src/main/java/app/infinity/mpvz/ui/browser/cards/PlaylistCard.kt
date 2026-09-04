@@ -19,8 +19,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.PlaylistEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.domain.media.model.VideoFolder
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
 import app.infinity.mpvz.ui.theme.AppShapeScale
 
 /**
@@ -48,11 +50,18 @@ fun PlaylistCard(
   isGridMode: Boolean = false,
   thumbnail: android.graphics.Bitmap? = null,
 ) {
+  val isFavorites = playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)
+  val displayName =
+    when {
+      !isFavorites -> playlist.name
+      playlist.isAudio -> stringResource(R.string.playlist_favorite_songs)
+      else -> stringResource(R.string.playlist_favorite_videos)
+    }
   // Convert playlist to VideoFolder format for FolderCard
   val folderModel =
     VideoFolder(
       bucketId = playlist.id.toString(),
-      name = playlist.name,
+      name = displayName,
       path = "", // Not used for playlists
       videoCount = itemCount,
       totalSize = 0, // Not tracked for playlists
@@ -62,7 +71,16 @@ fun PlaylistCard(
 
   // Create a custom chip renderer for playlist type
   val customChipRenderer: @Composable () -> Unit = {
-    val chipText = if (playlist.isM3uPlaylist) stringResource(R.string.playlist_m3u_badge) else "Local"
+    val isOnlinePlaylist =
+      playlist.m3uSourceUrl?.let { source ->
+        YtdlpManager.isPotentialPlaylistUrl(source) && YtdlpManager.requiresYtdlp(source)
+      } == true
+    val chipText =
+      when {
+        isOnlinePlaylist -> stringResource(R.string.playlist_online_badge)
+        playlist.isM3uPlaylist -> stringResource(R.string.playlist_m3u_badge)
+        else -> "Local"
+      }
 
     // Use Material Design theme colors
     val materialTheme = androidx.compose.material3.MaterialTheme.colorScheme
@@ -97,7 +115,11 @@ fun PlaylistCard(
     onLongClick = onLongClick,
     onThumbClick = onThumbClick,
     showDateModified = true,
-    customIcon = Icons.RoundedFilled.PlaylistPlay,
+    customIcon = if (isFavorites) {
+      Icons.RoundedFilled.Favorite
+    } else {
+      Icons.RoundedFilled.PlaylistPlay
+    },
     modifier = modifier,
     customChipContent = customChipRenderer,
     isGridMode = isGridMode,

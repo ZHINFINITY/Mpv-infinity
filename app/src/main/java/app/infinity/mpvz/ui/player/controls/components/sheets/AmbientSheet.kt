@@ -31,6 +31,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -49,12 +52,12 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.presentation.components.SliderItem
+import app.infinity.mpvz.ui.components.themedSegmentedButtonColors
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.AmbientShaderPresets
-import app.infinity.mpvz.ui.player.AmbientVisualMode
+import app.infinity.mpvz.ui.player.AmbientStyle
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.components.expressive.SectionHeader
-import app.infinity.mpvz.ui.player.matchesFrameExtendPreset
 import app.infinity.mpvz.ui.player.matchesGlowPreset
 import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.spacing
@@ -66,7 +69,7 @@ fun AmbientSheet(
   onDismissRequest: () -> Unit,
 ) {
   // ── Collect all state flows ──────────────────────────────────────────────
-  val ambientMode by viewModel.ambientVisualMode.collectAsState()
+  val ambientStyle by viewModel.ambientStyle.collectAsState()
   val blurSamples by viewModel.ambientBlurSamples.collectAsState()
   val maxRadius by viewModel.ambientMaxRadius.collectAsState()
   val glowIntensity by viewModel.ambientGlowIntensity.collectAsState()
@@ -75,113 +78,23 @@ fun AmbientSheet(
   val warmth by viewModel.ambientWarmth.collectAsState()
   val fadeCurve by viewModel.ambientFadeCurve.collectAsState()
   val opacity by viewModel.ambientOpacity.collectAsState()
-  val bezelDepth by viewModel.ambientBezelDepth.collectAsState()
-  val ditherNoise by viewModel.ambientDitherNoise.collectAsState()
-  val frameExtendStrength by viewModel.frameExtendStrength.collectAsState()
-  val frameExtendDetailProtection by viewModel.frameExtendDetailProtection.collectAsState()
-  val frameExtendGlowMix by viewModel.frameExtendGlowMix.collectAsState()
-
   val isFast =
     remember(
-      ambientMode, blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength,
-      warmth, fadeCurve, opacity, frameExtendStrength, frameExtendDetailProtection,
-      frameExtendGlowMix, ditherNoise, bezelDepth,
+      blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength, warmth, fadeCurve, opacity,
     ) {
-      when (ambientMode) {
-        AmbientVisualMode.GLOW ->
-          matchesGlowPreset(
-            preset = AmbientShaderPresets.glowFast,
-            blurSamples = blurSamples,
-            maxRadius = maxRadius,
-            glowIntensity = glowIntensity,
-            satBoost = satBoost,
-            vignetteStrength = vignetteStrength,
-            warmth = warmth,
-            fadeCurve = fadeCurve,
-            opacity = opacity,
-          )
-        AmbientVisualMode.FRAME_EXTEND ->
-          matchesFrameExtendPreset(
-            preset = AmbientShaderPresets.frameExtendFast,
-            sampleBudget = blurSamples,
-            extendStrength = frameExtendStrength,
-            detailProtection = frameExtendDetailProtection,
-            glowMix = frameExtendGlowMix,
-            ditherNoise = ditherNoise,
-            bezelDepth = bezelDepth,
-            vignetteStrength = vignetteStrength,
-            opacity = opacity,
-          )
-        AmbientVisualMode.YOUTUBE -> false
-      }
+      matchesGlowPreset(AmbientShaderPresets.glowFast, blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength, warmth, fadeCurve, opacity)
     }
   val isBalanced =
     remember(
-      ambientMode, blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength,
-      warmth, fadeCurve, opacity, frameExtendStrength, frameExtendDetailProtection,
-      frameExtendGlowMix, ditherNoise, bezelDepth,
+      blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength, warmth, fadeCurve, opacity,
     ) {
-      when (ambientMode) {
-        AmbientVisualMode.GLOW ->
-          matchesGlowPreset(
-            preset = AmbientShaderPresets.glowBalanced,
-            blurSamples = blurSamples,
-            maxRadius = maxRadius,
-            glowIntensity = glowIntensity,
-            satBoost = satBoost,
-            vignetteStrength = vignetteStrength,
-            warmth = warmth,
-            fadeCurve = fadeCurve,
-            opacity = opacity,
-          )
-        AmbientVisualMode.FRAME_EXTEND ->
-          matchesFrameExtendPreset(
-            preset = AmbientShaderPresets.frameExtendBalanced,
-            sampleBudget = blurSamples,
-            extendStrength = frameExtendStrength,
-            detailProtection = frameExtendDetailProtection,
-            glowMix = frameExtendGlowMix,
-            ditherNoise = ditherNoise,
-            bezelDepth = bezelDepth,
-            vignetteStrength = vignetteStrength,
-            opacity = opacity,
-          )
-        AmbientVisualMode.YOUTUBE -> false
-      }
+      matchesGlowPreset(AmbientShaderPresets.glowBalanced, blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength, warmth, fadeCurve, opacity)
     }
   val isHQ =
     remember(
-      ambientMode, blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength,
-      warmth, fadeCurve, opacity, frameExtendStrength, frameExtendDetailProtection,
-      frameExtendGlowMix, ditherNoise, bezelDepth,
+      blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength, warmth, fadeCurve, opacity,
     ) {
-      when (ambientMode) {
-        AmbientVisualMode.GLOW ->
-          matchesGlowPreset(
-            preset = AmbientShaderPresets.glowHighQuality,
-            blurSamples = blurSamples,
-            maxRadius = maxRadius,
-            glowIntensity = glowIntensity,
-            satBoost = satBoost,
-            vignetteStrength = vignetteStrength,
-            warmth = warmth,
-            fadeCurve = fadeCurve,
-            opacity = opacity,
-          )
-        AmbientVisualMode.FRAME_EXTEND ->
-          matchesFrameExtendPreset(
-            preset = AmbientShaderPresets.frameExtendHighQuality,
-            sampleBudget = blurSamples,
-            extendStrength = frameExtendStrength,
-            detailProtection = frameExtendDetailProtection,
-            glowMix = frameExtendGlowMix,
-            ditherNoise = ditherNoise,
-            bezelDepth = bezelDepth,
-            vignetteStrength = vignetteStrength,
-            opacity = opacity,
-          )
-        AmbientVisualMode.YOUTUBE -> false
-      }
+      matchesGlowPreset(AmbientShaderPresets.glowHighQuality, blurSamples, maxRadius, glowIntensity, satBoost, vignetteStrength, warmth, fadeCurve, opacity)
     }
   val configuration = LocalConfiguration.current
   val customMaxHeight =
@@ -218,6 +131,30 @@ fun AmbientSheet(
             .padding(bottom = 4.dp),
       )
 
+      SingleChoiceSegmentedButtonRow(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+      ) {
+        AmbientStyle.entries.forEachIndexed { index, style ->
+          SegmentedButton(
+            selected = ambientStyle == style,
+            onClick = { viewModel.setAmbientStyle(style) },
+            shape = SegmentedButtonDefaults.itemShape(index, AmbientStyle.entries.size),
+            colors = themedSegmentedButtonColors(),
+          ) {
+            Text(text = stringResource(style.titleRes))
+          }
+        }
+      }
+
+      HorizontalDivider(
+        modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+      )
+
+      if (ambientStyle == AmbientStyle.Glow) {
       // ── Quality Presets ──────────────────────────────────────────────
       Row(
         modifier =
@@ -230,19 +167,16 @@ fun AmbientSheet(
         ExpressivePresetButton(
           label = "Fast",
           selected = isFast,
-          enabled = ambientMode != AmbientVisualMode.YOUTUBE,
           onClick = { viewModel.applyAmbientProfileFast() },
         )
         ExpressivePresetButton(
           label = "Balanced",
           selected = isBalanced,
-          enabled = ambientMode != AmbientVisualMode.YOUTUBE,
           onClick = { viewModel.applyAmbientProfileBalanced() },
         )
         ExpressivePresetButton(
           label = "HQ",
           selected = isHQ,
-          enabled = ambientMode != AmbientVisualMode.YOUTUBE,
           onClick = { viewModel.applyAmbientProfileHighQuality() },
         )
       }
@@ -504,168 +438,16 @@ fun AmbientSheet(
         }
       }
 
-      HorizontalDivider(
-        modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-      )
-
-      // ── Section: Visual Style ────────────────────────────────────────
-      SectionHeader(title = stringResource(R.string.ambient_visual_style))
-      Row(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .padding(horizontal = MaterialTheme.spacing.medium),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        AmbientModeButton(
-          label = AmbientVisualMode.GLOW.label,
-          selected = ambientMode == AmbientVisualMode.GLOW,
-          onClick = { viewModel.updateAmbientVisualMode(AmbientVisualMode.GLOW) },
-        )
-        AmbientModeButton(
-          label = AmbientVisualMode.FRAME_EXTEND.label,
-          selected = ambientMode == AmbientVisualMode.FRAME_EXTEND,
-          onClick = { viewModel.updateAmbientVisualMode(AmbientVisualMode.FRAME_EXTEND) },
-        )
-        AmbientModeButton(
-          label = AmbientVisualMode.YOUTUBE.label,
-          selected = ambientMode == AmbientVisualMode.YOUTUBE,
-          onClick = { viewModel.updateAmbientVisualMode(AmbientVisualMode.YOUTUBE) },
-        )
-      }
-
-      if (ambientMode == AmbientVisualMode.FRAME_EXTEND) {
-        HorizontalDivider(
-          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
-          color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-        )
-
-        var frameExtendExpanded by remember { mutableStateOf(true) }
-        SectionHeader(
-          title = stringResource(R.string.ambient_frame_extend),
-          isExpanded = frameExtendExpanded,
-          onClick = { frameExtendExpanded = !frameExtendExpanded },
-        )
-        AnimatedVisibility(
-          visible = frameExtendExpanded,
-          enter =
-            expandVertically(
-              animationSpec =
-                spring(
-                  dampingRatio = AppMotion.Spatial.Expressive.dampingRatio,
-                  stiffness = AppMotion.Spatial.Expressive.stiffness,
-                ),
-            ) +
-              fadeIn(animationSpec = spring(stiffness = AppMotion.Effect.Alpha.stiffness)),
-          exit =
-            shrinkVertically(
-              animationSpec =
-                spring(
-                  dampingRatio = AppMotion.Spatial.Expressive.dampingRatio,
-                  stiffness = AppMotion.Spatial.Expressive.stiffness,
-                ),
-            ) +
-              fadeOut(animationSpec = spring(stiffness = AppMotion.Effect.Alpha.stiffness)),
-        ) {
-          Column(
-            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
-          ) {
-            SliderItem(
-              label = "Strength",
-              valueText = "%.2f".format(frameExtendStrength),
-              value = frameExtendStrength,
-              onChange = { viewModel.updateFrameExtendParams(extendStrength = it) },
-              min = 0.20f,
-              max = 1.0f,
-              steps = 32,
-              icon = {
-                AppSymbolIcon(
-                  imageVector = Icons.RoundedFilled.Gradient,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(20.dp),
-                )
-              },
-            )
-
-            SliderItem(
-              label = "Detail Protect",
-              valueText = "%.2f".format(frameExtendDetailProtection),
-              value = frameExtendDetailProtection,
-              onChange = { viewModel.updateFrameExtendParams(detailProtection = it) },
-              min = 0.0f,
-              max = 1.0f,
-              steps = 20,
-              icon = {
-                AppSymbolIcon(
-                  imageVector = Icons.RoundedFilled.BlurOn,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(20.dp),
-                )
-              },
-            )
-
-            SliderItem(
-              label = "Glow Mix",
-              valueText = "%.2f".format(frameExtendGlowMix),
-              value = frameExtendGlowMix,
-              onChange = { viewModel.updateFrameExtendParams(glowMix = it) },
-              min = 0.0f,
-              max = 0.8f,
-              steps = 32,
-              icon = {
-                AppSymbolIcon(
-                  imageVector = Icons.RoundedFilled.Brightness6,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(20.dp),
-                )
-              },
-            )
-
-            SliderItem(
-              label = "Bezel",
-              valueText = "%.3f".format(bezelDepth),
-              value = bezelDepth,
-              onChange = { viewModel.updateAmbientParams(bezelDepth = it) },
-              min = 0.0f,
-              max = 0.1f,
-              steps = 50,
-              icon = {
-                AppSymbolIcon(
-                  imageVector = Icons.RoundedFilled.RoundedCorner,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(20.dp),
-                )
-              },
-            )
-
-            SliderItem(
-              label = "Dither",
-              valueText = "%.3f".format(ditherNoise),
-              value = ditherNoise,
-              onChange = { viewModel.updateFrameExtendParams(ditherNoise = it) },
-              min = 0.0f,
-              max = 0.05f,
-              steps = 50,
-              icon = {
-                AppSymbolIcon(
-                  imageVector = Icons.RoundedFilled.Grain,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.size(20.dp),
-                )
-              },
-            )
-          }
-        }
-      }
-
       Spacer(modifier = Modifier.height(8.dp))
+      } else {
+        Text(
+          text = stringResource(R.string.ambient_youtube_auto_hint),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.large, vertical = 8.dp),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+      }
     }
   }
 }
@@ -688,39 +470,6 @@ private fun RowScope.ExpressivePresetButton(
   FilledTonalButton(
     onClick = onClick,
     enabled = enabled,
-    modifier =
-      Modifier
-        .weight(1f)
-        .graphicsLayer(scaleX = scale, scaleY = scale),
-    colors =
-      if (selected) {
-        ButtonDefaults.filledTonalButtonColors(
-          containerColor = MaterialTheme.colorScheme.primary,
-          contentColor = MaterialTheme.colorScheme.onPrimary,
-        )
-      } else {
-        ButtonDefaults.filledTonalButtonColors()
-      },
-  ) {
-    Text(label, fontWeight = FontWeight.Bold)
-  }
-}
-
-@Composable
-private fun RowScope.AmbientModeButton(
-  label: String,
-  selected: Boolean,
-  onClick: () -> Unit,
-) {
-  val targetScale = if (selected) 1.02f else 1.0f
-  val scale by androidx.compose.animation.core.animateFloatAsState(
-    targetValue = targetScale,
-    animationSpec = AppMotion.Spatial.Expressive,
-    label = "AmbientModeButtonScale",
-  )
-
-  FilledTonalButton(
-    onClick = onClick,
     modifier =
       Modifier
         .weight(1f)

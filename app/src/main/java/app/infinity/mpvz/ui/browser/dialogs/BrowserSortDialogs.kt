@@ -332,6 +332,7 @@ fun VideoSortDialog(
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
@@ -569,6 +570,13 @@ fun VideoSortDialog(
         )
         add(
           VisibilityToggle(
+            label = "Codec support",
+            checked = showCodecSupportIndicator,
+            onCheckedChange = { browserPreferences.showCodecSupportIndicator.set(it) },
+          ),
+        )
+        add(
+          VisibilityToggle(
             label = "Date",
             checked = showDateChip,
             onCheckedChange = { browserPreferences.showDateChip.set(it) },
@@ -632,6 +640,7 @@ fun FileSystemSortDialog(
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
@@ -853,6 +862,13 @@ fun FileSystemSortDialog(
             label = "Framerate",
             checked = showFramerateInResolution,
             onCheckedChange = { browserPreferences.showFramerateInResolution.set(it) },
+          ),
+        )
+        add(
+          VisibilityToggle(
+            label = "Codec support",
+            checked = showCodecSupportIndicator,
+            onCheckedChange = { browserPreferences.showCodecSupportIndicator.set(it) },
           ),
         )
         add(
@@ -1140,3 +1156,87 @@ fun MusicSortDialog(
       },
   )
 }
+
+@Composable
+fun JellyfinSortDialog(
+  isOpen: Boolean,
+  onDismiss: () -> Unit,
+  sortBy: app.infinity.mpvz.domain.jellyfin.JellyfinSortBy,
+  onSortByChange: (app.infinity.mpvz.domain.jellyfin.JellyfinSortBy) -> Unit,
+  sortOrder: app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder,
+  onSortOrderChange: (app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder) -> Unit,
+  isUnplayedOnly: Boolean,
+  onUnplayedOnlyChange: (Boolean) -> Unit,
+  layoutMode: MediaLayoutMode = MediaLayoutMode.GRID,
+  onLayoutModeChange: (MediaLayoutMode) -> Unit = {},
+) {
+  SortDialog(
+    isOpen = isOpen,
+    onDismiss = onDismiss,
+    title = stringResource(R.string.sort_view_options),
+    sortType = sortBy.displayName,
+    onSortTypeChange = { typeName ->
+      app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.entries
+        .find { it.displayName == typeName }
+        ?.let(onSortByChange)
+    },
+    sortOrderAsc = sortOrder == app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.ASCENDING,
+    onSortOrderChange = { isAsc ->
+      onSortOrderChange(
+        if (isAsc) {
+          app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.ASCENDING
+        } else {
+          app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder.DESCENDING
+        },
+      )
+    },
+    types =
+      listOf(
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.NAME.displayName,
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.DATE_ADDED.displayName,
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.PREMIERE_DATE.displayName,
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.RATING.displayName,
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.RUNTIME.displayName,
+      ),
+    icons =
+      listOf(
+        Icons.RoundedFilled.Title,
+        Icons.RoundedFilled.CalendarToday,
+        Icons.RoundedFilled.Movie,
+        Icons.RoundedFilled.SwapVert,
+        Icons.RoundedFilled.AccessTime,
+      ),
+    getLabelForType = { type, _ ->
+      when (type) {
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.NAME.displayName -> Pair("A-Z", "Z-A")
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.DATE_ADDED.displayName -> Pair("Oldest", "Newest")
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.PREMIERE_DATE.displayName -> Pair("Oldest", "Newest")
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.RATING.displayName -> Pair("Lowest", "Highest")
+        app.infinity.mpvz.domain.jellyfin.JellyfinSortBy.RUNTIME.displayName -> Pair("Shortest", "Longest")
+        else -> Pair("Asc", "Desc")
+      }
+    },
+    visibilityToggles =
+      listOf(
+        VisibilityToggle(
+          label = "Unplayed Only",
+          checked = isUnplayedOnly,
+          onCheckedChange = onUnplayedOnlyChange,
+        ),
+      ),
+    layoutModeSelector =
+      ViewModeSelector(
+        label = "Layout",
+        firstOptionLabel = "List",
+        secondOptionLabel = "Grid",
+        firstOptionIcon = Icons.RoundedFilled.ViewList,
+        secondOptionIcon = Icons.RoundedFilled.GridView,
+        isFirstOptionSelected = layoutMode == MediaLayoutMode.LIST,
+        onViewModeChange = { isList ->
+          onLayoutModeChange(if (isList) MediaLayoutMode.LIST else MediaLayoutMode.GRID)
+        },
+      ),
+    showSortOptions = true,
+  )
+}
+

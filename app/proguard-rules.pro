@@ -56,6 +56,14 @@
 -keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
 
+# JSch (SFTP) resolves cipher/KEX/signature implementations reflectively from config strings
+-keep class com.jcraft.jsch.** { *; }
+-dontwarn com.jcraft.jsch.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn org.slf4j.**
+-dontwarn com.sun.jna.**
+-dontwarn org.newsclub.net.unix.**
+
 # ASN.1 classes
 -keep class com.hierynomus.asn1.** { *; }
 

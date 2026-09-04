@@ -86,7 +86,7 @@ value class NetworkPath private constructor(
  * live in playlists and intents without copying passwords or short-lived loopback proxy tokens.
  */
 object NetworkPlaybackUri {
-  const val SCHEME = "mpvrx-network"
+  const val SCHEME = "Mpv∞-network"
 
   data class Reference(
     val connectionId: Long,

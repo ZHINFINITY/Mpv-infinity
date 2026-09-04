@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import app.infinity.mpvz.R
+import java.util.Locale
 
 // Roboto Flex font family (variable font supporting weights 100-900)
 val RobotoFlex =
@@ -181,6 +182,28 @@ val AppTypography =
       labelSmall = labelSmall.copy(fontFamily = GoogleSansRounded),
     )
   }
+
+fun fontFamilyForText(text: String): FontFamily =
+  if (text.requiresSystemFontFallback()) FontFamily.SansSerif else GoogleSansRounded
+
+fun localeRequiresSystemFont(locale: Locale): Boolean =
+  locale.getDisplayName(locale).requiresSystemFontFallback()
+
+private fun String.requiresSystemFontFallback(): Boolean {
+  var index = 0
+  while (index < length) {
+    val codePoint = Character.codePointAt(this, index)
+    when (Character.UnicodeScript.of(codePoint)) {
+      Character.UnicodeScript.LATIN,
+      Character.UnicodeScript.COMMON,
+      Character.UnicodeScript.INHERITED,
+      -> Unit
+      else -> return true
+    }
+    index += Character.charCount(codePoint)
+  }
+  return false
+}
 
 // ═══════════════════════════════════════════════════════════
 // Material 3 Expressive Typography Extensions

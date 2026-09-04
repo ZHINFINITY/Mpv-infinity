@@ -43,12 +43,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -64,6 +64,7 @@ fun AddToPlaylistDialog(
   videos: List<Video>,
   onDismiss: () -> Unit,
   onSuccess: () -> Unit,
+  isJellyfin: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
   val viewModel: AddToPlaylistViewModel = viewModel()
@@ -73,9 +74,9 @@ fun AddToPlaylistDialog(
   val context = LocalContext.current
   val isAudio = remember(videos) { videos.any { it.isAudio } }
 
-  androidx.compose.runtime.LaunchedEffect(isOpen, isAudio) {
+  androidx.compose.runtime.LaunchedEffect(isOpen, isAudio, isJellyfin) {
     if (isOpen) {
-      viewModel.loadPlaylists(isAudio = isAudio)
+      viewModel.loadPlaylists(isAudio = null, isJellyfin = isJellyfin)
     }
   }
 
@@ -86,7 +87,7 @@ fun AddToPlaylistDialog(
       onDismiss = { showCreateDialog = false },
       onConfirm = { name ->
         scope.launch {
-          viewModel.createAndAdd(name, videos)
+          viewModel.createAndAdd(name, videos, isJellyfin = isJellyfin)
           val message =
             if (isAudio) {
               if (videos.size == 1) {
@@ -175,28 +176,29 @@ fun AddToPlaylistDialog(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(vertical = 4.dp),
           ) {
-            items(playlistOptions, key = { it.playlist.id }) { option ->
+            items(playlistOptions, key = { it.id }) { option ->
               PlaylistItemCard(
-                playlist = option.playlist,
-                itemCount = option.itemCount,
+                option = option,
                 onClick = {
                   scope.launch {
-                    viewModel.addToPlaylist(option.playlist.id, videos)
+                    viewModel.addToPlaylist(option, videos, isJellyfin = isJellyfin)
                     val message =
                       if (isAudio) {
                         if (videos.size == 1) {
-                          "Song added to \"${option.playlist.name}\""
+                          "Song added to \"${option.name}\""
                         } else {
-                          "${videos.size} songs added to \"${option.playlist.name}\""
+                          "${videos.size} songs added to \"${option.name}\""
                         }
                       } else {
                         if (videos.size == 1) {
-                          "Video added to \"${option.playlist.name}\""
+                          "Video added to \"${option.name}\""
                         } else {
-                          "${videos.size} videos added to \"${option.playlist.name}\""
+                          "${videos.size} videos added to \"${option.name}\""
                         }
                       }
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                    onSuccess()
+                    onDismiss()
                   }
                 },
               )
@@ -248,14 +250,14 @@ fun AddToPlaylistDialog(
 
 @Composable
 private fun PlaylistItemCard(
-  playlist: PlaylistEntity,
-  itemCount: Int,
+  option: PlaylistOption,
   onClick: () -> Unit,
 ) {
   Card(
     modifier =
       Modifier
         .fillMaxWidth()
+        .clip(AppShapeScale.medium)
         .clickable(onClick = onClick),
     shape = AppShapeScale.medium,
     colors =
@@ -281,7 +283,7 @@ private fun PlaylistItemCard(
         modifier = Modifier.weight(1f),
       ) {
         Text(
-          text = playlist.name,
+          text = option.name,
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
@@ -289,7 +291,7 @@ private fun PlaylistItemCard(
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-          text = "$itemCount videos • ${formatDate(playlist.updatedAt)}",
+          text = option.subtitle ?: "${option.itemCount} items",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

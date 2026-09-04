@@ -152,6 +152,7 @@ object GesturePreferencesScreen : Screen {
 
               val pinchToZoomSubtitles by preferences.pinchToZoomSubtitles.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_gestures_pinch_to_zoom_subtitles),
                 value = pinchToZoomSubtitles,
                 onValueChange = preferences.pinchToZoomSubtitles::set,
                 title = { Text(stringResource(R.string.pref_player_gestures_pinch_to_zoom_subtitles)) },
@@ -161,6 +162,7 @@ object GesturePreferencesScreen : Screen {
 
               val swipeSubtitlesToSeekDialog by preferences.swipeSubtitlesToSeekDialog.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_gestures_swipe_subtitles_to_seek_dialog),
                 value = swipeSubtitlesToSeekDialog,
                 onValueChange = preferences.swipeSubtitlesToSeekDialog::set,
                 title = { Text(stringResource(R.string.pref_player_gestures_swipe_subtitles_to_seek_dialog)) },
@@ -170,6 +172,7 @@ object GesturePreferencesScreen : Screen {
 
               val swipeSubtitlesInvertDirection by preferences.swipeSubtitlesInvertDirection.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_gestures_swipe_subtitles_invert_direction),
                 value = swipeSubtitlesInvertDirection,
                 onValueChange = preferences.swipeSubtitlesInvertDirection::set,
                 title = { Text(stringResource(R.string.pref_player_gestures_swipe_subtitles_invert_direction)) },
@@ -195,6 +198,7 @@ object GesturePreferencesScreen : Screen {
 
               val enableCenterSwipeUpGesture by preferences.enableCenterSwipeUpGesture.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_gestures_enable_center_swipe_up_gesture),
                 value = enableCenterSwipeUpGesture,
                 onValueChange = { preferences.enableCenterSwipeUpGesture.set(it) },
                 title = { Text(stringResource(R.string.pref_player_gestures_enable_center_swipe_up_gesture)) },
@@ -448,6 +452,7 @@ object GesturePreferencesScreen : Screen {
               val centerVerticalSubtitlePositionGesture by preferences.centerVerticalSubtitlePositionGesture
                 .collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_gesture_center_vertical_subtitle_position_title),
                 value = centerVerticalSubtitlePositionGesture,
                 onValueChange = { preferences.centerVerticalSubtitlePositionGesture.set(it) },
                 title = { Text(text = stringResource(R.string.pref_gesture_center_vertical_subtitle_position_title)) },

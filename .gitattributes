@@ -1,1 +1,4 @@
 # LFS tracking removed to allow pushing to public fork
+
+# Preserve pinned third-party source verbatim; upstream contains trailing whitespace.
+app/src/main/cpp/third_party/quickjs/** -whitespace

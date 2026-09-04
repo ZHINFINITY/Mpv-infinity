@@ -593,8 +593,6 @@ object FileTypeUtils {
  * Handles file and folder filtering logic
  */
 object FileFilterUtils {
-  private const val TAG = "FileFilterUtils"
-
   // Folders to skip during scanning (system/cache folders)
   private val SKIP_FOLDERS =
     setOf(
@@ -635,23 +633,6 @@ object FileFilterUtils {
     )
 
   /**
-   * Checks if a folder contains a .nomedia file
-   */
-  fun hasNoMediaFile(folder: File): Boolean {
-    if (!folder.isDirectory || !folder.canRead()) {
-      return false
-    }
-
-    return try {
-      val noMediaFile = File(folder, ".nomedia")
-      noMediaFile.exists()
-    } catch (e: Exception) {
-      Log.w(TAG, "Error checking for .nomedia file in: ${folder.absolutePath}", e)
-      false
-    }
-  }
-
-  /**
    * Checks if a folder should be skipped during scanning
    */
   fun shouldSkipFolder(
@@ -662,7 +643,7 @@ object FileFilterUtils {
     if (isAndroidDataAccessiblePath(folder)) {
       // Allow navigation/scanning into Android/data so app-specific video folders
       // can appear in both the folder list and filesystem browser.
-      return folder.name.startsWith(".")
+      return folder.name.startsWith(".") && !options.includeNoMediaFolders
     }
 
     if (noMediaPathFilter.shouldExcludeDirectory(folder)) {
@@ -671,7 +652,7 @@ object FileFilterUtils {
 
     val name = folder.name.lowercase()
     val isHidden = name.startsWith(".")
-    return isHidden || SKIP_FOLDERS.contains(name)
+    return (isHidden && !options.includeNoMediaFolders) || SKIP_FOLDERS.contains(name)
   }
 
   /**

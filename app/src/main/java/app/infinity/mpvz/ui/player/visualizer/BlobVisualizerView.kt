@@ -16,7 +16,7 @@ import android.view.MotionEvent
 
 internal class BlobVisualizerView(
   context: Context,
-  features: AudioFeatures = AudioFeatures(),
+  features: AudioFeatures,
   palette: VisualizerPalette,
   reducedMotion: Boolean = false,
 ) : GLSurfaceView(context),
@@ -35,7 +35,7 @@ internal class BlobVisualizerView(
     setEGLContextClientVersion(3)
     setEGLConfigChooser(8, 8, 8, 8, 16, 0)
     holder.setFormat(PixelFormat.TRANSLUCENT)
-    setZOrderOnTop(true)
+    setZOrderMediaOverlay(true)
     preserveEGLContextOnPause = true
     setRenderer(blobRenderer)
     renderMode = RENDERMODE_CONTINUOUSLY

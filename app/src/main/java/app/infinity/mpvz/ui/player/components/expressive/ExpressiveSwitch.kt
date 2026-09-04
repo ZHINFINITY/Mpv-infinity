@@ -9,9 +9,11 @@
 
 package app.infinity.mpvz.ui.player.components.expressive
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -23,10 +25,14 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.drawscope.Fill
@@ -118,6 +124,18 @@ fun ExpressiveSwitch(
       label = "ExpressiveSwitchThumbOffset",
     )
 
+    // Motion-blur pulse on toggle (RenderEffect; silently no-ops below Android 12).
+    val toggleBlur = remember { Animatable(0f) }
+    var isInitialState by remember { mutableStateOf(true) }
+    LaunchedEffect(checked) {
+      if (isInitialState) {
+        isInitialState = false
+      } else {
+        toggleBlur.snapTo(6f)
+        toggleBlur.animateTo(0f, animationSpec = tween(durationMillis = 320))
+      }
+    }
+
     val density = LocalDensity.current
     val trackRadiusPx = with(density) { SwitchDimensions.trackRadius.toPx() }
     val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
@@ -158,7 +176,8 @@ fun ExpressiveSwitch(
         Modifier
           .padding(start = thumbOffsetX)
           .size(thumbSize)
-          .scale(iconScale),
+          .scale(iconScale)
+          .blur(toggleBlur.value.dp),
       shape = MaterialTheme.shapes.extraLarge,
       color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.outline,
       shadowElevation = ElevationTokens.Level1,

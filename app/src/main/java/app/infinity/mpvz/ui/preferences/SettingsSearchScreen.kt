@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,8 +28,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,8 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,19 +46,21 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.LocalEmphasizedTypography
@@ -81,21 +80,10 @@ object SettingsSearchScreen : Screen {
     val emphasizedTypography = LocalEmphasizedTypography.current
 
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var debouncedSearchQuery by rememberSaveable { mutableStateOf("") }
 
-    // Debounce search to save battery and reduce UI jank
-    LaunchedEffect(searchQuery) {
-      if (searchQuery.isBlank()) {
-        debouncedSearchQuery = ""
-        return@LaunchedEffect
-      }
-      kotlinx.coroutines.delay(300)
-      debouncedSearchQuery = searchQuery
-    }
-
-    val searchResults by remember(debouncedSearchQuery) {
+    val searchResults by remember(searchQuery, resources) {
       derivedStateOf {
-        SearchablePreferences.search(debouncedSearchQuery) { resId ->
+        SearchablePreferences.search(searchQuery) { resId ->
           resources.getString(resId)
         }
       }
@@ -152,14 +140,13 @@ object SettingsSearchScreen : Screen {
             .fillMaxSize()
             .padding(padding),
       ) {
-        TextField(
-          value = searchQuery,
-          onValueChange = { searchQuery = it },
-          modifier =
-            Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 16.dp, vertical = 8.dp)
-              .focusRequester(focusRequester),
+        InlineSearchBar(
+          query = searchQuery,
+          onQueryChange = { searchQuery = it },
+          onSearch = { keyboardController?.hide() },
+          modifier = Modifier.padding(horizontal = 16.dp),
+          inputFieldModifier = Modifier.focusRequester(focusRequester),
+          windowInsets = WindowInsets(0.dp),
           placeholder = {
             Text(
               text = stringResource(R.string.settings_search_hint),
@@ -191,22 +178,6 @@ object SettingsSearchScreen : Screen {
               }
             }
           },
-          singleLine = true,
-          shape = MaterialTheme.shapes.extraExtraLarge,
-          colors =
-            TextFieldDefaults.colors(
-              focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-              unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-              disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-              focusedIndicatorColor = Color.Transparent,
-              unfocusedIndicatorColor = Color.Transparent,
-              disabledIndicatorColor = Color.Transparent,
-            ),
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-          keyboardActions =
-            KeyboardActions(
-              onSearch = { keyboardController?.hide() },
-            ),
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -306,16 +277,16 @@ object SettingsSearchScreen : Screen {
             item {
               val suggestions =
                 listOf(
-                  "Theme",
-                  "Gestures",
-                  "Hardware decoding",
-                  "Subtitles",
-                  "Folders",
-                  "Audio",
-                  "Background playback",
-                  "Notification",
-                  "Streaming",
-                  "Advanced",
+                  stringResource(R.string.pref_appearance_title),
+                  stringResource(R.string.pref_gesture),
+                  stringResource(R.string.pref_decoder_try_hw_dec_title),
+                  stringResource(R.string.pref_subtitles),
+                  stringResource(R.string.pref_folders_title),
+                  stringResource(R.string.pref_audio),
+                  stringResource(R.string.pref_video_background_playback_title),
+                  stringResource(R.string.pref_advanced_notification_style),
+                  stringResource(R.string.ui_yt_dlp_streaming),
+                  stringResource(R.string.pref_advanced),
                 )
               @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
               androidx.compose.foundation.layout.FlowRow(
@@ -340,7 +311,7 @@ object SettingsSearchScreen : Screen {
               }
             }
           }
-        } else if (debouncedSearchQuery.isNotEmpty() && searchResults.isEmpty()) {
+        } else if (searchResults.isEmpty()) {
           // No results
           Box(
             modifier = Modifier.fillMaxSize(),
@@ -373,16 +344,16 @@ object SettingsSearchScreen : Screen {
               items = searchResults,
               key = {
                 index,
-                pref,
+                result,
                 ->
-                "${pref.titleRes}_${pref.category}_${pref.screen}_$index".hashCode()
+                "${result.preference.searchTargetKey}_${result.preference.screen}_$index"
               },
-            ) { _, preference ->
+            ) { _, result ->
               SearchResultItem(
-                preference = preference,
+                result = result,
                 onClick = {
                   keyboardController?.hide()
-                  val currentQuery = debouncedSearchQuery.trim()
+                  val currentQuery = searchQuery.trim()
                   if (currentQuery.isNotEmpty()) {
                     val currentHistory =
                       searchHistoryPref
@@ -398,8 +369,8 @@ object SettingsSearchScreen : Screen {
                     }
                     searchHistoryPref.set(currentHistory.joinToString("|"))
                   }
-                  SettingsSearchNavigation.open(preference)
-                  backstack.add(preference.screen)
+                  SettingsSearchNavigation.open(result.preference)
+                  backstack.add(result.preference.screen)
                 },
               )
             }
@@ -412,15 +383,32 @@ object SettingsSearchScreen : Screen {
 
 @Composable
 private fun SearchResultItem(
-  preference: SearchablePreference,
+  result: SettingsSearchResult,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val preference = result.preference
   val titleText =
     if (preference.titleRes != null) {
       stringResource(preference.titleRes)
     } else {
       preference.title ?: ""
+    }
+  val highlightedTitle =
+    buildAnnotatedString {
+      append(titleText)
+      result.titleMatchIndices.sorted().forEach { index ->
+        if (index in titleText.indices) {
+          addStyle(
+            SpanStyle(
+              color = MaterialTheme.colorScheme.primary,
+              fontWeight = FontWeight.Bold,
+            ),
+            start = index,
+            end = index + 1,
+          )
+        }
+      }
     }
 
   val summaryText =
@@ -434,6 +422,7 @@ private fun SearchResultItem(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(MaterialTheme.shapes.largeIncreased)
         .clickable(onClick = onClick),
     shape = MaterialTheme.shapes.largeIncreased,
     color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -470,7 +459,7 @@ private fun SearchResultItem(
         verticalArrangement = Arrangement.spacedBy(3.dp),
       ) {
         Text(
-          text = titleText,
+          text = highlightedTitle,
           style = MaterialTheme.typography.bodyLarge,
           fontWeight = FontWeight.Medium,
           maxLines = 1,

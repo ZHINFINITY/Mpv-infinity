@@ -11,13 +11,14 @@ package app.infinity.mpvz.di
 
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.domain.hdr.HdrToysManager
+import app.infinity.mpvz.domain.hdr.MpvShaderRuntime
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
 import app.infinity.mpvz.network.AndroidCookieJar
+import app.infinity.mpvz.network.SharedHttpClient
 import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.repository.IntroDbRepository
 import app.infinity.mpvz.repository.ai.AiClient
 import app.infinity.mpvz.repository.ai.AiService
-import app.infinity.mpvz.repository.ai.EmbeddedSubtitleTranslator
 import app.infinity.mpvz.repository.ai.AnthropicClient
 import app.infinity.mpvz.repository.ai.GroqClient
 import app.infinity.mpvz.repository.ai.GroqSpeechClient
@@ -32,6 +33,7 @@ import app.infinity.mpvz.repository.subtitle.OnlineSubtitleFileStore
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleOrchestrator
 import app.infinity.mpvz.repository.subtitlehub.MpvRxSubtitleHubRepository
 import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
+import app.infinity.mpvz.ui.player.PlaybackSessionShaderRuntime
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
@@ -42,17 +44,15 @@ import java.util.concurrent.TimeUnit
 val domainModule =
   module {
     single { AndroidCookieJar() }
-    single {
-      OkHttpClient
-        .Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .cookieJar(get<AndroidCookieJar>())
-        .build()
+    single<OkHttpClient> {
+      SharedHttpClient.derive {
+        connectTimeout(30, TimeUnit.SECONDS)
+        cookieJar(get<AndroidCookieJar>())
+      }
     }
     single { Anime4KManager(androidContext()) }
-    single { HdrToysManager(androidContext()) }
+    single<MpvShaderRuntime> { PlaybackSessionShaderRuntime }
+    single { HdrToysManager(androidContext(), get()) }
     single { OnlineSubtitleFileStore(androidContext(), get()) }
     single { WyzieSearchRepository(androidContext(), get(), get(), get(), get()) }
     single { MpvRxSubtitleHubRepository(get(), get(), get(), get()) }
@@ -74,7 +74,6 @@ val domainModule =
     single<AiClient>(named("together")) { TogetherClient(get(), get()) }
     single { SubtitleGenerationService(androidContext(), get(), get(), get(), get(), get()) }
     single { RealtimeSubtitleService(androidContext(), get(), get(), get(), get(), get()) }
-    single { EmbeddedSubtitleTranslator(get(), get(), get()) }
     single {
       AiService(
         androidContext(),
@@ -93,7 +92,9 @@ val domainModule =
         .SyncplayManager(androidContext())
     }
     single { app.infinity.mpvz.data.lyrics.LrcLibApiService(get()) }
+    single { app.infinity.mpvz.data.lyrics.LyricsTranslationService(get()) }
     single { app.infinity.mpvz.repository.lyrics.LyricsRepository(androidContext(), get()) }
-    single { TorrentStreamingEngine(androidContext(), get()) }
+    single { TorrentStreamingEngine(androidContext()) }
+    single { app.infinity.mpvz.repository.SeerrRepository(get(), get(), get()) }
   }
 

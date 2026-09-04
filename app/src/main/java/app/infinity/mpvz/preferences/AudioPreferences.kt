@@ -25,13 +25,14 @@ class AudioPreferences(
   val volumeBoostCap = preferenceStore.getInt("audio_volume_boost_cap", 30)
   val backgroundPlayback = preferenceStore.getBoolean("automatic_background_playback", false)
   /** Audio-player-only background playback; video retains [backgroundPlayback]. */
-  val audioBackgroundPlayback = preferenceStore.getBoolean("audio_player_background_playback", true)
+  val audioBackgroundPlayback = preferenceStore.getBoolean("audio_player_background_playback", false)
   val volumeNormalization = preferenceStore.getBoolean("audio_volume_normalization", false)
   val drcEnabled = preferenceStore.getBoolean("audio_drc_enabled", false)
   val showAudioVisualizer = preferenceStore.getBoolean("show_audio_visualizer", true)
   val audioVisualizerStyle = preferenceStore.getEnum("audio_visualizer_style", AudioVisualizerStyle.Blob)
   val audioOrientation = preferenceStore.getEnum("audio_player_orientation", AudioPlayerOrientation.Auto)
   val audioAmbientMode = preferenceStore.getBoolean("audio_ambient_mode", true)
+  val audioWavySeekbar = preferenceStore.getBoolean("audio_wavy_seekbar", true)
   val enabledMusicTabs = preferenceStore.getStringSet(
     "enabled_music_tabs",
     setOf("SONGS", "ALBUMS", "ARTISTS", "PLAYLISTS", "FOLDERS"),
@@ -47,12 +48,23 @@ class AudioPreferences(
     },
   )
 
+  val lyricsAutoTranslate = preferenceStore.getBoolean("lyrics_auto_translate", false)
+  val lyricsTargetLanguage = preferenceStore.getString("lyrics_target_language", "en")
+  val lyricsTranslationDisplayMode = preferenceStore.getEnum("lyrics_translation_display_mode", LyricsTranslationDisplayMode.DualLine)
+
   init {
     // Consolidate the old audio-only screen-lock switch into the single global setting.
     val legacyScreenLockPlayback = preferenceStore.getBoolean("play_audio_after_screen_lock", false)
     if (legacyScreenLockPlayback.get()) backgroundPlayback.set(true)
     if (legacyScreenLockPlayback.isSet()) legacyScreenLockPlayback.delete()
   }
+}
+
+enum class LyricsTranslationDisplayMode(
+  @StringRes val title: Int,
+) {
+  DualLine(R.string.pref_lyrics_display_dual_line),
+  Replace(R.string.pref_lyrics_display_replace),
 }
 
 enum class AudioPlayerOrientation(

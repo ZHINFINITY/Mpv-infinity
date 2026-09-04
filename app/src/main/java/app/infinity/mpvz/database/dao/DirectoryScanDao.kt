@@ -13,7 +13,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Transaction
 import app.infinity.mpvz.database.entities.DirectoryScanEntity
 
 @Dao
@@ -37,22 +36,13 @@ interface DirectoryScanDao {
   suspend fun deleteScan(scanKey: String)
 
   @Query(
-    "DELETE FROM directory_scan_index WHERE scanKey = :scanKey AND rootPath = :rootPath AND path NOT IN (:currentPaths)",
+    "DELETE FROM directory_scan_index WHERE scanKey = :scanKey " +
+      "AND (path = :path OR substr(path, 1, length(:pathPrefix)) = :pathPrefix)",
   )
-  suspend fun deleteMissingPaths(
+  suspend fun deleteSubtree(
     scanKey: String,
-    rootPath: String,
-    currentPaths: List<String>,
+    path: String,
+    pathPrefix: String,
   )
 
-  @Transaction
-  suspend fun reconcileRoot(
-    scanKey: String,
-    rootPath: String,
-    currentPaths: List<String>,
-    changedEntries: List<DirectoryScanEntity>,
-  ) {
-    if (changedEntries.isNotEmpty()) upsert(changedEntries)
-    deleteMissingPaths(scanKey, rootPath, currentPaths)
-  }
 }

@@ -79,8 +79,8 @@ class OpenRouterSpeechClient(
                 .Builder()
                 .url(URL)
                 .header("Authorization", "Bearer $apiKey")
-                .header("HTTP-Referer", "https://mpvrx.app")
-                .header("X-OpenRouter-Title", "mpvRx")
+                .header("HTTP-Referer", "https://Mpv∞.app")
+                .header("X-OpenRouter-Title", "Mpv∞")
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build(),
             ).execute()

@@ -15,6 +15,7 @@ import androidx.room.TypeConverters
 import app.infinity.mpvz.database.converters.NetworkProtocolConverter
 import app.infinity.mpvz.database.converters.NetworkStreamEntryTypeConverter
 import app.infinity.mpvz.database.dao.DirectoryScanDao
+import app.infinity.mpvz.database.dao.DownloadItemDao
 import app.infinity.mpvz.database.dao.NetworkConnectionDao
 import app.infinity.mpvz.database.dao.NetworkStreamEntryDao
 import app.infinity.mpvz.database.dao.PlaybackStateDao
@@ -22,7 +23,10 @@ import app.infinity.mpvz.database.dao.PlaylistDao
 import app.infinity.mpvz.database.dao.RecentlyPlayedDao
 import app.infinity.mpvz.database.dao.SecureMediaDao
 import app.infinity.mpvz.database.dao.VideoMetadataDao
+import app.infinity.mpvz.database.dao.JellyfinServerDao
 import app.infinity.mpvz.database.entities.DirectoryScanEntity
+import app.infinity.mpvz.database.entities.DownloadItemEntity
+import app.infinity.mpvz.database.entities.JellyfinServerEntity
 import app.infinity.mpvz.database.entities.NetworkStreamEntryEntity
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.database.entities.PlaylistEntity
@@ -43,8 +47,10 @@ import app.infinity.mpvz.domain.network.NetworkConnection
     DirectoryScanEntity::class,
     SecureMediaEntity::class,
     NetworkStreamEntryEntity::class,
+    JellyfinServerEntity::class,
+    DownloadItemEntity::class,
   ],
-  version = 14,
+  version = 18,
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)
@@ -64,4 +70,8 @@ abstract class MpvRxDatabase : RoomDatabase() {
   abstract fun directoryScanDao(): DirectoryScanDao
 
   abstract fun secureMediaDao(): SecureMediaDao
+
+  abstract fun jellyfinServerDao(): JellyfinServerDao
+
+  abstract fun downloadItemDao(): DownloadItemDao
 }

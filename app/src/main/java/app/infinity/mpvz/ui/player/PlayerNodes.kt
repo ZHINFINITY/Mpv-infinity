@@ -37,6 +37,7 @@ data class TrackNode(
   @SerialName("hearing-impaired") val hearingImpaired: Boolean? = null,
   @SerialName("hls-bitrate") val hlsBitrate: Long? = null,
   @SerialName("program-id") val programId: Long? = null,
+  @SerialName("program-ids") val programIds: List<Long>? = null,
   val selected: Boolean? = null,
   @SerialName("main-selection") val mainSelection: Long? = null,
   val external: Boolean? = null,
@@ -69,12 +70,35 @@ data class TrackNode(
   @SerialName("dolby-vision-profile") val dolbyVisionProfile: Long? = null,
   @SerialName("dolby-vision-level") val dolbyVisionLevel: Long? = null,
   val metadata: Map<String, String?>? = null,
-  /** Whether the active engine can decode and select this track. */
-  val supported: Boolean? = null,
 ) {
   val isAudio = type == "audio"
   val isVideo = type == "video"
   val isAlbumArtwork = albumArt == true || image == true
   val isSubtitle = type == "sub"
   val isSelected = selected == true
+
+  val effectiveBitrate: Long?
+    get() = demuxBitrate?.takeIf { it > 0L } ?: hlsBitrate?.takeIf { it > 0L }
+
+  val effectiveProgramIds: List<Long>
+    get() = programIds?.takeIf { it.isNotEmpty() } ?: listOfNotNull(programId)
+
+  val effectiveTitle: String?
+    get() =
+      title?.takeIf { it.isNotBlank() }
+        ?: metadata?.entries?.firstOrNull { it.key.equals("title", ignoreCase = true) }?.value?.takeIf { it.isNotBlank() }
+        ?: metadata?.entries?.firstOrNull { it.key.equals("handler_name", ignoreCase = true) }?.value?.takeIf { it.isNotBlank() && !it.contains("handler", ignoreCase = true) }
+
+  val effectiveLang: String?
+    get() =
+      lang?.takeIf { it.isNotBlank() }
+        ?: metadata?.entries?.firstOrNull { it.key.equals("language", ignoreCase = true) || it.key.equals("lang", ignoreCase = true) }?.value?.takeIf { it.isNotBlank() }
+
+  val ytdlFormatId: String?
+    get() =
+      YTDL_FORMAT_ID_REGEX.find(effectiveTitle.orEmpty())?.groupValues?.getOrNull(1)
+        ?: YTDL_MUXED_FORMAT_ID_REGEX.find(effectiveTitle.orEmpty())?.groupValues?.getOrNull(1)
 }
+
+private val YTDL_FORMAT_ID_REGEX = Regex("""^\s*([^\s]+)\s+-\s+""")
+private val YTDL_MUXED_FORMAT_ID_REGEX = Regex("""(?:^|\s)muxed-([^\s]+)(?:\s|$)""")

@@ -15,31 +15,10 @@ import app.infinity.mpvz.preferences.preference.getEnum
 import app.infinity.mpvz.ui.player.Debanding
 import app.infinity.mpvz.ui.player.HdrScreenMode
 
-enum class PlaybackEngineMode(
-  val displayName: String,
-  val summary: String,
-) {
-  Auto("Automatic", "Use MPV by default and switch Dolby Vision to Native when detected"),
-  MPV("MPV", "Always use the MPV playback engine"),
-  Media3("Native", "Always use the Native playback engine when supported"),
-}
-
-enum class MPVDecoderMode(
-  val displayName: String,
-  val value: String,
-) {
-  Auto("Auto", "auto"),
-  SW("Software", "no"),
-  HW("HW", "mediacodec-copy"),
-  HWPlus("HW+", "mediacodec"),
-}
-
 class DecoderPreferences(
   preferenceStore: PreferenceStore,
 ) {
   val profile = preferenceStore.getString("mpv_profile", "fast")
-  val playbackEngine = preferenceStore.getEnum("playback_engine", PlaybackEngineMode.Auto)
-  val mpvDecoderMode = preferenceStore.getEnum("mpv_decoder_mode", MPVDecoderMode.Auto)
   val tryHWDecoding = preferenceStore.getBoolean("try_hw_dec", true)
   val gpuNext = preferenceStore.getBoolean("gpu_next")
   val useVulkan = preferenceStore.getBoolean("use_vulkan", false)

@@ -18,8 +18,11 @@ import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.torrent.isTorrentSource
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerLookupHints
+import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.Utils
@@ -56,6 +59,53 @@ data class PlaybackSubtitleTrack(
  * bypassing MediaUtils.
  */
 object MediaUtils {
+  fun playFiles(
+    videos: List<Video>,
+    context: Context,
+    startIndex: Int = 0,
+    launchSource: String = "playlist",
+  ) {
+    if (videos.isEmpty()) return
+    val selectedIndex = startIndex.coerceIn(videos.indices)
+    if (videos.size == 1) {
+      playFile(videos.single(), context, launchSource)
+      return
+    }
+
+    val queueItems =
+      videos.map { video ->
+        PlaybackItem.fromUri(
+          uri = video.uri.toString(),
+          stableId = video.path.takeIf(String::isNotBlank)?.let(PlaybackIdentity::forLocalPath),
+          title = video.displayName,
+          mimeType = video.mimeType,
+        )
+      }
+    val launchToken =
+      PreparedPlaybackLaunchStore.stage(
+        items = queueItems,
+        currentIndex = selectedIndex,
+        isExplicitQueue = true,
+      )
+    val selected = videos[selectedIndex]
+    val intent =
+      Intent(Intent.ACTION_VIEW, selected.uri).apply {
+        setClass(context, PlayerActivity::class.java)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        putExtra("internal_launch", true)
+        putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
+        putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
+        putExtra("playlist_index", selectedIndex)
+        putExtra("launch_source", launchSource)
+        putExtra("is_audio", selected.isAudio)
+        putExtra("title", selected.displayName)
+        putExtra("local_media_path", selected.path)
+        putExtra(PlayerActivity.EXTRA_VIDEO_WIDTH, selected.width)
+        putExtra(PlayerActivity.EXTRA_VIDEO_HEIGHT, selected.height)
+      }
+    context.startActivity(intent)
+  }
+
   /**
    * Play video content from any source.
    *
@@ -82,6 +132,13 @@ object MediaUtils {
     mediaDescription: String? = null,
     posterUrl: String? = null,
     backdropUrl: String? = null,
+    playlist: List<Uri> = emptyList(),
+    playlistIndex: Int = 0,
+    playlistTitles: List<String> = emptyList(),
+    playlistArtists: List<String> = emptyList(),
+    playlistArtworkUrls: List<String> = emptyList(),
+    isAudio: Boolean = false,
+    playlistDurationsSeconds: List<Int> = emptyList(),
   ) {
     val uri =
       when (source) {
@@ -113,6 +170,8 @@ object MediaUtils {
           intent.putExtra("internal_launch", true) // Enables subtitle autoload
           localPath?.let { intent.putExtra("local_media_path", it) }
           intent.putExtra("is_audio", source.isAudio)
+          intent.putExtra(PlayerActivity.EXTRA_VIDEO_WIDTH, source.width)
+          intent.putExtra(PlayerActivity.EXTRA_VIDEO_HEIGHT, source.height)
           applyPlaybackExtras(
             intent = intent,
             launchSource = launchSource,
@@ -138,6 +197,13 @@ object MediaUtils {
             mediaDescription = mediaDescription,
             posterUrl = posterUrl,
             backdropUrl = backdropUrl,
+            playlist = playlist,
+            playlistIndex = playlistIndex,
+            playlistTitles = playlistTitles,
+            playlistArtists = playlistArtists,
+            playlistArtworkUrls = playlistArtworkUrls,
+            isAudio = isAudio,
+            playlistDurationsSeconds = playlistDurationsSeconds,
           )
           context.startActivity(intent)
           return
@@ -184,10 +250,6 @@ object MediaUtils {
       } else {
         uri
       }
-    val isAudio =
-      localPath?.let { File(it).extension.lowercase() in FileTypeUtils.AUDIO_EXTENSIONS }
-        ?: context.contentResolver.getType(playbackUri)?.startsWith("audio/", ignoreCase = true)
-        ?: false
 
     val intent = Intent(Intent.ACTION_VIEW, playbackUri)
     val torrentSource =
@@ -207,7 +269,6 @@ object MediaUtils {
     intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     localPath?.let { intent.putExtra("local_media_path", it) }
-    intent.putExtra("is_audio", isAudio)
     applyPlaybackExtras(
       intent = intent,
       launchSource = launchSource,
@@ -223,6 +284,13 @@ object MediaUtils {
       mediaDescription = mediaDescription,
       posterUrl = posterUrl,
       backdropUrl = backdropUrl,
+      playlist = playlist,
+      playlistIndex = playlistIndex,
+      playlistTitles = playlistTitles,
+      playlistArtists = playlistArtists,
+      playlistArtworkUrls = playlistArtworkUrls,
+      isAudio = isAudio,
+      playlistDurationsSeconds = playlistDurationsSeconds,
     )
     context.startActivity(intent)
   }
@@ -278,7 +346,46 @@ object MediaUtils {
     mediaDescription: String?,
     posterUrl: String?,
     backdropUrl: String?,
+    playlist: List<Uri> = emptyList(),
+    playlistIndex: Int = 0,
+    playlistTitles: List<String> = emptyList(),
+    playlistArtists: List<String> = emptyList(),
+    playlistArtworkUrls: List<String> = emptyList(),
+    isAudio: Boolean = false,
+    playlistDurationsSeconds: List<Int> = emptyList(),
   ) {
+    if (isAudio) {
+      intent.putExtra("is_audio", true)
+      intent.putExtra("media_library_audio", true)
+    }
+    if (playlist.isNotEmpty()) {
+      val selectedIndex = playlistIndex.coerceIn(playlist.indices)
+      val queueItems =
+        playlist.mapIndexed { index, uri ->
+          PlaybackItem.fromUri(
+            uri = uri.toString(),
+            title = playlistTitles.getOrNull(index),
+            artist = playlistArtists.getOrNull(index),
+            mimeType = if (isAudio) "audio/*" else "video/*",
+            headers = headers.orEmpty(),
+            artworkUri =
+              playlistArtworkUrls.getOrNull(index)?.takeIf(String::isNotBlank)
+                ?: posterUrl?.takeIf { index == selectedIndex },
+            durationSeconds = playlistDurationsSeconds.getOrNull(index)?.takeIf { it > 0 },
+          )
+        }
+      val launchToken =
+        PreparedPlaybackLaunchStore.stage(
+          items = queueItems,
+          currentIndex = selectedIndex,
+          isExplicitQueue = true,
+        )
+      intent.putExtra("internal_launch", true)
+      intent.putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
+      intent.putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, launchToken)
+      intent.putExtra("playlistIndex", selectedIndex)
+      intent.putExtra("playlist_index", selectedIndex)
+    }
     launchSource?.let { intent.putExtra("launch_source", it) }
     title?.let {
       intent.putExtra("title", it)
@@ -445,5 +552,42 @@ object MediaUtils {
     val units = arrayOf("B", "KB", "MB", "GB")
     val digitGroups = (kotlin.math.ln(bytes.toDouble()) / kotlin.math.ln(1024.0)).toInt().coerceIn(0, units.size - 1)
     return "${java.text.DecimalFormat("#,##0.#").format(bytes / 1024.0.pow(digitGroups))} ${units[digitGroups]}"
+  }
+
+  fun formatRelativeTime(epochMillis: Long): String {
+    if (epochMillis <= 0L) return ""
+    val now = System.currentTimeMillis()
+    val diff = (now - epochMillis).coerceAtLeast(0L)
+    val seconds = diff / 1000L
+    val minutes = seconds / 60L
+    val hours = minutes / 60L
+    val days = hours / 24L
+
+    return when {
+      seconds < 60 -> "Just now"
+      minutes < 60 -> "${minutes}m ago"
+      hours < 24 -> "${hours}h ago"
+      days == 1L -> "Yesterday"
+      days < 7L -> "${days}d ago"
+      else -> {
+        val sdf = java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault())
+        sdf.format(java.util.Date(epochMillis))
+      }
+    }
+  }
+
+  fun formatIsoRelativeTime(isoString: String?): String {
+    if (isoString.isNullOrBlank()) return ""
+    return runCatching {
+      val cleanIso = isoString.trim()
+      val date =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+          java.time.Instant.parse(cleanIso).toEpochMilli()
+        } else {
+          val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+          sdf.parse(cleanIso)?.time ?: return ""
+        }
+      formatRelativeTime(date)
+    }.getOrDefault("")
   }
 }

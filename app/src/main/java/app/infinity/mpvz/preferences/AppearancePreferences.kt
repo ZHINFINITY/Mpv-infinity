@@ -44,12 +44,10 @@ class AppearancePreferences(
   val darkMode = preferenceStore.getEnum("dark_mode", DarkMode.System)
   val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Dynamic)
   val amoledMode = preferenceStore.getBoolean("amoled_mode", false)
-  val liquidGlassMode = preferenceStore.getBoolean("liquid_glass_mode", false)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
   val unlimitedNameLines = preferenceStore.getBoolean("unlimited_name_lines", false)
   val hidePlayerButtonsBackground = preferenceStore.getBoolean("hide_player_buttons_background", false)
-  val playerControlsStyle = preferenceStore.getEnum("player_controls_style", PlayerControlsStyle.Glass)
-  val showSeekbarContainer = preferenceStore.getBoolean("show_seekbar_container", true)
+  val forceDarkPlayerButtonsBackground = preferenceStore.getBoolean("force_dark_player_buttons_background", false)
   val showUnplayedOldVideoLabel = preferenceStore.getBoolean("show_unplayed_old_video_label", true)
   val unplayedOldVideoDays = preferenceStore.getInt("unplayed_old_video_days", 7)
   val showNetworkThumbnails = preferenceStore.getBoolean("show_network_thumbnails", false)
@@ -61,7 +59,7 @@ class AppearancePreferences(
   val showRecentsTab = preferenceStore.getBoolean("show_recents_tab", true)
   val showPlaylistsTab = preferenceStore.getBoolean("show_playlists_tab", true)
   val showNetworkTab = preferenceStore.getBoolean("show_network_tab", false)
-  val showJellyfinTab = preferenceStore.getBoolean("show_jellyfin_tab", true)
+  val showJellyfinTab = preferenceStore.getBoolean("show_jellyfin_tab", false)
   val showQuickPlayFab = preferenceStore.getBoolean("show_quick_play_fab", true)
   val quickPlayFabDirect = preferenceStore.getBoolean("quick_play_fab_direct", false)
 
@@ -80,7 +78,7 @@ class AppearancePreferences(
   val bottomRightControls =
     preferenceStore.getString(
       "bottom_right_controls",
-      "FRAME_NAVIGATION,VIDEO_ZOOM,PICTURE_IN_PICTURE,ASPECT_RATIO",
+      "FRAME_NAVIGATION,CLIP,VIDEO_ZOOM,PICTURE_IN_PICTURE,ASPECT_RATIO",
     )
 
   val bottomLeftControls =
@@ -92,11 +90,13 @@ class AppearancePreferences(
   val portraitBottomControls =
     preferenceStore.getString(
       "portrait_bottom_controls",
-      "CAST,SCREEN_ROTATION,DECODER,AUDIO_TRACK,SUBTITLES,BOOKMARKS_CHAPTERS,PLAYBACK_SPEED,BACKGROUND_PLAYBACK,REPEAT_MODE,SHUFFLE,VIDEO_ZOOM,FRAME_NAVIGATION,ASPECT_RATIO,PICTURE_IN_PICTURE,LOCK_CONTROLS,MORE_OPTIONS",
+      "CAST,SCREEN_ROTATION,DECODER,AUDIO_TRACK,SUBTITLES,BOOKMARKS_CHAPTERS,PLAYBACK_SPEED,BACKGROUND_PLAYBACK,REPEAT_MODE,SHUFFLE,VIDEO_ZOOM,FRAME_NAVIGATION,CLIP,ASPECT_RATIO,PICTURE_IN_PICTURE,LOCK_CONTROLS,MORE_OPTIONS",
     )
 
   private val castButtonMigrationComplete =
     preferenceStore.getBoolean("cast_button_migration_complete", false)
+  private val clipButtonMigrationComplete =
+    preferenceStore.getBoolean("clip_button_migration_complete", false)
 
   init {
     if (!castButtonMigrationComplete.get()) {
@@ -117,6 +117,25 @@ class AppearancePreferences(
       }
       castButtonMigrationComplete.set(true)
     }
+
+    if (!clipButtonMigrationComplete.get()) {
+      val landscapeButtons =
+        listOf(
+          topLeftControls.get(),
+          topRightControls.get(),
+          bottomRightControls.get(),
+          bottomLeftControls.get(),
+        ).flatMap { it.split(',') }
+          .map { it.trim().uppercase() }
+      if ("CLIP" !in landscapeButtons) {
+        bottomRightControls.set("${bottomRightControls.get()},CLIP")
+      }
+      val portraitButtons = portraitBottomControls.get().split(',').map { it.trim().uppercase() }
+      if ("CLIP" !in portraitButtons) {
+        portraitBottomControls.set("${portraitBottomControls.get()},CLIP")
+      }
+      clipButtonMigrationComplete.set(true)
+    }
   }
 
   fun parseButtons(
@@ -135,14 +154,6 @@ class AppearancePreferences(
       }.filter { it != PlayerButton.NONE }
       .filter { usedButtons.add(it) }
       .toList()
-}
-
-enum class PlayerControlsStyle(
-  val displayName: String,
-) {
-  Classic("Classic"),
-  Glass("Glass"),
-  Glossy("Glossy"),
 }
 
 enum class PortraitPlaybackControlsPosition(
@@ -178,7 +189,7 @@ fun MultiChoiceSegmentedButton(
             .onGloballyPositioned { buttonCenter = it.boundsInWindow().center }
             .semantics { role = Role.RadioButton },
         colors =
-          ToggleButtonDefaults.toggleButtonColors(
+          ToggleButtonDefaults.colors(
             checkedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             checkedContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),

@@ -52,7 +52,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -67,12 +66,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
-import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.PlayerControlsStyle
-import app.infinity.mpvz.ui.theme.AppTheme
-import app.infinity.mpvz.preferences.preference.collectAsState
 import kotlinx.coroutines.launch
-import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
 private val sheetAnimationSpec = tween<Float>(350)
@@ -92,15 +86,6 @@ fun PlayerSheet(
 ) {
   val scope = rememberCoroutineScope()
   val density = LocalDensity.current
-  val appearancePreferences = koinInject<AppearancePreferences>()
-  val playerControlsStyle by appearancePreferences.playerControlsStyle.collectAsState()
-  val appTheme by appearancePreferences.appTheme.collectAsState()
-  val sheetContentColor =
-    if (appTheme == AppTheme.Monochrome || playerControlsStyle == PlayerControlsStyle.Glossy) {
-      Color.White
-    } else {
-      MaterialTheme.colorScheme.onSurface
-    }
   val latestOnDismissRequest by rememberUpdatedState(onDismissRequest)
   val maxWidth =
     customMaxWidth
@@ -110,7 +95,6 @@ fun PlayerSheet(
         420.dp
       }
   val isImeVisible = WindowInsets.ime.getBottom(density) > 0
-  val sheetShape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize)
   val maxHeight =
     customMaxHeight ?: when {
       isImeVisible -> LocalConfiguration.current.screenHeightDp.dp
@@ -190,22 +174,6 @@ fun PlayerSheet(
       modifier =
         Modifier
           .sizeIn(maxWidth = maxWidth, maxHeight = maxHeight)
-          .then(
-            if (playerControlsStyle == PlayerControlsStyle.Glossy) {
-              Modifier.background(
-                brush =
-                  Brush.verticalGradient(
-                    listOf(
-                      Color.White.copy(alpha = 0.08f),
-                      Color.Transparent,
-                    ),
-                  ),
-                shape = sheetShape,
-              )
-            } else {
-              Modifier
-            },
-          )
           .clickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
@@ -230,16 +198,9 @@ fun PlayerSheet(
             WindowInsets.systemBars
               .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
           ).imePadding(),
-      shape = sheetShape,
-      color =
-        surfaceColor
-          ?: if (playerControlsStyle == PlayerControlsStyle.Glossy) {
-            Color.Black.copy(alpha = 0.55f)
-          } else {
-            MaterialTheme.colorScheme.surface
-          },
+      shape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
+      color = surfaceColor ?: MaterialTheme.colorScheme.surface,
       tonalElevation = tonalElevation,
-      contentColor = sheetContentColor,
       content = {
         BackHandler(
           enabled = anchoredDraggableState.targetValue == 0,

@@ -64,13 +64,14 @@ class PlaylistViewModel(
     viewModelScope.launch(Dispatchers.IO) {
       try {
         // Get initial cached data synchronously
-        val cachedPlaylists = repository.getAllPlaylists(isAudio = false)
+        val cachedPlaylists = repository.getAllPlaylists()
         if (cachedPlaylists.isNotEmpty()) {
           // Show cached data immediately (without video counts for speed)
           val quickLoad =
-            cachedPlaylists.sortedBy { it.name.lowercase() }.map { playlist ->
-              PlaylistWithCount(playlist, 0) // Show 0 count initially
-            }
+            visiblePlaylists(cachedPlaylists)
+              .map { playlist ->
+                PlaylistWithCount(playlist, 0) // Show 0 count initially
+              }
           _playlistsWithCount.value = quickLoad
           _hasCompletedInitialLoad.value = true
         }
@@ -81,11 +82,9 @@ class PlaylistViewModel(
 
     // Then observe for updates with actual counts
     viewModelScope.launch(Dispatchers.IO) {
-      repository.observeAllPlaylists(isAudio = false).collectLatest { playlistsFromDb ->
-        val sortedPlaylists = playlistsFromDb.sortedBy { it.name.lowercase() }
-
+      repository.observeAllPlaylists().collectLatest { playlistsFromDb ->
         val playlistsWithCounts =
-          sortedPlaylists.map { playlist ->
+          visiblePlaylists(playlistsFromDb).map { playlist ->
             val count = getActualVideoCount(playlist.id)
             PlaylistWithCount(playlist, count)
           }
@@ -123,15 +122,17 @@ class PlaylistViewModel(
     }
   }
 
+  private fun visiblePlaylists(playlists: List<PlaylistEntity>): List<PlaylistEntity> =
+    repository.prioritizeFavorites(playlists)
+
   fun refresh() {
     viewModelScope.launch(Dispatchers.IO) {
       try {
         _isLoading.value = true
-        val playlistsFromDb = repository.getAllPlaylists(isAudio = false)
-        val sortedPlaylists = playlistsFromDb.sortedBy { it.name.lowercase() }
+        val playlistsFromDb = repository.getAllPlaylists()
 
         val playlistsWithCounts =
-          sortedPlaylists.map { playlist ->
+          visiblePlaylists(playlistsFromDb).map { playlist ->
             val count = getActualVideoCount(playlist.id)
             PlaylistWithCount(playlist, count)
           }
@@ -156,6 +157,8 @@ class PlaylistViewModel(
     repository.createM3UPlaylistFromFile(getApplication(), uri)
 
   suspend fun refreshM3UPlaylist(playlistId: Int): Result<Unit> = repository.refreshM3UPlaylist(playlistId)
+
+  fun isProtectedPlaylist(playlist: PlaylistEntity): Boolean = repository.isProtectedPlaylist(playlist)
 
   suspend fun deletePlaylist(playlist: PlaylistEntity) {
     repository.deletePlaylist(playlist)

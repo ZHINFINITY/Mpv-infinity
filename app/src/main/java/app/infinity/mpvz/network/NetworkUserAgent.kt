@@ -36,6 +36,6 @@ object NetworkUserAgent {
         }
     }
 
-    return "mpvRx/${BuildConfig.VERSION_NAME} (Android ${Build.VERSION.RELEASE}; ${Build.MANUFACTURER} ${Build.MODEL})"
+    return "Mpv∞/${BuildConfig.VERSION_NAME} (Android ${Build.VERSION.RELEASE}; ${Build.MANUFACTURER} ${Build.MODEL})"
   }
 }

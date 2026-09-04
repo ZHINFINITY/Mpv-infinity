@@ -6,25 +6,34 @@ native_lib_dir = sys.argv[1] if len(sys.argv) > 1 else ""
 # scriptdest is the path for a legacy wrapper if needed
 scriptdest = "../youtube-dl.sh"
 name = "yt-dlp"
+download_name = name + ".download"
 url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
 
-# Clean up old files first
-for path in (scriptdest, "youtube-dl", name):
+# Clean up legacy and interrupted files, but retain a working yt-dlp until its
+# replacement has downloaded successfully.
+for path in (scriptdest, "youtube-dl", download_name):
     try:
         if os.path.exists(path): os.unlink(path)
     except:
         pass
 
-print("Downloading '{}' to '{}'...".format(url, name))
+print("Downloading '{}' to '{}'...".format(url, download_name))
 try:
     # Use a real browser user-agent for download
     opener = urllib.request.build_opener()
     opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')]
     urllib.request.install_opener(opener)
     
-    urllib.request.urlretrieve(url, name)
+    urllib.request.urlretrieve(url, download_name)
+    if not os.path.isfile(download_name) or os.path.getsize(download_name) == 0:
+        raise IOError("Downloaded yt-dlp file is empty")
+    os.replace(download_name, name)
     print("Download successful.")
 except Exception as e:
+    try:
+        if os.path.exists(download_name): os.unlink(download_name)
+    except:
+        pass
     print("Download failed: " + str(e))
     sys.exit(1)
 

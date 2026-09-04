@@ -40,12 +40,16 @@ import app.infinity.mpvz.ui.player.FilterPreset
 import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VideoSettingsFilterPresetsCard(modifier: Modifier = Modifier) {
   val decoderPreferences = koinInject<DecoderPreferences>()
+  val configOwnedOptions = currentMpvConfigOverrideOptions()
+  val presetOptions = setOf("brightness", "saturation", "contrast", "gamma", "hue", "sharpen")
+  val presetsEnabled = presetOptions.none(configOwnedOptions::contains)
   var isExpanded by remember { mutableStateOf(true) }
 
   // Collect current filter values
@@ -98,6 +102,7 @@ fun VideoSettingsFilterPresetsCard(modifier: Modifier = Modifier) {
         FilterPreset.entries.forEach { preset ->
           FilterChip(
             selected = currentPreset == preset,
+            enabled = presetsEnabled,
             onClick = {
               // Apply preset values to all filters
               decoderPreferences.brightnessFilter.set(preset.brightness)

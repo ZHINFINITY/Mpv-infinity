@@ -33,7 +33,7 @@ class SettingsManager(
   private val database: MpvRxDatabase,
 ) {
   companion object {
-    private const val TAG_ROOT = "mpvRxSettings"
+    private const val TAG_ROOT = "Mpv∞Settings"
     private const val TAG_PREFERENCES = "preferences"
     private const val TAG_PREFERENCE = "preference"
     private const val TAG_DATABASE = "database"
@@ -103,7 +103,7 @@ class SettingsManager(
     serializer.startTag(null, TAG_PREFERENCES)
     val allPreferences = preferenceStore.getAll()
     for ((key, value) in allPreferences) {
-      if (value != null) {
+      if (key != BrowserPreferences.ONBOARDING_COMPLETED_KEY && value != null) {
         writePreference(serializer, key, value)
         exportedCount++
         exportedKeys.add("pref:$key")
@@ -227,12 +227,14 @@ class SettingsManager(
               stats.version = version ?: "unknown"
             }
             TAG_PREFERENCE -> {
-              try {
-                readPreference(parser)
-                stats.imported++
-              } catch (e: Exception) {
-                stats.failed++
-                stats.errors.add("Failed to import preference: ${e.message}")
+              if (parser.getAttributeValue(null, ATTR_KEY) != BrowserPreferences.ONBOARDING_COMPLETED_KEY) {
+                try {
+                  readPreference(parser)
+                  stats.imported++
+                } catch (e: Exception) {
+                  stats.failed++
+                  stats.errors.add("Failed to import preference: ${e.message}")
+                }
               }
             }
             TAG_NETWORK_CONNECTION -> {
@@ -317,7 +319,7 @@ class SettingsManager(
 
   fun getDefaultExportFilename(): String {
     val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-    return "mpv_infinity_settings_${dateFormat.format(Date())}.xml"
+    return "Mpv∞_settings_${dateFormat.format(Date())}.xml"
   }
 
   data class ImportStats(

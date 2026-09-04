@@ -53,6 +53,7 @@ import app.infinity.mpvz.domain.lyrics.SyncedLine
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.theme.fontFamilyForText
 
 @Composable
 fun LyricsSheet(
@@ -120,6 +121,7 @@ fun LyricsSheet(
               text = displayTitle,
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
+              fontFamily = fontFamilyForText(displayTitle),
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
             )
@@ -128,6 +130,7 @@ fun LyricsSheet(
             Text(
               text = displayArtist,
               style = MaterialTheme.typography.bodySmall,
+              fontFamily = fontFamilyForText(displayArtist),
               color = MaterialTheme.colorScheme.onSurfaceVariant,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
@@ -190,6 +193,17 @@ fun LyricsSheet(
         }
       }
 
+      state.errorMessage?.let { message ->
+        Text(
+          text = message,
+          style = MaterialTheme.typography.bodySmall,
+          fontFamily = fontFamilyForText(message),
+          color = MaterialTheme.colorScheme.error,
+          textAlign = TextAlign.Center,
+          modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+      }
+
       Spacer(modifier = Modifier.height(12.dp))
 
       // Lyrics Content
@@ -238,12 +252,7 @@ fun LyricsSheet(
                   label = "LyricTextColor",
                 )
 
-                Text(
-                  text = line.line,
-                  color = textColor,
-                  fontSize = if (isActive) 20.sp else 16.sp,
-                  fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                  textAlign = TextAlign.Center,
+                Column(
                   modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
@@ -252,7 +261,31 @@ fun LyricsSheet(
                       PlaybackSession.command("seek", targetSeconds.toString(), "absolute+exact")
                     }
                     .padding(vertical = 4.dp, horizontal = 8.dp),
-                )
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                  Text(
+                    text = line.line,
+                    color = textColor,
+                    fontSize = if (isActive) 20.sp else 16.sp,
+                    fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                    fontFamily = fontFamilyForText(line.line),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                  )
+                  val trans = line.translation?.trim()
+                  if (!trans.isNullOrBlank() && !trans.equals(line.line.trim(), ignoreCase = true)) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                      text = trans,
+                      color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f),
+                      fontSize = if (isActive) 15.sp else 13.sp,
+                      fontWeight = FontWeight.Medium,
+                      fontFamily = fontFamilyForText(trans),
+                      textAlign = TextAlign.Center,
+                      modifier = Modifier.fillMaxWidth(),
+                    )
+                  }
+                }
               }
             }
           }
@@ -271,6 +304,7 @@ fun LyricsSheet(
                   text = lineText,
                   color = MaterialTheme.colorScheme.onSurface,
                   fontSize = 16.sp,
+                  fontFamily = fontFamilyForText(lineText),
                   textAlign = TextAlign.Center,
                   modifier = Modifier.fillMaxWidth(),
                 )

@@ -70,7 +70,8 @@ sealed class AndroidPreference<T>(
       .map { get() }
       .conflate()
 
-  override fun stateIn(scope: CoroutineScope): StateFlow<T> = changes().stateIn(scope, SharingStarted.Eagerly, get())
+  override fun stateIn(scope: CoroutineScope): StateFlow<T> =
+    changes().stateIn(scope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000), get())
 
   class StringPrimitive(
     preferences: SharedPreferences,
@@ -103,12 +104,7 @@ sealed class AndroidPreference<T>(
       preferences: SharedPreferences,
       key: String,
       defaultValue: Long,
-    ): Long =
-      when (val storedValue = preferences.all[key]) {
-        is Number -> storedValue.toLong()
-        is String -> storedValue.toLongOrNull() ?: defaultValue
-        else -> defaultValue
-      }
+    ): Long = preferences.getLong(key, defaultValue)
 
     override fun write(
       key: String,

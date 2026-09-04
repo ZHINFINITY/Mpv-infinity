@@ -23,6 +23,9 @@ import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
+import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.YtdlPreferences
@@ -72,13 +75,16 @@ class MPVView(
     // The libmpv core is process-wide, so returning to the player can reuse a core created with
     // older renderer preferences. Keep fallbacks stable for the lifetime of that preference
     // selection, but recreate the core when gpu-next/Vulkan selection actually changes.
+    MpvConfigOverridePolicy.configure(advancedPreferences.mpvConfOverrides.get())
     val requestedBackend = selectRenderBackend(ignoreForcedOpenGlFallback = true)
+    val coreConfigurationKey =
+      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
         configDir = configDir,
         cacheDir = cacheDir,
-        coreConfigurationKey = requestedBackend.configurationKey,
+        coreConfigurationKey = coreConfigurationKey,
         initOptions = ::initOptions,
         postInitOptions = ::postInitOptions,
         observeProperties = ::observeProperties,
@@ -96,20 +102,6 @@ class MPVView(
     if (isSurfaceReady || PlaybackSession.state.value.surfaceAttached) {
       isSurfaceReady = false
       PlaybackSession.unbindSurface(this)
-    }
-  }
-
-  /**
-   * Re-sends the current view dimensions to libmpv after the Activity returns to the foreground.
-   * Android can keep the Surface alive while its parent is remeasured; in that case no
-   * SurfaceHolder#surfaceChanged callback is emitted and libmpv can retain the old output size.
-   */
-  fun refreshSurfaceSize() {
-    if (!isSurfaceReady || !holder.surface.isValid) return
-    val currentWidth = width
-    val currentHeight = height
-    if (currentWidth > 0 && currentHeight > 0) {
-      PlaybackSession.resizeSurface(currentWidth, currentHeight)
     }
   }
 
@@ -213,15 +205,22 @@ class MPVView(
         }
       }
     val hdrPipelineReady = hdrScreenMode != HdrScreenMode.LINEAR || isLinearAvailable
-    applyHdrScreenOutputOptions(
-      mode = hdrScreenMode,
-      pipelineReady = hdrPipelineReady,
-      boostSdrToHdr = decoderPreferences.boostSdrToHdr.get(),
-    )
+    if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HDR_OUTPUT)) {
+      applyHdrScreenOutputOptions(
+        mode = hdrScreenMode,
+        pipelineReady = hdrPipelineReady,
+        boostSdrToHdr = decoderPreferences.boostSdrToHdr.get(),
+      )
+    }
 
     // Fongmi can map direct MediaCodec frames into Vulkan; other Vulkan builds start with copy mode.
-    PlaybackSession.setOptionString("hwdec", hwdecMode)
-    PlaybackSession.setOptionString("hwdec-codecs", "all")
+    if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HARDWARE_DECODER)) {
+      PlaybackSession.setOptionString(
+        "hwdec",
+        hwdecMode,
+      )
+      PlaybackSession.setOptionString("hwdec-codecs", "all")
+    }
 
     // These were forced on between the last known-good build (e3b1de8) and the first build
     // reproducing the HEVC/Main10 frame-drop regression (84f21fc). Keep mpv's normal direct-
@@ -272,6 +271,14 @@ class MPVView(
       "http_persistent=0,reconnect=1,reconnect_on_network_error=1,reconnect_streamed=1," +
         "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
     )
+    // demuxer-lavf-o only reaches demuxer-internal opens (HLS/DASH segments). The primary http(s)
+    // URL is opened by stream_lavf, which reads stream-lavf-o; without it a dropped connection or
+    // one failed seek-reopen permanently stalls network playback (endless buffering).
+    PlaybackSession.setOptionString(
+      "stream-lavf-o",
+      "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_streamed=1," +
+        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+    )
     // Drop only video-output-bound late frames when rendering cannot keep up.
     // This prevents long-term jitter buildup without aggressively sacrificing smoothness.
     PlaybackSession.setOptionString("framedrop", "vo")
@@ -286,9 +293,13 @@ class MPVView(
     PlaybackSession.setOptionString("video-sync", "audio")
 
     // Anime4K shader initialization (MUST be in initOptions, not after file load!)
-    applyAnime4KShaders(backend.vo, backend.gpuApi)
+    if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.ANIME4K)) {
+      applyAnime4KShaders(backend.vo, backend.gpuApi)
+    }
     // HDR Toys shaders (loaded after Anime4K so they append in the correct order)
-    applyHdrToysMode(hdrScreenMode, hdrPipelineReady)
+    if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HDR_OUTPUT)) {
+      applyHdrToysMode(hdrScreenMode, hdrPipelineReady)
+    }
 
     setupSubtitlesOptions()
     setupAudioOptions()
@@ -308,10 +319,12 @@ class MPVView(
       Debanding.GPU -> PlaybackSession.setOptionString("deband", "yes")
     }
 
-    // Do not restore the MPV stats OSD during player initialization. The persisted page is a UI
-    // preference for the More sheet; restoring it here briefly exposes page 4 (Active Key Bindings)
-    // over the library while a newly selected song is loading. Statistics can still be opened
-    // explicitly from MoreSheet when the user requests them.
+    advancedPreferences.enabledStatisticsPage.get().let {
+      if (it in 1..5) {
+        PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+        PlaybackSession.command("script-binding", "stats/display-page-$it")
+      }
+    }
   }
 
   fun applyOsdSafeAreaMargins(insets: WindowInsetsCompat? = null) {
@@ -368,7 +381,7 @@ class MPVView(
     width: Int,
     height: Int,
   ) {
-    PlaybackSession.resizeSurface(width, height)
+    PlaybackSession.resizeSurface(width, height, owner = this)
     applyFrameRate()
   }
 
@@ -410,34 +423,31 @@ class MPVView(
       "cache-buffering-state" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
       "demuxer-cache-duration" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "demuxer-cache-time" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
+      "network" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "video-params/aspect" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "video-params/w" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
       "video-params/h" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
       "container-fps" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "eof-reached" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
-      "user-data/mpvrx/show_text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/toggle_ui" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/show_panel" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/set_button_title" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/reset_button_title" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/toggle_button" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/seek_by" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/seek_to" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/seek_by_with_text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/seek_to_with_text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
-      "user-data/mpvrx/software_keyboard" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/show_text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/toggle_ui" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/show_panel" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/set_button_title" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/reset_button_title" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/toggle_button" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/seek_by" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/seek_to" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/seek_by_with_text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/seek_to_with_text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/software_keyboard" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
       // Curl bridge: scripts write a JSON request here; response is written to curl_response
-      "user-data/mpvrx/curl_request" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/curl_request" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
       // curl_response is written by the bridge; scripts observe this property for results
-      "user-data/mpvrx/curl_response" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
+      "user-data/Mpv∞/curl_response" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
       // Track console visibility state
       "user-data/mpv/console/open" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "sub-text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,
       "sub-scale" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
-      "sub-font-size" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
-      "sub-pos" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
-      "secondary-sub-pos" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
-      "sub-visibility" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
     )
 
   private fun setupAudioOptions() {
@@ -478,11 +488,9 @@ class MPVView(
     PlaybackSession.setOptionString("secondary-sub-delay", subDelay)
     PlaybackSession.setOptionString("secondary-sub-speed", subSpeed)
 
-    val preferredFont = subtitlesPreferences.font.get()
-    if (preferredFont.isNotBlank()) {
-      PlaybackSession.setOptionString("sub-font", preferredFont)
-    }
-    // If blank, MPV uses its default font
+    val preferredFont = subtitlesPreferences.font.get().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
+    PlaybackSession.setOptionString("sub-font", preferredFont)
+    PlaybackSession.setOptionString("secondary-sub-font", preferredFont)
 
     if (subtitlesPreferences.overrideAssSubs.get()) {
       PlaybackSession.setOptionString("sub-ass-override", "force")
@@ -546,6 +554,7 @@ class MPVView(
   }
 
   fun applyAnime4KShaders() {
+    if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.ANIME4K)) return
     applyAnime4KShaders(
       activeVo = PlaybackSession.getPropertyString("vo") ?: "",
       activeGpuApi = PlaybackSession.getPropertyString("gpu-api") ?: "",
@@ -561,6 +570,7 @@ class MPVView(
     mode: HdrScreenMode,
     pipelineReady: Boolean,
   ) {
+    if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HDR_OUTPUT)) return
     val profile = mode.hdrToysProfile
     if (!pipelineReady || profile == null) {
       hdrToysManager.clear()
@@ -655,7 +665,6 @@ class MPVView(
 
   private fun preferredHwdecMode(usesVulkan: Boolean): String =
     RendererBackendPolicy.preferredHwdecMode(
-      requestedMode = decoderPreferences.mpvDecoderMode.get().value,
       hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
       usesVulkan = usesVulkan,
       buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,

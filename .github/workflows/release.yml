@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: Tag to release (for example v1.0.0)
+        description: Tag to release (for example v2.1.0)
         required: true
         type: string
 
@@ -43,16 +43,11 @@ jobs:
             version_tag="${{ inputs.tag_name }}"
           fi
 
-          if [[ ! "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$version_tag" != "v1.0.2-hotfix" ]]; then
-            echo "Invalid release tag: $version_tag"
+          if [[ ! "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid stable release tag: $version_tag"
             exit 1
           fi
           echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
-          if [[ "$version_tag" == "v1.0.2-hotfix" ]]; then
-            echo "RELEASE_NAME=Mpv∞ v1.0.2 Hotfix" >> "$GITHUB_ENV"
-          else
-            echo "RELEASE_NAME=Mpv∞ $version_tag" >> "$GITHUB_ENV"
-          fi
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
@@ -62,6 +57,8 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleFongmiRelease --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
 
       - name: Sign and verify release APKs
         shell: bash
@@ -82,33 +79,21 @@ jobs:
             local unsigned="$1"
             local signed="$2"
             local label="$3"
-            if [[ -f "$unsigned" ]]; then
-              "$apksigner" sign \
-                --ks release.keystore \
-                --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
-                --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
-                --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
-                --out "$signed" \
-                "$unsigned"
-              rm -f "$unsigned"
-            elif [[ -f "$signed" ]]; then
-              # Gradle may emit an already-signed release APK instead of an
-              # explicit -unsigned APK. Re-sign that file in place.
-              temporary="${signed}.resigned"
-              "$apksigner" sign \
-                --ks release.keystore \
-                --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
-                --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
-                --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
-                --out "$temporary" \
-                "$signed"
-              mv -f "$temporary" "$signed"
-            else
-              echo "Missing expected $label APK: neither $unsigned nor $signed exists"
+            if [[ ! -f "$unsigned" ]]; then
+              echo "Missing expected $label APK: $unsigned"
               find app/build/outputs/apk -type f -name '*.apk' -print || true
               exit 1
             fi
+
+            "$apksigner" sign \
+              --ks release.keystore \
+              --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+              --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
+              --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+              --out "$signed" \
+              "$unsigned"
             "$apksigner" verify --verbose "$signed"
+            rm -f "$unsigned"
           }
 
           release_dir="app/build/outputs/apk/standard/release"
@@ -121,6 +106,20 @@ jobs:
               "standard $abi release"
           done
 
+          flavor_dir="app/build/outputs/apk/fongmi/release"
+          test -d "$flavor_dir"
+          sign_apk \
+            "$flavor_dir/app-fongmi-universal-release-unsigned.apk" \
+            "$flavor_dir/app-fongmi-universal-release.apk" \
+            "fongmi universal release"
+
+          flavor_dir="app/build/outputs/apk/noVulkan/release"
+          test -d "$flavor_dir"
+          sign_apk \
+            "$flavor_dir/app-noVulkan-universal-release-unsigned.apk" \
+            "$flavor_dir/app-noVulkan-universal-release.apk" \
+            "non-Vulkan universal release"
+
       - name: Stage release assets and checksums
         shell: bash
         run: |
@@ -132,11 +131,23 @@ jobs:
           architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
           for abi in "${architectures[@]}"; do
             src="$release_dir/app-standard-${abi}-release.apk"
-            dst="release-assets/mpv-infinity-${abi}-${VERSION_TAG}.apk"
+            dst="release-assets/Mpv∞-${abi}-${VERSION_TAG}.apk"
             test -f "$src"
             cp "$src" "$dst"
             sha256sum "$dst" | tee -a checksums.txt
           done
+
+          src="app/build/outputs/apk/fongmi/release/app-fongmi-universal-release.apk"
+          dst="release-assets/Mpv∞-fongmi-${VERSION_TAG}.apk"
+          test -f "$src"
+          cp "$src" "$dst"
+          sha256sum "$dst" | tee -a checksums.txt
+
+          src="app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release.apk"
+          dst="release-assets/Mpv∞-no-vulkan-${VERSION_TAG}.apk"
+          test -f "$src"
+          cp "$src" "$dst"
+          sha256sum "$dst" | tee -a checksums.txt
 
       - name: Prepare release notes
         shell: bash
@@ -159,7 +170,19 @@ jobs:
           latest = '\n'.join(section).strip()
           if not latest:
               raise SystemExit('Could not find latest changelog section')
-          Path('release-notes.md').write_text(latest + '\n\n---\n### SHA-256 checksums\n\n```text\n', encoding='utf-8')
+          variant_guide = """
+          ### APK variants
+
+          All variants contain the same Mpv∞ app version and features, with their native backends built from [mpvlib Android](https://github.com/Riteshp2001/mpvlibAndroid). Choose the package that best matches your device:
+
+          - **Standard** (`Mpv∞-<architecture>-<version>.apk`): Recommended for most devices. Available as Universal and architecture-specific APKs with the standard Vulkan-capable playback backend.
+          - **FongMi** (`Mpv∞-fongmi-<version>.apk`): Universal package using the FongMi native profile for Vulkan, direct MediaCodec, and Dolby Vision playback.
+          - **Non-Vulkan** (`Mpv∞-no-vulkan-<version>.apk`): Universal OpenGL-only package for devices without compatible Vulkan support or with unstable legacy GPU drivers.
+          """.strip()
+          Path('release-notes.md').write_text(
+              latest + '\n\n---\n' + variant_guide + '\n\n### SHA-256 checksums\n\n```text\n',
+              encoding='utf-8',
+          )
           PY
           cat checksums.txt >> release-notes.md
           printf '%s\n' '```' >> release-notes.md
@@ -167,8 +190,8 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION_TAG }}
-          name: ${{ env.RELEASE_NAME }}
+          tag_name: ${{ github.ref_name }}
+          name: Mpv∞ ${{ github.ref_name }}
           body_path: release-notes.md
           generate_release_notes: true
           draft: false

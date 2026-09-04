@@ -125,7 +125,7 @@ import app.infinity.mpvz.ui.cast.CastMediaSnapshot
 import app.infinity.mpvz.ui.cast.CastPlaybackController
 import app.infinity.mpvz.ui.player.controls.PlayerControls
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
-import app.infinity.mpvz.ui.theme.MpvrxTheme
+import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.device.VulkanCapabilities
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
@@ -216,7 +216,7 @@ class PlayerActivity :
    */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
 
-  /** Media3 backend kept behind the existing mpvRx UI for incremental playback migration. */
+  /** Media3 backend kept behind the existing Mpv∞ UI for incremental playback migration. */
   private val media3PlaybackController by lazy {
     Media3PlaybackController(
       context = this,
@@ -245,7 +245,7 @@ class PlayerActivity :
           val failedItem = media3ActiveItem ?: currentPlaybackItem()
           if (failedItem != null && decoderPreferences.playbackEngine.get() == PlaybackEngineMode.Auto) {
             media3AutoFallbackItemId = failedItem.stableId
-            AppDebugLog.warn(
+            android.util.Log.w(
               TAG,
               "Media3 error recorded as automatic fallback item=${failedItem.stableId}; " +
                 "suppressing Native retry",
@@ -1221,7 +1221,7 @@ class PlayerActivity :
 
   private fun setupPlayerControls() {
     binding.controls.setContent {
-      MpvrxTheme {
+      MpvInfinityTheme {
         Box(modifier = Modifier.fillMaxSize()) {
           val torrentState by torrentStreamingEngine.state.collectAsState()
           PlayerControls(
@@ -1348,7 +1348,7 @@ class PlayerActivity :
   ) {
     val playerView = binding.media3Player
     val sourceUri = media3SourceUri(item)
-    AppDebugLog.info(
+    android.util.Log.i(
       TAG,
       "Media3: source resolved original=${redactedUrlForLog(item.originalUri)} " +
         "playable=${redactedUrlForLog(item.playableUri)} " +
@@ -1360,10 +1360,10 @@ class PlayerActivity :
     fun startPlayback() {
       if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId != item.stableId) return
       if (media3PreparedItemId == item.stableId) {
-        AppDebugLog.info(TAG, "Media3: duplicate start ignored item=${item.stableId}")
+        android.util.Log.i(TAG, "Media3: duplicate start ignored item=${item.stableId}")
         return
       }
-      AppDebugLog.info(
+      android.util.Log.i(
         TAG,
         "Media3: start attempt layout=${playerView.width}x${playerView.height} " +
           "visibility=${playerView.visibility} attachedToWindow=${playerView.isAttachedToWindow}",
@@ -1404,10 +1404,10 @@ class PlayerActivity :
         )
       }.onSuccess {
         media3PreparedItemId = item.stableId
-        AppDebugLog.info(TAG, "Media3: playback submitted state=${media3PlaybackController.currentState().playbackState}")
+        android.util.Log.i(TAG, "Media3: playback submitted state=${media3PlaybackController.currentState().playbackState}")
         onStarted()
       }.onFailure { error ->
-        AppDebugLog.error(TAG, "Media3 could not start playback; falling back to MPV", error)
+        android.util.Log.e(TAG, "Media3 could not start playback; falling back to MPV", error)
         switchToMpvEngine()
       }
     }
@@ -1875,7 +1875,7 @@ class PlayerActivity :
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (error: Exception) {
-      AppDebugLog.info(TAG, "Media3: Dolby Vision preflight unavailable source=${redactedUrlForLog(source)} error=${error.message}")
+      android.util.Log.i(TAG, "Media3: Dolby Vision preflight unavailable source=${redactedUrlForLog(source)} error=${error.message}")
       null
     } finally {
       runCatching { extractor.release() }
@@ -1909,7 +1909,7 @@ class PlayerActivity :
     // preference and before Auto/Dolby detection, otherwise a stale video/Media3 state can take
     // ownership of a song and leave MPV controls pointed at an inactive generation.
     if (isAudioPlaybackItem(item)) {
-      AppDebugLog.info(TAG, "Forcing MPV for audio item=${item.stableId} title=${item.title.orEmpty()}")
+      android.util.Log.i(TAG, "Forcing MPV for audio item=${item.stableId} title=${item.title.orEmpty()}")
       return false
     }
     if (item.originalUri.startsWith("magnet:", ignoreCase = true)) return false
@@ -1917,7 +1917,7 @@ class PlayerActivity :
     // again. This prevents queue/state emissions during the handoff from immediately starting a
     // second Native controller while MPV is already resuming the same file.
     if (media3AutoFallbackItemId == item.stableId) {
-      AppDebugLog.info(
+      android.util.Log.i(
         TAG,
         "Suppressing Native retry after fallback item=${item.stableId} " +
           "configuredMode=${decoderPreferences.playbackEngine.get().name}",
@@ -1941,7 +1941,7 @@ class PlayerActivity :
     // Keep this defensive guard even though shouldUseMedia3() rejects audio. Manual engine
     // selection and delayed observers can call this method directly after a queue transition.
     if (isAudioPlaybackItem(item)) {
-      AppDebugLog.warn(TAG, "Rejected Media3 handoff for audio item=${item.stableId}; restoring MPV")
+      android.util.Log.w(TAG, "Rejected Media3 handoff for audio item=${item.stableId}; restoring MPV")
       switchToMpvEngine(itemOverride = item, force = true)
       return
     }
@@ -1953,9 +1953,9 @@ class PlayerActivity :
     if (!force && playbackEngine == PlaybackEngine.MEDIA3 && media3ItemId == item.stableId) {
       val currentState = media3PlaybackController.currentState()
       if (currentState.playbackState != Player.STATE_IDLE && currentState.mediaItemIndex >= 0) return
-      AppDebugLog.info(TAG, "Media3 session is idle for current item; rebuilding item=${item.stableId}")
+      android.util.Log.i(TAG, "Media3 session is idle for current item; rebuilding item=${item.stableId}")
     }
-    AppDebugLog.info(
+    android.util.Log.i(
       TAG,
       "Playback engine selected engine=MEDIA3 uri=${redactedUrlForLog(item.playableUri)} " +
         "originalUri=${redactedUrlForLog(item.originalUri)} " +
@@ -1999,7 +1999,7 @@ class PlayerActivity :
       // Media3 is the only active engine and the device does not spend battery on a hidden player.
       runCatching { PlaybackSession.stop(clearQueue = false) }
       mpvStoppedForMedia3 = true
-      AppDebugLog.info(TAG, "MPV stopped for exclusive Media3 playback item=${item.stableId}")
+      android.util.Log.i(TAG, "MPV stopped for exclusive Media3 playback item=${item.stableId}")
     }
     playbackEngine = PlaybackEngine.MEDIA3
     // Media3 owns chapter visibility for this session. The controller will replace this empty
@@ -2016,7 +2016,7 @@ class PlayerActivity :
           (manualOrientationOverrideItemId == null || manualOrientationOverrideItemId == item.stableId))
     ) {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-      AppDebugLog.info(TAG, "Media3: provisional landscape requested for Dolby Vision item=${item.stableId}")
+      android.util.Log.i(TAG, "Media3: provisional landscape requested for Dolby Vision item=${item.stableId}")
     }
     media3State = Media3PlaybackController.State()
     cachedMedia3State = Media3PlaybackController.State()
@@ -2031,7 +2031,7 @@ class PlayerActivity :
     // visibility is restored.
     binding.player.visibility = View.GONE
     binding.media3Player.visibility = View.VISIBLE
-    AppDebugLog.info(
+    android.util.Log.i(
       TAG,
       "Media3: surfaces switched media3=${binding.media3Player.width}x${binding.media3Player.height} " +
         "mpvVisibility=${binding.player.visibility} media3Visibility=${binding.media3Player.visibility}",
@@ -2053,7 +2053,7 @@ class PlayerActivity :
                 !media3VideoFrameRendered
             ) {
               media3AutoFallbackItemId = item.stableId
-              AppDebugLog.warn(
+              android.util.Log.w(
                 TAG,
                 "Media3 produced no video frame after watchdog; falling back to MPV " +
                   "and suppressing Media3 retry for item=${item.stableId}",
@@ -2099,7 +2099,7 @@ class PlayerActivity :
     // The decoder sheet is rendered above the active player surface. During Media3 ownership MPV's
     // queue can briefly be empty, so prefer the item that owns the visible Media3 session and then
     // fall back to the normal PlaybackSession lookup.
-    AppDebugLog.info(
+    android.util.Log.i(
       TAG,
       "Manual engine selection requested engine=$selectedEngine playbackEngine=$playbackEngine " +
         "media3ItemId=$media3ItemId activeItem=${activePlaybackItem?.stableId} " +
@@ -2110,7 +2110,7 @@ class PlayerActivity :
         ?: activePlaybackItem?.takeIf { media3ItemId == null || it.stableId == media3ItemId }
         ?: currentPlaybackItem()
     if (resolvedItem == null) {
-      AppDebugLog.warn(
+      android.util.Log.w(
         TAG,
         "Manual engine selection ignored: no active item selectedEngine=$selectedEngine " +
           "media3ItemId=$media3ItemId",
@@ -2127,7 +2127,7 @@ class PlayerActivity :
       }
     decoderPreferences.playbackEngine.set(selectedEngine)
     manualEngineOverride = targetEngine
-    AppDebugLog.info(
+    android.util.Log.i(
       TAG,
       "Manual engine override scheduled item=${resolvedItem.stableId} engine=$targetEngine",
     )
@@ -2149,13 +2149,13 @@ class PlayerActivity :
       repeat(40) { attempt ->
         val item = currentPlaybackItem()
         if (item != null) {
-          AppDebugLog.info(TAG, "Manual Media3 selection resolved item=${item.stableId} attempt=$attempt")
+          android.util.Log.i(TAG, "Manual Media3 selection resolved item=${item.stableId} attempt=$attempt")
           switchToMedia3Engine(item)
           return@launch
         }
         delay(50L)
       }
-      AppDebugLog.warn(TAG, "Manual Media3 selection timed out: no active PlaybackSession item")
+      android.util.Log.w(TAG, "Manual Media3 selection timed out: no active PlaybackSession item")
     }
   }
 
@@ -2185,7 +2185,7 @@ class PlayerActivity :
       )
     }
 
-    AppDebugLog.info(
+    android.util.Log.i(
       TAG,
       "Playback engine selected engine=MPV " +
         "uri=${redactedUrlForLog(currentItem?.playableUri.orEmpty())} " +
@@ -2246,7 +2246,7 @@ class PlayerActivity :
           // A seek started during the handoff can nest a second mute guard inside the replacement
           // guard. Complete both in one place so MPV does not remain silent after Media3 stops.
           PlaybackSession.restorePlaybackAudioAfterTransition()
-          AppDebugLog.info(
+          android.util.Log.i(
             TAG,
             "MPV handoff resumed item=${currentItem.stableId} positionMs=$resumePositionMs audioRestored=true",
           )
@@ -2281,7 +2281,7 @@ class PlayerActivity :
           // Do not let that emission restart Native for the same item; the fallback guard in
           // shouldUseMedia3() does not cover this direct observer path.
           if (media3AutoFallbackItemId == currentItem.stableId) {
-            AppDebugLog.info(
+            android.util.Log.i(
               TAG,
               "Suppressing automatic Native retry from MPV Dolby Vision track observer " +
                 "item=${currentItem.stableId}",
@@ -2289,7 +2289,7 @@ class PlayerActivity :
             return@collect
           }
           if (playbackEngine == PlaybackEngine.MPV && tracks.any(::isDolbyVisionTrack)) {
-            AppDebugLog.info(TAG, "Auto engine detected Dolby Vision track; switching to Media3 item=${currentItem.stableId}")
+            android.util.Log.i(TAG, "Auto engine detected Dolby Vision track; switching to Media3 item=${currentItem.stableId}")
             switchToMedia3Engine(currentItem)
           }
         }
@@ -2599,7 +2599,7 @@ class PlayerActivity :
             MediaPlaybackService.nativeBackgroundRequested = false
             Log.e(TAG, "Unable to start Native background keep-alive service", error)
           }
-        AppDebugLog.info(
+        android.util.Log.i(
           TAG,
           "Keeping Native Media3 playback alive while Activity is stopped " +
             "positionMs=${media3State.positionMs} isPlaying=${media3State.isPlaying}",
@@ -2645,7 +2645,7 @@ class PlayerActivity :
         // onStop is also delivered when the user presses Home. The old code only paused on
         // finish/screen-off, so a normal video continued audibly behind the launcher even though
         // video background playback was disabled.
-        AppDebugLog.info(TAG, "Pausing playback because the player entered background")
+        android.util.Log.i(TAG, "Pausing playback because the player entered background")
         viewModel.pause()
       } else if (isBackgroundPlaybackSessionActive && !isInBackgroundPlayback) {
         disableVideoForBackground()
@@ -2674,7 +2674,7 @@ class PlayerActivity :
   private fun restoreMedia3SurfaceAfterPipReturn() {
     if (playbackEngine != PlaybackEngine.MEDIA3 || media3ItemId == null) return
     val currentState = media3PlaybackController.currentState()
-    AppDebugLog.info(
+    android.util.Log.i(
       TAG,
       "PiP return: restoring Media3 surface item=$media3ItemId prepared=$media3PreparedItemId " +
         "attached=$media3Attached positionMs=${currentState.positionMs} " +
@@ -2686,7 +2686,7 @@ class PlayerActivity :
       media3PlaybackController.reattach(binding.media3Player)
       media3Attached = true
     }.onFailure { error ->
-      AppDebugLog.error(TAG, "PiP return: Media3 surface reattach failed", error)
+      android.util.Log.e(TAG, "PiP return: Media3 surface reattach failed", error)
     }
   }
 
@@ -3776,7 +3776,7 @@ class PlayerActivity :
     // delayed dismissal before it can stop/release the active Media3 session.
     if (wasInPipMode && !isInPictureInPictureMode && !hardStopRequested) {
       cancelPendingPipDismissalStop()
-      AppDebugLog.info(
+      android.util.Log.i(
         TAG,
         "PiP return confirmed in onResume; preserving Media3 session item=$media3ItemId " +
           "prepared=$media3PreparedItemId positionMs=${media3PlaybackController.currentState().positionMs}",
@@ -4591,7 +4591,7 @@ class PlayerActivity :
   private fun restartCurrentAtEof() {
     isAdvancingAtEof = false
     if (playbackEngine == PlaybackEngine.MEDIA3) {
-      AppDebugLog.info(TAG, "Media3 repeat replay positionMs=0")
+      android.util.Log.i(TAG, "Media3 repeat replay positionMs=0")
       media3PlaybackController.seekTo(0L, fast = false)
       media3PlaybackController.setPlayWhenReady(true)
       return
@@ -6118,7 +6118,7 @@ class PlayerActivity :
             }
           if (probedDolbyVisionMime != null) {
             resolvedMimeType = probedDolbyVisionMime
-            AppDebugLog.info(
+            android.util.Log.i(
               TAG,
               "Auto engine preflight detected Dolby Vision source=$resolvedOriginalUri",
             )
@@ -6249,7 +6249,7 @@ class PlayerActivity :
       cancelPendingPipDismissalStop()
       wasInPipMode = true
       handledPipDismissal = false
-      AppDebugLog.info(
+      android.util.Log.i(
         TAG,
         "PiP entered item=$media3ItemId prepared=$media3PreparedItemId " +
           "positionMs=${media3PlaybackController.currentState().positionMs}",
@@ -6258,7 +6258,7 @@ class PlayerActivity :
       // Android invokes this transition both when the user expands PiP and when the
       // system X removes the PiP window. Keep the delayed X-stop fallback, but restore the
       // existing Media3 surface immediately; onStart/onResume cancel the fallback for expansion.
-      AppDebugLog.info(
+      android.util.Log.i(
         TAG,
         "PiP exited callback item=$media3ItemId prepared=$media3PreparedItemId " +
           "attached=$media3Attached positionMs=${media3PlaybackController.currentState().positionMs}",
@@ -7338,7 +7338,7 @@ class PlayerActivity :
       manualOrientationOverride = value
       manualOrientationOverrideItemId = currentPlaybackItem()?.stableId ?: activePlaybackItem?.stableId
       requestedOrientation = value
-      AppDebugLog.info(
+      android.util.Log.i(
         TAG,
         "Manual orientation override value=$value item=${manualOrientationOverrideItemId ?: "unknown"}",
       )

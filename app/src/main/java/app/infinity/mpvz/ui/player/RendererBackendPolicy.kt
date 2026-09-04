@@ -27,20 +27,10 @@ internal object RendererBackendPolicy {
   ): Boolean = !usesVulkan || buildSupportsMediaCodecVulkan
 
   fun preferredHwdecMode(
-    requestedMode: String = "auto",
     hardwareDecodingEnabled: Boolean,
     usesVulkan: Boolean,
     buildSupportsMediaCodecVulkan: Boolean,
   ): String {
-    if (requestedMode == "no") return "no"
-    if (requestedMode == "mediacodec-copy") return "mediacodec-copy,no"
-    if (requestedMode == "mediacodec") {
-      return if (canUseDirectMediaCodec(usesVulkan, buildSupportsMediaCodecVulkan)) {
-        "mediacodec,no"
-      } else {
-        "mediacodec-copy,no"
-      }
-    }
     if (!hardwareDecodingEnabled) return "no"
 
     return if (canUseDirectMediaCodec(usesVulkan, buildSupportsMediaCodecVulkan)) {

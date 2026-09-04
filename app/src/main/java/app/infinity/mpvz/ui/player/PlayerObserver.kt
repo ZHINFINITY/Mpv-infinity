@@ -22,6 +22,9 @@ class PlayerObserver(
   KoinComponent {
   private val playerPreferences: PlayerPreferences by inject()
 
+  private fun shouldIgnoreCallback(): Boolean =
+    activity.player.isExiting || !activity.isActivePlaybackOwner()
+
   private fun isVideoGeometryProperty(property: String): Boolean =
     property == "video-params/aspect" ||
       property == "video-params/w" ||
@@ -42,7 +45,7 @@ class PlayerObserver(
     if (property != null && !isVideoGeometryProperty(property)) return
 
     activity.runOnUiThread {
-      if (activity.player.isExiting || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+      if (shouldIgnoreCallback() || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
       if (playerPreferences.orientation.get() != PlayerOrientation.Video) return@runOnUiThread
       if (playerPreferences.lastCustomAspectRatio.get() > 0f) return@runOnUiThread
       if (playerPreferences.lastVideoAspect.get() != VideoAspect.Stretch) return@runOnUiThread
@@ -67,20 +70,24 @@ class PlayerObserver(
   }
 
   override fun eventProperty(property: String) {
-    if (activity.player.isExiting) return
-    activity.runOnUiThread { activity.onObserverEvent(property) }
+    if (shouldIgnoreCallback()) return
+    activity.runOnUiThread {
+      if (!shouldIgnoreCallback()) activity.onObserverEvent(property)
+    }
   }
 
   override fun eventProperty(
     property: String,
     value: Long,
   ) {
-    if (activity.player.isExiting) return
+    if (shouldIgnoreCallback()) return
     if (shouldBypassUiThread(property)) {
-      activity.onObserverEvent(property, value)
+      activity.runIfActivePlaybackOwner { activity.onObserverEvent(property, value) }
       requestStretchVideoOrientationUpdate(property)
     } else {
-      activity.runOnUiThread { activity.onObserverEvent(property, value) }
+      activity.runOnUiThread {
+        if (!shouldIgnoreCallback()) activity.onObserverEvent(property, value)
+      }
     }
   }
 
@@ -88,28 +95,37 @@ class PlayerObserver(
     property: String,
     value: Boolean,
   ) {
-    if (activity.player.isExiting) return
-    activity.runOnUiThread { activity.onObserverEvent(property, value) }
+    if (shouldIgnoreCallback()) return
+    // keep-open holds the last frame instead of emitting a natural END_FILE, so the raw
+    // eof-reached edge is the only end-of-playback signal; PlayerActivity validates it by
+    // position before advancing (a network stall can flip it mid-file).
+    activity.runOnUiThread {
+      if (!shouldIgnoreCallback()) activity.onObserverEvent(property, value)
+    }
   }
 
   override fun eventProperty(
     property: String,
     value: String,
   ) {
-    if (activity.player.isExiting) return
-    activity.runOnUiThread { activity.onObserverEvent(property, value) }
+    if (shouldIgnoreCallback()) return
+    activity.runOnUiThread {
+      if (!shouldIgnoreCallback()) activity.onObserverEvent(property, value)
+    }
   }
 
   override fun eventProperty(
     property: String,
     value: Double,
   ) {
-    if (activity.player.isExiting) return
+    if (shouldIgnoreCallback()) return
     if (shouldBypassUiThread(property)) {
-      activity.onObserverEvent(property, value)
+      activity.runIfActivePlaybackOwner { activity.onObserverEvent(property, value) }
       requestStretchVideoOrientationUpdate(property)
     } else {
-      activity.runOnUiThread { activity.onObserverEvent(property, value) }
+      activity.runOnUiThread {
+        if (!shouldIgnoreCallback()) activity.onObserverEvent(property, value)
+      }
     }
   }
 
@@ -118,19 +134,26 @@ class PlayerObserver(
     property: String,
     value: MPVNode,
   ) {
-    if (activity.player.isExiting) return
-    activity.runOnUiThread { activity.onObserverEvent(property, value) }
+    if (shouldIgnoreCallback()) return
+    activity.runOnUiThread {
+      if (!shouldIgnoreCallback()) activity.onObserverEvent(property, value)
+    }
   }
 
   override fun event(
     eventId: Int,
     data: MPVNode,
   ) {
-    if (activity.player.isExiting) return
+    if (shouldIgnoreCallback()) return
+    val naturalEnd = eventId == MPVLib.MpvEvent.MPV_EVENT_END_FILE && PlaybackSession.isNaturalEndFile(data)
     activity.runOnUiThread {
+      if (shouldIgnoreCallback()) return@runOnUiThread
       activity.event(eventId)
       if (eventId == MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED) {
         requestStretchVideoOrientationUpdate()
+      }
+      if (naturalEnd) {
+        activity.onObserverEvent("eof-reached", true)
       }
     }
   }

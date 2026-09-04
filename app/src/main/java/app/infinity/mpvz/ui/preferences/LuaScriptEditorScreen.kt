@@ -52,6 +52,7 @@ import app.infinity.mpvz.ui.editor.MpvHelpScreen
 import app.infinity.mpvz.ui.editor.MpvScriptEditor
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.coroutines.Dispatchers
@@ -205,6 +206,12 @@ data class LuaScriptEditorScreen(
                 ).show()
             }
             return@launch
+          }
+
+          if (preferences.enableLuaScripts.get() && finalFileName in preferences.selectedLuaScripts.get()) {
+            val internalScriptsDir = File(context.filesDir, "scripts").apply { mkdirs() }
+            File(internalScriptsDir, finalFileName).writeText(scriptContent)
+            PlaybackSession.invalidateCoreConfiguration()
           }
 
           withContext(Dispatchers.Main) {

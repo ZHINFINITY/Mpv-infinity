@@ -29,6 +29,7 @@ enum class OnlineSubtitleSearchMode(
 data class OnlineSubtitleSearchRequest(
   val query: String,
   val tmdbId: Int? = null,
+  val imdbId: String? = null,
   val season: Int? = null,
   val episode: Int? = null,
   val year: String? = null,
@@ -58,7 +59,7 @@ fun OnlineSubtitle.subdlGroupEpisodeRange(): IntRange? {
   if (provider != SubtitleProvider.MPVRX_SUBTITLE_HUB || source != "SubDL.com") return null
   val start = metadata[SUBDL_GROUP_EPISODE_START_KEY]?.toIntOrNull() ?: return null
   val end = metadata[SUBDL_GROUP_EPISODE_END_KEY]?.toIntOrNull() ?: return null
-  if (start <= 0 || end < start || end - start > MAX_SUBDL_GROUP_EPISODES) return null
+  if (start <= 0 || end < start || end - start >= MAX_SUBDL_GROUP_EPISODES) return null
   return start..end
 }
 

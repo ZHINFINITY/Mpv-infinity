@@ -67,8 +67,8 @@ internal object PreparedPlaybackLaunchStore {
       return if (token <= lastConsumedToken || token < sequence.get()) {
         PreparedPlaybackLaunchResult.Stale
       } else {
-        // If Android retained the Intent after process recreation, the URI remains a valid
-        // standalone fallback even though the process-local queue no longer exists.
+        // The process may have been recreated after Android retained the Intent. Its URI remains
+        // a valid standalone fallback even though the process-local queue no longer exists.
         PreparedPlaybackLaunchResult.Missing
       }
     }

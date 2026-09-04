@@ -9,6 +9,7 @@
 
 package app.infinity.mpvz.ui.player.controls
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,17 +22,24 @@ import androidx.compose.material3.CardColors
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.clip.ClipOverlayView
+import app.infinity.mpvz.ui.player.controls.components.MpvConfigOwnedPanel
 import app.infinity.mpvz.ui.player.controls.components.panels.AudioDelayPanel
 import app.infinity.mpvz.ui.player.controls.components.panels.HdrScreenOutputPanel
 import app.infinity.mpvz.ui.player.controls.components.panels.LuaScriptsPanel
 import app.infinity.mpvz.ui.player.controls.components.panels.SubtitleDelayPanel
 import app.infinity.mpvz.ui.player.controls.components.panels.SubtitleSettingsPanel
 import app.infinity.mpvz.ui.player.controls.components.panels.VideoSettingsPanel
+import app.infinity.mpvz.ui.utils.isAnyMpvOptionOwnedByConfig
+import app.infinity.mpvz.ui.utils.isMpvOptionOwnedByConfig
 
 @Composable
 fun PlayerPanels(
@@ -50,9 +58,26 @@ fun PlayerPanels(
     },
     modifier = modifier,
   ) { currentPanel ->
+    val configOwned =
+      when (currentPanel) {
+        Panels.AudioDelay -> isMpvOptionOwnedByConfig("audio-delay")
+        Panels.HdrScreenOutput -> isAnyMpvOptionOwnedByConfig(MpvConfigControlledFeatures.HDR_OUTPUT)
+        else -> false
+      }
+    if (configOwned) {
+      MpvConfigOwnedPanel(onDismissRequest)
+      return@AnimatedContent
+    }
     when (currentPanel) {
       Panels.None -> {
         Box(Modifier.fillMaxHeight())
+      }
+      Panels.Clip -> {
+        val activity = LocalActivity.current as? PlayerActivity
+        if (activity != null) {
+          val clipOverlay = remember(activity) { ClipOverlayView.ensureAttached(activity) }
+          clipOverlay.EditorPanel(onDismissRequest)
+        }
       }
       Panels.SubtitleSettings -> {
         SubtitleSettingsPanel(

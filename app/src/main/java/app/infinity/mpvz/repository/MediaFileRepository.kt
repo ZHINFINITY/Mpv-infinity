@@ -64,6 +64,7 @@ object MediaFileRepository : KoinComponent {
   private fun currentScanOptions(includeAudioOverride: Boolean? = null): MediaScanOptions =
     MediaScanOptions(
       includeNoMediaFolders = foldersPreferences.includeNoMediaFolders.get(),
+      hiddenFolderMarkerNames = foldersPreferences.hiddenFolderMarkerNames.get(),
       includeAudio = includeAudioOverride ?: browserPreferences.includeAudioBrowser.get(),
       minimumAudioDurationSeconds = browserPreferences.minimumAudioDurationSeconds.get(),
     )

@@ -13,6 +13,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import app.infinity.mpvz.network.awaitResponse
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitle
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleFileStore
@@ -20,6 +21,7 @@ import app.infinity.mpvz.repository.subtitle.OnlineSubtitleProvider
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchRequest
 import app.infinity.mpvz.repository.subtitle.SubtitleProvider
 import app.infinity.mpvz.utils.media.resolveSubtitleStorageDirectory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -351,7 +353,7 @@ class WyzieSearchRepository(
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
             .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).awaitResponse().use { response ->
           if (!response.isSuccessful) throw IOException("Failed to fetch sources: ${response.code}")
           val body = response.body.string()
           val parsed = json.decodeFromString<WyzieSourcesResponse>(body)
@@ -359,6 +361,8 @@ class WyzieSearchRepository(
           preferences.wyzieCachedSourcesJson.set(body)
           Result.success(parsed)
         }
+      } catch (cancellation: CancellationException) {
+        throw cancellation
       } catch (e: Exception) {
         Log.e("WyzieSearchRepository", "Failed to fetch sources from network", e)
         // If we have cached sources, return them as a fallback instead of failing completely
@@ -517,13 +521,15 @@ class WyzieSearchRepository(
           )
 
         Result.success(sortedResults)
+      } catch (cancellation: CancellationException) {
+        throw cancellation
       } catch (e: Exception) {
         Log.e("WyzieSearchRepository", "Search failed: ${e.message}", e)
         Result.failure(e)
       }
     }
 
-  private fun fetchSubtitles(
+  private suspend fun fetchSubtitles(
     id: String,
     season: Int? = null,
     episode: Int? = null,
@@ -619,7 +625,7 @@ class WyzieSearchRepository(
         }.toString()
 
     val request = Request.Builder().url(url).build()
-    client.newCall(request).execute().use { response ->
+    client.newCall(request).awaitResponse().use { response ->
       val responseBodyString = response.body.string()
       if (!response.isSuccessful) {
         // Wyzie API returns 400 when no subtitles are found for valid parameters
@@ -660,7 +666,7 @@ class WyzieSearchRepository(
   ): Result<Uri> =
     withContext(Dispatchers.IO) {
       try {
-        client.newCall(Request.Builder().url(subtitle.url).build()).execute().use { response ->
+        client.newCall(Request.Builder().url(subtitle.url).build()).awaitResponse().use { response ->
           if (!response.isSuccessful) {
             return@withContext Result.failure(
               Exception("Download failed: ${response.code}"),
@@ -668,6 +674,8 @@ class WyzieSearchRepository(
           }
           Result.success(fileStore.save(response.body.bytes(), subtitle.toOnlineSubtitle(), mediaTitle))
         }
+      } catch (cancellation: CancellationException) {
+        throw cancellation
       } catch (e: Exception) {
         Log.e("WyzieSearchRepository", "Download failed", e)
         Result.failure(e)
@@ -678,6 +686,8 @@ class WyzieSearchRepository(
     withContext(Dispatchers.IO) {
       try {
         Result.success(tmdbSearch(query))
+      } catch (cancellation: CancellationException) {
+        throw cancellation
       } catch (e: Exception) {
         Log.e("WyzieSearchRepository", "Media search failed", e)
         Result.failure(e)
@@ -696,6 +706,8 @@ class WyzieSearchRepository(
     withContext(Dispatchers.IO) {
       try {
         Result.success(bestTmdbResult(tmdbSearch(query), year))
+      } catch (cancellation: CancellationException) {
+        throw cancellation
       } catch (e: Exception) {
         Log.w("WyzieSearchRepository", "TMDB best-match search failed: ${e.message}")
         Result.failure(e)
@@ -720,11 +732,13 @@ class WyzieSearchRepository(
           ""
         }}"
         val request = Request.Builder().url(url).build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).awaitResponse().use { response ->
           if (!response.isSuccessful) throw IOException("Failed to get TV show details: ${response.code}")
           val body = response.body.string()
           Result.success(json.decodeFromString<WyzieTvShowDetails>(body))
         }
+      } catch (cancellation: CancellationException) {
+        throw cancellation
       } catch (e: Exception) {
         Log.e("WyzieSearchRepository", "Failed to get TV show details", e)
         Result.failure(e)
@@ -747,18 +761,20 @@ class WyzieSearchRepository(
           ""
         }}"
         val request = Request.Builder().url(url).build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).awaitResponse().use { response ->
           if (!response.isSuccessful) throw IOException("Failed to get season episodes: ${response.code}")
           val body = response.body.string()
           Result.success(json.decodeFromString<WyzieSeasonDetails>(body).episodes)
         }
+      } catch (cancellation: CancellationException) {
+        throw cancellation
       } catch (e: Exception) {
         Log.e("WyzieSearchRepository", "Failed to get season episodes", e)
         Result.failure(e)
       }
     }
 
-  private fun tmdbSearch(query: String): List<WyzieTmdbResult> {
+  private suspend fun tmdbSearch(query: String): List<WyzieTmdbResult> {
     val url = "$baseUrl/api/tmdb/search?q=${URLEncoder.encode(query, "UTF-8")}"
     try {
       val request =
@@ -767,13 +783,15 @@ class WyzieSearchRepository(
           .url(url)
           .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
           .build()
-      client.newCall(request).execute().use { response ->
+      client.newCall(request).awaitResponse().use { response ->
         if (!response.isSuccessful) throw IOException("TMDB search failed: ${response.code}")
         val body = response.body.string()
         val results = json.decodeFromString<WyzieTmdbResponse>(body).results
         if (results.isEmpty()) throw IOException("TMDB search returned no results")
         return results
       }
+    } catch (cancellation: CancellationException) {
+      throw cancellation
     } catch (e: Exception) {
       Log.w("WyzieSearchRepository", "TMDB search failed: ${e.message}")
       throw IOException("TMDB search failed", e)

@@ -65,9 +65,9 @@ fun PlaybackSpeedSheet(
   onResetPresets: () -> Unit,
   onMakeDefault: (Float) -> Unit,
   onResetDefault: () -> Unit,
-  isMedia3Active: Boolean = false,
-  onMedia3AudioPitchCorrection: ((Boolean) -> Unit)? = null,
   onDismissRequest: () -> Unit,
+  speedControlEnabled: Boolean = true,
+  pitchCorrectionEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   PlayerSheet(onDismissRequest = onDismissRequest) {
@@ -106,6 +106,7 @@ fun PlaybackSpeedSheet(
       ) {
         RepeatingIconButton(
           onClick = { onSpeedChange((speed - 0.05f).coerceAtLeast(0.05f)) },
+          enabled = speedControlEnabled,
           modifier = Modifier.size(40.dp),
         ) {
           Icon(Icons.RoundedFilled.Remove, null, modifier = Modifier.size(24.dp))
@@ -119,11 +120,13 @@ fun PlaybackSpeedSheet(
             onSpeedChange(snapped)
           },
           valueRange = 0.1f..4.0f,
+          enabled = speedControlEnabled,
           modifier = Modifier.weight(1f),
         )
 
         RepeatingIconButton(
           onClick = { onSpeedChange((speed + 0.05f).coerceAtMost(4.0f)) },
+          enabled = speedControlEnabled,
           modifier = Modifier.size(40.dp),
         ) {
           Icon(Icons.RoundedFilled.Add, null, modifier = Modifier.size(24.dp))
@@ -154,6 +157,7 @@ fun PlaybackSpeedSheet(
               onClick = { onSpeedChange(presetSpeed) },
               label = { Text("${presetSpeed.toFixed(2)}") },
               leadingIcon = null,
+              enabled = speedControlEnabled,
               colors =
                 if (!isDefault) {
                   androidx.compose.material3.FilterChipDefaults.filterChipColors(
@@ -181,6 +185,7 @@ fun PlaybackSpeedSheet(
           if (!isDefaultPreset) {
             Button(
               onClick = { onRemoveSpeedPreset(speed) },
+              enabled = speedControlEnabled,
               colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
               contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
               modifier = buttonModifier,
@@ -195,6 +200,7 @@ fun PlaybackSpeedSheet(
         } else {
           Button(
             onClick = { onAddSpeedPreset(speed) },
+            enabled = speedControlEnabled,
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
             modifier = buttonModifier,
           ) {
@@ -215,13 +221,10 @@ fun PlaybackSpeedSheet(
 
         SwitchPreference(
           value = pitchCorrection,
+          enabled = pitchCorrectionEnabled,
           onValueChange = { newValue ->
             audioPreferences.audioPitchCorrection.set(newValue)
-            if (isMedia3Active) {
-              onMedia3AudioPitchCorrection?.invoke(newValue)
-            } else {
-              PlaybackSession.setPropertyBoolean("audio-pitch-correction", newValue)
-            }
+            PlaybackSession.setPropertyBoolean("audio-pitch-correction", newValue)
           },
           title = {
             Text(
@@ -250,14 +253,18 @@ fun PlaybackSpeedSheet(
         Button(
           modifier = Modifier.weight(1f),
           onClick = { onMakeDefault(speed) },
+          enabled = speedControlEnabled,
         ) {
           Text(text = stringResource(id = R.string.player_sheets_speed_make_default))
         }
-        Button(onClick = {
-          onResetDefault()
-          onResetPresets()
-          onSpeedChange(1.0f)
-        }) {
+        Button(
+          onClick = {
+            onResetDefault()
+            onResetPresets()
+            onSpeedChange(1.0f)
+          },
+          enabled = speedControlEnabled,
+        ) {
           Text(text = stringResource(id = R.string.generic_reset))
         }
       }

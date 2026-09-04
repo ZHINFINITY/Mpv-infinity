@@ -15,7 +15,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.util.LruCache
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.compose.animation.AnimatedContent
@@ -24,7 +23,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -46,7 +44,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import app.infinity.mpvz.ui.icons.Icon
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -85,18 +83,17 @@ import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.browser.NavigationBarState
-import app.infinity.mpvz.ui.theme.AppMotion
-import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
+import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
 import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.TrackNode
+import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.ui.player.toObject
 import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.utils.media.fileExtension
-import app.infinity.mpvz.utils.storage.FileTypeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -127,16 +124,11 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
   val hasRealVideo = tracks.any { it.isVideo && !it.isAlbumArtwork }
   val hasAlbumArt = tracks.any { it.isAlbumArtwork }
 
-  val ext = (currentItem?.originalUri ?: currentItem?.title ?: "").fileExtension()
-  val mimeIsAudio = currentItem?.mimeType?.startsWith("audio/", ignoreCase = true) == true
-  val extIsAudio = ext in FileTypeUtils.AUDIO_EXTENSIONS
-  val extIsVideo = ext in FileTypeUtils.VIDEO_EXTENSIONS
-
   val isAudioOnlyItem =
-    if (hasRealVideo || extIsVideo) {
-      false
-    } else {
-      mimeIsAudio || extIsAudio || hasAlbumArt || tracks.any { it.isAudio }
+    when (currentItem?.declaredMediaKind() ?: DeclaredPlaybackMediaKind.UNKNOWN) {
+      DeclaredPlaybackMediaKind.AUDIO -> true
+      DeclaredPlaybackMediaKind.VIDEO -> false
+      DeclaredPlaybackMediaKind.UNKNOWN -> !hasRealVideo && (hasAlbumArt || tracks.any { it.isAudio })
     }
 
   val isMiniPlayerAllowed = isAudioOnlyItem || enableVideoMiniPlayer
@@ -145,28 +137,9 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
     !isSettingsScreen &&
     isMiniPlayerAllowed &&
     sessionState.phase != PlaybackPhase.IDLE &&
+    sessionState.phase != PlaybackPhase.STOPPING &&
     sessionState.phase != PlaybackPhase.UNINITIALIZED &&
     sessionState.phase != PlaybackPhase.ERROR
-
-  // Resolve artwork while the full player/browser is still visible. The minimized overlay then
-  // receives a ready, bounded bitmap instead of decoding during its entrance animation.
-  val currentMediaPath by PlaybackSession.propString["path"].collectAsStateWithLifecycle()
-  val currentStreamFilename by PlaybackSession.propString["stream-open-filename"].collectAsStateWithLifecycle()
-  val coverArtPath =
-    if (isAudioOnlyItem) {
-      // During rapid navigation MPV's path can still describe the outgoing song while the queue
-      // already points at the selected item. Resolve art from that selected URI first.
-      currentItem?.originalUri?.takeIf { it.isNotBlank() }
-        ?: currentItem?.playableUri?.takeIf { it.isNotBlank() }
-        ?: currentMediaPath?.takeIf { it.isNotBlank() }
-        ?: currentStreamFilename?.takeIf { it.isNotBlank() }
-    } else {
-      null
-    }
-  val coverArt = rememberMiniPlayerCoverArt(
-    pathOrUri = coverArtPath,
-    refreshKey = sessionState.generation to sessionState.phase,
-  )
 
   // Keep the mini player alive while browser selection mode is active. Its outer
   // placement is lifted above the selection actions instead of hiding/overlapping.
@@ -176,17 +149,16 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
 
   AnimatedVisibility(
     visible = isMediaActive,
-    // Keep the established slide motion but avoid compositing a second full-size alpha layer while
-    // the browser and service handoff are settling.
-    enter = slideInVertically(animationSpec = tween(120), initialOffsetY = { it }),
-    exit = slideOutVertically(animationSpec = tween(100), targetOffsetY = { it }),
+    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
     modifier = modifier,
   ) {
     MiniPlayerContent(
       context = context,
       enableVideoMiniPlayer = enableVideoMiniPlayer,
       isAudioOnlyItem = isAudioOnlyItem,
-      coverArt = coverArt,
+      hasRealVideo = hasRealVideo,
+      detachedPlaybackActive = isServiceRunning,
     )
   }
 }
@@ -196,15 +168,14 @@ private fun MiniPlayerContent(
   context: Context,
   enableVideoMiniPlayer: Boolean,
   isAudioOnlyItem: Boolean,
-  coverArt: Bitmap?,
+  hasRealVideo: Boolean,
+  detachedPlaybackActive: Boolean,
 ) {
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
+  val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentItem = sessionState.currentItem
   val paused by PlaybackSession.propBoolean["pause"].collectAsStateWithLifecycle()
   val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsStateWithLifecycle()
-  val rawTagTitle by PlaybackSession.propString["metadata/by-key/Title"].collectAsStateWithLifecycle()
-  val rawTagTitleLower by PlaybackSession.propString["metadata/by-key/title"].collectAsStateWithLifecycle()
-  val rawTagTitleUpper by PlaybackSession.propString["metadata/by-key/TITLE"].collectAsStateWithLifecycle()
   val duration by PlaybackSession.propInt["duration"].collectAsStateWithLifecycle()
   val positionState = PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
   val videoAspectRaw by PlaybackSession.propDouble["video-params/aspect"].collectAsStateWithLifecycle()
@@ -212,22 +183,13 @@ private fun MiniPlayerContent(
   val videoHeight by PlaybackSession.propLong["video-params/h"].collectAsStateWithLifecycle()
 
   val isPlaying = paused == false
-  // Queue selection is updated before playback during rapid navigation. Prefer it over MPV’s
-  // outgoing media-title so the minimized player does not show the previous song while settling.
-  val title = sequenceOf(rawTagTitle, rawTagTitleLower, rawTagTitleUpper, currentItem?.title, rawMediaTitle)
-    .filterNotNull()
-    .map { it.trim() }
-    .firstOrNull { it.isNotBlank() && !it.equals("Unknown Title", ignoreCase = true) }
-    ?: "Media Track"
-  val rawArtist by PlaybackSession.propString["metadata/by-key/Artist"].collectAsStateWithLifecycle()
-  val rawArtistLower by PlaybackSession.propString["metadata/by-key/artist"].collectAsStateWithLifecycle()
-  val rawAlbumArtist by PlaybackSession.propString["metadata/by-key/album_artist"].collectAsStateWithLifecycle()
-  val artist = sequenceOf(currentItem?.artist, rawArtist, rawArtistLower, rawAlbumArtist)
-    .filterNotNull()
-    .map { it.trim() }
-    .firstOrNull { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+  val title =
+    queueState.currentItem?.title?.takeIf { queueState.isExplicitQueue && it.isNotBlank() }
+      ?: rawMediaTitle?.takeIf { it.isNotBlank() }
+      ?: currentItem?.title?.takeIf { it.isNotBlank() }
+      ?: "Media Track"
 
-  val isVideoMode = !isAudioOnlyItem && enableVideoMiniPlayer
+  val isVideoMode = detachedPlaybackActive && hasRealVideo && !isAudioOnlyItem && enableVideoMiniPlayer
 
   DisposableEffect(isVideoMode) {
     if (isVideoMode) {
@@ -237,6 +199,15 @@ private fun MiniPlayerContent(
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
     }
   }
+
+  val coverArtPath =
+    currentItem?.originalUri?.takeIf { it.isNotBlank() }
+      ?: currentItem?.playableUri?.takeIf { it.isNotBlank() }
+  val coverArt =
+    rememberMiniPlayerCoverArt(
+      pathOrUri = if (isAudioOnlyItem) coverArtPath else null,
+      artworkUri = if (isAudioOnlyItem) currentItem?.artworkUri else null,
+    )
 
   val coroutineScope = rememberCoroutineScope()
   var offsetX by remember { mutableFloatStateOf(0f) }
@@ -254,7 +225,12 @@ private fun MiniPlayerContent(
       }
       context.startActivity(intent)
       if (context is Activity) {
-        context.overridePendingTransition(R.anim.slide_in_up, 0)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+          context.overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, R.anim.slide_in_up, 0)
+        } else {
+          @Suppress("DEPRECATION")
+          context.overridePendingTransition(R.anim.slide_in_up, 0)
+        }
       }
     }
   }
@@ -299,7 +275,7 @@ private fun MiniPlayerContent(
       }
       .clip(RoundedCornerShape(20.dp))
       .clickable { launchPlayer() },
-    color = liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainerHigh, alpha = 0.72f),
+    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
     tonalElevation = 8.dp,
     shadowElevation = 10.dp,
   ) {
@@ -342,8 +318,13 @@ private fun MiniPlayerContent(
                 setZOrderMediaOverlay(true)
                 holder.addCallback(object : SurfaceHolder.Callback {
                   override fun surfaceCreated(holder: SurfaceHolder) {
-                    PlaybackSession.bindSurface(holder.surface, owner = this@apply)
-                    PlaybackSession.setPropertyBoolean("sub-visibility", false)
+                    val attached =
+                      PlaybackSession.bindSurface(
+                        surface = holder.surface,
+                        owner = this@apply,
+                        ownerIsActive = { MediaPlaybackService.isForegroundActive() },
+                      )
+                    if (attached) PlaybackSession.setPropertyBoolean("sub-visibility", false)
                   }
 
                   override fun surfaceChanged(
@@ -353,13 +334,14 @@ private fun MiniPlayerContent(
                     height: Int,
                   ) {
                     if (holder.surface.isValid) {
-                      PlaybackSession.resizeSurface(width, height)
+                      PlaybackSession.resizeSurface(width, height, owner = this@apply)
                     }
                   }
 
                   override fun surfaceDestroyed(holder: SurfaceHolder) {
-                    PlaybackSession.unbindSurface(this@apply)
-                    PlaybackSession.setPropertyBoolean("sub-visibility", true)
+                    if (PlaybackSession.unbindSurface(this@apply)) {
+                      PlaybackSession.setPropertyBoolean("sub-visibility", true)
+                    }
                   }
                 })
               }
@@ -384,13 +366,12 @@ private fun MiniPlayerContent(
               modifier = Modifier.basicMarquee(),
             )
           }
-            Text(
-              text = artist?.takeIf { it.isNotBlank() } ?: if (isPlaying) "Playing Video" else "Paused",
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
+          Text(
+            text = if (isPlaying) "Playing Video" else "Paused",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+          )
         }
 
         // Control Buttons
@@ -500,13 +481,12 @@ private fun MiniPlayerContent(
               modifier = Modifier.basicMarquee(),
             )
           }
-            Text(
-              text = artist?.takeIf { it.isNotBlank() } ?: if (isPlaying) "Playing" else "Paused",
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
+          Text(
+            text = if (isPlaying) "Playing" else "Paused",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+          )
         }
 
         Spacer(modifier = Modifier.width(8.dp))
@@ -576,48 +556,25 @@ private fun MiniPlayerContent(
  * Extracts embedded album art for the current track so the mini player can show a
  * square cover instead of a bare icon. Returns null when no artwork is available.
  */
-private const val MAX_MINI_PLAYER_ARTWORK_DIMENSION = 512
-
-private object MiniPlayerArtworkCache {
-  private const val MAX_ENTRIES = 4
-  private val cache =
-    object : LruCache<String, Bitmap>(MAX_ENTRIES) {
-      override fun sizeOf(key: String, value: Bitmap): Int = 1
-    }
-
-  @Synchronized
-  fun get(key: String): Bitmap? = synchronized(cache) { cache.get(key) }
-
-  @Synchronized
-  fun put(key: String, bitmap: Bitmap) {
-    synchronized(cache) { cache.put(key, bitmap) }
-  }
-}
-
 @Composable
 private fun rememberMiniPlayerCoverArt(
   pathOrUri: String?,
-  refreshKey: Any? = null,
+  artworkUri: String?,
 ): Bitmap? {
   val context = LocalContext.current
-  var bitmap by remember(pathOrUri, refreshKey) {
-    mutableStateOf(pathOrUri?.let(MiniPlayerArtworkCache::get))
-  }
-  LaunchedEffect(pathOrUri, refreshKey) {
+  var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+  LaunchedEffect(pathOrUri, artworkUri) {
     if (pathOrUri.isNullOrBlank()) {
       bitmap = null
       return@LaunchedEffect
     }
-    MiniPlayerArtworkCache.get(pathOrUri)?.let {
-      bitmap = it
-      return@LaunchedEffect
-    }
-    runCatching {
-      val loaded = withContext(Dispatchers.IO) {
+    withContext(Dispatchers.IO) {
+      runCatching {
+        EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)?.let { return@runCatching it }
         val cleanPath =
           when {
-            pathOrUri.startsWith("file://") -> pathOrUri.removePrefix("file://")
-            pathOrUri.startsWith("content://") -> null
+            pathOrUri.startsWith("file://", ignoreCase = true) -> Uri.parse(pathOrUri).path
+            pathOrUri.startsWith("content://", ignoreCase = true) -> null
             else -> pathOrUri
           }
         val retriever = MediaMetadataRetriever()
@@ -631,32 +588,12 @@ private fun rememberMiniPlayerCoverArt(
         } finally {
           runCatching { retriever.release() }
         }
+      }.onSuccess { loaded ->
+        bitmap = loaded
+      }.onFailure {
+        bitmap = null
       }
-      withContext(Dispatchers.Default) { limitMiniPlayerArtwork(loaded) }
-    }.onSuccess { loaded ->
-      loaded?.let { MiniPlayerArtworkCache.put(pathOrUri, it) }
-      bitmap = loaded
-    }.onFailure {
-      bitmap = null
     }
   }
   return bitmap
 }
-
-private fun limitMiniPlayerArtwork(bitmap: Bitmap?): Bitmap? =
-  bitmap?.let { source ->
-    runCatching {
-      val maxDimension = maxOf(source.width, source.height)
-      if (maxDimension <= MAX_MINI_PLAYER_ARTWORK_DIMENSION) return@runCatching source
-      val scale = MAX_MINI_PLAYER_ARTWORK_DIMENSION.toFloat() / maxDimension.toFloat()
-      val scaled =
-        Bitmap.createScaledBitmap(
-          source,
-          (source.width * scale).toInt().coerceAtLeast(1),
-          (source.height * scale).toInt().coerceAtLeast(1),
-          true,
-        )
-      if (!source.isRecycled) source.recycle()
-      scaled
-    }.getOrNull()
-  }
