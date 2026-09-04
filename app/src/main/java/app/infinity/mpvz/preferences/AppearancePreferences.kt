@@ -52,6 +52,8 @@ class AppearancePreferences(
   val unplayedOldVideoDays = preferenceStore.getInt("unplayed_old_video_days", 7)
   val showNetworkThumbnails = preferenceStore.getBoolean("show_network_thumbnails", false)
   val seekbarStyle = preferenceStore.getEnum("seekbar_style", SeekbarStyle.Thick)
+  val playerControlsTheme = preferenceStore.getEnum("player_controls_theme", PlayerControlsTheme.Classic)
+  val showSeekbarOuterContainer = preferenceStore.getBoolean("show_seekbar_outer_container", false)
   val portraitPlaybackControlsPosition =
     preferenceStore.getEnum("portrait_playback_controls_position", PortraitPlaybackControlsPosition.Center)
   val showHomeTab = preferenceStore.getBoolean("show_home_tab", true)
@@ -206,4 +208,11 @@ fun MultiChoiceSegmentedButton(
       }
     }
   }
+}
+
+
+enum class PlayerControlsTheme(val displayName: String) {
+  Classic("Classic"),
+  Glass("Glass"),
+  Glossy("Glossy"),
 }

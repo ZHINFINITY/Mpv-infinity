@@ -767,6 +767,8 @@ fun AudioPlayerControls(
   val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
   val audioWavySeekbar by audioPreferences.audioWavySeekbar.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
+  val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
+  val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
   val colorScheme = MaterialTheme.colorScheme
   val palette =
     remember(colorScheme) {
@@ -1576,11 +1578,22 @@ fun AudioPlayerControls(
       val isPaused = paused ?: false
 
       Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .clip(RoundedCornerShape(16.dp))
-          .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
-          .padding(horizontal = 10.dp, vertical = 6.dp),
+        modifier = if (showSeekbarOuterContainer) {
+          Modifier
+            .padding(horizontal = 8.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+              when (playerControlsTheme.name) {
+                "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                "Glossy" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+              },
+            )
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+        } else {
+          Modifier.fillMaxWidth()
+        },
       ) {
       SeekbarWithTimers(
         position = currentPosSec,
