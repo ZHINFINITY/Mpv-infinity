@@ -855,6 +855,12 @@ object MediaInfoParser {
     val parsedCandidate =
       runCatching {
         val uri = Uri.parse(source)
+        if (HttpUtils.isYouTubeUrl(uri)) {
+          val videoId = HttpUtils.extractYouTubeVideoId(uri)
+          if (!videoId.isNullOrBlank()) {
+            return@runCatching "YouTube Video ($videoId)"
+          }
+        }
         val queryParams = listOf("path", "file", "filename", "title", "name", "url", "src", "stream", "video", "target", "source", "query", "q")
         var candidate: String? = null
 
@@ -896,6 +902,26 @@ object MediaInfoParser {
       .replace(Regex("""\s+"""), " ")
       .trim()
       .ifBlank { source }
+  }
+
+  /**
+   * Human-friendly per-file label for episode/file lists (e.g. torrent season packs), showing
+   * "S01E02 - Felina" instead of the raw scene-release filename with codec/resolution noise.
+   */
+  fun episodeLabel(fileName: String): String {
+    val info = parse(fileName)
+    return when {
+      info.season != null && info.episode != null -> {
+        val base = "S${info.season.toString().padStart(2, '0')}E${info.episode.toString().padStart(2, '0')}"
+        if (!info.episodeTitle.isNullOrBlank()) "$base - ${info.episodeTitle}" else base
+      }
+      info.episode != null -> {
+        val base = "E${info.episode.toString().padStart(2, '0')}"
+        if (!info.episodeTitle.isNullOrBlank()) "$base - ${info.episodeTitle}" else base
+      }
+      info.title.isNotBlank() -> info.title
+      else -> fileName
+    }
   }
 
   private fun formatDisplayTitle(info: ParsedMediaInfo): String {

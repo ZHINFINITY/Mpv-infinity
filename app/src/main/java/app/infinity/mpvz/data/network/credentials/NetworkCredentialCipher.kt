@@ -60,7 +60,7 @@ class NetworkCredentialCipher(
   fun isEncrypted(storedValue: String): Boolean = storedValue.startsWith(PREFIX)
 
   companion object {
-    private const val PREFIX = "mpvrx-credential:v1:"
+    private const val PREFIX = "Mpv∞-credential:v1:"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val GCM_IV_BYTES = 12
     private const val GCM_TAG_BYTES = 16
@@ -74,7 +74,7 @@ class NetworkCredentialCipher(
 /** Supplies the app-only AES key. Android Keystore keys are intentionally excluded from backups. */
 object AndroidNetworkCredentialKey {
   private const val KEYSTORE = "AndroidKeyStore"
-  private const val KEY_ALIAS = "mpvrx.network-credentials.v1"
+  private const val KEY_ALIAS = "Mpv∞.network-credentials.v1"
 
   @Synchronized
   fun getOrCreate(): SecretKey {

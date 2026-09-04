@@ -9,6 +9,20 @@
 
 package app.infinity.mpvz.ui.browser.fab
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
@@ -16,6 +30,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import app.infinity.mpvz.ui.theme.AppMotion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -25,6 +44,41 @@ import kotlinx.coroutines.flow.filter
  * Common helper functions for FAB visibility based on scroll state
  */
 object FabScrollHelper {
+  /**
+   * Fullscreen scrim overlay that absorbs all pointer gestures and auto-dismisses the expanded FAB.
+   * Intercepts gestures during PointerEventPass.Initial so background content (LazyColumn, HorizontalPager)
+   * cannot scroll or swipe while the FAB menu is open.
+   */
+  @Composable
+  fun FabScrim(
+    visible: Boolean,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+  ) {
+    AnimatedVisibility(
+      visible = visible,
+      enter = fadeIn(),
+      exit = fadeOut(),
+    ) {
+      Box(
+        modifier =
+          modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.32f))
+            .pointerInput(Unit) {
+              awaitEachGesture {
+                val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                down.consume()
+                onDismiss()
+                do {
+                  val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                  event.changes.forEach { it.consume() }
+                } while (event.changes.any { it.pressed })
+              }
+            },
+      )
+    }
+  }
   /**
    * Sets up scroll tracking for both list and grid views to control FAB visibility
    */

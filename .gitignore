@@ -31,6 +31,9 @@ app/debug/
 # Generated files
 bin/
 gen/
+!app/src/main/cpp/third_party/quickjs/gen/
+!app/src/main/cpp/third_party/quickjs/gen/repl.c
+!app/src/main/cpp/third_party/quickjs/gen/standalone.c
 out/
 
 # Captures
@@ -155,3 +158,6 @@ lint/tmp/
 # Profiling
 # =========================
 *.hprof
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/

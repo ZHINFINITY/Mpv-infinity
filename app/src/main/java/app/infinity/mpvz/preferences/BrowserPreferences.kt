@@ -29,6 +29,10 @@ class BrowserPreferences(
   preferenceStore: PreferenceStore,
   context: android.content.Context,
 ) {
+  companion object {
+    internal const val ONBOARDING_COMPLETED_KEY = "onboarding_completed"
+  }
+
   // Folder sorting preferences
   val folderSortType = preferenceStore.getEnum("folder_sort_type", FolderSortType.Title)
   val folderSortOrder = preferenceStore.getEnum("folder_sort_order", SortOrder.Ascending)
@@ -46,6 +50,7 @@ class BrowserPreferences(
   val networkSortType = preferenceStore.getEnum("network_sort_type", NetworkSortType.Title)
   val networkSortOrder = preferenceStore.getEnum("network_sort_order", SortOrder.Ascending)
   val networkLayoutMode = preferenceStore.getEnum("network_layout_mode", MediaLayoutMode.LIST)
+  val jellyfinLayoutMode = preferenceStore.getEnum("jellyfin_layout_mode", MediaLayoutMode.GRID)
 
   val folderViewMode = preferenceStore.getEnum("folder_view_mode", FolderViewMode.AlbumView)
   val dualPaneForTablet = preferenceStore.getBoolean("dual_pane_for_tablet", true)
@@ -83,6 +88,7 @@ class BrowserPreferences(
   val showResolutionChip = preferenceStore.getBoolean("show_resolution_chip", false)
   val showFramerateInResolution = preferenceStore.getBoolean("show_framerate_in_resolution", false)
   val showSubtitleIndicator = preferenceStore.getBoolean("show_subtitle_indicator", false)
+  val showCodecSupportIndicator = preferenceStore.getBoolean("show_codec_support_indicator", false)
   val showProgressBar = preferenceStore.getBoolean("show_progress_bar", true)
   val centerGridTitles = preferenceStore.getBoolean("center_grid_titles", true)
   val mediaLayoutMode = preferenceStore.getEnum("media_layout_mode", MediaLayoutMode.LIST)
@@ -110,6 +116,12 @@ class BrowserPreferences(
   val includeAudioBrowser = preferenceStore.getBoolean("include_audio_browser", false)
   val minimumAudioDurationSeconds = preferenceStore.getInt("minimum_audio_duration_seconds", 0)
   val mediaLibraryType = preferenceStore.getEnum("media_library_type", MediaLibraryType.Video)
+
+  // Set by onboarding when the user opts into the quick tour; cleared once the tour ran.
+  val demoTutorialPending = preferenceStore.getBoolean("demo_tutorial_pending", false)
+
+  // True once the user finished (or skipped through) the first-run permission flow.
+  val onboardingCompleted = preferenceStore.getBoolean(ONBOARDING_COMPLETED_KEY, false)
 
   // Watched threshold preference (percentage 1-100)
   val watchedThreshold = preferenceStore.getInt("watched_threshold", 95)

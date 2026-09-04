@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets
 object SafeClipboard {
   const val MAX_CLIPBOARD_BYTES: Int = 512 * 1024
   private const val RETRY_BYTES: Int = 128 * 1024
-  private const val LEGACY_DEBUG_DUMP_LABEL = "mpvrx_logs"
+  private const val LEGACY_DEBUG_DUMP_LABEL = "Mpv∞_logs"
 
   data class TruncatedText(
     val text: String,

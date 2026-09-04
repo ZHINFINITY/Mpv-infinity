@@ -103,7 +103,7 @@ class AiService(
             AiModelInfo("openai/whisper-large-v3", "Whisper Large V3"),
           ),
         )
-      else -> Result.failure(IllegalArgumentException("$provider does not provide speech-to-text in mpvRx"))
+      else -> Result.failure(IllegalArgumentException("$provider does not provide speech-to-text in Mpv∞"))
     }
 
   suspend fun verifyKey(): Result<String> =

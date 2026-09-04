@@ -33,8 +33,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +68,7 @@ import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.browser.sheets.PlaylistActionSheet
 import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.utils.LocalBackStack
@@ -143,6 +142,8 @@ object PlaylistScreen : Screen {
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     // Playlist action sheet state
     var showPlaylistActionSheet by remember { mutableStateOf(false) }
+    val hasProtectedSelection =
+      selectionManager.getSelectedItems().any { item -> viewModel.isProtectedPlaylist(item.playlist) }
 
     // FAB visibility for scroll-based hiding
     val isFabVisible = remember { mutableStateOf(true) }
@@ -181,59 +182,49 @@ object PlaylistScreen : Screen {
       topBar = {
         if (isSearching) {
           // Search mode - show search bar
-          SearchBar(
-            inputField = {
-              SearchBarDefaults.InputField(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                onSearch = { },
-                expanded = false,
-                onExpandedChange = { },
-                placeholder = {
-                  Text(
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_search_playlists),
-                  )
-                },
-                leadingIcon = {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Search,
-                    contentDescription =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.settings_search_title,
-                      ),
-                  )
-                },
-                trailingIcon = {
-                  IconButton(
-                    onClick = {
-                      isSearching = false
-                      searchQuery = ""
-                    },
-                  ) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.Close,
-                      contentDescription =
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.generic_cancel,
-                        ),
-                    )
-                  }
-                },
-                modifier = Modifier.focusRequester(focusRequester),
-              )
-            },
-            expanded = false,
-            onExpandedChange = { },
+          InlineSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            onSearch = { },
             modifier =
               Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
+            inputFieldModifier = Modifier.focusRequester(focusRequester),
+            placeholder = {
+              Text(
+                androidx.compose.ui.res
+                  .stringResource(app.infinity.mpvz.R.string.ui_search_playlists),
+              )
+            },
+            leadingIcon = {
+              Icon(
+                imageVector = Icons.RoundedFilled.Search,
+                contentDescription =
+                  androidx.compose.ui.res.stringResource(
+                    app.infinity.mpvz.R.string.settings_search_title,
+                  ),
+              )
+            },
+            trailingIcon = {
+              IconButton(
+                onClick = {
+                  isSearching = false
+                  searchQuery = ""
+                },
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Close,
+                  contentDescription =
+                    androidx.compose.ui.res.stringResource(
+                      app.infinity.mpvz.R.string.generic_cancel,
+                    ),
+                )
+              }
+            },
             shape = RoundedCornerShape(28.dp),
             tonalElevation = 6.dp,
-          ) {
-            // Empty content for SearchBar
-          }
+          )
         } else {
           BrowserTopBar(
             title = stringResource(R.string.ui_playlists),
@@ -248,12 +239,12 @@ object PlaylistScreen : Screen {
               backStack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
             },
             onRenameClick =
-              if (selectionManager.isSingleSelection) {
+              if (selectionManager.isSingleSelection && !hasProtectedSelection) {
                 { showRenameDialog = true }
               } else {
                 null
               },
-            onDeleteClick = { showDeleteDialog = true },
+            onDeleteClick = if (hasProtectedSelection) null else ({ showDeleteDialog = true }),
             onSelectAll = { selectionManager.selectAll() },
             onInvertSelection = { selectionManager.invertSelection() },
             onDeselectAll = { selectionManager.clear() },

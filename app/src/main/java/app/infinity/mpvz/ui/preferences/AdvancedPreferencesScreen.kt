@@ -12,7 +12,6 @@ package app.infinity.mpvz.ui.preferences
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
-import android.os.StatFs
 import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,7 +29,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,16 +46,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastJoinToString
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.core.net.toUri
 import androidx.core.os.LocaleListCompat
 import androidx.documentfile.provider.DocumentFile
 import app.infinity.mpvz.R
-import app.infinity.mpvz.database.MpvRxDatabase
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.FoldersPreferences
@@ -75,6 +70,7 @@ import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,8 +84,6 @@ import java.util.Locale
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.outputStream
 import kotlin.io.path.readLines
-
-private fun Double.formatOneDecimal(): String = String.format(Locale.US, "%.1f", this)
 
 private enum class AppLanguage(
   val languageTag: String,
@@ -366,6 +360,7 @@ object AdvancedPreferencesScreen : Screen {
           item {
             PreferenceCard {
               ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_app_language_title),
                 value = currentAppLanguage,
                 onValueChange = { language ->
                   if (language != currentAppLanguage) pendingAppLanguage = language
@@ -560,6 +555,13 @@ object AdvancedPreferencesScreen : Screen {
 
               PreferenceDivider()
 
+              MpvConfigOverridePreference(
+                preferences = preferences,
+                modifier = Modifier.settingsSearchTarget(R.string.pref_mpv_conf_overrides_title),
+              )
+
+              PreferenceDivider()
+
               Preference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_advanced_input_conf),
                 title = { Text(stringResource(R.string.pref_advanced_input_conf)) },
@@ -586,16 +588,9 @@ object AdvancedPreferencesScreen : Screen {
             PreferenceCard {
               val enableP2pStreaming by preferences.enableP2pStreaming.collectAsState()
               val enableHlsProxy by preferences.enableHlsProxy.collectAsState()
-              val torrentStartupBufferMb by preferences.torrentStartupBufferMb.collectAsState()
-              val torrentReadAheadMb by preferences.torrentReadAheadMb.collectAsState()
-              val torrentCacheMb by preferences.torrentCacheMb.collectAsState()
-              var startupBufferText by remember(torrentStartupBufferMb) { mutableStateOf(torrentStartupBufferMb.toString()) }
-              var readAheadText by remember(torrentReadAheadMb) { mutableStateOf(torrentReadAheadMb.toString()) }
-              var cacheText by remember(torrentCacheMb) { mutableStateOf(torrentCacheMb.toString()) }
-              val freeStorageBytes = remember(context) { StatFs(context.cacheDir.absolutePath).availableBytes }
-              val freeStorageGb = freeStorageBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
 
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_enable_p2p_streaming_title),
                 value = enableP2pStreaming,
                 onValueChange = preferences.enableP2pStreaming::set,
                 title = { Text(stringResource(R.string.pref_enable_p2p_streaming_title)) },
@@ -610,6 +605,7 @@ object AdvancedPreferencesScreen : Screen {
               PreferenceDivider()
 
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_enable_hls_proxy_title),
                 value = enableHlsProxy,
                 onValueChange = preferences.enableHlsProxy::set,
                 title = { Text(stringResource(R.string.pref_enable_hls_proxy_title)) },
@@ -619,54 +615,6 @@ object AdvancedPreferencesScreen : Screen {
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
-              )
-
-              PreferenceDivider()
-
-              OutlinedTextField(
-                value = startupBufferText,
-                onValueChange = { value ->
-                  startupBufferText = value.filter(Char::isDigit)
-                  startupBufferText.toLongOrNull()?.takeIf { it >= 0L }?.let(preferences.torrentStartupBufferMb::set)
-                },
-                label = { Text("Torrent startup buffer (MB)") },
-                supportingText = { Text("0 = maximum safe free storage; currently ${freeStorageGb.formatOneDecimal()} GB free") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-              )
-
-              OutlinedTextField(
-                value = readAheadText,
-                onValueChange = { value ->
-                  readAheadText = value.filter(Char::isDigit)
-                  readAheadText.toLongOrNull()?.takeIf { it >= 0L }?.let(preferences.torrentReadAheadMb::set)
-                },
-                label = { Text("Torrent read-ahead (MB)") },
-                supportingText = { Text("0 = maximum safe free storage; larger values reduce seek buffering") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-              )
-
-              OutlinedTextField(
-                value = cacheText,
-                onValueChange = { value ->
-                  cacheText = value.filter(Char::isDigit)
-                  cacheText.toLongOrNull()?.takeIf { it >= 0L }?.let(preferences.torrentCacheMb::set)
-                },
-                label = { Text("Torrent cache budget (MB)") },
-                supportingText = { Text("0 = maximum safe free storage; used to keep skipped-ahead data available") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-              )
-
-              Text(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                text = "Available storage: ${freeStorageGb.formatOneDecimal()} GB (${freeStorageBytes / (1024L * 1024L)} MB). A 512 MB safety reserve is kept free.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
               )
             }
           }
@@ -789,7 +737,7 @@ object AdvancedPreferencesScreen : Screen {
           item {
             PreferenceCard {
               var isConfirmDialogShown by remember { mutableStateOf(false) }
-              val mpvrxDatabase = koinInject<MpvRxDatabase>()
+              val playbackStateRepository = koinInject<PlaybackStateRepository>()
               val enableRecentlyPlayed by preferences.enableRecentlyPlayed.collectAsState()
               var recentlyPlayedCount by remember { mutableStateOf(0) }
 
@@ -852,8 +800,9 @@ object AdvancedPreferencesScreen : Screen {
                   onConfirm = {
                     scope.launch(Dispatchers.IO) {
                       runCatching {
-                        mpvrxDatabase.videoDataDao().clearAllPlaybackStates()
+                        playbackStateRepository.clearAllPlaybackStates()
                         RecentlyPlayedOps.clearAll()
+                        PlaybackStateEvents.notifyChanged("")
                       }.onSuccess {
                         withContext(Dispatchers.Main) {
                           isConfirmDialogShown = false
@@ -1145,7 +1094,7 @@ object AdvancedPreferencesScreen : Screen {
 
                     SafeClipboard.copyPlainText(
                       context = context,
-                      label = "mpvrx_logs",
+                      label = "Mpv∞_logs",
                       text = CrashActivity.concatLogs(deviceInfo, null, logcat),
                     )
                     CrashActivity.shareLogs(deviceInfo, null, logcat, activity)

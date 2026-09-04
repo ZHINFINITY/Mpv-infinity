@@ -1,10 +1,31 @@
 import com.android.build.api.variant.FilterConfiguration
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
-val arm64Only = project.findProperty("arm64Only") == "true"
-val enableX86 = !arm64Only && project.findProperty("enableX86") != "false"
+val localProperties =
+  Properties().apply {
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+      localFile.inputStream().use { load(it) }
+    }
+  }
+
+val targetAbiProp = project.findProperty("targetAbi")?.toString() ?: localProperties.getProperty("targetAbi")
+val enableX86 = project.findProperty("enableX86") != "false"
 val x86Abis = if (enableX86) listOf("x86", "x86_64") else emptyList()
+val activeAbis =
+  if (!targetAbiProp.isNullOrBlank()) {
+    targetAbiProp.split(",").map { it.trim() }
+  } else {
+    listOf("arm64-v8a", "armeabi-v7a") + x86Abis
+  }
 val universalOnlyDistributions = setOf("noVulkan", "fongmi")
+val releaseVersionCode = 250
+val versionCodeBandSize = 10_000
+val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
+val previewVersionCode =
+  (releaseVersionCode + 1) * versionCodeBandSize +
+    (getCommitCount().toIntOrNull() ?: 1).coerceIn(1, versionCodeBandSize - 2)
 
 plugins {
   alias(libs.plugins.android.application)
@@ -24,8 +45,10 @@ android {
     applicationId = "app.infinity.mpvz"
     minSdk = 26
     targetSdk = 36
-    versionCode = 154
-    versionName = "1.0.7"
+    // Stable occupies the top of its version band. Preview uses the next band's commit-count
+    // offset, so Stable -> Preview -> newer Preview -> next Stable is always an Android upgrade.
+    versionCode = stableVersionCode
+    versionName = "2.5.0"
 
     vectorDrawables {
       useSupportLibrary = true
@@ -36,7 +59,7 @@ android {
 
     externalNativeBuild {
       cmake {
-        abiFilters += if (arm64Only) listOf("arm64-v8a") else listOf("arm64-v8a", "armeabi-v7a") + x86Abis
+        abiFilters += activeAbis
       }
     }
   }
@@ -54,6 +77,7 @@ android {
     create("standard") {
       dimension = "distribution"
       buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
+      buildConfigField("String", "UPDATE_APK_VARIANT", "\"standard\"")
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
@@ -61,7 +85,8 @@ android {
 
     create("noVulkan") {
       dimension = "distribution"
-      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "false")
+      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
+      buildConfigField("String", "UPDATE_APK_VARIANT", "\"no-vulkan\"")
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
@@ -69,7 +94,8 @@ android {
 
     create("fongmi") {
       dimension = "distribution"
-      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "false")
+      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
+      buildConfigField("String", "UPDATE_APK_VARIANT", "\"fongmi\"")
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "true")
@@ -85,20 +111,14 @@ android {
     abi {
       isEnable = true
       reset()
-      if (arm64Only) {
-        include("arm64-v8a")
-      } else {
-        include("armeabi-v7a", "arm64-v8a")
-      }
-      if (enableX86) {
-        include("x86", "x86_64")
-      }
-      isUniversalApk = !arm64Only
+      include(*activeAbis.toTypedArray())
+      isUniversalApk = activeAbis.size > 1
     }
   }
 
   buildTypes {
     named("release") {
+      buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(
@@ -113,11 +133,12 @@ android {
     create("preview") {
       initWith(getByName("release"))
       signingConfig = null
-      applicationIdSuffix = ".preview"
-      versionNameSuffix = "-${getCommitCount()}"
+      buildConfigField("boolean", "IS_PREVIEW_BUILD", "true")
+      versionNameSuffix = "-beta.r${getCommitCount()}"
     }
 
     named("debug") {
+      buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-${getCommitCount()}"
       resValue("string", "app_name", "Mpv∞-Debug")
@@ -135,7 +156,6 @@ android {
     viewBinding = true
     buildConfig = true
     resValues = true
-    prefab = true
   }
 
   packaging {
@@ -191,9 +211,9 @@ androidComponents {
         output.enabled.set(false)
       }
 
-      output.versionCode.set(
-        (output.versionCode.orNull ?: 0) * 10 + (abiCodes[abi] ?: 0),
-      )
+      val channelVersionCode =
+        if (variant.buildType == "preview") previewVersionCode else (output.versionCode.orNull ?: stableVersionCode)
+      output.versionCode.set(channelVersionCode * 10 + (abiCodes[abi] ?: 0))
     }
   }
 }
@@ -201,8 +221,6 @@ androidComponents {
 kotlin {
   compilerOptions {
     freeCompilerArgs.addAll(
-      "-Xcontext-parameters",
-      "-Xannotation-default-target=param-property",
       "-opt-in=com.google.accompanist.permissions.ExperimentalPermissionsApi",
       "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
       "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
@@ -248,6 +266,7 @@ dependencies {
 
   implementation(libs.seeker)
   implementation(libs.compose.prefs)
+  implementation(libs.markdown.renderer.m3)
 
   implementation(libs.accompanist.permissions)
 
@@ -258,13 +277,11 @@ dependencies {
   implementation(libs.kotlinx.immutable.collections)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.okhttp)
-  implementation(libs.curl.android)
   implementation(libs.jsoup)
   implementation(libs.androidx.media3.common)
   implementation(libs.androidx.media3.exoplayer)
   implementation(libs.androidx.media3.exoplayer.hls)
   implementation(libs.androidx.media3.exoplayer.dash)
-  implementation(libs.media3.ffmpeg)
   implementation(libs.androidx.media3.ui)
   implementation(libs.androidx.media3.effect)
   implementation(libs.androidx.media3.transformer)
@@ -288,9 +305,11 @@ dependencies {
   // Network protocol libraries
   implementation(libs.smbj)
   implementation(libs.commons.net)
+  implementation(libs.jsch)
   implementation(libs.sardine.android) {
     exclude(group = "xpp3", module = "xpp3")
   }
+  implementation(libs.libarchive.android)
   implementation(libs.nanohttpd)
   implementation(libs.lazycolumnscrollbar)
   implementation(libs.reorderable)

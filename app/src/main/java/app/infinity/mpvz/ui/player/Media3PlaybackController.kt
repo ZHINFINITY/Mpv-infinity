@@ -45,11 +45,11 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 
 /**
- * Media3 playback backend used by the existing mpvRx player surface.
+ * Media3 playback backend used by the existing Mpv∞ player surface.
  *
- * The controller deliberately has no UI of its own: the existing mpvRx Compose controls remain
+ * The controller deliberately has no UI of its own: the existing Mpv∞ Compose controls remain
  * the only visible controls, while this class owns Media3 lifecycle, playlist loading, and
- * playback state. It can therefore be introduced incrementally without changing the mpvRx look.
+ * playback state. It can therefore be introduced incrementally without changing the Mpv∞ look.
  */
 @OptIn(UnstableApi::class)
 class Media3PlaybackController(
@@ -84,7 +84,7 @@ class Media3PlaybackController(
   private val appContext = context.applicationContext
   private val httpFactory = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
   private val channelMixingProcessor = ChannelMixingAudioProcessor()
-  private val nativeAudioEffectsProcessor = NativeAudioEffectsProcessor()
+  private val nativeAudioEffectsProcessor = Media3AudioEffectsState()
   private var audioChannels = AudioChannels.AutoSafe
   private var audioPitchCorrection = true
   private val trackSelector = DefaultTrackSelector(appContext)
@@ -1251,7 +1251,7 @@ class Media3PlaybackController(
       if (attachedView === view && subtitleCueGeneration == generation) {
         runCatching { view.subtitleView?.setCues(filteredCues) }
           .onFailure { error ->
-            AppDebugLog.error(
+            android.util.Log.e(TAG,
               TAG,
               "Media3 subtitle cue render failed; keeping playback alive: ${error.message}",
               error,
@@ -1338,7 +1338,7 @@ class Media3PlaybackController(
 
   override fun onPlayerError(error: PlaybackException) {
     val cause = error.cause
-    AppDebugLog.error(
+    android.util.Log.e(TAG,
       TAG,
       "Media3: player error code=${error.errorCode} name=${error.errorCodeName} " +
         "message=${error.message.orEmpty()} cause=${cause?.javaClass?.name}: ${cause?.message} " +
@@ -1509,7 +1509,7 @@ class Media3PlaybackController(
   }
 
   private fun logInfo(message: String) {
-    AppDebugLog.info(TAG, "Media3: $message")
+    android.util.Log.i(TAG, "Media3: $message")
   }
 
   private fun formatDescription(format: Format): String =
@@ -1541,4 +1541,10 @@ class Media3PlaybackController(
     const val POST_SEEK_BUFFER_LEAD_MS = 5_000L
     const val POST_SEEK_RESUME_TIMEOUT_MS = 8_000L
   }
+}
+
+/** Source-local audio-effect state used by Media3 while MPV remains the primary engine. */
+private class Media3AudioEffectsState {
+  var volumeNormalizationEnabled: Boolean = false
+  var drcEnabled: Boolean = false
 }

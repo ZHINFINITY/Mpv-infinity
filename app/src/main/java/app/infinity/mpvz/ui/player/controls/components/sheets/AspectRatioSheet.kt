@@ -24,8 +24,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -40,6 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.presentation.components.PlayerSheet
+import app.infinity.mpvz.ui.player.AutoCropState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.spacing
@@ -54,6 +57,10 @@ data class AspectRatio(
 fun AspectRatioSheet(
   currentRatio: Double?,
   customRatios: List<AspectRatio>,
+  autoCropEnabled: Boolean,
+  autoCropState: AutoCropState,
+  autoCropControlEnabled: Boolean,
+  onAutoCropChanged: (Boolean) -> Unit,
   onSelectRatio: (Double) -> Unit,
   onAddCustomRatio: (String, Double) -> Unit,
   onDeleteCustomRatio: (AspectRatio) -> Unit,
@@ -89,6 +96,35 @@ fun AspectRatioSheet(
           Modifier
             .padding(horizontal = MaterialTheme.spacing.medium)
             .padding(bottom = MaterialTheme.spacing.small),
+      )
+
+      val autoCropSummary =
+        when {
+          !autoCropControlEnabled -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_managed
+          !autoCropEnabled -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_summary
+          autoCropState == AutoCropState.ANALYZING -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_analyzing
+          autoCropState == AutoCropState.APPLIED -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_applied
+          autoCropState == AutoCropState.NO_BARS -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_none
+          autoCropState == AutoCropState.UNSUPPORTED -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_unsupported
+          autoCropState == AutoCropState.ERROR -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_failed
+          else -> app.infinity.mpvz.R.string.ui_auto_crop_black_bars_summary
+        }
+      ListItem(
+        content = {
+          Text(androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_auto_crop_black_bars))
+        },
+        supportingContent = { Text(androidx.compose.ui.res.stringResource(autoCropSummary)) },
+        trailingContent = {
+          Switch(
+            checked = autoCropEnabled,
+            onCheckedChange = onAutoCropChanged,
+            enabled = autoCropControlEnabled,
+          )
+        },
+        modifier =
+          Modifier.clickable(enabled = autoCropControlEnabled) {
+            onAutoCropChanged(!autoCropEnabled)
+          },
       )
 
       // Preset ratios

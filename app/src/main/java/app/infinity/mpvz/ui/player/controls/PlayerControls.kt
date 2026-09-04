@@ -9,17 +9,25 @@
 
 package app.infinity.mpvz.ui.player.controls
 
-import app.infinity.mpvz.preferences.PlaybackEngineMode
-import app.infinity.mpvz.domain.torrent.TorrentStreamingState
+import app.infinity.mpvz.ui.player.DeclaredPlaybackMediaKind
+import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.declaredMediaKind
+import app.infinity.mpvz.domain.torrent.TorrentStreamingState
+import app.infinity.mpvz.domain.torrent.formatTorrentBytes
+import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
+import android.os.Debug
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -103,7 +111,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -113,57 +120,55 @@ import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.constraintlayout.compose.Dimension
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AdvancedPreferences
-import app.infinity.mpvz.preferences.AudioChannels
 import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.PlayerPreferences
-import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
+import app.infinity.mpvz.preferences.allPlayerButtons
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.preferences.preference.deleteAndGet
 import app.infinity.mpvz.preferences.preference.minusAssign
 import app.infinity.mpvz.preferences.preference.plusAssign
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.Decoder
 import app.infinity.mpvz.ui.player.Decoder.Companion.getDecoderFromValue
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.player.Media3PlaybackController
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoOpenAnimationOverlay
-import app.infinity.mpvz.ui.player.detectMedia3VideoFormatStatus
-import app.infinity.mpvz.ui.player.detectVideoFormatStatus
 import app.infinity.mpvz.ui.player.buildControlsEnterH
 import app.infinity.mpvz.ui.player.buildControlsEnterV
 import app.infinity.mpvz.ui.player.buildControlsExitH
 import app.infinity.mpvz.ui.player.buildControlsExitV
 import app.infinity.mpvz.ui.player.controls.components.AnimatedPlayPauseIcon
-import app.infinity.mpvz.ui.player.controls.components.PlayerGlassSurface
 import app.infinity.mpvz.ui.player.controls.components.BrightnessSlider
+import app.infinity.mpvz.ui.player.controls.components.LocalForceDarkPlayerButtonsBackground
+import app.infinity.mpvz.ui.player.controls.components.LocalHidePlayerButtonsBackground
 import app.infinity.mpvz.ui.player.controls.components.MultipleSpeedPlayerUpdate
 import app.infinity.mpvz.ui.player.controls.components.SeekPlayerUpdate
-import app.infinity.mpvz.ui.player.controls.components.SeekThumbnailPreviewBubble
 import app.infinity.mpvz.ui.player.controls.components.SeekbarWithTimers
 import app.infinity.mpvz.ui.player.controls.components.SlideToUnlock
 import app.infinity.mpvz.ui.player.controls.components.TextPlayerUpdate
-import app.infinity.mpvz.ui.player.controls.components.TranslatedSubtitleText
 import app.infinity.mpvz.ui.player.controls.components.VolumeSlider
+import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
+import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
+import app.infinity.mpvz.ui.player.controls.components.playerButtonContentColor
+import app.infinity.mpvz.ui.player.controls.components.rememberBufferingState
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
-import app.infinity.mpvz.ui.player.getTrackSelectionId
-import app.infinity.mpvz.ui.player.setTrackSelectionId
-import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.controlColor
 import app.infinity.mpvz.ui.theme.playerRippleConfiguration
 import app.infinity.mpvz.ui.theme.spacing
 import dev.vivvvek.seeker.Segment
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -171,17 +176,11 @@ import kotlin.math.roundToInt
 @Suppress("CompositionLocalAllowlist")
 val LocalPlayerButtonsClickEvent = staticCompositionLocalOf { {} }
 
-fun <T> playerControlsExitAnimationSpec(): FiniteAnimationSpec<T> =
-  spring(
-    dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-    stiffness = AppMotion.Spatial.Standard.stiffness,
-  )
+fun <T> playerControlsExitAnimationSpec(durationMillis: Int = 300): FiniteAnimationSpec<T> =
+  tween(durationMillis = durationMillis, easing = FastOutSlowInEasing)
 
-fun <T> playerControlsEnterAnimationSpec(): FiniteAnimationSpec<T> =
-  spring(
-    dampingRatio = AppMotion.Spatial.Expressive.dampingRatio,
-    stiffness = AppMotion.Spatial.Expressive.stiffness,
-  )
+fun <T> playerControlsEnterAnimationSpec(durationMillis: Int = 100): FiniteAnimationSpec<T> =
+  tween(durationMillis = durationMillis, easing = LinearOutSlowInEasing)
 
 @OptIn(
   ExperimentalMaterial3Api::class,
@@ -193,20 +192,7 @@ fun <T> playerControlsEnterAnimationSpec(): FiniteAnimationSpec<T> =
 fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
-  onClosePlayer: () -> Unit = onBackPress,
-  onMinimizeAudioPlayer: () -> Unit = onBackPress,
-  isMedia3Active: Boolean = false,
-  media3State: Media3PlaybackController.State = Media3PlaybackController.State(),
-  engineSelection: PlaybackEngineMode = if (isMedia3Active) PlaybackEngineMode.Media3 else PlaybackEngineMode.MPV,
-  onEngineSelected: (PlaybackEngineMode) -> Unit = {},
-  onDecoderSelected: (Decoder) -> Unit = { decoder ->
-    PlaybackSession.setPropertyString("hwdec", decoder.value)
-  },
-  onMedia3AudioChannels: (AudioChannels) -> Unit = {},
-  onMedia3AudioProcessing: (Boolean, Boolean) -> Unit = { _, _ -> },
-  onMedia3AudioPitchCorrection: (Boolean) -> Unit = {},
   modifier: Modifier = Modifier,
-  torrentStreamingState: TorrentStreamingState = TorrentStreamingState.Idle,
 ) {
   val spacing = MaterialTheme.spacing
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -215,83 +201,48 @@ fun PlayerControls(
   val aiEnabled by aiPreferences.enabled.collectAsState()
   val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
-  val showSeekbarContainer by appearancePreferences.showSeekbarContainer.collectAsState()
+  val forceDarkButtonBackground by appearancePreferences.forceDarkPlayerButtonsBackground.collectAsState()
   val portraitPlaybackControlsPosition by
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
-  val subtitlesPreferences = koinInject<SubtitlesPreferences>()
-  val subtitleFontSize by subtitlesPreferences.fontSize.collectAsState()
-  val subtitleScale by subtitlesPreferences.subScale.collectAsState()
-  val liveSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
-  val liveSubtitleFontSize by PlaybackSession.propInt["sub-font-size"].collectAsState()
-  val subtitleTextColor by subtitlesPreferences.textColor.collectAsState()
-  val subtitleBackgroundColor by subtitlesPreferences.backgroundColor.collectAsState()
-  val subtitleBorderColor by subtitlesPreferences.borderColor.collectAsState()
-  val subtitleBorderSize by subtitlesPreferences.borderSize.collectAsState()
-  val subtitleShadowOffset by subtitlesPreferences.shadowOffset.collectAsState()
-  val subtitleBold by subtitlesPreferences.bold.collectAsState()
-  val subtitleItalic by subtitlesPreferences.italic.collectAsState()
-  val subtitleJustification by subtitlesPreferences.justification.collectAsState()
-  val subtitlePosition by PlaybackSession.propInt["sub-pos"].collectAsState()
   val audioPreferences = koinInject<AudioPreferences>()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
+  val showControlsDrawer by playerPreferences.showControlsDrawer.collectAsState()
   val interactionSource = remember { MutableInteractionSource() }
   val controlsShown by viewModel.controlsShown.collectAsState()
   val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
   val areControlsLocked by viewModel.areControlsLocked.collectAsState()
   val seekBarShown by viewModel.seekBarShown.collectAsState()
-  val pausedForCache by PlaybackSession.propBoolean["paused-for-cache"].collectAsState()
-  val cacheBufferingState by PlaybackSession.propInt["cache-buffering-state"].collectAsState()
-  val demuxerCacheDuration by PlaybackSession.propDouble["demuxer-cache-duration"].collectAsState()
-  val mpvPaused by PlaybackSession.propBoolean["pause"].collectAsState()
-  val mpvDuration by PlaybackSession.propInt["duration"].collectAsState()
+  val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+  val playbackSessionState by PlaybackSession.state.collectAsStateWithLifecycle()
+  val duration by PlaybackSession.propInt["duration"].collectAsState()
+  val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
-  val paused = if (isMedia3Active) !media3State.isPlaying else mpvPaused
-  val torrentBuffering = torrentStreamingState is TorrentStreamingState.Connecting
-  val duration =
-    if (isMedia3Active) {
-      // Do not reuse the inactive MPV timeline while Media3 is preparing. That stale duration can
-      // make a slider interaction submit an unintended seek back to zero.
-      media3State.durationMs
-        .takeIf { it > 0L && it != androidx.media3.common.C.TIME_UNSET }
-        ?.let { (it / 1000L).coerceAtLeast(1L).toInt() }
-    } else {
-      mpvDuration
-    }
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
-  val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
-  val playbackSpeed = if (isMedia3Active) media3State.playbackSpeed else mpvPlaybackSpeed
-  val media3DurationSeconds =
-    media3State.durationMs
-      .takeIf { it > 0L && it != androidx.media3.common.C.TIME_UNSET }
-      ?.div(1000f)
-      ?.takeIf { it.isFinite() && it > 0f }
-      ?: 0f
-  val media3PositionSeconds =
-    media3State.positionMs
-      .takeIf { it >= 0L && it != androidx.media3.common.C.TIME_UNSET }
-      ?.div(1000f)
-      ?.takeIf { it.isFinite() && it >= 0f }
-      ?: 0f
-  val seekbarDuration =
-    if (isMedia3Active) {
-      media3DurationSeconds
-    } else if (preciseDuration > 0) {
-      preciseDuration
-    } else {
-      duration?.toFloat() ?: 0f
-    }
+  val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
+  val seekbarDuration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
   val seekState by viewModel.seekState.collectAsState()
-  val seekPreview by viewModel.seekThumbnailPreview.collectAsState()
   val brightness by viewModel.currentBrightness.collectAsState()
   val doubleTapSeekAmount = seekState.amount
-  val currentZoom by viewModel.videoZoom.collectAsState()
   val showDoubleTapOvals by playerPreferences.showDoubleTapOvals.collectAsState()
   val showSeekTime by playerPreferences.showSeekTimeWhileSeeking.collectAsState()
   val showBufferedRange by playerPreferences.showBufferedRange.collectAsState()
   val showChapterIndicators by playerPreferences.showChapterIndicators.collectAsState()
-  val useThumbFastSeekPreview by playerPreferences.useThumbFastSeekPreview.collectAsState()
+  val torrentState by viewModel.torrentState.collectAsState()
+  val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
+  val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
+
+  val isTorrentConnecting = torrentState is TorrentStreamingState.Connecting
+  val isTorrentStreaming = torrentState is TorrentStreamingState.Streaming
+  val bufferingState =
+    rememberBufferingState(
+      enabled = showLoadingCircle,
+      // A torrent that has not produced a playable range yet never reaches mpv, so the engine's own
+      // connecting phase has to drive the spinner directly.
+      forceVisible = isTorrentConnecting || playbackSessionState.phase == PlaybackPhase.LOADING,
+    )
+  val isMpvBuffering = bufferingState.isCacheStall
   val safeAreaWindow by playerPreferences.safeAreaWindow.collectAsState()
   val safeAreaInsetModifier =
     if (safeAreaWindow) {
@@ -308,6 +259,10 @@ fun PlayerControls(
   var isSeeking by remember { mutableStateOf(false) }
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsState()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
+  val showBufferingIndicator =
+    bufferingState.visible &&
+      (controlsShown || playbackSessionState.phase == PlaybackPhase.LOADING) &&
+      !isPlayerSeeking
   var stableDemuxerCacheTime by remember { mutableFloatStateOf(0f) }
   val currentDemuxerCacheTime =
     demuxerCacheTime
@@ -330,57 +285,6 @@ fun PlayerControls(
   val decoder = remember(activeDecoder, configuredDecoder) {
     getDecoderFromValue(activeDecoder?.takeIf { it.isNotBlank() } ?: configuredDecoder ?: "auto")
   }
-  val videoTracks by viewModel.videoTracks.collectAsState(persistentListOf())
-  val activeVideoTrack = remember(videoTracks) {
-    videoTracks.firstOrNull { it.isSelected } ?: videoTracks.firstOrNull()
-  }
-  val sourcePrimaries by PlaybackSession.propString["video-params/primaries"].collectAsState()
-  val sourceGamma by PlaybackSession.propString["video-params/gamma"].collectAsState()
-  val sourcePixelFormat by PlaybackSession.propString["video-params/pixelformat"].collectAsState()
-  val sourceMaxLuma by PlaybackSession.propDouble["video-params/max-luma"].collectAsState()
-  val sourceMaxCll by PlaybackSession.propDouble["video-params/max-cll"].collectAsState()
-  val sourceMaxFall by PlaybackSession.propDouble["video-params/max-fall"].collectAsState()
-  val outputPrimaries by PlaybackSession.propString["video-target-params/primaries"].collectAsState()
-  val outputGamma by PlaybackSession.propString["video-target-params/gamma"].collectAsState()
-  val outputPixelFormat by PlaybackSession.propString["video-target-params/pixelformat"].collectAsState()
-  val filteredOutputPrimaries by PlaybackSession.propString["video-out-params/primaries"].collectAsState()
-  val filteredOutputGamma by PlaybackSession.propString["video-out-params/gamma"].collectAsState()
-  val filteredOutputPixelFormat by PlaybackSession.propString["video-out-params/pixelformat"].collectAsState()
-  val videoFormatStatus = if (isMedia3Active) {
-    detectMedia3VideoFormatStatus(
-      mimeType = media3State.videoMimeType,
-      codecs = media3State.videoCodecs,
-      colorSpace = media3State.videoColorSpace,
-      colorTransfer = media3State.videoColorTransfer,
-    )
-  } else remember(
-    activeVideoTrack,
-    sourcePrimaries,
-    sourceGamma,
-    sourcePixelFormat,
-    sourceMaxLuma,
-    sourceMaxCll,
-    sourceMaxFall,
-    outputPrimaries,
-    outputGamma,
-    outputPixelFormat,
-    filteredOutputPrimaries,
-    filteredOutputGamma,
-    filteredOutputPixelFormat,
-  ) {
-    detectVideoFormatStatus(
-      videoTrack = activeVideoTrack,
-      sourcePrimaries = sourcePrimaries,
-      sourceGamma = sourceGamma,
-      sourcePixelFormat = sourcePixelFormat,
-      sourceMaxLuma = sourceMaxLuma,
-      sourceMaxCll = sourceMaxCll,
-      sourceMaxFall = sourceMaxFall,
-      outputPrimaries = outputPrimaries ?: filteredOutputPrimaries,
-      outputGamma = outputGamma ?: filteredOutputGamma,
-      outputPixelFormat = outputPixelFormat ?: filteredOutputPixelFormat,
-    )
-  }
   val isSpeedNonOne = remember(playbackSpeed) {
     abs((playbackSpeed ?: 1f) - 1f) > 0.001f
   }
@@ -394,17 +298,22 @@ fun PlayerControls(
   val haptic = LocalHapticFeedback.current
 
   val customButtons by viewModel.customButtons.collectAsState()
+  val showVideoQualitySelector by viewModel.showVideoQualitySelector.collectAsState()
 
   val abLoop by viewModel.abLoopState.collectAsState()
   val abLoopA = abLoop.a
   val abLoopB = abLoop.b
+  val repeatMode by viewModel.repeatMode.collectAsState()
+  val shuffleEnabled by viewModel.shuffleEnabled.collectAsState()
+  val transformState by viewModel.transformState.collectAsState()
+  val isHdrOutputEnabled by viewModel.isHdrScreenOutputEnabled.collectAsState()
+  val isAmbientEnabled by viewModel.isAmbientEnabled.collectAsState()
+  val backgroundPlaybackEnabled by audioPreferences.backgroundPlayback.collectAsState()
 
   val onOpenSheet: (Sheets) -> Unit = remember(viewModel) {
     {
       viewModel.sheetShown.update { _ -> it }
-      if (it == Sheets.None || it == Sheets.Playlist) {
-        // The playlist is an in-player Now Playing card. Keep the controls layer visible so the
-        // card is not hidden behind the controls visibility gate.
+      if (it == Sheets.None) {
         viewModel.showControls()
       } else {
         viewModel.hideControls()
@@ -425,31 +334,27 @@ fun PlayerControls(
     }
   }
 
-  val sheetShown by viewModel.sheetShown.collectAsState()
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
-  if (isAudioOnly) {
-    val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
-    val rawPath by PlaybackSession.propString["path"].collectAsState()
-    val playbackQueue by PlaybackSession.queue.collectAsState()
-    val activeQueueTitle = playbackQueue.currentItem?.title
-    val activeQueueItemId = playbackQueue.currentItem?.stableId
-    val activity = LocalActivity.current as? PlayerActivity
-    val activityTitle = activity?.getTitleForControls()
-    val pathTitle = rawPath
-      ?.substringAfterLast('/')
-      ?.substringAfterLast('\\')
-      ?.substringBefore('?')
-      ?.takeIf { it.isNotBlank() }
-    // media-title can remain at the previous video value until the new MPV generation emits its
-    // first property update. Prefer the current queue/path identity first; use media-title only as
-    // a fallback so the audio screen cannot inherit the previous video title.
-    val mediaTitle = remember(rawMediaTitle, rawPath, activeQueueTitle, activeQueueItemId, activityTitle) {
-      sequenceOf(activeQueueTitle, pathTitle, activityTitle, rawMediaTitle)
-        .filterNotNull()
-        .map { it.trim() }
-        .firstOrNull { it.isNotBlank() && !it.equals("Unknown Video", ignoreCase = true) }
+  val activity = LocalActivity.current as? PlayerActivity
+  val currentPlaybackItem = playbackQueue.currentItem
+  val useAudioPlayer =
+    when (currentPlaybackItem?.declaredMediaKind()) {
+      DeclaredPlaybackMediaKind.VIDEO -> false
+      DeclaredPlaybackMediaKind.AUDIO -> true
+      else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
+  if (useAudioPlayer) {
+    val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
+    val queuedTitle =
+      playbackQueue.currentItem?.title?.takeIf { playbackQueue.isExplicitQueue && it.isNotBlank() }
+    val mediaTitle =
+      remember(queuedTitle, rawMediaTitle, activity) {
+        queuedTitle
+          ?: activity?.getTitleForControls()
+          ?: rawMediaTitle?.takeIf { it.isNotBlank() }
+      }
 
+    val sheetShown by viewModel.sheetShown.collectAsState()
     val subtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
     val audioTracks by viewModel.audioTracks.collectAsState(persistentListOf())
     val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
@@ -461,8 +366,6 @@ fun PlayerControls(
         viewModel = viewModel,
         mediaTitle = mediaTitle,
         onBackPress = onBackPress,
-        onClosePlayer = onClosePlayer,
-        onMinimizePlayer = onMinimizeAudioPlayer,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
       )
@@ -470,7 +373,6 @@ fun PlayerControls(
       PlayerSheets(
         viewModel = viewModel,
         sheetShown = sheetShown,
-        videoFormatStatus = videoFormatStatus,
         subtitles = subtitles.toImmutableList(),
         onAddSubtitle = viewModel::addSubtitle,
         onToggleSubtitle = viewModel::toggleSubtitle,
@@ -480,9 +382,6 @@ fun PlayerControls(
         audioTracks = audioTracks.toImmutableList(),
         onAddAudio = viewModel::addAudio,
         onSelectAudio = viewModel::selectAudioTrack,
-        onMedia3AudioChannels = onMedia3AudioChannels,
-        onMedia3AudioProcessing = onMedia3AudioProcessing,
-        onMedia3AudioPitchCorrection = onMedia3AudioPitchCorrection,
         chapter = chapters.getOrNull(currentChapter ?: 0),
         chapters = chapters.toImmutableList(),
         onSeekToChapter = {
@@ -490,20 +389,16 @@ fun PlayerControls(
           viewModel.unpause()
         },
         decoder = decoder,
-        isMedia3Active = isMedia3Active,
-        engineSelection = engineSelection,
-        onEngineSelected = onEngineSelected,
-        media3DecoderName = media3State.videoDecoderName,
-        onUpdateDecoder = onDecoderSelected,
+        onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
-        onSpeedChange = { viewModel.setPlaybackSpeed(it.toFixed(2)) },
+        onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
         onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
         onAddSpeedPreset = { playerPreferences.speedPresets += it.toFixed(2).toString() },
         onRemoveSpeedPreset = { playerPreferences.speedPresets -= it.toFixed(2).toString() },
         onResetSpeedPresets = playerPreferences.speedPresets::delete,
         speedPresets = sortedSpeedPresets,
         onResetDefaultSpeed = {
-          viewModel.setPlaybackSpeed(playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
+          PlaybackSession.setPropertyFloat("speed", playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
         },
         sleepTimerTimeRemaining = sleepTimerTimeRemaining,
         onStartSleepTimer = viewModel::startTimer,
@@ -521,6 +416,21 @@ fun PlayerControls(
     }
     return
   }
+
+  val playerActivity = LocalActivity.current as PlayerActivity
+  val configuration = LocalConfiguration.current
+  val isPortrait = remember(configuration.orientation) { configuration.orientation == ORIENTATION_PORTRAIT }
+  val aspect by viewModel.videoAspect.collectAsState()
+  val currentZoom by viewModel.videoZoom.collectAsState()
+  val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
+  val queuedTitle =
+    playbackQueue.currentItem?.title?.takeIf { playbackQueue.isExplicitQueue && it.isNotBlank() }
+  val mediaTitle =
+    remember(queuedTitle, rawMediaTitle, playerActivity) {
+      queuedTitle
+        ?: playerActivity.getTitleForControls().takeIf { it.isNotBlank() }
+        ?: rawMediaTitle
+    }
 
   val topRightControlsPref by appearancePreferences.topRightControls.collectAsState()
   val bottomRightControlsPref by appearancePreferences.bottomRightControls.collectAsState()
@@ -544,29 +454,72 @@ fun PlayerControls(
     remember(portraitBottomControlsPref) {
       appearancePreferences.parseButtons(portraitBottomControlsPref, mutableSetOf())
     }
+  val landscapeHasConfiguredQualityButton =
+    remember(topRightButtons, bottomRightButtons, bottomLeftButtons) {
+      PlayerButton.VIDEO_QUALITY in topRightButtons ||
+        PlayerButton.VIDEO_QUALITY in bottomRightButtons ||
+        PlayerButton.VIDEO_QUALITY in bottomLeftButtons
+    }
+  val portraitHasConfiguredQualityButton = PlayerButton.VIDEO_QUALITY in portraitBottomButtons
+  val hasPlaylistSupport = viewModel.hasPlaylistSupport()
+    val playerDrawerButtons =
+    remember(
+      showVideoQualitySelector,
+      chapters,
+      isAudioOnly,
+      hasPlaylistSupport,
+    ) {
+      allPlayerButtons.filter { button ->
+        when (button) {
+          PlayerButton.BOOKMARKS_CHAPTERS,
+          PlayerButton.CURRENT_CHAPTER,
+          -> chapters.isNotEmpty()
+          PlayerButton.PICTURE_IN_PICTURE -> !isAudioOnly
+          PlayerButton.VIDEO_QUALITY -> showVideoQualitySelector
+          PlayerButton.SHUFFLE -> hasPlaylistSupport
+          else -> true
+        }
+      }
+    }
 
   var isUnlockSliderDragging by remember { mutableStateOf(false) }
+  var isPlayerDrawerShown by remember { mutableStateOf(false) }
+  LaunchedEffect(showControlsDrawer) {
+    if (!showControlsDrawer && isPlayerDrawerShown) {
+      isPlayerDrawerShown = false
+    }
+  }
+  val setPlayerDrawerShown: (Boolean) -> Unit = { visible ->
+    if (showControlsDrawer) {
+      isPlayerDrawerShown = visible
+      if (visible) {
+        viewModel.hideControls()
+      } else if (viewModel.sheetShown.value == Sheets.None && viewModel.panelShown.value == Panels.None) {
+        viewModel.showControls()
+      }
+    }
+  }
+  val isBrightnessSliderShown by viewModel.isBrightnessSliderShown.collectAsState()
+  val isVolumeSliderShown by viewModel.isVolumeSliderShown.collectAsState()
+  val areSlidersShown = isBrightnessSliderShown || isVolumeSliderShown
 
   LaunchedEffect(
     controlsShown,
     paused,
     isSeeking,
     resetControlsTimestamp,
-    currentZoom,
     areControlsLocked,
     isUnlockSliderDragging,
     isAudioOnly,
-    doubleTapSeekAmount,
-    sheetShown,
+    isPlayerDrawerShown,
+    showControlsDrawer,
   ) {
-    if (
-      !isAudioOnly &&
-        controlsShown &&
-        paused == false &&
-        !isSeeking &&
-        doubleTapSeekAmount == 0 &&
-        !isUnlockSliderDragging &&
-        sheetShown != Sheets.Playlist
+    if (!isAudioOnly &&
+      controlsShown &&
+      paused == false &&
+      !isSeeking &&
+      !isUnlockSliderDragging &&
+      !(showControlsDrawer && isPlayerDrawerShown)
     ) {
       // Use 2 second delay when controls are locked, otherwise use user preference
       val delayTime = if (areControlsLocked) 2000L else playerTimeToDisappear.toLong()
@@ -576,26 +529,24 @@ fun PlayerControls(
   }
 
   val videoOpenAnim by playerPreferences.videoOpenAnimation.collectAsState()
-  val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
   val animSpeed by playerPreferences.animationSpeed.collectAsState()
-
-  LaunchedEffect(useThumbFastSeekPreview) {
-    if (useThumbFastSeekPreview) {
-      viewModel.cancelLegacySeekPreview()
-    } else {
-      viewModel.hideSeekThumbnailPreview()
-    }
-  }
 
   val transparentOverlay by animateFloatAsState(
     if (controlsShown && !areControlsLocked) .8f else 0f,
-    animationSpec = playerControlsExitAnimationSpec(),
+    animationSpec =
+      if (controlsShown && !areControlsLocked) {
+        playerControlsEnterAnimationSpec((100 * animSpeed).toInt().coerceAtLeast(30))
+      } else {
+        playerControlsExitAnimationSpec((300 * animSpeed).toInt().coerceAtLeast(50))
+      },
     label = "controls_transparent_overlay",
   )
 
   GestureHandler(
     viewModel = viewModel,
     interactionSource = interactionSource,
+    externalPanelShown = showControlsDrawer && isPlayerDrawerShown,
+    onDismissExternalPanel = { setPlayerDrawerShown(false) },
   )
 
   DoubleTapToSeekOvals(doubleTapSeekAmount, seekText, showDoubleTapOvals, showSeekTime, showSeekTime, interactionSource)
@@ -618,37 +569,30 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    val statisticsOverlayModifier =
-      Modifier
-        .align(Alignment.TopStart)
-        .windowInsetsPadding(
-          WindowInsets.safeDrawing.only(
-            WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
-          ),
-        ).padding(top = 16.dp, start = 14.dp)
-    if (isMedia3Active && statisticsPage in 1..6) {
-      Media3StatsOverlay(
-        page = statisticsPage,
-        media3State = media3State,
-        modifier = statisticsOverlayModifier,
-      )
-    } else if (!isMedia3Active && statisticsPage == 6) {
+    if (statisticsPage == 6) {
       CustomStatsPageSixOverlay(
         viewModel = viewModel,
-        modifier = statisticsOverlayModifier,
+        modifier =
+          Modifier
+            .align(Alignment.TopStart)
+            .windowInsetsPadding(
+              WindowInsets.safeDrawing.only(
+                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+              ),
+            ).padding(top = 16.dp, start = 14.dp),
       )
     }
 
     CompositionLocalProvider(
       LocalRippleConfiguration provides playerRippleConfiguration,
       LocalPlayerButtonsClickEvent provides { resetControlsTimestamp = System.currentTimeMillis() },
+      LocalForceDarkPlayerButtonsBackground provides forceDarkButtonBackground,
+      LocalHidePlayerButtonsBackground provides hideBackground,
       LocalContentColor provides Color.White,
     ) {
       CompositionLocalProvider(
         LocalLayoutDirection provides LayoutDirection.Ltr,
       ) {
-        val configuration = LocalConfiguration.current
-        val isPortrait = remember(configuration.orientation) { configuration.orientation == ORIENTATION_PORTRAIT }
         val density = LocalDensity.current
         var controlsLayoutHeightPx by remember { mutableStateOf(0) }
         var landscapeRightButtonsTopPx by remember { mutableStateOf<Int?>(null) }
@@ -666,21 +610,19 @@ fun PlayerControls(
                 }
               }.then(safeAreaInsetModifier)
               .then(navigationBarBottomInsetModifier),
-        ) {
+          ) {
           val (topLeftControls, topRightControls) = createRefs()
           val (volumeSlider, brightnessSlider) = createRefs()
           val unlockControlsButton = createRef()
           val (bottomRightControls, bottomLeftControls) = createRefs()
           val playerPauseButton = createRef()
+          val bufferingIndicator = createRef()
           val skipSegmentChip = createRef()
           val seekbar = createRef()
-          val thumbnailPreview = createRef()
-          val (playerUpdates, translatedSubtitle) = createRefs()
+          val (playerUpdates) = createRefs()
           val (customLeftButtonsRef, customRightButtonsRef) = createRefs()
           val customButtonsPortraitRef = createRef()
 
-          val isBrightnessSliderShown by viewModel.isBrightnessSliderShown.collectAsState()
-          val isVolumeSliderShown by viewModel.isVolumeSliderShown.collectAsState()
           val volume by viewModel.currentVolume.collectAsState()
           val volumePercent by viewModel.currentVolumePercent.collectAsState()
           val mpvVolume by PlaybackSession.propInt["volume"].collectAsState()
@@ -692,19 +634,6 @@ fun PlayerControls(
           val controlsAnimStyle by playerPreferences.controlsAnimStyle.collectAsState()
           val enterMs = (100 * animSpeed).toInt().coerceAtLeast(30)
           val exitMs = (300 * animSpeed).toInt().coerceAtLeast(50)
-
-          val activity = LocalActivity.current as PlayerActivity
-          val aspect by viewModel.videoAspect.collectAsState()
-
-          val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
-          val playbackQueueState by PlaybackSession.queue.collectAsState()
-          val activeItemStableId = playbackQueueState.currentItem?.stableId
-          val activityTitle = activity.getTitleForControls()
-          val mediaTitle = remember(rawMediaTitle, activityTitle, activeItemStableId) {
-            activityTitle.takeIf { it.isNotBlank() && it != "Unknown Video" }
-              ?: rawMediaTitle?.takeIf { it.isNotBlank() }
-              ?: activityTitle
-          }
 
           // Slider display duration: 1000ms shown + 300ms exit animation = 1300ms total
           val sliderDisplayDuration = 1000L
@@ -727,7 +656,6 @@ fun PlayerControls(
             }
           }
 
-          val areSlidersShown = isBrightnessSliderShown || isVolumeSliderShown
           val navigationBarsPadding =
             if (showSystemNavigationBar) {
               WindowInsets.navigationBars.asPaddingValues()
@@ -828,7 +756,6 @@ fun PlayerControls(
 
           val holdForMultipleSpeed by playerPreferences.holdForMultipleSpeed.collectAsState()
           val currentPlayerUpdate by viewModel.playerUpdate.collectAsState()
-          val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
           val isTranslatingSub by viewModel.isTranslatingSub.collectAsState()
           val translationProgress by viewModel.translationProgress.collectAsState()
           val translationStatus by viewModel.translationStatus.collectAsState()
@@ -860,7 +787,6 @@ fun PlayerControls(
               is PlayerUpdates.RepeatMode -> showActionFeedbackOverlay
               is PlayerUpdates.Shuffle -> showRepeatShuffleOverlay
               is PlayerUpdates.ShowText -> showActionFeedbackOverlay
-              is PlayerUpdates.TranslatedSubtitle -> false
               is PlayerUpdates.ProviderStatusText -> showProviderStatusOverlay
               is PlayerUpdates.HorizontalSeek -> showActionFeedbackOverlay
               is PlayerUpdates.FrameInfo -> true // Groups 3/4 — not in scope
@@ -1032,52 +958,6 @@ fun PlayerControls(
             }
           }
 
-          AnimatedVisibility(
-            visible = embeddedTranslatedSubtitle != null,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.constrainAs(translatedSubtitle) {
-              linkTo(parent.start, parent.end)
-              val position = (subtitlePosition ?: subtitlesPreferences.subPos.get()).coerceIn(0, 150)
-              // Keep the translated cue on the same anchor as MPV's primary subtitle. The
-              // position is the shared MPV 0–150 coordinate, not a separate overlay setting.
-              // MPV's default sub-pos is 100. Keep the translated cue on the same baseline
-              // instead of applying the old 150-based offset, which moved it too high by default.
-              val configuredOffset = (((100 - position) * (if (isPortrait) 1.55f else 2.1f)).coerceIn(-250f, 250f)).dp
-              bottom.linkTo(parent.bottom, configuredOffset)
-            },
-          ) {
-            val translated = embeddedTranslatedSubtitle
-            if (!translated.isNullOrBlank()) {
-              TranslatedSubtitleText(
-                text = translated,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                // MPV's subtitle size is based on a 720px reference OSD; convert it to Compose
-                // sp using the live player height so translation matches the embedded subtitle.
-                fontSize = with(density) {
-                  val osdHeightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
-                  val fontSizePx =
-                    (liveSubtitleFontSize ?: subtitleFontSize) *
-                      (osdHeightPx / 720f) *
-                      (liveSubtitleScale ?: subtitleScale)
-                  (fontSizePx / density.density).coerceIn(8f, 120f).sp
-                },
-                textColor = Color(subtitleTextColor),
-                backgroundColor = Color(subtitleBackgroundColor),
-                outlineColor = Color(subtitleBorderColor),
-                outlineWidth = subtitleBorderSize.toFloat(),
-                shadowOffset = subtitleShadowOffset.toFloat(),
-                bold = subtitleBold,
-                italic = subtitleItalic,
-                textAlign = when (subtitleJustification.name.lowercase()) {
-                  "left" -> androidx.compose.ui.text.style.TextAlign.Start
-                  "right" -> androidx.compose.ui.text.style.TextAlign.End
-                  else -> androidx.compose.ui.text.style.TextAlign.Center
-                },
-              )
-            }
-          }
-
           val areButtonsVisible = controlsShown && !areControlsLocked && !areSlidersShown
           val leftCustomButtons = remember(customButtons) { customButtons.filter { it.isLeft } }
           val rightCustomButtons = remember(customButtons) { customButtons.filterNot { it.isLeft } }
@@ -1085,7 +965,8 @@ fun PlayerControls(
           val showLandscapeRightCustomButtons = areButtonsVisible && !isPortrait && rightCustomButtons.isNotEmpty()
           val showPortraitCustomButtons = areButtonsVisible && isPortrait && customButtons.isNotEmpty()
           val customButtonsRowVerticalPadding = 2.dp
-          val skipChipToButtonsSpacing = 2.dp
+          val skipChipToButtonsSpacing = 4.dp
+          val bottomControlsToSeekbarSpacing = spacing.smaller
           val bottomRightControlsBottomOffset =
             if (bottomRightControlsTopPx != null && controlsLayoutHeightPx > 0) {
               with(density) {
@@ -1249,7 +1130,7 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible = showPortraitCustomButtons && !isPortrait,
+            visible = showPortraitCustomButtons,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =
@@ -1257,7 +1138,7 @@ fun PlayerControls(
                 .constrainAs(customButtonsPortraitRef) {
                   start.linkTo(parent.start, spacing.large)
                   end.linkTo(parent.end, spacing.large)
-                  bottom.linkTo(seekbar.top, spacing.small) // Reduced from medium
+                  bottom.linkTo(seekbar.top, spacing.medium)
                   width = Dimension.fillToConstraints
                   height = Dimension.wrapContent
                 }.onGloballyPositioned { coordinates ->
@@ -1384,11 +1265,79 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
-            visible =
-              controlsShown &&
-                !areControlsLocked &&
-                !areSlidersShown &&
-                !isPortrait,
+            visible = showBufferingIndicator,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier =
+              Modifier.constrainAs(bufferingIndicator) {
+                start.linkTo(parent.absoluteLeft)
+                end.linkTo(parent.absoluteRight)
+                if (isPortrait && portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                  bottom.linkTo(bottomRightControls.top, spacing.small)
+                } else {
+                  top.linkTo(parent.top)
+                  bottom.linkTo(parent.bottom)
+                }
+              },
+          ) {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              LoadingIndicator(
+                modifier = Modifier.size(76.dp),
+              )
+              val cachePercent = bufferingState.cachePercent
+              val cacheSeconds = bufferingState.cacheSeconds
+              val bufferText =
+                when {
+                  isTorrentConnecting -> {
+                    (torrentState as TorrentStreamingState.Connecting).phase
+                  }
+                  isTorrentStreaming -> {
+                    val streamState = torrentState as TorrentStreamingState.Streaming
+                    val speed = app.infinity.mpvz.domain.torrent.formatTorrentSpeed(streamState.downloadSpeed)
+                    val peers = "${streamState.peers} peers"
+                    val progress = "${(streamState.bufferProgress * 100).toInt()}%"
+                    "$speed | $peers | $progress"
+                  }
+                  // mpv only reports a fill target while it is actually holding playback for cache.
+                  isMpvBuffering && cachePercent != null && cachePercent in 1..99 ->
+                    "Buffering $cachePercent%"
+                  isMpvBuffering && cacheSeconds != null ->
+                    "Buffering (${String.format(java.util.Locale.ROOT, "%.1f", cacheSeconds)}s)"
+                  else -> stringResource(R.string.ui_buffering)
+                }
+              Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                  Box(
+                    modifier =
+                      Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                  )
+                  Text(
+                    text = bufferText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.SemiBold,
+                  )
+                }
+              }
+            }
+          }
+
+          AnimatedVisibility(
+            visible = controlsShown && !areControlsLocked && !areSlidersShown && !showBufferingIndicator,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { 0 },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { 0 },
             modifier =
@@ -1403,265 +1352,218 @@ fun PlayerControls(
                 }
               },
           ) {
-            val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
             val interaction = remember { MutableInteractionSource() }
+            val buttonShadow = PlaySkipButtonShadowBrush
 
-            when {
-              pausedForCache == true && showLoadingCircle -> {
-                Column(
-                  horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.spacedBy(10.dp),
+            val hasPlaylistControls =
+              playlistMode && (playlistItems.size > 1 || viewModel.getPlaylistTotalCount() > 1)
+
+            if (hasPlaylistControls) {
+              androidx.compose.foundation.layout.Row(
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Surface(
+                  modifier =
+                    Modifier
+                      .size(56.dp)
+                      .clip(CircleShape)
+                      .clickable(
+                        enabled = viewModel.hasPrevious(),
+                        onClick = {
+                          resetControlsTimestamp = System.currentTimeMillis()
+                          if (viewModel.hasPrevious()) viewModel.playPrevious()
+                        },
+                      ).then(
+                        if (hideBackground) {
+                          Modifier.background(brush = buttonShadow, shape = CircleShape)
+                        } else {
+                          Modifier
+                        },
+                      ),
+                  shape = CircleShape,
+                  color =
+                    if (!hideBackground) {
+                      playerButtonContainerColor()
+                    } else {
+                      Color.Transparent
+                    },
+                  contentColor = playerButtonContentColor(),
+                  tonalElevation = 0.dp,
+                  shadowElevation = 0.dp,
+                  border =
+                    if (!hideBackground) {
+                      BorderStroke(1.dp, playerButtonBorderColor())
+                    } else {
+                      null
+                    },
                 ) {
-                  LoadingIndicator(
-                    modifier = Modifier.size(if (isPortrait) 34.dp else 40.dp),
+                  Icon(
+                    imageVector = Icons.RoundedFilled.SkipPrevious,
+                    contentDescription =
+                      androidx.compose.ui.res.stringResource(
+                        app.infinity.mpvz.R.string.pref_gesture_media_previous,
+                      ),
+                    tint =
+                      if (viewModel.hasPrevious()) {
+                        if (hideBackground) controlColor else playerButtonContentColor()
+                      } else {
+                        if (hideBackground) {
+                          controlColor.copy(alpha = 0.38f)
+                        } else {
+                          playerButtonContentColor().copy(alpha = 0.38f)
+                        }
+                      },
+                    modifier =
+                      Modifier
+                        .fillMaxSize()
+                        .padding(MaterialTheme.spacing.small),
                   )
-                  val bufferText =
-                    when {
-                      cacheBufferingState != null && cacheBufferingState!! in 1..99 ->
-                        "Buffering ${cacheBufferingState}%"
-                      demuxerCacheDuration != null && demuxerCacheDuration!! > 0.0 ->
-                        "Buffering (${String.format(java.util.Locale.ROOT, "%.1f", demuxerCacheDuration)}s)"
-                      else -> stringResource(R.string.ui_buffering)
-                    }
-                  Text(
-                    text = bufferText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                }
+
+                Surface(
+                  modifier =
+                    Modifier
+                      .size(64.dp)
+                      .clip(CircleShape)
+                      .clickable(interaction, ripple(), onClick = {
+                        resetControlsTimestamp = System.currentTimeMillis()
+                        viewModel.pauseUnpause()
+                      })
+                      .then(
+                        if (hideBackground) {
+                          Modifier.background(brush = buttonShadow, shape = CircleShape)
+                        } else {
+                          Modifier
+                        },
+                      ),
+                  shape = CircleShape,
+                  color =
+                    if (!hideBackground) {
+                      playerButtonContainerColor()
+                    } else {
+                      Color.Transparent
+                    },
+                  contentColor = if (hideBackground) controlColor else playerButtonContentColor(),
+                  tonalElevation = 0.dp,
+                  shadowElevation = 0.dp,
+                  border =
+                    if (!hideBackground) {
+                      BorderStroke(1.dp, playerButtonBorderColor())
+                    } else {
+                      null
+                    },
+                ) {
+                  AnimatedPlayPauseIcon(
+                    isPlaying = paused == false,
+                    modifier =
+                      Modifier
+                        .fillMaxSize()
+                        .padding(MaterialTheme.spacing.medium),
+                    tint = LocalContentColor.current,
+                  )
+                }
+
+                Surface(
+                  modifier =
+                    Modifier
+                      .size(56.dp)
+                      .clip(CircleShape)
+                      .clickable(
+                        enabled = viewModel.hasNext(),
+                        onClick = {
+                          resetControlsTimestamp = System.currentTimeMillis()
+                          if (viewModel.hasNext()) viewModel.playNext()
+                        },
+                      ).then(
+                        if (hideBackground) {
+                          Modifier.background(brush = buttonShadow, shape = CircleShape)
+                        } else {
+                          Modifier
+                        },
+                      ),
+                  shape = CircleShape,
+                  color =
+                    if (!hideBackground) {
+                      playerButtonContainerColor()
+                    } else {
+                      Color.Transparent
+                    },
+                  contentColor = playerButtonContentColor(),
+                  tonalElevation = 0.dp,
+                  shadowElevation = 0.dp,
+                  border =
+                    if (!hideBackground) {
+                      BorderStroke(1.dp, playerButtonBorderColor())
+                    } else {
+                      null
+                    },
+                ) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.SkipNext,
+                    contentDescription =
+                      androidx.compose.ui.res.stringResource(
+                        app.infinity.mpvz.R.string.pref_gesture_media_next,
+                      ),
+                    tint =
+                      if (viewModel.hasNext()) {
+                        if (hideBackground) controlColor else playerButtonContentColor()
+                      } else {
+                        if (hideBackground) {
+                          controlColor.copy(alpha = 0.38f)
+                        } else {
+                          playerButtonContentColor().copy(alpha = 0.38f)
+                        }
+                      },
+                    modifier =
+                      Modifier
+                        .fillMaxSize()
+                        .padding(MaterialTheme.spacing.small),
                   )
                 }
               }
-
-              else -> {
-                val buttonShadow = PlaySkipButtonShadowBrush
-
-                val hasPlaylistControls =
-                  playlistMode && (playlistItems.size > 1 || viewModel.getPlaylistTotalCount() > 1)
-
-                if (hasPlaylistControls) {
-                  androidx.compose.foundation.layout.Row(
-                    horizontalArrangement = Arrangement.spacedBy(24.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                  ) {
-                    Surface(
-                      modifier =
-                        Modifier
-                          .size(56.dp)
-                          .clip(CircleShape)
-                          .clickable(
-                            enabled = viewModel.hasPrevious(),
-                            onClick = {
-                              resetControlsTimestamp = System.currentTimeMillis()
-                              if (viewModel.hasPrevious()) viewModel.playPrevious()
-                            },
-                          ).then(
-                            if (hideBackground) {
-                              Modifier.background(brush = buttonShadow, shape = CircleShape)
-                            } else {
-                              Modifier
-                            },
-                          ),
-                      shape = CircleShape,
-                      color =
-                        if (!hideBackground) {
-                          MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
-                        } else {
-                          Color.Transparent
-                        },
-                      contentColor = MaterialTheme.colorScheme.onSurface,
-                      tonalElevation = 0.dp,
-                      shadowElevation = 0.dp,
-                      border =
-                        if (!hideBackground) {
-                          BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                        } else {
-                          null
-                        },
-                    ) {
-                      Icon(
-                        imageVector = Icons.RoundedFilled.SkipPrevious,
-                        contentDescription =
-                          androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.pref_gesture_media_previous,
-                          ),
-                        tint =
-                          if (viewModel.hasPrevious()) {
-                            if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface
-                          } else {
-                            if (hideBackground) {
-                              controlColor.copy(alpha = 0.38f)
-                            } else {
-                              MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                            }
-                          },
-                        modifier =
-                          Modifier
-                            .fillMaxSize()
-                            .padding(MaterialTheme.spacing.small),
-                      )
-                    }
-
-                    Surface(
-                      modifier =
-                        Modifier
-                          .size(64.dp)
-                          .clip(CircleShape)
-                          .clickable(
-                            interactionSource = interaction,
-                            indication = null,
-                            onClick = {
-                              resetControlsTimestamp = System.currentTimeMillis()
-                              viewModel.pauseUnpause()
-                            },
-                          )
-                          .then(
-                            if (hideBackground) {
-                              Modifier.background(brush = buttonShadow, shape = CircleShape)
-                            } else {
-                              Modifier
-                            },
-                          ),
-                      shape = CircleShape,
-                      color =
-                        if (!hideBackground) {
-                          MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
-                        } else {
-                          Color.Transparent
-                        },
-                      contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-                      tonalElevation = 0.dp,
-                      shadowElevation = 0.dp,
-                      border =
-                        if (!hideBackground) {
-                          BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                        } else {
-                          null
-                        },
-                    ) {
-                      if (torrentBuffering) {
-                        LoadingIndicator(modifier = Modifier.size(24.dp))
+            } else {
+              Surface(
+                modifier =
+                  Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .clickable(interaction, ripple(), onClick = {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.pauseUnpause()
+                    })
+                    .then(
+                      if (hideBackground) {
+                        Modifier.background(brush = buttonShadow, shape = CircleShape)
                       } else {
-                        AnimatedPlayPauseIcon(
-                          isPlaying = paused == false,
-                          modifier =
-                            Modifier
-                              .fillMaxSize()
-                              .padding(MaterialTheme.spacing.medium),
-                          tint = LocalContentColor.current,
-                        )
-                      }
-                    }
-
-                    Surface(
-                      modifier =
                         Modifier
-                          .size(56.dp)
-                          .clip(CircleShape)
-                          .clickable(
-                            enabled = viewModel.hasNext(),
-                            onClick = {
-                              resetControlsTimestamp = System.currentTimeMillis()
-                              if (viewModel.hasNext()) viewModel.playNext()
-                            },
-                          ).then(
-                            if (hideBackground) {
-                              Modifier.background(brush = buttonShadow, shape = CircleShape)
-                            } else {
-                              Modifier
-                            },
-                          ),
-                      shape = CircleShape,
-                      color =
-                        if (!hideBackground) {
-                          MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
-                        } else {
-                          Color.Transparent
-                        },
-                      contentColor = MaterialTheme.colorScheme.onSurface,
-                      tonalElevation = 0.dp,
-                      shadowElevation = 0.dp,
-                      border =
-                        if (!hideBackground) {
-                          BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                        } else {
-                          null
-                        },
-                    ) {
-                      Icon(
-                        imageVector = Icons.RoundedFilled.SkipNext,
-                        contentDescription =
-                          androidx.compose.ui.res.stringResource(
-                            app.infinity.mpvz.R.string.pref_gesture_media_next,
-                          ),
-                        tint =
-                          if (viewModel.hasNext()) {
-                            if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface
-                          } else {
-                            if (hideBackground) {
-                              controlColor.copy(alpha = 0.38f)
-                            } else {
-                              MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                            }
-                          },
-                        modifier =
-                          Modifier
-                            .fillMaxSize()
-                            .padding(MaterialTheme.spacing.small),
-                      )
-                    }
-                  }
-                } else {
-                  Surface(
-                    modifier =
-                      Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .clickable(
-                          interactionSource = interaction,
-                          indication = null,
-                          onClick = {
-                            resetControlsTimestamp = System.currentTimeMillis()
-                            viewModel.pauseUnpause()
-                          },
-                        )
-                        .then(
-                          if (hideBackground) {
-                            Modifier.background(brush = buttonShadow, shape = CircleShape)
-                          } else {
-                            Modifier
-                          },
-                        ),
-                    shape = CircleShape,
-                    color =
-                      if (!hideBackground) {
-                        MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f)
-                      } else {
-                        Color.Transparent
                       },
-                    contentColor = if (hideBackground) controlColor else MaterialTheme.colorScheme.onSurface,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                    border =
-                      if (!hideBackground) {
-                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                      } else {
-                        null
-                      },
-                  ) {
-                    if (torrentBuffering) {
-                      LoadingIndicator(modifier = Modifier.size(24.dp))
-                    } else {
-                      AnimatedPlayPauseIcon(
-                        isPlaying = paused == false,
-                        modifier =
-                          Modifier
-                            .fillMaxSize()
-                            .padding(MaterialTheme.spacing.medium),
-                        tint = LocalContentColor.current,
-                      )
-                    }
-                  }
-                }
+                    ),
+                shape = CircleShape,
+                color =
+                  if (!hideBackground) {
+                    playerButtonContainerColor()
+                  } else {
+                    Color.Transparent
+                  },
+                contentColor = if (hideBackground) controlColor else playerButtonContentColor(),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                border =
+                  if (!hideBackground) {
+                    BorderStroke(1.dp, playerButtonBorderColor())
+                  } else {
+                    null
+                  },
+              ) {
+                AnimatedPlayPauseIcon(
+                  isPlaying = paused == false,
+                  modifier =
+                    Modifier
+                      .fillMaxSize()
+                      .padding(MaterialTheme.spacing.medium),
+                  tint = LocalContentColor.current,
+                )
               }
             }
           }
@@ -1684,31 +1586,25 @@ fun PlayerControls(
                   },
                 ).constrainAs(seekbar) {
                   if (isPortrait) {
-                    bottom.linkTo(bottomRightControls.top, 36.dp)
+                    if (portraitPlaybackControlsPosition == PortraitPlaybackControlsPosition.BelowSeekbar) {
+                      bottom.linkTo(playerPauseButton.top, spacing.small)
+                    } else {
+                      bottom.linkTo(bottomRightControls.top, spacing.medium)
+                    }
                   } else {
                     bottom.linkTo(parent.bottom, spacing.medium)
                   }
-                  // Keep the portrait rail inside the video bounds and leave a clear gap for
-                  // the timer row below it; the lower transport panel must never cover duration.
-                  start.linkTo(parent.start, if (isPortrait) spacing.extraLarge else spacing.large)
-                  end.linkTo(parent.end, if (isPortrait) spacing.extraLarge else spacing.large)
+                  start.linkTo(parent.start, spacing.large)
+                  end.linkTo(parent.end, spacing.large)
                 },
           ) {
-            val mpvPosition by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
-            val mpvPrecisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
-            val position =
-              if (isMedia3Active) media3PositionSeconds.toInt() else mpvPosition
-            val precisePosition =
-              if (isMedia3Active) media3PositionSeconds else mpvPrecisePosition
+            val position by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
+            val precisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
             val invertDuration by playerPreferences.invertDuration.collectAsState()
+            val remaining  by PlaybackSession.propFloat["playtime-remaining"].collectAsState()
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
-            val displayedSeekbarPosition =
-              if (!isMedia3Active && useThumbFastSeekPreview && seekPreview.visible) {
-                seekPreview.positionSeconds
-              } else {
-                precisePosition
-              }
+            val displayedSeekbarPosition = precisePosition
             // Memoize the immutable copies so they are not reallocated on every position
             // tick (this scope recomposes ~20x/sec while scrubbing).
             val seekbarChapters =
@@ -1717,114 +1613,40 @@ fun PlayerControls(
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
 
-            val renderSeekbar: @Composable () -> Unit = {
-              SeekbarWithTimers(
-                position = displayedSeekbarPosition,
-                committedPosition = precisePosition,
-                // Media3 owns the timeline while active; do not let the inactive MPV precise-duration
-                // flow override the live Media3 timer after an engine handoff.
-                duration = seekbarDuration,
-                onValueChangeStarted = {
-                  if (!isMedia3Active && !useThumbFastSeekPreview) {
-                    viewModel.beginLegacySeekPreview()
-                  }
-                },
-                onValueChange = {
-                  isSeeking = true
-                  resetControlsTimestamp = System.currentTimeMillis()
-                  when {
-                    isMedia3Active -> Unit
-                    useThumbFastSeekPreview -> viewModel.updateSeekThumbnailPreview(it, seekbarDuration)
-                    else -> viewModel.updateLegacySeekPreview(it.toDouble(), seekbarDuration.toDouble())
-                  }
-                },
-                onValueChangeFinished = { targetPosition ->
-                  isSeeking = false
-                  resetControlsTimestamp = System.currentTimeMillis()
-                  if (isMedia3Active) {
-                    viewModel.hideSeekThumbnailPreview()
-                    viewModel.seekTo(targetPosition.toDouble(), fast = true)
-                  } else if (useThumbFastSeekPreview) {
-                    viewModel.hideSeekThumbnailPreview()
-                    viewModel.seekTo(targetPosition.toDouble(), fast = false)
-                  } else {
-                    viewModel.commitLegacySeekPreview(targetPosition.toDouble(), seekbarDuration.toDouble())
-                  }
-                  viewModel.showControls()
-                },
-                timersInverted = Pair(false, invertDuration),
-                durationTimerOnCLick = {
-                  resetControlsTimestamp = System.currentTimeMillis()
-                  playerPreferences.invertDuration.set(!invertDuration)
-                },
-                positionTimerOnClick = {},
-                chapters = seekbarChapters,
-                skipSegments = skipSegmentsImmutable,
-                paused = paused ?: false,
-                seekbarStyle = seekbarStyle,
-                useWavySeekbar = useWavySeekbar,
-                loopStart = abLoopA?.toFloat(),
-                loopEnd = abLoopB?.toFloat(),
-                bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
-                isPortrait = isPortrait,
-                applyHorizontalPadding = false,
-                modifier = Modifier.fillMaxWidth(),
-              )
-            }
-            if (showSeekbarContainer) {
-              PlayerGlassSurface(
-                modifier =
-                  Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = if (isPortrait) 8.dp else 6.dp),
-                shape = RoundedCornerShape(26.dp),
-                hideBackground = hideBackground,
-                contentColor = Color.White,
-              ) {
-                if (isPortrait) {
-                  // Keep the seekbar group centered in one fixed, symmetric
-                  // bubble. The previous wrap-content box made the top and
-                  // bottom gaps depend on the timer/rail content height.
-                  Box(
-                    modifier = Modifier.fillMaxWidth().height(92.dp),
-                    contentAlignment = Alignment.Center,
-                  ) {
-                    renderSeekbar()
-                  }
-                } else {
-                  renderSeekbar()
-                }
-              }
-            } else {
-              renderSeekbar()
-            }
+            SeekbarWithTimers(
+              position = displayedSeekbarPosition,
+              committedPosition = precisePosition,
+              duration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f,
+              remaining = remaining ?: 0f,
+              onValueChange = {
+                isSeeking = true
+                resetControlsTimestamp = System.currentTimeMillis()
+                viewModel.seekPreviewTo(it)
+              },
+              onValueChangeFinished = { targetPosition ->
+                isSeeking = false
+                resetControlsTimestamp = System.currentTimeMillis()
+                viewModel.seekTo(targetPosition.toInt(), fast = false)
+                viewModel.showControls()
+              },
+              timersInverted = Pair(false, invertDuration),
+              durationTimerOnCLick = {
+                resetControlsTimestamp = System.currentTimeMillis()
+                playerPreferences.invertDuration.set(!invertDuration)
+              },
+              positionTimerOnClick = {},
+              chapters = seekbarChapters,
+              skipSegments = skipSegmentsImmutable,
+              paused = paused ?: false,
+              seekbarStyle = seekbarStyle,
+              useWavySeekbar = useWavySeekbar,
+              timerTextColor = Color.White,
+              loopStart = abLoopA?.toFloat(),
+              loopEnd = abLoopB?.toFloat(),
+              bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
+              isPortrait = isPortrait,
+            )
           }
-
-          val seekPreviewChapterTitle =
-            remember(chapters, seekPreview.positionSeconds) {
-              chapterNameForPosition(chapters, seekPreview.positionSeconds)
-            }
-
-          SeekThumbnailPreviewBubble(
-            position = seekPreview.positionSeconds,
-            duration = seekbarDuration,
-            visible = !isMedia3Active && useThumbFastSeekPreview && seekPreview.visible && !areControlsLocked,
-            bitmap = seekPreview.bitmap,
-            isLoading = seekPreview.isLoading,
-            isPortrait = isPortrait,
-            chapterTitle = seekPreviewChapterTitle,
-            modifier =
-              Modifier
-                .then(navigationHorizontalPaddingModifier)
-                .zIndex(100f)
-                .constrainAs(thumbnailPreview) {
-                  start.linkTo(parent.start, spacing.large)
-                  end.linkTo(parent.end, spacing.large)
-                  bottom.linkTo(seekbar.top, 4.dp)
-                  width = Dimension.fillToConstraints
-                  height = Dimension.wrapContent
-                }.padding(horizontal = if (isPortrait) spacing.large else 62.dp),
-          )
 
           AnimatedVisibility(
             visible = controlsShown && !areControlsLocked,
@@ -1866,11 +1688,9 @@ fun PlayerControls(
               TopPlayerControlsPortrait(
                 mediaTitle = mediaTitle,
                 hideBackground = hideBackground,
-                onBackPress = onClosePlayer,
+                onBackPress = onBackPress,
                 onOpenSheet = onOpenSheet,
-                onOpenPanel = onOpenPanel,
                 viewModel = viewModel,
-                playbackSpeed = playbackSpeed ?: 1f,
                 isTranslatingSub = showAiIndicators && isTranslatingSub,
                 isRealtimeSubsActive = showRealtimeSubs && isRealtimeSubsActive,
                 realtimeSubsLanguage = realtimeSubsLanguage,
@@ -1881,7 +1701,7 @@ fun PlayerControls(
               TopLeftPlayerControlsLandscape(
                 mediaTitle = mediaTitle,
                 hideBackground = hideBackground,
-                onBackPress = onClosePlayer,
+                onBackPress = onBackPress,
                 onOpenSheet = onOpenSheet,
                 viewModel = viewModel,
                 isTranslatingSub = showAiIndicators && isTranslatingSub,
@@ -1935,7 +1755,7 @@ fun PlayerControls(
               onOpenSheet = onOpenSheet,
               onOpenPanel = onOpenPanel,
               viewModel = viewModel,
-              activity = activity,
+              activity = playerActivity,
             )
           }
 
@@ -1957,12 +1777,12 @@ fun PlayerControls(
                   },
                 ).constrainAs(bottomRightControls) {
                   if (isPortrait) {
-                    bottom.linkTo(parent.bottom, spacing.extraLarge)
+                    bottom.linkTo(parent.bottom, spacing.large) // Reduced from extraLarge
                     start.linkTo(parent.start, spacing.large)
                     end.linkTo(parent.end, spacing.large)
                     width = Dimension.fillToConstraints
                   } else {
-                    bottom.linkTo(seekbar.top, spacing.medium)
+                    bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
                     end.linkTo(parent.end, spacing.large)
                   }
                 }.onGloballyPositioned { coordinates ->
@@ -1972,7 +1792,7 @@ fun PlayerControls(
             if (isPortrait) {
               BottomPlayerControlsPortrait(
                 buttons = portraitBottomButtons,
-                isPlaying = paused == false,
+                showVideoQualitySelector = showVideoQualitySelector && !portraitHasConfiguredQualityButton,
                 chapters = chapters,
                 currentChapter = currentChapter,
                 isSpeedNonOne = isSpeedNonOne,
@@ -1986,11 +1806,12 @@ fun PlayerControls(
                 onOpenSheet = onOpenSheet,
                 onOpenPanel = onOpenPanel,
                 viewModel = viewModel,
-                activity = activity,
+                activity = playerActivity,
               )
             } else {
               BottomRightPlayerControlsLandscape(
                 buttons = bottomRightButtons,
+                showVideoQualitySelector = showVideoQualitySelector && !landscapeHasConfiguredQualityButton,
                 chapters = chapters,
                 currentChapter = currentChapter,
                 isSpeedNonOne = isSpeedNonOne,
@@ -2004,7 +1825,7 @@ fun PlayerControls(
                 onOpenSheet = onOpenSheet,
                 onOpenPanel = onOpenPanel,
                 viewModel = viewModel,
-                activity = activity,
+                activity = playerActivity,
               )
             }
           }
@@ -2026,7 +1847,7 @@ fun PlayerControls(
                     Modifier
                   },
                 ).constrainAs(bottomLeftControls) {
-                  bottom.linkTo(seekbar.top, spacing.medium)
+                  bottom.linkTo(seekbar.top, bottomControlsToSeekbarSpacing)
                   start.linkTo(parent.start, spacing.large)
                   width = Dimension.fillToConstraints
                   end.linkTo(bottomRightControls.start, spacing.small)
@@ -2047,13 +1868,14 @@ fun PlayerControls(
               onOpenSheet = onOpenSheet,
               onOpenPanel = onOpenPanel,
               viewModel = viewModel,
-              activity = activity,
+              activity = playerActivity,
             )
           }
         }
       }
     }
 
+    val sheetShown by viewModel.sheetShown.collectAsState()
     val subtitles by viewModel.subtitleTracks.collectAsState(persistentListOf())
     val audioTracks by viewModel.audioTracks.collectAsState(persistentListOf())
     val sleepTimerTimeRemaining by viewModel.remainingTime.collectAsState()
@@ -2066,54 +1888,37 @@ fun PlayerControls(
     PlayerSheets(
       viewModel = viewModel,
       sheetShown = sheetShown,
-      subtitles =
-        if (isMedia3Active) media3State.subtitleTracks.toImmutableList()
-        else subtitles.toImmutableList(),
-      onAddSubtitle = { uri -> if (!isMedia3Active) viewModel.addSubtitle(uri) },
+      subtitles = subtitles.toImmutableList(),
+      onAddSubtitle = viewModel::addSubtitle,
       onToggleSubtitle = viewModel::toggleSubtitle,
       isSubtitleSelected = viewModel::isSubtitleSelected,
       subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,
       onRemoveSubtitle = viewModel::removeSubtitle,
-      audioTracks =
-        if (isMedia3Active) media3State.audioTracks.toImmutableList()
-        else audioTracks.toImmutableList(),
+      audioTracks = audioTracks.toImmutableList(),
       onAddAudio = viewModel::addAudio,
       onSelectAudio = viewModel::selectAudioTrack,
-      onMedia3AudioChannels = onMedia3AudioChannels,
-      onMedia3AudioProcessing = onMedia3AudioProcessing,
-      onMedia3AudioPitchCorrection = onMedia3AudioPitchCorrection,
       chapter = chapters.getOrNull(currentChapter ?: 0),
       chapters = chapters.toImmutableList(),
-      onSeekToChapter = { index ->
-        if (isMedia3Active) {
-          chapters.getOrNull(index)?.start?.let { viewModel.seekTo(it.toDouble()) }
-          viewModel.unpause()
-        } else {
-          PlaybackSession.setPropertyInt("chapter", index)
-          viewModel.unpause()
-        }
+      onSeekToChapter = {
+        PlaybackSession.setPropertyInt("chapter", it)
+        viewModel.unpause()
       },
       decoder = decoder,
-      isMedia3Active = isMedia3Active,
-      engineSelection = engineSelection,
-      onEngineSelected = onEngineSelected,
-      media3DecoderName = media3State.videoDecoderName,
-      onUpdateDecoder = onDecoderSelected,
+      onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
-      onSpeedChange = { viewModel.setPlaybackSpeed(it.toFixed(2)) },
+      onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
       onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },
       onAddSpeedPreset = { playerPreferences.speedPresets += it.toFixed(2).toString() },
       onRemoveSpeedPreset = { playerPreferences.speedPresets -= it.toFixed(2).toString() },
       onResetSpeedPresets = playerPreferences.speedPresets::delete,
       speedPresets = sortedSpeedPresets,
       onResetDefaultSpeed = {
-        viewModel.setPlaybackSpeed(playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
+        PlaybackSession.setPropertyFloat("speed", playerPreferences.defaultSpeed.deleteAndGet().toFixed(2))
       },
       sleepTimerTimeRemaining = sleepTimerTimeRemaining,
       onStartSleepTimer = viewModel::startTimer,
       onOpenPanel = onOpenPanel,
       onShowSheet = onOpenSheet,
-      videoFormatStatus = videoFormatStatus,
       onDismissRequest = { onOpenSheet(Sheets.None) },
     )
 
@@ -2123,21 +1928,96 @@ fun PlayerControls(
       viewModel = viewModel,
       onDismissRequest = { onOpenPanel(Panels.None) },
     )
+
+    val activePlayerDrawerButtons =
+      remember(
+        isSpeedNonOne,
+        currentZoom,
+        repeatMode,
+        shuffleEnabled,
+        transformState,
+        abLoopA,
+        abLoopB,
+        isHdrOutputEnabled,
+        isAmbientEnabled,
+        backgroundPlaybackEnabled,
+        statisticsPage,
+      ) {
+        buildSet {
+          if (isSpeedNonOne) add(PlayerButton.PLAYBACK_SPEED)
+          if (kotlin.math.abs(currentZoom) >= 0.005f) add(PlayerButton.VIDEO_ZOOM)
+          if (repeatMode != app.infinity.mpvz.ui.player.RepeatMode.OFF) add(PlayerButton.REPEAT_MODE)
+          if (shuffleEnabled) add(PlayerButton.SHUFFLE)
+          if (transformState.isMirrored) add(PlayerButton.MIRROR)
+          if (transformState.isVerticalFlipped) add(PlayerButton.VERTICAL_FLIP)
+          if (abLoopA != null || abLoopB != null) add(PlayerButton.AB_LOOP)
+          if (isHdrOutputEnabled) add(PlayerButton.HDR_MODE)
+          if (isAmbientEnabled) add(PlayerButton.AMBIENT_MODE)
+          if (backgroundPlaybackEnabled) add(PlayerButton.BACKGROUND_PLAYBACK)
+          if (statisticsPage == 6) add(PlayerButton.TIME_NETWORK)
+        }
+      }
+
+    if (showControlsDrawer) {
+      PlayerButtonTheme(hideBackground = false) {
+        PlayerControlDrawer(
+          buttons = playerDrawerButtons,
+          activeButtons = activePlayerDrawerButtons,
+          controlsVisible =
+            controlsShown &&
+              !areControlsLocked &&
+              !areSlidersShown &&
+              sheetShown == Sheets.None &&
+              panel == Panels.None,
+          panelVisible = isPlayerDrawerShown,
+          onPanelVisibilityChanged = setPlayerDrawerShown,
+          renderButton = { button ->
+            RenderPlayerButton(
+              button = button,
+              chapters = chapters,
+              currentChapter = currentChapter,
+              isPortrait = isPortrait,
+              isSpeedNonOne = isSpeedNonOne,
+              currentZoom = currentZoom,
+              aspect = aspect,
+              mediaTitle = mediaTitle,
+              hideBackground = true,
+              decoder = decoder,
+              playbackSpeed = playbackSpeed ?: 1f,
+              onBackPress = onBackPress,
+              onOpenSheet = onOpenSheet,
+              onOpenPanel = onOpenPanel,
+              viewModel = viewModel,
+              activity = playerActivity,
+              buttonSize = 44.dp,
+              compact = true,
+            )
+          },
+        )
+      }
+    }
   }
 }
 
-private fun chapterNameForPosition(
-  chapters: List<Segment>,
-  positionSeconds: Float,
-): String? {
-  if (chapters.isEmpty()) return null
-  val chapterIndex =
-    chapters.indexOfLast { chapter ->
-      chapter.start <= positionSeconds
-    }
-  val chapter = chapters.getOrNull(chapterIndex.takeIf { it >= 0 } ?: 0) ?: return null
-  return chapter.name.takeIf { it.isNotBlank() }
-    ?: "Chapter ${chapterIndex.coerceAtLeast(0) + 1}"
+private const val MEMORY_STATS_SAMPLE_INTERVAL_MS = 5_000L
+
+private data class ProcessMemorySnapshot(
+  val totalPssBytes: Long,
+  val javaHeapUsedBytes: Long,
+  val javaHeapMaxBytes: Long,
+  val nativeHeapBytes: Long,
+)
+
+private fun readProcessMemorySnapshot(): ProcessMemorySnapshot {
+  val runtime = Runtime.getRuntime()
+  val memoryInfo = Debug.MemoryInfo()
+  Debug.getMemoryInfo(memoryInfo)
+  return ProcessMemorySnapshot(
+    totalPssBytes = memoryInfo.totalPss.toLong() * 1024L,
+    javaHeapUsedBytes = runtime.totalMemory() - runtime.freeMemory(),
+    javaHeapMaxBytes = runtime.maxMemory(),
+    nativeHeapBytes = Debug.getNativeHeapAllocatedSize(),
+  )
 }
 
 private data class CustomStatsSnapshot(
@@ -2146,7 +2026,8 @@ private data class CustomStatsSnapshot(
   val video: String,
   val audio: String,
   val cpuPercent: Float,
-  val gpuEstimatePercent: Float,
+  val processMemoryText: String,
+  val playbackCacheText: String,
   val batteryPercentText: String,
   val batteryRateText: String,
   val batteryWattsText: String,
@@ -2160,175 +2041,12 @@ private data class CustomStatsSnapshot(
 )
 
 @Composable
-private fun Media3StatsOverlay(
-  page: Int,
-  media3State: Media3PlaybackController.State,
-  modifier: Modifier = Modifier,
-) {
-  val position = formatStatsTime(media3State.positionMs)
-  val duration = formatStatsTime(media3State.durationMs)
-  val buffered = formatStatsTime(media3State.bufferedPositionMs)
-  val decoder = media3State.videoDecoderName ?: "waiting"
-  val videoMime = media3State.videoMimeType ?: "unknown"
-  val videoCodec = media3State.videoCodecs ?: "unknown"
-  val videoProfile = media3State.videoProfile ?: "unknown"
-  val resolution =
-    if (media3State.videoWidth > 0 && media3State.videoHeight > 0) {
-      "${media3State.videoWidth}×${media3State.videoHeight}"
-    } else {
-      "unknown"
-    }
-  val frameRate =
-    media3State.videoFrameRate.takeIf { it > 0f }?.let { "%.2f fps".format(it) } ?: "unknown"
-  val colorSpace = media3ColorSpaceName(media3State.videoColorSpace)
-  val transfer = media3TransferName(media3State.videoColorTransfer)
-  val state =
-    when (media3State.playbackState) {
-      androidx.media3.common.Player.STATE_BUFFERING -> "buffering"
-      androidx.media3.common.Player.STATE_READY -> "ready"
-      androidx.media3.common.Player.STATE_ENDED -> "ended"
-      androidx.media3.common.Player.STATE_IDLE -> "idle"
-      else -> "unknown"
-    }
-  val audioTracks = media3State.audioTracks
-  val selectedAudio = audioTracks.filter { it.selected == true }
-  val selectedAudioSummary =
-    selectedAudio
-      .map { track ->
-        listOfNotNull(
-          track.title?.takeIf { it.isNotBlank() },
-          track.lang?.takeIf { it.isNotBlank() },
-          track.codec?.takeIf { it.isNotBlank() },
-        ).joinToString(" · ")
-      }.filter { it.isNotBlank() }
-      .joinToString(" | ")
-      .ifBlank { "none" }
-  val subtitleSummary =
-    media3State.subtitleTracks
-      .filter { it.selected == true }
-      .map { track ->
-        listOfNotNull(
-          track.title?.takeIf { it.isNotBlank() },
-          track.lang?.takeIf { it.isNotBlank() },
-          track.codec?.takeIf { it.isNotBlank() },
-        ).joinToString(" · ")
-      }.filter { it.isNotBlank() }
-      .joinToString(" | ")
-      .ifBlank { "none" }
-  val pageTitle =
-    when (page) {
-      1 -> "PLAYBACK & DECODER"
-      2 -> "VIDEO FORMAT"
-      3 -> "AUDIO & TRACKS"
-      4 -> "BUFFER & SESSION"
-      5 -> "COLOR & OUTPUT"
-      6 -> "NATIVE PERFORMANCE"
-      else -> "NATIVE"
-    }
-  val baseStyle =
-    MaterialTheme.typography.bodySmall.copy(
-      color = Color.White,
-      fontSize = 8.sp,
-      lineHeight = 10.sp,
-      shadow =
-        Shadow(
-          color = Color.Black,
-          offset = androidx.compose.ui.geometry.Offset(1.2f, 1.2f),
-          blurRadius = 3f,
-        ),
-    )
-  val headerStyle =
-    baseStyle.copy(
-      fontWeight = FontWeight.Bold,
-      fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-      fontSize = 8.5.sp,
-    )
-  val labelStyle = baseStyle.copy(fontWeight = FontWeight.Bold)
-
-  Column(
-    modifier = modifier.widthIn(max = 520.dp).alpha(0.88f),
-    verticalArrangement = Arrangement.spacedBy(1.dp),
-  ) {
-    OutlinedText("NATIVE · PAGE $page · $pageTitle", headerStyle)
-    when (page) {
-      1 -> {
-        OutlinedLabeled("Decoder", "$decoder · ${media3DecoderKind(decoder)}", labelStyle, baseStyle)
-        OutlinedLabeled("Video", "$videoMime | $videoCodec", labelStyle, baseStyle)
-        OutlinedLabeled("State", "$state · ${if (media3State.isPlaying) "playing" else "paused"}", labelStyle, baseStyle)
-        OutlinedLabeled("Speed", "%.2f×".format(media3State.playbackSpeed), labelStyle, baseStyle)
-      }
-      2 -> {
-        OutlinedLabeled("Format", videoMime, labelStyle, baseStyle)
-        OutlinedLabeled("Codec", "$videoCodec · Profile: $videoProfile", labelStyle, baseStyle)
-        OutlinedLabeled("Output", "$resolution · $frameRate", labelStyle, baseStyle)
-        OutlinedLabeled("Decoder", decoder, labelStyle, baseStyle)
-      }
-      3 -> {
-        OutlinedLabeled("Audio", "$selectedAudioSummary · Tracks: ${audioTracks.size}", labelStyle, baseStyle)
-        OutlinedLabeled("Subtitles", "$subtitleSummary · Tracks: ${media3State.subtitleTracks.size}", labelStyle, baseStyle)
-        OutlinedLabeled("Playback", "$state · Position: $position / $duration", labelStyle, baseStyle)
-      }
-      4 -> {
-        OutlinedLabeled("Position", "$position / $duration", labelStyle, baseStyle)
-        OutlinedLabeled("Buffer", buffered, labelStyle, baseStyle)
-        val bufferLead =
-          if (media3State.bufferedPositionMs >= media3State.positionMs) {
-            formatStatsTime(media3State.bufferedPositionMs - media3State.positionMs)
-          } else {
-            "--:--"
-          }
-        OutlinedLabeled("Buffer lead", bufferLead, labelStyle, baseStyle)
-        OutlinedLabeled("State", "$state · Item ${media3State.mediaItemIndex + 1}", labelStyle, baseStyle)
-      }
-      5 -> {
-        val hdr = if (transfer == "SDR/unknown" || transfer == "SDR/linear") "SDR" else transfer
-        OutlinedLabeled("Source", "$videoCodec · $videoProfile", labelStyle, baseStyle)
-        OutlinedLabeled("Output", "$resolution · $hdr", labelStyle, baseStyle)
-        OutlinedLabeled("Color", "$colorSpace · $transfer", labelStyle, baseStyle)
-        OutlinedLabeled("Decoder", "$decoder · ${media3DecoderKind(decoder)}", labelStyle, baseStyle)
-      }
-      6 -> {
-        OutlinedLabeled("Video", "$resolution · $frameRate · $videoMime", labelStyle, baseStyle)
-        OutlinedLabeled("Decoder", decoder, labelStyle, baseStyle)
-        OutlinedLabeled("Session", "$state · $position / $duration", labelStyle, baseStyle)
-        OutlinedLabeled("Tracks", "Audio ${audioTracks.size} · Subtitles ${media3State.subtitleTracks.size}", labelStyle, baseStyle)
-        OutlinedLabeled("Buffer", buffered, labelStyle, baseStyle)
-      }
-    }
-  }
-}
-
-private fun media3DecoderKind(decoder: String): String =
-  if (decoder.contains("ffmpeg", ignoreCase = true) || decoder.contains("software", ignoreCase = true)) "SW" else "HW"
-
-private fun media3ColorSpaceName(value: Int): String =
-  when (value) {
-    androidx.media3.common.C.COLOR_SPACE_BT709 -> "BT.709"
-    androidx.media3.common.C.COLOR_SPACE_BT601 -> "BT.601"
-    androidx.media3.common.C.COLOR_SPACE_BT2020 -> "BT.2020"
-    else -> "unknown"
-  }
-
-private fun media3TransferName(value: Int): String =
-  when (value) {
-    androidx.media3.common.C.COLOR_TRANSFER_ST2084 -> "HDR10/PQ"
-    androidx.media3.common.C.COLOR_TRANSFER_HLG -> "HLG"
-    androidx.media3.common.C.COLOR_TRANSFER_LINEAR -> "SDR/linear"
-    else -> "SDR/unknown"
-  }
-
-private fun formatStatsTime(valueMs: Long): String {
-  if (valueMs <= 0L || valueMs == androidx.media3.common.C.TIME_UNSET) return "--:--"
-  val totalSeconds = valueMs / 1000L
-  return "%d:%02d:%02d".format(totalSeconds / 3600L, (totalSeconds / 60L) % 60L, totalSeconds % 60L)
-}
-
-@Composable
 private fun CustomStatsPageSixOverlay(
   viewModel: PlayerViewModel,
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current.applicationContext
+  val torrentState by viewModel.torrentState.collectAsState()
   val isHdrOutputEnabled by viewModel.isHdrScreenOutputEnabled.collectAsState()
   val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
   val hdrOutputText =
@@ -2336,6 +2054,8 @@ private fun CustomStatsPageSixOverlay(
       R.string.hdr_mode_output_diagnostic,
       stringResource(hdrScreenMode.shortTitleRes),
     )
+  val processMemoryFormat = stringResource(R.string.diagnostics_process_memory_value)
+  val playbackCacheFormat = stringResource(R.string.diagnostics_playback_cache_value)
   val stats by produceState(
     initialValue =
       CustomStatsSnapshot(
@@ -2344,7 +2064,8 @@ private fun CustomStatsPageSixOverlay(
         video = "--",
         audio = "--",
         cpuPercent = 0f,
-        gpuEstimatePercent = 0f,
+        processMemoryText = "--",
+        playbackCacheText = "--",
         batteryPercentText = "--%",
         batteryRateText = "Unknown",
         batteryWattsText = "-- W",
@@ -2358,15 +2079,20 @@ private fun CustomStatsPageSixOverlay(
       ),
     isHdrOutputEnabled,
     hdrOutputText,
+    processMemoryFormat,
+    playbackCacheFormat,
   ) {
     var lastCpuMs = runCatching { android.os.Process.getElapsedCpuTime() }.getOrDefault(0L)
     var lastTimeMs = android.os.SystemClock.elapsedRealtime()
+    var lastMemorySampleMs = lastTimeMs
+    var memorySnapshot = withContext(Dispatchers.Default) { readProcessMemorySnapshot() }
 
     var startBatteryTemp: Float? = null
     var peakBatteryTemp = 0.0f
     var totalActivePlayTimeMs = 0L
-    var lastDropped = 0
-    var lastDelayed = 0
+    val processorCount = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+    var smoothedCpuPercent = 0f
+    var cpuSampleCount = 0
 
     while (true) {
       val fileName = runCatching { PlaybackSession.getPropertyString("media-title") ?: "--" }.getOrDefault("--")
@@ -2376,8 +2102,6 @@ private fun CustomStatsPageSixOverlay(
             ?: PlaybackSession.getPropertyString("vo")
             ?: "--"
         }.getOrDefault("--")
-      val dropped = runCatching { PlaybackSession.getPropertyInt("drop-frame-count") ?: 0 }.getOrDefault(0)
-      val delayed = runCatching { PlaybackSession.getPropertyInt("vo-delayed-frame-count") ?: 0 }.getOrDefault(0)
       val videoCodec = runCatching { PlaybackSession.getPropertyString("video-codec") ?: "--" }.getOrDefault("--")
       val audioCodec = runCatching { PlaybackSession.getPropertyString("audio-codec-name") ?: "--" }.getOrDefault("--")
 
@@ -2385,18 +2109,60 @@ private fun CustomStatsPageSixOverlay(
       val currentTimeMs = android.os.SystemClock.elapsedRealtime()
       val cpuDelta = (currentCpuMs - lastCpuMs).coerceAtLeast(0L)
       val timeDelta = (currentTimeMs - lastTimeMs).coerceAtLeast(1L)
-      val cpu = ((cpuDelta.toFloat() / timeDelta.toFloat()) * 100f).coerceIn(0f, 100f)
-
-      val estFps = runCatching { PlaybackSession.getPropertyDouble("estimated-vf-fps") ?: 0.0 }.getOrDefault(0.0).toFloat()
-      val droppedDelta = (dropped - lastDropped).coerceAtLeast(0)
-      val delayedDelta = (delayed - lastDelayed).coerceAtLeast(0)
-      val framePressure =
-        if (estFps > 0f) {
-          ((droppedDelta + delayedDelta).toFloat() / estFps).coerceIn(0f, 1f)
+      if (currentTimeMs - lastMemorySampleMs >= MEMORY_STATS_SAMPLE_INTERVAL_MS) {
+        memorySnapshot =
+          runCatching {
+            withContext(Dispatchers.Default) { readProcessMemorySnapshot() }
+          }.getOrDefault(memorySnapshot)
+        lastMemorySampleMs = currentTimeMs
+      }
+      val rawCpuPercent =
+        if (cpuSampleCount > 0) {
+          ((cpuDelta.toFloat() / timeDelta.toFloat()) * 100f / processorCount)
+            .coerceIn(0f, 100f)
         } else {
           0f
         }
-      val gpuEstimate = (framePressure * 95f + if (estFps > 0f) 5f else 0f).coerceIn(0f, 100f)
+
+      when (cpuSampleCount) {
+        0 -> Unit
+        1 -> smoothedCpuPercent = rawCpuPercent
+        else -> smoothedCpuPercent = smoothedCpuPercent * 0.65f + rawCpuPercent * 0.35f
+      }
+      cpuSampleCount++
+
+      val processMemoryText =
+        String.format(
+          processMemoryFormat,
+          formatTorrentBytes(memorySnapshot.totalPssBytes),
+          formatTorrentBytes(memorySnapshot.javaHeapUsedBytes),
+          formatTorrentBytes(memorySnapshot.javaHeapMaxBytes),
+          formatTorrentBytes(memorySnapshot.nativeHeapBytes),
+        )
+      val cacheDurationSeconds =
+        runCatching { PlaybackSession.getPropertyDouble("demuxer-cache-duration") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it >= 0.0 }
+          ?: 0.0
+      val packetCacheBytes =
+        runCatching { PlaybackSession.getPropertyDouble("demuxer-cache-state/fw-bytes") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it >= 0.0 }
+          ?.toLong()
+          ?: 0L
+      val fileCacheBytes =
+        runCatching { PlaybackSession.getPropertyDouble("demuxer-cache-state/file-cache-bytes") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it >= 0.0 }
+          ?.toLong()
+          ?: 0L
+      val playbackCacheText =
+        String.format(
+          playbackCacheFormat,
+          cacheDurationSeconds,
+          formatTorrentBytes(packetCacheBytes),
+          formatTorrentBytes(fileCacheBytes),
+        )
 
       val battery = readBatterySnapshot(context)
       val isPaused = runCatching { PlaybackSession.getPropertyBoolean("pause") }.getOrDefault(false) == true
@@ -2462,8 +2228,9 @@ private fun CustomStatsPageSixOverlay(
           renderContext = renderContext,
           video = videoCodec,
           audio = audioCodec,
-          cpuPercent = cpu,
-          gpuEstimatePercent = gpuEstimate,
+          cpuPercent = smoothedCpuPercent,
+          processMemoryText = processMemoryText,
+          playbackCacheText = playbackCacheText,
           batteryPercentText = battery.percentageText,
           batteryRateText = battery.rateText,
           batteryWattsText = battery.wattsText,
@@ -2498,8 +2265,6 @@ private fun CustomStatsPageSixOverlay(
 
       lastCpuMs = currentCpuMs
       lastTimeMs = currentTimeMs
-      lastDropped = dropped
-      lastDelayed = delayed
 
       delay(if (isPaused) 2000L else 1000L)
     }
@@ -2545,6 +2310,104 @@ private fun CustomStatsPageSixOverlay(
     )
     OutlinedLabeled("Audio", "${stats.audio} | HDR: ${stats.hdrActive}", labelStyle, valueStyle)
 
+    when (val currentTorrentState = torrentState) {
+      is TorrentStreamingState.Connecting -> {
+        Spacer(modifier = Modifier.height(2.dp))
+        OutlinedText(stringResource(R.string.diagnostics_torrent_header), style = headerStyle)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Box(modifier = Modifier.weight(1f)) {
+            OutlinedLabeled(
+              stringResource(R.string.diagnostics_torrent_peer_status),
+              stringResource(
+                R.string.diagnostics_torrent_peers_value,
+                currentTorrentState.peers,
+                currentTorrentState.seeds,
+              ),
+              labelStyle,
+              valueStyle,
+            )
+          }
+          Box(modifier = Modifier.weight(1f)) {
+            OutlinedLabeled(
+              stringResource(R.string.diagnostics_torrent_transfer),
+              stringResource(
+                R.string.diagnostics_torrent_transfer_value,
+                formatTorrentSpeed(currentTorrentState.downloadSpeed),
+                formatTorrentSpeed(currentTorrentState.uploadSpeed),
+              ),
+              labelStyle,
+              valueStyle,
+            )
+          }
+        }
+      }
+      is TorrentStreamingState.Streaming -> {
+        val fileSize = currentTorrentState.fileSize.coerceAtLeast(0L)
+        val downloadedBytes = currentTorrentState.downloadedBytes.coerceAtLeast(0L).coerceAtMost(fileSize)
+        val bufferProgress =
+          currentTorrentState.bufferProgress
+            .takeIf { it.isFinite() }
+            ?.coerceIn(0f, 1f)
+            ?: 0f
+        Spacer(modifier = Modifier.height(2.dp))
+        OutlinedText(stringResource(R.string.diagnostics_torrent_header), style = headerStyle)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Box(modifier = Modifier.weight(1f)) {
+            OutlinedLabeled(
+              stringResource(R.string.diagnostics_torrent_peer_status),
+              stringResource(
+                R.string.diagnostics_torrent_peers_value,
+                currentTorrentState.peers,
+                currentTorrentState.seeds,
+              ),
+              labelStyle,
+              valueStyle,
+            )
+          }
+          Box(modifier = Modifier.weight(1f)) {
+            OutlinedLabeled(
+              stringResource(R.string.diagnostics_torrent_loaded),
+              stringResource(
+                R.string.diagnostics_torrent_loaded_value,
+                formatTorrentBytes(downloadedBytes),
+                formatTorrentBytes(fileSize),
+                (bufferProgress * 100f).roundToInt(),
+              ),
+              labelStyle,
+              valueStyle,
+            )
+          }
+        }
+        OutlinedLabeled(
+          stringResource(R.string.diagnostics_torrent_transfer),
+          stringResource(
+            R.string.diagnostics_torrent_transfer_value,
+            formatTorrentSpeed(currentTorrentState.downloadSpeed),
+            formatTorrentSpeed(currentTorrentState.uploadSpeed),
+          ),
+          labelStyle,
+          valueStyle,
+        )
+        LinearProgressIndicator(
+          progress = { bufferProgress },
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .height(3.dp)
+              .padding(vertical = 0.5.dp),
+        )
+      }
+      is TorrentStreamingState.Error,
+      TorrentStreamingState.Idle,
+      -> Unit
+    }
+
     Spacer(modifier = Modifier.height(2.dp))
     OutlinedText(stringResource(R.string.diagnostics_power_thermals_header), style = headerStyle)
     OutlinedLabeled(
@@ -2573,16 +2436,22 @@ private fun CustomStatsPageSixOverlay(
           .height(3.dp)
           .padding(vertical = 0.5.dp),
     )
-    OutlinedLabeled("App CPU", "${stats.cpuPercent.toInt()}%", labelStyle, valueStyle)
-    LinearProgressIndicator(
-      progress = { stats.gpuEstimatePercent / 100f },
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .height(3.dp)
-          .padding(vertical = 0.5.dp),
+    OutlinedLabeled(stringResource(R.string.diagnostics_app_cpu), "${stats.cpuPercent.toInt()}%", labelStyle, valueStyle)
+
+    Spacer(modifier = Modifier.height(2.dp))
+    OutlinedText(stringResource(R.string.diagnostics_memory_cache_header), style = headerStyle)
+    OutlinedLabeled(
+      stringResource(R.string.diagnostics_process_memory),
+      stats.processMemoryText,
+      labelStyle,
+      valueStyle,
     )
-    OutlinedLabeled("Frame Pressure", "${stats.gpuEstimatePercent.toInt()}%", labelStyle, valueStyle)
+    OutlinedLabeled(
+      stringResource(R.string.diagnostics_playback_cache),
+      stats.playbackCacheText,
+      labelStyle,
+      valueStyle,
+    )
   }
 }
 
@@ -2591,11 +2460,9 @@ private fun OutlinedText(
   text: String,
   style: androidx.compose.ui.text.TextStyle,
 ) {
-  Box(modifier = Modifier.fillMaxWidth()) {
+  Box {
     Text(
       text = text,
-      maxLines = 2,
-      overflow = TextOverflow.Ellipsis,
       style =
         style.copy(
           color = Color.Black,
@@ -2609,8 +2476,6 @@ private fun OutlinedText(
     )
     Text(
       text = text,
-      maxLines = 2,
-      overflow = TextOverflow.Ellipsis,
       style = style,
     )
   }
@@ -2647,11 +2512,9 @@ private fun OutlinedLabeled(
         append(value)
       }
     }
-  Box(modifier = Modifier.fillMaxWidth()) {
+  Box {
     Text(
       text = annotated,
-      maxLines = 2,
-      overflow = TextOverflow.Ellipsis,
       style =
         labelStyle.copy(
           color = Color.Black,
@@ -2665,8 +2528,6 @@ private fun OutlinedLabeled(
     )
     Text(
       text = annotated,
-      maxLines = 2,
-      overflow = TextOverflow.Ellipsis,
       style = labelStyle,
     )
   }

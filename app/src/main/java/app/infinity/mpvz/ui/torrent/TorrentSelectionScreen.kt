@@ -29,7 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -103,9 +103,10 @@ private fun TorrentReadyScreen(
     color = MaterialTheme.colorScheme.surface,
   ) {
     Box(modifier = Modifier.fillMaxSize()) {
-      if (hasBackdrop) {
+      val backdropUrl = artwork.backdropUrl
+      if (!backdropUrl.isNullOrBlank()) {
         RemoteImage(
-          url = artwork.backdropUrl!!,
+          url = backdropUrl,
           contentDescription = null,
           modifier =
             Modifier
@@ -187,15 +188,12 @@ private fun TorrentReadyScreen(
           }
 
         // File list header
-        Surface(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-          shape = RoundedCornerShape(18.dp),
-          color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f),
-          tonalElevation = 2.dp,
+        Column(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 20.dp, vertical = 4.dp),
         ) {
-          Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-          ) {
           Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -253,13 +251,12 @@ private fun TorrentReadyScreen(
           }
 
           if (isSearchOpen && state.catalog.playableFiles.size > 1) {
-            OutlinedTextField(
-              value = searchQuery,
-              onValueChange = { searchQuery = it },
-              modifier =
-                Modifier
-                  .fillMaxWidth()
-                  .padding(top = 4.dp, bottom = 4.dp),
+            app.infinity.mpvz.ui.components.InlineSearchBar(
+              query = searchQuery,
+              onQueryChange = { searchQuery = it },
+              onSearch = {},
+              modifier = Modifier.padding(bottom = 4.dp),
+              windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
               placeholder = {
                 Text(
                   stringResource(R.string.ui_search_episodes),
@@ -285,11 +282,7 @@ private fun TorrentReadyScreen(
                   }
                 }
               },
-              singleLine = true,
-              shape = RoundedCornerShape(12.dp),
-              textStyle = MaterialTheme.typography.bodySmall,
             )
-          }
           }
         }
 
@@ -348,9 +341,9 @@ private fun TorrentReadyScreen(
 @Composable
 private fun TorrentHeroBanner(artwork: TorrentArtwork) {
   var expanded by remember { mutableStateOf(false) }
-  val hasBackdrop = !artwork.backdropUrl.isNullOrBlank()
-  val hasPoster = !artwork.posterUrl.isNullOrBlank()
-  val hasDescription = !artwork.description.isNullOrBlank()
+  val backdropUrl = artwork.backdropUrl
+  val posterUrl = artwork.posterUrl
+  val description = artwork.description
   val metadata =
     listOfNotNull(
       artwork.releaseYear,
@@ -361,10 +354,10 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
     modifier =
       Modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp)
-        .then(if (hasBackdrop) Modifier else Modifier.padding(top = 8.dp)),
+        .padding(horizontal = 20.dp)
+        .then(if (!backdropUrl.isNullOrBlank()) Modifier else Modifier.padding(top = 8.dp)),
   ) {
-    if (hasBackdrop) {
+    if (!backdropUrl.isNullOrBlank()) {
       Box(
         modifier =
           Modifier
@@ -373,7 +366,7 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
             .clip(RoundedCornerShape(16.dp)),
       ) {
         RemoteImage(
-          url = artwork.backdropUrl!!,
+          url = backdropUrl,
           contentDescription = artwork.title,
           modifier = Modifier.fillMaxSize(),
           contentScale = ContentScale.Crop,
@@ -398,7 +391,7 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
           horizontalArrangement = Arrangement.spacedBy(12.dp),
           verticalAlignment = Alignment.Bottom,
         ) {
-          if (hasPoster) {
+          if (!posterUrl.isNullOrBlank()) {
             Box(
               modifier =
                 Modifier
@@ -407,7 +400,7 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
                   .clip(RoundedCornerShape(10.dp)),
             ) {
               RemoteImage(
-                url = artwork.posterUrl!!,
+                url = posterUrl,
                 contentDescription = artwork.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
@@ -440,7 +433,7 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalAlignment = Alignment.Top,
       ) {
-        if (hasPoster) {
+        if (!posterUrl.isNullOrBlank()) {
           Box(
             modifier =
               Modifier
@@ -449,7 +442,7 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
                 .clip(RoundedCornerShape(12.dp)),
           ) {
             RemoteImage(
-              url = artwork.posterUrl!!,
+              url = posterUrl,
               contentDescription = artwork.title,
               modifier = Modifier.fillMaxSize(),
               contentScale = ContentScale.Crop,
@@ -476,9 +469,9 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
       }
     }
 
-    if (hasDescription) {
+    if (!description.isNullOrBlank()) {
       Text(
-        text = artwork.description!!,
+        text = description,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = if (expanded) Int.MAX_VALUE else 3,
@@ -508,14 +501,14 @@ private fun TorrentFileRow(
     modifier =
       Modifier
         .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
         .clickable(enabled = enabled, onClick = onClick),
-    shape = RoundedCornerShape(18.dp),
-    color = if (launching) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
-      else MaterialTheme.colorScheme.surfaceContainerHigh,
-    tonalElevation = if (launching) 4.dp else 1.dp,
+    shape = RoundedCornerShape(12.dp),
+    color = MaterialTheme.colorScheme.surfaceContainer,
+    tonalElevation = if (launching) 2.dp else 0.dp,
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

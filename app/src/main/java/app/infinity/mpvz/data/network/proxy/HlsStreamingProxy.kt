@@ -11,6 +11,7 @@ package app.infinity.mpvz.data.network.proxy
 
 import android.net.Uri
 import android.util.Log
+import app.infinity.mpvz.network.SharedHttpClient
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -83,12 +84,12 @@ class HlsStreamingProxy private constructor() :
   private val sessionsByToken = ConcurrentHashMap<String, HlsSession>()
 
   private val httpClient: OkHttpClient by lazy {
-    OkHttpClient.Builder()
-      .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-      .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-      .followRedirects(true)
-      .followSslRedirects(true)
-      .build()
+    SharedHttpClient.derive {
+      connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+      readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+      followRedirects(true)
+      followSslRedirects(true)
+    }
   }
 
   /**
@@ -153,18 +154,18 @@ class HlsStreamingProxy private constructor() :
           handleMasterManifest(token, hlsSession, headOnly)
         }
         subPath.startsWith("variant.m3u8", ignoreCase = true) -> {
-          val targetUrl = session.parms["u"]?.let(::decodeUrl)
+          val targetUrl = session.parameters["u"]?.firstOrNull()?.let(::decodeUrl)
           if (targetUrl.isNullOrBlank()) return notFound(headOnly)
           handleVariantManifest(token, hlsSession, targetUrl, headOnly)
         }
         subPath.startsWith("segment", ignoreCase = true) -> {
-          val targetUrl = session.parms["u"]?.let(::decodeUrl)
+          val targetUrl = session.parameters["u"]?.firstOrNull()?.let(::decodeUrl)
           if (targetUrl.isNullOrBlank()) return notFound(headOnly)
           val rangeHeader = session.headers["range"]
           handleSegment(hlsSession, targetUrl, rangeHeader, headOnly)
         }
         subPath.startsWith("key", ignoreCase = true) -> {
-          val targetUrl = session.parms["u"]?.let(::decodeUrl)
+          val targetUrl = session.parameters["u"]?.firstOrNull()?.let(::decodeUrl)
           if (targetUrl.isNullOrBlank()) return notFound(headOnly)
           handleKey(hlsSession, targetUrl, headOnly)
         }
@@ -232,7 +233,7 @@ class HlsStreamingProxy private constructor() :
     headOnly: Boolean,
   ): Response {
     val requestBuilder = Request.Builder().url(variantUrl)
-    applyHeaders(requestBuilder, session.headers, session.userAgent, session.sourceUrl)
+    applyHeaders(requestBuilder, credentialsFor(variantUrl, session), session.userAgent, session.sourceUrl)
 
     val okResponse: OkResponse
     try {
@@ -274,7 +275,7 @@ class HlsStreamingProxy private constructor() :
     headOnly: Boolean,
   ): Response {
     val requestBuilder = Request.Builder().url(segmentUrl)
-    applyHeaders(requestBuilder, session.headers, session.userAgent, session.sourceUrl)
+    applyHeaders(requestBuilder, credentialsFor(segmentUrl, session), session.userAgent, session.sourceUrl)
     if (!rangeHeader.isNullOrBlank()) {
       requestBuilder.header("Range", rangeHeader)
     }
@@ -329,7 +330,7 @@ class HlsStreamingProxy private constructor() :
     headOnly: Boolean,
   ): Response {
     val requestBuilder = Request.Builder().url(keyUrl)
-    applyHeaders(requestBuilder, session.headers, session.userAgent, session.sourceUrl)
+    applyHeaders(requestBuilder, credentialsFor(keyUrl, session), session.userAgent, session.sourceUrl)
 
     val okResponse: OkResponse
     try {
@@ -482,6 +483,26 @@ class HlsStreamingProxy private constructor() :
     val base = baseUrl.toHttpUrlOrNull() ?: return cleanRelative
     val resolved = base.resolve(cleanRelative)
     return resolved?.toString() ?: cleanRelative
+  }
+
+  /**
+   * Manifest-supplied targets are attacker-influenced and may point at any host, so the session's
+   * Authorization/Cookie headers are only forwarded back to the origin that issued them.
+   */
+  private fun credentialsFor(
+    targetUrl: String,
+    session: HlsSession,
+  ): Map<String, String> {
+    val target = targetUrl.toHttpUrlOrNull() ?: return emptyMap()
+    val source = session.sourceUrl.toHttpUrlOrNull() ?: return emptyMap()
+    val sameOrigin =
+      target.host.equals(source.host, ignoreCase = true) &&
+        target.port == source.port &&
+        target.scheme.equals(source.scheme, ignoreCase = true)
+    if (!sameOrigin) {
+      Log.w(TAG, "Withholding session headers for cross-origin target ${target.host}")
+    }
+    return if (sameOrigin) session.headers else emptyMap()
   }
 
   private fun applyHeaders(

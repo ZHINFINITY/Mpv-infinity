@@ -1,5 +1,5 @@
-HSPLapp/gyrolet/mpvrx/**;->**(**)**
-Lapp/gyrolet/mpvrx/**;
+HSPLapp/gyrolet/Mpv∞/**;->**(**)**
+Lapp/gyrolet/Mpv∞/**;
 
 # Jetpack Compose core classes
 Landroidx/compose/runtime/Composer;
@@ -38,13 +38,13 @@ Lis/xyz/mpv/MPVLib;
 HSPLis/xyz/mpv/MPVLib;->**(**)**
 Lis/xyz/mpv/BaseMPVView;
 HSPLis/xyz/mpv/BaseMPVView;->**(**)**
-Lapp/gyrolet/mpvrx/ui/player/MPVView;
-HSPLapp/gyrolet/mpvrx/ui/player/MPVView;->**(**)**
-Lapp/gyrolet/mpvrx/domain/anime4k/Anime4KManager;
-HSPLapp/gyrolet/mpvrx/domain/anime4k/Anime4KManager;->**(**)**
+Lapp/gyrolet/Mpv∞/ui/player/MPVView;
+HSPLapp/gyrolet/Mpv∞/ui/player/MPVView;->**(**)**
+Lapp/gyrolet/Mpv∞/domain/anime4k/Anime4KManager;
+HSPLapp/gyrolet/Mpv∞/domain/anime4k/Anime4KManager;->**(**)**
 
 # Ambient files
-Lapp/gyrolet/mpvrx/ui/player/Ambient**;
-HSPLapp/gyrolet/mpvrx/ui/player/Ambient**;->**(**)**
-Lapp/gyrolet/mpvrx/ui/player/controls/components/sheets/Ambient**;
-HSPLapp/gyrolet/mpvrx/ui/player/controls/components/sheets/Ambient**;->**(**)**
+Lapp/gyrolet/Mpv∞/ui/player/Ambient**;
+HSPLapp/gyrolet/Mpv∞/ui/player/Ambient**;->**(**)**
+Lapp/gyrolet/Mpv∞/ui/player/controls/components/sheets/Ambient**;
+HSPLapp/gyrolet/Mpv∞/ui/player/controls/components/sheets/Ambient**;->**(**)**

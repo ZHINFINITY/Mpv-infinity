@@ -14,6 +14,7 @@ import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -49,6 +51,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +64,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -68,7 +73,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.repository.SecureFolderRepository
 import app.infinity.mpvz.domain.media.model.Video
@@ -102,6 +106,7 @@ import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
 import app.infinity.mpvz.ui.browser.selection.SelectionManager
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.securefolder.SecureConfirmDialog
@@ -113,8 +118,7 @@ import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.CopyPasteOps
 import app.infinity.mpvz.utils.media.MediaUtils
-import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.utils.media.MediaSearchEngine
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
 import app.infinity.mpvz.utils.sort.SortUtils
 import kotlinx.coroutines.delay
@@ -162,27 +166,49 @@ data class VideoListScreen(
     val lastPlayedInFolderPath by viewModel.lastPlayedInFolderPath.collectAsState()
     val playlistMode by playerPreferences.playlistMode.collectAsState()
     val videosWereDeletedOrMoved by viewModel.videosWereDeletedOrMoved.collectAsState()
-    val temporaryQueue by PlaybackSession.queue.collectAsState()
 
     // Sorting
     val videoSortType by browserPreferences.videoSortType.collectAsState()
     val videoSortOrder by browserPreferences.videoSortOrder.collectAsState()
     val mediaLayoutMode by browserPreferences.folderViewVideoLayoutMode.collectAsState()
     val musicCoverArtSize by browserPreferences.musicCoverArtSize.collectAsState()
+    val sortedVideos =
+      remember(videos, videoSortType, videoSortOrder) {
+        SortUtils.sortVideos(videos, videoSortType, videoSortOrder)
+      }
     val sortedVideosWithInfo =
-      remember(videosWithPlaybackInfo, videoSortType, videoSortOrder) {
+      remember(sortedVideos, videosWithPlaybackInfo) {
         val infoById = videosWithPlaybackInfo.associateBy { it.video.id }
-        val sortedVideos = SortUtils.sortVideos(videosWithPlaybackInfo.map { it.video }, videoSortType, videoSortOrder)
-        // Maintain the playback info mapping — O(1) lookup per item
         sortedVideos.map { video ->
           infoById[video.id] ?: VideoWithPlaybackInfo(video)
         }
       }
 
+    var internalSearchQuery by rememberSaveable { mutableStateOf("") }
+    var internalIsSearching by rememberSaveable { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val displayedVideosWithInfo =
+      remember(sortedVideosWithInfo, internalSearchQuery, internalIsSearching) {
+        if (!internalIsSearching || internalSearchQuery.isBlank()) {
+          sortedVideosWithInfo
+        } else {
+          val matchingVideoIds =
+            MediaSearchEngine.searchVideos(
+              query = internalSearchQuery,
+              videos = sortedVideosWithInfo.map { it.video },
+            ).mapTo(hashSetOf()) { it.id }
+          sortedVideosWithInfo.filter { it.video.id in matchingVideoIds }
+        }
+      }
+
+    LaunchedEffect(internalIsSearching) {
+      if (internalIsSearching) focusRequester.requestFocus()
+    }
+
     // Selection manager
     val selectionManager =
       rememberSelectionManager(
-        items = sortedVideosWithInfo.map { it.video },
+        items = sortedVideos,
         getId = { it.id },
         onDeleteItems = { items, _ -> viewModel.deleteVideos(items) },
         onRenameItem = { video, newName -> viewModel.renameVideo(video, newName) },
@@ -326,7 +352,32 @@ data class VideoListScreen(
 
     Scaffold(
       topBar = {
-        BrowserTopBar(
+        if (internalIsSearching) {
+          InlineSearchBar(
+            query = internalSearchQuery,
+            onQueryChange = { internalSearchQuery = it },
+            onSearch = { },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            inputFieldModifier = Modifier.focusRequester(focusRequester),
+            placeholder = { Text(stringResource(R.string.ui_search_videos)) },
+            leadingIcon = {
+              Icon(Icons.RoundedFilled.Search, contentDescription = stringResource(R.string.settings_search_title))
+            },
+            trailingIcon = {
+              IconButton(
+                onClick = {
+                  internalIsSearching = false
+                  internalSearchQuery = ""
+                },
+              ) {
+                Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.generic_cancel))
+              }
+            },
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+            tonalElevation = 6.dp,
+          )
+        } else {
+          BrowserTopBar(
           title = displayFolderName,
           isInSelectionMode = selectionManager.isInSelectionMode,
           selectedCount = selectionManager.selectedCount,
@@ -344,6 +395,7 @@ data class VideoListScreen(
           },
           onCancelSelection = { selectionManager.clear() },
           onSortClick = { sortDialogOpen.value = true },
+          onSearchClick = { internalIsSearching = true },
           onSettingsClick =
             if (isDualPane) {
               null
@@ -379,32 +431,17 @@ data class VideoListScreen(
               moveToSecureConfirmOpen.value = true
             }
           },
-          onAddToPlaylistClick =
-            if (!BuildConfig.ENABLE_UPDATE_FEATURE) {
-              { addToPlaylistDialogOpen.value = true }
-            } else {
-              null
-            },
-          onAddToQueueClick = {
-            TemporaryPlaybackQueue.add(context, selectionManager.getSelectedItems())
-            selectionManager.clear()
-          },
-          additionalActions = {
-            if (temporaryQueue.isTemporaryQueue && temporaryQueue.items.isNotEmpty()) {
-              IconButton(onClick = { TemporaryPlaybackQueue.start(context) }) {
-                Icon(
-                  Icons.RoundedFilled.QueueMusic,
-                  contentDescription = stringResource(R.string.ui_play_queue),
-                )
-              }
-            }
-          },
-        )
+          onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
+          )
+        }
       },
       floatingActionButton = {
         val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
         val miniPlayerClearance = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance
         if (sortedVideosWithInfo.isNotEmpty()) {
+          val isFabShouldBeVisible =
+            showQuickPlayFab && !selectionManager.isInSelectionMode && isFabVisible.value
+
           TooltipBox(
             positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
             tooltip = {
@@ -424,7 +461,7 @@ data class VideoListScreen(
                   .windowInsetsPadding(WindowInsets.systemBars)
                   .padding(bottom = navigationBarHeight + miniPlayerClearance)
                   .animateFloatingActionButton(
-                    visible = showQuickPlayFab && !selectionManager.isInSelectionMode && isFabVisible.value,
+                    visible = isFabShouldBeVisible,
                     alignment = Alignment.BottomEnd,
                   ),
               onClick = {
@@ -466,7 +503,7 @@ data class VideoListScreen(
       Box(modifier = Modifier.fillMaxSize()) {
         VideoListContent(
           folderId = bucketId,
-          videosWithInfo = sortedVideosWithInfo,
+          videosWithInfo = displayedVideosWithInfo,
           isLoading = isLoading && videos.isEmpty(),
           isRefreshing = isRefreshing,
           recentlyPlayedFilePath = lastPlayedInFolderPath ?: recentlyPlayedFilePath,
@@ -521,26 +558,8 @@ data class VideoListScreen(
             onRenameClick = { renameDialogOpen.value = true },
             onDeleteClick = { deleteDialogOpen.value = true },
             onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
-            onAddToTemporaryQueueClick = {
-              TemporaryPlaybackQueue.add(context, selectionManager.getSelectedItems())
-            },
-            onInfoClick = {
-              if (selectionManager.isSingleSelection) {
-                selectionManager.getSelectedItems().firstOrNull()?.let { video ->
-                  context.startActivity(
-                    Intent(context, app.infinity.mpvz.ui.mediainfo.MediaInfoActivity::class.java).apply {
-                      action = Intent.ACTION_VIEW
-                      data = video.uri
-                    },
-                  )
-                  selectionManager.clear()
-                }
-              }
-            },
-            showInfo = selectionManager.isSingleSelection,
             showDownscale = selectionManager.getSelectedItems().let { items -> items.isNotEmpty() && items.none { it.isAudio } },
             showRename = selectionManager.selectedCount > 0,
-            showAddToTemporaryQueue = selectionManager.selectedCount > 0,
             modifier =
               Modifier
                 .align(Alignment.BottomCenter)
@@ -852,6 +871,8 @@ internal fun VideoListContent(
   mediaLayoutMode: app.infinity.mpvz.preferences.MediaLayoutMode,
   isAudio: Boolean = false,
   musicCoverArtSize: Int = 48,
+  isFabExpanded: Boolean = false,
+  onFabExpandedChange: (Boolean) -> Unit = {},
 ) {
   val thumbnailRepository = koinInject<ThumbnailRepository>()
   val gesturePreferences = koinInject<GesturePreferences>()
@@ -877,11 +898,13 @@ internal fun VideoListContent(
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
   val unplayedOldVideoDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
   val showDurationField by browserPreferences.showDurationField.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
   val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
   val videoGridColumnsPortrait by browserPreferences.videoGridColumnsPortrait.collectAsState()
   val videoGridColumnsLandscape by browserPreferences.videoGridColumnsLandscape.collectAsState()
@@ -894,6 +917,7 @@ internal fun VideoListContent(
       showSizeChip,
       showResolutionChip,
       showFramerateInResolution,
+      showCodecSupportIndicator,
       showProgressBar,
       showDateChip,
       showUnplayedOldVideoLabel,
@@ -901,6 +925,7 @@ internal fun VideoListContent(
       showExtensionField,
       showDurationField,
       centerGridTitles,
+      thumbnailQuality,
     ) {
       VideoCardUiConfig(
         unlimitedNameLines = unlimitedNameLines,
@@ -908,6 +933,7 @@ internal fun VideoListContent(
         showSizeChip = showSizeChip,
         showResolutionChip = showResolutionChip,
         showFramerateInResolution = showFramerateInResolution,
+        showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
@@ -915,6 +941,7 @@ internal fun VideoListContent(
         showExtensionField = showExtensionField,
         showDurationField = showDurationField,
         centerGridTitles = centerGridTitles,
+        thumbnailQuality = thumbnailQuality,
       )
     }
 
@@ -982,7 +1009,7 @@ internal fun VideoListContent(
         // rememberSaveable state made this whole content scope recompose continuously while scrolling
         // and repeated the O(n) last-played lookup for large libraries.
         val initialScrollIndex =
-          remember(autoScrollToLastPlayed, recentlyPlayedFilePath, videosWithInfo) {
+          remember(folderId, autoScrollToLastPlayed, recentlyPlayedFilePath) {
             if (autoScrollToLastPlayed && recentlyPlayedFilePath != null) {
               videosWithInfo
                 .indexOfFirst { it.video.path == recentlyPlayedFilePath }
@@ -1002,19 +1029,17 @@ internal fun VideoListContent(
             initialFirstVisibleItemIndex = initialScrollIndex,
           )
         var isScrollbarDragging by remember { mutableStateOf(false) }
-        var isVideoListScrolling by remember { mutableStateOf(false) }
-
-        LaunchedEffect(mediaLayoutMode, listState, gridState) {
-          snapshotFlow {
-            if (mediaLayoutMode == MediaLayoutMode.GRID) {
-              gridState.isScrollInProgress
-            } else {
-              listState.isScrollInProgress
+        val isViewportScrolling by
+          remember(listState, gridState, mediaLayoutMode) {
+            derivedStateOf {
+              if (mediaLayoutMode == MediaLayoutMode.GRID) {
+                gridState.isScrollInProgress
+              } else {
+                listState.isScrollInProgress
+              }
             }
-          }.distinctUntilChanged().collectLatest { scrolling ->
-            isVideoListScrolling = scrolling
           }
-        }
+        val allowThumbnailLoading = !isViewportScrolling && !isScrollbarDragging
 
         val latestVideosWithInfo by rememberUpdatedState(videosWithInfo)
         val thumbnailListKey =
@@ -1048,12 +1073,12 @@ internal fun VideoListContent(
           mediaLayoutMode,
           thumbnailListKey,
           videoGridColumns,
+          isViewportScrolling,
           isScrollbarDragging,
-          isVideoListScrolling,
         ) {
           val generationId = "$folderId:${mediaLayoutMode.name}"
-          if (!showVideoThumbnails || latestVideosWithInfo.isEmpty() || isScrollbarDragging || isVideoListScrolling) {
-            if (isScrollbarDragging || isVideoListScrolling) {
+          if (!showVideoThumbnails || latestVideosWithInfo.isEmpty() || !allowThumbnailLoading) {
+            if (!allowThumbnailLoading) {
               thumbnailRepository.cancelFolderThumbnailGeneration(generationId)
             }
             return@LaunchedEffect
@@ -1109,8 +1134,8 @@ internal fun VideoListContent(
           listState = listState,
           gridState = if (mediaLayoutMode == MediaLayoutMode.GRID) gridState else null,
           isFabVisible = isFabVisible,
-          expanded = false,
-          onExpandedChange = {},
+          expanded = isFabExpanded,
+          onExpandedChange = onFabExpandedChange,
         )
 
         val coroutineScope = rememberCoroutineScope()
@@ -1160,7 +1185,7 @@ internal fun VideoListContent(
               ) {
                 items(
                   count = videosWithInfo.size,
-                  key = { index -> videosWithInfo[index].video.id },
+                  key = { index -> videosWithInfo[index].video.stableListKey },
                   contentType = { "video_item" },
                 ) { index ->
                   val videoWithInfo = videosWithInfo[index]
@@ -1195,7 +1220,7 @@ internal fun VideoListContent(
                       thumbnailHeightPx = thumbHeightPx,
                       showSubtitleIndicator = showSubtitleIndicator,
                       allowThumbnailGeneration = false,
-                      allowThumbnailLoading = !isScrollbarDragging && !isVideoListScrolling,
+                      allowThumbnailLoading = allowThumbnailLoading,
                       uiConfig = videoCardUiConfig,
                     )
                   }
@@ -1235,7 +1260,7 @@ internal fun VideoListContent(
               ) {
                 items(
                   count = videosWithInfo.size,
-                  key = { index -> videosWithInfo[index].video.id },
+                  key = { index -> videosWithInfo[index].video.stableListKey },
                   contentType = { "video_item" },
                 ) { index ->
                   val videoWithInfo = videosWithInfo[index]
@@ -1267,7 +1292,7 @@ internal fun VideoListContent(
                       isGridMode = false,
                       showSubtitleIndicator = showSubtitleIndicator,
                       allowThumbnailGeneration = false,
-                      allowThumbnailLoading = !isScrollbarDragging && !isVideoListScrolling,
+                      allowThumbnailLoading = allowThumbnailLoading,
                       uiConfig = videoCardUiConfig,
                       thumbnailWidthPx = if (isAudio) with(density) { musicCoverArtSize.dp.roundToPx() } else null,
                       thumbnailHeightPx = if (isAudio) with(density) { musicCoverArtSize.dp.roundToPx() } else null,
@@ -1307,8 +1332,8 @@ private fun visibleVideoWindow(
   if (itemCount <= 0) return emptyList()
 
   val safeColumns = columns.coerceAtLeast(1)
-  val prefetchBefore = safeColumns
-  val prefetchAfter = safeColumns * 3
+  val prefetchBefore = safeColumns * 2
+  val prefetchAfter = safeColumns * 6
   val visibleStart = firstVisibleIndex.coerceIn(0, itemCount - 1)
   val visibleEnd = lastVisibleIndex.coerceIn(visibleStart, itemCount - 1)
   val beforeStart = (visibleStart - prefetchBefore).coerceAtLeast(0)
@@ -1321,4 +1346,7 @@ private fun visibleVideoWindow(
   }
 }
 
-private const val THUMBNAIL_SCROLL_SETTLE_MILLIS = 250L
+private val Video.stableListKey: String
+  get() = "$id:$path"
+
+private const val THUMBNAIL_SCROLL_SETTLE_MILLIS = 100L

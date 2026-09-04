@@ -30,9 +30,9 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -55,14 +55,20 @@ fun AudioTracksSheet(
   onAddAudioTrack: () -> Unit,
   onOpenDelayPanel: () -> Unit,
   onOpenEqualizerSheet: (() -> Unit)? = null,
-  isMedia3Active: Boolean = false,
-  onMedia3AudioChannels: ((AudioChannels) -> Unit)? = null,
-  onMedia3AudioProcessing: ((Boolean, Boolean) -> Unit)? = null,
   onDismissRequest: () -> Unit,
+  delayControlEnabled: Boolean = true,
+  equalizerControlEnabled: Boolean = true,
+  audioChannelsEnabled: Boolean = true,
+  reverseStereoEnabled: Boolean = true,
+  audioEffectsEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   val audioPreferences = koinInject<AudioPreferences>()
   val audioChannels by audioPreferences.audioChannels.collectAsState()
+  val (embeddedTracks, externalTracks) =
+    remember(tracks) {
+      tracks.partition { track -> track.external != true }
+    }
 
   PlayerSheet(onDismissRequest) {
     Column(modifier) {
@@ -71,27 +77,41 @@ fun AudioTracksSheet(
         onAddAudioTrack,
         actions = {
           if (onOpenEqualizerSheet != null) {
-            IconButton(onClick = onOpenEqualizerSheet) {
+            IconButton(onClick = onOpenEqualizerSheet, enabled = equalizerControlEnabled) {
               Icon(Icons.RoundedFilled.Equalizer, stringResource(R.string.btn_label_equalizer))
             }
           }
-          IconButton(onClick = onOpenDelayPanel) {
+          IconButton(onClick = onOpenDelayPanel, enabled = delayControlEnabled) {
             Icon(Icons.RoundedFilled.AvTimer, null)
           }
         },
       )
 
       LazyColumn {
-        items(tracks, key = { it.id }) {
+        if (embeddedTracks.isNotEmpty()) {
+          item(key = "embedded_audio_tracks_header") {
+            AudioTrackSectionHeader(stringResource(R.string.player_sheets_embedded_audio_tracks))
+          }
+        }
+        items(embeddedTracks, key = { it.id }) {
           AudioTrackRow(
-            title =
-              buildString {
-                append(getTrackTitle(it))
-                if (it.supported == false) append(" (unsupported)")
-              },
+            title = getTrackTitle(it),
+            details = audioTrackDetails(it),
             isSelected = it.isSelected,
             onClick = { onSelect(it) },
-            enabled = it.supported != false,
+          )
+        }
+        if (externalTracks.isNotEmpty()) {
+          item(key = "external_audio_tracks_header") {
+            AudioTrackSectionHeader(stringResource(R.string.player_sheets_external_audio_tracks))
+          }
+        }
+        items(externalTracks, key = { it.id }) {
+          AudioTrackRow(
+            title = getTrackTitle(it),
+            details = audioTrackDetails(it),
+            isSelected = it.isSelected,
+            onClick = { onSelect(it) },
           )
         }
         item {
@@ -114,11 +134,10 @@ fun AudioTracksSheet(
               items(AudioChannels.entries, key = { it.name }) {
                 FilterChip(
                   selected = audioChannels == it,
+                  enabled = if (it == AudioChannels.ReverseStereo) reverseStereoEnabled else audioChannelsEnabled,
                   onClick = {
                     audioPreferences.audioChannels.set(it)
-                    if (isMedia3Active) {
-                      onMedia3AudioChannels?.invoke(it)
-                    } else if (it == AudioChannels.ReverseStereo) {
+                    if (it == AudioChannels.ReverseStereo) {
                       PlaybackSession.setPropertyString(AudioChannels.AutoSafe.property, AudioChannels.AutoSafe.value)
                     } else {
                       PlaybackSession.setPropertyString(it.property, it.value)
@@ -140,25 +159,14 @@ fun AudioTracksSheet(
               color = MaterialTheme.colorScheme.primary,
             )
             Spacer(modifier = Modifier.height(MaterialTheme.spacing.smaller))
-            if (isMedia3Active) {
-              Text(
-                text = "Native effects apply to PCM audio; passthrough or offload may bypass them.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = MaterialTheme.spacing.smaller),
-              )
-            }
             LazyRow(
               horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
             ) {
               item {
                 FilterChip(
                   selected = volumeNormalization,
-                  onClick = {
-                    val enabled = !volumeNormalization
-                    audioPreferences.volumeNormalization.set(enabled)
-                    if (isMedia3Active) onMedia3AudioProcessing?.invoke(enabled, drcEnabled)
-                  },
+                  enabled = audioEffectsEnabled,
+                  onClick = { audioPreferences.volumeNormalization.set(!volumeNormalization) },
                   label = { Text(text = stringResource(id = R.string.pref_audio_volume_normalization_title)) },
                   leadingIcon = null,
                 )
@@ -166,11 +174,8 @@ fun AudioTracksSheet(
               item {
                 FilterChip(
                   selected = drcEnabled,
-                  onClick = {
-                    val enabled = !drcEnabled
-                    audioPreferences.drcEnabled.set(enabled)
-                    if (isMedia3Active) onMedia3AudioProcessing?.invoke(volumeNormalization, enabled)
-                  },
+                  enabled = audioEffectsEnabled,
+                  onClick = { audioPreferences.drcEnabled.set(!drcEnabled) },
                   label = { Text(text = stringResource(id = R.string.pref_audio_drc_title)) },
                   leadingIcon = null,
                 )
@@ -184,13 +189,27 @@ fun AudioTracksSheet(
 }
 
 @Composable
+private fun AudioTrackSectionHeader(title: String) {
+  Text(
+    text = title,
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.extraSmall),
+    style = MaterialTheme.typography.labelLarge,
+    color = MaterialTheme.colorScheme.primary,
+    fontWeight = FontWeight.Bold,
+  )
+}
+
+@Composable
 fun AudioTrackRow(
   title: String,
   isSelected: Boolean,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   enabled: Boolean = true,
-  textColor: Color = MaterialTheme.colorScheme.onSurface,
+  details: String? = null,
 ) {
   Row(
     modifier =
@@ -206,11 +225,31 @@ fun AudioTrackRow(
       onClick = onClick,
       enabled = enabled,
     )
-    Text(
-      title,
-      fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
-      fontStyle = if (isSelected) FontStyle.Italic else FontStyle.Normal,
-      color = textColor,
-    )
+    Column(modifier = Modifier.weight(1f)) {
+      Text(
+        title,
+        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
+        fontStyle = if (isSelected) FontStyle.Italic else FontStyle.Normal,
+      )
+      details?.let { value ->
+        Text(
+          text = value,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
   }
+}
+
+private fun audioTrackDetails(track: TrackNode): String? {
+  val codec = track.codecDesc?.takeIf(String::isNotBlank) ?: track.codec?.takeIf(String::isNotBlank)
+  val bitrate =
+    track.effectiveBitrate
+      ?.takeIf { it > 0L }
+      ?.let { bitsPerSecond -> "${bitsPerSecond / 1_000L} kbps" }
+  return listOfNotNull(track.ytdlFormatId?.let { "#$it" }, codec, bitrate)
+    .distinct()
+    .joinToString(" • ")
+    .takeIf(String::isNotBlank)
 }

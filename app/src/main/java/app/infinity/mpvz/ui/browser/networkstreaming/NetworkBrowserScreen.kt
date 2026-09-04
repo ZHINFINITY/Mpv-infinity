@@ -10,6 +10,7 @@
 package app.infinity.mpvz.ui.browser.networkstreaming
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,8 +31,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,8 +54,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.domain.network.NetworkFile
+import app.infinity.mpvz.domain.network.NetworkPath
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.MediaLayoutMode
+import app.infinity.mpvz.preferences.NetworkBookmarkPreferences
+import app.infinity.mpvz.preferences.NetworkFolderBookmark
 import app.infinity.mpvz.preferences.NetworkSortType
 import app.infinity.mpvz.preferences.SortOrder
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -70,6 +72,7 @@ import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.ui.browser.dialogs.NetworkSortDialog
 import app.infinity.mpvz.ui.browser.playlist.PlaylistDetailScreen
 import app.infinity.mpvz.ui.browser.states.EmptyState
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
@@ -90,6 +93,7 @@ data class NetworkBrowserScreen(
     val backstack = LocalBackStack.current
     val context = LocalContext.current
     val browserPreferences = koinInject<BrowserPreferences>()
+    val bookmarkPreferences = koinInject<NetworkBookmarkPreferences>()
 
     val networkSortType by browserPreferences.networkSortType.collectAsState()
     val networkSortOrder by browserPreferences.networkSortOrder.collectAsState()
@@ -97,6 +101,14 @@ data class NetworkBrowserScreen(
     val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
     val videoGridColumnsPortrait by browserPreferences.videoGridColumnsPortrait.collectAsState()
     val videoGridColumnsLandscape by browserPreferences.videoGridColumnsLandscape.collectAsState()
+    val includeAudioInBrowser by browserPreferences.includeAudioBrowser.collectAsState()
+    val bookmarks by bookmarkPreferences.bookmarks.collectAsState()
+    val normalizedPath = remember(currentPath) { NetworkPath.from(currentPath) }
+    val canBookmarkCurrentFolder = normalizedPath.segments.isNotEmpty()
+    val isCurrentFolderBookmarked =
+      remember(bookmarks, connectionId, normalizedPath.value) {
+        bookmarkPreferences.contains(connectionId, normalizedPath.value)
+      }
 
     val viewModel: NetworkBrowserViewModel =
       viewModel(
@@ -144,50 +156,40 @@ data class NetworkBrowserScreen(
     Scaffold(
       topBar = {
         if (isSearching) {
-          SearchBar(
-            inputField = {
-              SearchBarDefaults.InputField(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                onSearch = { },
-                expanded = false,
-                onExpandedChange = { },
-                placeholder = {
-                  Text(stringResource(R.string.settings_search_title))
-                },
-                leadingIcon = {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Search,
-                    contentDescription = stringResource(R.string.settings_search_title),
-                  )
-                },
-                trailingIcon = {
-                  IconButton(
-                    onClick = {
-                      isSearching = false
-                      searchQuery = ""
-                    },
-                  ) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.Close,
-                      contentDescription = stringResource(R.string.generic_cancel),
-                    )
-                  }
-                },
-                modifier = Modifier.focusRequester(focusRequester),
-              )
-            },
-            expanded = false,
-            onExpandedChange = { },
+          InlineSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            onSearch = { },
             modifier =
               Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
+            inputFieldModifier = Modifier.focusRequester(focusRequester),
+            placeholder = {
+              Text(stringResource(R.string.settings_search_title))
+            },
+            leadingIcon = {
+              Icon(
+                imageVector = Icons.RoundedFilled.Search,
+                contentDescription = stringResource(R.string.settings_search_title),
+              )
+            },
+            trailingIcon = {
+              IconButton(
+                onClick = {
+                  isSearching = false
+                  searchQuery = ""
+                },
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Close,
+                  contentDescription = stringResource(R.string.generic_cancel),
+                )
+              }
+            },
             shape = RoundedCornerShape(28.dp),
             tonalElevation = 6.dp,
-          ) {
-            // Empty content for SearchBar
-          }
+          )
         } else {
           BrowserTopBar(
             title = connectionName,
@@ -210,6 +212,39 @@ data class NetworkBrowserScreen(
             onSelectAll = null,
             onInvertSelection = null,
             onDeselectAll = null,
+            additionalActions = {
+              if (canBookmarkCurrentFolder) {
+                IconButton(
+                  onClick = {
+                    bookmarkPreferences.toggle(
+                      NetworkFolderBookmark(
+                        connectionId = connectionId,
+                        path = normalizedPath.value,
+                        folderName = normalizedPath.segments.last(),
+                      ),
+                    )
+                  },
+                ) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.Star,
+                    contentDescription =
+                      stringResource(
+                        if (isCurrentFolderBookmarked) {
+                          R.string.network_bookmark_remove
+                        } else {
+                          R.string.network_bookmark_add
+                        },
+                      ),
+                    tint =
+                      if (isCurrentFolderBookmarked) {
+                        MaterialTheme.colorScheme.primary
+                      } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                      },
+                  )
+                }
+              }
+            },
           )
         }
       },
@@ -226,6 +261,7 @@ data class NetworkBrowserScreen(
         manualGridColumnsEnabled = manualGridColumnsEnabled,
         videoGridColumnsPortrait = videoGridColumnsPortrait,
         videoGridColumnsLandscape = videoGridColumnsLandscape,
+        includeAudio = includeAudioInBrowser,
         searchQuery = searchQuery,
         onRefresh = { viewModel.loadFiles() },
         onFolderClick = { folder ->
@@ -264,6 +300,7 @@ private fun NetworkBrowserContent(
   manualGridColumnsEnabled: Boolean,
   videoGridColumnsPortrait: Int,
   videoGridColumnsLandscape: Int,
+  includeAudio: Boolean,
   searchQuery: String,
   onRefresh: suspend () -> Unit,
   onFolderClick: (NetworkFile) -> Unit,
@@ -272,35 +309,7 @@ private fun NetworkBrowserContent(
 ) {
   val sortedFiles =
     remember(files, networkSortType, networkSortOrder) {
-      val (dirList, fileList) = files.partition { it.isDirectory }
-
-      val sortedDirs =
-        when (networkSortType) {
-          NetworkSortType.Title ->
-            if (networkSortOrder.isAscending) dirList.sortedBy { it.name.lowercase() }
-            else dirList.sortedByDescending { it.name.lowercase() }
-          NetworkSortType.Date ->
-            if (networkSortOrder.isAscending) dirList.sortedBy { it.lastModified }
-            else dirList.sortedByDescending { it.lastModified }
-          NetworkSortType.Size ->
-            if (networkSortOrder.isAscending) dirList.sortedBy { it.size }
-            else dirList.sortedByDescending { it.size }
-        }
-
-      val sortedMedia =
-        when (networkSortType) {
-          NetworkSortType.Title ->
-            if (networkSortOrder.isAscending) fileList.sortedBy { it.name.lowercase() }
-            else fileList.sortedByDescending { it.name.lowercase() }
-          NetworkSortType.Date ->
-            if (networkSortOrder.isAscending) fileList.sortedBy { it.lastModified }
-            else fileList.sortedByDescending { it.lastModified }
-          NetworkSortType.Size ->
-            if (networkSortOrder.isAscending) fileList.sortedBy { it.size }
-            else fileList.sortedByDescending { it.size }
-        }
-
-      sortedDirs + sortedMedia
+      files.sortedForNetworkBrowser(networkSortType, networkSortOrder)
     }
 
   val filteredFiles =
@@ -370,8 +379,8 @@ private fun NetworkBrowserContent(
     else -> {
       val folders = remember(filteredFiles) { filteredFiles.filter { it.isDirectory } }
       val videos =
-        remember(filteredFiles) {
-          filteredFiles.filter { !it.isDirectory && (it.mimeType?.startsWith("video/") == true || it.isM3uFile()) }
+        remember(filteredFiles, includeAudio) {
+          filteredFiles.filter { it.isPlayableNetworkMedia(includeAudio) || it.isNetworkPlaylistFile() }
         }
       val isGrid = networkLayoutMode == MediaLayoutMode.GRID
 
@@ -437,6 +446,8 @@ private fun NetworkBrowserContent(
                   top = 8.dp,
                   bottom = navigationBarHeight,
                 ),
+              horizontalArrangement = Arrangement.spacedBy(4.dp),
+              verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
               if (folders.isNotEmpty()) {
                 item(span = { GridItemSpan(gridColumns) }) {
@@ -564,20 +575,4 @@ private fun NetworkBrowserContent(
       }
     }
   }
-}
-
-private fun NetworkFile.isM3uFile(): Boolean {
-  val lowerName = name.lowercase()
-  val lowerPath = path.substringBefore('?').lowercase()
-  return lowerName.endsWith(".m3u") ||
-    lowerName.endsWith(".m3u8") ||
-    lowerPath.endsWith(".m3u") ||
-    lowerPath.endsWith(".m3u8") ||
-    mimeType in
-    setOf(
-      "application/x-mpegurl",
-      "application/vnd.apple.mpegurl",
-      "audio/x-mpegurl",
-      "audio/mpegurl",
-    )
 }

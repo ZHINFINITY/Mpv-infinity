@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project("mpvrx_native" C CXX)
+project("Mpv∞_native" C CXX)
 
 # Release-only native optimization shared by MpvRx-owned JNI/helper targets.
 # Keep this scoped to our small native targets; the prebuilt mpvlib AARs are
@@ -18,30 +18,44 @@ set(MPVRX_NATIVE_RELEASE_LINK_OPTIONS
     "$<$<CONFIG:Release>:-Wl,-z,max-page-size=16384>"
 )
 
-function(mpvrx_optimize_native_target target)
+function(Mpv∞_optimize_native_target target)
     target_compile_options(${target} PRIVATE ${MPVRX_NATIVE_RELEASE_COMPILE_OPTIONS})
     target_link_options(${target} PRIVATE ${MPVRX_NATIVE_RELEASE_LINK_OPTIONS})
 endfunction()
-
-# Android 16 compatibility for libmpv's raw clone-based subprocess path.
-add_library(android_compat SHARED android_compat.c)
-target_link_libraries(android_compat log dl)
-mpvrx_optimize_native_target(android_compat)
 
 # YTDLP execution wrapper for SDK 29+ bypass
 add_executable(ytdl_wrapper ytdl_wrapper.c)
 set_target_properties(ytdl_wrapper PROPERTIES OUTPUT_NAME "ytdl")
 set_target_properties(ytdl_wrapper PROPERTIES PREFIX "lib" SUFFIX ".so")
-mpvrx_optimize_native_target(ytdl_wrapper)
+Mpv∞_optimize_native_target(ytdl_wrapper)
 
-# libcurl JNI bridge for Lua/JS scripting HTTP support
-# BoringSSL is C++; use C++ linker so libc++ is linked at the correct position
-add_library(curl_bridge SHARED curl_bridge.c cJSON.c)
-set_target_properties(curl_bridge PROPERTIES LINKER_LANGUAGE CXX)
-find_package(curl REQUIRED CONFIG)
-target_link_libraries(curl_bridge curl::curl_static log z)
-target_include_directories(curl_bridge PRIVATE ${CURL_INCLUDE_DIRS})
-# Prevent symbols from statically linked curl/BoringSSL dependencies from being
-# re-exported by the JNI bridge. JNIEXPORT entry points retain default visibility.
-target_link_options(curl_bridge PRIVATE "$<$<CONFIG:Release>:-Wl,--exclude-libs,ALL>")
-mpvrx_optimize_native_target(curl_bridge)
+# QuickJS-NG CLI used by current yt-dlp releases for YouTube n/sig challenges.
+# Package it as an executable .so beside libytdl.so so Android permits subprocess execution.
+set(QUICKJS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/quickjs")
+add_executable(
+    qjs_runtime
+    "${QUICKJS_DIR}/dtoa.c"
+    "${QUICKJS_DIR}/gen/repl.c"
+    "${QUICKJS_DIR}/gen/standalone.c"
+    "${QUICKJS_DIR}/libregexp.c"
+    "${QUICKJS_DIR}/libunicode.c"
+    "${QUICKJS_DIR}/qjs.c"
+    "${QUICKJS_DIR}/quickjs-libc.c"
+    "${QUICKJS_DIR}/quickjs.c"
+)
+set_target_properties(
+    qjs_runtime
+    PROPERTIES
+    OUTPUT_NAME "qjs"
+    PREFIX "lib"
+    SUFFIX ".so"
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS ON
+    ENABLE_EXPORTS TRUE
+)
+target_include_directories(qjs_runtime PRIVATE "${QUICKJS_DIR}")
+target_compile_definitions(qjs_runtime PRIVATE _GNU_SOURCE QUICKJS_NG_BUILD)
+target_compile_options(qjs_runtime PRIVATE -funsigned-char)
+target_link_libraries(qjs_runtime dl m)
+Mpv∞_optimize_native_target(qjs_runtime)

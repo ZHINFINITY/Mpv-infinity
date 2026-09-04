@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -40,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -390,6 +392,7 @@ private fun StorageVolumeItem(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
         .clickable(onClick = onClick)
         .padding(horizontal = 12.dp, vertical = 12.dp),
     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -433,6 +436,7 @@ private fun FolderItem(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
         .clickable(onClick = onClick)
         .padding(horizontal = 12.dp, vertical = 8.dp),
     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -469,6 +473,7 @@ private fun FileItem(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
         .clickable(onClick = onClick)
         .padding(horizontal = 12.dp, vertical = 8.dp),
     horizontalArrangement = Arrangement.spacedBy(12.dp),

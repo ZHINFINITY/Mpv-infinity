@@ -19,6 +19,10 @@ int main(int argc, char *argv[]) {
     char *python_lib = getenv("YTDL_PYTHON");
     char *script_path = getenv("YTDL_SCRIPT");
 
+    // python313.zip ships only the aarch64 sysconfig module; reuse it on every ABI
+    // so 32-bit ARM and x86 devices don't die with "No module named '_sysconfigdata__android_...'".
+    setenv("_PYTHON_SYSCONFIGDATA_NAME", "_sysconfigdata__android_aarch64-linux-android", 0);
+
     // Use a hardcoded fallback if env var is missing
     if (!python_lib || strlen(python_lib) == 0) {
         python_lib = "libpython.so";

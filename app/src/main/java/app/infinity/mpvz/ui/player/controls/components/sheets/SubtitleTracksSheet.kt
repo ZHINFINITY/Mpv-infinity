@@ -23,9 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Divider
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -33,7 +31,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -88,7 +85,6 @@ fun SubtitlesSheet(
   translationProgress: Float,
   translationStatus: String,
   translationEnabled: Boolean,
-  embeddedTranslationEnabled: Boolean = translationEnabled,
   isGeneratingSubtitles: Boolean,
   subtitleGenerationProgress: Float,
   subtitleGenerationStatus: String,
@@ -99,9 +95,7 @@ fun SubtitlesSheet(
   realtimeSubsEnabled: Boolean = true,
   subtitlesOff: Boolean = false,
   onDisableSubtitles: () -> Unit = {},
-  onToggleEmbeddedTranslation: () -> Unit = {},
-  embeddedTranslationLanguage: String = "",
-  onEmbeddedTranslationLanguageChange: (String) -> Unit = {},
+  delayControlEnabled: Boolean = true,
   modifier: Modifier = Modifier,
 ) {
   val items =
@@ -337,49 +331,11 @@ fun SubtitlesSheet(
           IconButton(onClick = onOpenSubtitleSettings) {
             Icon(Icons.RoundedFilled.Palette, null)
           }
-          IconButton(onClick = onOpenSubtitleDelay) {
+          IconButton(onClick = onOpenSubtitleDelay, enabled = delayControlEnabled) {
             Icon(Icons.RoundedFilled.AvTimer, null)
           }
         },
       )
-
-      if (tracks.any { it.external != true }) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium, vertical = MaterialTheme.spacing.small),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text("Translate embedded subtitles", style = MaterialTheme.typography.titleSmall)
-            Text(
-              "Show an AI translation over soft embedded subtitles",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          }
-          Switch(checked = embeddedTranslationEnabled, onCheckedChange = { onToggleEmbeddedTranslation() })
-        }
-        if (embeddedTranslationEnabled && configuredLanguages.size >= 2) {
-          Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
-            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
-          ) {
-            Text(
-              "Translation language",
-              style = MaterialTheme.typography.labelLarge,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
-              configuredLanguages.take(2).forEach { code ->
-                FilterChip(
-                  selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
-                  onClick = { onEmbeddedTranslationLanguageChange(code) },
-                  label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
-                )
-              }
-            }
-          }
-        }
-      }
 
       if (aiEnabled && isTranslating) {
         Column(
@@ -523,7 +479,7 @@ fun SubtitlesSheet(
               }
             }
             SubtitleItem.Divider -> {
-              Divider(
+              HorizontalDivider(
                 modifier =
                   Modifier.padding(
                     horizontal = MaterialTheme.spacing.medium,
@@ -564,9 +520,7 @@ fun SubtitleTrackRow(
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
   ) {
-    // The whole row owns the toggle action. Leaving the checkbox callback null prevents one
-    // checkbox tap from invoking onToggle twice (row click + checkbox change).
-    Checkbox(checked = isSelected, onCheckedChange = null)
+    Checkbox(checked = isSelected, onCheckedChange = { onToggle() })
     Text(title, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.weight(1f))
 
     if (selectionIndicator != null) {

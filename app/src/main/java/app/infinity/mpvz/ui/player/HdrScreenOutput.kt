@@ -16,9 +16,8 @@ import app.infinity.mpvz.domain.hdr.HdrToysProfile
 /**
  * Available HDR screen output modes.
  *
- * Every mode below owns the complete mpv HDR/color-output state. This is intentional: switching
- * modes must never depend on whichever target-prim/target-trc/tone-mapping values were left behind
- * by the previous mode.
+ * Every mode below owns the mpv HDR/color-output state needed by its pipeline. Tone and gamut
+ * mapping remain under mpv/user control rather than being overwritten by mode transitions.
  *
  * - [OFF]         — restore mpv's normal automatic SDR/HDR handling.
  * - [BT_2100_PQ]  — HDR10 hdr-toys pipeline.
@@ -73,8 +72,7 @@ enum class HdrScreenMode(
 /**
  * All mpv options owned by the HDR mode controller.
  *
- * Keep this list synchronized with every mode builder below. A mode transition is deterministic
- * only when every property that can affect output color is explicitly written by every mode.
+ * Keep this list synchronized with every mode builder below.
  */
 private val HDR_OWNED_PROPERTIES =
   listOf(
@@ -84,8 +82,6 @@ private val HDR_OWNED_PROPERTIES =
     "target-trc",
     "target-peak",
     "inverse-tone-mapping",
-    "tone-mapping",
-    "gamut-mapping-mode",
     "hdr-compute-peak",
     "hdr-reference-white",
     "tone-mapping-visualize",
@@ -119,8 +115,6 @@ private fun commonSettings(
   targetTrc: String,
   targetPeak: String,
   inverseToneMapping: String,
-  toneMapping: String,
-  gamutMappingMode: String,
   hdrComputePeak: String,
   shaderOptions: String,
 ): List<Pair<String, String>> =
@@ -131,8 +125,6 @@ private fun commonSettings(
     "target-trc" to targetTrc,
     "target-peak" to targetPeak,
     "inverse-tone-mapping" to inverseToneMapping,
-    "tone-mapping" to toneMapping,
-    "gamut-mapping-mode" to gamutMappingMode,
     "hdr-compute-peak" to hdrComputePeak,
     "hdr-reference-white" to "203",
     "tone-mapping-visualize" to "no",
@@ -147,8 +139,6 @@ private fun offSettings(): List<Pair<String, String>> =
     targetTrc = "auto",
     targetPeak = "auto",
     inverseToneMapping = "no",
-    toneMapping = "auto",
-    gamutMappingMode = "auto",
     hdrComputePeak = "auto",
     shaderOptions = "",
   )
@@ -163,8 +153,6 @@ private fun hdrToysSettings(profile: HdrToysProfile): List<Pair<String, String>>
     targetTrc = profile.targetTrc,
     targetPeak = "auto",
     inverseToneMapping = "no",
-    toneMapping = "clip",
-    gamutMappingMode = "clip",
     hdrComputePeak = "no",
     shaderOptions = profile.shaderOptionsValue,
   )
@@ -180,8 +168,6 @@ private fun linearHdrSettings(boostSdrToHdr: Boolean): List<Pair<String, String>
     targetTrc = "auto",
     targetPeak = "auto",
     inverseToneMapping = if (boostSdrToHdr) "yes" else "no",
-    toneMapping = "clip",
-    gamutMappingMode = "clip",
     hdrComputePeak = "yes",
     shaderOptions = "",
   )

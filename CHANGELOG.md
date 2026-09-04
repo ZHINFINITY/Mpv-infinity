@@ -2,322 +2,232 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
-## 1.0.7 — Public Hotfix Release
-
-This hotfix improves the MPV and Native playback handoff on supported Android devices.
-
-- **HW+ decoder selection:** HW+ remains selectable in the MPV decoder sheet, with a safe renderer fallback when direct MediaCodec is unavailable for the active build or GPU configuration.
-- **Native-to-MPV audio:** MPV reselects its automatic audio track after switching from Native, preventing stale Native track identifiers from leaving playback silent.
-- **Playback continuity:** Existing playback position and transition-audio restoration behavior remain preserved during engine switching.
-- **Embedded subtitle translation:** Optional translation of embedded subtitles, language selection, translated-cue positioning, subtitle styling, and translation visibility controls are included for supported playback sources.
-- **Torrent playback improvements:** Startup buffering, background read-ahead, and clearer inline torrent playback status are included.
-
-## 1.0.4 — Public Feature Release
-
-This release adds native media-server browsing and media-request workflows while preserving Mpv∞’s existing MPV and Media3 playback engines.
-
-- **Jellyfin Client:** Connect to Jellyfin servers, manage saved Jellyfin profiles, browse libraries, search movies and series, view media details, inspect seasons and episodes, and play available content in Mpv∞.
-- **Jellyfin playback integration:** Start authenticated remote playback from Jellyfin, preserve playback state, support series and episode navigation, and continue using the existing player controls and playback engines.
-- **Seerr support:** Connect to Seerr and Overseerr-compatible servers using Jellyfin authentication, local account authentication, or an API key.
-- **Seerr discovery:** Browse trending movies, movies, and TV shows with posters, ratings, descriptions, genres, cast information, and availability status.
-- **Media requests:** Request movies or selected TV seasons through Seerr, including standard and 4K request options and anime audio preferences where supported by the server.
-- **Jellyfin availability matching:** Match Seerr titles with the Jellyfin library so available content can be launched directly in Mpv∞.
-- **Browser and player improvements:** Add the Jellyfin entry point to the app browser and improve remote artwork, playback launching, and media-library presentation.
-
-## 1.0.3 — Public Hotfix Release
-
-This hotfix keeps the tested v1.0.2 feature set and corrects the remaining branding, subtitle, notification, crash-diagnostics, and music-player issues.
-
-- **Permission-dialog identity:** Replaced the inherited MpvRx repository link with the official Mpv∞ repository at https://github.com/ZHINFINITY/Mpv-infinity.
-- **Media3 subtitles:** Improved subtitle position and scale handling for text and PGS bitmap cues, applied color/background/outline/drop-shadow settings to supported text subtitles, and refreshed settings when the Native renderer attaches.
-- **Crash diagnostics:** Subtitle cue rendering is guarded, Media3 errors include codec and track context, and uncaught crashes are saved to the app-specific crash log before the crash screen opens.
-- **Music playback:** Rapid-navigation notification metadata and artwork are synchronized to the final selected track, while music-player artwork resolution and entrance/minimize transitions are smoother.
-
-## 1.0.2 — Stable Release
-
-This release consolidates the tested improvements added after v1.0.0 across playback, queues, subtitles, library management, and performance.
-
-- **Dual playback engines:** MPV/libmpv and AndroidX Media3 are available with per-item engine selection, automatic routing for supported Dolby Vision and HLS/DASH sources, safer engine handoff, and fallback behavior.
-- **Reliable playback resume:** MPV and Native/Media3 preserve the active timestamp when the app closes, restore saved positions on reopen, and retain the position across engine changes.
-- **Mixed temporary queue:** Audio-only files and videos can be combined in an editable temporary queue, with quick-play access, reordering, removal, queue persistence across media views, and correct transitions between music and video.
-- **Audio player improvements:** Background playback, notifications, minimization, swipe-down dismissal, orientation recovery, landscape controls, visualizer layout, artwork, artist metadata, and rapid track changes are handled consistently.
-- **Media3 playback tools:** Dual dialogue/sign subtitles, subtitle positioning and styling, chapter navigation, skip-intro and segment actions, frame navigation, improved seeking, larger local buffer headroom, and broader audio compatibility through the FFmpeg extension.
-- **Streaming support:** HTTPS and other supported network sources retain configured request headers, including referrer settings, while cookies and network playback metadata are handled more reliably.
-- **Video and HDR pipeline:** Device-dependent Dolby Vision, HDR10+, hardware decoding, shader rendering, Anime4K upscaling, GPU debanding, ambient visual effects, and adaptive quality controls remain available without lowering the normal playback path.
-- **Library and queue usability:** Tree View cache reuse, reduced duplicate rescans, folder swipe-to-mark-watched, immediate New-indicator updates, nested-folder playlist discovery, search-result Properties access, and improved playlist sheets.
-- **Customization and distribution:** Material 3 themes, translucent player controls, configurable gestures and layouts, subtitle font management, settings export naming, casting, scripting, and Standard APK variants for universal, arm64-v8a, armeabi-v7a, x86, and x86_64.
-- **Performance and stability:** Background polling and statistics backoff, thermal-aware shader and Anime4K budgets, safer Media3 state polling, reduced thumbnail pressure during large-folder scrolling, PiP shutdown cleanup, and improved lifecycle handling.
-
-## 1.0.1 — Stable Release
-
-This stable release consolidates the hybrid playback, mixed queue, audio-player, and usability improvements delivered after v1.0.0.
-
-- **Hybrid playback engines:** MPV and Media3 are available for high-quality video and audio playback, with reliable per-item engine handoff and fallback behavior. HDR, Dolby Vision, HDR10+, hardware decoding, shader, chapter, subtitle, casting, scripting, and streaming capabilities remain available according to device and source support.
-- **Temporary mixed-media queue:** Select songs and videos from different folders into an editable, non-persistent queue. The queue can be started from the Quick Play menus, keeps all selected items visible, supports reordering and removal, and advances across audio/video boundaries without replacing the queue with the first item’s folder playlist. Queue contents are preserved when another music view or media launch is opened, so video entries cannot silently disappear from a mixed queue.
-- **Audio-player recovery:** Video-to-audio queue transitions now restore the audio player’s orientation, controls, metadata, minimize handoff, background playback, and playback notification state instead of retaining the preceding video session state.
-- **Music metadata and artwork:** Artist information is preserved for music added to a temporary queue and used as a fallback when embedded metadata is incomplete. Album-art presentation and landscape metadata placement are improved.
-- **Music-player UI:** Added swipe-down minimization, a cleaner landscape artwork-and-controls layout, visible landscape option controls, improved spacing, and a larger visualizer option target while preserving the existing portrait experience.
-- **Media3 stability:** Position and playback-state polling uses the controller’s published state snapshot, avoiding unsafe cross-thread player access during playback and transitions.
-- **Playback resume:** MPV and Media3 save the active timestamp when the app closes and restore the same video at its saved position when playback is reopened.
-- **Tree View performance:** Duplicate startup refreshes are suppressed, scanner caches are reused when returning to the browser, and ordinary navigation no longer triggers a full storage rescan; explicit refresh remains available for library changes.
-- **Folder watched gesture:** Swipe a video folder to the right to mark its videos as watched and remove the corresponding New indicators and folder count.
-- **Search Properties access:** Long-press a search result to open its Properties/media-information screen directly.
-- **Settings export identity:** New settings exports use the Mpv∞ filename format `mpv_infinity_settings_YYYYMMDD_HHMMSS.xml`; compatibility with existing settings files is retained.
-- **Standard distribution:** Stable assets target the Standard flavor and include universal, arm64-v8a, armeabi-v7a, x86, and x86_64 APKs.
-
-## 1.0.0 — Public Release
-
-- **Foreground media playback:** The playback service promotes itself immediately with a minimal notification before media-session and playback initialization.
-- **Public feature set:** MPV and Media3 playback engines, dual subtitle tracks, chapter-aware playback, folder playlist sheets, skip segments, adaptive controls, HDR and shader pipelines, casting, scripting, audio library mode, and the broader features listed in the README.
-- **Distribution:** Standard APK variants only; no Fongmi or no-Vulkan variants.
-
-## 1.1.26 — Media3 Subtitle Slots, Skip Intro, and Playlist Race Fixes (CI Candidate)
-
-- **Dual subtitle renderer mapping:** The stale-cue guard now distinguishes custom text-renderer slots from global Media3 renderer indexes, restoring valid dialogue and sign cue delivery while still rejecting late callbacks from disabled slots.
-- **Media3 skip intro:** Skip-segment detection now polls Media3 position and duration, and both manual and automatic skip actions seek through the Media3 controller instead of the unavailable MPV `time-pos` property.
-- **Nested playlist race protection:** Folder discovery is marked in flight so asynchronous Media3 loading cannot overwrite a pending multi-item folder queue with a singleton.
-- **Release scope:** CI-only validation candidate; repository remains private, only Standard APK variants are in scope, and v1.1.25 behavior is otherwise preserved.
-
-## 1.1.25 — Media3 Subtitle Cue Guard and Playlist Discovery Logging
-
-- **Subtitle stale-cue guard:** SubtitleTextOutput callbacks from disabled renderer slots are now rejected; any cached cues for that slot are cleared immediately so a disabled sign track cannot remain visible after deselection.
-- **Playlist discovery always runs:** The playlist-sheet refresh no longer skips discovery based on the Activity playlist size; fresh discovery runs on every sheet open for external file-manager launches.
-- **Diagnostic logging:** Added detailed logs to sibling resolution and folder generation to expose which guard aborts discovery for nested MKV folders such as Konosuba.
-- **Release scope:** CI-only validation candidate; repository remains private, only Standard APK variants are in scope, and all v1.1.24 fixes are preserved.
-
-## 1.1.24 — Media3 Subtitle Cue Reset and Playlist Sheet Refresh (Unreleased CI Candidate)
-
-- **Subtitle deselection cleanup:** Explicit subtitle toggles now clear merged Media3 cue buffers and create a renderer disable boundary before applying the new selection, preventing a disabled sign track from remaining visible.
-- **Playlist sheet refresh:** Opening the playlist sheet now retriggers folder discovery through the Activity’s preserved external URI, including direct and compact-control entry points, so a singleton file-manager launch can materialize its nested MKV sibling queue.
-- **Race reduction:** Folder discovery is triggered from one authoritative sheet-open effect rather than duplicate control callbacks.
-- **Release scope:** Unreleased CI validation candidate; repository remains private, no release is being published yet, and the v1.1.23 fixes are preserved.
-
-## 1.1.23 — Media3 Dialogue+Sign Same-Group Fix and MKV Playlist Index Fix
-
-- **Dialogue+sign same TrackGroup:** When dialogue and sign tracks share the same Media3 `TrackGroup`, both are now assigned to a single text renderer through a multi-index `SelectionOverride`, allowing both to render simultaneously without the toggle workaround.
-- **MKV playlist index fallback:** The current-file lookup now falls back to filename matching when exact normalized-path comparison fails because content-URI and filesystem paths are represented differently.
-- **Stable subtitle identity:** Track-map rebuilds preserve the desired subtitle selection using stable track identity keys rather than volatile synthetic IDs.
-- **External launch session bypass:** File-manager `ACTION_VIEW` launches bypass stale saved playback sessions so fresh folder-queue discovery can run.
-- **Release scope:** CI-only validation candidate; repository remains private, only Standard APK variants are in scope, and all v1.1.22 fixes are preserved.
-
-## 1.1.22 — Media3 Dialogue and Nested MKV Playlist Hotfix (Unreleased CI Candidate)
-
-- **First-load dialogue subtitles:** Dialogue and sign tracks from the same Media3 `TrackGroup` are now assigned one track index per text-renderer slot instead of being batched onto one renderer. This explicitly activates dialogue when both tracks are selected for the first time.
-- **MPV-like sign readability:** Sign cues retain their embedded ASS/SSA position and alignment while receiving a compact opaque window and conservative cue-size normalization; dialogue sizing is unchanged.
-- **File-manager MKV folders:** MediaStore folder discovery can recover a video row by display name and size when a SAF/content URI omits a numeric ID or `RELATIVE_PATH`, allowing ancestor-folder queue generation for nested season layouts.
-- **Release scope:** Unreleased CI validation candidate; repository remains private, only Standard APK variants are in scope, and v1.1.21 optimizations are preserved.
-
-## 1.1.21 — Playback Efficiency and Resource Cleanup (Unreleased CI Candidate)
-
-- **Reduced duplicate UI work:** Media3 state callbacks now suppress identical snapshots while retaining the 250 ms live position updates needed by the seekbar and controls.
-- **Lower subtitle overhead:** Sign-track detection reuses a compiled pattern and cached renderer classification instead of rescanning and lowercasing track titles for every cue batch.
-- **Resource cleanup:** Artwork and embedded-lyrics metadata fallbacks now release `MediaMetadataRetriever` even when data-source or metadata extraction fails.
-- **Quality preservation:** No video/audio resolution, decoder selection, bitrate, subtitle positioning, playback timing, or MPV music-player behavior was reduced or changed by this optimization pass.
-- **Release scope:** Unreleased CI validation candidate; repository remains private, no release tag is created, and all v1.1.20 fixes are preserved.
-
-## 1.1.20 — Media3 Subtitle First-Load and MKV Playlist Hotfix
-
-- **First-load dual subtitles:** A bounded retry of up to four attempts at 120 ms intervals reapplies the explicit renderer-specific subtitle overrides after each track-map update, so selecting dialogue and signs works immediately without toggling one track off and back on.
-- **Sign subtitle readability:** Sign-track cues receive a dark window treatment while preserving their embedded ASS/SSA position and alignment, preventing sign colors from blending with the underlying source sign.
-- **MKV folder playlist:** The season-folder recursive sibling scan now runs for all launch sources, including file-manager launches, not only video-list launches. This fixes Konosuba and similar nested-season-folder playlist-sheet failures.
-- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.19 fixes are preserved.
-
-## 1.1.19 — Media3 Subtitle and Nested MKV Playlist Hotfix
-
-- **First-load simultaneous subtitles:** Text-renderer-specific overrides are cleared before each explicit Media3 subtitle assignment, so selecting dialogue and signs works immediately without toggling one track off and on.
-- **Readable sign windows:** Embedded cue windows retain their ASS/SSA positioning while opaque backgrounds are reduced to adaptive semi-transparent colors, keeping signs readable without hiding the source image.
-- **Nested MKV folders:** Folder discovery keeps the immediate season folder as the default and falls back to ancestor/descendant scanning or MediaStore ancestor paths when nested Anime/Show/Season layouts otherwise produce a singleton queue.
-- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.18 fixes are preserved.
-
-## 1.1.18 — Media3 Subtitle and MKV Playlist Sheet Hotfix
-
-- **Media3 simultaneous subtitles:** Dialogue and sign selections now remain selected across track-change callbacks and are assigned to separate text-renderer slots, so both cue streams can render continuously together.
-- **MKV playlist sheet:** The playlist sheet now refreshes from the live queue when asynchronous folder discovery publishes sibling items.
-- **Playlist interaction recovery:** An empty or still-loading Playlist state no longer blocks ordinary screen taps; it self-dismisses if no multi-item queue appears.
-- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.17 fixes are preserved.
-
-## 1.1.17 — Media3 Double-Tap Feedback Hotfix
-
-- **Double-tap seek indicator:** Media3 now uses its live position and duration when updating the shared double-tap seek state, so the visible `+10`/`-10` text and chevron indicator appear just as they do with MPV. The actual seek operation remains unchanged for both engines.
-- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.16 fixes are preserved.
-
-## 1.1.16 — Media3 Subtitle, Chapter, Playlist, and Position Hotfix
-
-- **ASS drawing artifact:** Broadened Media3’s ASS drawing-command detection to remove coordinate-only drawing cues such as `m x y l x y` without removing dialogue or sign cues.
-- **Media3 dialogue and signs:** The merged cue list is now filtered after PlayerView’s own cue update, so selected dialogue and sign subtitles remain renderable together.
-- **Media3 chapters:** Matroska Chapter entries are also extracted from track Format metadata, covering files where the global metadata callback does not receive chapters.
-- **MKV folder playlist:** The asynchronous multi-item queue is no longer replaced by a singleton when Media3 starts loading before folder discovery finishes.
-- **Queue position:** Automatic transitions to a different queued item now start at 00:00 instead of inheriting the previous Media3 item’s position.
-- **Release scope:** CI-only validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.15 fixes are preserved.
-
-## 1.1.15 — Media3 Chapters, Subtitles, and Playlist Hotfix
-
-- **Media3 chapters:** Matroska and other supported Media3 chapter metadata now feeds the existing chapter sheet; files without supported chapter metadata keep the chapter button hidden, while MPV chapter behavior is unchanged.
-- **Media3 dialogue and signs:** Removed the controller-side cue replacement that could discard the dialogue stream when dialogue and sign subtitle tracks were selected together; PlayerView now retains Media3’s native merged cue handling.
-- **ASS drawing artifact:** Corrected the raw-string whitespace and numeric-token regex used for ASS drawing-command detection.
-- **Playlist controls:** The playlist sheet no longer triggers the playback auto-hide timer after opening, keeping the folder card and its controls visible while browsing a queue.
-- **Release scope:** Unreleased CI validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.14 fixes are preserved.
-
-## 1.1.14 — Gesture, Playlist, and Media3 Subtitle Hotfix
-
-- **Media3 hold speed:** Long-press speed gestures now read and restore the live Media3 playback state instead of stale MPV pause and speed properties.
-- **Folder playlist sheet:** Multi-item folder queues are now exposed to the playlist card in both MPV and Media3, including ordinary folders outside the Reels path. The playlist swipe path also keeps controls visible when opening the sheet.
-- **Media3 subtitle sheet refresh:** Selecting or removing a subtitle publishes the updated selection immediately so the open sheet reflects the change without being dismissed and reopened.
-- **ASS drawing artifact:** Media3 filters malformed ASS vector drawing-command cues that were being displayed as numeric text in the video corner, while preserving positioned sign cues.
-- **Release scope:** Unreleased validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.13 fixes are preserved.
-
-## 1.1.13 — Media3 Subtitle Rendering Hotfix
-
-- **ASS/SSA sign positioning:** Native/Media3 subtitles now honor embedded alignment and position tags while retaining the app’s subtitle scale control, preventing sign subtitles from being stacked, oversized, or misplaced.
-- **Simultaneous subtitle tracks:** Native/Media3 can keep dialogue and sign tracks selected together, and tapping an active track removes only that track instead of disabling every subtitle.
-- **Subtitle Off action:** The subtitle sheet now disables the active engine correctly; MPV subtitle properties remain unchanged for MPV playback.
-- **Release scope:** Unreleased CI validation build; repository remains private, only Standard APK variants are in scope, and all v1.1.12 fixes are preserved.
-
-## 1.1.12 — Portrait Controls and Media3 Gesture Hotfix
-
-- **Portrait bottom controls:** The vertical player now renders the same saved buttons, membership, and order configured in Edit Portrait Bottom, including added and removed controls.
-- **Media3 hold speed:** The Hold for multi-x speed gesture now routes through the engine-aware playback-speed setter, so the configured speed applies to Media3 and returns to the prior speed after release.
-- **Queue position:** Queued Media3/Native transitions keep the start-at-zero guard through asynchronous state restoration instead of reapplying the previous video’s position.
-- **Folder playlist card:** The folder playlist button opens the existing Now Playing card without triggering the generic control-hide action.
-- **Release scope:** Private repository; Standard APK variants only. MPV behavior and previously working music, pause-button, subtitle, and playback paths are preserved.
-
-## 1.1.11 — Playlist Card and Portrait Pause Hotfix
-
-- **Folder playlist card:** The portrait top-bar episode pill now opens the existing bottom “Now Playing” card for the videos in the loaded folder, including the item count, thumbnails, current-item highlight, metadata, and reorder handles.
-- **Playlist button availability:** The episode pill remains tappable for an explicit folder queue even when the general playlist preference is disabled; other playlist controls and playback behavior are unchanged.
-- **Circular pause indication:** Preserved the portrait pause/resume button’s circular clipping so the pressed state does not show a blue rectangular overlay.
-- **Release scope:** Private repository; Standard APK variants only.
-
-## 1.1.10 — Queue Episode Start Hotfix
-
-- **Next and previous items start at 00:00:** Queue navigation and automatic playlist advancement no longer reuse the prior video’s saved or engine-handoff position.
-- **Same-video resume preserved:** Reopening the same video directly can still restore that video’s own saved position.
-- **Previous fixes preserved:** The working MPV-only music player and circular portrait pause-button indication remain unchanged.
-- **Release scope:** Private repository; Standard APK variants only.
-
-## 1.1.9 — Portrait Pause Button UI Hotfix
-
-- **Circular pressed indication:** Clipped the portrait video pause/resume button’s interaction layer to its circular shape so the blue rectangular pressed overlay no longer appears when pausing or resuming.
-- **Playback behavior preserved:** The pause/resume action, circular control appearance, and MPV music-player implementation are unchanged.
-- **Release scope:** Private repository; Standard APK variants only.
-
-## 1.1.8 — MPV-Only Music Ownership Hotfix
-
-- **MPV-only audio routing:** Audio items are now forced through MPV before any global engine, Media3, or Dolby/Auto decision. Delayed video-track callbacks cannot hand the current song back to Media3.
-- **Shared-container audio:** An explicit audio launch remains MPV-owned even when a shared container such as MKV reports a `video/*` MIME type.
-- **Responsive controls:** MPV pause/resume no longer becomes a no-op because of a temporary Android audio-focus failure, and the current audio generation remains the command target for seeking and timeline updates.
-- **Stale title prevention:** The current audio queue item and path now take precedence over a stale `media-title` left by the previous video.
-- **Release scope:** This is a Standard APK hotfix; music remains MPV-based, the repository remains private, and upstream MPV/mpvRx attribution is preserved.
-
-## 1.1.7 — MPV Music Player Metadata and Timeline Hotfix
-
-- **Track information:** Audio controls now receive MPV’s live `media-title` and keep the title available during direct audio launches and queue transitions.
-- **Cover art and embedded metadata:** Artwork and presentation metadata no longer become permanently blank when the audio screen appears before MPV emits `FILE_LOADED`; extraction retries after the load phase becomes ready.
-- **Lyrics:** Lyrics lookup waits for a real MPV duration, retries when the loaded audio timeline becomes available, and ignores stale results from a previous track.
-- **Seekbar:** The MPV audio timeline poller now recognizes the audio-load ownership hint, so direct music playback continuously updates position and duration instead of remaining at a placeholder.
-- **Release scope:** This is a Standard APK hotfix; MPV remains the music engine, the repository remains private, and upstream MPV/mpvRx attribution is preserved.
-
-## 1.1.6 — MPV Music Controls Hotfix
-
-- **MPV music controls:** Audio-only transitions now explicitly retain MPV ownership, including audio containers such as MKV, so pause/resume, seek, speed, and track commands are not routed to a stale Native/Media3 player after returning from video playback.
-- **Music timeline and metadata:** Audio loads now refresh MPV position and duration state, update the current title, and preserve the audio hint through queue navigation so the seekbar and song information remain synchronized.
-- **Vertical pause button:** Removed the default rectangular pressed indication from the circular vertical video pause/resume control while preserving its touch behavior and circular shape.
-- **Previous fixes preserved:** Includes the v1.1.5 portrait seekbar redesign and v1.1.4 video-startup crash protection. The repository remains private and only Standard APK variants are released.
-
-## 1.1.4 — Video Startup Crash Hotfix
-
-- **Video startup crash:** Prevented the MPV state poller and audio-routing check from dereferencing the player host before the Activity has attached it. This fixes the crash when opening a video after the v1.1.3 audio recovery changes.
-- **Music-player behavior preserved:** Audio remains MPV-based, and the v1.1.3 music control/timeline recovery remains included.
-- **Portrait controls preserved:** The v1.1.3 symmetric portrait seekbar-card redesign remains included.
-- **Release scope:** This is a Standard APK corrective hotfix for v1.1.3; the repository remains private and upstream MPV/mpvRx attribution is preserved.
-
-## 1.1.3 — Portrait Controls and Music Player Recovery Hotfix
-
-- **Symmetric portrait seekbar card:** Rebuilt the vertical seekbar contents around one shared inner inset so both timestamps and the rail sit comfortably inside the same rounded card with balanced corner spacing. The existing glass/player-controls appearance is preserved.
-- **Music-player recovery after video playback:** Audio commands are routed to MPV whenever the current item is audio, even if a stale Native engine flag remains from the preceding video. Audio timing is refreshed from MPV while the track is active, and audio scrubbing no longer gets rejected by a transient seekability state.
-- **Video behavior preserved:** Native/Media3 routing remains unchanged for video items; this hotfix does not redesign the video engine or add a video surface to the music player.
-- **Release scope:** This is a Standard APK hotfix for v1.1.2; the repository remains private and upstream MPV/mpvRx attribution is preserved.
-
-## 1.1.2 — MPV Audio Recovery and Portrait Seekbar Hotfix
-
-- **Rapid music skips:** MPV now releases any previous transition mute before arming the next load guard, preventing the audio output from remaining muted while the timeline continues after several fast song skips.
-- **Video transition protection:** Each new MPV load still uses its own short transition guard, so the fix does not remove the protection against stale audio during video decoder replacement or engine handoff.
-- **Portrait seekbar spacing:** Increased and equalized the outer portrait seekbar card’s vertical padding, while retaining the separated timestamp row and rail so elapsed and remaining duration stay visible.
-- **Release scope:** This is a Standard APK hotfix for v1.1.1; the repository remains private and upstream MPV/mpvRx attribution is preserved.
-
-## 1.1.1 — Native Subtitle Rendering Hotfix
-
-- **Native caption style mapping:** Corrected the Media3 `CaptionStyleCompat` argument order so Native subtitles render with visible text, a transparent background/window, and the selected outline instead of black text and a small black cue rectangle.
-- **Subtitle zoom preserved:** The existing Native pinch-scale and track-reapply behavior remains unchanged.
-- **Release scope:** This is a Standard APK hotfix for v1.1.0; MPV subtitle rendering and the MPV-only music path are unchanged.
-
-## 1.1.0 — Native Subtitle, Background Playback, and Portrait Control Fixes
-
-- **Native subtitle rendering:** Native subtitles now use one configured Media3 subtitle renderer, preventing duplicate layers and visual artifacts when the size or track changes.
-- **Transparent Native captions:** Native subtitle backgrounds and windows remain transparent instead of showing an unwanted black box. Supported style, border, color, and saved pinch-scale settings are reapplied after track updates.
-- **Native background playback:** The Native player stays alive through the foreground service handoff when background playback is enabled, without incorrectly reading or controlling MPV state.
-- **Music-player metadata and state:** Music playback remains MPV-based, while the music player derives its title from the current audio path or metadata instead of a stale video title.
-- **Portrait controls:** The vertical player now has one transport row, compact icon-only actions, a speed/lock/audio header pill, and timestamps above the seek rail so elapsed and remaining duration stay visible.
-- **Release scope:** This release contains the Standard APK variants only; the repository remains private and upstream MPV/mpvRx attribution is preserved.
-
-## 1.0.11 — Native Playback and Portrait Controls Fixes
-
-- **Native background playback:** When background playback is enabled, the Media3/Native player remains active as the Activity stops instead of being treated like the MPV-only service handoff.
-- **Native subtitle styling:** Native captions now start with a transparent window and receive supported text, background, and edge settings from the subtitle panel while preserving the saved pinch scale across renderer and track updates.
-- **Music-player synchronization:** The audio controls can use live Native state for play/pause, position, and duration instead of stale MPV properties.
-- **Portrait controls:** The vertical player now uses a compact rounded control card with visible elapsed/remaining time, a centered transport row, labeled Subtitles/Zoom/Rotate/More actions, and a reference-style speed/lock/audio header pill.
-
-## 1.0.10 — Native Subtitle and Music Player Fixes
-
-- **Native subtitle persistence:** Native subtitle pinch zoom now keeps its scale in the active engine state and reapplies it when Media3 recreates the subtitle renderer or changes tracks.
-- **Correct Native gesture baseline:** Each Native pinch starts from the last Native scale instead of MPV’s unrelated `sub-scale` value, which previously made Native appear to reset to 1.0.
-- **Music-player launch routing:** Direct audio launches are identified before the first MPV track-list event, preventing the first song from briefly opening in the video-player surface.
-- **Audio metadata recovery:** Embedded title, artist, album, artwork, codec, sample rate, bitrate, and channel information are used when transient MPV properties are unavailable, restoring the lossless details view for local files.
-
-## 1.0.9 — MPV Subtitle Scale Application Fix
-
-- **MPV rendering fix:** Removed the ASS subtitle layout path that reset `sub-scale` to `1.0` whenever subtitle positioning was reapplied.
-- **Actual pinch effect:** MPV now retains the scale written by the pinch gesture or subtitle settings slider instead of showing a changed indicator while rendering the original size.
-- **Native path preserved:** The v1.0.8 Media3 `SubtitleView` scaling bridge remains unchanged.
-- **Private test release:** This build is for device validation; prior releases remain available and the planned public fresh-start reset is deferred.
-
-## 1.0.8 — Shared Subtitle Pinch-Zoom Fix
-
-- **Both engines supported:** Subtitle pinch gestures now detect selected Native subtitle tracks as well as MPV tracks.
-- **Actual Native scaling:** Native pinch updates Media3’s attached `SubtitleView`; MPV continues to receive the existing `sub-scale` property update.
-- **Private test release:** This build supersedes the v1.0.7 gesture-routing test and does not change the planned public fresh-start reset.
-
-## 1.0.7 — Subtitle Pinch-Zoom Gesture Fix
-
-- **Subtitle pinch zoom:** Pinching directly over visible subtitle text now routes to `sub-scale` instead of being misclassified as video zoom.
-- **Gesture behavior preserved:** Video pinch zoom, pan, subtitle position gestures, and both Native and MPV playback paths remain unchanged outside the corrected subtitle hit test.
-- **Private test release:** This build is for device validation; previous releases remain available and the planned public fresh-start reset is deferred.
-
-## 1.0.6 — Native Multichannel Regression Fix
-
-- **Wuthering With You regression fixed:** Native AutoSafe now preserves the six-channel layout used by the previously working DTS/DTS-HD path instead of forcing it through a stereo mixer.
-- **Targeted 7.1 protection:** AutoSafe still downmixes seven- and eight-channel input, which is the narrower compatibility path needed for Tangled’s failing AudioTrack configuration.
-- **Fallback preserved:** If Native genuinely fails on a device, the existing safe MPV fallback remains active and the repository stays on the private test-release track.
-
-## 1.0.4 — Tangled Fallback and Stability Fix
-
-- **Media3-error fallback protection:** Auto mode now records a Native/Media3 playback error as an automatic fallback for the affected item before switching to MPV, preventing the MPV Dolby Vision observer from immediately selecting Native again.
-- **Tangled stability:** This covers the failure path where Media3 initializes but cannot create the required audio renderer for an 8-channel Dolby/TrueHD or E-AC-3 track, while MPV can continue playback.
-- **Detached-callback crash protection:** Delayed player cleanup callbacks no longer call the detached `PlayerActivity` host after an engine transition or Activity teardown. Local cleanup state is still cleared safely.
-- **Manual switching preserved:** The new protection applies to automatic fallback only; explicit decoder-sheet selection of Native or MPV remains available.
-
-## 1.0.3 — Tangled Dolby Vision Handoff Fix
-
-- **Observer-path fallback protection:** Auto mode now suppresses the MPV Dolby Vision track observer from immediately selecting Native again after the Native watchdog has already fallen back to MPV for the same item.
-- **Tangled compatibility:** This specifically fixes Dolby Vision Profile 8.1 / HDR10-compatible files such as Tangled, where Native can initialize and decode but fail to produce usable visible output on some devices.
-- **Manual switching preserved:** The guard applies only to automatic Auto-mode reselection. Choosing Native or MPV manually from the decoder sheet still works.
-
-## 1.0.2 — Mpv∞ Update Feed Fix
-
-- **Own release feed:** The in-app updater now checks `ZHINFINITY/Mpv-infinity` releases instead of the inherited mpvRx release feed, so it will no longer offer mpvRx versions such as 2.1.0.
-- **Version alignment:** The corrective build is version `1.0.2` and downloads only the compatible Mpv∞ Standard APK from the Mpv∞ release assets.
-
-## 1.0.0 — Feature & Experience Release
+## 2.5.0 - Frame Review, Auto Crop & Library Performance
+
+> [!IMPORTANT]
+> **Project hiatus:** Following version 2.5.0, Mpv∞ development will be paused until further notice.
+
+### 🎬 Frame Review, Seeking & Playback
+- **Frame-Level Review**: Added a full-player Frame Review mode with horizontal frame swipes, previous/next-frame controls, precise frame and millisecond readouts, snapshots with optional subtitles, and a transparent responsive layout.
+- **Frame-Addressed Timeline**: The Frame Review slider now selects integer video frames. Dragging uses throttled keyframe previews, while release performs an exact mpv seek with bounded refinement and adjacent-frame correction for precision without sustained decoder load.
+- **Reliable Forward and Backward Seeking**: Backward seeks use exact targets to keep audio and video aligned. Forward seeks stop safely before EOF and a subsequent forward action can finish playback instead of becoming unresponsive near the end.
+- **Safer Surface Recovery**: MediaCodec video is suspended before an Android playback surface is destroyed and restored only for the matching playback generation, reducing black frames and decoder failures after surface recreation.
+- **thumbfast Seek Preview Removal**: Removed the separate ThumbFast overlay engine, frame-decode cache, preference, and UI. Scrubbing now uses one throttled live-video preview path, reducing duplicate decoder work and stale preview races.
+- **Smoother Startup and Controls**: Reduced startup control flicker, replaced overshooting control springs with predictable timed transitions, and improved seek coalescing so rapid gestures settle on the latest requested position.
+- **Correct Orientation from the First Frame**: Local videos pass their known dimensions into the player so portrait and landscape orientation can be selected before playback appears instead of rotating after startup.
+- **Correct Audio State Across Transitions**: Playback teardown no longer carries a temporary seek mute into the next file, and terminal playback state is persisted immediately when a file reaches EOF.
+- **Persistent Video Geometry**: Video zoom survives file loads, while crop, pan, zoom, stretch, and ambient rendering now share one consistent geometry path.
+- **Immediate Runtime Changes**: Clearing playback history updates repository-backed state immediately, and edited enabled Lua scripts reload with the next player core.
+
+### ✂️ Automatic Crop & Video Output
+- **Automatic Black-Bar Cropping**: Added an Auto Crop aspect mode that samples multiple frames, detects persistent black borders conservatively, and caches results for repeat playback.
+- **Variable-Aspect Safety**: Auto Crop now handles changing aspect ratios, source rotation, and short or dark scenes without retaining stale crop measurements.
+- **Stretch and Ambient Compatibility**: Cropping works correctly in stretch layouts and updates the ambient background from the same final video geometry.
+- **Translated Auto Crop Experience**: Auto Crop status, actions, results, and error messages are available across every supported app language.
+- **Cleaner HDR Configuration**: Removed redundant tone-mapping and gamut-mapping overrides so HDR output follows the selected pipeline without conflicting transformations.
+
+### 🎛️ Player Controls, PiP & Navigation
+- **Onboarding Never Blocks the App**: "Get started" now always enters the app, even when permissions were skipped — the finish page lists any missing permissions in an amber warning instead of the quick-tour toggle, and screens that need storage show a compact in-place "Grant access" prompt.
+- **Search Bar Respects the Status Bar**: The inline search bar (folders, videos, music, playlists, network, Jellyfin) no longer renders under the status bar and camera cutout — the system-inset padding lost in the Material search migration is back.
+- **Streaming Link Handling Toggle**: New "Open streaming site links" switch in player settings controls whether Mpv∞ registers for YouTube, Vimeo, Twitch, Odysee, and Bilibili links — turn it off and those links go straight to their own apps while direct media URLs keep working.
+- **Correct First Playlist Entry**: Opening any video other than the first from a folder no longer shows the opened video's name on the playlist sheet's first row — stale launch metadata from the temporary one-item queue is now cleared before the folder playlist is published.
+- **Right-Edge Action Panel**: Added a bare right-edge pull handle that opens the complete player action set in the app's movable `DraggablePanel`.
+- **Consistent Action Tiles**: Player actions use a responsive three-column tile layout with normalized icon sizes, no nested circular backgrounds, dynamic colors, and full-tile indicators for active settings such as Background Playback, HDR, Ambient, Repeat, Shuffle, transforms, speed, and zoom.
+- **Swipe Speed Lock**: Added a hold-speed swipe gesture with locking, haptic feedback, and reliable restoration to 1x when the lock is released.
+- **Configurable Audio Seeking**: Music-player rewind and forward controls now use the configured double-tap seek duration.
+- **Reliable PiP Handoffs**: Expanding PiP restores the full player without interrupting playback, Back opens the mini player where appropriate, and the PiP close action stops playback cleanly.
+- **Supported-Link Routing**: Expanded Open by default coverage for supported YouTube domains.
+### 🌐 Network Streaming & Protocols
+- **Auto-Next at End of File Restored**: Videos and music advance to the next queue item again when a file finishes — in the player and during background playback. A 2.5.0 change suppressed the end-of-file signal that keep-open builds rely on; it now flows again and is validated against the playback position so a dropped network stream can't fake it and skip mid-file.
+- **Proxy Connection Slot Leak**: Timed-out network proxy operations no longer leave their late-arriving upstream streams open, which could exhaust small servers' connection limits and fail every following request.
+- **WebDAV Playback Reliability**: Playback no longer fails outright on servers whose share root rejects or empties a depth-0 PROPFIND (common behind reverse proxies) — only credential rejections abort the connection now, and file sizes fall back to an HTTP HEAD/ranged probe when PROPFIND can't provide them. Failed proxy streams also recover: a dead upstream session is evicted so the next seek reconnects instead of buffering forever, and upstream failures are now logged (redacted) instead of silently returning 503.
+- **No yt-dlp for Local Proxy Streams**: Loopback proxy URLs (all SMB/FTP/SFTP/WebDAV/torrent playback) are excluded from the yt-dlp hook outright, so extensionless network files can't be misrouted through the extractor.
+- **YouTube on 32-bit and x86 Devices**: Fixed shared YouTube links failing with "could not load this link" on armeabi-v7a and x86 devices — the bundled Python runtime only shipped its arm64 build configuration, so yt-dlp crashed with "No module named \_sysconfigdata\_\_android\_..." before extraction could start.
+- **SFTP Support**: Added SFTP as a full network protocol alongside SMB, FTP, and WebDAV — browse folders, stream with seeking through the secure loopback proxy, and manage connections from the same add/edit dialogs (default port 22).
+- **Large-File Freeze & EOF Seek Fix**: Network reconnect options now reach the primary playback stream, so a dropped connection or a failed seek-reopen recovers automatically instead of freezing large files or showing endless buffering when seeking back after the end of a file.
+- **Proxy Hang Guard**: A network body that ends early now surfaces as a recoverable disconnect instead of leaving the player waiting forever for missing bytes.
+- **More Robust WebDAV Streaming**: Full-file streams reuse the shared HTTP client (consistent timeouts, no per-request client leak), and servers that ignore byte-range requests fall back to skip-to-offset streaming so seeking keeps working everywhere.
+- **Music on Network Shares**: WebDAV, SMB, FTP, and SFTP browsers now show and play audio files when "Show audio in browser" is enabled, including folder queues and the audio-player interface.
+- **Fewer Duplicate Requests**: Prevented duplicate network request bursts during playback startup.
+
+### 🎬 Playback & Stability
+- **Precise End-of-File Seeks**: Avoided non-precise seeks into EOF that could end playback unexpectedly.
+- **Ambient Sheet Theming**: Fixed the Ambient sheet appearance in light mode.
+- **Cleaner Builds**: Resolved Kotlin and Material API warnings and updated dependencies.
+
+### � Onboarding & Quick Tour
+- **Step-by-Step Permission Setup**: The first-run permission page is now a guided stepper — one permission per screen with progress dots, so everything fits any display without clipping. Optional permissions (notifications, audio) can be skipped individually, and skipping storage skips the whole permission flow.
+- **Quick Tour Opt-In**: The final setup step offers a quick-tour toggle; the in-app tour itself ships in an upcoming release.
+
+### �📋 Media Info
+- **Image Details**: JPG, PNG, WebP, GIF, TIFF and other images now get a dedicated Image tab with resolution, format, bit depth, color space, compression, and orientation — including embedded cover images found inside audio and video files.
+- **Other & Raw Tabs**: Timecode tracks, programs, and future MediaInfo section kinds appear in a new Other tab together with MKV attachment names, and the complete MediaInfo report is readable in-app from a Raw tab.
+- **Full-Value Reader**: Tapping any field opens a scrollable, selectable popup with its complete value and a copy action, so long values are never lost to truncation.
+- **Kind-Aware Overview**: Images show resolution, format, bit depth, and size; music shows duration, channels, sample rate, and bitrate; irrelevant placeholders such as "No Video" no longer appear.
+- **Complete Container Metadata**: Every General field MediaInfo reports is listed, and the file's system path is shown both under the title and in the container card.
+
+### 🌐 Network, Storage & Subtitles
+- **Network Folder Bookmarks**: Save, open, and manage frequently used folders from saved SMB, FTP, and WebDAV connections without duplicating credentials.
+- **Hardened WebDAV Playback**: Long-running streams are no longer cut off by a whole-call timeout, reserved filename characters are encoded exactly once, duplicate server entries are removed, and reverse-proxy hrefs resolve safely.
+- **Network Subtitle Refresh**: External subtitles are discovered and refreshed correctly for WebDAV and other network media. Next/previous queue navigation now follows the current network item instead of reusing the first item's cached path.
+- **Configurable Hidden Folders**: Added controls for including dot-prefixed and `.nomedia` folders that Android MediaStore normally omits.
+- **Incremental Hidden Scanning**: Hidden-folder discovery now reuses indexed scan state and refreshes changed roots instead of repeatedly traversing the full storage tree.
+- **Android 10 File Operations**: Restored rename, move, delete, and storage permission behavior on Android 10 while retaining scoped-storage handling on newer Android versions.
+- **Cleaner Subtitle Colors**: Removed the duplicated subtitle background-color control so one setting owns the rendered value.
+
+### 🎵 Music, Notifications, Lyrics & Playlists
+- **Colloquial Hinglish Romanization**: Added a casual Latin-script lyrics option for Indic languages, including per-line mixed-script detection, Hindi schwa deletion, long-vowel handling, nasalization fixes, and cleaner Punjabi apostrophes.
+- **No Stale Lyrics After Track Changes**: In-flight lyrics loading, source switching, and translation are cancelled and identity-checked so a slow previous track cannot overwrite the current song.
+- **Reliable Notification Favorites**: Music notification favorites use the same stable identity as the app, update immediately, and stay synchronized with playlist changes.
+- **Isolated Notification Controls**: Media notification actions now target the active playback session, include a close action, and avoid duplicate or cross-session commands.
+- **Save Queue as Playlist**: The current player queue can be saved directly as a named playlist.
+- **Faster Playlist Artwork**: Playlist rows reuse cached video thumbnails instead of regenerating artwork while browsing.
+- **Relevant Queue Actions Only**: Play Next and Add to Queue remain available for audio selections without appearing in video selection menus where those actions are not supported.
+
+### 📦 Installation
+- **Obtainium Access**: Added a direct Obtainium badge and corrected setup link in the project README for easier installation and update tracking.
+
+### ⚡ Library, Documentation & Stability
+- **Smooth Large Libraries**: Lists containing hundreds of videos suspend thumbnail decoding, disk reads, and cache-key work during flings, then resume a bounded viewport batch after scrolling settles.
+- **Incremental Playback Progress**: Five-second playback persistence updates only the affected library row instead of rebuilding and re-sorting every video, preserving stable lazy-list items and reducing mid-scroll jank.
+- **Lower Per-Card Overhead**: Thumbnail preferences are observed once per screen, repository work runs off the main thread, and large video pickers use stable content types and scroll-aware loading.
+- **Documentation Crash Fixed**: Fixed issue #571, where scrolling through mpv Input Command documentation crashed on the duplicated `COMMAND:playlist-next` lazy-list key. Playlist commands now appear once and all documentation rows have category-qualified unique keys.
+- **More Reliable Player State**: Fixed playback-state updates that could lag behind user actions and improved queue, notification, and playlist synchronization during repeated media changes.
+
+## 2.4.0 — Playlists, Playback Reliability & Expressive Navigation
+
+### 🎬 Playback, PiP & Performance
+- **Faster Video Startup**: Removed blocking external asset synchronization from the launch path. Validated internal mpv assets are reused immediately while external assets refresh after playback begins.
+- **Reliable Seek Thumbnails**: Hardened ThumbFast-style preview initialization, request ordering, caching, and decode behavior so scrubbing shows the newest requested frame without stale replacements.
+- **Clean PiP Dismissal**: Consolidated PiP close handling into one idempotent teardown path, preventing lingering playback, duplicated audio, and brief audio glitches after the PiP window is dismissed.
+- **Safer Playback Transitions**: Improved yt-dlp, ambient-mode, clip-editor, renderer, queue, and audio-player lifecycle handling across repeated media changes.
+- **Actionable Player Diagnostics**: Expanded statistics Page 6 with real process memory, Java/native heap, mpv cache, buffered duration, packet/file cache, torrent, and playback-health data.
+
+### 📚 Playlists, Queues & Web Media
+- **YouTube Playlist Support**: YouTube and other supported web playlist links can be imported from the Playlists tab with ordered videos, titles, channel metadata, and thumbnails alongside existing M3U/M3U8 support.
+- **Metadata-Rich Player Queues**: Pasting a YouTube playlist into a link field now starts its first video and preloads every entry into the in-player playlist drawer with title, channel, artwork, duration, and stable URL metadata.
+- **More Flexible Queues**: Added Play Next and Add to Queue actions, mixed audio/video playlist support, reliable local M3U path resolution, and safer queue ownership during media handoffs.
+- **Shared Favorites Playlists**: Video favorites now appear as Favorite Videos in the main Playlists tab, while the same Favorite Songs collection is available from both Music and Playlists with consistent configured cover-art sizing.
+- **Cleaner Playlist Browsing**: Favorite collections are clearly separated by media type, remote cards have consistent selection styling, and network playlist thumbnails and folder queues are restored.
+- **Clear yt-dlp Setup**: First-time web playback now prompts before installing yt-dlp and shows installation progress instead of appearing to buffer indefinitely.
+
+### 🔎 Search, Lyrics & Discovery
+- **Production Settings Search**: Expanded settings coverage with ranked fuzzy matching, typo tolerance, subsequence matching, direct conditional-setting routing, precise scrolling, and highlighted matches.
+- **Better Lyrics Coverage**: Added embedded ID3v2 lyrics extraction for MP3 files and improved online lyrics lookup for YouTube media.
+- **Focused Browser Actions**: Queue selection actions now appear only in modes where they are valid, avoiding video-mode actions that depend on audio inclusion.
+
+### 🧭 Navigation & Interface
+- **Responsive Tab Navigation**: Added a smooth one-to-one sliding navigation pill and cancellable page transitions so rapid or random tab taps always settle on the latest selected destination.
+- **Stable Swipe Navigation**: Restored predictable tab swipes and removed competing page-state writers that could leave the browser between screens.
+- **Refined Player Controls**: Added always-dark player control backgrounds, unified light/dark button palettes, refreshed segmented controls, and improved audio-player controls.
+
+### 🔔 Notifications & Remote Controls
+- **Stateful Media Actions**: Media notifications now use Material Symbol transport icons, visibly distinguish saved Favorites, cycle Repeat states correctly, and expose expanded playback controls.
+- **Reliable Notification Ownership**: Prevented duplicate media cards, restored the correct audio route, and kept notification state synchronized with the active playback session.
+- **Clear PiP Seeking**: PiP controls now use dedicated Replay 10 and Forward 10 Material Symbols for precise ten-second seeking.
+
+## 2.3.0 — Playback, Streaming Quality & Media Experience
+
+### 🎬 Playback Reliability & Native Tools
+- **Reliable Media Handoffs**: Reworked ownership across the player, mini-player, and background service so stale activities, callbacks, resolvers, and queues cannot take over a newer request. Audio-to-video, video-to-audio, playlist, URI, torrent, and yt-dlp transitions now avoid freezes, audio-only video, lost metadata, and mismatched queues.
+- **Safer Session Recovery**: Playback position restores correctly after session recreation, HTTP demux cache survives player transitions, videos pause when the app moves to the background, and mini-player replacement no longer races the active session.
+- **FDSAN-Safe mpv Builds**: Fixed the Android libmpv subprocess file-descriptor sanitizer crash in both standard and Fongmi builds, refreshed the bundled mpv libraries, and hardened native stop/replacement sequencing.
+- **Native Video Clipping**: Added an on-player clipping workflow and hardened the editor and export path for reliable repeated use.
+- **Player Lifecycle Fixes**: Prevented duplicate audio autoplay advances, playlist-sheet crashes, released-session service shutdowns, stale background-playback handoffs, and cross-contamination between audio brightness and playlist selection.
+- **Restored Ambient Glow**: Brought back the proven v1.4.1 ambient glow shader and removed conflicting legacy ambient behavior.
+
+### 🌐 Streaming Quality, yt-dlp & Subtitles
+- **Per-Video Quality Selection**: Added a quality control for network streams and per-item yt-dlp format selection, with the chosen format carried through playback instead of applying one global guess.
+- **Clearer Web Playback Status**: Improved yt-dlp web playback, resolver status feedback, and quality-button visibility across the player layouts.
+- **Episode-Aware Subtitle Search**: SubHub searches now retain the current season and episode context when media moves through the playback pipeline.
+- **Dedicated Subtitle Preferences**: Added a focused subtitle section to Settings so subtitle controls are easier to find and manage.
+
+### 🍿 Jellyfin & Seerr
+- **Built-In Seerr Requests**: Integrated Seerr with Jellyfin so movies and series can be discovered and requested inside Mpv∞, with refined discovery cards and live request-status updates.
+- **Jellyfin Music in the Mpv∞ Player**: Jellyfin audio now uses the full music-player experience, with a redesigned Music section, complete album queues, swipeable tabs, home playlists, favorites, and synchronized favorite state.
+- **Faster Jellyfin Actions**: Added direct quick play, YouTube trailers, improved resume actions, and a browser FAB that closes predictably, follows scrolling, and blocks accidental tab gestures while open.
+- **Richer Library Browsing**: Moved libraries ahead of Continue Watching, redesigned list and episode layouts, improved season selection, and fixed tablet mini-player overlap.
+- **Jellyfin Stability**: Fixed authentication persistence, music queue resolution, cover-art loading, local artwork handling, bitmap crashes, and incorrect album playback.
+
+### 🎵 Music, Lyrics & Recents
+- **Refined, Translated and Romanized Lyrics**: Improved the lyrics interface and controls, added lyric translation and romanization, and made Hindi and Indic transliteration, full-sentence parsing, and per-line results faster and more accurate.
+- **Playlist Favorites & Feedback**: Added favorite controls in the music player, protected the default playlist, introduced square playlist artwork, and added an animated visualizer indicator for the currently playing track.
+- **Reliable Local Music Discovery**: Folder artwork and local artwork URIs now decode correctly, and the music library automatically scans after the first permission grant and when the app resumes.
+- **Separate Video and Audio History**: Recently Played now has swipeable Video and Audio tabs with independent filtering, counts, empty states, scrolling, and artwork sizing.
+
+### 🧭 Browsing & Interface
+- **Fuzzy Media Search**: Added typo-tolerant folder and video search for faster navigation through large libraries.
+- **More Predictable Browser Controls**: Improved FAB expansion, outside-tap dismissal, scroll integration, quick-play access, and recent-item padding across browser screens.
+- **Smoother Navigation**: Removed the bottom-navbar delay during page swipes, added swipe navigation to Jellyfin music tabs, and merged Network tabs into the header for a cleaner layout.
+- **Player Control Polish**: Refined gesture handling, added speed-scaled remaining time, improved timer contrast, tightened control spacing, and made quality-control placement more consistent.
+
+### 📦 Updates & Release Delivery
+- **Preview Update Channel**: Added preview-build discovery to the in-app updater and a live release channel to the preview download site.
+- **Activity-Aware Preview Builds**: Preview automation now checks for unpublished app changes before building, while still supporting complete manual builds.
+- **Clearer Download Links**: Updated preview-site download link colors for better visibility.
+
+## 2.2.2 — Lyrics & Navigation Hotfix
+
+- **Smooth Karaoke Fill**: Word-timed lyrics now fill continuously from left to right with a soft glow. The previous per-letter jump, scale, and layout movement have been removed.
+- **Reliable Tab Swiping**: Main browser navigation now uses the pager's settled page as its single source of truth, preventing interrupted swipes from leaving Recents and Playlists stuck between pages.
+- **Synchronized Builds**: Standard, Fongmi, and non-Vulkan packages are built together from the same release tag and app source revision.
+
+## 2.2.1 — Playback & Lyrics Hotfix
+
+### 🎬 Video Playback Reliability
+- **Black Screen on Startup Fixed**: Video output now waits for Android to attach a valid render surface before mpv initializes the renderer. This restores the proven 2.1.0 startup order and prevents `Missing surface pointer`, audio-only playback, and permanent `video=eof` states on slower devices, including Vivo devices running Android 16.
+- **Safer Surface Recreation**: If the surface disappears while a file is loading, video selection is deferred until the replacement surface is attached instead of racing a destroyed native window.
+- **Single Video-Restoration Path**: Removed duplicate Activity-level restoration state so `PlaybackSession` is the sole owner of deferred video selection.
+
+### 🎤 Lyrics & Update Notes
+- **Word-Timed Karaoke for Standard LRC**: Regular LRCLIB line-synced lyrics now receive stable per-word timing, so the active line animates word by word instead of displaying one static sentence. Enhanced LRC files keep their original word timestamps.
+- **Consistent Centered Lyrics**: Normal and fullscreen lyrics now use the same centered layout for active lines, translations, and plain lyrics.
+- **Maintained Markdown Renderer**: Update release notes now use the lightweight Material 3 Markdown renderer from Maven Central instead of a custom parser.
+
+## 2.2.0 — Jellyfin, Torrent Series & Player Reliability Release
+
+### 🪼 Jellyfin Streaming Integration
+- **Built-in Jellyfin Client & Tab**: Connect to your Jellyfin server and browse Movies, Shows, and Music directly inside the app, with authenticated streaming, external subtitle support, and a bottom-sheet server setup flow that replaces the old dialog.
+- **JellyCine-Style Home Experience**: Completely redesigned Jellyfin tab using Material 3 Expressive components — hero carousel with autoscroll animations, resume carousel, expanded Top Picks, and a dedicated Music section on the home page.
+- **Richer Library Cards & Ratings**: Library cards now fetch real cover art and show IMDb star ratings, with Rotten Tomatoes ratings reorganized for readability and your libraries prioritized in the order you use them.
+- **Faster, Smarter Library Browsing**: Libraries are queried by item type instead of slow folder traversal, with server-side genre filtering, prioritized Shows/Movies in search results, search debouncing, and direct breadcrumb navigation.
+- **Episode Auto-Play & Next-Episode Overlay**: Series continue automatically with a next-episode overlay, audio/subtitle language sync between episodes, and an item info sheet for details before you play.
+- **Two-Way Playback Sync**: Playback state (pause/resume/stop) is reported to the server in real time, and the app pulls your freshest watch position from Jellyfin before starting playback — resume works across devices.
+
+### 🧲 Torrent Series & Network Streaming
+- **Series Torrents Become a Real Playlist**: Multi-file torrents now appear as one playlist entry per episode (sorted naturally), so you can jump between episodes from the queue sheet, use next/previous, auto-advance at the end of an episode, and keep separate resume positions per file. Switching episodes restarts the stream on the right file automatically.
+- **Media Tab Redesign**: The Torrent tab became the unified Media tab in JellyCine style — hero banner, resume carousel, poster cards, and a detail sheet — with saved torrent and network streams unified in one place and a save/open action on recent stream links.
+- **Network Tabs Reorganized**: Tabs reordered to Local Network, Media, and Syncplay, with "Saved Links" naming and a streamlined Media tab UI.
+- **Smarter Recents**: YouTube links now persist their real video titles and thumbnails into recents, and network streaming episode rows show proper episode titles with Jellyfin artwork fallback.
+- **Honest Buffering Indicator**: A proper buffering spinner for network and torrent streams that only appears during genuine cache stalls — no more flicker while seeking or when controls are hidden.
+
+### 🎤 Lyrics & Audio Experience
+- **Letter-by-Letter Karaoke Lyrics**: Synced lyrics now animate every single character on its own beat — letters rise into place with a pop, glow briefly, and sweep from dim to bright, driven by a frame-interpolated playback clock so the wave stays fluid even between position updates.
+- **Centered Lyric Focus**: The active line glides to the center of the view (instead of sticking to the top) with a depth-of-field falloff — nearby lines stay readable while distant lines blur and fade. Fullscreen lyrics are center-aligned with larger type.
+- **Visualizer Engine Cleanup**: All four visualizers (Galaxy, Blob, Cuboid, Particle) now share one audio analysis source of truth — beats, volume gating, and spectrum data are identical across styles, and a dead duplicate rendering engine was removed.
+- **Audio Quality-of-Life**: New audio file picker with persistent folder selection, an autoplay-next-audio preference, immediate audio stop when closing the player, correct "now playing" highlight in the music list, and a crash fix when starting playback from the Songs tab.
+
+### 🎬 Player Reliability & Playback Engine
+- **Load Recovery & Watchdog**: Media that never becomes ready now times out with a visible error and automatic retry instead of hanging forever; playback also recovers cleanly after reopening the app, and end-file metadata edge cases no longer crash the session.
+- **Resume Position Correctness**: Each video resumes from its own saved position — the next playlist item no longer inherits the previous video's progress, progress is persisted for the active playlist item, and history identity is unified for local files.
+- **Subtitle Improvements**: Choose preferred subtitles by ordered title keywords (e.g. "Dialogue" before "Signs"), yt-dlp subtitle titles no longer confuse language filters, and subtitle scale/position now compensate correctly during GPU video zoom and pan (#395).
+- **Skip Markers Fixed**: Intro/outro skip markers no longer accidentally advance to the next video, and marker metadata survives track changes.
+- **Zero-Permission External Playback**: Files shared from other apps play via file descriptors without any storage permission, with robust fallbacks for content URIs.
+- **mpv.conf Option Ownership Page**: A dedicated, organized settings page (replacing the old popup) to hand specific option groups — renderer, decoder, shaders, subtitles, and more — over to your mpv.conf, with per-option control, live counts, and one-tap reset.
+
+### 🧭 UI, Navigation & Updates
+- **Expressive Adaptive Navigation Bar**: New Material 3 expressive navbar that sizes its pill to the actual content, adapts between phone and tablet instead of cramming six tabs, and centers correctly on launch.
+- **Codec Support Indicators**: Per-video decoder support badges across browsing screens and a cleaned-up codec capabilities page, so you can see hardware vs. software decode support at a glance.
+- **In-App Updates Get a Bottom Sheet**: The update dialog was replaced with a modern bottom sheet that renders release notes as formatted Markdown (headings, lists, bold, links) with version chips, release date, size, and download progress.
+- **Picture-in-Picture Polish**: The media notification now stays available in PiP mode (#402).
+
+### ⚡ Performance, Networking & Stability
+- **One Shared HTTP Stack**: The bundled libcurl was replaced by the app-wide OkHttp client (scripts, Jellyfin reporting, subtitles all included), reducing native footprint and unifying cookies, headers, and TLS handling.
+- **ANR & Leak Fixes**: Fixed a teardown ANR, audio-focus races, and an HLS credential leak; preference listeners are now shared instead of one per collector.
+- **Snappier Lists**: Recently-played lookups are indexed, per-render date formatters were hoisted, recompositions were trimmed in Jellyfin browsing, and the library scrollbar no longer overlaps content.
+- **Cleaner Codebase**: The project was reorganized along MVVM lines (update feature split into domain/UI layers, domain no longer depends on UI), every compiler warning was fixed, and dead code was removed.
+
+## 2.1.0 — Feature & Experience Release
 
 ### 🧲 Native Torrent Streaming & Media Browsing
 - **Built-in Torrent Streaming Engine**: Stream and play `.torrent` files, magnet links, and HTTP torrent URLs directly with background piece caching, sequential download prioritization, and integrated local streaming server.
@@ -470,7 +380,7 @@ This stable release consolidates the hybrid playback, mixed queue, audio-player,
 - **Tablet Responsiveness**: Improved Secure Folder UI for tablet and foldable devices.
 
 ### 🏷️ Branding, Licensing & Cleanup
-- **App Rename**: The app is now branded **mpvRx** (renamed from "MpvRx") across UI, docs, and metadata.
+- **App Rename**: The app is now branded **Mpv∞** (renamed from "MpvRx") across UI, docs, and metadata.
 - **New License**: Relicensed to **CC BY-NC 4.0** with license headers applied across the codebase.
 - **Acknowledgements**: Added credit for MpvRex and Pixel Player (UI and thumbnail pipeline inspiration) and AFinity.
 - **Code Quality**: Added ktlint formatting enforcement and fixed AAPT resource and Kotlin compiler warnings.
@@ -599,7 +509,7 @@ This stable release consolidates the hybrid playback, mixed queue, audio-player,
 ### 🌐 Network & External Playback
 - **WebDAV PROPFIND fix**: Connection checks now use a depth-zero `PROPFIND` request instead of Sardine's `HEAD`-based `exists()` call, making it work with servers like FileBrowser Quantum that reject `HEAD` on DAV collections.
 - **WebDAV trailing slash**: Collection URLs consistently keep a trailing slash during validation and browsing.
-- **External-player discovery**: Added a MIME-only intent filter so external-player pickers can find mpvRx before attaching the final video or audio URI.
+- **External-player discovery**: Added a MIME-only intent filter so external-player pickers can find Mpv∞ before attaching the final video or audio URI.
 - **More protocol support**: Added `gopher://`, `sctp://`, and `data://` to network stream detection and intent filters.
 - **Stream compatibility improved**: Better handling of edge-case media streams and improved browsing reliability.
 
@@ -808,7 +718,7 @@ This stable release consolidates the hybrid playback, mixed queue, audio-player,
 - Added Hybrid Skip Markers. The player can now check IntroDB, TIDB, and AniSkip together and use whichever result is found first.
 - Anime4K settings are now easier to use with a collapsible section in Decoder Preferences and also Added Optimization by Sunny Vishnu .
 - Added a setting to show or hide Media Info from Android's share/open-with screen.
-- Added documentation for custom Lua/JS player commands in `MPV_INFINITY_CUSTOM_COMMANDS.md`.
+- Added documentation for custom Lua/JS player commands in `MPVRX_CUSTOM_COMMANDS.md`.
 
 ## 1.3.8
 

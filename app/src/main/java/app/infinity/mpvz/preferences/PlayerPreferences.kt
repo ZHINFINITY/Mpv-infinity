@@ -12,7 +12,7 @@ package app.infinity.mpvz.preferences
 import app.infinity.mpvz.preferences.preference.DependentBooleanPreference
 import app.infinity.mpvz.preferences.preference.PreferenceStore
 import app.infinity.mpvz.preferences.preference.getEnum
-import app.infinity.mpvz.ui.player.AmbientVisualMode
+import app.infinity.mpvz.ui.player.AmbientStyle
 import app.infinity.mpvz.ui.player.ControlsAnimationStyle
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.player.PlayerOrientation
@@ -49,7 +49,7 @@ class PlayerPreferences(
   val showDoubleTapOvals = preferenceStore.getBoolean("show_double_tap_ovals", true)
   val showSeekTimeWhileSeeking = preferenceStore.getBoolean("show_seek_time_while_seeking", true)
   val usePreciseSeeking = preferenceStore.getBoolean("use_precise_seeking", false)
-  val useThumbFastSeekPreview = preferenceStore.getBoolean("use_thumbfast_seek_preview", true)
+
   val showBufferedRange = preferenceStore.getBoolean("show_buffered_range", true)
   val showChapterIndicators = preferenceStore.getBoolean("show_chapter_indicators", true)
 
@@ -62,6 +62,7 @@ class PlayerPreferences(
   val customAspectRatios = preferenceStore.getStringSet("custom_aspect_ratios", emptySet())
   val lastVideoAspect = preferenceStore.getEnum("last_video_aspect", VideoAspect.Fit)
   val lastCustomAspectRatio = preferenceStore.getFloat("last_custom_aspect_ratio", -1f)
+  val autoCropBlackBars = preferenceStore.getBoolean("auto_crop_black_bars", false)
 
   val defaultSpeed = preferenceStore.getFloat("default_speed", 1f)
   val speedPresets =
@@ -80,6 +81,7 @@ class PlayerPreferences(
   val defaultBrightness = preferenceStore.getFloat("default_brightness", -1f)
 
   val allowGesturesInPanels = preferenceStore.getBoolean("allow_gestures_in_panels")
+  val showControlsDrawer = preferenceStore.getBoolean("show_controls_drawer", true)
   val showSystemStatusBar = preferenceStore.getBoolean("show_system_status_bar")
   val showSystemNavigationBar = preferenceStore.getBoolean("show_system_navigation_bar")
   val safeAreaWindow = preferenceStore.getBoolean("safe_area_window", false)
@@ -122,6 +124,9 @@ class PlayerPreferences(
   val autoplayNextAudio = preferenceStore.getBoolean("autoplay_next_audio", true)
 
   val autoPiPOnNavigation = preferenceStore.getBoolean("auto_pip_on_navigation", false)
+
+  // MX/VLC-style: only the home gesture auto-enters PiP; Back keeps its normal close/handoff.
+  val pipOnHomeGestureOnly = preferenceStore.getBoolean("auto_pip_home_gesture_only", false)
   private val videoBackgroundPlayback = preferenceStore.getBoolean("automatic_background_playback", false)
   private val storedEnableVideoMiniPlayer = preferenceStore.getBoolean("enable_video_mini_player", false)
   val enableVideoMiniPlayer = DependentBooleanPreference(storedEnableVideoMiniPlayer, videoBackgroundPlayback)
@@ -129,25 +134,21 @@ class PlayerPreferences(
   val keepScreenOnWhenPaused = preferenceStore.getBoolean("keep_screen_on_when_paused", false)
   val autoplayAfterScreenUnlock = preferenceStore.getBoolean("autoplay_after_screen_unlock", false)
   val enableMediaInfoIntent = preferenceStore.getBoolean("enable_mediainfo_intent", true)
+  val enableWebStreamLinkIntents = preferenceStore.getBoolean("enable_web_stream_link_intents", true)
 
   // Custom Buttons - JSON List
   val customButtons = preferenceStore.getString("custom_buttons_json", "[]")
 
   // Ambience Mode
+  val ambientStyle = preferenceStore.getEnum("ambient_style", AmbientStyle.Glow)
   val ambientBlurSamples = preferenceStore.getInt("ambient_blur_samples", 12)
   val ambientMaxRadius = preferenceStore.getFloat("ambient_max_radius", 0.15f)
   val ambientGlowIntensity = preferenceStore.getFloat("ambient_glow_intensity", 1.2f)
   val ambientSatBoost = preferenceStore.getFloat("ambient_sat_boost", 1.0f)
-  val ambientDitherNoise = preferenceStore.getFloat("ambient_dither_noise", 0.0f)
-  val ambientBezelDepth = preferenceStore.getFloat("ambient_bezel_depth", 0.0f)
   val ambientVignetteStrength = preferenceStore.getFloat("ambient_vignette_strength", 0.5f)
   val ambientWarmth = preferenceStore.getFloat("ambient_warmth", 0.0f)
   val ambientFadeCurve = preferenceStore.getFloat("ambient_fade_curve", 1.5f)
   val ambientOpacity = preferenceStore.getFloat("ambient_opacity", 1.0f)
-  val ambientVisualMode = preferenceStore.getEnum("ambient_visual_mode", AmbientVisualMode.GLOW)
-  val ambientExtendStrength = preferenceStore.getFloat("ambient_extend_strength", 0.70f)
-  val ambientExtendDetailProtection = preferenceStore.getFloat("ambient_extend_detail_protection", 0.60f)
-  val ambientExtendGlowMix = preferenceStore.getFloat("ambient_extend_glow_mix", 0.20f)
   val isAmbientEnabled = preferenceStore.getBoolean("ambient_enabled", false)
   val ambientBatterySaver = preferenceStore.getBoolean("ambient_battery_saver", false)
 
@@ -182,9 +183,6 @@ class PlayerPreferences(
 
   /** Animation played when a video first opens. Default = no overlay. */
   val videoOpenAnimation = preferenceStore.getEnum("video_open_animation", VideoOpenAnimation.Default)
-
-  /** Tab-switching animation style in the main browser. */
-  val navAnimStyle = preferenceStore.getEnum("nav_anim_style", NavigationAnimStyle.Default)
 
   /** Screen-level (app-wide) navigation transition style. */
   val appNavStyle = preferenceStore.getEnum("app_nav_style", NavigationAnimStyle.Default)

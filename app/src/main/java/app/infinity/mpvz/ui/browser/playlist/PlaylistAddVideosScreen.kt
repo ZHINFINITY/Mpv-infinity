@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -24,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +47,7 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.cards.FolderCard
 import app.infinity.mpvz.ui.browser.cards.VideoCard
+import app.infinity.mpvz.ui.browser.cards.rememberVideoCardUiConfig
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.dialogs.FolderSortDialog
 import app.infinity.mpvz.ui.browser.dialogs.VideoSortDialog
@@ -82,6 +85,12 @@ data class PlaylistAddVideosScreen(
     val scope = rememberCoroutineScope()
 
     val browserPreferences = koinInject<BrowserPreferences>()
+    val videoCardUiConfig = rememberVideoCardUiConfig()
+    val videoListState = rememberLazyListState()
+    val isVideoListScrolling by
+      remember(videoListState) {
+        derivedStateOf { videoListState.isScrollInProgress }
+      }
 
     val playlistDetailViewModel: PlaylistDetailViewModel =
       viewModel(
@@ -214,7 +223,11 @@ data class PlaylistAddVideosScreen(
           )
         } else {
           LazyColumn(modifier = Modifier.padding(padding)) {
-            items(sortedFolders, key = { it.bucketId }) { videoFolder ->
+            items(
+              items = sortedFolders,
+              key = { it.bucketId },
+              contentType = { "folder" },
+            ) { videoFolder ->
               FolderCard(
                 folder = videoFolder,
                 onClick = { selectedFolder = videoFolder },
@@ -231,14 +244,23 @@ data class PlaylistAddVideosScreen(
           modifier = Modifier.padding(padding),
         )
       } else {
-        LazyColumn(modifier = Modifier.padding(padding)) {
-          items(sortedVideos, key = { it.id }) { video: Video ->
+        LazyColumn(
+          state = videoListState,
+          modifier = Modifier.padding(padding),
+        ) {
+          items(
+            items = sortedVideos,
+            key = { it.id },
+            contentType = { "video" },
+          ) { video: Video ->
             VideoCard(
               video = video,
               isSelected = selectionManager?.isSelected(video) == true,
               onClick = { selectionManager?.toggle(video) },
               onThumbClick = { selectionManager?.toggle(video) },
               onLongClick = { selectionManager?.handleLongClick(video) },
+              allowThumbnailLoading = !isVideoListScrolling,
+              uiConfig = videoCardUiConfig,
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
             )
           }

@@ -124,11 +124,13 @@ data object SecureFolderScreen : Screen {
     val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
     val showProgressBar by browserPreferences.showProgressBar.collectAsState()
     val showDateChip by browserPreferences.showDateChip.collectAsState()
+    val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
     val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
     val unplayedOldVideoDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
     val showExtensionField by browserPreferences.showExtensionField.collectAsState()
     val showDurationField by browserPreferences.showDurationField.collectAsState()
     val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+    val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
 
     val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
     val videoGridColumnsPortrait by browserPreferences.videoGridColumnsPortrait.collectAsState()
@@ -141,6 +143,7 @@ data object SecureFolderScreen : Screen {
         showSizeChip,
         showResolutionChip,
         showFramerateInResolution,
+        showCodecSupportIndicator,
         showProgressBar,
         showDateChip,
         showUnplayedOldVideoLabel,
@@ -148,6 +151,7 @@ data object SecureFolderScreen : Screen {
         showExtensionField,
         showDurationField,
         centerGridTitles,
+        thumbnailQuality,
       ) {
         VideoCardUiConfig(
           unlimitedNameLines = unlimitedNameLines,
@@ -155,6 +159,7 @@ data object SecureFolderScreen : Screen {
           showSizeChip = showSizeChip,
           showResolutionChip = showResolutionChip,
           showFramerateInResolution = showFramerateInResolution,
+          showCodecSupportIndicator = showCodecSupportIndicator,
           showProgressBar = showProgressBar,
           showDateChip = showDateChip,
           showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
@@ -162,6 +167,7 @@ data object SecureFolderScreen : Screen {
           showExtensionField = showExtensionField,
           showDurationField = showDurationField,
           centerGridTitles = centerGridTitles,
+          thumbnailQuality = thumbnailQuality,
         )
       }
 

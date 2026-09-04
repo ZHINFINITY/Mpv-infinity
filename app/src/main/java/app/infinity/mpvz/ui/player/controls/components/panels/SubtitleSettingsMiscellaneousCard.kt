@@ -38,23 +38,27 @@ import app.infinity.mpvz.presentation.components.ExpandableCard
 import app.infinity.mpvz.presentation.components.SliderItem
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.applySubtitleLayout
 import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
 import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
 @Composable
-fun SubtitlesMiscellaneousCard(
-  viewModel: PlayerViewModel,
-  modifier: Modifier = Modifier,
-) {
+fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
   val preferences = koinInject<SubtitlesPreferences>()
   val playerPreferences = koinInject<PlayerPreferences>()
+  val configOwnedOptions = currentMpvConfigOverrideOptions()
+  val layoutOptions = setOf("sub-ass-override", "secondary-sub-ass-override", "sub-pos", "secondary-sub-pos")
+  val scaleOptions = setOf("sub-scale", "secondary-sub-scale")
+  val scaleByWindowOptions =
+    setOf("sub-scale-by-window", "sub-use-margins", "secondary-sub-scale-by-window", "secondary-sub-use-margins")
+  val blendOptions = setOf("blend-subtitles")
+  val miscellaneousOptions = layoutOptions + scaleOptions + scaleByWindowOptions + blendOptions
   var isExpanded by remember { mutableStateOf(true) }
   ExpandableCard(
     isExpanded,
@@ -78,28 +82,28 @@ fun SubtitlesMiscellaneousCard(
         }
         SwitchPreference(
           overrideAssSubs,
+          enabled = layoutOptions.none(configOwnedOptions::contains),
           onValueChange = {
             overrideAssSubs = it
             preferences.overrideAssSubs.set(it)
             applySubtitleLayout(PlaybackSession.getPropertyInt("sub-pos") ?: preferences.subPos.get(), it)
-            viewModel.applyNativeSubtitleStyle()
           },
-          { Text(stringResource(R.string.player_sheets_sub_override_ass)) },
+          title = { Text(stringResource(R.string.player_sheets_sub_override_ass)) },
         )
         var scaleByWindow by remember {
           mutableStateOf(PlaybackSession.getPropertyString("sub-scale-by-window") == "yes")
         }
         SwitchPreference(
           scaleByWindow,
+          enabled = scaleByWindowOptions.none(configOwnedOptions::contains),
           onValueChange = {
             scaleByWindow = it
             preferences.scaleByWindow.set(it)
             val value = if (it) "yes" else "no"
             PlaybackSession.setPropertyString("sub-scale-by-window", value)
             PlaybackSession.setPropertyString("sub-use-margins", value)
-            viewModel.applyNativeSubtitleStyle()
           },
-          { Text(stringResource(R.string.player_sheets_sub_scale_by_window)) },
+          title = { Text(stringResource(R.string.player_sheets_sub_scale_by_window)) },
           summary = { Text(stringResource(R.string.player_sheets_sub_scale_by_window_summary)) },
         )
         var blendSubtitlesWithVideo by remember {
@@ -107,14 +111,14 @@ fun SubtitlesMiscellaneousCard(
         }
         SwitchPreference(
           blendSubtitlesWithVideo,
+          enabled = blendOptions.none(configOwnedOptions::contains),
           onValueChange = {
             blendSubtitlesWithVideo = it
             preferences.blendSubtitlesWithVideo.set(it)
             val blendMode = if (it && playerPreferences.isAmbientEnabled.get()) "video" else "no"
             PlaybackSession.setPropertyString("blend-subtitles", blendMode)
-            viewModel.applyNativeSubtitleStyle()
           },
-          { Text(stringResource(R.string.player_sheets_sub_blend_with_video)) },
+          title = { Text(stringResource(R.string.player_sheets_sub_blend_with_video)) },
           summary = { Text(stringResource(R.string.player_sheets_sub_blend_with_video_summary)) },
         )
         val subScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
@@ -126,11 +130,9 @@ fun SubtitlesMiscellaneousCard(
           onChange = {
             preferences.subScale.set(it)
             PlaybackSession.setPropertyFloat("sub-scale", it)
-            if (viewModel.isMedia3ActiveForGesture()) {
-              viewModel.setSubtitleScaleForGesture(it)
-            }
           },
           max = 5f,
+          enabled = scaleOptions.none(configOwnedOptions::contains),
           icon = {
             Icon(
               Icons.RoundedFilled.FormatSize,
@@ -145,14 +147,9 @@ fun SubtitlesMiscellaneousCard(
           onChange = {
             preferences.subPos.set(it)
             applySubtitleLayout(it, preferences.overrideAssSubs.get())
-            // Media3's SubtitleView does not expose MPV's sub-pos property; keep the
-            // shared position preference for MPV while ensuring the setting is not silently
-            // ignored when the Native engine is active.
-            if (viewModel.isMedia3ActiveForGesture()) {
-              viewModel.setNativeSubtitlePosition(it)
-            }
           },
           max = 150,
+          enabled = layoutOptions.none(configOwnedOptions::contains),
           icon = {
             Icon(
               Icons.RoundedFilled.AlignVerticalCenter,
@@ -168,20 +165,15 @@ fun SubtitlesMiscellaneousCard(
           horizontalArrangement = Arrangement.End,
         ) {
           TextButton(
+            enabled = miscellaneousOptions.none(configOwnedOptions::contains),
             onClick = {
               val defaultSubPos = preferences.subPos.deleteAndGet()
               preferences.subScale.deleteAndGet().let {
                 PlaybackSession.setPropertyFloat("sub-scale", it)
-                if (viewModel.isMedia3ActiveForGesture()) {
-                  viewModel.setSubtitleScaleForGesture(it)
-                }
               }
               val defaultOverride = preferences.overrideAssSubs.deleteAndGet()
               overrideAssSubs = defaultOverride
               applySubtitleLayout(defaultSubPos, defaultOverride)
-              if (viewModel.isMedia3ActiveForGesture()) {
-                viewModel.setNativeSubtitlePosition(defaultSubPos)
-              }
               val defaultScaleByWindow = preferences.scaleByWindow.deleteAndGet()
               scaleByWindow = defaultScaleByWindow
               val scaleValue = if (defaultScaleByWindow) "yes" else "no"
@@ -191,7 +183,6 @@ fun SubtitlesMiscellaneousCard(
               blendSubtitlesWithVideo = defaultBlendSubtitles
               val blendMode = if (defaultBlendSubtitles && playerPreferences.isAmbientEnabled.get()) "video" else "no"
               PlaybackSession.setPropertyString("blend-subtitles", blendMode)
-              viewModel.applyNativeSubtitleStyle()
             },
           ) {
             Row {

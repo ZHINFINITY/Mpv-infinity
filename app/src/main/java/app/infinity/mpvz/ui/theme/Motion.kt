@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 
 /**
- * mpvRx motion policy — respects system reduce-motion accessibility setting.
+ * Mpv∞ motion policy — respects system reduce-motion accessibility setting.
  * When reduce-motion is true, all animations use non-bouncing standard specs.
  */
 @Stable

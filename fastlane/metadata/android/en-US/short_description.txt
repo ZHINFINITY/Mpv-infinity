@@ -1,1 +1,1 @@
-Powerful Android video player with Native Media3 and MPV engines.
+A powerful media player built on mpv with an improved user interface

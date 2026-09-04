@@ -43,8 +43,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -53,7 +57,6 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
-import app.infinity.mpvz.ui.theme.liquidGlassSurfaceColor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -73,6 +76,7 @@ fun BrowserTopBar(
   onBackClick: (() -> Unit)? = null,
   onSortClick: (() -> Unit)? = null,
   onSearchClick: (() -> Unit)? = null,
+  onRequestClick: (() -> Unit)? = null,
   onSettingsClick: (() -> Unit)? = null,
   onDeleteClick: (() -> Unit)? = null,
   onRenameClick: (() -> Unit)? = null,
@@ -91,10 +95,10 @@ fun BrowserTopBar(
   onMoveToSecureClick: (() -> Unit)? = null,
   useRemoveIcon: Boolean = false,
   onAddToPlaylistClick: (() -> Unit)? = null,
-  onAddToQueueClick: (() -> Unit)? = null,
   onRestoreClick: (() -> Unit)? = null,
   colors: TopAppBarColors? = null,
   forceHeadlineSmall: Boolean = false,
+  showBetaBadge: Boolean = false,
 ) {
   if (isInSelectionMode) {
     SelectionTopBar(
@@ -117,7 +121,6 @@ fun BrowserTopBar(
       modifier = modifier,
       useRemoveIcon = useRemoveIcon,
       onAddToPlaylist = onAddToPlaylistClick,
-      onAddToQueue = onAddToQueueClick,
       colors = colors,
       additionalActions = additionalActions,
     )
@@ -127,6 +130,7 @@ fun BrowserTopBar(
       onBackClick = onBackClick,
       onSortClick = onSortClick,
       onSearchClick = onSearchClick,
+      onRequestClick = onRequestClick,
       onSettingsClick = onSettingsClick,
       additionalActions = additionalActions,
       modifier = modifier,
@@ -134,6 +138,7 @@ fun BrowserTopBar(
       onTitleDoubleTap = onTitleDoubleTap,
       colors = colors,
       forceHeadlineSmall = forceHeadlineSmall,
+      showBetaBadge = showBetaBadge,
     )
   }
 }
@@ -148,6 +153,7 @@ private fun NormalTopBar(
   onBackClick: (() -> Unit)?,
   onSortClick: (() -> Unit)?,
   onSearchClick: (() -> Unit)?,
+  onRequestClick: (() -> Unit)? = null,
   onSettingsClick: (() -> Unit)?,
   additionalActions: @Composable RowScope.() -> Unit,
   modifier: Modifier = Modifier,
@@ -155,6 +161,7 @@ private fun NormalTopBar(
   onTitleDoubleTap: (() -> Unit)? = null,
   colors: TopAppBarColors? = null,
   forceHeadlineSmall: Boolean = false,
+  showBetaBadge: Boolean = false,
 ) {
   val preferences = koinInject<AppearancePreferences>()
   val darkMode by preferences.darkMode.collectAsState()
@@ -196,10 +203,16 @@ private fun NormalTopBar(
           if (MaterialTheme.colorScheme.background == Color.Black) {
             Color.Black
           } else {
-            liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
+            MaterialTheme.colorScheme.surfaceContainer
           },
       ),
     title = {
+      val betaBadgeSuffix =
+        if (showBetaBadge) {
+          stringResource(R.string.ui_beta_badge_suffix)
+        } else {
+          ""
+        }
       val titleModifier =
         Modifier
           .onGloballyPositioned { coordinates ->
@@ -239,7 +252,20 @@ private fun NormalTopBar(
           }
 
       Text(
-        title,
+        buildAnnotatedString {
+          append(title)
+          if (showBetaBadge) {
+            withStyle(
+              SpanStyle(
+                fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                fontWeight = FontWeight.SemiBold,
+                baselineShift = BaselineShift.Superscript,
+              ),
+            ) {
+              append(betaBadgeSuffix)
+            }
+          }
+        },
         style =
           if (forceHeadlineSmall || onBackClick != null) {
             MaterialTheme.typography.headlineSmall
@@ -286,6 +312,22 @@ private fun NormalTopBar(
             contentDescription =
               androidx.compose.ui.res.stringResource(
                 app.infinity.mpvz.R.string.settings_search_title,
+              ),
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.secondary,
+          )
+        }
+      }
+      if (onRequestClick != null) {
+        IconButton(
+          onClick = onRequestClick,
+          modifier = Modifier.padding(horizontal = 2.dp),
+        ) {
+          Icon(
+            Icons.RoundedFilled.Explore,
+            contentDescription =
+              androidx.compose.ui.res.stringResource(
+                app.infinity.mpvz.R.string.seerr_discover,
               ),
             modifier = Modifier.size(24.dp),
             tint = MaterialTheme.colorScheme.secondary,
@@ -349,7 +391,6 @@ private fun SelectionTopBar(
   modifier: Modifier = Modifier,
   useRemoveIcon: Boolean = false,
   onAddToPlaylist: (() -> Unit)? = null,
-  onAddToQueue: (() -> Unit)? = null,
   onMoveToSecure: (() -> Unit)? = null,
   onRestore: (() -> Unit)? = null,
   colors: TopAppBarColors? = null,
@@ -364,13 +405,13 @@ private fun SelectionTopBar(
           if (MaterialTheme.colorScheme.background == Color.Black) {
             Color.Black
           } else {
-            liquidGlassSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
+            MaterialTheme.colorScheme.surfaceContainer
           },
       ),
     title = {
       Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clickable { showDropdown = true },
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { showDropdown = true },
       ) {
         Text(
           stringResource(R.string.selected_items, selectedCount, totalCount),
@@ -528,7 +569,7 @@ private fun SelectionTopBar(
         ) {
           Icon(
             Icons.RoundedFilled.Info,
-            contentDescription = stringResource(R.string.properties),
+            contentDescription = stringResource(R.string.info),
             modifier = Modifier.size(24.dp),
             tint =
               if (isSingleSelection) {

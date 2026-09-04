@@ -49,9 +49,10 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
+import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
-import app.infinity.mpvz.preferences.MPVDecoderMode
-import app.infinity.mpvz.preferences.PlaybackEngineMode
+import app.infinity.mpvz.preferences.MpvConfigOverride
+import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
@@ -74,6 +75,18 @@ object DecoderPreferencesScreen : Screen {
   @Composable
   override fun Content() {
     val preferences = koinInject<DecoderPreferences>()
+    val advancedPreferences = koinInject<AdvancedPreferences>()
+    val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
+    val configOwnedOptions =
+      remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
+    val profileConfigOwned = "profile" in configOwnedOptions
+    val rendererBackendConfigOwned = setOf("gpu-api", "gpu-context").any(configOwnedOptions::contains)
+    val decoderConfigOwned = MpvConfigControlledFeatures.HARDWARE_DECODER.any(configOwnedOptions::contains)
+    val shadersConfigOwned = MpvConfigControlledFeatures.ANIME4K.any(configOwnedOptions::contains)
+    val debandingConfigOwned =
+      setOf("vf", "deband", "deband-iterations", "deband-threshold", "deband-range", "deband-grain")
+        .any(configOwnedOptions::contains)
+    val yuv420ConfigOwned = "vf" in configOwnedOptions
     val backstack = LocalBackStack.current
     val context = LocalContext.current
     val isDeviceVulkanSupported = remember { VulkanCapabilities.isDeviceSupported(context) }
@@ -127,11 +140,12 @@ object DecoderPreferencesScreen : Screen {
             PreferenceCard {
               val profile by preferences.profile.collectAsState()
               val currentProfile = MPVProfile.fromValue(profile)
-              val playbackEngine by preferences.playbackEngine.collectAsState()
               ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_profile_title),
                 value = currentProfile,
                 onValueChange = { preferences.profile.set(it.value) },
                 values = MPVProfile.entries,
+                enabled = !profileConfigOwned,
                 title = { Text(stringResource(R.string.pref_decoder_profile_title)) },
                 summary = {
                   Text(
@@ -143,45 +157,11 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_playback_engine_title),
-                value = playbackEngine,
-                onValueChange = { preferences.playbackEngine.set(it) },
-                values = PlaybackEngineMode.entries,
-                valueToText = { AnnotatedString(it.displayName) },
-                title = { Text(stringResource(R.string.pref_decoder_playback_engine_title)) },
-                summary = {
-                  Text(
-                    text = playbackEngine.summary,
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              val mpvDecoderMode by preferences.mpvDecoderMode.collectAsState()
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpv_mode_title),
-                value = mpvDecoderMode,
-                onValueChange = { preferences.mpvDecoderMode.set(it) },
-                values = MPVDecoderMode.entries,
-                valueToText = { AnnotatedString(it.displayName) },
-                title = { Text(stringResource(R.string.pref_decoder_mpv_mode_title)) },
-                summary = {
-                  Text(
-                    text = stringResource(R.string.pref_decoder_mpv_mode_summary, mpvDecoderMode.displayName),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
               val tryHWDecoding by preferences.tryHWDecoding.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_try_hw_dec_title),
                 value = tryHWDecoding,
+                enabled = !decoderConfigOwned,
                 onValueChange = {
                   preferences.tryHWDecoding.set(it)
                 },
@@ -278,7 +258,7 @@ object DecoderPreferencesScreen : Screen {
                     }
                   }
                 },
-                enabled = isVulkanSupported,
+                enabled = isVulkanSupported && !rendererBackendConfigOwned,
                 title = { Text(stringResource(R.string.pref_decoder_vulkan_experimental_title)) },
                 summary = {
                   Text(
@@ -310,6 +290,7 @@ object DecoderPreferencesScreen : Screen {
                 value = debanding,
                 onValueChange = { preferences.debanding.set(it) },
                 values = Debanding.entries,
+                enabled = !debandingConfigOwned,
                 title = { Text(stringResource(R.string.pref_decoder_debanding_title)) },
                 summary = {
                   Text(
@@ -325,6 +306,7 @@ object DecoderPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_yuv420p_title),
                 value = useYUV420p,
+                enabled = !yuv420ConfigOwned,
                 onValueChange = {
                   preferences.useYUV420P.set(it)
                 },
@@ -343,6 +325,7 @@ object DecoderPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_anime4k_title),
                 value = enableAnime4K,
+                enabled = !shadersConfigOwned,
                 onValueChange = { enabled ->
                   preferences.enableAnime4K.set(enabled)
                   if (enabled && !useVulkan) {
@@ -376,7 +359,7 @@ object DecoderPreferencesScreen : Screen {
                 },
               )
 
-              if (enableAnime4K) {
+              if (enableAnime4K && !shadersConfigOwned) {
                 val rotationState by animateFloatAsState(
                   targetValue = if (anime4kExpanded) 180f else 0f,
                   label = "anime4k_chevron_rotation",

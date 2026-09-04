@@ -19,7 +19,7 @@ import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
 import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
 import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.theme.MpvrxTheme
+import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.utils.media.MediaUtils
 import org.koin.android.ext.android.inject
 
@@ -80,7 +80,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
       LaunchedEffect(viewModel) {
         viewModel.launches.collect(::openPlayer)
       }
-      MpvrxTheme {
+      MpvInfinityTheme {
         TorrentSelectionScreen(
           state = state,
           onBack = ::closePicker,

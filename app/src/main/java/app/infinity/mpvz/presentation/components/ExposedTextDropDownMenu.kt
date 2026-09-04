@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -37,16 +38,18 @@ fun ExposedTextDropDownMenu(
   onValueChangedEvent: (String) -> Unit,
   modifier: Modifier = Modifier,
   leadingIcon: (@Composable () -> Unit)? = null,
+  enabled: Boolean = true,
 ) {
   var expanded by remember { mutableStateOf(false) }
 
   ExposedDropdownMenuBox(
     expanded = expanded,
-    onExpandedChange = { expanded = !expanded },
+    onExpandedChange = { if (enabled) expanded = !expanded },
     modifier = modifier,
   ) {
     OutlinedTextField(
       readOnly = true,
+      enabled = enabled,
       value = selectedValue,
       onValueChange = {},
       label = { Text(text = label) },

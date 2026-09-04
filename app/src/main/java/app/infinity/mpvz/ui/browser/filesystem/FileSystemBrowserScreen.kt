@@ -17,8 +17,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -46,8 +51,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.ToggleFloatingActionButton
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
@@ -72,7 +75,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -81,7 +86,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.browser.FileSystemItem
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -109,6 +113,7 @@ import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.browser.sheets.PlayLinkSheet
 import app.infinity.mpvz.ui.browser.states.EmptyState
 import app.infinity.mpvz.ui.browser.states.PermissionDeniedState
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppMotion
@@ -118,7 +123,6 @@ import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.media.CopyPasteOps
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.utils.media.OpenDocumentTreeContract
-import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
 import app.infinity.mpvz.utils.permission.PermissionUtils
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
@@ -172,9 +176,9 @@ fun FileSystemBrowserScreen(path: String? = null) {
   val appearancePreferences = koinInject<app.infinity.mpvz.preferences.AppearancePreferences>()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
-    val playerPreferences = koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
+  val playerPreferences = koinInject<app.infinity.mpvz.preferences.PlayerPreferences>()
   val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-  var hasHandledInitialResume by rememberSaveable { mutableStateOf(false) }
+
   // ViewModel - use path parameter if provided, otherwise show roots
   val viewModel: FileSystemBrowserViewModel =
     viewModel(
@@ -321,7 +325,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
     )
 
   var isPermissionSetupCompleted by androidx.compose.runtime.saveable.rememberSaveable {
-    androidx.compose.runtime.mutableStateOf(permissionState.status == com.google.accompanist.permissions.PermissionStatus.Granted)
+    androidx.compose.runtime.mutableStateOf(
+      permissionState.status == com.google.accompanist.permissions.PermissionStatus.Granted ||
+        browserPreferences.onboardingCompleted.get(),
+    )
   }
 
   // Combined MainScreen updates for better performance and responsiveness
@@ -344,7 +351,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
           selectionManager = if (onlyVideosSelected) selectionManager else null,
         )
         mainScreenObj.updatePermissionState(
-          isDenied = !isPermissionSetupCompleted || permissionState.status is PermissionStatus.Denied,
+          isDenied = !isPermissionSetupCompleted,
         )
       } catch (e: Exception) {
         Log.e("FileSystemBrowserScreen", "Failed to update MainScreen state", e)
@@ -415,13 +422,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
     val observer =
       LifecycleEventObserver { _, event ->
         if (event == Lifecycle.Event.ON_RESUME) {
-          // The ViewModel already loads the initial directory. Avoid a second startup refresh;
-          // later returns reuse the scanner cache instead of rescanning all storage.
-          if (hasHandledInitialResume) {
-            viewModel.refreshVisibleDirectory()
-          } else {
-            hasHandledInitialResume = true
-          }
+          viewModel.refresh()
         }
       }
     lifecycleOwner.lifecycle.addObserver(observer)
@@ -511,62 +512,52 @@ fun FileSystemBrowserScreen(path: String? = null) {
       topBar = {
         if (isSearching) {
           // Search mode - show search bar instead of top bar
-          SearchBar(
-            inputField = {
-              SearchBarDefaults.InputField(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                onSearch = { },
-                expanded = false,
-                onExpandedChange = { },
-                placeholder = {
-                  Text(
-                    if (isAtRoot) {
-                      "Search in all storage volumes..."
-                    } else {
-                      "Search in ${breadcrumbs.lastOrNull()?.name ?: "folder"}..."
-                    },
-                  )
-                },
-                leadingIcon = {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Search,
-                    contentDescription =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.settings_search_title,
-                      ),
-                  )
-                },
-                trailingIcon = {
-                  IconButton(
-                    onClick = {
-                      isSearching = false
-                      searchQuery = ""
-                    },
-                  ) {
-                    Icon(
-                      imageVector = Icons.RoundedFilled.Close,
-                      contentDescription =
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.generic_cancel,
-                        ),
-                    )
-                  }
-                },
-                modifier = Modifier.focusRequester(focusRequester),
-              )
-            },
-            expanded = false,
-            onExpandedChange = { },
+          InlineSearchBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            onSearch = { },
             modifier =
               Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
+            inputFieldModifier = Modifier.focusRequester(focusRequester),
+            placeholder = {
+              Text(
+                if (isAtRoot) {
+                  "Search in all storage volumes..."
+                } else {
+                  "Search in ${breadcrumbs.lastOrNull()?.name ?: "folder"}..."
+                },
+              )
+            },
+            leadingIcon = {
+              Icon(
+                imageVector = Icons.RoundedFilled.Search,
+                contentDescription =
+                  androidx.compose.ui.res.stringResource(
+                    app.infinity.mpvz.R.string.settings_search_title,
+                  ),
+              )
+            },
+            trailingIcon = {
+              IconButton(
+                onClick = {
+                  isSearching = false
+                  searchQuery = ""
+                },
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Close,
+                  contentDescription =
+                    androidx.compose.ui.res.stringResource(
+                      app.infinity.mpvz.R.string.generic_cancel,
+                    ),
+                )
+              }
+            },
             shape = RoundedCornerShape(28.dp),
             tonalElevation = 6.dp,
-          ) {
-            // Empty content for SearchBar
-          }
+          )
         } else {
           BrowserTopBar(
             title =
@@ -630,7 +621,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
             onInvertSelection = { selectionManager.invertSelection() },
             onDeselectAll = { selectionManager.clear() },
             onAddToPlaylistClick =
-              if (!BuildConfig.ENABLE_UPDATE_FEATURE && onlyVideosSelected) {
+              if (onlyVideosSelected) {
                 { addToPlaylistDialogOpen.value = true }
               } else {
                 null
@@ -642,6 +633,13 @@ fun FileSystemBrowserScreen(path: String? = null) {
         val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
         val miniPlayerClearance = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance
         if (isAtRoot) {
+          val isFabShouldBeVisible =
+            showQuickPlayFab &&
+              !isInSelectionMode &&
+              isFabVisible.value &&
+              !app.infinity.mpvz.ui.browser.MainScreen
+                .getPermissionDeniedState()
+
           FloatingActionButtonMenu(
             modifier =
               Modifier.padding(
@@ -672,12 +670,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
                   modifier =
                     Modifier
                       .animateFloatingActionButton(
-                        visible =
-                          showQuickPlayFab &&
-                            !isInSelectionMode &&
-                            isFabVisible.value &&
-                            !app.infinity.mpvz.ui.browser.MainScreen
-                              .getPermissionDeniedState(),
+                        visible = isFabShouldBeVisible,
                         alignment = Alignment.BottomEnd,
                       ),
                   checked = isFabExpanded.value && !quickPlayFabDirect,
@@ -736,20 +729,6 @@ fun FileSystemBrowserScreen(path: String? = null) {
               FloatingActionButtonMenuItem(
                 onClick = {
                   isFabExpanded.value = false
-                  TemporaryPlaybackQueue.start(context)
-                },
-                icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
-                text = {
-                  Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(app.infinity.mpvz.R.string.ui_play_queue),
-                  )
-                },
-              )
-
-              FloatingActionButtonMenuItem(
-                onClick = {
-                  isFabExpanded.value = false
                   coroutineScope.launch {
                     val recentlyPlayedVideos =
                       app.infinity.mpvz.utils.history.RecentlyPlayedOps.getRecentlyPlayed(
@@ -772,7 +751,6 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 },
               )
 
-
               FloatingActionButtonMenuItem(
                 onClick = {
                   isFabExpanded.value = false
@@ -790,8 +768,8 @@ fun FileSystemBrowserScreen(path: String? = null) {
             }
           }
         }
-      },
-    ) { padding ->
+      }
+  ) { padding ->
       Box(modifier = Modifier.padding(padding)) {
         if (isPermissionSetupCompleted && permissionState.status == PermissionStatus.Granted) {
             if (isSearching) {
@@ -860,15 +838,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
                           // Single video - play normally
                           MediaUtils.playFile(video, context)
                         } else {
-                          // Multiple videos - play as playlist starting from clicked video
-                          val intent = Intent(Intent.ACTION_VIEW, allVideos[startIndex].uri)
-                          intent.setClass(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java)
-                          intent.putExtra("internal_launch", true)
-                          intent.putParcelableArrayListExtra("playlist", ArrayList(allVideos.map { it.uri }))
-                          intent.putExtra("playlist_index", startIndex)
-                          intent.putExtra("launch_source", "playlist")
-                          intent.putExtra("is_audio", video.isAudio)
-                          context.startActivity(intent)
+                          MediaUtils.playFiles(allVideos, context, startIndex)
                         }
                       } else {
                         MediaUtils.playFile(video, context)
@@ -894,6 +864,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 isInSelectionMode = isInSelectionMode,
               )
             }
+        } else if (isPermissionSetupCompleted) {
+          app.infinity.mpvz.ui.browser.states.StoragePermissionPrompt(
+            onRequestPermission = { permissionState.launchPermissionRequest() },
+          )
         } else {
           PermissionDeniedState(
             onRequestPermission = { permissionState.launchPermissionRequest() },
@@ -904,6 +878,11 @@ fun FileSystemBrowserScreen(path: String? = null) {
             modifier = Modifier,
           )
         }
+
+        FabScrollHelper.FabScrim(
+          visible = isFabExpanded.value && !quickPlayFabDirect,
+          onDismiss = { isFabExpanded.value = false },
+        )
       }
     }
 
@@ -953,14 +932,10 @@ fun FileSystemBrowserScreen(path: String? = null) {
         onRenameClick = { renameDialogOpen.value = true },
         onDeleteClick = { deleteDialogOpen = true },
         onAddToPlaylistClick = { addToPlaylistDialogOpen.value = true },
-        onAddToTemporaryQueueClick = {
-          TemporaryPlaybackQueue.add(context, selectedVideos)
-        },
         showDownscale =
           selectedVideos.isNotEmpty() && selectedVideos.none { it.isAudio } && selectedFolders.isEmpty(),
         showRename = selectionManager.isSingleSelection,
-        showAddToPlaylist = !BuildConfig.ENABLE_UPDATE_FEATURE && onlyVideosSelected,
-        showAddToTemporaryQueue = onlyVideosSelected,
+        showAddToPlaylist = onlyVideosSelected,
         modifier = Modifier.padding(bottom = 0.dp),
       )
     }
@@ -1296,15 +1271,7 @@ private fun playVideosAsPlaylist(
     // Single video - play normally
     MediaUtils.playFile(videos.first(), context)
   } else {
-    // Multiple videos - play as playlist
-    val intent = Intent(Intent.ACTION_VIEW, videos.first().uri)
-    intent.setClass(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java)
-    intent.putExtra("internal_launch", true)
-    intent.putParcelableArrayListExtra("playlist", ArrayList(videos.map { it.uri }))
-    intent.putExtra("playlist_index", 0)
-    intent.putExtra("launch_source", "playlist")
-    intent.putExtra("is_audio", videos.first().isAudio)
-    context.startActivity(intent)
+    MediaUtils.playFiles(videos, context)
   }
 }
 
@@ -1350,11 +1317,13 @@ private fun FileSystemBrowserContent(
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
   val unplayedOldVideoDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
   val showDurationField by browserPreferences.showDurationField.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
   val videoCardUiConfig =
     remember(
       unlimitedNameLines,
@@ -1369,6 +1338,8 @@ private fun FileSystemBrowserContent(
       showExtensionField,
       showDurationField,
       centerGridTitles,
+      showCodecSupportIndicator,
+      thumbnailQuality,
     ) {
       VideoCardUiConfig(
         unlimitedNameLines = unlimitedNameLines,
@@ -1376,6 +1347,7 @@ private fun FileSystemBrowserContent(
         showSizeChip = showSizeChip,
         showResolutionChip = showResolutionChip,
         showFramerateInResolution = showFramerateInResolution,
+        showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
@@ -1383,6 +1355,7 @@ private fun FileSystemBrowserContent(
         showExtensionField = showExtensionField,
         showDurationField = showDurationField,
         centerGridTitles = centerGridTitles,
+        thumbnailQuality = thumbnailQuality,
       )
     }
 
@@ -1776,12 +1749,14 @@ private fun FileSystemSearchContent(
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
   val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
   val unplayedOldVideoDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
   val showDurationField by browserPreferences.showDurationField.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
   val videoCardUiConfig =
     remember(
       unlimitedNameLines,
@@ -1796,6 +1771,8 @@ private fun FileSystemSearchContent(
       showExtensionField,
       showDurationField,
       centerGridTitles,
+      showCodecSupportIndicator,
+      thumbnailQuality,
     ) {
       VideoCardUiConfig(
         unlimitedNameLines = unlimitedNameLines,
@@ -1803,6 +1780,7 @@ private fun FileSystemSearchContent(
         showSizeChip = showSizeChip,
         showResolutionChip = showResolutionChip,
         showFramerateInResolution = showFramerateInResolution,
+        showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
@@ -1810,6 +1788,7 @@ private fun FileSystemSearchContent(
         showExtensionField = showExtensionField,
         showDurationField = showDurationField,
         centerGridTitles = centerGridTitles,
+        thumbnailQuality = thumbnailQuality,
       )
     }
 

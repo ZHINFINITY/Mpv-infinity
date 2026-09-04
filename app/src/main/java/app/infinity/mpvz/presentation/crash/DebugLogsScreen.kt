@@ -268,7 +268,7 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
                   menuExpanded = false
                   SafeClipboard.copyPlainText(
                     context = context,
-                    label = "mpvrx_debug_logs",
+                    label = "Mpv∞_debug_logs",
                     text = visibleText(),
                   )
                 },
@@ -387,13 +387,13 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
           !hasLoadedOnce && sourceEntries.isEmpty() -> {
             DebugLogMessageState(
               title = "Loading logs…",
-              message = "Reading the current mpvRx process logcat.",
+              message = "Reading the current Mpv∞ process logcat.",
             )
           }
           readError != null && sourceEntries.isEmpty() -> {
             DebugLogMessageState(
               title = "Unable to read logs",
-              message = "Android did not return the app logcat. mpvRx will keep retrying automatically.\n\n${readError.orEmpty()}",
+              message = "Android did not return the app logcat. Mpv∞ will keep retrying automatically.\n\n${readError.orEmpty()}",
               isError = true,
             )
           }
@@ -407,7 +407,7 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
                 } else if (isPaused) {
                   "Resume to see the latest captured entries."
                 } else {
-                  "Use mpvRx normally and new app logs will appear here."
+                  "Use Mpv∞ normally and new app logs will appear here."
                 },
             )
           }
@@ -437,7 +437,7 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
                   onCopy = {
                     SafeClipboard.copyPlainText(
                       context = context,
-                      label = "mpvrx_log_entry",
+                      label = "Mpv∞_log_entry",
                       text = formatDebugLogEntry(entry),
                     )
                   },
@@ -653,11 +653,11 @@ private fun exportDebugLogs(
   if (text.isBlank()) return
 
   val exportDirectory = File(context.cacheDir, "shared_logs").apply { mkdirs() }
-  val file = File(exportDirectory, "mpvrx-debug-${System.currentTimeMillis()}.txt")
+  val file = File(exportDirectory, "Mpv∞-debug-${System.currentTimeMillis()}.txt")
   file.writeText(text)
 
   exportDirectory
-    .listFiles { candidate -> candidate.isFile && candidate.name.startsWith("mpvrx-debug-") }
+    .listFiles { candidate -> candidate.isFile && candidate.name.startsWith("Mpv∞-debug-") }
     ?.sortedByDescending(File::lastModified)
     ?.drop(5)
     ?.forEach { candidate -> candidate.delete() }

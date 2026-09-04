@@ -32,6 +32,8 @@ class FoldersPreferences(
   val blacklistedAudioFolders = preferenceStore.getStringSet("blacklisted_audio_folders", emptySet())
   val pinnedFolders = preferenceStore.getStringSet("pinned_folders", emptySet())
   val includeNoMediaFolders = preferenceStore.getBoolean("include_nomedia_folders", false)
+  val hiddenFolderMarkerNames =
+    preferenceStore.getStringSet("hidden_folder_marker_names", setOf(".nomedia"))
 
   fun addBlacklistedFolders(paths: Set<String>, scope: BlacklistScope) {
     val currentVideo = blacklistedFolders.get().toMutableSet()

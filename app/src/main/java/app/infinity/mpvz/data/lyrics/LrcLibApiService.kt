@@ -5,6 +5,8 @@
 package app.infinity.mpvz.data.lyrics
 
 import android.util.Log
+import app.infinity.mpvz.network.awaitResponse
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -54,15 +56,17 @@ class LrcLibApiService(
 
       val request = Request.Builder()
         .url(urlBuilder.build())
-        .header("User-Agent", "mpvRx Music Player/1.0")
+        .header("User-Agent", "Mpv∞ Music Player/1.0")
         .get()
         .build()
 
-      okHttpClient.newCall(request).execute().use { response ->
+      okHttpClient.newCall(request).awaitResponse().use { response ->
         if (!response.isSuccessful) return@withContext null
         val bodyString = response.body.string()
         json.decodeFromString<LrcLibResponse>(bodyString)
       }
+    } catch (cancellation: CancellationException) {
+      throw cancellation
     } catch (e: Exception) {
       Log.w("LrcLibApiService", "Error fetching lyrics from get endpoint: ${e.message}")
       null
@@ -94,15 +98,17 @@ class LrcLibApiService(
 
       val request = Request.Builder()
         .url(urlBuilder.build())
-        .header("User-Agent", "mpvRx Music Player/1.0")
+        .header("User-Agent", "Mpv∞ Music Player/1.0")
         .get()
         .build()
 
-      okHttpClient.newCall(request).execute().use { response ->
+      okHttpClient.newCall(request).awaitResponse().use { response ->
         if (!response.isSuccessful) return@withContext emptyList()
         val bodyString = response.body.string()
         json.decodeFromString<List<LrcLibResponse>>(bodyString)
       }
+    } catch (cancellation: CancellationException) {
+      throw cancellation
     } catch (e: Exception) {
       Log.w("LrcLibApiService", "Error searching lyrics from search endpoint: ${e.message}")
       emptyList()

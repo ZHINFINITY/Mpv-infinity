@@ -45,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -240,6 +241,12 @@ object PreferencesScreen : Screen {
               icon = Icons.RoundedFilled.Audiotrack,
               screen = AudioPreferencesScreen,
             ),
+            SettingsDestination(
+              title = stringResource(R.string.pref_subtitles),
+              summary = stringResource(R.string.pref_subtitles_summary),
+              icon = Icons.RoundedFilled.Subtitles,
+              screen = SubtitlesPreferencesScreen,
+            ),
           ),
       ),
       SettingsSection(
@@ -258,19 +265,6 @@ object PreferencesScreen : Screen {
               summary = stringResource(R.string.pref_layout_summary),
               icon = Icons.RoundedFilled.GridView,
               screen = PlayerControlsPreferencesScreen,
-            ),
-          ),
-      ),
-      SettingsSection(
-        title = stringResource(R.string.pref_section_subtitles),
-        tint = colorScheme.onSurfaceVariant,
-        items =
-          listOf(
-            SettingsDestination(
-              title = stringResource(R.string.pref_subtitles),
-              summary = stringResource(R.string.pref_subtitles_summary),
-              icon = Icons.RoundedFilled.Subtitles,
-              screen = SubtitlesPreferencesScreen,
             ),
           ),
       ),
@@ -361,6 +355,7 @@ private fun SettingsSearchEntry(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(MaterialTheme.shapes.extraExtraLarge)
         .clickable(onClick = onClick),
     shape = MaterialTheme.shapes.extraExtraLarge,
     color = MaterialTheme.colorScheme.secondaryContainer,

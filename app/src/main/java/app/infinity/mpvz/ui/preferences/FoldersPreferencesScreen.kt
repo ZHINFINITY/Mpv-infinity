@@ -36,6 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import app.infinity.mpvz.ui.components.IconSwitch
 import androidx.compose.material3.Text
@@ -72,6 +73,7 @@ import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
+import app.infinity.mpvz.utils.storage.normalizeHiddenMarkerName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -90,6 +92,7 @@ object FoldersPreferencesScreen : Screen {
     val blacklistedVideoFolders by preferences.blacklistedFolders.collectAsState()
     val blacklistedAudioFolders by preferences.blacklistedAudioFolders.collectAsState()
     val includeNoMediaFolders by preferences.includeNoMediaFolders.collectAsState()
+    val hiddenFolderMarkerNames by preferences.hiddenFolderMarkerNames.collectAsState()
     var availableFolders by remember { mutableStateOf<List<VideoFolder>>(emptyList()) }
     var showAddDialog by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
@@ -163,10 +166,17 @@ object FoldersPreferencesScreen : Screen {
           )
 
           NoMediaPreferenceCard(
-            modifier = Modifier.settingsSearchTarget(R.string.pref_folders_include_nomedia_title),
+            modifier = Modifier.settingsSearchTarget(R.string.pref_folders_include_hidden_title),
             includeNoMediaFolders = includeNoMediaFolders,
+            markerNames = hiddenFolderMarkerNames,
             onIncludeNoMediaFoldersChanged = { enabled ->
               preferences.includeNoMediaFolders.set(enabled)
+              app.infinity.mpvz.repository.MediaFileRepository
+                .clearCache()
+              MediaLibraryEvents.notifyChanged()
+            },
+            onMarkerNamesChanged = { markerNames ->
+              preferences.hiddenFolderMarkerNames.set(markerNames)
               app.infinity.mpvz.repository.MediaFileRepository
                 .clearCache()
               MediaLibraryEvents.notifyChanged()
@@ -321,9 +331,14 @@ object FoldersPreferencesScreen : Screen {
 @Composable
 private fun NoMediaPreferenceCard(
   includeNoMediaFolders: Boolean,
+  markerNames: Set<String>,
   onIncludeNoMediaFoldersChanged: (Boolean) -> Unit,
+  onMarkerNamesChanged: (Set<String>) -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  var showAddMarkerDialog by remember { mutableStateOf(false) }
+  var markerInput by remember { mutableStateOf("") }
+
   Card(
     modifier = modifier.fillMaxWidth(),
     colors =
@@ -331,33 +346,135 @@ private fun NoMediaPreferenceCard(
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
       ),
   ) {
-    Row(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .clickable { onIncludeNoMediaFoldersChanged(!includeNoMediaFolders) }
-          .padding(16.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text = stringResource(R.string.pref_folders_include_nomedia_title),
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-          text = stringResource(R.string.pref_folders_include_nomedia_summary),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Column {
+      Row(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .clickable { onIncludeNoMediaFoldersChanged(!includeNoMediaFolders) }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.pref_folders_include_hidden_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+          )
+          Spacer(modifier = Modifier.height(4.dp))
+          Text(
+            text = stringResource(R.string.pref_folders_include_hidden_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        IconSwitch(
+          checked = includeNoMediaFolders,
+          onCheckedChange = onIncludeNoMediaFoldersChanged,
         )
       }
-      IconSwitch(
-        checked = includeNoMediaFolders,
-        onCheckedChange = onIncludeNoMediaFoldersChanged,
-      )
+
+      if (includeNoMediaFolders) {
+        HorizontalDivider()
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+          Text(
+            text = stringResource(R.string.pref_folders_hidden_markers_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Text(
+            text = stringResource(R.string.pref_folders_hidden_markers_summary),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+
+          if (markerNames.isEmpty()) {
+            Text(
+              text = stringResource(R.string.pref_folders_hidden_markers_empty),
+              modifier = Modifier.padding(top = 8.dp),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          } else {
+            markerNames.sorted().forEach { markerName ->
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Text(text = markerName, modifier = Modifier.weight(1f))
+                IconButton(onClick = { onMarkerNamesChanged(markerNames - markerName) }) {
+                  Icon(
+                    Icons.RoundedFilled.Close,
+                    contentDescription =
+                      stringResource(R.string.pref_folders_remove_marker, markerName),
+                  )
+                }
+              }
+            }
+          }
+
+          TextButton(
+            onClick = {
+              markerInput = ""
+              showAddMarkerDialog = true
+            },
+          ) {
+            Icon(Icons.RoundedFilled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.size(8.dp))
+            Text(stringResource(R.string.pref_folders_add_marker))
+          }
+        }
+      }
     }
+  }
+
+  if (showAddMarkerDialog) {
+    val normalizedMarker = normalizeHiddenMarkerName(markerInput)
+    val errorMessage =
+      when {
+        markerInput.isBlank() -> null
+        normalizedMarker == null -> R.string.pref_folders_marker_invalid
+        normalizedMarker in markerNames -> R.string.pref_folders_marker_duplicate
+        else -> null
+      }
+
+    AlertDialog(
+      onDismissRequest = { showAddMarkerDialog = false },
+      title = { Text(stringResource(R.string.pref_folders_add_marker_title)) },
+      text = {
+        OutlinedTextField(
+          value = markerInput,
+          onValueChange = { markerInput = it },
+          label = { Text(stringResource(R.string.pref_folders_marker_name)) },
+          placeholder = { Text(".nomedia") },
+          singleLine = true,
+          isError = errorMessage != null,
+          supportingText =
+            if (errorMessage == null) {
+              null
+            } else {
+              { Text(stringResource(errorMessage)) }
+            },
+        )
+      },
+      confirmButton = {
+        TextButton(
+          enabled = normalizedMarker != null && normalizedMarker !in markerNames,
+          onClick = {
+            onMarkerNamesChanged(markerNames + requireNotNull(normalizedMarker))
+            showAddMarkerDialog = false
+          },
+        ) {
+          Text(stringResource(R.string.pref_folders_add_marker))
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showAddMarkerDialog = false }) {
+          Text(stringResource(R.string.generic_cancel))
+        }
+      },
+    )
   }
 }
 

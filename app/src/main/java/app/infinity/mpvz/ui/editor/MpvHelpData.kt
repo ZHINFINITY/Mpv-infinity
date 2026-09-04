@@ -561,6 +561,10 @@ object MpvHelpData {
       command("speed-multiply", "<factor>", "Multiply playback speed."),
       command("speed-set", "<speed>", "Set absolute playback speed."),
       command("ab-loop", "", "Toggle A-B loop at current position."),
+    )
+
+  private val cmdPlaylist =
+    listOf(
       command("playlist-next", "[flags]", "Go to next playlist item (weak, force)."),
       command("playlist-prev", "[flags]", "Go to previous playlist item."),
       command("playlist-play-index", "<index>", "Play playlist entry by index (0-based)."),
@@ -570,8 +574,6 @@ object MpvHelpData {
       command("playlist-move", "<index1> <index2>", "Move playlist entry from index1 to index2."),
       command("playlist-clear", "", "Clear the playlist."),
     )
-
-  private val cmdPlaylist = cmdPlayback.filter { it.name.startsWith("playlist") }
 
   private val cmdProperties =
     listOf(
@@ -1123,7 +1125,7 @@ object MpvHelpData {
       configPlayback + configScreenshots + configInput + configScripting + configGeneral
 
   private val commands =
-    cmdPlayback + cmdProperties + cmdFiles + cmdScreenshots +
+    cmdPlayback + cmdPlaylist + cmdProperties + cmdFiles + cmdScreenshots +
       cmdOsd + cmdScripting + cmdFilters + cmdMeta
 
   private val properties =

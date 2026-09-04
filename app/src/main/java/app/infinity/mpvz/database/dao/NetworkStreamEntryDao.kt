@@ -63,6 +63,18 @@ interface NetworkStreamEntryDao {
   @Query("DELETE FROM network_stream_entries WHERE stableKey = :stableKey")
   suspend fun deleteByStableKey(stableKey: String)
 
+  @Query(
+    """
+    UPDATE network_stream_entries
+    SET updatedAt = :updatedAt
+    WHERE stableKey = :stableKey AND entryType = 'NORMAL'
+    """,
+  )
+  suspend fun touchNormalEntry(
+    stableKey: String,
+    updatedAt: Long,
+  )
+
   @Transaction
   suspend fun upsertNormalAndTrim(
     entry: NetworkStreamEntryEntity,

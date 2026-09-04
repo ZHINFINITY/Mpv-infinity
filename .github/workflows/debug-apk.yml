@@ -1,0 +1,45 @@
+name: Build debug APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: APK flavor
+        required: true
+        default: standard
+        type: choice
+        options:
+          - standard
+          - fongmi
+          - no_vulkan
+
+permissions:
+  contents: read
+
+jobs:
+  build-debug:
+    name: Build ${{ inputs.flavor }} debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Build debug APK
+        run: |
+          chmod +x ./gradlew
+          case "${{ inputs.flavor }}" in
+            standard) ./gradlew assembleStandardDebug --stacktrace --no-daemon --max-workers=2 ;;
+            fongmi) ./gradlew assembleFongmiDebug --stacktrace --no-daemon --max-workers=2 ;;
+            no_vulkan) ./gradlew assembleNoVulkanDebug --stacktrace --no-daemon --max-workers=2 ;;
+          esac
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-infinity-${{ inputs.flavor }}-debug
+          path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: error

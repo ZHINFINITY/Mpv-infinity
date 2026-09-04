@@ -66,7 +66,7 @@ fun SubtitleSettingsPanel(
     ) {
       SubtitleSettingsTypographyCard(viewModel = viewModel)
       SubtitleSettingsColorsCard(viewModel = viewModel)
-      SubtitlesMiscellaneousCard(viewModel = viewModel)
+      SubtitlesMiscellaneousCard()
     }
   }
 }

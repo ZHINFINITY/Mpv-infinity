@@ -113,7 +113,7 @@ object ScreenshotSaver {
     settings: ScreenshotSettings,
     includeSubtitles: Boolean,
   ): File? {
-    val tempFile = File(context.cacheDir, "mpvrx_snapshot_native.${settings.format.extension}")
+    val tempFile = File(context.cacheDir, "Mpv∞_snapshot_native.${settings.format.extension}")
     tempFile.delete()
     PlaybackSession.command("screenshot-to-file", tempFile.absolutePath, if (includeSubtitles) "subtitles" else "video")
     delay(250)
@@ -127,7 +127,7 @@ object ScreenshotSaver {
   ): File? {
     if (!settings.format.androidFallback) return null
 
-    val sourcePng = File(context.cacheDir, "mpvrx_snapshot_fallback_source.png")
+    val sourcePng = File(context.cacheDir, "Mpv∞_snapshot_fallback_source.png")
     sourcePng.delete()
     PlaybackSession.setOptionString("screenshot-format", "png")
     PlaybackSession.command("screenshot-to-file", sourcePng.absolutePath, if (includeSubtitles) "subtitles" else "video")
@@ -139,7 +139,7 @@ object ScreenshotSaver {
     }
 
     val bitmap = BitmapFactory.decodeFile(sourcePng.absolutePath) ?: return null
-    val output = File(context.cacheDir, "mpvrx_snapshot_fallback.${settings.format.extension}")
+    val output = File(context.cacheDir, "Mpv∞_snapshot_fallback.${settings.format.extension}")
     output.delete()
     output.outputStream().use { stream ->
       if (!bitmap.compress(settings.compressFormat(), settings.compressQuality(), stream)) {

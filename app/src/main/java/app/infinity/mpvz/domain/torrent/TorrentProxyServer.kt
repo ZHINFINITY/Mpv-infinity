@@ -35,13 +35,11 @@ class TorrentProxyServer(
     val firstPiece: Int,
     val lastPiece: Int,
     val mimeType: String,
-    val readAheadBytes: Long,
-    val cacheBudgetBytes: Long,
   )
 
   companion object {
     private const val TAG = "TorrentProxyServer"
-    private const val DEFAULT_READ_AHEAD_BYTES = 64L * 1024L * 1024L
+    private const val READ_AHEAD_BYTES = 16L * 1024L * 1024L
     private const val PIECE_WAIT_TIMEOUT_MS = 120_000L
     private const val PIECE_POLL_INTERVAL_MS = 40L
   }
@@ -120,21 +118,17 @@ class TorrentProxyServer(
     val absoluteStart = target.fileOffset + relativeOffset
     val first = (absoluteStart / target.pieceLength).toInt().coerceIn(target.firstPiece, target.lastPiece)
     val absoluteEnd =
-              min(
-          target.fileOffset + target.fileSize - 1L,
-          absoluteStart + target.readAheadBytes.coerceAtLeast(DEFAULT_READ_AHEAD_BYTES / 8L)
-            .coerceAtMost(target.cacheBudgetBytes) - 1L,
-        )
-
+      min(
+        target.fileOffset + target.fileSize - 1L,
+        absoluteStart + READ_AHEAD_BYTES - 1L,
+      )
     val last = (absoluteEnd / target.pieceLength).toInt().coerceIn(first, target.lastPiece)
 
     synchronized(priorityLock) {
       if (first == prioritizedFrom && last <= prioritizedThrough) return
-      // Advance the sequential window as mpv consumes the stream. This keeps the initial torrent
-      // request bounded while allowing the next read-ahead window to download in the background.
-      if (last > prioritizedThrough) {
-        target.handle.setSequentialRange(target.firstPiece, last)
-      }
+      // Keep the engine's full selected-file sequential range stable. mpv commonly issues
+      // overlapping head/tail probes; moving the global range for every HTTP request makes those
+      // probes race and can starve the actual playback reader.
       for (piece in first..last) {
         target.handle.piecePriority(piece, Priority.TOP_PRIORITY)
         target.handle.setPieceDeadline(piece, ((piece - first) * 100).coerceAtMost(10_000))

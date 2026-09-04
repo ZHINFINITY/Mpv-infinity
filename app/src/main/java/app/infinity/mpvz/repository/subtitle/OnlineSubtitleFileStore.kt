@@ -39,7 +39,7 @@ class OnlineSubtitleFileStore(
         preferredName = subtitle.fileName ?: subtitle.displayName,
         preferredEpisode = selectedEpisode,
       )
-    if (extracted == null && SubtitleArchiveExtractor.isZipArchive(bytes)) {
+    if (extracted == null && SubtitleArchiveExtractor.isSupportedArchive(bytes)) {
       val selectedEpisodeMessage = selectedEpisode?.let { " for episode $it" }.orEmpty()
       throw IllegalStateException(
         "Downloaded subtitle archive did not contain a supported subtitle file$selectedEpisodeMessage",

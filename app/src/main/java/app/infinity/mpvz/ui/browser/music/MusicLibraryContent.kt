@@ -8,11 +8,15 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -29,7 +33,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -58,10 +64,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.SearchBar
-import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -72,7 +77,7 @@ import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.animateFloatingActionButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -86,13 +91,14 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
@@ -104,6 +110,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.floor
 import kotlin.math.sqrt
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.PlaylistEntity
@@ -121,22 +130,27 @@ import app.infinity.mpvz.ui.browser.NavigationBarState
 import app.infinity.mpvz.ui.browser.cards.PlaylistCard
 import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
-import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
-import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
+import app.infinity.mpvz.ui.browser.components.QueueInsertion
+import app.infinity.mpvz.ui.browser.components.addVideosToPlaybackQueue
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
+import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
 import app.infinity.mpvz.ui.browser.dialogs.DeleteConfirmationDialog
 import app.infinity.mpvz.ui.browser.dialogs.FolderSortDialog
 import app.infinity.mpvz.ui.browser.dialogs.MusicSortDialog
+import app.infinity.mpvz.ui.player.controls.components.MiniAudioVisualizer
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistDetailScreen
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
+import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.utils.media.MediaUtils
-import app.infinity.mpvz.utils.media.TemporaryPlaybackQueue
-import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.utils.permission.PermissionUtils
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -163,8 +177,7 @@ private fun MusicSong.toVideo(): Video {
     height = 0,
     fps = 0f,
     resolution = "",
-    isAudio = true,
-    artist = artist,
+    isAudio = true
   )
 }
 
@@ -194,7 +207,6 @@ fun MusicLibraryContent(
   val selectedArtist by musicViewModel.selectedArtist.collectAsState()
   val recentlyPlayedFilePath by musicViewModel.recentlyPlayedFilePath.collectAsState()
   val isPlaybackActive by musicViewModel.isPlaybackActive.collectAsState()
-  val temporaryQueue by PlaybackSession.queue.collectAsState()
 
   val browserPreferences = koinInject<BrowserPreferences>()
   val foldersPreferences = koinInject<app.infinity.mpvz.preferences.FoldersPreferences>()
@@ -242,7 +254,9 @@ fun MusicLibraryContent(
     items = playlists,
     getId = { it.id.toLong() },
     onDeleteItems = { selectedPlaylists, _ ->
-      selectedPlaylists.forEach { musicViewModel.deletePlaylist(it) }
+      selectedPlaylists
+        .filterNot { it.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true) }
+        .forEach { musicViewModel.deletePlaylist(it) }
       Pair(selectedPlaylists.size, 0)
     }
   )
@@ -254,6 +268,30 @@ fun MusicLibraryContent(
     MusicTab.PLAYLISTS -> playlistSelectionManager
     // Folders tab reuses FolderListScreen, which owns its own selection state.
     MusicTab.FOLDERS -> songSelectionManager
+  }
+
+  @Suppress("UNCHECKED_CAST")
+  fun selectedMusicVideos(): List<Video> {
+    val items = activeSelectionManager.getSelectedItems()
+    return when (selectedTab) {
+      MusicTab.SONGS -> (items as List<MusicSong>).map { song -> song.toVideo() }
+      MusicTab.ALBUMS -> {
+        val selectedAlbums = items as List<MusicAlbum>
+        songs
+          .filter { song ->
+            selectedAlbums.any { album -> song.albumId == album.id || song.album.equals(album.title, true) }
+          }.map { song -> song.toVideo() }
+      }
+      MusicTab.ARTISTS -> {
+        val selectedArtists = items as List<MusicArtist>
+        songs
+          .filter { song -> selectedArtists.any { artist -> song.artist.equals(artist.name, true) } }
+          .map { song -> song.toVideo() }
+      }
+      MusicTab.PLAYLISTS,
+      MusicTab.FOLDERS,
+      -> emptyList()
+    }
   }
 
   val visibleTabs by musicViewModel.visibleTabs.collectAsState()
@@ -270,8 +308,35 @@ fun MusicLibraryContent(
   }
   val pagerState = rememberPagerState(initialPage = initialPageIndex) { visibleTabs.size }
 
+  val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+  // Handle storage permission so onPermissionGranted triggers an immediate scan on first launch
+  val permissionState = PermissionUtils.handleStoragePermission(
+    audioOnly = true,
+    onPermissionGranted = { musicViewModel.scanLibrary(context) },
+  )
+
+  // Rescan on resume if library is currently empty (e.g. after granting permissions)
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        if (songs.isEmpty() || musicViewModel.songs.value.isEmpty()) {
+          musicViewModel.scanLibrary(context)
+        }
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
+
   LaunchedEffect(Unit) {
     musicViewModel.scanLibrary(context)
+  }
+
+  LaunchedEffect(selectedTab) {
+    if (songs.isEmpty() && !isLoading) {
+      musicViewModel.scanLibrary(context)
+    }
   }
 
   LaunchedEffect(visibleTabs) {
@@ -297,6 +362,50 @@ fun MusicLibraryContent(
     playlistSelectionManager.clear()
   }
 
+  val songsListState = rememberLazyListState()
+  val songsGridState = rememberLazyGridState()
+  val albumsListState = rememberLazyListState()
+  val albumsGridState = rememberLazyGridState()
+  val artistsListState = rememberLazyListState()
+  val artistsGridState = rememberLazyGridState()
+  val playlistsListState = rememberLazyListState()
+  val playlistsGridState = rememberLazyGridState()
+
+  val activeTab = visibleTabs.getOrNull(pagerState.currentPage) ?: MusicTab.SONGS
+  val activeListState = when (activeTab) {
+    MusicTab.SONGS -> songsListState
+    MusicTab.ALBUMS -> albumsListState
+    MusicTab.ARTISTS -> artistsListState
+    MusicTab.PLAYLISTS -> playlistsListState
+    MusicTab.FOLDERS -> null
+  }
+  val activeGridState = when (activeTab) {
+    MusicTab.SONGS -> songsGridState
+    MusicTab.ALBUMS -> albumsGridState
+    MusicTab.ARTISTS -> artistsGridState
+    MusicTab.PLAYLISTS -> playlistsGridState
+    MusicTab.FOLDERS -> null
+  }
+
+  if (activeListState != null) {
+    FabScrollHelper.trackScrollForFabVisibility(
+      listState = activeListState,
+      gridState = if (viewMode == MusicViewMode.GRID) activeGridState else null,
+      isFabVisible = isFabVisible,
+      expanded = isFabExpanded.value,
+      onExpandedChange = { isFabExpanded.value = it },
+    )
+  }
+
+  LaunchedEffect(pagerState) {
+    snapshotFlow { pagerState.isScrollInProgress }
+      .distinctUntilChanged()
+      .filter { it }
+      .collect {
+        if (isFabExpanded.value) isFabExpanded.value = false
+      }
+  }
+
   val navBarState = NavigationBarState
   SideEffect {
     navBarState.updateSelectionState(
@@ -311,12 +420,14 @@ fun MusicLibraryContent(
     }
   }
 
-  BackHandler(enabled = isSearchActive || activeSelectionManager.isInSelectionMode) {
-    if (isSearchActive) {
-      isSearchActive = false
-      musicViewModel.setSearchQuery("")
-    } else if (activeSelectionManager.isInSelectionMode) {
-      activeSelectionManager.clear()
+  BackHandler(enabled = isSearchActive || activeSelectionManager.isInSelectionMode || (isFabExpanded.value && !quickPlayFabDirect)) {
+    when {
+      isFabExpanded.value && !quickPlayFabDirect -> isFabExpanded.value = false
+      isSearchActive -> {
+        isSearchActive = false
+        musicViewModel.setSearchQuery("")
+      }
+      activeSelectionManager.isInSelectionMode -> activeSelectionManager.clear()
     }
   }
 
@@ -346,40 +457,32 @@ fun MusicLibraryContent(
           )
       ) {
         if (isSearchActive) {
-          SearchBar(
-            inputField = {
-              SearchBarDefaults.InputField(
-                query = searchQuery,
-                onQueryChange = { musicViewModel.setSearchQuery(it) },
-                onSearch = { },
-                expanded = false,
-                onExpandedChange = { },
-                placeholder = { Text(if (selectedTab == MusicTab.FOLDERS) "Search folders & songs..." else "Search songs, albums, artists...") },
-                leadingIcon = {
-                  IconButton(onClick = {
-                    isSearchActive = false
-                    musicViewModel.setSearchQuery("")
-                  }) {
-                    Icon(imageVector = Icons.RoundedFilled.ArrowBack, contentDescription = "Back")
-                  }
-                },
-                trailingIcon = {
-                  if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { musicViewModel.setSearchQuery("") }) {
-                      Icon(imageVector = Icons.RoundedFilled.Close, contentDescription = "Clear search")
-                    }
-                  }
-                }
-              )
-            },
-            expanded = false,
-            onExpandedChange = { },
+          InlineSearchBar(
+            query = searchQuery,
+            onQueryChange = musicViewModel::setSearchQuery,
+            onSearch = { },
             modifier = Modifier
               .fillMaxWidth()
               .padding(horizontal = 16.dp, vertical = 8.dp),
+            placeholder = { Text(if (selectedTab == MusicTab.FOLDERS) "Search folders & songs..." else "Search songs, albums, artists...") },
+            leadingIcon = {
+              IconButton(onClick = {
+                isSearchActive = false
+                musicViewModel.setSearchQuery("")
+              }) {
+                Icon(imageVector = Icons.RoundedFilled.ArrowBack, contentDescription = "Back")
+              }
+            },
+            trailingIcon = {
+              if (searchQuery.isNotEmpty()) {
+                IconButton(onClick = { musicViewModel.setSearchQuery("") }) {
+                  Icon(imageVector = Icons.RoundedFilled.Close, contentDescription = "Clear search")
+                }
+              }
+            },
             shape = RoundedCornerShape(28.dp),
-            tonalElevation = 6.dp
-          ) { }
+            tonalElevation = 6.dp,
+          )
         } else {
           Box {
             BrowserTopBar(
@@ -447,39 +550,7 @@ fun MusicLibraryContent(
               onRenameClick = null,
               isSingleSelection = activeSelectionManager.isSingleSelection,
               onInfoClick = null,
-              onAddToPlaylistClick = null,
-              onAddToQueueClick = if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
-                {
-                  val items = activeSelectionManager.getSelectedItems()
-                  val videosToQueue = when (selectedTab) {
-                    MusicTab.SONGS -> (items as List<MusicSong>).map { it.toVideo() }
-                    MusicTab.ALBUMS -> {
-                      val selected = items as List<MusicAlbum>
-                      songs.filter { song -> selected.any { album -> song.albumId == album.id || song.album.equals(album.title, ignoreCase = true) } }.map { it.toVideo() }
-                    }
-                    MusicTab.ARTISTS -> {
-                      val selected = items as List<MusicArtist>
-                      songs.filter { song -> selected.any { artist -> song.artist.equals(artist.name, ignoreCase = true) } }.map { it.toVideo() }
-                    }
-                    else -> emptyList()
-                  }
-                  TemporaryPlaybackQueue.add(context, videosToQueue)
-                  activeSelectionManager.clear()
-                }
-              } else null,
-              additionalActions = {
-                // Keep the temporary queue entry point visible even before a queue is populated.
-                // When empty, TemporaryPlaybackQueue.start() gives the user the existing empty-queue
-                // message; when populated, it opens the current mixed audio/video queue.
-                if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
-                  IconButton(onClick = { TemporaryPlaybackQueue.start(context) }) {
-                    Icon(
-                      Icons.RoundedFilled.QueueMusic,
-                      contentDescription = stringResource(R.string.ui_play_queue),
-                    )
-                  }
-                }
-              }
+              onAddToPlaylistClick = null
             )
           }
         }
@@ -507,7 +578,7 @@ fun MusicLibraryContent(
           )
         }
 
-        ScrollableTabRow(
+        PrimaryScrollableTabRow(
           selectedTabIndex = pagerState.currentPage.coerceIn(0, (visibleTabs.size - 1).coerceAtLeast(0)),
           containerColor = Color.Transparent,
           contentColor = MaterialTheme.colorScheme.primary,
@@ -542,6 +613,9 @@ fun MusicLibraryContent(
     floatingActionButton = {
       val isPlaylistsTab = visibleTabs.getOrNull(pagerState.currentPage) == MusicTab.PLAYLISTS
       val isFoldersTab = visibleTabs.getOrNull(pagerState.currentPage) == MusicTab.FOLDERS
+      val isFabShouldBeVisible =
+        showQuickPlayFab && !activeSelectionManager.isInSelectionMode && isFabVisible.value && !MainScreen.getPermissionDeniedState()
+
       if (isFoldersTab) {
         // FolderListScreen.MediaStoreFolderListContent renders its own FAB, skip ours.
       } else if (isPlaylistsTab) {
@@ -550,19 +624,20 @@ fun MusicLibraryContent(
           expanded = false,
           button = {
             ToggleFloatingActionButton(
-              modifier = Modifier.animateFloatingActionButton(
-                visible = showQuickPlayFab && !activeSelectionManager.isInSelectionMode && isFabVisible.value && !MainScreen.getPermissionDeniedState(),
-                alignment = Alignment.BottomEnd,
-              ),
+              modifier =
+                Modifier.animateFloatingActionButton(
+                  visible = isFabShouldBeVisible,
+                  alignment = Alignment.BottomEnd,
+                ),
               checked = false,
-              onCheckedChange = { showCreatePlaylistDialog = true }
+              onCheckedChange = { showCreatePlaylistDialog = true },
             ) {
               Icon(
                 imageVector = Icons.RoundedFilled.Add,
-                contentDescription = "New Playlist"
+                contentDescription = "New Playlist",
               )
             }
-          }
+          },
         ) { }
       } else if (songs.isNotEmpty()) {
         FloatingActionButtonMenu(
@@ -570,17 +645,19 @@ fun MusicLibraryContent(
           expanded = isFabExpanded.value && !quickPlayFabDirect,
           button = {
             TooltipBox(
-              positionProvider = TooltipDefaults.rememberTooltipPositionProvider(
-                if (isFabExpanded.value && !quickPlayFabDirect) TooltipAnchorPosition.Start else TooltipAnchorPosition.Above
-              ),
+              positionProvider =
+                TooltipDefaults.rememberTooltipPositionProvider(
+                  if (isFabExpanded.value && !quickPlayFabDirect) TooltipAnchorPosition.Start else TooltipAnchorPosition.Above,
+                ),
               tooltip = { PlainTooltip { Text(stringResource(R.string.ui_toggle_menu)) } },
               state = rememberTooltipState(),
             ) {
               ToggleFloatingActionButton(
-                modifier = Modifier.animateFloatingActionButton(
-                  visible = showQuickPlayFab && !activeSelectionManager.isInSelectionMode && isFabVisible.value && !MainScreen.getPermissionDeniedState(),
-                  alignment = Alignment.BottomEnd,
-                ),
+                modifier =
+                  Modifier.animateFloatingActionButton(
+                    visible = isFabShouldBeVisible,
+                    alignment = Alignment.BottomEnd,
+                  ),
                 checked = isFabExpanded.value && !quickPlayFabDirect,
                 onCheckedChange = {
                   if (quickPlayFabDirect) {
@@ -621,18 +698,10 @@ fun MusicLibraryContent(
               icon = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
               text = { Text("Shuffle Songs") },
             )
-            FloatingActionButtonMenuItem(
-              onClick = {
-                isFabExpanded.value = false
-                TemporaryPlaybackQueue.start(context)
-              },
-              icon = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
-              text = { Text(stringResource(R.string.ui_play_queue)) },
-            )
           }
         }
       }
-    }
+    },
   ) { innerPadding ->
     Box(
       modifier = Modifier
@@ -675,7 +744,9 @@ fun MusicLibraryContent(
                 onSongLongClick = { song ->
                   songSelectionManager.toggle(song)
                 },
-                selectionManager = songSelectionManager
+                selectionManager = songSelectionManager,
+                listState = songsListState,
+                gridState = songsGridState,
               )
 
               MusicTab.ALBUMS -> AlbumsTabContent(
@@ -692,7 +763,9 @@ fun MusicLibraryContent(
                 onAlbumLongClick = { album ->
                   albumSelectionManager.toggle(album)
                 },
-                selectionManager = albumSelectionManager
+                selectionManager = albumSelectionManager,
+                listState = albumsListState,
+                gridState = albumsGridState,
               )
 
               MusicTab.ARTISTS -> ArtistsTabContent(
@@ -709,7 +782,9 @@ fun MusicLibraryContent(
                 onArtistLongClick = { artist ->
                   artistSelectionManager.toggle(artist)
                 },
-                selectionManager = artistSelectionManager
+                selectionManager = artistSelectionManager,
+                listState = artistsListState,
+                gridState = artistsGridState,
               )
 
               MusicTab.PLAYLISTS -> PlaylistsTabContent(
@@ -728,6 +803,8 @@ fun MusicLibraryContent(
                   playlistSelectionManager.toggle(playlist)
                 },
                 selectionManager = playlistSelectionManager,
+                listState = playlistsListState,
+                gridState = playlistsGridState,
               )
 
               // Reuse the exact same folder-browsing screen Home uses for videos,
@@ -791,7 +868,11 @@ fun MusicLibraryContent(
         selectedSongForOptions?.let { song ->
           ModalBottomSheet(
             onDismissRequest = { selectedSongForOptions = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState =
+              rememberBottomSheetState(
+                initialValue = SheetValue.Hidden,
+                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+              )
           ) {
             Column(
               modifier = Modifier
@@ -818,7 +899,7 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                headlineContent = { Text("Play") },
+                content = { Text("Play") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = song
@@ -827,15 +908,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text(stringResource(R.string.ui_add_to_queue)) },
-                leadingContent = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
-                modifier = Modifier.clickable {
-                  TemporaryPlaybackQueue.add(context, listOf(song.toVideo()))
-                  selectedSongForOptions = null
-                }
-              )
-              ListItem(
-                headlineContent = { Text("Add to Playlist") },
+                content = { Text("Add to Playlist") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = song
@@ -844,7 +917,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text("Share") },
+                content = { Text("Share") },
                 leadingContent = { Icon(Icons.RoundedFilled.Share, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = song
@@ -853,7 +926,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text("Delete Song", color = MaterialTheme.colorScheme.error) },
+                content = { Text("Delete Song", color = MaterialTheme.colorScheme.error) },
                 leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                 modifier = Modifier.clickable {
                   val target = song
@@ -919,7 +992,11 @@ fun MusicLibraryContent(
           }
           ModalBottomSheet(
             onDismissRequest = { selectedAlbumForOptions = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState =
+              rememberBottomSheetState(
+                initialValue = SheetValue.Hidden,
+                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+              )
           ) {
             Column(
               modifier = Modifier
@@ -946,7 +1023,7 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                headlineContent = { Text("View Album Tracks") },
+                content = { Text("View Album Tracks") },
                 leadingContent = { Icon(Icons.RoundedFilled.Audiotrack, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = album
@@ -955,7 +1032,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text("Play Album") },
+                content = { Text("Play Album") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = albumSongs
@@ -964,7 +1041,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text("Shuffle Album") },
+                content = { Text("Shuffle Album") },
                 leadingContent = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = albumSongs
@@ -973,15 +1050,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text(stringResource(R.string.ui_add_to_queue)) },
-                leadingContent = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
-                modifier = Modifier.clickable {
-                  TemporaryPlaybackQueue.add(context, albumSongs.map { it.toVideo() })
-                  selectedAlbumForOptions = null
-                }
-              )
-              ListItem(
-                headlineContent = { Text("Add Album to Playlist") },
+                content = { Text("Add Album to Playlist") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = albumSongs
@@ -1000,7 +1069,11 @@ fun MusicLibraryContent(
           }
           ModalBottomSheet(
             onDismissRequest = { selectedArtistForOptions = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState =
+              rememberBottomSheetState(
+                initialValue = SheetValue.Hidden,
+                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+              )
           ) {
             Column(
               modifier = Modifier
@@ -1019,7 +1092,7 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                headlineContent = { Text("View Artist Songs") },
+                content = { Text("View Artist Songs") },
                 leadingContent = { Icon(Icons.RoundedFilled.Person, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = artist
@@ -1028,7 +1101,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text("Play Artist Songs") },
+                content = { Text("Play Artist Songs") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = artistSongs
@@ -1037,7 +1110,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text("Shuffle Artist Songs") },
+                content = { Text("Shuffle Artist Songs") },
                 leadingContent = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = artistSongs
@@ -1046,15 +1119,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                headlineContent = { Text(stringResource(R.string.ui_add_to_queue)) },
-                leadingContent = { Icon(Icons.RoundedFilled.QueueMusic, contentDescription = null) },
-                modifier = Modifier.clickable {
-                  TemporaryPlaybackQueue.add(context, artistSongs.map { it.toVideo() })
-                  selectedArtistForOptions = null
-                }
-              )
-              ListItem(
-                headlineContent = { Text("Add Artist Songs to Playlist") },
+                content = { Text("Add Artist Songs to Playlist") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = artistSongs
@@ -1070,7 +1135,11 @@ fun MusicLibraryContent(
         selectedPlaylistForOptions?.let { playlist ->
           ModalBottomSheet(
             onDismissRequest = { selectedPlaylistForOptions = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState =
+              rememberBottomSheetState(
+                initialValue = SheetValue.Hidden,
+                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+              )
           ) {
             Column(
               modifier = Modifier
@@ -1086,7 +1155,7 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                headlineContent = { Text("Open Playlist") },
+                content = { Text("Open Playlist") },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistPlay, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = playlist
@@ -1094,15 +1163,17 @@ fun MusicLibraryContent(
                   selectedPlaylistForDetail = target
                 }
               )
-              ListItem(
-                headlineContent = { Text("Delete Playlist", color = MaterialTheme.colorScheme.error) },
-                leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                modifier = Modifier.clickable {
-                  val target = playlist
-                  selectedPlaylistForOptions = null
-                  showDeletePlaylistDialog = target
-                }
-              )
+              if (!playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)) {
+                ListItem(
+                  content = { Text("Delete Playlist", color = MaterialTheme.colorScheme.error) },
+                  leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                  modifier = Modifier.clickable {
+                    val target = playlist
+                    selectedPlaylistForOptions = null
+                    showDeletePlaylistDialog = target
+                  }
+                )
+              }
             }
           }
         }
@@ -1138,56 +1209,50 @@ fun MusicLibraryContent(
           onMoveClick = { },
           onRenameClick = { },
           onDeleteClick = { showDeleteSelectedDialog = true },
-          onAddToPlaylistClick = @Suppress("UNCHECKED_CAST") {
-            val items = activeSelectionManager.getSelectedItems()
-            val videosToAdd = when (selectedTab) {
-              MusicTab.SONGS -> (items as List<MusicSong>).map { it.toVideo() }
-              MusicTab.ALBUMS -> {
-                val selAlbums = items as List<MusicAlbum>
-                songs.filter { s -> selAlbums.any { a -> s.albumId == a.id || s.album.equals(a.title, ignoreCase = true) } }.map { it.toVideo() }
-              }
-              MusicTab.ARTISTS -> {
-                val selArtists = items as List<MusicArtist>
-                songs.filter { s -> selArtists.any { ar -> s.artist.equals(ar.name, ignoreCase = true) } }.map { it.toVideo() }
-              }
-              MusicTab.PLAYLISTS -> emptyList()
-              MusicTab.FOLDERS -> emptyList()
-            }
+          onAddToPlaylistClick = {
+            val videosToAdd = selectedMusicVideos()
             if (videosToAdd.isNotEmpty()) {
               selectedVideosForAddToPlaylist = videosToAdd
             }
           },
-          onAddToTemporaryQueueClick = @Suppress("UNCHECKED_CAST") {
-            val items = activeSelectionManager.getSelectedItems()
-            val videosToQueue = when (selectedTab) {
-              MusicTab.SONGS -> (items as List<MusicSong>).map { it.toVideo() }
-              MusicTab.ALBUMS -> {
-                val selAlbums = items as List<MusicAlbum>
-                songs.filter { s -> selAlbums.any { a -> s.albumId == a.id || s.album.equals(a.title, ignoreCase = true) } }.map { it.toVideo() }
+          onPlayNextClick =
+            if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
+              {
+                if (addVideosToPlaybackQueue(context, selectedMusicVideos(), QueueInsertion.PlayNext)) {
+                  activeSelectionManager.clear()
+                }
               }
-              MusicTab.ARTISTS -> {
-                val selArtists = items as List<MusicArtist>
-                songs.filter { s -> selArtists.any { ar -> s.artist.equals(ar.name, ignoreCase = true) } }.map { it.toVideo() }
+            } else {
+              null
+            },
+          onAddToQueueClick =
+            if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
+              {
+                if (addVideosToPlaybackQueue(context, selectedMusicVideos(), QueueInsertion.AddToEnd)) {
+                  activeSelectionManager.clear()
+                }
               }
-              MusicTab.PLAYLISTS -> emptyList()
-              MusicTab.FOLDERS -> emptyList()
-            }
-            TemporaryPlaybackQueue.add(context, videosToQueue)
-          },
+            } else {
+              null
+            },
           showCopy = false,
           showMove = false,
           showRename = false,
           showDelete = selectedTab == MusicTab.SONGS || selectedTab == MusicTab.PLAYLISTS,
           showAddToPlaylist = selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS,
-          showAddToTemporaryQueue = selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS,
           modifier = Modifier.align(Alignment.BottomCenter)
+        )
+
+        FabScrollHelper.FabScrim(
+          visible = isFabExpanded.value && !quickPlayFabDirect,
+          onDismiss = { isFabExpanded.value = false },
         )
     }
   }
 }
 
 @Composable
-private fun LocalAlbumArtImage(
+fun LocalAlbumArtImage(
   uri: Uri?,
   contentDescription: String?,
   modifier: Modifier = Modifier
@@ -1282,33 +1347,43 @@ private fun SongsTabContent(
   coverArtSizeDp: Int = 48,
   onSongClick: (MusicSong) -> Unit,
   onSongLongClick: (MusicSong) -> Unit,
-  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicSong, Long>
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicSong, Long>,
+  listState: LazyListState = rememberLazyListState(),
+  gridState: LazyGridState = rememberLazyGridState(),
 ) {
   if (songs.isEmpty()) {
     EmptyMusicState(text = "No songs found")
     return
   }
 
+  // The recently-played row is written once when a song is tapped and never advances with the
+  // queue, so follow the live session item and keep it only as a fallback.
+  val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
+  val playingUri = sessionState.currentItem?.originalUri
+
+  fun MusicSong.isNowPlaying(): Boolean =
+    when {
+      !isPlaybackActive -> false
+      playingUri != null -> uri.toString() == playingUri || path == playingUri
+      else -> recentlyPlayedFilePath != null && path == recentlyPlayedFilePath
+    }
+
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
-  val listState = rememberLazyListState()
-  val gridState = rememberLazyGridState()
-  val hasEnoughItems = songs.size > 10
-  Box(modifier = Modifier.fillMaxSize()) {
+  Column(modifier = Modifier.fillMaxSize()) {
     if (viewMode == MusicViewMode.GRID) {
       LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 145.dp),
         state = gridState,
+        columns = GridCells.Adaptive(minSize = 145.dp),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp)
       ) {
         items(songs, key = { it.id }) { song ->
-          val isPlaying = isPlaybackActive && recentlyPlayedFilePath != null && song.path == recentlyPlayedFilePath
           SongGridCard(
             song = song,
             isSelected = selectionManager.isSelected(song),
-            isPlaying = isPlaying,
+            isPlaying = song.isNowPlaying(),
             onClick = { onSongClick(song) },
             onLongClick = { onSongLongClick(song) }
           )
@@ -1321,29 +1396,16 @@ private fun SongsTabContent(
         contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
       ) {
         items(songs, key = { it.id }) { song ->
-          val isPlaying = isPlaybackActive && recentlyPlayedFilePath != null && song.path == recentlyPlayedFilePath
           SongListItem(
             song = song,
             isSelected = selectionManager.isSelected(song),
-            isPlaying = isPlaying,
+            isPlaying = song.isNowPlaying(),
             coverArtSizeDp = coverArtSizeDp,
             onClick = { onSongClick(song) },
             onLongClick = { onSongLongClick(song) }
           )
         }
       }
-    }
-    if (hasEnoughItems) {
-      ExpressiveScrollBar(
-        listState = listState.takeIf { viewMode == MusicViewMode.LIST },
-        gridState = gridState.takeIf { viewMode == MusicViewMode.GRID },
-        dragLabelProvider = { index -> fastScrollGlyph(songs.getOrNull(index)?.title) },
-        onDragStateChanged = { },
-        modifier = Modifier
-          .align(Alignment.CenterEnd)
-          .padding(end = 2.dp, bottom = navBarHeight + 6.dp)
-          .graphicsLayer { alpha = 1f },
-      )
     }
   }
 }
@@ -1360,6 +1422,7 @@ private fun SongGridCard(
   Card(
     modifier = Modifier
       .fillMaxWidth()
+      .clip(AppShapeScale.large)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
@@ -1403,17 +1466,19 @@ private fun SongGridCard(
             )
           }
         } else if (isPlaying) {
+          val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+          val isPlaybackActive = paused != true
           Box(
             modifier = Modifier
               .fillMaxSize()
               .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
             contentAlignment = Alignment.Center
           ) {
-            Icon(
-              imageVector = Icons.RoundedFilled.Audiotrack,
-              contentDescription = "Playing",
-              tint = Color.White,
-              modifier = Modifier.size(36.dp)
+            MiniAudioVisualizer(
+              isPlaying = isPlaybackActive,
+              color = Color.White,
+              modifier = Modifier.size(width = 28.dp, height = 24.dp),
+              barCount = 4,
             )
           }
         }
@@ -1467,121 +1532,17 @@ private fun SongListItem(
   onClick: () -> Unit,
   onLongClick: (() -> Unit)? = null
 ) {
-  Surface(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(horizontal = 8.dp, vertical = 3.dp)
-      .clip(AppShapeScale.large)
-      .then(
-        if (onLongClick != null) {
-          Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-        } else {
-          Modifier.clickable(onClick = onClick)
-        }
-      ),
-    shape = AppShapeScale.large,
-    color = when {
-      isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-      isPlaying -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
-      else -> Color.Transparent
-    }
-  ) {
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 12.dp, vertical = 8.dp),
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      Box(
-        modifier = Modifier
-          .size(coverArtSizeDp.dp)
-          .clip(AppShapeScale.medium)
-          .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center
-      ) {
-        LocalAlbumArtImage(
-          uri = song.albumArtUri,
-          contentDescription = null,
-          modifier = Modifier.fillMaxSize()
-        )
-        if (isSelected) {
-          Box(
-            modifier = Modifier
-              .fillMaxSize()
-              .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              imageVector = Icons.RoundedFilled.CheckCircle,
-              contentDescription = "Selected",
-              tint = Color.White,
-              modifier = Modifier.size(24.dp)
-            )
-          }
-        } else if (isPlaying) {
-          Box(
-            modifier = Modifier
-              .fillMaxSize()
-              .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)),
-            contentAlignment = Alignment.Center
-          ) {
-            Icon(
-              imageVector = Icons.RoundedFilled.Audiotrack,
-              contentDescription = "Playing",
-              tint = Color.White,
-              modifier = Modifier.size(24.dp)
-            )
-          }
-        }
-      }
-
-      Spacer(modifier = Modifier.width(14.dp))
-
-      Column(modifier = Modifier.weight(1f)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(
-            text = song.title,
-            style = MaterialTheme.typography.bodyLarge.copy(
-              fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.SemiBold
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f, fill = false)
-          )
-          if (isPlaying) {
-            Spacer(modifier = Modifier.width(6.dp))
-            Surface(
-              shape = RoundedCornerShape(4.dp),
-              color = MaterialTheme.colorScheme.primary
-            ) {
-              Text(
-                text = "PLAYING",
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-              )
-            }
-          }
-        }
-        Text(
-          text = "${song.artist} • ${song.album}",
-          style = MaterialTheme.typography.bodySmall,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          color = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-      }
-
-      Spacer(modifier = Modifier.width(8.dp))
-
-      Text(
-        text = DateUtils.formatElapsedTime(song.durationMs / 1000),
-        style = MaterialTheme.typography.labelMedium,
-        color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-      )
-    }
-  }
+  SharedMusicTrackListItem(
+    title = song.title,
+    subtitle = "${song.artist} • ${song.album}",
+    albumArtUri = song.albumArtUri,
+    durationSeconds = song.durationMs / 1000,
+    isPlaying = isPlaying,
+    isSelected = isSelected,
+    coverArtSizeDp = coverArtSizeDp,
+    onClick = onClick,
+    onLongClick = onLongClick
+  )
 }
 
 @Composable
@@ -1591,7 +1552,9 @@ private fun AlbumsTabContent(
   coverArtSizeDp: Int = 48,
   onAlbumClick: (MusicAlbum) -> Unit,
   onAlbumLongClick: (MusicAlbum) -> Unit,
-  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicAlbum, Long>
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicAlbum, Long>,
+  listState: LazyListState = rememberLazyListState(),
+  gridState: LazyGridState = rememberLazyGridState(),
 ) {
   if (albums.isEmpty()) {
     EmptyMusicState(text = "No albums found")
@@ -1601,6 +1564,7 @@ private fun AlbumsTabContent(
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   if (viewMode == MusicViewMode.GRID) {
     LazyVerticalGrid(
+      state = gridState,
       columns = GridCells.Adaptive(minSize = 145.dp),
       modifier = Modifier.fillMaxSize(),
       contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
@@ -1618,6 +1582,7 @@ private fun AlbumsTabContent(
     }
   } else {
     LazyColumn(
+      state = listState,
       modifier = Modifier.fillMaxSize(),
       contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
     ) {
@@ -1645,6 +1610,7 @@ private fun AlbumGridCard(
   Card(
     modifier = Modifier
       .fillMaxWidth()
+      .clip(AppShapeScale.large)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
@@ -1810,7 +1776,9 @@ private fun ArtistsTabContent(
   coverArtSizeDp: Int = 48,
   onArtistClick: (MusicArtist) -> Unit,
   onArtistLongClick: (MusicArtist) -> Unit,
-  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicArtist, Long>
+  selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<MusicArtist, Long>,
+  listState: LazyListState = rememberLazyListState(),
+  gridState: LazyGridState = rememberLazyGridState(),
 ) {
   if (artists.isEmpty()) {
     EmptyMusicState(text = "No artists found")
@@ -1820,6 +1788,7 @@ private fun ArtistsTabContent(
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   if (viewMode == MusicViewMode.GRID) {
     LazyVerticalGrid(
+      state = gridState,
       columns = GridCells.Adaptive(minSize = 160.dp),
       modifier = Modifier.fillMaxSize(),
       contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
@@ -1837,6 +1806,7 @@ private fun ArtistsTabContent(
     }
   } else {
     LazyColumn(
+      state = listState,
       modifier = Modifier.fillMaxSize(),
       contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
     ) {
@@ -1864,6 +1834,7 @@ private fun ArtistGridCard(
   Card(
     modifier = Modifier
       .fillMaxWidth()
+      .clip(AppShapeScale.large)
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
@@ -1999,6 +1970,7 @@ private fun ArtistListCard(
 @Composable
 private fun PlaylistArtCollage(
   artUris: List<Uri>,
+  isFavorites: Boolean = false,
   modifier: Modifier = Modifier
 ) {
   val collageUris = remember(artUris) { artUris.take(4) }
@@ -2012,12 +1984,12 @@ private fun PlaylistArtCollage(
     when (collageUris.size) {
       0 -> {
         Icon(
-          imageVector = Icons.RoundedFilled.QueueMusic,
+          imageVector = if (isFavorites) Icons.RoundedFilled.Favorite else Icons.RoundedFilled.QueueMusic,
           contentDescription = "Playlist",
           modifier = Modifier
             .fillMaxSize()
             .padding(12.dp),
-          tint = MaterialTheme.colorScheme.onSurfaceVariant
+          tint = if (isFavorites) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
       }
       1 -> {
@@ -2180,10 +2152,12 @@ private fun MusicPlaylistCard(
   onClick: () -> Unit,
   onLongClick: () -> Unit,
 ) {
+  val isFavorites = playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)
   if (isGridMode) {
     Card(
       modifier = Modifier
         .fillMaxWidth()
+        .clip(AppShapeScale.large)
         .combinedClickable(onClick = onClick, onLongClick = onLongClick),
       shape = AppShapeScale.large,
       colors = CardDefaults.cardColors(
@@ -2198,6 +2172,7 @@ private fun MusicPlaylistCard(
         Box(modifier = Modifier.fillMaxWidth()) {
           PlaylistArtCollage(
             artUris = artUris,
+            isFavorites = isFavorites,
             modifier = Modifier.fillMaxWidth()
           )
           if (isSelected) {
@@ -2239,6 +2214,7 @@ private fun MusicPlaylistCard(
     Surface(
       modifier = Modifier
         .fillMaxWidth()
+        .clip(AppShapeScale.large)
         .combinedClickable(onClick = onClick, onLongClick = onLongClick),
       color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else Color.Transparent
     ) {
@@ -2251,6 +2227,7 @@ private fun MusicPlaylistCard(
         Box(modifier = Modifier.size(coverArtSizeDp)) {
           PlaylistArtCollage(
             artUris = artUris,
+            isFavorites = isFavorites,
             modifier = Modifier.fillMaxSize()
           )
           if (isSelected) {
@@ -2303,6 +2280,8 @@ private fun PlaylistsTabContent(
   onPlaylistClick: (PlaylistEntity) -> Unit,
   onPlaylistLongClick: (PlaylistEntity) -> Unit,
   selectionManager: app.infinity.mpvz.ui.browser.selection.SelectionManager<PlaylistEntity, Long>,
+  listState: LazyListState = rememberLazyListState(),
+  gridState: LazyGridState = rememberLazyGridState(),
 ) {
   val playlistRepository: PlaylistRepository = koinInject()
 
@@ -2310,9 +2289,9 @@ private fun PlaylistsTabContent(
     value = withContext(Dispatchers.IO) {
       playlists.associate { playlist ->
         val items = playlistRepository.getPlaylistItems(playlist.id)
-        val artUris = items.mapNotNull { item ->
-          songs.find { s -> s.path == item.filePath }?.albumArtUri
-        }.distinct().take(4)
+        val artUris = items.take(4).mapNotNull { item ->
+          songs.firstOrNull { it.path == item.filePath }?.albumArtUri
+        }
         playlist.id to Pair(items.size, artUris)
       }
     }
@@ -2339,6 +2318,7 @@ private fun PlaylistsTabContent(
       val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
       if (viewMode == MusicViewMode.GRID) {
         LazyVerticalGrid(
+          state = gridState,
           columns = GridCells.Adaptive(minSize = 145.dp),
           modifier = Modifier.fillMaxSize(),
           contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
@@ -2362,6 +2342,7 @@ private fun PlaylistsTabContent(
         }
       } else {
         LazyColumn(
+          state = listState,
           modifier = Modifier.fillMaxSize(),
           contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
         ) {
@@ -2400,7 +2381,11 @@ private fun AlbumDetailSheet(
 ) {
   ModalBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    sheetState =
+      rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+      )
   ) {
     Column(
       modifier = Modifier
@@ -2453,13 +2438,20 @@ private fun AlbumDetailSheet(
 
       Spacer(modifier = Modifier.height(16.dp))
 
+      val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
+      val playingUri = sessionState.currentItem?.originalUri
+
       LazyColumn(
         modifier = Modifier
           .fillMaxWidth()
           .height(350.dp)
       ) {
         items(songs, key = { it.id }) { song ->
-          val isPlaying = isPlaybackActive && recentlyPlayedFilePath != null && song.path == recentlyPlayedFilePath
+          val isPlaying = when {
+            !isPlaybackActive -> false
+            playingUri != null -> song.uri.toString() == playingUri || song.path == playingUri
+            else -> recentlyPlayedFilePath != null && song.path == recentlyPlayedFilePath
+          }
           SongListItem(
             song = song,
             isPlaying = isPlaying,
@@ -2486,7 +2478,11 @@ private fun ArtistDetailSheet(
 ) {
   ModalBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    sheetState =
+      rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+      )
   ) {
     Column(
       modifier = Modifier
@@ -2526,13 +2522,20 @@ private fun ArtistDetailSheet(
 
       Spacer(modifier = Modifier.height(16.dp))
 
+      val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
+      val playingUri = sessionState.currentItem?.originalUri
+
       LazyColumn(
         modifier = Modifier
           .fillMaxWidth()
           .height(350.dp)
       ) {
         items(songs, key = { it.id }) { song ->
-          val isPlaying = isPlaybackActive && recentlyPlayedFilePath != null && song.path == recentlyPlayedFilePath
+          val isPlaying = when {
+            !isPlaybackActive -> false
+            playingUri != null -> song.uri.toString() == playingUri || song.path == playingUri
+            else -> recentlyPlayedFilePath != null && song.path == recentlyPlayedFilePath
+          }
           SongListItem(
             song = song,
             isPlaying = isPlaying,

@@ -33,5 +33,5 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "MpvInfinity"
+rootProject.name = "Mpv∞"
 include(":app")

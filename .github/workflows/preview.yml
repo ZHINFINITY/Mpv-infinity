@@ -1,6 +1,8 @@
 name: Preview Build
 
 on:
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -9,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: mpvrx-preview-pages
+  group: Mpv∞-preview-pages
   cancel-in-progress: true
 
 jobs:
@@ -17,6 +19,8 @@ jobs:
     name: Build preview APKs
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      should_build: ${{ steps.activity.outputs.should_build }}
 
     steps:
       - name: Checkout preview source
@@ -24,7 +28,69 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check for unpublished app activity
+        id: activity
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PREVIEW_MANIFEST_URL: https://riteshp2001.github.io/Mpv∞/latest.json
+        run: |
+          set -euo pipefail
+
+          source_fingerprint="$(
+            git ls-files -s -- \
+              app \
+              build.gradle.kts \
+              settings.gradle.kts \
+              gradle.properties \
+              gradle \
+              fastlane/metadata/android/preview-site \
+              fastlane/metadata/android/en-US/images/icon.png \
+              | sha256sum | cut -d' ' -f1
+          )"
+
+          latest_fingerprint="$(
+            curl -fsSL --retry 3 --retry-delay 2 "$PREVIEW_MANIFEST_URL" \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin).get("source_fingerprint", ""))' \
+              2>/dev/null || true
+          )"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            should_build=true
+            reason="manual request"
+            selected_flavor=all
+            website_visible=true
+            publication_mode=manual
+          elif [[ -z "$latest_fingerprint" ]]; then
+            should_build=true
+            reason="published manifest has no source fingerprint"
+            selected_flavor=all
+            website_visible=false
+            publication_mode=automatic
+          elif [[ "$source_fingerprint" != "$latest_fingerprint" ]]; then
+            should_build=true
+            reason="app source changed"
+            selected_flavor=all
+            website_visible=false
+            publication_mode=automatic
+          else
+            should_build=false
+            reason="no app activity since the latest preview"
+            selected_flavor=all
+            website_visible=false
+            publication_mode=automatic
+          fi
+
+          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_FINGERPRINT=$source_fingerprint" >> "$GITHUB_ENV"
+          echo "SELECTED_FLAVOR=$selected_flavor" >> "$GITHUB_ENV"
+          echo "WEBSITE_VISIBLE=$website_visible" >> "$GITHUB_ENV"
+          echo "PUBLICATION_MODE=$publication_mode" >> "$GITHUB_ENV"
+          echo "Preview decision: $should_build ($reason)"
+
       - name: Set build metadata
+        id: metadata
+        if: steps.activity.outputs.should_build == 'true'
         shell: bash
         env:
           SOURCE_RUN_ID: ${{ github.run_id }}
@@ -39,6 +105,7 @@ jobs:
           published_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
           echo "COMMIT_COUNT=$commit_count" >> "$GITHUB_ENV"
+          echo "commit_count=$commit_count" >> "$GITHUB_OUTPUT"
           echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
           echo "SHORT_SHA=$short_sha" >> "$GITHUB_ENV"
           echo "PUBLISHED_AT=$published_at" >> "$GITHUB_ENV"
@@ -48,6 +115,7 @@ jobs:
           echo "SOURCE_BRANCH=$SOURCE_BRANCH" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
+        if: steps.activity.outputs.should_build == 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -55,15 +123,22 @@ jobs:
           cache: gradle
 
       - name: Make Gradle wrapper executable
+        if: steps.activity.outputs.should_build == 'true'
         run: chmod +x ./gradlew
 
       - name: Build selected preview APKs
+        if: steps.activity.outputs.should_build == 'true'
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew assembleStandardPreview --stacktrace --no-daemon --max-workers=2
+          if [[ "$SELECTED_FLAVOR" == "all" ]]; then
+            ./gradlew assembleFongmiPreview --stacktrace --no-daemon --max-workers=2
+            ./gradlew assembleNoVulkanPreview --stacktrace --no-daemon --max-workers=2
+          fi
 
       - name: Sign and verify preview APKs
+        if: steps.activity.outputs.should_build == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -109,9 +184,26 @@ jobs:
               "standard $abi preview"
           done
 
+          if [[ "$SELECTED_FLAVOR" == "all" ]]; then
+            flavor_dir="app/build/outputs/apk/fongmi/preview"
+            test -d "$flavor_dir"
+            sign_apk \
+              "$flavor_dir/app-fongmi-universal-preview-unsigned.apk" \
+              "$flavor_dir/app-fongmi-universal-preview.apk" \
+              "fongmi universal preview"
+
+            flavor_dir="app/build/outputs/apk/noVulkan/preview"
+            test -d "$flavor_dir"
+            sign_apk \
+              "$flavor_dir/app-noVulkan-universal-preview-unsigned.apk" \
+              "$flavor_dir/app-noVulkan-universal-preview.apk" \
+              "non-Vulkan universal preview"
+          fi
+
       - name: Stage GitHub Pages preview site
+        if: steps.activity.outputs.should_build == 'true'
         env:
-          SITE_BASE_URL: https://ZHINFINITY.github.io/Mpv-
+          SITE_BASE_URL: https://riteshp2001.github.io/Mpv∞
         shell: bash
         run: |
           set -euo pipefail
@@ -138,7 +230,10 @@ jobs:
           run_id = int(os.environ["SOURCE_RUN_ID"])
           run_number = int(os.environ["SOURCE_RUN_NUMBER"])
           run_url = os.environ["SOURCE_RUN_URL"]
-          selected_flavor = "all"
+          source_fingerprint = os.environ["SOURCE_FINGERPRINT"]
+          selected_flavor = os.environ["SELECTED_FLAVOR"]
+          website_visible = os.environ["WEBSITE_VISIBLE"].lower() == "true"
+          publication_mode = os.environ["PUBLICATION_MODE"]
 
           builds = [
               ("standard", "universal", "universal"),
@@ -147,6 +242,11 @@ jobs:
               ("standard", "x86", "x86"),
               ("standard", "x86_64", "x86_64"),
           ]
+          if selected_flavor == "all":
+              builds.extend([
+                  ("fongmi", "universal", "fongmi"),
+                  ("noVulkan", "universal", "no-vulkan"),
+              ])
           assets = []
 
           for flavor, output, public_name in builds:
@@ -172,7 +272,7 @@ jobs:
               "tag_name": f"preview-r{commit_count}",
               "name": f"Mpv∞ Preview r{commit_count}",
               "body": (
-                  f"Manually published preview from workflow run #{run_number}. "
+                  f"{publication_mode.title()} preview from workflow run #{run_number}. "
                   f"Source commit: {source_sha[:7]}."
               ),
               "published_at": published_at,
@@ -180,6 +280,9 @@ jobs:
               "channel": "preview",
               "commit_sha": source_sha,
               "commit_count": commit_count,
+              "source_fingerprint": source_fingerprint,
+              "website_visible": website_visible,
+              "publication_mode": publication_mode,
               "run_number": run_number,
               "run_id": run_id,
               "run_url": run_url,
@@ -198,13 +301,24 @@ jobs:
           python3 -m json.tool site/latest.json >/dev/null
           find site -maxdepth 2 -type f -printf '%p %k KB\n' | sort
 
-      # Preview APKs are served from GitHub Pages below instead of consuming
-      # the private repository's Actions artifact storage allowance.
+      - name: Upload preview APKs as Actions artifact
+        if: steps.activity.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Mpv∞-preview-r${{ steps.metadata.outputs.commit_count }}
+          path: |
+            site/downloads/*.apk
+            site/latest.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
 
       - name: Configure GitHub Pages
+        if: steps.activity.outputs.should_build == 'true'
         uses: actions/configure-pages@v6
 
       - name: Upload GitHub Pages artifact
+        if: steps.activity.outputs.should_build == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
@@ -212,6 +326,7 @@ jobs:
   deploy-preview:
     name: Publish preview download page
     needs: build-preview
+    if: needs.build-preview.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:

@@ -9,9 +9,11 @@
 
 package app.infinity.mpvz.ui.browser.cards
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -54,12 +56,14 @@ import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.ThumbnailQuality
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.theme.AppShapeScale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
@@ -71,6 +75,7 @@ data class VideoCardUiConfig(
   val showSizeChip: Boolean,
   val showResolutionChip: Boolean,
   val showFramerateInResolution: Boolean,
+  val showCodecSupportIndicator: Boolean,
   val showProgressBar: Boolean,
   val showDateChip: Boolean,
   val showUnplayedOldVideoLabel: Boolean,
@@ -78,7 +83,64 @@ data class VideoCardUiConfig(
   val showExtensionField: Boolean = true,
   val showDurationField: Boolean = true,
   val centerGridTitles: Boolean = false,
+  val thumbnailQuality: ThumbnailQuality = ThumbnailQuality.High,
 )
+
+/** Hoist this once per screen and pass the result to every card rather than collecting per item. */
+@Composable
+fun rememberVideoCardUiConfig(): VideoCardUiConfig {
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val browserPreferences = koinInject<BrowserPreferences>()
+
+  val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
+  val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
+  val showSizeChipPref by browserPreferences.showSizeChip.collectAsState()
+  val showResolutionChipPref by browserPreferences.showResolutionChip.collectAsState()
+  val showFramerateInResolutionConfig by browserPreferences.showFramerateInResolution.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
+  val showProgressBarConfig by browserPreferences.showProgressBar.collectAsState()
+  val showDateChipConfig by browserPreferences.showDateChip.collectAsState()
+  val showUnplayedOldVideoLabelConfig by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
+  val unplayedOldVideoDaysConfig by appearancePreferences.unplayedOldVideoDays.collectAsState()
+  val showExtensionField by browserPreferences.showExtensionField.collectAsState()
+  val showDurationFieldConfig by browserPreferences.showDurationField.collectAsState()
+  val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
+
+  return remember(
+    unlimitedNameLines,
+    showVideoThumbnails,
+    showSizeChipPref,
+    showResolutionChipPref,
+    showFramerateInResolutionConfig,
+    showCodecSupportIndicator,
+    showProgressBarConfig,
+    showDateChipConfig,
+    showUnplayedOldVideoLabelConfig,
+    unplayedOldVideoDaysConfig,
+    showExtensionField,
+    showDurationFieldConfig,
+    centerGridTitles,
+    thumbnailQuality,
+  ) {
+    VideoCardUiConfig(
+      unlimitedNameLines = unlimitedNameLines,
+      showThumbnails = showVideoThumbnails,
+      showSizeChip = showSizeChipPref,
+      showResolutionChip = showResolutionChipPref,
+      showFramerateInResolution = showFramerateInResolutionConfig,
+      showCodecSupportIndicator = showCodecSupportIndicator,
+      showProgressBar = showProgressBarConfig,
+      showDateChip = showDateChipConfig,
+      showUnplayedOldVideoLabel = showUnplayedOldVideoLabelConfig,
+      unplayedOldVideoDays = unplayedOldVideoDaysConfig,
+      showExtensionField = showExtensionField,
+      showDurationField = showDurationFieldConfig,
+      centerGridTitles = centerGridTitles,
+      thumbnailQuality = thumbnailQuality,
+    )
+  }
+}
 
 @Composable
 fun VideoCard(
@@ -104,57 +166,15 @@ fun VideoCard(
   allowThumbnailLoading: Boolean = true,
   uiConfig: VideoCardUiConfig? = null,
 ) {
-  val appearancePreferences = koinInject<AppearancePreferences>()
-  val browserPreferences = koinInject<BrowserPreferences>()
-
-  val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
-  val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
-  val showSizeChipPref by browserPreferences.showSizeChip.collectAsState()
-  val showResolutionChipPref by browserPreferences.showResolutionChip.collectAsState()
-  val showFramerateInResolutionConfig by browserPreferences.showFramerateInResolution.collectAsState()
-  val showProgressBarConfig by browserPreferences.showProgressBar.collectAsState()
-  val showDateChipConfig by browserPreferences.showDateChip.collectAsState()
-  val showUnplayedOldVideoLabelConfig by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
-  val unplayedOldVideoDaysConfig by appearancePreferences.unplayedOldVideoDays.collectAsState()
-  val showExtensionField by browserPreferences.showExtensionField.collectAsState()
-  val showDurationFieldConfig by browserPreferences.showDurationField.collectAsState()
-  val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
-
-  val resolvedUiConfig =
-    uiConfig ?: remember(
-      unlimitedNameLines,
-      showVideoThumbnails,
-      showSizeChipPref,
-      showResolutionChipPref,
-      showFramerateInResolutionConfig,
-      showProgressBarConfig,
-      showDateChipConfig,
-      showUnplayedOldVideoLabelConfig,
-      unplayedOldVideoDaysConfig,
-      showExtensionField,
-      showDurationFieldConfig,
-      centerGridTitles,
-    ) {
-      VideoCardUiConfig(
-        unlimitedNameLines = unlimitedNameLines,
-        showThumbnails = showVideoThumbnails,
-        showSizeChip = showSizeChipPref,
-        showResolutionChip = showResolutionChipPref,
-        showFramerateInResolution = showFramerateInResolutionConfig,
-        showProgressBar = showProgressBarConfig,
-        showDateChip = showDateChipConfig,
-        showUnplayedOldVideoLabel = showUnplayedOldVideoLabelConfig,
-        unplayedOldVideoDays = unplayedOldVideoDaysConfig,
-        showExtensionField = showExtensionField,
-        showDurationField = showDurationFieldConfig,
-        centerGridTitles = centerGridTitles,
-      )
-    }
+  // Screens hoist this once and pass it down; collecting per card would register a dozen
+  // preference observers for every visible item in a grid.
+  val resolvedUiConfig = uiConfig ?: rememberVideoCardUiConfig()
   val maxLines = if (resolvedUiConfig.unlimitedNameLines) Int.MAX_VALUE else 2
 
   val showThumbnails = resolvedUiConfig.showThumbnails
-  val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
+  val thumbnailQuality = resolvedUiConfig.thumbnailQuality
   val showFramerateInResolution = resolvedUiConfig.showFramerateInResolution
+  val showCodecSupportIndicator = resolvedUiConfig.showCodecSupportIndicator
   val showProgressBar = resolvedUiConfig.showProgressBar
   val showDateChip = resolvedUiConfig.showDateChip
   val showUnplayedOldVideoLabel = resolvedUiConfig.showUnplayedOldVideoLabel
@@ -166,7 +186,7 @@ fun VideoCard(
     } else if (video.isAudio && video.title.isNotBlank()) {
       video.title
     } else {
-      video.displayName.substringBeforeLast('.')
+      app.infinity.mpvz.utils.storage.FileTypeUtils.stripExtension(video.displayName)
     }
 
   val selectionInset = 2.dp
@@ -188,7 +208,8 @@ fun VideoCard(
       modifier
         .then(
           if (isGridMode) Modifier.fillMaxWidth() else Modifier.fillMaxWidth(),
-        ).combinedClickable(
+        ).clip(cardShape)
+        .combinedClickable(
           onClick = onClick,
           onLongClick = onLongClick,
         ),
@@ -234,29 +255,39 @@ fun VideoCard(
             thumbnailHeightPx?.takeIf { it > 0 }
               ?: (resolvedThumbWidthPx / aspect).roundToInt()
 
-          val thumbnailKey =
+          val thumbnailRequestKey =
             remember(
               video.id,
+              video.path,
               video.dateModified,
               video.size,
+              video.duration,
               resolvedThumbWidthPx,
               resolvedThumbHeightPx,
               thumbnailQuality,
             ) {
-              thumbnailRepository.thumbnailKey(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
+              Any()
             }
 
-          var thumbnail by remember(thumbnailKey) {
-            mutableStateOf(
-              thumbnailRepository.getThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx),
-            )
+          var thumbnail by remember(thumbnailRequestKey) {
+            mutableStateOf<Bitmap?>(null)
+          }
+
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
+            if (!allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
+              thumbnail =
+                withContext(Dispatchers.IO) {
+                  thumbnailRepository.getThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
+                }
+            }
           }
 
           // Update thumbnail when the repository emits that this key became ready (folder prefetch or any other source).
-          LaunchedEffect(thumbnailKey, allowThumbnailLoading) {
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailLoading) {
             if (!allowThumbnailLoading) return@LaunchedEffect
             thumbnailRepository.thumbnailReadyKeys
               .filter { key -> thumbnailRepository.isThumbnailKeyForVideo(key, video) }
+              .flowOn(Dispatchers.IO)
               .collect {
                 thumbnail =
                   withContext(Dispatchers.IO) {
@@ -266,15 +297,11 @@ fun VideoCard(
           }
 
           // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
-          LaunchedEffect(thumbnailKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (allowThumbnailLoading && thumbnail == null && showThumbnails) {
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
+            if (allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
               thumbnail =
                 withContext(Dispatchers.IO) {
-                  if (allowThumbnailGeneration) {
-                    thumbnailRepository.getThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
-                  } else {
-                    thumbnailRepository.getCachedThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
-                  }
+                  thumbnailRepository.getThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
                 }
             }
           }
@@ -354,6 +381,14 @@ fun VideoCard(
                   )
                 }
               }
+            }
+
+            if (showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()) {
+              CodecSupportIndicator(
+                video = video,
+                compact = true,
+                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+              )
             }
 
             // Duration overlay
@@ -440,6 +475,9 @@ fun VideoCard(
                 androidx.compose.foundation.layout.Arrangement
                   .spacedBy(4.dp),
             ) {
+              if (showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()) {
+                CodecSupportIndicator(video = video)
+              }
               if (showSubtitleIndicator && !video.isAudio) {
                 if (video.hasEmbeddedSubtitles && video.subtitleCodec.isNotBlank()) {
                   video.subtitleCodec.split(" ").forEach { codec ->
@@ -539,27 +577,46 @@ fun VideoCard(
           // Respect a caller-supplied size (e.g. the configurable Music cover-art size) instead of
           // always hardcoding 128dp, otherwise controls like the Cover Art Size slider have no effect
           // on this list layout.
-          val thumbWidthPx = thumbnailWidthPx?.takeIf { it > 0 } ?: with(LocalDensity.current) { 128.dp.roundToPx() }
+          val thumbWidthPx = thumbnailWidthPx?.takeIf { it > 0 } ?: with(LocalDensity.current) { (if (video.isAudio) 56.dp else 128.dp).roundToPx() }
           val thumbWidthDp = with(LocalDensity.current) { thumbWidthPx.toDp() }
           val thumbHeightPx = thumbnailHeightPx?.takeIf { it > 0 } ?: (thumbWidthPx / aspect).roundToInt()
 
           // Load thumbnail with optimized state management
           // Key includes video identity to prevent reloading same thumbnail
-          val thumbnailKey =
-            remember(video.id, video.dateModified, video.size, thumbWidthPx, thumbHeightPx, thumbnailQuality) {
-              thumbnailRepository.thumbnailKey(video, thumbWidthPx, thumbHeightPx)
+          val thumbnailRequestKey =
+            remember(
+              video.id,
+              video.path,
+              video.dateModified,
+              video.size,
+              video.duration,
+              thumbWidthPx,
+              thumbHeightPx,
+              thumbnailQuality,
+            ) {
+              Any()
             }
 
           // Try to get from memory cache immediately (synchronous, no flicker)
-          var thumbnail by remember(thumbnailKey) {
-            mutableStateOf(thumbnailRepository.getThumbnailFromMemory(video, thumbWidthPx, thumbHeightPx))
+          var thumbnail by remember(thumbnailRequestKey) {
+            mutableStateOf<Bitmap?>(null)
+          }
+
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
+            if (!allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
+              thumbnail =
+                withContext(Dispatchers.IO) {
+                  thumbnailRepository.getThumbnailFromMemory(video, thumbWidthPx, thumbHeightPx)
+                }
+            }
           }
 
           // Update thumbnail when the repository emits that this key became ready (folder prefetch or any other source).
-          LaunchedEffect(thumbnailKey, allowThumbnailLoading) {
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailLoading) {
             if (!allowThumbnailLoading) return@LaunchedEffect
             thumbnailRepository.thumbnailReadyKeys
               .filter { key -> thumbnailRepository.isThumbnailKeyForVideo(key, video) }
+              .flowOn(Dispatchers.IO)
               .collect {
                 thumbnail =
                   withContext(Dispatchers.IO) {
@@ -569,15 +626,11 @@ fun VideoCard(
           }
 
           // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
-          LaunchedEffect(thumbnailKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (allowThumbnailLoading && thumbnail == null && showThumbnails) {
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
+            if (allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
               thumbnail =
                 withContext(Dispatchers.IO) {
-                  if (allowThumbnailGeneration) {
-                    thumbnailRepository.getThumbnail(video, thumbWidthPx, thumbHeightPx)
-                  } else {
-                    thumbnailRepository.getCachedThumbnail(video, thumbWidthPx, thumbHeightPx)
-                  }
+                  thumbnailRepository.getThumbnail(video, thumbWidthPx, thumbHeightPx)
                 }
             }
           }
@@ -738,6 +791,9 @@ fun VideoCard(
                 androidx.compose.foundation.layout.Arrangement
                   .spacedBy(4.dp),
             ) {
+              if (showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()) {
+                CodecSupportIndicator(video = video)
+              }
               if (showSubtitleIndicator && !video.isAudio) {
                 if (video.hasEmbeddedSubtitles && video.subtitleCodec.isNotBlank()) {
                   video.subtitleCodec.split(" ").forEach { codec ->
@@ -829,7 +885,54 @@ fun VideoCard(
   }
 }
 
-private fun formatDate(timestampSeconds: Long): String {
-  val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
-  return sdf.format(java.util.Date(timestampSeconds * 1000))
+@Composable
+private fun CodecSupportIndicator(
+  video: Video,
+  modifier: Modifier = Modifier,
+  compact: Boolean = false,
+) {
+  val support =
+    remember(video.videoCodec, video.videoCodecMimeType, video.width, video.height, video.fps) {
+      app.infinity.mpvz.utils.media.VideoCodecSupportInspector.inspect(
+        codecLabel = video.videoCodec,
+        mimeType = video.videoCodecMimeType,
+        width = video.width,
+        height = video.height,
+        frameRate = video.fps,
+      )
+    }
+  val statusLabel =
+    when (support.decodeSupport) {
+      app.infinity.mpvz.utils.media.VideoDecodeSupport.HARDWARE -> "HW"
+      app.infinity.mpvz.utils.media.VideoDecodeSupport.SOFTWARE -> "SW"
+      app.infinity.mpvz.utils.media.VideoDecodeSupport.UNSUPPORTED -> if (compact) "NO" else "Unsupported"
+      app.infinity.mpvz.utils.media.VideoDecodeSupport.UNKNOWN -> "Unknown"
+    }
+  Row(
+    modifier =
+      modifier
+        .clip(AppShapeScale.small)
+        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        .padding(horizontal = if (compact) 6.dp else 8.dp, vertical = if (compact) 3.dp else 4.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Text(
+      text = "${support.codecLabel} · $statusLabel",
+      style = MaterialTheme.typography.labelSmall,
+      fontWeight = FontWeight.Bold,
+      color = MaterialTheme.colorScheme.onSurface,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+  }
 }
+
+// Hoisted because a card formats a date on every recomposition and SimpleDateFormat construction
+// parses the pattern and clones a Calendar each time.
+private val CARD_DATE_FORMATTER: java.time.format.DateTimeFormatter =
+  java.time.format.DateTimeFormatter
+    .ofPattern("MMM dd, yyyy")
+    .withZone(java.time.ZoneId.systemDefault())
+
+private fun formatDate(timestampSeconds: Long): String =
+  CARD_DATE_FORMATTER.format(java.time.Instant.ofEpochSecond(timestampSeconds))

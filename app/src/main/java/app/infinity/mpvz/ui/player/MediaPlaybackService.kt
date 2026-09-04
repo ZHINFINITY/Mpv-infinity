@@ -26,8 +26,6 @@ import android.graphics.Color
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.media.MediaMetadataRetriever
-import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -46,6 +44,7 @@ import androidx.media.MediaBrowserServiceCompat
 import androidx.media.session.MediaButtonReceiver
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
+import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
@@ -64,12 +63,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -88,23 +89,26 @@ class MediaPlaybackService :
   KoinComponent {
   companion object {
     private const val TAG = "MediaPlaybackService"
+
+    // Final state saves must outlive serviceScope, which is cancelled during teardown.
+    private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private const val NOTIFICATION_ID = 1
-    private const val NOTIFICATION_CHANNEL_ID = "mpvrx_playback_channel"
+    private const val NOTIFICATION_CHANNEL_ID = "Mpv∞_playback_channel"
     private const val PLAYBACK_STATE_SAVE_INTERVAL_MS = 5000L
     private const val PROGRESS_NOTIFICATION_UPDATE_INTERVAL_MS = 2000L
-    private const val MEDIA_NOTIFICATION_UPDATE_INTERVAL_MS = 5000L
+    private const val MEDIA_NOTIFICATION_UPDATE_INTERVAL_MS = 1000L
     private const val MAX_MEDIA_SESSION_QUEUE_ITEMS = 200
-    private const val MAX_NOTIFICATION_ARTWORK_DIMENSION = 768
+    private const val VIDEO_CONTENT_INTENT_REQUEST_CODE = 1100
+    private const val AUDIO_CONTENT_INTENT_REQUEST_CODE = 1101
     private val DEFAULT_ACCENT_COLOR = Color.rgb(214, 220, 228)
     const val ACTION_OPEN_PLAYER = "app.infinity.mpvz.action.OPEN_PLAYER_FROM_NOTIFICATION"
     const val ACTION_NOTIFICATION_PREVIOUS = "app.infinity.mpvz.action.NOTIFICATION_PREVIOUS"
     const val ACTION_NOTIFICATION_PLAY_PAUSE = "app.infinity.mpvz.action.NOTIFICATION_PLAY_PAUSE"
     const val ACTION_NOTIFICATION_NEXT = "app.infinity.mpvz.action.NOTIFICATION_NEXT"
+    const val ACTION_NOTIFICATION_FAVORITE = "app.infinity.mpvz.action.NOTIFICATION_FAVORITE"
+    const val ACTION_NOTIFICATION_MEDIA_FAVORITE = "app.infinity.mpvz.action.NOTIFICATION_MEDIA_FAVORITE"
+    const val ACTION_NOTIFICATION_CLOSE = "app.infinity.mpvz.action.NOTIFICATION_CLOSE"
     const val ACTION_NOTIFICATION_STOP = "app.infinity.mpvz.action.NOTIFICATION_STOP"
-    const val EXTRA_NATIVE_BACKGROUND_PLAYBACK = "native_background_playback"
-
-    @Volatile
-    internal var nativeBackgroundRequested = false
 
     @Volatile
     internal var thumbnail: Bitmap? = null
@@ -126,9 +130,13 @@ class MediaPlaybackService :
      */
     fun isRunning(): Boolean = isServiceRunning && !activityForeground
 
-    fun isForegroundActive(): Boolean = activeInstance?.foregroundReady == true
+    fun isForegroundActive(): Boolean =
+      activeInstance?.let { service ->
+        service.foregroundReady && !activityForeground && !service.handingBackToActivity
+      } == true
 
-    fun isNativeBackgroundPlaybackActive(): Boolean = activeInstance?.nativeBackgroundPlayback == true
+    /** True once the service owns the foreground notification, independent of Activity focus. */
+    internal fun isNotificationOwnerReady(): Boolean = activeInstance?.foregroundReady == true
 
     /**
      * True while a PlayerActivity is the active foreground owner of the shared playback session
@@ -183,6 +191,15 @@ class MediaPlaybackService :
       }
     }
 
+    internal fun stopForTerminalDismissal() {
+      val service = activeInstance
+      if (service != null && !service.mpvAccessReleased) {
+        service.stopPlaybackAndService(force = true)
+      } else {
+        PlaybackSession.stop(clearQueue = true)
+      }
+    }
+
     fun createNotificationChannel(context: Context) {
       val channel =
         NotificationChannel(
@@ -201,13 +218,14 @@ class MediaPlaybackService :
     }
   }
 
-  private val binder = MediaPlaybackBinder(this)
+  private val binder = MediaPlaybackBinder()
   private lateinit var mediaSession: MediaSessionCompat
   private val playerPreferences: PlayerPreferences by inject()
   private val advancedPreferences: AdvancedPreferences by inject()
   private val audioPreferences: AudioPreferences by inject()
   private val browserPreferences: BrowserPreferences by inject()
   private val gesturePreferences: GesturePreferences by inject()
+  private val playlistRepository: PlaylistRepository by inject()
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val torrentStreamingEngine: TorrentStreamingEngine by inject()
 
@@ -215,6 +233,7 @@ class MediaPlaybackService :
   private var mediaTitle = ""
   private var mediaArtist = ""
   private var mediaUri: String? = null
+  private var activeArtworkUri: String? = null
   private var paused = false
   private var playbackSpeed = 1.0f
   private var activeQueueItemId: Long = MediaSessionCompat.QueueItem.UNKNOWN_ID.toLong()
@@ -242,37 +261,37 @@ class MediaPlaybackService :
   private var lastThumbnailSource: WeakReference<Bitmap>? = null
   private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
   private var playbackStateSaveJob: Job? = null
-  private var mediaInfoGeneration = 0L
-  // Notification next/previous taps can arrive faster than MPV can replace its decoder. Keep the
-  // latest requested item and perform one replacement after the short burst settles.
-  private var notificationNavigationJob: Job? = null
-  private var notificationNavigationPending = false
-  private var lastNotificationNavigationAtMs = 0L
-  private var artworkRefreshJob: Job? = null
-  private var mpvAccessReleased = false
-  private var nativeBackgroundPlayback = false
+  private var favoriteStateJob: Job? = null
+  private var favoriteActionJob: Job? = null
+  private val mediaFavoriteActionMutex = Mutex()
+  @Volatile private var mpvAccessReleased = false
+  @Volatile private var isCurrentFavorite = false
   private var usesAudioBackgroundPlayback = false
   private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
-  private var audioFocusRequest: AudioFocusRequest? = null
-  private var ownsAudioFocus = false
-  private var hasAudioFocus = false
+
+  // Mutated from the framework's audio-focus callback thread as well as serviceScope and the
+  // Activity's main thread; stale reads here strand focus and permanently duck other apps.
+  @Volatile private var audioFocusRequest: AudioFocusRequest? = null
+
+  @Volatile private var ownsAudioFocus = false
+
+  @Volatile private var hasAudioFocus = false
+
   @Volatile
   private var handingBackToActivity = false
-  private var resumeAfterFocusGain = false
-  private var volumeBeforeDuck: Double? = null
+
+  @Volatile private var resumeAfterFocusGain = false
+
+  @Volatile private var volumeBeforeDuck: Double? = null
   private var noisyReceiverRegistered = false
   @Volatile
   private var foregroundReady = false
   private val audioFocusChangeListener =
     AudioManager.OnAudioFocusChangeListener { change ->
+      if (mpvAccessReleased || handingBackToActivity) return@OnAudioFocusChangeListener
       when (change) {
         AudioManager.AUDIOFOCUS_LOSS -> {
           resumeAfterFocusGain = false
-          // A foreground Activity is taking over playback; do not pause the shared session.
-          if (handingBackToActivity) {
-            abandonAudioOwnership()
-            return@OnAudioFocusChangeListener
-          }
           PlaybackSession.setPropertyBoolean("pause", true)
           abandonAudioOwnership()
         }
@@ -305,20 +324,16 @@ class MediaPlaybackService :
         context: Context?,
         intent: Intent?,
       ) {
-        if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && ownsAudioFocus) {
+        if (!mpvAccessReleased && !handingBackToActivity &&
+          intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && ownsAudioFocus
+        ) {
           PlaybackSession.setPropertyBoolean("pause", true)
         }
       }
     }
 
-  class MediaPlaybackBinder(service: MediaPlaybackService) : Binder() {
-    private val serviceReference = WeakReference(service)
-
-    fun getService(): MediaPlaybackService? = serviceReference.get()
-
-    fun clear() {
-      serviceReference.clear()
-    }
+  inner class MediaPlaybackBinder : Binder() {
+    fun getService() = this@MediaPlaybackService
   }
 
   fun isForegroundReady(): Boolean = foregroundReady
@@ -335,25 +350,19 @@ class MediaPlaybackService :
     activeInstance = this
     isServiceRunning = true
     mpvAccessReleased = false
-    nativeBackgroundPlayback = nativeBackgroundRequested
-    nativeBackgroundRequested = false
     handingBackToActivity = false
 
-    // Android 16 requires a service started with startForegroundService() to promote itself
-    // promptly. Do this before MediaSession, MPV, preference, or database-backed work.
+    // Ensure notification channel exists before starting foreground service
     createNotificationChannel(this)
-    promoteToForegroundImmediately()
 
     setupMediaSession()
-    if (!nativeBackgroundPlayback) {
-      ContextCompat.registerReceiver(
-        this,
-        noisyReceiver,
-        IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
-        ContextCompat.RECEIVER_NOT_EXPORTED,
-      )
-      noisyReceiverRegistered = true
-    }
+    ContextCompat.registerReceiver(
+      this,
+      noisyReceiver,
+      IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+      ContextCompat.RECEIVER_NOT_EXPORTED,
+    )
+    noisyReceiverRegistered = true
 
     serviceScope.launch {
       combine(
@@ -383,14 +392,11 @@ class MediaPlaybackService :
           stopSelf()
         } else {
           updateMediaSessionPlaybackState()
+          syncMediaSessionVisibility()
           updateNotification()
         }
       }
     }
-
-    // Native background mode only needs a foreground process keep-alive. It must not register
-    // MPV observers because Native owns playback independently of PlaybackSession.
-    if (nativeBackgroundPlayback) return
 
     // Only add MPV observer if MPV is initialized
     try {
@@ -398,12 +404,6 @@ class MediaPlaybackService :
       PlaybackSession.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
       PlaybackSession.observeProperty("media-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("metadata/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-      PlaybackSession.observeProperty("metadata/by-key/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-      PlaybackSession.observeProperty("metadata/by-key/Artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-      PlaybackSession.observeProperty("metadata/by-key/album_artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-      PlaybackSession.observeProperty("metadata/by-key/albumartist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-      PlaybackSession.observeProperty("metadata/by-key/performer", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-      PlaybackSession.observeProperty("metadata/by-key/PERFORMER", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
@@ -412,41 +412,6 @@ class MediaPlaybackService :
       Log.d(TAG, "MPV observer registered")
     } catch (e: Exception) {
       Log.e(TAG, "Error registering MPV observer", e)
-    }
-  }
-
-  /**
-   * Promote the service with a dependency-free notification before any potentially slow
-   * initialization. The full media notification is installed later by onStartCommand().
-   */
-  @SuppressLint("ForegroundServiceType")
-  private fun promoteToForegroundImmediately() {
-    if (foregroundReady) return
-    runCatching {
-      val type =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-          ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-        } else {
-          0
-        }
-      val startupNotification =
-        NotificationCompat
-          .Builder(this, NOTIFICATION_CHANNEL_ID)
-          .setSmallIcon(R.drawable.ic_launcher_monochrome)
-          .setContentTitle(getString(R.string.player_unknown_video))
-          .setContentText(getString(R.string.notification_playing))
-          .setOngoing(true)
-          .setSilent(true)
-          .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-          .setPriority(NotificationCompat.PRIORITY_LOW)
-          .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-          .build()
-      ServiceCompat.startForeground(this, NOTIFICATION_ID, startupNotification, type)
-      foregroundReady = true
-      Log.d(TAG, "Foreground service promoted immediately")
-    }.onFailure { error ->
-      // Keep the normal onStartCommand() promotion path available for diagnostics/recovery.
-      Log.e(TAG, "Immediate foreground promotion failed", error)
     }
   }
 
@@ -459,37 +424,14 @@ class MediaPlaybackService :
     flags: Int,
     startId: Int,
   ): Int {
-    Log.d(TAG, "Service starting with startId: $startId native=$nativeBackgroundPlayback")
+    Log.d(TAG, "Service starting with startId: $startId")
 
-    if (nativeBackgroundPlayback) {
-      intent?.getStringExtra("media_title")?.takeIf { it.isNotBlank() }?.let {
-        mediaTitle = FileTypeUtils.stripExtension(it)
-      }
-      intent?.getStringExtra("media_artist")?.let { mediaArtist = it }
-      paused = false
-      if (!notificationsEnabled()) {
-        stopForegroundNotification()
-        stopSelf(startId)
-        return START_NOT_STICKY
-      }
-      runCatching {
-        val type =
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-          } else {
-            0
-          }
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), type)
-        foregroundReady = true
-        // Notification transport actions are intentionally disabled here: they are MPV-specific.
-        // The Native controller remains the sole owner of Media3 playback.
-        mediaSession.isActive = false
-      }.onFailure { error ->
-        Log.e(TAG, "Error starting Native background foreground service", error)
-        stopSelf(startId)
-        return START_NOT_STICKY
-      }
-      return START_STICKY
+    // MediaButtonReceiver launches us with startForegroundService(). Android 16 enforces the
+    // promotion deadline even when there is no live playback session and this start will be
+    // stopped immediately, so no validation or action branch may run before this call.
+    if (!startForegroundNotification()) {
+      stopSelf(startId)
+      return START_NOT_STICKY
     }
 
     if (!PlaybackSession.isInitialized) {
@@ -503,7 +445,7 @@ class MediaPlaybackService :
     intent?.let {
       when (it.action) {
         ACTION_NOTIFICATION_PREVIOUS -> {
-          scheduleNotificationQueueNavigation(previous = true)
+          playPreviousFromSession()
           if (foregroundReady) return START_NOT_STICKY
         }
         ACTION_NOTIFICATION_PLAY_PAUSE -> {
@@ -511,11 +453,21 @@ class MediaPlaybackService :
           if (foregroundReady) return START_NOT_STICKY
         }
         ACTION_NOTIFICATION_NEXT -> {
-          scheduleNotificationQueueNavigation(previous = false)
+          playNextFromSession()
           if (foregroundReady) return START_NOT_STICKY
         }
-        ACTION_NOTIFICATION_STOP -> {
-          stopPlaybackAndService()
+        ACTION_NOTIFICATION_FAVORITE -> {
+          toggleCurrentItemFavorite()
+          if (foregroundReady) return START_NOT_STICKY
+        }
+        ACTION_NOTIFICATION_MEDIA_FAVORITE -> {
+          toggleCurrentMediaNotificationFavorite()
+          if (foregroundReady) return START_NOT_STICKY
+        }
+        ACTION_NOTIFICATION_CLOSE,
+        ACTION_NOTIFICATION_STOP,
+        -> {
+          stopPlaybackAndService(force = true)
           return START_NOT_STICKY
         }
         else -> MediaButtonReceiver.handleIntent(mediaSession, it)
@@ -526,7 +478,9 @@ class MediaPlaybackService :
       val uri = it.getStringExtra("media_uri")
       val identifier = it.getStringExtra("media_identifier")
       if (it.hasExtra("audio_background_playback")) {
-        usesAudioBackgroundPlayback = it.getBooleanExtra("audio_background_playback", false)
+        val isAudio = it.getBooleanExtra("audio_background_playback", false)
+        usesAudioBackgroundPlayback = isAudio
+        notificationIsAudio = isAudio
       }
 
       if (!title.isNullOrBlank()) {
@@ -545,7 +499,7 @@ class MediaPlaybackService :
     // Fallback: Read current state from MPV if not provided via intent
     if (mediaTitle.isBlank()) {
       mediaTitle = FileTypeUtils.stripExtension(PlaybackSession.getPropertyString("media-title") ?: "")
-      mediaArtist = readPreferredArtist()
+      mediaArtist = PlaybackSession.getPropertyString("metadata/artist") ?: ""
     }
 
     paused = PlaybackSession.getPropertyBoolean("pause") == true
@@ -585,6 +539,21 @@ class MediaPlaybackService :
       return START_NOT_STICKY
     }
 
+    if (!startForegroundNotification()) {
+      foregroundReady = false
+      mediaSession.isActive = false
+      stopSelf(startId)
+      return START_NOT_STICKY
+    }
+    foregroundReady = true
+    syncMediaSessionVisibility()
+    Log.d(TAG, "Foreground service started successfully")
+
+    return START_NOT_STICKY
+  }
+
+  @SuppressLint("ForegroundServiceType")
+  private fun startForegroundNotification(): Boolean =
     try {
       val type =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -593,19 +562,11 @@ class MediaPlaybackService :
           0
         }
       ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), type)
-      foregroundReady = true
-      mediaSession.isActive = true
-      Log.d(TAG, "Foreground service started successfully")
-    } catch (e: Exception) {
-      foregroundReady = false
-      mediaSession.isActive = false
-      Log.e(TAG, "Error starting foreground service", e)
-      stopSelf(startId)
-      return START_NOT_STICKY
+      true
+    } catch (error: Exception) {
+      Log.e(TAG, "Error starting foreground service", error)
+      false
     }
-
-    return START_NOT_STICKY
-  }
 
   override fun onGetRoot(
     clientPackageName: String,
@@ -626,42 +587,13 @@ class MediaPlaybackService :
     thumbnail: Bitmap? = null,
     uri: String? = null,
     identifier: String? = null,
-    clearThumbnail: Boolean = false,
   ) {
     serviceScope.launch {
-      val requestedIdentifier = identifier?.takeIf { it.isNotBlank() }
-      val selectedIdentifier = PlaybackSession.queue.value.currentItem?.stableId
-      if (requestedIdentifier != null && selectedIdentifier != null && requestedIdentifier != selectedIdentifier) {
-        Log.d(TAG, "Ignoring stale service metadata identifier=$requestedIdentifier selected=$selectedIdentifier")
-        return@launch
-      }
-      val requestGeneration = ++mediaInfoGeneration
       val resolvedTitle = FileTypeUtils.stripExtension(title)
       val resolvedIdentifier = identifier?.takeIf { it.isNotBlank() }
-      // Keep existing art while the replacement item is being resolved. Callers that finished an
-      // artwork lookup pass clearThumbnail=true so tracks without art still fall back to the icon.
-      val artworkChanged =
-        if (thumbnail != null) {
-          if (thumbnail === lastThumbnailSource?.get() && MediaPlaybackService.thumbnail?.isRecycled == false) {
-            false
-          } else {
-            // Bitmap scaling/copying can touch millions of pixels. Keep it off the service main
-            // thread; only the small ownership swap and notification update return to Main.
-            val preparedThumbnail = withContext(Dispatchers.Default) {
-              prepareNotificationThumbnail(thumbnail)
-            }
-            if (requestGeneration != mediaInfoGeneration) {
-              preparedThumbnail?.takeIf { !it.isRecycled }?.recycle()
-              return@launch
-            }
-            preparedThumbnail?.let { replaceOwnedThumbnail(it, sourceReference = thumbnail) } ?: false
-          }
-        } else if (clearThumbnail) {
-          replaceOwnedThumbnail(null)
-        } else {
-          false
-        }
-      if (requestGeneration != mediaInfoGeneration) return@launch
+      // A metadata-only Activity sync must not erase artwork already resolved for this queue item.
+      // Item changes are cleared explicitly in applySessionItem before the next cover is loaded.
+      val artworkChanged = thumbnail?.let(::replaceOwnedThumbnail) ?: false
       val metadataChanged =
         mediaTitle != resolvedTitle ||
           mediaArtist != artist ||
@@ -682,53 +614,27 @@ class MediaPlaybackService :
     }
   }
 
-  private fun replaceOwnedThumbnail(
-    ownedThumbnail: Bitmap?,
-    sourceReference: Bitmap? = ownedThumbnail,
-  ): Boolean {
-    if (ownedThumbnail == null && thumbnail == null) return false
-    if (sourceReference != null && sourceReference === lastThumbnailSource?.get() && thumbnail?.isRecycled == false) return false
+  private fun replaceOwnedThumbnail(source: Bitmap?): Boolean {
+    if (source == null && thumbnail == null) return false
+    if (source != null && source === lastThumbnailSource?.get() && thumbnail?.isRecycled == false) return false
+    val ownedCopy =
+      source?.let { bitmap ->
+        runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
+      }
     val previous = thumbnail
-    lastThumbnailSource = sourceReference?.let(::WeakReference)
-    thumbnail = ownedThumbnail
+    lastThumbnailSource = source?.let(::WeakReference)
+    thumbnail = ownedCopy
     if (lastPaletteThumbnail === previous) lastPaletteThumbnail = null
-    previous?.takeIf { it !== ownedThumbnail && !it.isRecycled }?.recycle()
-    return previous !== ownedThumbnail
+    previous?.takeIf { it !== ownedCopy && !it.isRecycled }?.recycle()
+    return previous !== ownedCopy
   }
-
-  private fun prepareNotificationThumbnail(source: Bitmap): Bitmap? =
-    runCatching {
-      val maxDimension = maxOf(source.width, source.height)
-      val scale =
-        if (maxDimension > MAX_NOTIFICATION_ARTWORK_DIMENSION) {
-          MAX_NOTIFICATION_ARTWORK_DIMENSION.toFloat() / maxDimension.toFloat()
-        } else {
-          1f
-        }
-      val prepared =
-        if (scale < 1f) {
-          Bitmap.createScaledBitmap(
-            source,
-            (source.width * scale).toInt().coerceAtLeast(1),
-            (source.height * scale).toInt().coerceAtLeast(1),
-            true,
-          )
-        } else {
-          source
-        }
-      val copy = prepared.copy(Bitmap.Config.ARGB_8888, false)
-      if (prepared !== source && !prepared.isRecycled) prepared.recycle()
-      copy
-    }.getOrNull()
 
   fun setPlaylistInfo(isAudio: Boolean) {
     notificationIsAudio = isAudio
+    usesAudioBackgroundPlayback = isAudio
   }
 
   fun takeAudioOwnership(): Boolean {
-    // Native Media3 owns audio focus and playback directly; this service is only a process
-    // keep-alive and must never request focus or mutate MPV state in Native mode.
-    if (nativeBackgroundPlayback) return true
     // During a foreground handoff, returning true means "ownership is intentionally not needed".
     // Do not request focus and bounce it back to PlayerActivity; that focus ping-pong is exactly
     // what can turn a notification tap into an unexpected pause.
@@ -760,74 +666,25 @@ class MediaPlaybackService :
       resumeAfterFocusGain = false
       return
     }
-    audioFocusRequest?.let { request -> audioManager.abandonAudioFocusRequest(request) }
+    val request = audioFocusRequest
+    if (request != null) {
+      audioManager.abandonAudioFocusRequest(request)
+    } else {
+      Log.w(TAG, "Owned audio focus without a request; focus may remain held")
+    }
+    audioFocusRequest = null
     ownsAudioFocus = false
     hasAudioFocus = false
     resumeAfterFocusGain = false
   }
 
   private fun restoreDuckedVolume() {
-    if (nativeBackgroundPlayback) {
-      volumeBeforeDuck = null
-      return
-    }
     volumeBeforeDuck?.let { volume -> PlaybackSession.setPropertyDouble("volume", volume) }
     volumeBeforeDuck = null
   }
 
-  private fun scheduleNotificationQueueNavigation(previous: Boolean) {
-    val selectedItem =
-      if (previous) PlaybackSession.selectPrevious() else PlaybackSession.selectNext()
-    if (selectedItem == null) {
-      refreshTransportControls()
-      return
-    }
-
-    val now = SystemClock.elapsedRealtime()
-    val isRapidContinuation =
-      lastNotificationNavigationAtMs > 0L && now - lastNotificationNavigationAtMs <= 350L
-    lastNotificationNavigationAtMs = now
-    notificationNavigationJob?.cancel()
-    notificationNavigationJob = null
-
-    if (!isRapidContinuation) {
-      // A single notification press is an intentional action and must not wait behind the debounce.
-      notificationNavigationPending = false
-      playSelectedSessionItem()
-      return
-    }
-
-    // Only a rapid continuation pauses the current item and enters selection-only mode. The latest
-    // selected item is published immediately, while decoder replacement waits for quiet time.
-    if (!notificationNavigationPending) {
-      runCatching { PlaybackSession.setPropertyBoolean("pause", true) }
-      notificationNavigationPending = true
-    }
-    publishPendingQueueItem(selectedItem)
-    val selectedItemId = selectedItem.stableId
-    notificationNavigationJob =
-      serviceScope.launch {
-        delay(350L)
-        if (!foregroundReady || PlaybackSession.state.value.surfaceAttached) return@launch
-        if (PlaybackSession.queue.value.currentItem?.stableId != selectedItemId) return@launch
-        playSelectedSessionItem()
-      }
-  }
-
-  private fun playSelectedSessionItem(): Boolean {
-    notificationNavigationPending = false
-    schedulePlaybackStateSave(force = true)
-    val selectedIndex = PlaybackSession.queue.value.currentIndex
-    val item = PlaybackSession.playQueueItem(selectedIndex)
-    if (item == null) {
-      refreshTransportControls()
-      return false
-    }
-    applySessionItem(item)
-    return true
-  }
-
   private fun playNextFromSession(): Boolean {
+    if (!canHandleTransportAction()) return false
     schedulePlaybackStateSave(force = true)
     val item = PlaybackSession.playNext()
     if (item == null) {
@@ -839,6 +696,7 @@ class MediaPlaybackService :
   }
 
   private fun playPreviousFromSession() {
+    if (!canHandleTransportAction()) return
     schedulePlaybackStateSave(force = true)
     PlaybackSession.playPrevious()?.let(::applySessionItem) ?: refreshTransportControls()
   }
@@ -887,158 +745,158 @@ class MediaPlaybackService :
     refreshTransportControls()
   }
 
-  fun publishPendingQueueItem(item: PlaybackItem) {
-    serviceScope.launch {
-      if (PlaybackSession.queue.value.currentItem?.stableId != item.stableId) {
-        Log.d(TAG, "Ignoring stale pending queue item=${item.stableId}")
-        return@launch
-      }
-      mediaInfoGeneration++
-      artworkRefreshJob?.cancel()
-      // Do not keep showing the outgoing song’s cover while the final rapid selection settles.
-      replaceOwnedThumbnail(null)
-      notificationIsAudio = resolveNotificationIsAudio(item, notificationIsAudio)
-      mediaIdentifier = item.stableId
-      mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
-      mediaArtist = item.artist.orEmpty().ifBlank { artistFromFileName(mediaTitle) }
-      mediaUri = item.originalUri
-      currentPositionSeconds = 0.0
-      lastPublishedPositionSeconds = 0.0
-      mediaDurationSeconds = 0.0
-      paused = true
-      playbackSpeed = 1.0f
-      chapters = emptyList()
-      currentChapterIndex = -1
-      scheduleArtworkRefresh(item)
-      updateMediaSessionMetadata()
-      updateMediaSessionPlaybackState()
-      updateNotification()
-    }
-  }
-
-  private fun scheduleArtworkRefresh(item: PlaybackItem) {
-    artworkRefreshJob?.cancel()
-    val requestGeneration = mediaInfoGeneration
-    val sourceUri = item.originalUri.takeIf { it.isNotBlank() } ?: return
-    artworkRefreshJob =
-      serviceScope.launch {
-        delay(120L)
-        val artwork =
-          withContext(Dispatchers.IO) {
-            runCatching {
-              val parsedUri = Uri.parse(sourceUri)
-              val cleanPath =
-                when {
-                  parsedUri.scheme == "file" -> parsedUri.path
-                  parsedUri.scheme == "content" -> null
-                  else -> sourceUri
-                }
-              val explicitArtwork =
-                EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, item.artworkUri)
-              if (explicitArtwork != null) {
-                explicitArtwork
-              } else {
-                val retriever = MediaMetadataRetriever()
-                try {
-                  if (cleanPath != null) {
-                    retriever.setDataSource(cleanPath)
-                  } else {
-                    retriever.setDataSource(this@MediaPlaybackService, parsedUri)
-                  }
-                  EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
-                } finally {
-                  runCatching { retriever.release() }
-                }
-              }
-            }.getOrNull()
-          }
-        if (
-          requestGeneration != mediaInfoGeneration ||
-            mediaIdentifier != item.stableId ||
-            PlaybackSession.queue.value.currentItem?.stableId != item.stableId
-        ) {
-          artwork?.takeIf { !it.isRecycled }?.recycle()
-          return@launch
-        }
-        // Keep the metadata currently published for this item. The Activity may have resolved
-        // an embedded title/artist after the pending queue selection; reusing item.title here
-        // would put the old filename or track number back into the notification.
-        setMediaInfo(
-          title = mediaTitle.ifBlank { FileTypeUtils.stripExtension(item.title.orEmpty()) },
-          artist = mediaArtist.ifBlank { item.artist.orEmpty().ifBlank { artistFromFileName(item.title.orEmpty()) } },
-          thumbnail = artwork,
-          uri = item.originalUri,
-          identifier = item.stableId,
-          clearThumbnail = true,
-        )
-      }
-  }
-
   private fun applySessionItem(item: PlaybackItem) {
     val itemChanged = mediaIdentifier != item.stableId || mediaUri != item.originalUri
-    // Invalidate older service metadata/artwork jobs only for a genuinely new item. A pending
-    // notification selection already published this same item and owns the artwork refresh job.
-    if (itemChanged) {
-      mediaInfoGeneration++
-      artworkRefreshJob?.cancel()
-    }
-    notificationIsAudio = resolveNotificationIsAudio(item, notificationIsAudio)
+    val artworkChanged = activeArtworkUri != item.artworkUri
+    val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
+    notificationIsAudio = isAudio
+    usesAudioBackgroundPlayback = isAudio
     mediaIdentifier = item.stableId
     mediaTitle = FileTypeUtils.stripExtension(item.title.orEmpty()).ifBlank { getString(R.string.player_unknown_video) }
-    mediaArtist = item.artist.orEmpty().ifBlank { artistFromFileName(mediaTitle) }
+    mediaArtist = item.artist.orEmpty()
     mediaUri = item.originalUri
+    activeArtworkUri = item.artworkUri
     currentPositionSeconds = 0.0
     lastPublishedPositionSeconds = 0.0
     mediaDurationSeconds = 0.0
     paused = false
     playbackSpeed = 1.0f
-    if (itemChanged) {
+    isCurrentFavorite = false
+    if (itemChanged || artworkChanged) {
       chapters = emptyList()
       currentChapterIndex = -1
-      scheduleArtworkRefresh(item)
+      replaceOwnedThumbnail(null)
+      refreshNotificationPalette()
     }
     updateMediaSessionMetadata()
     updateMediaSessionPlaybackState()
     updateNotification()
+    loadSessionArtwork(item)
+    refreshFavoriteState(item)
+  }
+
+  private fun refreshFavoriteState(item: PlaybackItem) {
+    favoriteStateJob?.cancel()
+    val expectedIdentifier = item.stableId
+    val favoritePath = item.originalUri.ifBlank { item.playableUri }
+    val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
+    if (favoritePath.isBlank()) {
+      if (isCurrentFavorite) {
+        isCurrentFavorite = false
+        refreshTransportControls()
+      }
+      return
+    }
+    favoriteStateJob =
+      serviceScope.launch {
+        playlistRepository.observeIsFavorite(favoritePath, isAudio).collect { favorite ->
+          if (mediaIdentifier == expectedIdentifier) {
+            if (isCurrentFavorite != favorite) {
+              isCurrentFavorite = favorite
+              refreshTransportControls()
+            }
+          }
+        }
+      }
+  }
+
+  /** Existing Progress-with-Chapters favorite path. Keep its behavior isolated and unchanged. */
+  private fun toggleCurrentItemFavorite() {
+    if (favoriteActionJob?.isActive == true) return
+    val item = PlaybackSession.queue.value.currentItem ?: return
+    val favoritePath = item.originalUri.ifBlank { item.playableUri }
+    val favoriteName = item.title?.takeIf { it.isNotBlank() } ?: mediaTitle
+    val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
+    favoriteActionJob =
+      serviceScope.launch {
+        runCatching {
+          withContext(Dispatchers.IO) {
+            playlistRepository.toggleFavorite(favoritePath, favoriteName, isAudio)
+          }
+        }.onFailure { error ->
+          Log.e(TAG, "Failed to toggle favorite from notification", error)
+        }
+      }
+  }
+
+  /** Media notification favorite path: serialize taps and publish the resulting state immediately. */
+  private fun toggleCurrentMediaNotificationFavorite() {
+    val item = PlaybackSession.queue.value.currentItem ?: return
+    val favoritePath = item.originalUri.ifBlank { item.playableUri }
+    if (favoritePath.isBlank()) return
+    val favoriteName = item.title?.takeIf { it.isNotBlank() } ?: mediaTitle
+    val isAudio = resolveNotificationIsAudio(item, notificationIsAudio)
+    val expectedIdentifier = item.stableId
+
+    serviceScope.launch {
+      runCatching {
+        withContext(Dispatchers.IO) {
+          mediaFavoriteActionMutex.withLock {
+            playlistRepository.toggleFavorite(favoritePath, favoriteName, isAudio)
+          }
+        }
+      }.onSuccess { favorite ->
+        if (mediaIdentifier == expectedIdentifier && isCurrentFavorite != favorite) {
+          isCurrentFavorite = favorite
+          refreshTransportControls()
+        }
+      }.onFailure { error ->
+        Log.e(TAG, "Failed to toggle favorite from media notification", error)
+      }
+    }
+  }
+
+  private fun loadSessionArtwork(item: PlaybackItem) {
+    val artworkUri = item.artworkUri?.takeIf { it.isNotBlank() } ?: return
+    val expectedIdentifier = item.stableId
+    serviceScope.launch {
+      val loaded =
+        withContext(Dispatchers.IO) {
+          EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri)
+        } ?: return@launch
+      if (mediaIdentifier != expectedIdentifier) {
+        return@launch
+      }
+      val changed = replaceOwnedThumbnail(loaded)
+      if (changed) {
+        refreshNotificationPalette()
+        updateMediaSessionMetadata()
+        updateNotification()
+      }
+    }
   }
 
   private fun resolveNotificationIsAudio(
     item: PlaybackItem,
     fallback: Boolean,
-  ): Boolean {
-    val mimeType = item.mimeType.orEmpty()
-    if (mimeType.startsWith("audio/", ignoreCase = true)) return true
-    if (mimeType.startsWith("video/", ignoreCase = true)) return false
-
-    val extension =
-      item.originalUri
-        .substringBefore('?')
-        .substringBefore('#')
-        .substringAfterLast('.', missingDelimiterValue = "")
-        .lowercase(Locale.ROOT)
-    return when (extension) {
-      in FileTypeUtils.AUDIO_EXTENSIONS -> true
-      in FileTypeUtils.VIDEO_EXTENSIONS -> false
-      else -> fallback
+  ): Boolean =
+    when (item.declaredMediaKind()) {
+      DeclaredPlaybackMediaKind.AUDIO -> true
+      DeclaredPlaybackMediaKind.VIDEO -> false
+      DeclaredPlaybackMediaKind.UNKNOWN -> fallback
     }
-  }
 
   private fun syncQueueState(queueState: PlaybackQueueState) {
     if (!::mediaSession.isInitialized) return
     publishMediaSessionQueue(queueState)
-    mediaSession.setRepeatMode(
-      when (queueState.repeatMode) {
-        RepeatMode.OFF -> PlaybackStateCompat.REPEAT_MODE_NONE
-        RepeatMode.ONE -> PlaybackStateCompat.REPEAT_MODE_ONE
-        RepeatMode.ALL -> PlaybackStateCompat.REPEAT_MODE_ALL
-      },
-    )
+    // Repeat mode remains a player/queue feature, but is intentionally not published through
+    // MediaSession so the Media notification cannot expose Repeat / Repeat One / Repeat All.
     mediaSession.setShuffleMode(
       if (queueState.shuffleEnabled) PlaybackStateCompat.SHUFFLE_MODE_ALL else PlaybackStateCompat.SHUFFLE_MODE_NONE,
     )
 
     val currentItem = queueState.currentItem
-    if (currentItem != null && (currentItem.stableId != mediaIdentifier || currentItem.originalUri != mediaUri)) {
+    val currentTitle =
+      currentItem?.title?.let { FileTypeUtils.stripExtension(it) }.orEmpty().ifBlank {
+        getString(R.string.player_unknown_video)
+      }
+    if (currentItem != null &&
+      (currentItem.stableId != mediaIdentifier ||
+        currentItem.originalUri != mediaUri ||
+        currentTitle != mediaTitle ||
+        currentItem.artist.orEmpty() != mediaArtist ||
+        currentItem.artworkUri != activeArtworkUri)
+    ) {
       applySessionItem(currentItem)
     } else {
       refreshTransportControls()
@@ -1076,6 +934,7 @@ class MediaPlaybackService :
             .Builder()
             .setMediaId(item.stableId)
             .setTitle(item.title?.takeIf { it.isNotBlank() } ?: getString(R.string.player_unknown_video))
+            .setSubtitle(item.artist?.takeIf { it.isNotBlank() })
             .build(),
           queueId,
         )
@@ -1101,7 +960,7 @@ class MediaPlaybackService :
   }
 
   private fun togglePlaybackFromNotification() {
-    if (nativeBackgroundPlayback) return
+    if (!canHandleTransportAction()) return
     val shouldPlay = PlaybackSession.getPropertyBoolean("pause") != false
     if (shouldPlay && !PlaybackSession.state.value.surfaceAttached && !takeAudioOwnership()) return
     paused = !shouldPlay
@@ -1109,19 +968,12 @@ class MediaPlaybackService :
     refreshTransportControls()
   }
 
-  private fun stopPlaybackAndService() {
-    if (nativeBackgroundPlayback) {
-      PlayerActivity.requestHardStopFromService()
-      runCatching { PlaybackSession.stop(clearQueue = true) }
-        .onFailure { error -> Log.w(TAG, "Unable to clear native background queue on stop", error) }
-      stopForegroundNotification()
-      stopSelf()
-      return
-    }
+  private fun stopPlaybackAndService(force: Boolean = false) {
+    if (!force && !canHandleTransportAction()) return
     handingBackToActivity = false
     schedulePlaybackStateSave(force = true)
     torrentStreamingEngine.stopStream()
-    PlaybackSession.stop(clearQueue = false)
+    PlaybackSession.stop(clearQueue = true)
     paused = true
     mediaSession.setPlaybackState(
       PlaybackStateCompat
@@ -1136,49 +988,17 @@ class MediaPlaybackService :
   }
 
   private fun stopDetachedPlaybackIfNeeded() {
-    // Native Media3 owns playback outside PlaybackSession; never mutate MPV from this mode.
-    if (nativeBackgroundPlayback) return
-    // Never kill the shared PlaybackSession media while an Activity is visible or taking it back
-    // over. This is important when the user disables the background-audio preference from the
-    // open music player: the service may be destroyed, but foreground playback remains owned by
-    // the Activity.
-    if (activityForeground || handingBackToActivity) return
+    // Never kill the shared PlaybackSession media while an Activity is taking it back over.
+    // A fresh launch may already have destroyed and recreated the shared session before this
+    // service's asynchronous onDestroy() callback reaches here.
+    if (mpvAccessReleased || activityForeground || handingBackToActivity) return
     if (PlaybackSession.state.value.surfaceAttached) return
     torrentStreamingEngine.stopStream()
     PlaybackSession.stop(clearQueue = false)
   }
 
-  private fun artistFromFileName(title: String): String =
-    title
-      .split(" - ", " – ", " — ", limit = 2)
-      .firstOrNull()
-      ?.trim()
-      ?.takeIf { it.length in 1..80 && !it.startsWith("[") }
-      .orEmpty()
-
-  private fun readPreferredArtist(): String {
-    val keys =
-      listOf(
-        "metadata/artist",
-        "metadata/by-key/artist",
-        "metadata/by-key/Artist",
-        "metadata/by-key/album_artist",
-        "metadata/by-key/albumartist",
-        "metadata/by-key/ALBUMARTIST",
-        "metadata/by-key/performer",
-        "metadata/by-key/PERFORMER",
-        "metadata/by-key/author",
-        "metadata/by-key/composer",
-      )
-    return keys.firstNotNullOfOrNull { key ->
-      runCatching { PlaybackSession.getPropertyString(key) }.getOrNull()
-        ?.trim()
-        ?.takeIf { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
-    } ?: artistFromFileName(mediaTitle)
-  }
-
   private fun handleDetachedEndOfFile() {
-    if (PlaybackSession.state.value.surfaceAttached || !foregroundReady) return
+    if (activityForeground || PlaybackSession.state.value.surfaceAttached || !foregroundReady) return
     val queueState = PlaybackSession.queue.value
     val autoplay = if (notificationIsAudio) playerPreferences.autoplayNextAudio.get() else playerPreferences.autoplayNextVideo.get()
     when {
@@ -1215,39 +1035,44 @@ class MediaPlaybackService :
         setCallback(
           object : MediaSessionCompat.Callback() {
             override fun onPlay() {
+              if (!canHandleTransportAction()) return
               Log.d(TAG, "onPlay called")
               handleMediaPlayAction(shouldPlay = true)
             }
 
             override fun onPause() {
+              if (!canHandleTransportAction()) return
               Log.d(TAG, "onPause called")
               handleMediaPlayAction(shouldPlay = false)
             }
 
             override fun onStop() {
+              if (!canHandleTransportAction()) return
               Log.d(TAG, "onStop called")
               stopPlaybackAndService()
             }
 
             override fun onSkipToNext() {
-              Log.d(TAG, "onSkipToNext called; waiting for navigation to settle")
-              // MediaSession transport actions have fixed semantics. Gesture preferences apply to
-              // hardware/custom media-key gestures, not the notification’s explicit Next button.
-              scheduleNotificationQueueNavigation(previous = false)
+              if (!canHandleTransportAction()) return
+              Log.d(TAG, "onSkipToNext called")
+              playNextFromSession()
             }
 
             override fun onSkipToPrevious() {
-              Log.d(TAG, "onSkipToPrevious called; waiting for navigation to settle")
-              scheduleNotificationQueueNavigation(previous = true)
+              if (!canHandleTransportAction()) return
+              Log.d(TAG, "onSkipToPrevious called")
+              playPreviousFromSession()
             }
 
             override fun onSkipToQueueItem(id: Long) {
+              if (!canHandleTransportAction()) return
               val index = publishedQueueIndexes[id] ?: return
               schedulePlaybackStateSave(force = true)
               PlaybackSession.playQueueItem(index)?.let(::applySessionItem)
             }
 
             override fun onSeekTo(pos: Long) {
+              if (!canHandleTransportAction()) return
               Log.d(TAG, "onSeekTo called: $pos")
               val duration = sanitizedDurationMs()
               val resolvedPosition = pos.coerceIn(0L, duration.takeIf { it > 0L } ?: Long.MAX_VALUE)
@@ -1256,21 +1081,22 @@ class MediaPlaybackService :
               refreshTransportControls()
             }
 
-            override fun onSetRepeatMode(repeatMode: Int) {
-              val resolvedMode =
-                when (repeatMode) {
-                  PlaybackStateCompat.REPEAT_MODE_NONE -> RepeatMode.OFF
-                  PlaybackStateCompat.REPEAT_MODE_ONE -> RepeatMode.ONE
-                  PlaybackStateCompat.REPEAT_MODE_ALL -> RepeatMode.ALL
-                  else -> return
-                }
-              PlaybackSession.setRepeatMode(resolvedMode)
-            }
-
             override fun onSetShuffleMode(shuffleMode: Int) {
+              if (!canHandleDetachedTransport()) return
               when (shuffleMode) {
                 PlaybackStateCompat.SHUFFLE_MODE_NONE -> PlaybackSession.setShuffleEnabled(false)
                 PlaybackStateCompat.SHUFFLE_MODE_ALL -> PlaybackSession.setShuffleEnabled(true)
+              }
+            }
+
+            override fun onCustomAction(
+              action: String?,
+              extras: android.os.Bundle?,
+            ) {
+              if (!canHandleTransportAction()) return
+              when (action) {
+                ACTION_NOTIFICATION_MEDIA_FAVORITE -> toggleCurrentMediaNotificationFavorite()
+                ACTION_NOTIFICATION_CLOSE -> stopPlaybackAndService(force = true)
               }
             }
           },
@@ -1282,6 +1108,12 @@ class MediaPlaybackService :
     sessionToken = mediaSession.sessionToken
   }
 
+  private fun canHandleDetachedTransport(): Boolean =
+    !mpvAccessReleased && !activityForeground && !handingBackToActivity
+
+  private fun canHandleTransportAction(): Boolean =
+    !mpvAccessReleased && (activityForeground || !handingBackToActivity)
+
   private fun currentNotificationStyle(): NotificationStyle =
     advancedPreferences.notificationStyle
       .get()
@@ -1291,6 +1123,17 @@ class MediaPlaybackService :
   private fun notificationsEnabled(): Boolean = currentNotificationStyle() != NotificationStyle.None
 
   private fun useProgressNotification(): Boolean = currentNotificationStyle() == NotificationStyle.Progress
+
+  /**
+   * A ProgressStyle notification and an active MediaSession are two independent System UI
+   * surfaces on Android 16. Publishing both makes one selected notification preference appear as
+   * two playback cards. Media Controls owns the MediaSession surface; Progress with Chapters owns
+   * only the foreground notification and keeps its transport actions on explicit PendingIntents.
+   */
+  private fun syncMediaSessionVisibility() {
+    if (!::mediaSession.isInitialized) return
+    mediaSession.isActive = foregroundReady && currentNotificationStyle() == NotificationStyle.Media
+  }
 
   private fun updateMediaSessionMetadata() {
     try {
@@ -1343,15 +1186,26 @@ class MediaPlaybackService :
         actions = 0L
       }
       val stateSpeed = if (state == PlaybackStateCompat.STATE_PLAYING) playbackSpeed else 0f
-
-      mediaSession.setPlaybackState(
+      val stateBuilder =
         PlaybackStateCompat
           .Builder()
           .setActions(actions)
           .setActiveQueueItemId(activeQueueItemId)
           .setState(state, sanitizedPositionMs(), stateSpeed, SystemClock.elapsedRealtime())
-          .build(),
-      )
+      if (actions != 0L && currentNotificationStyle() == NotificationStyle.Media) {
+        val favoriteLabel = favoriteActionLabel()
+        stateBuilder.addCustomAction(
+          PlaybackStateCompat.CustomAction
+            .Builder(ACTION_NOTIFICATION_MEDIA_FAVORITE, favoriteLabel, favoriteActionIcon())
+            .build(),
+        )
+        stateBuilder.addCustomAction(
+          PlaybackStateCompat.CustomAction
+            .Builder(ACTION_NOTIFICATION_CLOSE, getString(R.string.notification_close), Icons.Platform.Close)
+            .build(),
+        )
+      }
+      mediaSession.setPlaybackState(stateBuilder.build())
     } catch (e: Exception) {
       Log.e(TAG, "Error updating MediaSession playback state", e)
     }
@@ -1381,6 +1235,10 @@ class MediaPlaybackService :
   }
 
   private fun sanitizedPositionMs(): Long {
+    val livePosition = runCatching { PlaybackSession.getPropertyDouble("time-pos") }.getOrNull()
+    if (livePosition != null && livePosition.isFinite() && livePosition >= 0.0) {
+      currentPositionSeconds = livePosition
+    }
     val seconds = currentPositionSeconds.takeIf { it.isFinite() && it > 0.0 } ?: return 0L
     return (seconds * 1000.0)
       .coerceAtMost(Long.MAX_VALUE.toDouble())
@@ -1393,15 +1251,20 @@ class MediaPlaybackService :
   private fun buildNotification(): Notification =
     if (useProgressNotification()) buildModernNotification() else buildLegacyNotification()
 
-  private fun buildContentIntent(): PendingIntent =
-    PendingIntent.getActivity(
-      this,
-      0,
+  private fun buildContentIntent(): PendingIntent {
+    val currentItem = PlaybackSession.queue.value.currentItem
+    val isAudio =
+      notificationIsAudio || currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
+    val targetUri = currentItem?.originalUri?.takeIf { it.isNotBlank() } ?: mediaUri
+    val targetTitle = currentItem?.title?.takeIf { it.isNotBlank() } ?: mediaTitle
+    val targetIdentifier = currentItem?.stableId?.takeIf { it.isNotBlank() } ?: mediaIdentifier
+    val contentIntent =
       Intent(this, PlayerActivity::class.java).apply {
         action = ACTION_OPEN_PLAYER
-        mediaUri?.let { putExtra("uri", it) }
-        putExtra("title", mediaTitle)
-        putExtra("media_identifier", mediaIdentifier)
+        type = currentItem?.mimeType ?: "audio/*".takeIf { isAudio }
+        targetUri?.let { putExtra("uri", it) }
+        putExtra("title", targetTitle)
+        putExtra("media_identifier", targetIdentifier)
         putExtra(
           "position",
           (currentPositionSeconds
@@ -1413,12 +1276,18 @@ class MediaPlaybackService :
         )
         putExtra("launch_source", "notification")
         putExtra("internal_launch", true)
-        putExtra("is_audio", notificationIsAudio)
-        putExtra("media_library_audio", notificationIsAudio)
+        putExtra("is_audio", isAudio)
+        putExtra("media_library_audio", isAudio)
         flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-      },
+      }
+
+    return PendingIntent.getActivity(
+      this,
+      if (isAudio) AUDIO_CONTENT_INTENT_REQUEST_CODE else VIDEO_CONTENT_INTENT_REQUEST_CODE,
+      contentIntent,
       PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
+  }
 
   private fun buildTransportIntent(
     action: String,
@@ -1454,11 +1323,42 @@ class MediaPlaybackService :
       buildTransportIntent(ACTION_NOTIFICATION_NEXT, 1003),
     )
 
+  /** Existing Progress-with-Chapters favorite action. */
+  private fun favoriteAction() =
+    NotificationCompat.Action(
+      favoriteActionIcon(),
+      favoriteActionLabel(),
+      buildTransportIntent(ACTION_NOTIFICATION_FAVORITE, 1004),
+    )
+
+  /** Media notification favorite action, isolated from Progress-with-Chapters. */
+  private fun mediaFavoriteAction() =
+    NotificationCompat.Action(
+      favoriteActionIcon(),
+      favoriteActionLabel(),
+      buildTransportIntent(ACTION_NOTIFICATION_MEDIA_FAVORITE, 1008),
+    )
+
+  private fun favoriteActionIcon(): Int =
+    if (isCurrentFavorite) Icons.Platform.Favorite else Icons.Platform.FavoriteBorder
+
+  private fun favoriteActionLabel(): String =
+    getString(
+      if (isCurrentFavorite) R.string.notification_saved_to_favorites else R.string.notification_add_to_favorites,
+    )
+
+  private fun closeAction() =
+    NotificationCompat.Action(
+      Icons.Platform.Close,
+      getString(R.string.notification_close),
+      buildTransportIntent(ACTION_NOTIFICATION_CLOSE, 1006),
+    )
+
   private fun stopAction() =
     NotificationCompat.Action(
-      android.R.drawable.ic_menu_close_clear_cancel,
+      Icons.Platform.Stop,
       "Stop",
-      buildTransportIntent(ACTION_NOTIFICATION_STOP, 1004),
+      buildTransportIntent(ACTION_NOTIFICATION_STOP, 1006),
     )
 
   private fun chapterContentText(): String {
@@ -1480,8 +1380,11 @@ class MediaPlaybackService :
     }
   }
 
-  private fun playbackTimeText(): String =
-    "${formatSeconds(currentPositionSeconds)} / ${formatSeconds(mediaDurationSeconds)}"
+  private fun playbackTimeText(): String {
+    val positionSeconds = sanitizedPositionMs() / 1000.0
+    val durationSeconds = sanitizedDurationMs() / 1000.0
+    return "${formatSeconds(positionSeconds)} / ${formatSeconds(durationSeconds)}"
+  }
 
   private fun refreshNotificationPalette() {
     val currentThumbnail = thumbnail
@@ -1523,8 +1426,8 @@ class MediaPlaybackService :
 
   /**
    * Android 16+ (API 36): Progress-centric notification with chapter segment indicators.
-   * The MediaSession remains active so Bluetooth, lock-screen, Auto, and Wear controls keep
-   * working even when the user chooses this alternative notification presentation.
+   * This style uses explicit notification actions instead of also advertising a MediaSession,
+   * which would make System UI render a second playback card.
    */
   private fun buildModernNotification(): Notification {
     val (maximum, position) = notificationProgress()
@@ -1588,6 +1491,7 @@ class MediaPlaybackService :
         .addAction(prevAction())
         .addAction(playPauseAction())
         .addAction(nextAction())
+        .addAction(favoriteAction())
         .addAction(stopAction())
 
     // Set ProgressStyle — this sets the visual style to segmented progress
@@ -1620,7 +1524,7 @@ class MediaPlaybackService :
       .setSmallIcon(R.drawable.ic_launcher_monochrome)
       .setLargeIcon(thumbnail)
       .setContentIntent(buildContentIntent())
-      .setDeleteIntent(buildTransportIntent(ACTION_NOTIFICATION_STOP, 1005))
+      .setDeleteIntent(buildTransportIntent(ACTION_NOTIFICATION_CLOSE, 1005))
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       .setOnlyAlertOnce(true)
       .setOngoing(!paused)
@@ -1629,15 +1533,16 @@ class MediaPlaybackService :
       .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
       .setColor(DEFAULT_ACCENT_COLOR)
       .setColorized(false)
+      .addAction(mediaFavoriteAction())
       .addAction(prevAction())
       .addAction(playPauseAction())
       .addAction(nextAction())
-      .addAction(stopAction())
+      .addAction(closeAction())
       .setStyle(
         androidx.media.app.NotificationCompat
           .MediaStyle()
           .setMediaSession(mediaSession.sessionToken)
-          .setShowActionsInCompactView(0, 1, 2),
+          .setShowActionsInCompactView(1, 2, 3),
       ).setProgress(maximum, position, maximum <= 0)
       .setPriority(NotificationCompat.PRIORITY_LOW)
       .build()
@@ -1721,7 +1626,13 @@ class MediaPlaybackService :
         }
       }
       "eof-reached" -> {
-        if (value) serviceScope.launch { handleDetachedEndOfFile() }
+        // keep-open never emits a natural END_FILE, so detached advance must key off this flag.
+        if (value &&
+          mediaDurationSeconds > 0.0 &&
+          currentPositionSeconds >= mediaDurationSeconds - 2.0
+        ) {
+          serviceScope.launch { handleDetachedEndOfFile() }
+        }
       }
     }
   }
@@ -1734,9 +1645,6 @@ class MediaPlaybackService :
       "media-title" -> {
         if (value.isNotBlank()) {
           serviceScope.launch {
-            if (notificationNavigationPending || PlaybackSession.state.value.phase in setOf(PlaybackPhase.LOADING, PlaybackPhase.INITIALIZING)) {
-              return@launch
-            }
             if (mediaTitle == value) return@launch
             mediaTitle = value
             updateMediaSessionMetadata()
@@ -1744,23 +1652,10 @@ class MediaPlaybackService :
           }
         }
       }
-      "metadata/artist",
-      "metadata/by-key/artist",
-      "metadata/by-key/Artist",
-      "metadata/by-key/album_artist",
-      "metadata/by-key/albumartist",
-      "metadata/by-key/performer",
-      "metadata/by-key/PERFORMER",
-      "metadata/by-key/author",
-      "metadata/by-key/composer" -> {
-        val artist = value.trim()
-        if (artist.isBlank()) return
+      "metadata/artist" -> {
         serviceScope.launch {
-          if (notificationNavigationPending || PlaybackSession.state.value.phase in setOf(PlaybackPhase.LOADING, PlaybackPhase.INITIALIZING)) {
-            return@launch
-          }
-          if (mediaArtist == artist) return@launch
-          mediaArtist = artist
+          if (mediaArtist == value) return@launch
+          mediaArtist = value
           updateMediaSessionMetadata()
           updateNotification()
         }
@@ -1828,12 +1723,16 @@ class MediaPlaybackService :
   ) {
     if (eventId == MPVLib.MpvEvent.MPV_EVENT_SHUTDOWN) {
       Log.d(TAG, "MPV shutdown event received, stopping service")
-      savePlaybackStateBlocking()
+      savePlaybackStateNow()
       stopSelf()
       return
     }
 
     if (eventId == MPVLib.MpvEvent.MPV_EVENT_END_FILE) {
+      if (PlaybackSession.isNaturalEndFile(data)) {
+        serviceScope.launch { handleDetachedEndOfFile() }
+      }
+
       // The current file has finished (or been quit). Release the static
       // thumbnail Bitmap reference now so it does not linger in the
       // companion object for the entire process lifetime — which can be
@@ -1862,18 +1761,31 @@ class MediaPlaybackService :
       }
   }
 
-  private fun savePlaybackStateBlocking() {
+  private fun savePlaybackStateNow() {
     val identifier = mediaIdentifier
     if (identifier.isBlank()) return
+    // Every libmpv read happens here, so the database write can safely outlive the service.
     val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null) ?: return
 
     playbackStateSaveJob?.cancel()
-    runBlocking(Dispatchers.IO) {
+    persistenceScope.launch {
       runCatching {
         persistPlaybackState(identifier, snapshot)
       }.onFailure { error ->
         Log.e(TAG, "Error force-saving playback state", error)
       }
+    }
+  }
+
+  private fun savePlaybackStateBeforeTaskRemoval() {
+    val identifier = mediaIdentifier
+    if (identifier.isBlank()) return
+    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null) ?: return
+
+    val pendingSave = playbackStateSaveJob
+    runBlocking(Dispatchers.IO) {
+      pendingSave?.cancelAndJoin()
+      persistPlaybackState(identifier, snapshot)
     }
   }
 
@@ -1920,6 +1832,8 @@ class MediaPlaybackService :
       mediaTitle = mediaTitle.ifBlank { identifier },
       currentPosition = readMpvIntSeconds("time-pos", currentPositionSeconds.toInt()),
       duration = readMpvIntSeconds("duration", mediaDurationSeconds.toInt()),
+      isPositionRestorePending =
+        PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
       playbackSpeed = readMpvDouble("speed", oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED),
       videoZoom = readMpvDouble("video-zoom", oldState?.videoZoom?.toDouble() ?: 0.0).toFloat(),
       sid = readMpvTrackId("sid", oldState?.sid ?: -1),
@@ -1983,15 +1897,10 @@ class MediaPlaybackService :
     if (mpvAccessReleased) return
     mpvAccessReleased = true
 
-    runCatching { savePlaybackStateBlocking() }
+    runCatching { savePlaybackStateNow() }
       .onFailure { error -> Log.e(TAG, "Error saving playback state before MPV shutdown", error) }
     runCatching { PlaybackSession.removeObserver(this) }
       .onFailure { error -> Log.e(TAG, "Error removing MPV observer", error) }
-    notificationNavigationJob?.cancel()
-    notificationNavigationJob = null
-    lastNotificationNavigationAtMs = 0L
-    artworkRefreshJob?.cancel()
-    artworkRefreshJob = null
     runCatching { serviceScope.cancel() }
       .onFailure { error -> Log.e(TAG, "Error canceling playback service work", error) }
     if (::mediaSession.isInitialized) {
@@ -2008,7 +1917,7 @@ class MediaPlaybackService :
     try {
       Log.d(TAG, "Service destroyed")
 
-      if (!nativeBackgroundPlayback) releaseMpvAccessBeforeShutdown()
+      releaseMpvAccessBeforeShutdown()
       foregroundReady = false
       abandonAudioOwnership()
       if (noisyReceiverRegistered) {
@@ -2057,7 +1966,6 @@ class MediaPlaybackService :
     } finally {
       isServiceRunning = false
       if (activeInstance === this) activeInstance = null
-      binder.clear()
       stopDetachedPlaybackIfNeeded()
       handingBackToActivity = false
       super.onDestroy()
@@ -2065,15 +1973,8 @@ class MediaPlaybackService :
   }
 
   override fun onTaskRemoved(rootIntent: Intent?) {
-    if (nativeBackgroundPlayback) {
-      // Android uses task removal for the system PiP X action. A detached foreground
-      // playback session must not survive that explicit close as background audio.
-      Log.d(TAG, "Task removed from PiP; stopping detached playback")
-      stopPlaybackAndService()
-    } else {
-      Log.d(TAG, "Task removed - saving foreground playback state")
-      schedulePlaybackStateSave(force = true)
-    }
+    Log.d(TAG, "Task removed - keeping foreground background playback active")
+    savePlaybackStateBeforeTaskRemoval()
     super.onTaskRemoved(rootIntent)
   }
 }

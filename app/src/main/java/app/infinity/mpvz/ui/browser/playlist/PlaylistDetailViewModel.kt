@@ -17,10 +17,13 @@ import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.entities.PlaylistItemEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
+import android.net.Uri
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.extractLocalPath
+import app.infinity.mpvz.ui.player.resolveUri
+import app.infinity.mpvz.utils.media.M3UParser
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -106,29 +109,53 @@ class PlaylistDetailViewModel(
               _videoItems.value = videoItems
             } else {
               // For regular playlists, use the existing logic with MediaFileRepository
+              val fileObjects = items.map { item ->
+                when {
+                  item.filePath.startsWith("content://") || item.filePath.startsWith("file://") -> {
+                    val uri = Uri.parse(item.filePath)
+                    val resolved = uri.resolveUri(getApplication(), allowFdFallback = false)
+                    if (!resolved.isNullOrBlank()) File(resolved) else File(uri.path ?: item.filePath)
+                  }
+                  else -> File(item.filePath)
+                }
+              }
+
               // Get unique bucket IDs from playlist items' parent folders
-              val bucketIds =
-                items
-                  .map { item ->
-                    File(item.filePath).parent ?: ""
-                  }.toSet()
+              val bucketIds = fileObjects.mapNotNull { it.parent }.filter { it.isNotBlank() }.toSet()
 
               // Get all videos and audio files from those folders (uses cache)
               val allVideos = MediaFileRepository.getVideosForBuckets(getApplication(), bucketIds, includeAudioOverride = true)
 
               // Match videos by path, maintaining playlist order
               val videoItems =
-                items.mapNotNull { item ->
-                  val matchedVideo = allVideos.find { video -> video.path == item.filePath }
-                  val video = matchedVideo ?: run {
-                    val file = File(item.filePath)
-                    val isAudioFile = FileTypeUtils.isAudioFile(file)
+                items.mapIndexedNotNull { index, item ->
+                  val file = fileObjects.getOrNull(index) ?: File(item.filePath)
+                  val isAudioFile = FileTypeUtils.isAudioFile(file)
+                  val matchedVideo = allVideos.find { video ->
+                    video.path == item.filePath ||
+                      video.path == file.absolutePath ||
+                      video.uri.toString() == item.filePath
+                  }
+                  val video = (matchedVideo?.let { if (isAudioFile && !it.isAudio) it.copy(isAudio = true) else it }) ?: run {
+                    if (file.exists()) {
+                      MediaFileRepository.getVideosFromFiles(getApplication(), listOf(file)).firstOrNull()?.let {
+                        if (isAudioFile && !it.isAudio) it.copy(isAudio = true) else it
+                      }
+                    } else {
+                      null
+                    }
+                  } ?: run {
+                    val rawUri = when {
+                      item.filePath.startsWith("content://") || item.filePath.startsWith("http://") || item.filePath.startsWith("https://") -> Uri.parse(item.filePath)
+                      file.exists() -> Uri.fromFile(file)
+                      else -> Uri.parse(item.filePath)
+                    }
                     Video(
                       id = item.id.toLong(),
                       title = item.fileName,
                       displayName = item.fileName,
-                      path = item.filePath,
-                      uri = android.net.Uri.fromFile(file),
+                      path = if (file.exists()) file.absolutePath else item.filePath,
+                      uri = rawUri,
                       duration = 0L,
                       durationFormatted = "--",
                       size = if (file.exists()) file.length() else 0L,
@@ -136,8 +163,8 @@ class PlaylistDetailViewModel(
                       dateModified = item.addedAt,
                       dateAdded = item.addedAt,
                       mimeType = if (isAudioFile) "audio/*" else "video/*",
-                      bucketId = "",
-                      bucketDisplayName = "",
+                      bucketId = file.parent ?: "",
+                      bucketDisplayName = file.parentFile?.name ?: "",
                       width = 0,
                       height = 0,
                       fps = 0f,
@@ -300,24 +327,17 @@ class PlaylistDetailViewModel(
     withContext(Dispatchers.IO) {
       items.mapNotNull { item ->
         try {
-          val isNetwork =
-            item.filePath.startsWith("http://", ignoreCase = true) ||
-              item.filePath.startsWith("https://", ignoreCase = true) ||
-              item.filePath.startsWith("rtmp://", ignoreCase = true) ||
-              item.filePath.startsWith("rtsp://", ignoreCase = true) ||
-              item.filePath.startsWith("ftp://", ignoreCase = true) ||
-              item.filePath.startsWith("sftp://", ignoreCase = true) ||
-              item.filePath.startsWith("smb://", ignoreCase = true)
+          val mediaReference = M3UParser.normalizeLocalMediaReference(item.filePath)
+          val mediaUri = android.net.Uri.parse(mediaReference)
+          val isNetwork = mediaUri.scheme?.lowercase() !in setOf(null, "file", "content")
 
           var resolvedVideo: Video? = null
           val localPath =
             if (!isNetwork) {
-              if (item.filePath.startsWith("content://") || item.filePath.startsWith("file://")) {
-                android.net.Uri
-                  .parse(item.filePath)
-                  .extractLocalPath()
+              if (mediaUri.scheme.equals("content", true) || mediaUri.scheme.equals("file", true)) {
+                mediaUri.extractLocalPath()
               } else {
-                item.filePath
+                mediaReference.substringBefore('|')
               }
             } else {
               null
@@ -334,12 +354,12 @@ class PlaylistDetailViewModel(
             }
           }
 
-          val fallbackPath = localPath ?: item.filePath
+          val fallbackPath = localPath ?: mediaReference
           val fallbackUri =
             if (localPath != null) {
               android.net.Uri.fromFile(File(localPath))
             } else {
-              android.net.Uri.parse(item.filePath)
+              android.net.Uri.parse(mediaReference)
             }
 
           val video =

@@ -60,14 +60,38 @@ object EmbeddedArtworkCandidates {
 }
 
 internal object EmbeddedArtworkResolver {
-  fun decodeArtworkUri(context: Context, artworkUri: String?): Bitmap? =
-    artworkUri
-      ?.takeIf { it.isNotBlank() }
-      ?.let { rawUri ->
-        runCatching {
-          context.contentResolver.openInputStream(Uri.parse(rawUri))?.use(BitmapFactory::decodeStream)
-        }.getOrNull()
+  fun decodeArtworkUri(
+    context: Context,
+    artworkUri: String?,
+  ): Bitmap? {
+    if (artworkUri.isNullOrBlank()) return null
+    app.infinity.mpvz.presentation.components.RemoteImageLoader.getFromMemory(artworkUri)?.let { return it }
+    val uri = Uri.parse(artworkUri)
+    return runCatching {
+      val decoded =
+        when (uri.scheme?.lowercase()) {
+          null, "" -> BitmapFactory.decodeFile(artworkUri)
+          "file" -> BitmapFactory.decodeFile(uri.path)
+          "content", "android.resource" ->
+            context.contentResolver.openInputStream(uri)?.use { input -> BitmapFactory.decodeStream(input) }
+          "http", "https" -> {
+            val connection = (java.net.URL(artworkUri).openConnection() as java.net.HttpURLConnection).apply {
+              connectTimeout = 8000
+              readTimeout = 8000
+              instanceFollowRedirects = true
+              setRequestProperty("User-Agent", "Mozilla/5.0 (Android) Mpv∞")
+            }
+            connection.inputStream.use { input ->
+              BitmapFactory.decodeStream(input)
+            }
+          }
+          else -> null
+        }
+      decoded?.also {
+        app.infinity.mpvz.presentation.components.RemoteImageLoader.putInMemory(artworkUri, it)
       }
+    }.getOrNull()
+  }
 
   fun decodeEmbeddedArtwork(
     videoPath: String?,

@@ -13,10 +13,17 @@ import app.infinity.mpvz.database.dao.RecentlyPlayedDao
 import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
 import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class RecentlyPlayedRepositoryImpl(
   private val recentlyPlayedDao: RecentlyPlayedDao,
 ) : RecentlyPlayedRepository {
+  // Serializes the check-then-insert below so concurrent calls for the same file (e.g. duplicate
+  // file-loaded callbacks) can't both miss the existing row and insert two entries with the same
+  // filePath/timestamp, which crashes the Recently Played LazyColumn (duplicate item key).
+  private val addMutex = Mutex()
+
   override suspend fun addRecentlyPlayed(
     filePath: String,
     fileName: String,
@@ -27,7 +34,7 @@ class RecentlyPlayedRepositoryImpl(
     height: Int,
     launchSource: String?,
     playlistId: Int?,
-  ) {
+  ) = addMutex.withLock {
     // Check if there's an existing entry for this file
     val existingEntry = recentlyPlayedDao.getByFilePath(filePath)
 

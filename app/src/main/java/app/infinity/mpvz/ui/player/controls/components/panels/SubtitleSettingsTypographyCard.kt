@@ -45,6 +45,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
+import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.SubtitleJustification
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.preference.deleteAndGet
@@ -57,6 +58,7 @@ import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.controls.CARDS_MAX_WIDTH
 import app.infinity.mpvz.ui.player.controls.panelCardsColors
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import com.github.k1rakishou.fsaf.FileManager
 import com.yubyf.truetypeparser.TTFFile
 import kotlinx.collections.immutable.toImmutableList
@@ -77,6 +79,20 @@ fun SubtitleSettingsTypographyCard(
   val context = LocalContext.current
   val resources = LocalResources.current
   val preferences = koinInject<SubtitlesPreferences>()
+  val configOwnedOptions = currentMpvConfigOverrideOptions()
+  val ownsAny: (Set<String>) -> Boolean = { options -> options.any(configOwnedOptions::contains) }
+  val boldOptions = setOf("sub-bold", "secondary-sub-bold")
+  val italicOptions = setOf("sub-italic", "secondary-sub-italic")
+  val justifyOptions = setOf("sub-ass-justify", "sub-justify", "secondary-sub-justify")
+  val fontOptions = setOf("sub-font", "secondary-sub-font")
+  val fontSizeOptions = setOf("sub-font-size", "secondary-sub-font-size")
+  val borderStyleOptions = setOf("sub-border-style", "secondary-sub-border-style")
+  val borderSizeOptions =
+    setOf("sub-border-size", "sub-outline-size", "secondary-sub-border-size", "secondary-sub-outline-size")
+  val shadowOffsetOptions = setOf("sub-shadow-offset", "secondary-sub-shadow-offset")
+  val typographyOptions =
+    boldOptions + italicOptions + justifyOptions + fontOptions + fontSizeOptions +
+      borderStyleOptions + borderSizeOptions + shadowOffsetOptions
   val fileManager = koinInject<FileManager>()
   var isExpanded by remember { mutableStateOf(true) }
   val fonts by remember { mutableStateOf(mutableListOf<String>("Default")) }
@@ -154,11 +170,11 @@ fun SubtitleSettingsTypographyCard(
       ) {
         IconToggleButton(
           checked = isBold == true,
+          enabled = !ownsAny(boldOptions),
           onCheckedChange = {
             preferences.bold.set(it)
             PlaybackSession.setPropertyBoolean("sub-bold", it)
             PlaybackSession.setPropertyBoolean("secondary-sub-bold", it)
-            viewModel.applyNativeSubtitleStyle()
           },
         ) {
           Icon(
@@ -169,11 +185,11 @@ fun SubtitleSettingsTypographyCard(
         }
         IconToggleButton(
           checked = isItalic == true,
+          enabled = !ownsAny(italicOptions),
           onCheckedChange = {
             preferences.italic.set(it)
             PlaybackSession.setPropertyBoolean("sub-italic", it)
             PlaybackSession.setPropertyBoolean("secondary-sub-italic", it)
-            viewModel.applyNativeSubtitleStyle()
           },
         ) {
           Icon(
@@ -185,6 +201,7 @@ fun SubtitleSettingsTypographyCard(
         SubtitleJustification.entries.minus(SubtitleJustification.Auto).forEach { justification ->
           IconToggleButton(
             checked = justify == justification,
+            enabled = !ownsAny(justifyOptions),
             onCheckedChange = {
               PlaybackSession.setPropertyBoolean("sub-ass-justify", it)
               if (it) {
@@ -196,7 +213,6 @@ fun SubtitleSettingsTypographyCard(
                 PlaybackSession.setPropertyString("sub-justify", SubtitleJustification.Auto.value)
                 PlaybackSession.setPropertyString("secondary-sub-justify", SubtitleJustification.Auto.value)
               }
-              viewModel.applyNativeSubtitleStyle()
             },
           ) {
             Icon(justification.icon, null)
@@ -204,13 +220,8 @@ fun SubtitleSettingsTypographyCard(
         }
         Spacer(Modifier.weight(1f))
         TextButton(
-          onClick = {
-            resetTypography(preferences)
-            viewModel.applyNativeSubtitleStyle()
-            viewModel.setSubtitleScaleForGesture(
-              (preferences.fontSize.get() / 55f).coerceIn(0.1f, 5.0f),
-            )
-          },
+          enabled = !ownsAny(typographyOptions),
+          onClick = { resetTypography(preferences) },
         ) {
           Row(
             horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.extraSmall),
@@ -232,17 +243,18 @@ fun SubtitleSettingsTypographyCard(
           modifier = Modifier.size(32.dp),
         )
         ExposedTextDropDownMenu(
-          selectedValue = font?.ifEmpty { "Default" } ?: "Default",
+          selectedValue = font?.takeUnless { it == DEFAULT_SUBTITLE_FONT_FAMILY }.orEmpty().ifEmpty { "Default" },
           options = fonts.toImmutableList(),
           label = stringResource(R.string.player_sheets_sub_typography_font),
           onValueChangedEvent = {
-            val actualFont = if (it == "Default") "" else it
-            preferences.font.set(actualFont)
+            val storedFont = if (it == "Default") "" else it
+            val actualFont = storedFont.ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
+            preferences.font.set(storedFont)
             PlaybackSession.setPropertyString("sub-font", actualFont)
             PlaybackSession.setPropertyString("secondary-sub-font", actualFont)
-            viewModel.applyNativeSubtitleStyle()
           },
           leadingIcon = fontsLoadingIndicator,
+          enabled = !ownsAny(fontOptions),
         )
       }
       SliderItem(
@@ -255,11 +267,8 @@ fun SubtitleSettingsTypographyCard(
           preferences.fontSize.set(it)
           PlaybackSession.setPropertyInt("sub-font-size", it)
           PlaybackSession.setPropertyInt("secondary-sub-font-size", it)
-          viewModel.applyNativeSubtitleStyle()
-          if (viewModel.isMedia3ActiveForGesture()) {
-            viewModel.setSubtitleScaleForGesture((it / 55f).coerceIn(0.1f, 5.0f))
-          }
         },
+        enabled = !ownsAny(fontSizeOptions),
       ) {
         Icon(Icons.RoundedFilled.FormatSize, null)
       }
@@ -272,11 +281,11 @@ fun SubtitleSettingsTypographyCard(
             preferences.borderStyle.set(it)
             PlaybackSession.setPropertyString("sub-border-style", it.value)
             PlaybackSession.setPropertyString("secondary-sub-border-style", it.value)
-            viewModel.applyNativeSubtitleStyle()
           },
           title = { Text(stringResource(R.string.player_sheets_subtitles_border_style)) },
           valueToText = { AnnotatedString(resources.getString(it.titleRes)) },
           values = SubtitlesBorderStyle.entries,
+          enabled = !ownsAny(borderStyleOptions),
           type = ListPreferenceType.DROPDOWN_MENU,
           summary = { Text(stringResource(borderStyle.titleRes)) },
           icon = { Icon(Icons.RoundedFilled.BorderStyle, null) },
@@ -289,12 +298,12 @@ fun SubtitleSettingsTypographyCard(
         onChange = {
           preferences.borderSize.set(it)
           PlaybackSession.setPropertyInt("sub-border-size", it)
-          viewModel.applyNativeSubtitleStyle()
           PlaybackSession.setPropertyInt("sub-outline-size", it)
           PlaybackSession.setPropertyInt("secondary-sub-border-size", it)
           PlaybackSession.setPropertyInt("secondary-sub-outline-size", it)
         },
         max = 20,
+        enabled = !ownsAny(borderSizeOptions),
         icon = { Icon(Icons.RoundedFilled.BorderColor, null) },
       )
       SliderItem(
@@ -309,10 +318,10 @@ fun SubtitleSettingsTypographyCard(
           preferences.shadowOffset.set(it)
           PlaybackSession.setPropertyInt("sub-shadow-offset", it)
           PlaybackSession.setPropertyInt("secondary-sub-shadow-offset", it)
-          viewModel.applyNativeSubtitleStyle()
         },
         min = -20,
         max = 20,
+        enabled = !ownsAny(shadowOffsetOptions),
         icon = { Icon(Icons.RoundedFilled.Shadow, null) },
       )
     }
@@ -323,7 +332,7 @@ fun resetTypography(preferences: SubtitlesPreferences) {
   val bold = preferences.bold.deleteAndGet()
   val italic = preferences.italic.deleteAndGet()
   val justify = preferences.justification.deleteAndGet().value
-  val font = preferences.font.deleteAndGet()
+  val font = preferences.font.deleteAndGet().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
   val fontSize = preferences.fontSize.deleteAndGet()
   val borderSize = preferences.borderSize.deleteAndGet()
   val shadowOffset = preferences.shadowOffset.deleteAndGet()

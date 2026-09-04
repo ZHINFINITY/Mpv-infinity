@@ -176,11 +176,17 @@ class NetworkStreamingProxy private constructor() :
 
     return try {
       val rangeHeader = session.headers["range"]
-      if (rangeHeader == null) {
-        handleFullRequest(headOnly, streamInfo, requestedPath)
-      } else {
-        handleRangeRequest(headOnly, streamInfo, requestedPath, rangeHeader)
-      }
+      val response =
+        if (rangeHeader == null) {
+          handleFullRequest(headOnly, streamInfo, requestedPath)
+        } else {
+          handleRangeRequest(headOnly, streamInfo, requestedPath, rangeHeader)
+        }
+      // NanoHTTPD keeps a fixed-length socket alive even when the upstream body ends short,
+      // leaving the player waiting forever for the missing bytes. Closing per response turns
+      // that into a visible disconnect that mpv's reconnect logic recovers from.
+      response.addHeader("Connection", "close")
+      response
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (error: Exception) {
@@ -198,7 +204,7 @@ class NetworkStreamingProxy private constructor() :
   ): Response {
     val fileSize = getFileSize(streamInfo, path)
     if (fileSize < 0L) return upstreamFailure(headOnly)
-    val range = HttpByteRange.parse(rangeHeader, fileSize) ?: return rangeNotSatisfiable(fileSize, headOnly)
+    val range = HttpByteRange.parse(rangeHeader, fileSize) ?: return rangeNotSatisfiable(fileSize)
     val mimeType = mimeTypeFor(streamInfo, path)
 
     val response =
@@ -296,15 +302,24 @@ class NetworkStreamingProxy private constructor() :
         }
       }
 
+    // An abandoned operation can still complete and hand back an open stream; close it so a
+    // slow server can't permanently eat one of its own connection slots per timed-out request.
+    fun discardLateResult() {
+      job.invokeOnCompletion {
+        (result.get()?.getOrNull() as? InputStream)?.let { stream -> runCatching(stream::close) }
+      }
+      job.cancel()
+    }
+
     return try {
       if (!latch.await(PROXY_OPERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        job.cancel()
+        discardLateResult()
         Result.failure(IOException("Upstream proxy operation timed out"))
       } else {
         result.get() ?: Result.failure(IOException("Upstream proxy operation produced no result"))
       }
     } catch (interrupted: InterruptedException) {
-      job.cancel()
+      discardLateResult()
       Thread.currentThread().interrupt()
       Result.failure(interrupted)
     }
@@ -317,7 +332,11 @@ class NetworkStreamingProxy private constructor() :
     streamInfo.clientMutex.withLock {
       var client = streamInfo.client
       if (client == null) {
-        val candidate = repository.createClient(streamInfo.connectionId).getOrElse { return@withLock Result.failure(it) }
+        val candidate =
+          repository.createClient(streamInfo.connectionId).getOrElse { error ->
+            Log.w(TAG, "Upstream client creation failed (${error::class.java.simpleName})")
+            return@withLock Result.failure(error)
+          }
         try {
           candidate.connect().getOrThrow()
           streamInfo.client = candidate
@@ -326,6 +345,7 @@ class NetworkStreamingProxy private constructor() :
           runCatching { candidate.disconnect() }
           throw cancellation
         } catch (error: Exception) {
+          Log.w(TAG, "Upstream connect failed (${error::class.java.simpleName})")
           runCatching { candidate.disconnect() }
           return@withLock Result.failure(error)
         }
@@ -337,6 +357,7 @@ class NetworkStreamingProxy private constructor() :
           } catch (cancellation: CancellationException) {
             throw cancellation
           } catch (error: Exception) {
+            Log.w(TAG, "Upstream reconnect failed (${error::class.java.simpleName})")
             streamInfo.client = null
             runCatching { existingClient.disconnect() }
             return@withLock Result.failure(error)
@@ -344,7 +365,20 @@ class NetworkStreamingProxy private constructor() :
         }
       }
 
-      operation(client)
+      val result = operation(client)
+      result.exceptionOrNull()?.let { error ->
+        if (error is CancellationException) throw error
+        // Client error messages are app-constructed (HTTP status etc.) and carry no URLs/credentials.
+        Log.w(TAG, "Upstream operation failed (${error::class.java.simpleName}: ${error.message})")
+        // A dead session would otherwise be reused forever; evict it so the next request
+        // reconnects instead of failing every range request until the stream is re-registered.
+        val activeClient = streamInfo.client
+        if (activeClient != null && !activeClient.isConnected()) {
+          streamInfo.client = null
+          runCatching { activeClient.disconnect() }
+        }
+      }
+      result
     }
 
   private data class Route(
@@ -396,15 +430,8 @@ class NetworkStreamingProxy private constructor() :
     mimeType: String,
   ): Response = newFixedLengthResponse(status, mimeType, ByteArrayInputStream(ByteArray(0)), 0L)
 
-  private fun rangeNotSatisfiable(
-    fileSize: Long,
-    headOnly: Boolean,
-  ): Response =
-    textResponse(
-      Response.Status.RANGE_NOT_SATISFIABLE,
-      "Requested range not satisfiable",
-      headOnly,
-    ).apply {
+  private fun rangeNotSatisfiable(fileSize: Long): Response =
+    emptyResponse(Response.Status.RANGE_NOT_SATISFIABLE, "application/octet-stream").apply {
       addHeader("Content-Range", "bytes */$fileSize")
       addHeader("Accept-Ranges", "bytes")
     }

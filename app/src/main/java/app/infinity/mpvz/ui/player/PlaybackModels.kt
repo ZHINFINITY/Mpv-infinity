@@ -9,6 +9,8 @@
 
 package app.infinity.mpvz.ui.player
 
+import app.infinity.mpvz.utils.media.fileExtension
+import app.infinity.mpvz.utils.storage.FileTypeUtils
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Locale
@@ -45,48 +47,101 @@ data class PlaybackItem(
   val originalUri: String,
   val playableUri: String = originalUri,
   val title: String? = null,
+  val artist: String? = null,
   val mimeType: String? = null,
   val headers: Map<String, String> = emptyMap(),
   val networkSource: NetworkPlaybackSource? = null,
   val playlistItemId: Int? = null,
   val artworkUri: String? = null,
-  val artist: String? = null,
+  val durationSeconds: Int? = null,
+  /** File index inside a multi-file torrent; lets a series episode restart its stream. */
+  val torrentFileIndex: Int? = null,
 ) {
+  /** True while this torrent episode still points at its magnet/torrent source instead of a live stream URL. */
+  fun requiresTorrentResolution(): Boolean = torrentFileIndex != null && playableUri == originalUri
+
   companion object {
     fun fromUri(
       uri: String,
+      stableId: String? = null,
       playableUri: String = uri,
       title: String? = null,
+      artist: String? = null,
       mimeType: String? = null,
       headers: Map<String, String> = emptyMap(),
       networkSource: NetworkPlaybackSource? = null,
       playlistItemId: Int? = null,
       artworkUri: String? = null,
-      artist: String? = null,
+      durationSeconds: Int? = null,
     ): PlaybackItem =
       PlaybackItem(
         stableId =
-          networkSource?.let { PlaybackIdentity.forNetwork(it.connectionId, it.relativePath) }
+          stableId
+            ?: networkSource?.let { PlaybackIdentity.forNetwork(it.connectionId, it.relativePath) }
             ?: PlaybackIdentity.forUri(uri),
         originalUri = uri,
         playableUri = playableUri,
         title = title,
+        artist = artist,
         mimeType = mimeType,
         headers = headers,
         networkSource = networkSource,
         playlistItemId = playlistItemId,
         artworkUri = artworkUri,
-        artist = artist,
+        durationSeconds = durationSeconds,
       )
   }
 }
+
+internal enum class DeclaredPlaybackMediaKind {
+  AUDIO,
+  VIDEO,
+  UNKNOWN,
+}
+
+internal fun PlaybackItem.declaredMediaKind(): DeclaredPlaybackMediaKind {
+  if (mimeType?.startsWith("audio/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.AUDIO
+  if (mimeType?.startsWith("video/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.VIDEO
+
+  val extensions =
+    sequenceOf(originalUri, playableUri, title)
+      .filterNotNull()
+      .map(String::fileExtension)
+      .filter(String::isNotBlank)
+      .toSet()
+  if (extensions.any(FileTypeUtils.VIDEO_EXTENSIONS::contains)) return DeclaredPlaybackMediaKind.VIDEO
+  if (extensions.any(FileTypeUtils.AUDIO_EXTENSIONS::contains)) return DeclaredPlaybackMediaKind.AUDIO
+  if (sequenceOf(originalUri, playableUri).any { candidate ->
+      candidate.contains("/Audio/", ignoreCase = true) ||
+        candidate.contains("includeItemTypes=Audio", ignoreCase = true)
+    }) {
+    return DeclaredPlaybackMediaKind.AUDIO
+  }
+  return DeclaredPlaybackMediaKind.UNKNOWN
+}
+
+internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
+  declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO
+
+internal enum class PlaybackVideoSelection {
+  DISABLED,
+  IMMEDIATE,
+  DEFERRED,
+}
+
+internal fun PlaybackItem.videoSelection(surfaceAttached: Boolean): PlaybackVideoSelection =
+  when (declaredMediaKind()) {
+    DeclaredPlaybackMediaKind.AUDIO -> PlaybackVideoSelection.DISABLED
+    DeclaredPlaybackMediaKind.VIDEO,
+    DeclaredPlaybackMediaKind.UNKNOWN,
+    -> if (surfaceAttached) PlaybackVideoSelection.IMMEDIATE else PlaybackVideoSelection.DEFERRED
+  }
 
 data class PlaybackQueueState(
   val items: List<PlaybackItem> = emptyList(),
   val currentIndex: Int = -1,
   val isExplicitQueue: Boolean = false,
   val isM3u: Boolean = false,
-  val isTemporaryQueue: Boolean = false,
   val repeatMode: RepeatMode = RepeatMode.OFF,
   val shuffleEnabled: Boolean = false,
   val shuffleOrder: List<Int> = emptyList(),
@@ -106,7 +161,6 @@ internal object PlaybackQueueReducer {
     requestedIndex: Int,
     isExplicitQueue: Boolean,
     isM3u: Boolean,
-    isTemporaryQueue: Boolean,
   ): PlaybackQueueState {
     if (items.isEmpty()) {
       return previous.copy(
@@ -114,7 +168,6 @@ internal object PlaybackQueueReducer {
         currentIndex = -1,
         isExplicitQueue = false,
         isM3u = false,
-        isTemporaryQueue = false,
         shuffleOrder = emptyList(),
         shufflePosition = -1,
       )
@@ -127,7 +180,6 @@ internal object PlaybackQueueReducer {
         currentIndex = index,
         isExplicitQueue = isExplicitQueue,
         isM3u = isM3u,
-        isTemporaryQueue = isTemporaryQueue,
       ),
     )
   }
@@ -169,18 +221,15 @@ internal object PlaybackQueueReducer {
     return rebuildShuffle(previous.copy(items = reordered, currentIndex = newCurrentIndex))
   }
 
-  fun remove(
+  fun insertNext(
     previous: PlaybackQueueState,
-    index: Int,
-  ): PlaybackQueueState? {
-    if (index !in previous.items.indices || previous.items.size <= 1 || index == previous.currentIndex) {
-      return null
-    }
+    additions: List<PlaybackItem>,
+  ): PlaybackQueueState? = insert(previous, additions, playNext = true)
 
-    val remaining = previous.items.toMutableList().apply { removeAt(index) }
-    val newCurrentIndex = if (index < previous.currentIndex) previous.currentIndex - 1 else previous.currentIndex
-    return rebuildShuffle(previous.copy(items = remaining, currentIndex = newCurrentIndex))
-  }
+  fun append(
+    previous: PlaybackQueueState,
+    additions: List<PlaybackItem>,
+  ): PlaybackQueueState? = insert(previous, additions, playNext = false)
 
   fun setRepeatMode(
     previous: PlaybackQueueState,
@@ -210,6 +259,10 @@ internal object PlaybackQueueReducer {
   fun hasNext(previous: PlaybackQueueState): Boolean = peek(previous, forward = true) != null
 
   fun hasPrevious(previous: PlaybackQueueState): Boolean = peek(previous, forward = false) != null
+
+  fun peekNext(previous: PlaybackQueueState): PlaybackItem? = peek(previous, forward = true)
+
+  fun peekPrevious(previous: PlaybackQueueState): PlaybackItem? = peek(previous, forward = false)
 
   private fun advance(
     previous: PlaybackQueueState,
@@ -272,6 +325,46 @@ internal object PlaybackQueueReducer {
     }
   }
 
+  private fun insert(
+    previous: PlaybackQueueState,
+    additions: List<PlaybackItem>,
+    playNext: Boolean,
+  ): PlaybackQueueState? {
+    if (additions.isEmpty() || previous.currentIndex !in previous.items.indices) return null
+
+    if (!previous.shuffleEnabled) {
+      val insertionIndex = if (playNext) previous.currentIndex + 1 else previous.items.size
+      val items = previous.items.toMutableList().apply { addAll(insertionIndex, additions) }
+      return previous.copy(
+        items = items,
+        isExplicitQueue = true,
+        isM3u = false,
+      )
+    }
+
+    val prepared =
+      if (previous.shuffleOrder.size == previous.items.size) {
+        previous
+      } else {
+        rebuildShuffle(previous)
+      }
+    val firstAddedIndex = prepared.items.size
+    val addedIndexes = additions.indices.map { firstAddedIndex + it }
+    val insertionPosition =
+      if (playNext) {
+        (prepared.shufflePosition + 1).coerceIn(0, prepared.shuffleOrder.size)
+      } else {
+        prepared.shuffleOrder.size
+      }
+    val shuffleOrder = prepared.shuffleOrder.toMutableList().apply { addAll(insertionPosition, addedIndexes) }
+    return prepared.copy(
+      items = prepared.items + additions,
+      isExplicitQueue = true,
+      isM3u = false,
+      shuffleOrder = shuffleOrder,
+    )
+  }
+
   private fun rebuildShuffle(state: PlaybackQueueState): PlaybackQueueState {
     if (!state.shuffleEnabled || state.items.isEmpty()) {
       return state.copy(shuffleOrder = emptyList(), shufflePosition = -1)
@@ -295,6 +388,9 @@ object PlaybackIdentity {
   ): String = digest("network\u0000$connectionId\u0000${normalizeNetworkPath(relativePath)}")
 
   fun forUri(uri: String): String = digest("uri\u0000${canonicalizeUri(uri)}")
+
+  /** Gives every URI representation of the same local file one playback-state key. */
+  fun forLocalPath(path: String): String = digest("local\u0000${normalizeLocalPath(path)}")
 
   fun forTorrent(
     infoHash: String,
@@ -320,6 +416,11 @@ object PlaybackIdentity {
     }
     return normalized.joinToString("/")
   }
+
+  private fun normalizeLocalPath(path: String): String =
+    runCatching { URI(null, null, path.replace('\\', '/'), null).normalize().path }
+      .getOrDefault(path.replace('\\', '/'))
+      .trim()
 
   private fun canonicalizeUri(raw: String): String {
     val parsed = runCatching { URI(raw) }.getOrNull() ?: return raw.trim()

@@ -13,16 +13,17 @@ import android.media.audiofx.Visualizer
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
-private const val VISUALIZER_CAPTURE_RATE_MILLIHERTZ = 15_000
-
 /**
- * Audio spectrum analyzer for mpvRx using [android.media.audiofx.Visualizer].
+ * Audio spectrum analyzer for Mpv∞ using [android.media.audiofx.Visualizer].
  *
  * Captures live time-domain PCM waveforms and frequency-domain FFT bytes from the output mix / session ID
  * to drive [AudioFeatures] for 60 FPS visualizer rendering.
+ *
+ * Callers must supply the shared [AudioFeatures] instance; the analyzer never owns a private one so
+ * every renderer, seekbar and capture effect observes the same feature state.
  */
 class AudioSpectrumAnalyzer(
-  val features: AudioFeatures = AudioFeatures(),
+  val features: AudioFeatures,
 ) {
   private var visualizerManager: VisualizerManager? = null
   private var lastBeatNanos = 0L
@@ -32,8 +33,6 @@ class AudioSpectrumAnalyzer(
     const val BEAT_DEBOUNCE_MS = 120L
     const val ENERGY_WAVEFORM_WEIGHT = 0.35f
     const val ENERGY_FFT_WEIGHT = 0.65f
-    // Keep analysis comfortably below the 60 FPS renderer cadence. The renderer continues to
-    // draw smoothly from the latest snapshot while Android's audio-effect callback does less work.
   }
 
   @Synchronized
@@ -308,7 +307,7 @@ class VisualizerManager(
             fft?.let(onFFT)
           }
         },
-        VISUALIZER_CAPTURE_RATE_MILLIHERTZ,
+        Visualizer.getMaxCaptureRate(),
         true,
         true,
       )

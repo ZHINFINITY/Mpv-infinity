@@ -196,6 +196,7 @@ fun FolderCard(
     modifier =
       modifier
         .fillMaxWidth()
+        .clip(cardShape)
         .combinedClickable(
           onClick = onClick,
           onLongClick = onLongClick,
@@ -586,7 +587,12 @@ private fun formatFileSize(bytes: Long): String {
   return String.format(java.util.Locale.getDefault(), "%.1f %s", value, units[digitGroups])
 }
 
-private fun formatDate(timestampSeconds: Long): String {
-  val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
-  return sdf.format(java.util.Date(timestampSeconds * 1000))
-}
+// Hoisted because a card formats a date on every recomposition and SimpleDateFormat construction
+// parses the pattern and clones a Calendar each time.
+private val FOLDER_DATE_FORMATTER: java.time.format.DateTimeFormatter =
+  java.time.format.DateTimeFormatter
+    .ofPattern("MMM dd, yyyy")
+    .withZone(java.time.ZoneId.systemDefault())
+
+private fun formatDate(timestampSeconds: Long): String =
+  FOLDER_DATE_FORMATTER.format(java.time.Instant.ofEpochSecond(timestampSeconds))

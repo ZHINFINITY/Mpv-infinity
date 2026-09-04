@@ -17,12 +17,14 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import android.app.Activity
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -55,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavBackStack
@@ -78,7 +81,7 @@ import app.infinity.mpvz.ui.browser.components.MiniPlayer
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.theme.AppMotion
 import app.infinity.mpvz.ui.theme.DarkMode
-import app.infinity.mpvz.ui.theme.MpvrxTheme
+import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.ui.theme.rememberThemeTransitionState
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -90,6 +93,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import app.infinity.mpvz.ui.player.MPVPipHelper
 import app.infinity.mpvz.ui.player.PlaybackPhase
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.MediaPlaybackService
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.toObject
@@ -99,8 +103,8 @@ import app.infinity.mpvz.utils.device.VulkanCapabilities
 import app.infinity.mpvz.utils.media.fileExtension
 import app.infinity.mpvz.utils.permission.PermissionUtils
 import app.infinity.mpvz.utils.storage.FileTypeUtils
-import app.infinity.mpvz.utils.update.UpdateDialog
-import app.infinity.mpvz.utils.update.UpdateViewModel
+import app.infinity.mpvz.ui.update.UpdateSheet
+import app.infinity.mpvz.ui.update.UpdateViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
@@ -227,6 +231,9 @@ class MainActivity : AppCompatActivity() {
   private var appliedEdgeToEdgeDarkMode: Boolean? = null
   private lateinit var pipHelper: MPVPipHelper
   private var isPipMode by mutableStateOf(false)
+  private var wasInPipMode = false
+  private var pendingPipExitResolution = false
+  private var isExpandingFromPip by mutableStateOf(false)
 
   // Register the ActivityResultLauncher at class level
   private val mediaAccessLauncher =
@@ -273,7 +280,13 @@ class MainActivity : AppCompatActivity() {
       }
       val deviceSupportsVulkan = remember { VulkanCapabilities.isDeviceSupported(this@MainActivity) }
 
-      LaunchedEffect(sessionState, enableVideoMiniPlayer, autoPiPOnNavigation, trackListNode) {
+      LaunchedEffect(
+        sessionState,
+        enableVideoMiniPlayer,
+        autoPiPOnNavigation,
+        trackListNode,
+        NavigationBarState.isMiniPlayerVisible,
+      ) {
         pipHelper.updatePictureInPictureParams()
       }
 
@@ -309,44 +322,50 @@ class MainActivity : AppCompatActivity() {
         }
       }
 
-      if (isPipMode) {
+      if (isPipMode || isExpandingFromPip) {
         Box(
           modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
           contentAlignment = Alignment.Center,
         ) {
-          AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { viewContext ->
-              SurfaceView(viewContext).apply {
-                setZOrderMediaOverlay(true)
-                holder.addCallback(object : SurfaceHolder.Callback {
-                  override fun surfaceCreated(holder: SurfaceHolder) {
-                    PlaybackSession.bindSurface(holder.surface, owner = this@apply)
-                  }
-
-                  override fun surfaceChanged(
-                    holder: SurfaceHolder,
-                    format: Int,
-                    width: Int,
-                    height: Int,
-                  ) {
-                    if (holder.surface.isValid) {
-                      PlaybackSession.resizeSurface(width, height)
+          if (isPipMode) {
+            AndroidView(
+              modifier = Modifier.fillMaxSize(),
+              factory = { viewContext ->
+                SurfaceView(viewContext).apply {
+                  setZOrderMediaOverlay(true)
+                  holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                      PlaybackSession.bindSurface(
+                        surface = holder.surface,
+                        owner = this@apply,
+                        ownerIsActive = { MediaPlaybackService.isForegroundActive() },
+                      )
                     }
-                  }
 
-                  override fun surfaceDestroyed(holder: SurfaceHolder) {
-                    PlaybackSession.unbindSurface(this@apply)
-                  }
-                })
-              }
-            },
-          )
+                    override fun surfaceChanged(
+                      holder: SurfaceHolder,
+                      format: Int,
+                      width: Int,
+                      height: Int,
+                    ) {
+                      if (holder.surface.isValid) {
+                        PlaybackSession.resizeSurface(width, height, owner = this@apply)
+                      }
+                    }
+
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                      PlaybackSession.unbindSurface(this@apply)
+                    }
+                  })
+                }
+              },
+            )
+          }
         }
       } else {
-        MpvrxTheme(transitionState = themeTransitionState) {
+        MpvInfinityTheme(transitionState = themeTransitionState) {
           Surface(modifier = Modifier.fillMaxSize()) {
             Navigator()
           }
@@ -389,6 +408,20 @@ class MainActivity : AppCompatActivity() {
   override fun onResume() {
     super.onResume()
     pipHelper.updatePictureInPictureParams()
+    if (!isPipMode && (pendingPipExitResolution || wasInPipMode)) {
+      window.decorView.post {
+        if (!isFinishing && !isDestroyed && !isPipMode && (pendingPipExitResolution || wasInPipMode)) {
+          completePipExpansion()
+        }
+      }
+    }
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus && !isPipMode && (pendingPipExitResolution || wasInPipMode)) {
+      completePipExpansion()
+    }
   }
 
   override fun onUserLeaveHint() {
@@ -417,11 +450,77 @@ class MainActivity : AppCompatActivity() {
     super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
     this.isPipMode = isInPictureInPictureMode
     pipHelper.onPictureInPictureModeChanged(isInPictureInPictureMode)
+    if (isInPictureInPictureMode) {
+      wasInPipMode = true
+      pendingPipExitResolution = false
+      isExpandingFromPip = false
+    } else if (wasInPipMode) {
+      isExpandingFromPip = true
+      schedulePipExitResolution()
+    }
+  }
+
+  private fun schedulePipExitResolution() {
+    pendingPipExitResolution = true
+    if (isFinishing || isDestroyed) {
+      pendingPipExitResolution = false
+      wasInPipMode = false
+      isExpandingFromPip = false
+      return
+    }
+    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && hasWindowFocus()) {
+      completePipExpansion()
+    }
+  }
+
+  private fun completePipExpansion() {
+    if (!pendingPipExitResolution && !wasInPipMode) return
+    pendingPipExitResolution = false
+    wasInPipMode = false
+    this.isPipMode = false
+    openPlayerFromPipMaximize()
+  }
+
+  private fun openPlayerFromPipMaximize() {
+    val sessionState = PlaybackSession.state.value
+    val currentItem = sessionState.currentItem ?: PlaybackSession.queue.value.currentItem
+    if (
+      currentItem == null ||
+      sessionState.phase == PlaybackPhase.IDLE ||
+      sessionState.phase == PlaybackPhase.UNINITIALIZED ||
+      sessionState.phase == PlaybackPhase.ERROR
+    ) {
+      isExpandingFromPip = false
+      return
+    }
+
+    val intent = Intent(this, PlayerActivity::class.java).apply {
+      action = MediaPlaybackService.ACTION_OPEN_PLAYER
+      putExtra("is_audio", isCurrentMediaAudioOnly())
+      putExtra("internal_launch", true)
+      putExtra("launch_source", "pip_maximize")
+      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+    }
+    try {
+      startActivity(intent)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        overrideActivityTransition(Activity.OVERRIDE_TRANSITION_OPEN, 0, 0)
+      } else {
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
+      }
+    } catch (e: Exception) {
+      Log.e("MainActivity", "Failed to launch PlayerActivity from PiP maximize", e)
+      isExpandingFromPip = false
+    }
   }
 
   override fun onStop() {
     super.onStop()
     pipHelper.onStop()
+    pendingPipExitResolution = false
+    wasInPipMode = false
+    isExpandingFromPip = false
   }
 
   private fun isCurrentMediaAudioOnly(): Boolean {
@@ -458,7 +557,9 @@ class MainActivity : AppCompatActivity() {
   }
 
   override fun onDestroy() {
-    PermissionUtils.clearMediaAccessLauncher(mediaAccessLauncher)
+    pendingPipExitResolution = false
+    wasInPipMode = false
+    isExpandingFromPip = false
     try {
       super.onDestroy()
     } catch (e: Exception) {
@@ -512,7 +613,12 @@ class MainActivity : AppCompatActivity() {
     val animSpeed by playerPreferences.animationSpeed.collectAsState()
 
     val context = LocalContext.current
-    val currentVersion = BuildConfig.VERSION_NAME.replace("-dev", "")
+    val currentVersion =
+      if (BuildConfig.IS_PREVIEW_BUILD) {
+        stringResource(R.string.update_beta_build_format, BuildConfig.GIT_COUNT)
+      } else {
+        BuildConfig.VERSION_NAME.substringBefore('-')
+      }
 
     // Conditionally initialize update feature based on build config
     val updateViewModel: UpdateViewModel? =
@@ -612,49 +718,60 @@ class MainActivity : AppCompatActivity() {
 
               // Landscape/tablet single-pane: sit on the right side of the nav bar,
               // which slides left when the mini player appears.
-              else ->
+              else -> {
+                val isNavBarOnScreen = NavigationBarState.isNavBarVisible
+                val navBarLeft = if (NavigationBarState.navbarLeftOffset > 0.dp) NavigationBarState.navbarLeftOffset else 16.dp
+                val navBarWidth = if (NavigationBarState.navbarWidth > 0.dp) NavigationBarState.navbarWidth else 320.dp
+                val startPadding = if (isNavBarOnScreen) (navBarLeft + navBarWidth + 12.dp) else 12.dp
+                val bottomPadding = if (NavigationBarState.isInSelectionMode) {
+                  NavigationBarState.selectionBarClearance
+                } else {
+                  12.dp
+                }
+
                 Modifier
                   .align(Alignment.BottomStart)
                   .padding(
-                    start = NavigationBarState.navbarLeftOffset + NavigationBarState.navbarWidth + 12.dp,
+                    start = startPadding,
                     end = 12.dp,
                   )
                   .fillMaxWidth()
                   .windowInsetsPadding(WindowInsets.navigationBars)
-                  .padding(bottom = 12.dp)
+                  .padding(bottom = bottomPadding)
+              }
             }
 
           MiniPlayer(modifier = miniPlayerModifier)
         }
       }
 
-      // Display Update Dialog when appropriate (only if update feature is enabled)
+      // Display the update sheet when appropriate (only if update feature is enabled)
       if (BuildConfig.ENABLE_UPDATE_FEATURE && updateViewModel != null) {
         when (updateState) {
           is UpdateViewModel.UpdateState.Available -> {
             val release = (updateState as UpdateViewModel.UpdateState.Available).release
-            UpdateDialog(
+            UpdateSheet(
               release = release,
               isDownloading = isDownloading,
               progress = downloadProgress,
-              actionLabel = if (isDownloading) "Downloading..." else "Download",
+              isInstallReady = false,
               currentVersion = currentVersion,
               onDismiss = { updateViewModel.dismiss() },
               onAction = { updateViewModel.downloadUpdate(release) },
-              onIgnore = { updateViewModel.ignoreVersion(release.tagName.removePrefix("v")) },
+              onIgnore = { updateViewModel.ignoreVersion(release.tagName) },
             )
           }
           is UpdateViewModel.UpdateState.ReadyToInstall -> {
             val release = (updateState as UpdateViewModel.UpdateState.ReadyToInstall).release
-            UpdateDialog(
+            UpdateSheet(
               release = release,
               isDownloading = isDownloading,
               progress = downloadProgress,
-              actionLabel = "Install",
+              isInstallReady = true,
               currentVersion = currentVersion,
               onDismiss = { updateViewModel.dismiss() },
               onAction = { updateViewModel.installUpdate(release) },
-              onIgnore = { updateViewModel.ignoreVersion(release.tagName.removePrefix("v")) },
+              onIgnore = { updateViewModel.ignoreVersion(release.tagName) },
             )
           }
           else -> {}

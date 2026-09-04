@@ -51,7 +51,10 @@ class StretchAwarePlayerLayout @JvmOverloads constructor(
           w.toDouble() / h.toDouble()
         }
 
-      PlaybackSession.setPropertyDouble("video-aspect-override", viewportRatio)
+      PlaybackSession.setPropertyDouble(
+        "video-aspect-override",
+        VideoAspectGeometry.stretchAspectOverride(viewportRatio),
+      )
       PlaybackSession.setPropertyDouble("panscan", 0.0)
     }
   }
