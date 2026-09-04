@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/icon.png?v=5502d61" width="250" height="250" />
+  <img src="https://raw.githubusercontent.com/ZHINFINITY/Mpv-infinity/5502d61fd914e8b0afb5821e7138743aaa27fe75/fastlane/metadata/android/en-US/images/icon.png" width="250" height="250" alt="Mpv∞ app icon" />
 </p>
 
 <h1 align="center">Mpv∞</h1>
