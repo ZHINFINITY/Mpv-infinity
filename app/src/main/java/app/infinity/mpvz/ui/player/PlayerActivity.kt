@@ -5848,6 +5848,7 @@ class PlayerActivity :
     ensureCurrentMediaRequest(requestGeneration)
     if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE && !requiresYtdlp) {
       withContext(Dispatchers.Main) {
+        activeSaveMediaIdentifier = item.stableId
         activeEngineMode = PlaybackEngineMode.NATIVE
         binding.player.visibility = View.GONE
         binding.media3Player.visibility = View.VISIBLE

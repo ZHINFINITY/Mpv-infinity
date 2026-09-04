@@ -585,6 +585,10 @@ fun AudioPlayerControls(
   val gesturePreferences = koinInject<GesturePreferences>()
   val audioSeekDuration by gesturePreferences.doubleTapToSeekDuration.collectAsState()
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+  var optimisticIsPlaying by remember { mutableStateOf<Boolean?>(null) }
+  LaunchedEffect(paused) {
+    if (paused != null) optimisticIsPlaying = null
+  }
   val duration by PlaybackSession.propInt["duration"].collectAsState()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
@@ -789,7 +793,7 @@ fun AudioPlayerControls(
       }
   }
 
-   val isPlaying = paused == false
+   val isPlaying = optimisticIsPlaying ?: (paused == false)
    val currentDurSec = if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
    val currentVolumePercent by viewModel.currentVolumePercent.collectAsState()
    val volumeScale = currentVolumePercent / 100f
@@ -1629,7 +1633,10 @@ fun AudioPlayerControls(
           )
         }
         ReactiveSurfaceButton(
-          onClick = { viewModel.pauseUnpause() },
+          onClick = {
+            optimisticIsPlaying = !isPlaying
+            viewModel.pauseUnpause()
+          },
           shape = CircleShape,
           color = MaterialTheme.colorScheme.primary,
           modifier = Modifier.size(if (isPortrait) 76.dp else 64.dp),
