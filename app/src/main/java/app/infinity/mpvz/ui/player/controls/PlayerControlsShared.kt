@@ -350,7 +350,7 @@ fun RenderPlayerButton(
                 ),
           ) {
             Text(
-              text = decoder.title,
+              text = if (activity.isNativeEngineActive()) "Native" else decoder.title,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
               style = MaterialTheme.typography.bodyMedium,
