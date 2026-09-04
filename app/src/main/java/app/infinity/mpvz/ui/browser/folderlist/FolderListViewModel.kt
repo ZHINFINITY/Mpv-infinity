@@ -380,7 +380,6 @@ class FolderListViewModel(
           entry
         }
       }
-    calculateNewVideoCounts(_videoFolders.value)
     viewModelScope.launch(Dispatchers.IO) {
       val videos = MediaFileRepository.getVideosInFolder(getApplication(), folder.bucketId)
       videos.forEach { video ->
