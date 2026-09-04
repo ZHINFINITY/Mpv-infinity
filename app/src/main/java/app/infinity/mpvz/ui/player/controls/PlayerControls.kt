@@ -95,6 +95,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeJoin
@@ -1718,9 +1719,15 @@ fun PlayerControls(
                   .clip(RoundedCornerShape(26.dp))
                   .background(
                     when {
-                      liquidGlassSurfaces -> MaterialTheme.colorScheme.surface.copy(alpha = 0.32f)
+                      liquidGlassSurfaces -> {
+                        val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                        if (darkSurface) Color.Black.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.28f)
+                      }
                       playerControlsTheme.name == "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
-                      playerControlsTheme.name == "Glossy" -> Color.Black.copy(alpha = 0.34f)
+                      playerControlsTheme.name == "Glossy" -> {
+                        val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                        if (darkSurface) Color.Black.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.20f)
+                      }
                       else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
                     },
                   )

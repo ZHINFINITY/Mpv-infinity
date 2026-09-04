@@ -54,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -244,7 +245,11 @@ private fun PlayerControlPanel(
     shape = RoundedCornerShape(24.dp),
     containerColor = when {
       liquidGlassSurfaces || playerControlsTheme.name == "Glass" || playerControlsTheme.name == "Glossy" ->
-        Color.White.copy(alpha = if (liquidGlassSurfaces) 0.14f else 0.18f)
+        if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+          Color.Black.copy(alpha = if (liquidGlassSurfaces) 0.24f else 0.20f)
+        } else {
+          Color.White.copy(alpha = if (liquidGlassSurfaces) 0.28f else 0.22f)
+        }
       else -> MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f)
     },
     tonalElevation = 2.dp,
@@ -252,7 +257,11 @@ private fun PlayerControlPanel(
     border = BorderStroke(
       1.dp,
       if (liquidGlassSurfaces || playerControlsTheme.name != "Classic") {
-        Color.White.copy(alpha = 0.28f)
+        if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+          Color.White.copy(alpha = 0.28f)
+        } else {
+          Color.Black.copy(alpha = 0.18f)
+        }
       } else {
         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
       },
@@ -357,7 +366,11 @@ private fun PlayerControlTile(
         if (active) {
           MaterialTheme.colorScheme.primaryContainer
         } else if (liquidGlassSurfaces || playerControlsTheme.name != "Classic") {
-          Color.White.copy(alpha = if (liquidGlassSurfaces) 0.10f else 0.14f)
+          if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+            Color.Black.copy(alpha = if (liquidGlassSurfaces) 0.24f else 0.18f)
+          } else {
+            Color.White.copy(alpha = if (liquidGlassSurfaces) 0.28f else 0.20f)
+          }
         } else {
           MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.78f)
         },

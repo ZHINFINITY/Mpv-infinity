@@ -985,10 +985,10 @@ fun AudioPlayerControls(
 
   val targetTopColor =
     if (ambientModeEnabled) ambientColors?.first ?: Color.Transparent
-    else visualizerPalette.primary.copy(alpha = 0.22f)
+    else Color(visualizerPalette.primary).copy(alpha = 0.22f)
   val targetBottomColor =
     if (ambientModeEnabled) ambientColors?.second ?: Color.Transparent
-    else visualizerPalette.secondary.copy(alpha = 0.22f)
+    else Color(visualizerPalette.secondary).copy(alpha = 0.22f)
 
   val animatedAmbientTop: Color by animateColorAsState(
     targetValue = targetTopColor,
@@ -1584,27 +1584,7 @@ fun AudioPlayerControls(
 
       Box(
         contentAlignment = Alignment.Center,
-        modifier = if (showSeekbarOuterContainer || liquidGlassSurfaces) {
-          Modifier
-            .padding(horizontal = 8.dp)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
-            .background(
-              when {
-                liquidGlassSurfaces -> MaterialTheme.colorScheme.surface.copy(alpha = 0.32f)
-                playerControlsTheme.name == "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
-                playerControlsTheme.name == "Glossy" -> Color.Black.copy(alpha = 0.34f)
-                else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
-              },
-            )
-            .border(
-              BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-              RoundedCornerShape(26.dp),
-            )
-            .padding(horizontal = 6.dp)
-        } else {
-          Modifier.fillMaxWidth()
-        },
+        modifier = Modifier.fillMaxWidth(),
       ) {
       SeekbarWithTimers(
         position = currentPosSec,
