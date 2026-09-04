@@ -55,6 +55,14 @@ enum class CustomKeyCodes(
   MediaNext("NEXT"),
 }
 
+enum class PlaybackEngineMode(
+  val title: String,
+) {
+  MPV("MPV"),
+  MEDIA3("Media3"),
+  override fun toString(): String = title
+}
+
 enum class Decoder(
   val title: String,
   val value: String,

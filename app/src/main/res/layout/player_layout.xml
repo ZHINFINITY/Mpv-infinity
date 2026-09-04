@@ -24,7 +24,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <app.infinity.mpvz.ui.player.Media3PlayerView
+    <androidx.media3.ui.PlayerView
         android:id="@+id/media3_player"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -32,7 +32,8 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:use_controller="false" />
 
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/controls"
