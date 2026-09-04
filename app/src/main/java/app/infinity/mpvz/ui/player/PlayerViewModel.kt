@@ -4143,6 +4143,10 @@ class PlayerViewModel : ViewModel(),
    */
   fun seekPreviewTo(position: Float) {
     cancelFrameSeek()
+    if (host.isNativeEngineActive()) {
+      host.nativeSeekTo((position * 1000f).toLong())
+      return
+    }
     synchronized(seekPreviewLock) {
       pendingSeekPreviewPosition = position.coerceAtLeast(0f)
       if (seekPreviewJob?.isActive == true) return
@@ -4518,6 +4522,15 @@ class PlayerViewModel : ViewModel(),
     aspect: VideoAspect,
     showUpdate: Boolean = true,
   ) {
+    if (host.isNativeEngineActive()) {
+      host.nativeSetVideoAspect(aspect)
+      playerPreferences.lastVideoAspect.set(aspect)
+      playerPreferences.lastCustomAspectRatio.set(-1f)
+      _videoAspect.value = aspect
+      _currentAspectRatio.value = -1.0
+      if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
+      return
+    }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
     when (aspect) {
       VideoAspect.Fit -> {
@@ -4577,6 +4590,13 @@ class PlayerViewModel : ViewModel(),
     ratio: Double,
     showUpdate: Boolean = true,
   ) {
+    if (host.isNativeEngineActive()) {
+      host.nativeSetVideoAspect(VideoAspect.Stretch)
+      playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
+      _currentAspectRatio.value = ratio
+      if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
+      return
+    }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
     PlaybackSession.setPropertyDouble("panscan", 0.0)
     PlaybackSession.setPropertyDouble("video-aspect-override", ratio)

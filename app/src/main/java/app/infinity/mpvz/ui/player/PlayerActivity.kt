@@ -329,6 +329,10 @@ class PlayerActivity :
     nativeEngine.setSpeed(speed)
   }
 
+  override fun nativeSetVideoAspect(aspect: VideoAspect) {
+    nativeEngine.setVideoAspect(aspect)
+  }
+
   // ==================== State Management ====================
 
   /**
@@ -713,10 +717,12 @@ class PlayerActivity :
       }
     }
     viewModel.setNativeSubtitleToggleListener { id ->
-      if (id <= 0) {
+      if (id == 0) {
         nativeEngine.disableSubtitles()
       } else {
-        nativeEngine.snapshot.value.subtitleTracks.getOrNull(id - 1)?.let(nativeEngine::selectTrack)
+        nativeEngine.snapshot.value.subtitleTracks.getOrNull(-id - 1)?.let { track ->
+          if (track.selected) nativeEngine.disableSubtitles() else nativeEngine.selectTrack(track)
+        }
       }
     }
     viewModel.setNativeAudioToggleListener { id ->

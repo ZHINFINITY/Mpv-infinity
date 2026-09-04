@@ -219,13 +219,13 @@ fun PlayerControls(
   val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
   val areControlsLocked by viewModel.areControlsLocked.collectAsState()
   val seekBarShown by viewModel.seekBarShown.collectAsState()
-  val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+  val mpvPaused by PlaybackSession.propBoolean["pause"].collectAsState()
   val playbackSessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val duration by PlaybackSession.propInt["duration"].collectAsState()
   val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
-  val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
+  val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val seekbarDuration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
   val seekState by viewModel.seekState.collectAsState()
   val brightness by viewModel.currentBrightness.collectAsState()
@@ -343,6 +343,8 @@ fun PlayerControls(
   val activity = LocalActivity.current as? PlayerActivity
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
+  val paused = if (playbackEngine == PlaybackEngineMode.NATIVE) !nativeSnapshot.isPlaying else mpvPaused
+  val playbackSpeed = if (playbackEngine == PlaybackEngineMode.NATIVE) nativeSnapshot.speed else mpvPlaybackSpeed
   val currentPlaybackItem = playbackQueue.currentItem
   val useAudioPlayer =
     when (currentPlaybackItem?.declaredMediaKind()) {
@@ -1623,7 +1625,11 @@ fun PlayerControls(
             val remaining  by PlaybackSession.propFloat["playtime-remaining"].collectAsState()
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
-            val displayedSeekbarPosition = precisePosition
+            val displayedSeekbarPosition =
+              if (playbackEngine == PlaybackEngineMode.NATIVE) nativeSnapshot.positionMs / 1000f else precisePosition
+            val displayedSeekbarDuration =
+              if (playbackEngine == PlaybackEngineMode.NATIVE) nativeSnapshot.durationMs / 1000f
+              else if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
             // Memoize the immutable copies so they are not reallocated on every position
             // tick (this scope recomposes ~20x/sec while scrubbing).
             val seekbarChapters =
@@ -1634,9 +1640,11 @@ fun PlayerControls(
 
             SeekbarWithTimers(
               position = displayedSeekbarPosition,
-              committedPosition = precisePosition,
-              duration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f,
-              remaining = remaining ?: 0f,
+              committedPosition = displayedSeekbarPosition,
+              duration = displayedSeekbarDuration,
+              remaining = if (playbackEngine == PlaybackEngineMode.NATIVE) {
+                (displayedSeekbarDuration - displayedSeekbarPosition).coerceAtLeast(0f)
+              } else remaining ?: 0f,
               onValueChange = {
                 isSeeking = true
                 resetControlsTimestamp = System.currentTimeMillis()
@@ -1656,7 +1664,7 @@ fun PlayerControls(
               positionTimerOnClick = {},
               chapters = seekbarChapters,
               skipSegments = skipSegmentsImmutable,
-              paused = paused ?: false,
+              paused = paused,
               seekbarStyle = seekbarStyle,
               useWavySeekbar = useWavySeekbar,
               timerTextColor = Color.White,

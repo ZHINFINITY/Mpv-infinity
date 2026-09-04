@@ -26,6 +26,7 @@ data class NativePlaybackSnapshot(
   val audioCodec: String? = null,
   val audioChannels: Int = 0,
   val audioSampleRate: Int = 0,
+  val speed: Float = 1f,
   val subtitleTracks: List<NativeTrack> = emptyList(),
   val audioTracks: List<NativeTrack> = emptyList(),
 )
@@ -62,6 +63,14 @@ class NativeMedia3Engine(context: Context) {
     attachedView = view
     view.useController = false
     view.player = player
+  }
+
+  fun setVideoAspect(aspect: VideoAspect) {
+    attachedView?.resizeMode = when (aspect) {
+      VideoAspect.Fit -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+      VideoAspect.Crop -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+      VideoAspect.Stretch -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+    }
   }
 
   fun play(uri: Uri, startPositionMs: Long = 0L, autoplay: Boolean = true) {
@@ -180,6 +189,7 @@ class NativeMedia3Engine(context: Context) {
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
       audioChannels = audio?.channelCount ?: 0,
       audioSampleRate = audio?.sampleRate ?: 0,
+      speed = player.playbackParameters.speed,
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
     )
