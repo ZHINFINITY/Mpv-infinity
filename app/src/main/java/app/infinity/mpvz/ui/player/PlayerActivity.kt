@@ -803,11 +803,16 @@ class PlayerActivity :
               nativeEngine.stop()
               loadPlaylistItem(playlistIndex.coerceAtLeast(0))
               engineHandoffJob = lifecycleScope.launch {
-                // MPV loads asynchronously; apply the captured handoff state after the new item is
-                // ready, overriding any stale position or pause value from the previous session.
-                delay(350L)
-                PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
-                PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
+                // MPV loads asynchronously. PiP transitions can delay the load completion, so
+                // apply the captured handoff state more than once instead of losing the first
+                // seek/play command while MPV is still replacing the file.
+                repeat(5) {
+                  delay(250L)
+                  if (!ownsPlaybackSession() || !mpvInitialized || activeEngineMode != PlaybackEngineMode.MPV) return@launch
+                  PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
+                  PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
+                  if (outgoingPlaying) PlaybackSession.command("play")
+                }
               }
             }
           }
