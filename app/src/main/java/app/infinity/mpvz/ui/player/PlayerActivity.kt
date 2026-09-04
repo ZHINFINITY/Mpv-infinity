@@ -2052,13 +2052,15 @@ class PlayerActivity :
           backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
           isUserFinishing = isUserFinishing,
           isFinishing = isFinishing,
-          isInPictureInPictureMode = isInPictureInPictureMode,
+        isInPictureInPictureMode = isInPictureInPictureMode,
           isScreenOffOrLocked = isDeviceScreenOffOrLocked(),
         )
       ) {
         if (startBackgroundPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Started) {
           isBackgroundPlaybackSessionActive = true
-          disableVideoForBackground()
+          // PiP still owns a visible MPV surface. Disabling vid here is appropriate for
+          // audio/background playback, but makes the PiP window black while audio continues.
+          if (!isInPictureInPictureMode) disableVideoForBackground()
         } else {
           rememberResumeAfterUnlockBeforeForcedPause()
           viewModel.pause()
@@ -2071,7 +2073,7 @@ class PlayerActivity :
         viewModel.pause()
       } else if (!isBackgroundPlaybackSessionActive && (isUserFinishing || isFinishing)) {
         viewModel.pause()
-      } else if (isBackgroundPlaybackSessionActive && !isInBackgroundPlayback) {
+      } else if (isBackgroundPlaybackSessionActive && !isInBackgroundPlayback && !isInPictureInPictureMode) {
         disableVideoForBackground()
       }
     }.onFailure { e ->
