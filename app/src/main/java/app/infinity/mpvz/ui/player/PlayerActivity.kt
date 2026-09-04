@@ -687,6 +687,9 @@ class PlayerActivity :
       borderColor = subtitlesPreferences.borderColor.get(),
       borderSize = subtitlesPreferences.borderSize.get(),
       fontSize = subtitlesPreferences.fontSize.get(),
+      fontFamily = subtitlesPreferences.font.get(),
+      bold = subtitlesPreferences.bold.get(),
+      italic = subtitlesPreferences.italic.get(),
     )
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -705,6 +708,9 @@ class PlayerActivity :
             borderColor = values[2],
             borderSize = values[3],
             fontSize = values[4],
+            fontFamily = subtitlesPreferences.font.get(),
+            bold = subtitlesPreferences.bold.get(),
+            italic = subtitlesPreferences.italic.get(),
           )
         }
       }
@@ -718,6 +724,27 @@ class PlayerActivity :
           .collect { (scale, position) ->
             nativeEngine.setSubtitleScale(scale)
             nativeEngine.setSubtitlePosition(position)
+          }
+      }
+    }
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        combine(
+          subtitlesPreferences.font.changes(),
+          subtitlesPreferences.bold.changes(),
+          subtitlesPreferences.italic.changes(),
+        ) { font, bold, italic -> font to (bold to italic) }
+          .collect { (font, flags) ->
+            nativeEngine.setSubtitleStyle(
+              textColor = subtitlesPreferences.textColor.get(),
+              backgroundColor = subtitlesPreferences.backgroundColor.get(),
+              borderColor = subtitlesPreferences.borderColor.get(),
+              borderSize = subtitlesPreferences.borderSize.get(),
+              fontSize = subtitlesPreferences.fontSize.get(),
+              fontFamily = font,
+              bold = flags.first,
+              italic = flags.second,
+            )
           }
       }
     }

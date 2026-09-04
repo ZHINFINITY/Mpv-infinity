@@ -46,12 +46,24 @@ data class NativeTrack(
 class NativeMedia3Engine(context: Context) {
   private val player = ExoPlayer.Builder(context.applicationContext).build()
   private var attachedView: PlayerView? = null
+  private var subtitleScale = 1f
+  private var subtitlePosition = 100
+  private var subtitleFontSize = 55
+  private var subtitleStyle = CaptionStyleCompat(
+    android.graphics.Color.WHITE,
+    android.graphics.Color.TRANSPARENT,
+    android.graphics.Color.TRANSPARENT,
+    CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+    android.graphics.Color.BLACK,
+    null,
+  )
   private val _snapshot = MutableStateFlow(NativePlaybackSnapshot())
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
   val currentPlayer: Player get() = player
 
   private val listener = object : Player.Listener {
     override fun onEvents(player: Player, events: Player.Events) {
+      configureSubtitleView()
       publishSnapshot()
     }
   }
@@ -65,6 +77,7 @@ class NativeMedia3Engine(context: Context) {
     attachedView = view
     view.useController = false
     view.player = player
+    configureSubtitleView()
   }
 
   fun setVideoAspect(aspect: VideoAspect) {
@@ -87,11 +100,13 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun setSubtitleScale(scale: Float) {
-    attachedView?.subtitleView?.setFractionalTextSize((0.053f * scale.coerceIn(0.1f, 5f)).coerceIn(0.01f, 0.2f))
+    subtitleScale = scale.coerceIn(0.1f, 5f)
+    configureSubtitleView()
   }
 
   fun setSubtitlePosition(position: Int) {
-    attachedView?.subtitleView?.setBottomPaddingFraction(((100 - position.coerceIn(0, 100)) / 100f).coerceIn(0f, 1f))
+    subtitlePosition = position.coerceIn(0, 150)
+    configureSubtitleView()
   }
 
   fun setSubtitleStyle(
@@ -100,19 +115,44 @@ class NativeMedia3Engine(context: Context) {
     borderColor: Int,
     borderSize: Int,
     fontSize: Int,
+    fontFamily: String? = null,
+    bold: Boolean = false,
+    italic: Boolean = false,
   ) {
-    attachedView?.subtitleView?.apply {
-      setStyle(
-        CaptionStyleCompat(
-          textColor,
-          backgroundColor,
-          android.graphics.Color.TRANSPARENT,
-          CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-          borderColor,
-          null,
-        ),
-      )
-      setFractionalTextSize((fontSize.coerceIn(8, 160) / 1000f).coerceIn(0.01f, 0.16f))
+    subtitleFontSize = fontSize.coerceIn(8, 160)
+    val typefaceStyle = when {
+      bold && italic -> android.graphics.Typeface.BOLD_ITALIC
+      bold -> android.graphics.Typeface.BOLD
+      italic -> android.graphics.Typeface.ITALIC
+      else -> android.graphics.Typeface.NORMAL
+    }
+    subtitleStyle = CaptionStyleCompat(
+      textColor,
+      // MPV's background preference is not a cue rectangle. Keeping it transparent prevents
+      // the black artifact behind text and signs reported on Native playback.
+      android.graphics.Color.TRANSPARENT,
+      android.graphics.Color.TRANSPARENT,
+      CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+      borderColor,
+      android.graphics.Typeface.create(fontFamily?.takeIf { it.isNotBlank() }, typefaceStyle),
+    )
+    configureSubtitleView()
+  }
+
+  private fun configureSubtitleView() {
+    val view = attachedView ?: return
+    view.subtitleView?.apply {
+      setApplyEmbeddedStyles(true)
+      setApplyEmbeddedFontSizes(false)
+      setStyle(subtitleStyle)
+      setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
+      pivotX = width / 2f
+      pivotY = height.toFloat()
+      scaleX = subtitleScale
+      scaleY = subtitleScale
+      translationY = ((subtitlePosition - 100) / 100f * height * 0.5f)
+        .coerceIn(-height * 0.5f, height * 0.5f)
+      setBottomPaddingFraction(0f)
     }
   }
 
