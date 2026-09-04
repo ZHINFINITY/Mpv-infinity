@@ -4228,6 +4228,10 @@ class PlayerViewModel : ViewModel(),
     coalesceSeek(offset)
   }
 
+  fun nativePlaybackPositionSeconds(): Double = host.nativePlaybackPositionSeconds()
+
+  fun nativePlaybackDurationSeconds(): Double = host.nativePlaybackDurationSeconds()
+
   /**
    * Conflated live preview used by the legacy/full-screen seek mode and the audio seekbar.
    * Pointer events can arrive much faster than a decoder can seek, so only the newest target is
@@ -5973,29 +5977,41 @@ class PlayerViewModel : ViewModel(),
   fun setLoopA() {
     if (_abLoopState.value.a != null) {
       _abLoopState.update { it.copy(a = null) }
-      PlaybackSession.setPropertyString("ab-loop-a", "no")
+      if (host.isNativeEngineActive()) host.nativeSetLoopA(null) else PlaybackSession.setPropertyString("ab-loop-a", "no")
       return
     }
-    val currentPos = PlaybackSession.getPropertyDouble("time-pos") ?: return
+    val currentPos = if (host.isNativeEngineActive()) {
+      host.nativePlaybackPositionSeconds()
+    } else {
+      PlaybackSession.getPropertyDouble("time-pos") ?: return
+    }
     _abLoopState.update { it.copy(a = currentPos) }
-    PlaybackSession.setPropertyDouble("ab-loop-a", currentPos)
+    if (host.isNativeEngineActive()) host.nativeSetLoopA(currentPos) else PlaybackSession.setPropertyDouble("ab-loop-a", currentPos)
   }
 
   fun setLoopB() {
     if (_abLoopState.value.b != null) {
       _abLoopState.update { it.copy(b = null) }
-      PlaybackSession.setPropertyString("ab-loop-b", "no")
+      if (host.isNativeEngineActive()) host.nativeSetLoopB(null) else PlaybackSession.setPropertyString("ab-loop-b", "no")
       return
     }
-    val currentPos = PlaybackSession.getPropertyDouble("time-pos") ?: return
+    val currentPos = if (host.isNativeEngineActive()) {
+      host.nativePlaybackPositionSeconds()
+    } else {
+      PlaybackSession.getPropertyDouble("time-pos") ?: return
+    }
     _abLoopState.update { it.copy(b = currentPos) }
-    PlaybackSession.setPropertyDouble("ab-loop-b", currentPos)
+    if (host.isNativeEngineActive()) host.nativeSetLoopB(currentPos) else PlaybackSession.setPropertyDouble("ab-loop-b", currentPos)
   }
 
   fun clearABLoop() {
     _abLoopState.update { it.copy(a = null, b = null) }
-    PlaybackSession.setPropertyString("ab-loop-a", "no")
-    PlaybackSession.setPropertyString("ab-loop-b", "no")
+    if (host.isNativeEngineActive()) {
+      host.nativeClearLoop()
+    } else {
+      PlaybackSession.setPropertyString("ab-loop-a", "no")
+      PlaybackSession.setPropertyString("ab-loop-b", "no")
+    }
   }
 
   fun formatTimestamp(seconds: Double): String {

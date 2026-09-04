@@ -306,7 +306,6 @@ fun PlayerControls(
     getDecoderFromValue(activeDecoder?.takeIf { it.isNotBlank() } ?: configuredDecoder ?: "auto")
   }
   val playerTimeToDisappear by playerPreferences.playerTimeToDisappear.collectAsState()
-  val chapters by viewModel.chapters.collectAsState(persistentListOf())
   val skipSegments by viewModel.skipSegments.collectAsState(persistentListOf())
   val currentSkippableSegment by viewModel.currentSkippableSegment.collectAsState()
   val showSkipChipAuto by viewModel.showSkipChipAuto.collectAsState()
@@ -356,6 +355,12 @@ fun PlayerControls(
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
+  val mpvChapters by viewModel.chapters.collectAsState(persistentListOf())
+  val chapters = if (nativeEngineActive && nativeSnapshot.chapters.isNotEmpty()) {
+    nativeSnapshot.chapters.map { dev.vivvvek.seeker.Segment(it.title, it.startSeconds) }.toImmutableList()
+  } else {
+    mpvChapters
+  }
   val paused = if (nativeEngineActive) !nativeSnapshot.isPlaying else (mpvPaused ?: false)
   val playbackSpeed = if (nativeEngineActive) nativeSnapshot.speed else mpvPlaybackSpeed
   val isSpeedNonOne = remember(playbackSpeed) {
@@ -610,7 +615,7 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    if (statisticsPage in 1..2 || statisticsPage == 6) {
+    if (statisticsPage in 1..6) {
       val statsModifier =
         Modifier
           .align(Alignment.TopStart)
@@ -2138,23 +2143,30 @@ private fun NativeStatsPageOverlay(
   val bitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
   Surface(
     modifier = modifier,
-    color = Color.Black.copy(alpha = 0.78f),
+    color = Color.Transparent,
     shape = MaterialTheme.shapes.medium,
   ) {
     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-      Text("Native statistics — Page ${page.coerceIn(1, 2)}", style = MaterialTheme.typography.titleSmall, color = Color.White)
+      Text("Native statistics — Page ${page.coerceIn(1, 6)}", style = MaterialTheme.typography.titleSmall, color = Color.White)
       Text("Engine: Native", style = MaterialTheme.typography.bodySmall, color = Color.White)
       if (page == 1) {
         Text("Video output: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
         Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
         Text("Output bitrate: $bitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
         Text("Duration: ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      } else {
+      } else if (page == 2) {
         Text("Audio: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
         Text("Channels: ${snapshot.audioChannels}", style = MaterialTheme.typography.bodySmall, color = Color.White)
         Text("Sample rate: ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
         Text("Embedded audio tracks: ${snapshot.audioTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
         Text("Embedded subtitles: ${snapshot.subtitleTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      } else {
+        Text("Video output: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Video codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Audio codec: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Audio tracks: ${snapshot.audioTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Subtitle tracks: ${snapshot.subtitleTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        Text("Position: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
       }
     }
   }

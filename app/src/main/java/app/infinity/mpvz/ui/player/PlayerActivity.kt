@@ -332,6 +332,18 @@ class PlayerActivity :
     nativeEngine.seekTo(positionMs)
   }
 
+  override fun nativePlaybackPositionSeconds(): Double =
+    nativeEngine.snapshot.value.positionMs / 1000.0
+
+  override fun nativePlaybackDurationSeconds(): Double =
+    nativeEngine.snapshot.value.durationMs / 1000.0
+
+  override fun nativeSetLoopA(positionSeconds: Double?) = nativeEngine.setLoopA(positionSeconds)
+
+  override fun nativeSetLoopB(positionSeconds: Double?) = nativeEngine.setLoopB(positionSeconds)
+
+  override fun nativeClearLoop() = nativeEngine.clearLoop()
+
   override fun nativeSetSpeed(speed: Float) {
     nativeEngine.setSpeed(speed, audioPreferences.audioPitchCorrection.get())
   }
@@ -2103,6 +2115,18 @@ class PlayerActivity :
     pendingPipExitResolution = true
     if (isFinishing) {
       handlePipDismissed()
+      return
+    }
+    if (activeEngineMode == PlaybackEngineMode.NATIVE) {
+      lifecycleScope.launch {
+        delay(500L)
+        if (!pendingPipExitResolution) return@launch
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && hasWindowFocus()) {
+          completePipExpansion()
+        } else {
+          handlePipDismissed()
+        }
+      }
       return
     }
     if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && hasWindowFocus()) {
