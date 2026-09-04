@@ -1916,4 +1916,180 @@
   <string name="ui_no_saved_media_description">Media you save from the player will appear here.</string>
   <string name="ui_no_saved_media_title">No saved media yet</string>
   <string name="ui_saved_media">Saved Media</string>
+
+  <!-- Cancel / OK common labels -->
+  <string name="cancel">Cancel</string>
+  <string name="ok">OK</string>
+
+  <!-- Ambient style -->
+  <string name="ambient_style_youtube">YouTube</string>
+
+  <!-- Video clipping -->
+  <string name="clip_action">Clip</string>
+  <string name="clip_cancel">Cancel</string>
+  <string name="clip_cancelling">Cancelling…</string>
+  <string name="clip_crop">Crop</string>
+  <string name="clip_crop_full_frame">Full frame</string>
+  <string name="clip_crop_size">Crop size</string>
+  <string name="clip_done">Done</string>
+  <string name="clip_end_short">End</string>
+  <string name="clip_export_busy">Export is already in progress</string>
+  <string name="clip_export_failed">Export failed</string>
+  <string name="clip_exporting">Exporting…</string>
+  <string name="clip_invalid_range">Invalid clip range</string>
+  <string name="clip_options">Clip options</string>
+  <string name="clip_save">Save</string>
+  <string name="clip_saved">Clip saved</string>
+  <string name="clip_select_crop">Select crop area</string>
+  <string name="clip_start_short">Start</string>
+  <string name="clip_video_unavailable">Video unavailable for clipping</string>
+
+  <!-- Diagnostics -->
+  <string name="diagnostics_app_cpu">App CPU</string>
+  <string name="diagnostics_memory_cache_header">Memory cache</string>
+  <string name="diagnostics_playback_cache">Playback cache</string>
+  <string name="diagnostics_playback_cache_value">%1$s / %2$s</string>
+  <string name="diagnostics_process_memory">Process memory</string>
+  <string name="diagnostics_process_memory_value">%1$s MB</string>
+  <string name="diagnostics_torrent_header">Torrent</string>
+  <string name="diagnostics_torrent_loaded">Loaded</string>
+  <string name="diagnostics_torrent_loaded_value">%1$s / %2$s</string>
+  <string name="diagnostics_torrent_peer_status">Peers</string>
+  <string name="diagnostics_torrent_peers_value">%1$d connected</string>
+  <string name="diagnostics_torrent_transfer">Transfer</string>
+  <string name="diagnostics_torrent_transfer_value">↓ %1$s  ↑ %2$s</string>
+
+  <!-- Downloads manager -->
+  <string name="downloads_active_section">Active</string>
+  <string name="downloads_cancel">Cancel</string>
+  <string name="downloads_cancelled">Cancelled</string>
+  <string name="downloads_completed_section">Completed</string>
+  <string name="downloads_delete_confirm_message">This will permanently remove the downloaded file.</string>
+  <string name="downloads_delete_confirm_title">Delete download?</string>
+  <string name="downloads_delete_file">Delete file</string>
+  <string name="downloads_empty">No downloads</string>
+  <string name="downloads_empty_hint">Downloaded media will appear here.</string>
+  <string name="downloads_failed">Failed</string>
+  <string name="downloads_location">Downloads location</string>
+  <string name="downloads_location_default">Default</string>
+  <string name="downloads_location_reset">Reset to default</string>
+  <string name="downloads_play">Play</string>
+  <string name="downloads_queued">Queued</string>
+  <string name="downloads_remove_entry">Remove</string>
+  <string name="downloads_retry">Retry</string>
+  <string name="downloads_title">Downloads</string>
+
+  <!-- Subtitle title preferences -->
+  <string name="enter_subtitle_title_preferences">Subtitle title preferences</string>
+  <string name="subtitle_title_preferences_placeholder">Subtitle title preferences</string>
+
+  <!-- Media info -->
+  <string name="media_info_attachments">Attachments</string>
+  <string name="media_info_file_path">File path</string>
+  <string name="media_info_stat_bit_depth">Bit depth</string>
+  <string name="media_info_stat_channels">Channels</string>
+  <string name="media_info_stat_format">Format</string>
+  <string name="media_info_stat_sample_rate">Sample rate</string>
+  <string name="media_info_tab_image">Image</string>
+  <string name="media_info_tab_other">Other</string>
+  <string name="media_info_tab_raw">Raw</string>
+
+  <!-- Notifications -->
+  <string name="notification_add_to_favorites">Add to favorites</string>
+  <string name="notification_close">Close</string>
+
+  <!-- Onboarding -->
+  <string name="onboarding_all_set_desc">You\'re all set! Enjoy using Mpv∞.</string>
+  <string name="onboarding_all_set_title">All set</string>
+  <string name="onboarding_get_started">Get started</string>
+  <string name="onboarding_missing_permissions_desc">Some permissions are required for full functionality.</string>
+  <string name="onboarding_missing_permissions_title">Missing permissions</string>
+  <string name="onboarding_skip">Skip</string>
+
+  <!-- OSS library descriptions -->
+  <string name="oss_androidx_activity_description">AndroidX Activity integration for lifecycle-aware component management.</string>
+  <string name="oss_androidx_biometric_description">Biometric authentication support for secure app access.</string>
+  <string name="oss_jsch_description">SSH/SCP/SFTP client for remote file operations.</string>
+  <string name="oss_libarchive_android_description">Archive extraction support for compressed file handling.</string>
+  <string name="oss_libtorrent4j_description">BitTorrent library for torrent streaming support.</string>
+  <string name="oss_markdown_renderer_description">Markdown rendering for release notes and descriptions.</string>
+  <string name="oss_mpv_description">MPV media player core used for video playback.</string>
+  <string name="oss_mpvlib_android_description">Android bindings for the MPV media player library.</string>
+  <string name="oss_quickjs_ng_description">JavaScript engine for scripting and subtitle processing.</string>
+
+  <!-- Player filters -->
+  <string name="player_sheets_filters_">Filters</string>
+
+  <!-- Player speed gesture -->
+  <string name="player_speed_gesture_locked">Speed locked</string>
+  <string name="player_speed_gesture_restored">Speed restored</string>
+
+  <!-- Playlist -->
+  <string name="playlist_add_remote_title">Add from URL</string>
+  <string name="playlist_import_error">Failed to import playlist</string>
+  <string name="playlist_import_success">Playlist imported</string>
+  <string name="playlist_remote_url_hint">Playlist URL</string>
+
+  <!-- Preferences: Appearance -->
+  <string name="pref_appearance_force_dark_player_buttons_background_summary">Force dark background behind player control buttons</string>
+  <string name="pref_appearance_force_dark_player_buttons_background_title">Dark player button background</string>
+
+  <!-- Preferences: Audio -->
+  <string name="pref_audio_wavy_seekbar_summary">Animated wavy seekbar style</string>
+  <string name="pref_audio_wavy_seekbar_title">Wavy seekbar</string>
+
+  <!-- Preferences: Player -->
+  <string name="pref_auto_pip_home_only_summary">Only auto-enter PiP when going to home screen</string>
+  <string name="pref_auto_pip_home_only_title">PiP only on home</string>
+  <string name="pref_player_controls_drawer_summary">Swipe up to open additional player controls</string>
+  <string name="pref_player_controls_drawer_title">Controls drawer</string>
+  <string name="pref_player_web_stream_links_summary">Show web stream links in the player</string>
+  <string name="pref_player_web_stream_links_title">Web stream links</string>
+
+  <!-- Preferences: Folders -->
+  <string name="pref_folders_add_marker">Add marker</string>
+  <string name="pref_folders_add_marker_title">Add hidden marker</string>
+  <string name="pref_folders_hidden_markers_empty">No hidden markers configured</string>
+  <string name="pref_folders_hidden_markers_summary">Mark specific folders to hide from the browser</string>
+  <string name="pref_folders_hidden_markers_title">Hidden markers</string>
+  <string name="pref_folders_include_hidden_summary">Show folders that match hidden markers</string>
+  <string name="pref_folders_include_hidden_title">Include hidden folders</string>
+  <string name="pref_folders_marker_duplicate">Marker already exists</string>
+  <string name="pref_folders_marker_invalid">Invalid marker name</string>
+  <string name="pref_folders_marker_name">Marker name</string>
+  <string name="pref_folders_remove_marker">Remove marker</string>
+
+  <!-- Preferences: Music -->
+  <string name="pref_music_tabs_title">Music tabs</string>
+
+  <!-- Preferences: Subtitle API keys -->
+  <string name="pref_betaseries_api_key_title">BetaSeries API key</string>
+  <string name="pref_jimaku_api_key_title">Jimaku API key</string>
+  <string name="pref_subdl_api_key_title">SubDL API key</string>
+  <string name="pref_subsource_api_key_title">SubSource API key</string>
+  <string name="pref_subs_ro_api_key_title">Subs.ro API key</string>
+  <string name="pref_subx_api_key_title">SubX API key</string>
+  <string name="pref_subtitle_api_key_dialog_text">Enter your API key for this subtitle source.</string>
+  <string name="pref_subtitle_api_key_placeholder">API key</string>
+  <string name="pref_subtitle_api_key_summary_required">API key required</string>
+  <string name="pref_subtitle_api_key_summary_saved">API key saved</string>
+  <string name="pref_subtitles_all_keyless_sources">Show all sources without API keys</string>
+  <string name="pref_subtitles_source_api_key_required">An API key is required for this source.</string>
+
+  <!-- Storage permissions -->
+  <string name="storage_permission_grant">Grant permission</string>
+  <string name="storage_permission_needed_desc">Storage permission is required to access media files.</string>
+  <string name="storage_permission_needed_title">Storage permission needed</string>
+
+  <!-- Update -->
+  <string name="ui_preview_builds">Preview builds</string>
+  <string name="ui_preview_builds_summary">Receive preview builds with the latest features</string>
+  <string name="ui_stable_releases">Stable releases</string>
+  <string name="ui_update_channel">Update channel</string>
+
+  <!-- UI common -->
+  <string name="ui_add_playlist_from_url">Add playlist from URL</string>
+  <string name="ui_audio_tab">Audio</string>
+  <string name="ui_by_ritesh_pandit">by Ritesh Pandit</string>
+  <string name="ui_panditritesh2001_okhdfcbank">panditritesh2001@okhdfcbank</string>
 </resources>
