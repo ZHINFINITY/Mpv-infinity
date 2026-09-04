@@ -104,6 +104,7 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.browser.cards.FolderCard
+import app.infinity.mpvz.ui.browser.cards.SwipeableFolderActions
 import app.infinity.mpvz.ui.browser.cards.VideoCard
 import app.infinity.mpvz.ui.browser.cards.VideoCardUiConfig
 import app.infinity.mpvz.ui.browser.components.BrowserBottomBar
@@ -924,6 +925,7 @@ object FolderListScreen : Screen {
                       foldersPreferences.pinnedFolders.set(updated)
                     }
                   },
+                  onToggleFolderWatched = { folder, watched -> viewModel.setFolderWatched(folder, watched) },
                   selectedFolderBucketId = selectedFolderBucketId,
                   audioOnly = audioOnly,
                 )
@@ -1224,6 +1226,7 @@ private fun FolderListContent(
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
   onTogglePin: (VideoFolder) -> Unit,
+  onToggleFolderWatched: (VideoFolder, Boolean) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
 ) {
@@ -1282,6 +1285,7 @@ private fun FolderListContent(
           onFolderClick = onFolderClick,
           onFolderLongClick = onFolderLongClick,
           onTogglePin = onTogglePin,
+          onToggleFolderWatched = onToggleFolderWatched,
           selectedFolderBucketId = selectedFolderBucketId,
           audioOnly = audioOnly,
         )
@@ -1299,6 +1303,7 @@ private fun FolderListContent(
           onFolderClick = onFolderClick,
           onFolderLongClick = onFolderLongClick,
           onTogglePin = onTogglePin,
+          onToggleFolderWatched = onToggleFolderWatched,
           selectedFolderBucketId = selectedFolderBucketId,
           audioOnly = audioOnly,
         )
@@ -1321,6 +1326,7 @@ private fun GridContent(
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
   onTogglePin: (VideoFolder) -> Unit,
+  onToggleFolderWatched: (VideoFolder, Boolean) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
 ) {
@@ -1376,6 +1382,12 @@ private fun GridContent(
 
         val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
 
+        SwipeableFolderActions(
+          itemKey = folder.bucketId,
+          enabled = !selectionManager.isInSelectionMode,
+          isWatched = newCount == 0,
+          onWatchedChange = { onToggleFolderWatched(folder, it) },
+        ) {
         FolderCard(
           folder = folder,
           isSelected = selectionManager.isSelected(folder),
@@ -1435,6 +1447,7 @@ private fun ListContent(
   onFolderClick: (VideoFolder) -> Unit,
   onFolderLongClick: (VideoFolder) -> Unit,
   onTogglePin: (VideoFolder) -> Unit,
+  onToggleFolderWatched: (VideoFolder, Boolean) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
 ) {
@@ -1466,6 +1479,12 @@ private fun ListContent(
 
         val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
 
+        SwipeableFolderActions(
+          itemKey = folder.bucketId,
+          enabled = !selectionManager.isInSelectionMode,
+          isWatched = newCount == 0,
+          onWatchedChange = { onToggleFolderWatched(folder, it) },
+        ) {
         FolderCard(
           folder = folder,
           isSelected = selectionManager.isSelected(folder),

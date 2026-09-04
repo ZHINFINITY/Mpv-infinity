@@ -16,6 +16,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.domain.media.model.VideoFolder
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.FoldersPreferences
 import app.infinity.mpvz.repository.MediaFileRepository
@@ -23,6 +24,7 @@ import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps
 import app.infinity.mpvz.utils.storage.FolderViewScanner
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +64,7 @@ class FolderListViewModel(
 
   private val _foldersWithNewCount = MutableStateFlow<List<FolderWithNewCount>>(emptyList())
   val foldersWithNewCount: StateFlow<List<FolderWithNewCount>> = _foldersWithNewCount.asStateFlow()
+  private val folderWatchedOverrides = MutableStateFlow<Map<String, Boolean>>(emptyMap())
 
   // Only show loading on fresh install (when there's no cached data)
   private val _isLoading = MutableStateFlow(false)
@@ -284,6 +287,7 @@ class FolderListViewModel(
 
                 // Count new unplayed videos
                 val newCount =
+                  folderWatchedOverrides.value[folder.bucketId]?.let { if (it) 0 else null } ?: run {
                   videos.count { video ->
                     // Check if video was modified within threshold days
                     val videoAge = currentTime - (video.dateModified * 1000)
@@ -308,6 +312,7 @@ class FolderListViewModel(
 
                     isRecent && isUnplayed
                   }
+                }
 
                 FolderWithNewCount(folder, newCount)
               } catch (e: Exception) {
@@ -363,6 +368,40 @@ class FolderListViewModel(
    */
   fun recalculateNewVideoCounts() {
     calculateNewVideoCounts(_videoFolders.value)
+  }
+
+  fun setFolderWatched(folder: VideoFolder, watched: Boolean) {
+    folderWatchedOverrides.value = folderWatchedOverrides.value + (folder.bucketId to watched)
+    calculateNewVideoCounts(_videoFolders.value)
+    viewModelScope.launch(Dispatchers.IO) {
+      val videos = MediaFileRepository.getVideosInFolder(getApplication(), folder.bucketId)
+      videos.forEach { video ->
+        val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val identifier = PlaybackIdentity.forLocalPath(video.path)
+        val existing = playbackStateRepository.getVideoDataByTitle(identifier)
+        playbackStateRepository.upsert(
+          (existing ?: PlaybackStateEntity(
+            mediaTitle = identifier,
+            lastPosition = 0,
+            playbackSpeed = 1.0,
+            sid = -1,
+            secondarySid = -1,
+            subDelay = 0,
+            subSpeed = 1.0,
+            aid = -1,
+            audioDelay = 0,
+            timeRemaining = durationSeconds,
+            hasBeenWatched = false,
+          )).copy(
+            mediaTitle = identifier,
+            lastPosition = if (watched) 0 else durationSeconds,
+            timeRemaining = if (watched) 0 else durationSeconds,
+            hasBeenWatched = watched,
+          ),
+        )
+        PlaybackStateEvents.notifyChanged(identifier)
+      }
+    }
   }
 
   suspend fun renameFolder(
