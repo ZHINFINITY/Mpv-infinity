@@ -124,7 +124,12 @@ class SeerrRepository(
     queryParameters: Map<String, String?> = emptyMap(),
     baseUrlOverride: String? = null,
   ): Request {
-    val baseUrl = baseUrlOverride ?: preferences.serverUrl.get().trim().removeSuffix("/")
+    val rawBaseUrl = baseUrlOverride ?: preferences.serverUrl.get().trim().removeSuffix("/")
+    val baseUrl = if (rawBaseUrl.startsWith("http://", true) || rawBaseUrl.startsWith("https://", true)) {
+      rawBaseUrl
+    } else {
+      "https://$rawBaseUrl"
+    }
     val cleanPath = path.removePrefix("/")
     val fullUrlString = "$baseUrl/$cleanPath"
     val httpUrlBuilder = fullUrlString.toHttpUrlOrNull()?.newBuilder()

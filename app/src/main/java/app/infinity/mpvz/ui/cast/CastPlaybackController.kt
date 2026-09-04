@@ -195,6 +195,8 @@ class CastPlaybackController(
 
   fun release() {
     released = true
+    if (instance === this) instance = null
+    scope.cancel()
     stopPositionPolling()
     volumeDebounceJob?.cancel()
     val context = castContext

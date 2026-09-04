@@ -12,6 +12,14 @@ on:
           - standard
           - fongmi
           - no_vulkan
+      target_abi:
+        description: Target ABI
+        required: true
+        default: arm64-v8a
+        type: choice
+        options:
+          - arm64-v8a
+          - all
 
 permissions:
   contents: read
@@ -32,10 +40,12 @@ jobs:
       - name: Build debug APK
         run: |
           chmod +x ./gradlew
+          ABI_ARGS=""
+          if [[ "${{ inputs.target_abi }}" != "all" ]]; then ABI_ARGS="-PtargetAbi=${{ inputs.target_abi }}"; fi
           case "${{ inputs.flavor }}" in
-            standard) ./gradlew assembleStandardDebug --stacktrace --no-daemon --max-workers=2 ;;
-            fongmi) ./gradlew assembleFongmiDebug --stacktrace --no-daemon --max-workers=2 ;;
-            no_vulkan) ./gradlew assembleNoVulkanDebug --stacktrace --no-daemon --max-workers=2 ;;
+            standard) ./gradlew assembleStandardDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
+            fongmi) ./gradlew assembleFongmiDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
+            no_vulkan) ./gradlew assembleNoVulkanDebug $ABI_ARGS --stacktrace --no-daemon --max-workers=2 ;;
           esac
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
