@@ -1,60 +1,86 @@
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/icon.png?v=5502d61" width="250" height="250" alt="Mpv∞ app icon" />
+  <img src="fastlane/metadata/android/en-US/images/icon.png" width="250" height="250" />
 </p>
 
 <h1 align="center">Mpv∞</h1>
 
 <p align="center">
-  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22app.infinity.mpvz%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FRiteshp2001%2FMpv∞%22%2C%22author%22%3A%22Riteshp2001%22%2C%22name%22%3A%22Mpv∞%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22filterReleaseNotesByRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22useLatestAssetDateAsReleaseDate%5C%22%3Afalse%2C%5C%22releaseTitleAsVersion%5C%22%3Afalse%2C%5C%22trackOnly%5C%22%3Afalse%2C%5C%22versionExtractionRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22matchGroupToUse%5C%22%3A%5C%22%5C%22%2C%5C%22versionDetection%5C%22%3Atrue%2C%5C%22releaseDateAsVersion%5C%22%3Afalse%2C%5C%22useVersionCodeAsOSVersion%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22invertAPKFilter%5C%22%3Afalse%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%2C%5C%22minimumUpdateAgeDays%5C%22%3A%5C%22%5C%22%2C%5C%22appName%5C%22%3A%5C%22%5C%22%2C%5C%22appAuthor%5C%22%3A%5C%22%5C%22%2C%5C%22shizukuPretendToBeGooglePlay%5C%22%3Afalse%2C%5C%22allowInsecure%5C%22%3Afalse%2C%5C%22exemptFromBackgroundUpdates%5C%22%3Afalse%2C%5C%22skipUpdateNotifications%5C%22%3Afalse%2C%5C%22about%5C%22%3A%5C%22%5C%22%2C%5C%22refreshBeforeDownload%5C%22%3Afalse%2C%5C%22includeZips%5C%22%3Afalse%2C%5C%22zippedApkFilterRegEx%5C%22%3A%5C%22%5C%22%2C%5C%22includeTarballs%5C%22%3Afalse%2C%5C%22tarballedApkFilterRegEx%5C%22%3A%5C%22%5C%22%7D%22%2C%22overrideSource%22%3Anull%7D">
-    <img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="80" />
-  </a>
+  <b>Powerful and efficient Android video player with Native Media3 and MPV engines.</b>
+  <br>
+  <i>High-quality playback, thoughtful controls, and a focused media library without distractions.</i>
+  <br>
+  <a href="https://t.me/Infinityzlabs">Join the Mpv∞ Telegram channel</a>
 </p>
 
+**Mpv∞ (Mpv-infinity) is an ad-free, open-source Android media player for high-quality video and audio playback, combining MPV/libmpv with AndroidX Media3/ExoPlayer engines, dual subtitles, HDR, Dolby Vision, HDR10+, chapters, and customizable playback controls.**
+
+### Jellyfin Client and Seerr Support
+Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media servers, browsing libraries, searching movies and TV shows, and playing available media directly in Mpv∞. It also includes native **Seerr support** for Seerr and Overseerr-compatible media request servers, including discovery, search, availability status, season requests, and direct playback of available Jellyfin content. Relevant search terms include **Jellyfin Android client**, **Jellyfin media player**, **Seerr client**, **Overseerr client**, **Android MPV player**, and **Jellyfin video playback**.
+
 <p align="center">
-  <b>Feature-rich, Efficient Powerful Android video player based on libmpv.</b>
-  <br>
-  <i>No ads. No trackers. No noise. Just a serious video player with a calmer surface and a sharper edge.</i>
+  <a href="https://t.me/Infinityzlabs"><b>Join InfinityZ Lab on Telegram for app feedback and feature requests</b></a>
 </p>
 
 > [!IMPORTANT]
-> **Well Development is now Resumed**
+> **Mpv∞ is actively developed by ZHINFINITY.**
+>
+> The current hotfix release focuses on reliable Native-to-MPV fallback for difficult Dolby Vision files while preserving the existing MPV playback path.
 
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-brightgreen.svg" />
   <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" />
-  <img src="https://img.shields.io/github/v/release/Riteshp2001/Mpv∞.svg?logo=github&label=Release&cacheSeconds=3600" />
-  <img src="https://img.shields.io/github/downloads/Riteshp2001/Mpv∞/total?logo=github&cacheSeconds=3600" />
+  <img src="https://img.shields.io/github/v/release/ZHINFINITY/Mpv-infinity.svg?logo=github&label=Release&cacheSeconds=3600" />
+  <img src="https://img.shields.io/github/downloads/ZHINFINITY/Mpv-infinity/total?logo=github&cacheSeconds=3600" />
 </p>
 
 ---
 
 ## Showcase
 
+The screenshots below present the Mpv∞ player surface, video library, About page, Live Wallpaper library, Native engine selector, and chapter navigation.
+
 <div align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/player.png" width="92%">
+  <img src="docs/showcase/player-glass.jpg" width="90%" alt="Mpv∞ player with translucent controls and seekbar">
 </div>
 
 <br>
 
 <div align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/videoscreen.png" width="31%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/pip.png" width="31%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/about.jpg" width="31%">
+  <img src="docs/showcase/video-library.jpg" width="31%" alt="Mpv∞ video library">
+  <img src="docs/showcase/about-mpv-infinity.jpg" width="31%" alt="Mpv∞ About page">
+  <img src="docs/showcase/live-wallpapers.jpg" width="31%" alt="Mpv∞ Live Wallpaper library">
 </div>
 
 <br>
 
 <div align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/playlistwindow.png" width="48%">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/chapters.png" width="48%">
+  <img src="docs/showcase/decoder-native.jpg" width="46%" alt="Mpv∞ Playback engine selector showing MPV and Native">
+  <img src="docs/showcase/chapters.jpg" width="46%" alt="Mpv∞ chapter navigation sheet">
 </div>
 
 ---
 
 ## Features
 
-Mpv∞ pushes the mpv-android experience further with deep customization, thermal-aware performance, and unique quality-of-life features. Here's what sets it apart:
+Mpv∞ is a feature-rich Android media player combining the MPV and AndroidX Media3 playback engines with customizable controls, advanced video rendering, subtitle tools, audio playback, and practical library features.
+
+<details close>
+<summary><b>⚙️ Dual Playback Engines: MPV + Media3</b></summary>
+
+| Feature | Description |
+|---|---|
+| **MPV playback engine** | Full libmpv playback for broad format support, advanced rendering, shaders, scripting, and detailed MPV controls. |
+| **Media3 playback engine** | AndroidX Media3 playback with platform-integrated video, audio, codec, timeline, and device support. |
+| **Automatic engine routing** | Auto mode can choose Media3 for supported Dolby Vision items and HLS/DASH streams while keeping ordinary files on MPV. |
+| **Per-video engine selection** | Switch the current item between MPV and Media3 from the decoder controls without changing the global preference. |
+| **Engine-aware playback controls** | Seeking, playback position, chapters, segment actions, and subtitle selection are available through the active engine. |
+| **Media3 audio compatibility** | Media3 playback includes the FFmpeg audio extension for additional audio-format compatibility where supported by the device. |
+| **Media3 dual subtitles** | Selectable dialogue and sign subtitle tracks can render together as layered subtitle tracks. |
+| **Media3 chapters and skippable segments** | Media3 exposes chapter-aware timeline information and playable segment actions such as intro, recap, outro, and credits skipping. |
+| **Playback information** | Statistics and decoder controls show the active engine and available output details when reported by the platform. |
+
+</details>
 
 <details close>
 <summary><b>🎨 Theme & Visual System</b></summary>
@@ -88,10 +114,12 @@ Mpv∞ pushes the mpv-android experience further with deep customization, therma
 </details>
 
 <details close>
-<summary><b>📺 HDR & Video Pipeline</b></summary>
+<summary><b>📺 HDR, Codec & Video Pipeline</b></summary>
 
 | Feature | Description |
 |---|---|
+| **Native Dolby Vision & HDR10+** | The Media3 Native engine supports device-dependent Dolby Vision and HDR10+ playback through Android’s available hardware codec stack. |
+| **Device Codec Support** | Uses codecs exposed by the device for compatible video formats, HDR profiles, and hardware-accelerated playback. |
 | **Shader-Based HDR Pipeline** | Powered by [hdr-toys](https://github.com/natural-harmonia-gropius/hdr-toys) — 77 bundled GLSL shaders |
 | **Four HDR Modes** | BT.2100 PQ (HDR10), BT.2100 HLG, BT.2020 gamut mapping, Linear HDR |
 | **SDR-to-HDR Boost** | Boost SDR content into HDR range when using Linear HDR pipeline |
@@ -149,6 +177,7 @@ Mpv∞ pushes the mpv-android experience further with deep customization, therma
 | **Subtitle Font Manager** | Choose a font directory, reload fonts, clear the cache, and select a default subtitle font |
 | **Speech-to-Subtitle Generation** | Experimental subtitle generation from the active audio using supported cloud or offline Whisper providers |
 | **Explicit Subtitle Off** | Disable subtitles directly without cycling through every available track |
+| **Embedded and External Subtitle Tracks** | Select subtitle tracks from containers or automatically discovered same-name external subtitle files |
 
 </details>
 
@@ -211,38 +240,9 @@ Mpv∞ pushes the mpv-android experience further with deep customization, therma
 | **Syncplay Rooms** | Join a Syncplay server room to synchronize pause, resume, seeking, and playback position with other viewers |
 | **Responsive & Dual-Pane Layouts** | Automatic grid sizing plus optional folder/settings dual-pane views on tablets |
 | **Audio Library Mode** | MediaStore and filesystem audio browsing with square artwork, metadata titles, and mixed sibling playlists |
-</details>
-
-<details close>
-<summary><b>🍿 Jellyfin Client (Expressive Cinematic UI)</b></summary>
-
-| Feature | Description |
-|---|---|
-| **Native Server Integration** | Direct connection with Jellyfin accounts, fast token authentication, and multi-server management |
-| **Material 3 Expressive UI** | Cinematic interface with spring-based transitions and fluid layout hierarchy |
-| **Featured Hero Banner** | Auto-advancing 16:9 backdrop banner with smooth gradient scrims, ratings, badges, and quick play |
-| **Continue Watching & Recently Watched** | Horizontal resume carousels with relative timestamps and progress bars tracking playback progress |
-| **Library Filter Chips** | Instant switching between Movies, TV Shows, Anime, Music, and BoxSets with dynamic item counts |
-| **Poster & Backdrop Cards** | 2:3 vertical posters and 16:9 backdrop cards with community ratings, release years, and unplayed badges |
-| **Cinematic Detail Sheet** | Full-bleed modal sheet with backdrops, floating posters, storyline synopsis, and season/episode picker |
-| **Server-Synced Favorites** | Heart action synced bidirectionally with your Jellyfin server account (`UserData.IsFavorite`) |
-| **Direct & Transcoded Streaming** | High-performance direct stream playback with audio track and subtitle stream switching |
-
-</details>
-
-<details close>
-<summary><b>⚡ Unified Media & Torrent Streaming</b></summary>
-
-| Feature | Description |
-|---|---|
-| **Sequential Torrent Engine** | Powered by high-speed native Go bridge (`anacrolix/torrent`) with sequential piece prioritization |
-| **Instant Streaming** | Stream magnet links, `.torrent` files, direct web streams (HLS, MP4), and YouTube URLs |
-| **Cinematic Discovery** | Hero banner carousel, Continue Watching row, and 2:3 vertical poster cards for saved media |
-| **Automated TMDB Enrichment** | Fetches posters, backdrops, storyline synopsis, release years, and media types via Wyzie/TMDB |
-| **Cinematic Media Details** | Modal bottom sheet with floating poster, metadata badges, "Watch Now / Resume", and "Copy Magnet" |
-| **Intelligent Episode Parser** | Robust parser supporting anime numbering, season/episode formats (S01E02, 1x02), and quality tags |
-| **Episode Search & Sorting** | Filter and sort episodes within multi-file torrents with watched status checkmarks |
-| **Unified Media Hub** | Save direct streams, YouTube links, and torrents into your collection with one-tap ingestion |
+| **Folder Playlist Sheets** | Open playable folders, including nested series folders, as navigable episode or file playlists from the player |
+| **Safer Folder Deletion** | Media-only folder deletion by default, with an explicit option to delete every contained file |
+| **Settings Search Memory** | Search suggestions and recently used settings queries |
 
 </details>
 
@@ -282,6 +282,7 @@ Mpv∞ pushes the mpv-android experience further with deep customization, therma
 | **Video Compressor** | Built-in FFmpeg-based compression with presets |
 | **12 Video Filter Presets** | Vivid, Cinematic, Dramatic, Ghibli Style, Neon Pop, Deep Black, and more |
 | **Custom Skip Segments** | Intro/outro/recap/credits/preview detection from IntroDB, TIDB, AniSkip, Anime Skip |
+| **One-Tap Segment Skip** | Skip detected intro, outro, recap, credit, and preview segments during playback |
 | **A-B Loop** | In-player looping with visual markers on seekbar |
 | **Frame Navigation** | Frame-by-frame forward/backward with frame number display |
 | **Sleep Timer** | Built-in with quick presets (15/30/45/60 min) |
@@ -302,27 +303,25 @@ Mpv∞ pushes the mpv-android experience further with deep customization, therma
 
 ---
 
-## 🔋 Battery Optimization guide for Mpv
+## 🔋 Battery Optimization Guide for Mpv∞
 
-First Pro Tip Keep Mpv Conf empty if you are newbie
+For efficient playback, begin with Mpv∞'s default configuration and enable additional rendering features only when you need them. The following choices usually reduce unnecessary GPU and battery work:
 
-- **Use `gpu` not `gpu-next`** — gpu-next is a Vulkan-based renderer that keeps the GPU awake for no reason when playing normal video. The classic `gpu` backend is lighter and uses the OpenGL driver stack, which on most Android devices has better power characteristics.
-- **Disable Vulkan entirely.** Vulkan is great for Video Playback but also Heavy.
-- **Use the `fast` mpv profile.** It's literally built into Mpv∞ use that Mpv Profiles and Set it to Default  or in _mpv.conf_ `profile=fast`
-- **Don't use shaders.** That Anime4K preset you using that's what's eating your battery. Shaders run on the GPU every single frame. If you're watching 24fps content and you have a shader pipeline running, congratulations — you're doing 24 unnecessary GPU compute passes per second for a Minute amount of visible benefit on a phone screen .
-- **Don't use AI-generated configs.** That means you, the person who copied a Reddit config with 200 lines of `scale=ewa_lanczossharp` and `dscale=mitchell` and `cscale=sinc` and a dozen `glsl-shaders` entries. Most  of You have no idea what any of those do. You just made your phone render video like it's preparing for a 4K cinema projection. On a 6-inch screen. Grow some Brains Its your android Phone not some Fuckin.. 4k Television
+- **Use `gpu` for ordinary playback** when you do not need the Vulkan-based `gpu-next` renderer.
+- **Use the built-in `fast` profile** for a lightweight starting point.
+- **Enable Anime4K and other shaders selectively**, because they run on every rendered frame and can increase GPU load.
+- **Check the statistics pages** during long playback to observe battery, thermal, frame, and rendering behavior on your device.
+- **Keep custom mpv.conf settings focused**, since aggressive scaling, debanding, and shader chains can increase startup time, memory use, and power consumption.
 
-**My POV:** mpv's default config with `profile=fast` and the `gpu` backend plays video with negligible battery impact — often **less** than OEM players because mpv doesn't have a billion proprietary DRM modules, analytics SDKs, and ad frameworks burning CPU in the background. The next time your battery drops more than 20-25% watching a 2-hour movie, don't blame mpv. Blame the 14 shaders you blindly copy-pasted.
-
-_Just a Pro tip if your battery consumption stays within 200 mAh and belwo 0.9W ( See Page 6 of Mpv∞ - video player More Settings -> Page6) useage than ur Mpv Conf are Proper for Video watching thats what i have experimented and telling rest all i don't know About in detail technicality's if anyone wanna tell me In depth guide then keep it to yourself i dont wanna listen_
+Actual power use depends on the device, codec, resolution, refresh rate, renderer, and selected shaders. Mpv∞'s thermal-aware safeguards can reduce shader quality when the device is under sustained load.
 
 ---
 
 <div align="center">
-  <a href="https://github.com/Riteshp2001/Mpv∞/releases">
+  <a href="https://github.com/ZHINFINITY/Mpv-infinity/releases">
     <img src="https://img.shields.io/badge/Download-Stable_Release-blue?style=for-the-badge&logo=github" alt="Stable Release">
   </a>
-  <!-- <a href="https://riteshp2001.github.io/Mpv∞/">
+  <!-- <a href="https://ZHINFINITY.github.io/Mpv-/">
     <img src="https://img.shields.io/badge/Download-Preview_Build-orange?style=for-the-badge&logo=github" alt="Preview Build">
   </a> -->
 </div>
@@ -331,8 +330,7 @@ _Just a Pro tip if your battery consumption stays within 200 mAh and belwo 0.9W 
   <i>Note: Previews may be unstable and are intended for testing purposes only.</i>
 </div> -->
 
-If something breaks, feels off, or deserves another pass, _don't be Dumb and ask for Trash Features which only you require it wll be auto deleted_,
-report it in the [Issues](https://github.com/Riteshp2001/Mpv∞/issues).
+If something breaks or feels inconsistent, please report it through the [Issues](https://github.com/ZHINFINITY/Mpv-infinity/issues) page with the app version, device model, engine selected, and relevant logs.
 
 ---
 
@@ -368,24 +366,22 @@ report it in the [Issues](https://github.com/Riteshp2001/Mpv∞/issues).
 
 ---
 
-## Support
-
-If you find Mpv∞ useful and would like to support its development, consider buying me a coffee! Your support keeps the project alive and helps push new features.
+## Sponsor and Support
+If you find Mpv∞ useful, you can support its continued development through Ko-fi or the UPI details below.
 
 <div align="center">
-
-### ☕ Buy Me a Coffee
-
-<a href="https://www.buymeacoffee.com/riteshp2001">
-  <img src="https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee">
-</a>
+  <a href="https://ko-fi.com/zhinfinity">
+    <img src="https://img.shields.io/badge/Sponsor%20and%20Support%20on-Ko--fi-ff5e5b?logo=ko-fi&logoColor=white" alt="Sponsor and Support ZHINFINITY on Ko-fi">
+  </a>
+  <br>
+  <br>
 
 ### UPI
 
-`panditritesh2001@okhdfcbank`
+`zhjjk001-1@oksbi`
 
-<a href="upi://pay?pa=panditritesh2001@okhdfcbank&pn=Ritesh%20Pandit&cu=INR">
-  <img src="fastlane/metadata/android/en-US/images/upiqr-code.svg" width="250" height="250" alt="UPI QR Code">
+<a href="upi://pay?pa=zhjjk001-1@oksbi&pn=ZHINFINITY&cu=INR">
+  <img src="fastlane/metadata/android/en-US/images/upiqr-code.png" width="250" height="250" alt="UPI QR Code">
 </a>
 
 Scan with any UPI app (Google Pay, PhonePe, Paytm, BHIM)
@@ -408,23 +404,28 @@ To cut a signed GitHub release through Actions, configure these repository secre
 Then bump `versionCode` and `versionName` in `app/build.gradle.kts`, create a tag, and push it:
 
 ```bash
-git tag -a v1.3.1 -m "Release version 1.3.1"
-git push origin v1.3.1
+git tag -a v1.0.1 -m "Release version 1.0.1"
+git push origin v1.0.1
 ```
 
 Preview releases use the same flow with preview tags such as:
 
 ```bash
-git tag -a v1.3.1-preview.1 -m "Preview release"
-git push origin v1.3.1-preview.1
+git tag -a v1.0.1-preview.1 -m "Preview release"
+git push origin v1.0.1-preview.1
 ```
 
 ---
 
 ## Acknowledgments
 
+Mpv∞ is maintained by **ZHINFINITY** and follows the same open-source lineage model as mpvRx: it is an independent modified Android player based on the open-source **[mpvRx](https://github.com/Riteshp2001/mpvRx)** project, with the earlier **[mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)** and **[mpv-android](https://github.com/mpv-android)** projects acknowledged as part of that lineage. Mpv∞-specific branding, Native Media3 integration, engine routing, fallback handling, controls, themes, and other changes are maintained separately. Mpv∞ is not affiliated with or endorsed by the upstream maintainers.
+
 - [mpv-android](https://github.com/mpv-android)
-- [mpvExtended](https://github.com/marlboro-advance/mpvEx)
+- [AndroidX Media3](https://developer.android.com/jetpack/androidx/releases/media3) for the Native/Media3 playback, audio, UI, and effects stack (**Apache-2.0**).
+- [Jellyfin Media3 FFmpeg Decoder](https://github.com/jellyfin/jellyfin-androidx-media) through `org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1` for additional codec and multichannel audio support (**GPL-3.0**).
+- **Device-dependent 7.1 audio support** is Mpv∞ integration built on the Media3 audio pipeline, the Jellyfin FFmpeg decoder where selected, and codecs exposed by the user’s Android device; it is not a separate third-party library or a universal device-support guarantee.
+- [mpvExtended / mpvEx](https://github.com/marlboro-advance/mpvEx)
 - [mpvKt](https://github.com/abdallahmehiz/mpvKt)
 - [PixelPlayer](https://github.com/theovilardo/PixelPlayer)
 - [MpvRex](https://github.com/sfsakhawat999/mpvRex)
@@ -433,22 +434,25 @@ git push origin v1.3.1-preview.1
 - [hdr-toys](https://github.com/natural-harmonia-gropius/hdr-toys)
 - [AFinity](https://github.com/MakD/AFinity)
 - [anacrolix/torrent](https://github.com/anacrolix/torrent)
+- [Anime4K](https://github.com/bloc97/Anime4K)
 - [**SunnyVishnu3**](https://github.com/SunnyVishnu3) for the `yt-dlp` native integration and SDK 29+ bypass logic.
+
+For the detailed notice and redistribution guidance, see [`UPSTREAM_NOTICES.md`](UPSTREAM_NOTICES.md). Individual source files and bundled assets may contain their own copyright and license notices; those notices remain part of the distributed source tree.
 
 ---
 
 ## License
 
-Distributed under **GNU Affero General Public License v3.0 (AGPL-3.0-or-later)**. See `LICENSE` for more information.
+Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE) and [`UPSTREAM_NOTICES.md`](UPSTREAM_NOTICES.md) for the license and attribution information. Mpv∞-specific code, branding, and modifications are maintained by **ZHINFINITY**, while upstream copyrights remain with their respective holders.
 
 ---
 
 ## Star History
 
-<a href="https://www.star-history.com/#Riteshp2001/Mpv∞&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=ZHINFINITY%2FMpv-infinity&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Riteshp2001/Mpv∞&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Riteshp2001/Mpv∞&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Riteshp2001/Mpv∞&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ZHINFINITY/Mpv-infinity&type=date&legend=top-left" />
  </picture>
 </a>
