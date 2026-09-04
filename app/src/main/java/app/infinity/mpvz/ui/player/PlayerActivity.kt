@@ -665,17 +665,29 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         decoderPreferences.playbackEngine.changes().collect { engine ->
           val useNative = engine == PlaybackEngineMode.NATIVE
+          val handoffPositionMs = if (useNative) {
+            ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
+          } else {
+            nativeEngine.currentPlayer.currentPosition
+          }
+          val handoffPlaying = if (useNative) {
+            !(PlaybackSession.getPropertyBoolean("pause") ?: true)
+          } else {
+            nativeEngine.currentPlayer.isPlaying
+          }
           binding.media3Player.visibility = if (useNative) View.VISIBLE else View.GONE
           binding.player.visibility = if (useNative) View.GONE else View.VISIBLE
           val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
           if (currentUri != null && isReady) {
             if (useNative) {
+              PlaybackSession.setPropertyBoolean("pause", true)
               nativeEngine.play(
                 Uri.parse(currentUri),
-                startPositionMs = nativeEngine.currentPlayer.currentPosition,
-                autoplay = nativeEngine.currentPlayer.isPlaying,
+                startPositionMs = handoffPositionMs.coerceAtLeast(0L),
+                autoplay = handoffPlaying,
               )
             } else if (mpvInitialized) {
+              nativeEngine.stop()
               loadPlaylistItem(playlistIndex.coerceAtLeast(0))
             }
           }
@@ -683,15 +695,21 @@ class PlayerActivity :
       }
     }
     viewModel.setNativeSubtitleToggleListener { id ->
-      if (id <= 0) {
+      if (id == 0) {
         nativeEngine.disableSubtitles()
       } else {
-        nativeEngine.snapshot.value.subtitleTracks.getOrNull(id - 1)?.let(nativeEngine::selectTrack)
+        nativeEngine.snapshot.value.subtitleTracks.getOrNull((-id) - 1)?.let { track ->
+          if (track.selected) nativeEngine.disableSubtitles() else nativeEngine.selectTrack(track)
+        }
       }
+    }
+    viewModel.setNativeAudioTrackListener { id ->
+      nativeEngine.snapshot.value.audioTracks.getOrNull((-id) - 1)?.let(nativeEngine::selectTrack)
     }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         nativeEngine.snapshot.collect { snapshot ->
+          viewModel.setNativeAudioTracks(snapshot.audioTracks)
           viewModel.setNativeSubtitleTracks(snapshot.subtitleTracks)
         }
       }

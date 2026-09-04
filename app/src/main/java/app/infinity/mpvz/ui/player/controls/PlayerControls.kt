@@ -218,7 +218,7 @@ fun PlayerControls(
   val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
   val areControlsLocked by viewModel.areControlsLocked.collectAsState()
   val seekBarShown by viewModel.seekBarShown.collectAsState()
-  val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+  val mpvPaused by PlaybackSession.propBoolean["pause"].collectAsState()
   val playbackSessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val duration by PlaybackSession.propInt["duration"].collectAsState()
   val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
@@ -342,6 +342,7 @@ fun PlayerControls(
   val activity = LocalActivity.current as? PlayerActivity
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
+  val paused = if (playbackEngine == PlaybackEngineMode.NATIVE) !nativeSnapshot.isPlaying else mpvPaused
   val currentPlaybackItem = playbackQueue.currentItem
   val useAudioPlayer =
     when (currentPlaybackItem?.declaredMediaKind()) {
@@ -585,7 +586,7 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    if (statisticsPage == 6) {
+    if (statisticsPage in 1..6) {
       val statsModifier =
         Modifier
           .align(Alignment.TopStart)
@@ -595,7 +596,7 @@ fun PlayerControls(
             ),
           ).padding(top = 16.dp, start = 14.dp)
       if (activity?.isNativeEngineActive() == true) {
-        NativeStatsPageOverlay(snapshot = nativeSnapshot, modifier = statsModifier)
+        NativeStatsPageOverlay(snapshot = nativeSnapshot, page = statisticsPage, modifier = statsModifier)
       } else {
         CustomStatsPageSixOverlay(viewModel = viewModel, modifier = statsModifier)
       }
@@ -2051,6 +2052,7 @@ private fun readProcessMemorySnapshot(): ProcessMemorySnapshot {
 @Composable
 private fun NativeStatsPageOverlay(
   snapshot: NativePlaybackSnapshot,
+  page: Int,
   modifier: Modifier = Modifier,
 ) {
   val quality = if (snapshot.videoWidth > 0 && snapshot.videoHeight > 0) {
@@ -2065,7 +2067,7 @@ private fun NativeStatsPageOverlay(
     shape = MaterialTheme.shapes.medium,
   ) {
     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-      Text("Native statistics", style = MaterialTheme.typography.titleSmall, color = Color.White)
+      Text("Native statistics · Page $page", style = MaterialTheme.typography.titleSmall, color = Color.White)
       Text("Engine: Native", style = MaterialTheme.typography.bodySmall, color = Color.White)
       Text("Video: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
       Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)

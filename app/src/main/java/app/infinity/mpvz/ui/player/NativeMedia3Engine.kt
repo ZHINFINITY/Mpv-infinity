@@ -26,6 +26,7 @@ data class NativePlaybackSnapshot(
   val audioCodec: String? = null,
   val audioChannels: Int = 0,
   val audioSampleRate: Int = 0,
+  val audioTracks: List<NativeTrack> = emptyList(),
   val subtitleTracks: List<NativeTrack> = emptyList(),
 )
 
@@ -91,12 +92,13 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun selectTrack(track: NativeTrack) {
+    val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
       .setOverrideForType(
         TrackSelectionOverride(
-          player.currentTracks.groups[track.groupIndex].mediaTrackGroup,
+          group.mediaTrackGroup,
           track.trackIndex,
         ),
       )
@@ -148,6 +150,20 @@ class NativeMedia3Engine(context: Context) {
 
   private fun publishSnapshot() {
     val groups = player.currentTracks.groups
+    val audios = groups.mapIndexedNotNull { groupIndex, group ->
+      if (group.type != C.TRACK_TYPE_AUDIO) return@mapIndexedNotNull null
+      (0 until group.length).map { trackIndex ->
+        val format = group.getTrackFormat(trackIndex)
+        NativeTrack(
+          groupIndex = groupIndex,
+          trackIndex = trackIndex,
+          type = group.type,
+          label = format.label ?: format.language ?: "Audio ${trackIndex + 1}",
+          language = format.language,
+          selected = group.isTrackSelected(trackIndex),
+        )
+      }
+    }.flatten()
     val subtitles = groups.mapIndexedNotNull { groupIndex, group ->
       if (group.type != C.TRACK_TYPE_TEXT) return@mapIndexedNotNull null
       (0 until group.length).map { trackIndex ->
@@ -179,6 +195,7 @@ class NativeMedia3Engine(context: Context) {
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
       audioChannels = audio?.channelCount ?: 0,
       audioSampleRate = audio?.sampleRate ?: 0,
+      audioTracks = audios,
       subtitleTracks = subtitles,
     )
   }
