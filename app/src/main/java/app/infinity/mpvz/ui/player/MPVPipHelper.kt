@@ -73,9 +73,14 @@ class MPVPipHelper(
   private val playerPreferences: PlayerPreferences by inject()
   private var pipReceiver: BroadcastReceiver? = null
 
+  /** Re-arm the action receiver before an explicit entry request. */
+  fun prepareForEntry() {
+    if (pipReceiver == null) registerPipReceiver()
+  }
+
   fun onPictureInPictureModeChanged(isInPipMode: Boolean) {
     if (isInPipMode) {
-      registerPipReceiver()
+      prepareForEntry()
     } else {
       unregisterPipReceiver()
     }
@@ -234,6 +239,7 @@ class MPVPipHelper(
       Log.d("MPVPipHelper", "PiP mode is disabled: audio=${isAudioPlayer()}, videoLoaded=${isVideoLoaded()}")
       return false
     }
+    prepareForEntry()
     return runCatching {
       activity.enterPictureInPictureMode(buildPipParams())
     }.onFailure {

@@ -81,6 +81,13 @@ class NativeMedia3Engine(context: Context) {
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
+  private val timelineRunnable = object : Runnable {
+    override fun run() {
+      if (player.currentMediaItem == null) return
+      publishSnapshot()
+      loopHandler.postDelayed(this, 250L)
+    }
+  }
   private val loopRunnable = object : Runnable {
     override fun run() {
       val a = loopASeconds
@@ -121,6 +128,7 @@ class NativeMedia3Engine(context: Context) {
     view.useController = false
     view.player = player
     configureSubtitleView()
+    startTimelineUpdates()
   }
 
   fun setVideoAspect(aspect: VideoAspect) {
@@ -228,21 +236,25 @@ class NativeMedia3Engine(context: Context) {
     player.prepare()
     player.playWhenReady = autoplay
     publishSnapshot()
+    startTimelineUpdates()
   }
 
   fun setPlaying(playing: Boolean) {
     if (playing) player.play() else player.pause()
     publishSnapshot()
+    startTimelineUpdates()
   }
 
   fun seekTo(positionMs: Long) {
     player.seekTo(positionMs.coerceAtLeast(0L))
     publishSnapshot()
+    startTimelineUpdates()
   }
 
   fun seekBy(offsetMs: Long) {
     player.seekTo((player.currentPosition + offsetMs).coerceAtLeast(0L))
     publishSnapshot()
+    startTimelineUpdates()
   }
 
   fun setLoopA(positionSeconds: Double?) {
@@ -316,6 +328,7 @@ class NativeMedia3Engine(context: Context) {
 
   fun stop() {
     clearLoop()
+    loopHandler.removeCallbacks(timelineRunnable)
     player.stop()
     player.clearMediaItems()
     publishSnapshot()
@@ -323,6 +336,7 @@ class NativeMedia3Engine(context: Context) {
 
   fun release() {
     clearLoop()
+    loopHandler.removeCallbacks(timelineRunnable)
     player.removeListener(listener)
     attachedView?.player = null
     attachedView = null
@@ -386,5 +400,10 @@ class NativeMedia3Engine(context: Context) {
       audioTracks = audioTracks,
       chapters = chapters,
     )
+  }
+
+  private fun startTimelineUpdates() {
+    loopHandler.removeCallbacks(timelineRunnable)
+    if (player.currentMediaItem != null) loopHandler.post(timelineRunnable)
   }
 }

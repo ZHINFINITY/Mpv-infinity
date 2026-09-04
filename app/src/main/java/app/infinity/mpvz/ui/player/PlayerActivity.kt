@@ -801,7 +801,12 @@ class PlayerActivity :
               nativeEngine.play(Uri.parse(currentUri), outgoingPositionMs, outgoingPlaying)
             } else if (mpvInitialized) {
               nativeEngine.stop()
-              loadPlaylistItem(playlistIndex.coerceAtLeast(0))
+              // This is a renderer handoff, not a user-selected queue change. Avoid the normal
+              // loader's outgoing-item stop/report path, which can race the new MPV load.
+              loadPlaylistItemInternal(
+                index = playlistIndex.coerceAtLeast(0),
+                saveCurrentPlaybackState = false,
+              )
               engineHandoffJob = lifecycleScope.launch {
                 // MPV loads asynchronously. PiP transitions can delay the load completion, so
                 // apply the captured handoff state more than once instead of losing the first
@@ -6148,6 +6153,7 @@ class PlayerActivity :
     binding.root.scaleY = 1f
     binding.root.translationX = 0f
     binding.controls.alpha = 0f
+    pipHelper.prepareForEntry()
     pipHelper.updatePictureInPictureParams()
     val entered = pipHelper.enterPipMode()
     if (!entered && !isInPictureInPictureMode) binding.controls.alpha = 1f
