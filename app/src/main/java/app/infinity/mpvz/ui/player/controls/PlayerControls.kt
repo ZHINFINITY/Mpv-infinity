@@ -127,6 +127,7 @@ import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
+import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.allPlayerButtons
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.preferences.preference.deleteAndGet
@@ -156,6 +157,7 @@ import app.infinity.mpvz.ui.player.controls.components.SeekPlayerUpdate
 import app.infinity.mpvz.ui.player.controls.components.SeekbarWithTimers
 import app.infinity.mpvz.ui.player.controls.components.SlideToUnlock
 import app.infinity.mpvz.ui.player.controls.components.TextPlayerUpdate
+import app.infinity.mpvz.ui.player.controls.components.TranslatedSubtitleText
 import app.infinity.mpvz.ui.player.controls.components.VolumeSlider
 import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
@@ -209,6 +211,18 @@ fun PlayerControls(
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
   val audioPreferences = koinInject<AudioPreferences>()
+  val subtitlesPreferences = koinInject<SubtitlesPreferences>()
+  val subtitlePosition by subtitlesPreferences.subPos.collectAsState()
+  val subtitleFontSize by subtitlesPreferences.fontSize.collectAsState()
+  val subtitleScale by subtitlesPreferences.subScale.collectAsState()
+  val subtitleTextColor by subtitlesPreferences.textColor.collectAsState()
+  val subtitleBackgroundColor by subtitlesPreferences.backgroundColor.collectAsState()
+  val subtitleBorderColor by subtitlesPreferences.borderColor.collectAsState()
+  val subtitleBorderSize by subtitlesPreferences.borderSize.collectAsState()
+  val subtitleShadowOffset by subtitlesPreferences.shadowOffset.collectAsState()
+  val subtitleBold by subtitlesPreferences.bold.collectAsState()
+  val subtitleItalic by subtitlesPreferences.italic.collectAsState()
+  val subtitleJustification by subtitlesPreferences.justification.collectAsState()
   val decoderPreferences = koinInject<DecoderPreferences>()
   val playbackEngine by decoderPreferences.playbackEngine.collectAsState()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
@@ -237,6 +251,7 @@ fun PlayerControls(
   val torrentState by viewModel.torrentState.collectAsState()
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
+  val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
 
   val isTorrentConnecting = torrentState is TorrentStreamingState.Connecting
   val isTorrentStreaming = torrentState is TorrentStreamingState.Streaming
@@ -638,6 +653,7 @@ fun PlayerControls(
           val (bottomRightControls, bottomLeftControls) = createRefs()
           val playerPauseButton = createRef()
           val bufferingIndicator = createRef()
+          val translatedSubtitle = createRef()
           val skipSegmentChip = createRef()
           val seekbar = createRef()
           val (playerUpdates) = createRefs()
@@ -826,6 +842,44 @@ fun PlayerControls(
             }
             delay(2000)
             viewModel.playerUpdate.update { PlayerUpdates.None }
+          }
+
+          AnimatedVisibility(
+            visible = embeddedTranslatedSubtitle != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.constrainAs(translatedSubtitle) {
+              linkTo(parent.start, parent.end)
+              val configuredOffset =
+                (((100 - subtitlePosition) * (if (isPortrait) 1.55f else 2.1f))
+                  .coerceIn(-250f, 250f)).dp
+              bottom.linkTo(parent.bottom, configuredOffset)
+            },
+          ) {
+            embeddedTranslatedSubtitle?.takeIf { it.isNotBlank() }?.let { translated ->
+              val translatedFontSize = with(density) {
+                val osdHeightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
+                val fontSizePx = subtitleFontSize * (osdHeightPx / 720f) * subtitleScale
+                (fontSizePx / density.density).coerceIn(8f, 120f).sp
+              }
+              TranslatedSubtitleText(
+                text = translated,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                fontSize = translatedFontSize,
+                textColor = Color(subtitleTextColor),
+                backgroundColor = Color(subtitleBackgroundColor),
+                outlineColor = Color(subtitleBorderColor),
+                outlineWidth = subtitleBorderSize.toFloat(),
+                shadowOffset = subtitleShadowOffset.toFloat(),
+                bold = subtitleBold,
+                italic = subtitleItalic,
+                textAlign = when (subtitleJustification.name.lowercase()) {
+                  "left" -> androidx.compose.ui.text.style.TextAlign.Start
+                  "right" -> androidx.compose.ui.text.style.TextAlign.End
+                  else -> androidx.compose.ui.text.style.TextAlign.Center
+                },
+              )
+            }
           }
 
           AnimatedVisibility(
