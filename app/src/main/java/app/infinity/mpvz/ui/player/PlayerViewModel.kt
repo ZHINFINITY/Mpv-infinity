@@ -4487,6 +4487,11 @@ class PlayerViewModel : ViewModel(),
   fun changeSubtitlePositionTo(position: Int) {
     val newPosition = clampSubtitlePosition(position)
     subtitlesPreferences.subPos.set(newPosition)
+    if (host.isNativeEngineActive()) {
+      host.nativeSetSubtitlePosition(newPosition)
+      playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
+      return
+    }
     syncSubtitleLayout(newPosition)
     playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
   }
@@ -5081,6 +5086,11 @@ class PlayerViewModel : ViewModel(),
   // ==================== Video Zoom ====================
 
   fun setVideoZoom(zoom: Float) {
+    if (host.isNativeEngineActive()) {
+      _videoZoom.value = zoom
+      host.nativeSetZoom(zoom)
+      return
+    }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ZOOM)) {
       _videoZoom.value = 0f
       return
@@ -5100,6 +5110,12 @@ class PlayerViewModel : ViewModel(),
     x: Float,
     y: Float,
   ) {
+    if (host.isNativeEngineActive()) {
+      _videoPanX.value = x
+      _videoPanY.value = y
+      host.nativeSetPan(x, y)
+      return
+    }
     _videoPanX.value = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-x")) 0f else x
     _videoPanY.value = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-y")) 0f else y
   }
@@ -6537,3 +6553,11 @@ private fun String.md5(): String {
   val digest = MessageDigest.getInstance("MD5").digest(toByteArray())
   return digest.joinToString("") { byte -> "%02x".format(byte) }
 }
+  fun setSubtitleScale(scale: Float) {
+    val clamped = scale.coerceIn(0.1f, 5f)
+    if (host.isNativeEngineActive()) host.nativeSetSubtitleScale(clamped)
+    else PlaybackSession.setPropertyFloat("sub-scale", clamped)
+    playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
+  }
+
+  private fun syncSubtitleLayout(primaryPosition: Int = subtitlesPreferences.subPos.get()) {
