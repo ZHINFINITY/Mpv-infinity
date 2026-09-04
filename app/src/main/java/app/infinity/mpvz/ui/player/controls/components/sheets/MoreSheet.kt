@@ -269,6 +269,10 @@ fun MoreSheet(
               )
             },
             onClick = {
+              if (activeEngine == PlaybackEngineMode.NATIVE) {
+                advancedPreferences.enabledStatisticsPage.set(page.takeIf { it in 1..6 } ?: 0)
+                return@FilterChip
+              }
               val isConsoleOpen = PlaybackSession.getPropertyBoolean("user-data/mpv/console/open") == true
 
               // If we are choosing any page OTHER than Console, close the console if it's currently open

@@ -98,6 +98,9 @@ object AboutScreen : Screen {
         ?: BuildConfig.VERSION_NAME
     val buildType = BuildConfig.BUILD_TYPE
     val githubRepoUrl = stringResource(R.string.github_repo_url)
+    val koFiUrl = "https://ko-fi.com/ZHINFINITY"
+    val paypalUrl = "https://paypal.me/InfinityxEternity"
+    val upiId = "zhjjk001-1@oksbi"
     val settingsScrollState = rememberScrollState()
     val settingsHighlight =
       rememberSettingsSearchHighlight(AboutScreen, settingsScrollState, MaterialTheme.colorScheme.primary)
@@ -385,7 +388,7 @@ object AboutScreen : Screen {
                       SafeClipboard.copyPlainText(
                         context = context,
                         label = "Mpv∞_support_link",
-                        text = "https://github.com/ZHINFINITY/Mpv-infinity",
+                        text = "$koFiUrl\n$paypalUrl\n$upiId",
                         showToast = false,
                       )
                       Toast
@@ -410,7 +413,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_zhinfinity_github,
+                        app.infinity.mpvz.R.string.pref_about_donate_kofi_url,
                       ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
@@ -435,7 +438,7 @@ object AboutScreen : Screen {
                   val supportIntent =
                     Intent(
                       Intent.ACTION_VIEW,
-                      "https://github.com/ZHINFINITY/Mpv-infinity".toUri(),
+                      koFiUrl.toUri(),
                     )
                   context.startActivity(supportIntent)
                 } catch (_: Exception) {
@@ -460,7 +463,7 @@ object AboutScreen : Screen {
               Spacer(Modifier.width(8.dp))
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_visit_github),
+                  .stringResource(app.infinity.mpvz.R.string.pref_about_donate_kofi),
                 fontWeight = FontWeight.SemiBold,
               )
             }
@@ -468,6 +471,22 @@ object AboutScreen : Screen {
         }
 
         Spacer(Modifier.height(8.dp))
+        PreferenceSectionHeader(title = stringResource(R.string.pref_section_updates))
+        PreferenceCard {
+          Button(
+            onClick = {
+              context.startActivity(
+                Intent(Intent.ACTION_VIEW, "https://github.com/ZHINFINITY/Mpv-infinity/releases".toUri()),
+              )
+            },
+            modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp),
+            shape = RoundedCornerShape(12.dp),
+          ) {
+            Icon(Icons.RoundedFilled.Update, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.ui_check_for_updates_now), fontWeight = FontWeight.SemiBold)
+          }
+        }
 
         // System Stats Section
         PreferenceSectionHeader(title = stringResource(R.string.pref_section_system))

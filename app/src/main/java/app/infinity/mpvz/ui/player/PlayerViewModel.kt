@@ -600,7 +600,9 @@ class PlayerViewModel : ViewModel(),
 
   // These MPV-backed state flows must be initialized before any init block collects them.
   private val nativeSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
+  private val nativeAudioTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private var nativeSubtitleToggleListener: ((Int) -> Unit)? = null
+  private var nativeAudioTrackListener: ((Int) -> Unit)? = null
 
   fun setNativeSubtitleTracks(tracks: List<NativeTrack>) {
     nativeSubtitleTracks.value = tracks.mapIndexed { index, track ->
@@ -619,6 +621,19 @@ class PlayerViewModel : ViewModel(),
     nativeSubtitleToggleListener = listener
   }
 
+  fun setNativeAudioTracks(tracks: List<NativeTrack>) {
+    nativeAudioTracks.value = tracks.mapIndexed { index, track ->
+      TrackNode(
+        id = -(index + 1), type = "audio", title = track.label, lang = track.language,
+        selected = track.selected, external = false,
+      )
+    }
+  }
+
+  fun setNativeAudioTrackListener(listener: ((Int) -> Unit)?) {
+    nativeAudioTrackListener = listener
+  }
+
   private val allTracks: StateFlow<List<TrackNode>> =
     PlaybackSession.propNode["track-list"]
       .map { node -> parseTracks(node).toImmutableList() }
@@ -630,8 +645,9 @@ class PlayerViewModel : ViewModel(),
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val audioTracks: StateFlow<List<TrackNode>> =
-    allTracks
-      .map { tracks -> tracks.filter { it.isAudio }.toImmutableList() }
+    combine(allTracks, nativeAudioTracks, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, engine ->
+      if (engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isAudio }
+    }
       .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val videoQualityTracks: StateFlow<List<TrackNode>> =
@@ -703,6 +719,10 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun selectAudioTrack(track: TrackNode) {
+    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+      nativeAudioTrackListener?.invoke(track.id)
+      return
+    }
     if (getTrackSelectionId("aid") == track.id) {
       setTrackSelectionId("aid", null)
       return
