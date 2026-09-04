@@ -290,9 +290,6 @@ fun PlayerControls(
   val decoder = remember(activeDecoder, configuredDecoder) {
     getDecoderFromValue(activeDecoder?.takeIf { it.isNotBlank() } ?: configuredDecoder ?: "auto")
   }
-  val isSpeedNonOne = remember(playbackSpeed) {
-    abs((playbackSpeed ?: 1f) - 1f) > 0.001f
-  }
   val playerTimeToDisappear by playerPreferences.playerTimeToDisappear.collectAsState()
   val chapters by viewModel.chapters.collectAsState(persistentListOf())
   val skipSegments by viewModel.skipSegments.collectAsState(persistentListOf())
@@ -343,8 +340,11 @@ fun PlayerControls(
   val activity = LocalActivity.current as? PlayerActivity
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
-  val paused = if (playbackEngine == PlaybackEngineMode.NATIVE) !nativeSnapshot.isPlaying else mpvPaused
+  val paused = if (playbackEngine == PlaybackEngineMode.NATIVE) !nativeSnapshot.isPlaying else (mpvPaused ?: false)
   val playbackSpeed = if (playbackEngine == PlaybackEngineMode.NATIVE) nativeSnapshot.speed else mpvPlaybackSpeed
+  val isSpeedNonOne = remember(playbackSpeed) {
+    abs((playbackSpeed ?: 1f) - 1f) > 0.001f
+  }
   val currentPlaybackItem = playbackQueue.currentItem
   val useAudioPlayer =
     when (currentPlaybackItem?.declaredMediaKind()) {
