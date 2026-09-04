@@ -209,6 +209,7 @@ fun PlayerControls(
   val forceDarkButtonBackground by appearancePreferences.forceDarkPlayerButtonsBackground.collectAsState()
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val portraitPlaybackControlsPosition by
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
@@ -1707,19 +1708,22 @@ fun PlayerControls(
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
 
             Box(
-              modifier = if (showSeekbarOuterContainer) {
+              contentAlignment = Alignment.Center,
+              modifier = if (showSeekbarOuterContainer || liquidGlassSurfaces) {
                 Modifier
-                  .padding(horizontal = 8.dp)
+                  .padding(horizontal = if (isPortrait) 8.dp else 6.dp)
                   .fillMaxWidth()
-                  .clip(RoundedCornerShape(12.dp))
+                  .then(if (isPortrait) Modifier.height(92.dp) else Modifier)
+                  .clip(RoundedCornerShape(26.dp))
                   .background(
-                    when (playerControlsTheme.name) {
-                      "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
-                      "Glossy" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    when {
+                      liquidGlassSurfaces -> MaterialTheme.colorScheme.surface.copy(alpha = 0.32f)
+                      playerControlsTheme.name == "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                      playerControlsTheme.name == "Glossy" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
                       else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
                     },
                   )
-                  .padding(horizontal = 6.dp, vertical = 2.dp)
+                  .padding(horizontal = 6.dp)
               } else {
                 Modifier.fillMaxWidth()
               },

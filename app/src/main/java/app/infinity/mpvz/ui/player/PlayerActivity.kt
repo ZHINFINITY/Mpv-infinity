@@ -1921,7 +1921,7 @@ class PlayerActivity :
   }
 
   override fun onPause() {
-    if (!mpvInitialized || !ownsPlaybackSession()) {
+    if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession()) {
       super.onPause()
       return
     }
@@ -5836,7 +5836,9 @@ class PlayerActivity :
         positionRestoreOverride.positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
       } else if (restoreSavedPosition && !item.isDefinitelyAudioOnly()) {
         (resolvePlaybackState(item.stableId, legacyMediaIdentifier)
-          ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier))
+          ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier)
+          ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(item.playableUri))
+          ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(item.playableUri)))
           ?.lastPosition
           ?.takeIf { it > 0 }
           ?.toDouble()
