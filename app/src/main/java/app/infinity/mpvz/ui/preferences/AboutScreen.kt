@@ -481,25 +481,23 @@ object AboutScreen : Screen {
               )
             }
             Spacer(Modifier.height(10.dp))
-            Text(
-              text = "UPI: zhjjk001-1@oksbi",
-              style = MaterialTheme.typography.bodyMedium,
-              color = cs.onSurfaceVariant,
-              modifier = Modifier.clickable {
-                SafeClipboard.copyPlainText(context, "Mpv∞_upi", "zhjjk001-1@oksbi", showToast = true)
+            Surface(
+              shape = RoundedCornerShape(12.dp),
+              color = cs.primaryContainer.copy(alpha = 0.4f),
+              modifier = Modifier.fillMaxWidth().clickable {
+                SafeClipboard.copyPlainText(
+                  context, "Mpv∞_payment_details",
+                  "UPI: zhjjk001-1@oksbi\nPayPal: https://paypal.me/InfinityxEternity",
+                  showToast = true,
+                )
               },
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-              text = "PayPal: paypal.me/InfinityxEternity",
-              style = MaterialTheme.typography.bodyMedium,
-              color = cs.onSurfaceVariant,
-              modifier = Modifier.clickable {
-                runCatching {
-                  context.startActivity(Intent(Intent.ACTION_VIEW, "https://paypal.me/InfinityxEternity".toUri()))
-                }
-              },
-            )
+            ) {
+              Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text("UPI: zhjjk001-1@oksbi", style = MaterialTheme.typography.bodyMedium, color = cs.onSurface)
+                Spacer(Modifier.height(6.dp))
+                Text("PayPal: https://paypal.me/InfinityxEternity", style = MaterialTheme.typography.bodyMedium, color = cs.onSurface)
+              }
+            }
           }
         }
 

@@ -83,4 +83,6 @@ interface PlayerHost {
   fun nativeSeekTo(positionMs: Long) {}
 
   fun nativeSetSpeed(speed: Float) {}
+
+  fun nativeSetVideoAspect(aspect: VideoAspect) {}
 }
