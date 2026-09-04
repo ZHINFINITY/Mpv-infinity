@@ -305,6 +305,9 @@ class PlayerActivity :
   override fun isNativeEngineActive(): Boolean =
     decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE
 
+  override fun isNativePlaying(): Boolean =
+    isNativeEngineActive() && nativeEngine.currentPlayer.isPlaying
+
   override fun nativePauseUnpause() {
     nativeEngine.setPlaying(!nativeEngine.currentPlayer.isPlaying)
   }
@@ -675,6 +678,13 @@ class PlayerActivity :
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
     nativeEngine.attach(binding.media3Player)
+    nativeEngine.setSubtitleStyle(
+      textColor = subtitlesPreferences.textColor.get(),
+      backgroundColor = subtitlesPreferences.backgroundColor.get(),
+      borderColor = subtitlesPreferences.borderColor.get(),
+      borderSize = subtitlesPreferences.borderSize.get(),
+      fontSize = subtitlesPreferences.fontSize.get(),
+    )
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         decoderPreferences.playbackEngine.changes().collect { engine ->
@@ -5691,6 +5701,15 @@ class PlayerActivity :
         viewModel.onVideoLoadCompleted()
       }
       return
+    }
+    // Media3 cannot resolve yt-dlp-backed web URLs. Use MPV deliberately for these sources and
+    // switch surfaces before loading so a previous Native frame cannot leave a black player.
+    withContext(Dispatchers.Main) {
+      if (requiresYtdlp || decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE) {
+        nativeEngine.stop()
+        binding.media3Player.visibility = View.GONE
+        binding.player.visibility = View.VISIBLE
+      }
     }
     if (!PlaybackSession.awaitStopCompletion()) {
       throw IllegalStateException("Timed out waiting for previous playback to stop")

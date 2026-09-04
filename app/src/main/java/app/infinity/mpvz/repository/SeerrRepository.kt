@@ -203,14 +203,13 @@ class SeerrRepository(
       }
     }.toString()
 
-    val req = buildRequest(
-      path = endpoint,
-      method = "POST",
-      bodyJson = payload,
-      baseUrlOverride = cleanUrl,
-    )
-
     try {
+      val req = buildRequest(
+        path = endpoint,
+        method = "POST",
+        bodyJson = payload,
+        baseUrlOverride = cleanUrl,
+      )
       httpClient.newCall(req).awaitResponse().use { resp ->
         val bodyStr = resp.body.string()
         if (resp.isSuccessful) {

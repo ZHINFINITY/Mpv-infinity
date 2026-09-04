@@ -4503,6 +4503,14 @@ class PlayerViewModel : ViewModel(),
     playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
   }
 
+  fun setPlaybackSpeed(speed: Float) {
+    val clamped = speed.coerceIn(0.25f, 4f)
+    if (host.isNativeEngineActive()) host.nativeSetSpeed(clamped)
+    else PlaybackSession.setPropertyFloat("speed", clamped)
+  }
+
+  fun isNativePlaying(): Boolean = host.isNativePlaying()
+
   private fun syncSubtitleLayout(primaryPosition: Int = subtitlesPreferences.subPos.get()) {
     applySubtitleLayout(primaryPosition, subtitlesPreferences.overrideAssSubs.get())
   }

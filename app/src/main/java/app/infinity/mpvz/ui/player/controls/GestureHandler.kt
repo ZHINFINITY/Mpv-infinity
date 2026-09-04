@@ -577,7 +577,7 @@ fun GestureHandler(
                         )
                       }
                     } else if (
-                      paused == false &&
+                      (paused == false || viewModel.isNativePlaying()) &&
                       multipleSpeedGesture > 0f &&
                       claimGesture(GestureOwner.SPEED)
                     ) {
@@ -595,7 +595,7 @@ fun GestureHandler(
                       for (i in 1..steps) {
                         val t = i.toFloat() / steps
                         val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
-                        PlaybackSession.setPropertyFloat("speed", intermediateSpeed)
+                        viewModel.setPlaybackSpeed(intermediateSpeed)
                         if (i < steps) delay(stepDelay)
                       }
 
@@ -764,7 +764,7 @@ fun GestureHandler(
                             isSpeedLocked = false
                             isDynamicSpeedControlActive = false
                             originalSpeed = 1f
-                            PlaybackSession.setPropertyFloat("speed", originalSpeed)
+                              viewModel.setPlaybackSpeed(originalSpeed)
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.playerUpdate.update {
                               PlayerUpdates.ShowText(context.getString(R.string.player_speed_gesture_restored))
@@ -796,7 +796,7 @@ fun GestureHandler(
                             if (abs(lastAppliedSpeed - newSpeed) > 0.01f) {
                               haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                               lastAppliedSpeed = newSpeed
-                              PlaybackSession.setPropertyFloat("speed", newSpeed)
+                            viewModel.setPlaybackSpeed(newSpeed)
                               viewModel.playerUpdate.update { PlayerUpdates.DynamicSpeedControl(newSpeed) }
                             }
                           }
@@ -966,7 +966,7 @@ fun GestureHandler(
                   for (i in 1..steps) {
                     val t = i.toFloat() / steps
                     val intermediateSpeed = currentSpeed + (targetSpeed - currentSpeed) * t
-                    PlaybackSession.setPropertyFloat("speed", intermediateSpeed)
+                    viewModel.setPlaybackSpeed(intermediateSpeed)
                     if (i < steps) delay(stepDelay)
                   }
                 }

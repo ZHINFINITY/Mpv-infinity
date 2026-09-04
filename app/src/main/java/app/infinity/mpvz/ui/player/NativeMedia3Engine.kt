@@ -8,6 +8,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -91,6 +92,28 @@ class NativeMedia3Engine(context: Context) {
 
   fun setSubtitlePosition(position: Int) {
     attachedView?.subtitleView?.setBottomPaddingFraction(((100 - position.coerceIn(0, 100)) / 100f).coerceIn(0f, 1f))
+  }
+
+  fun setSubtitleStyle(
+    textColor: Int,
+    backgroundColor: Int,
+    borderColor: Int,
+    borderSize: Int,
+    fontSize: Int,
+  ) {
+    attachedView?.subtitleView?.apply {
+      setStyle(
+        CaptionStyleCompat(
+          textColor,
+          backgroundColor,
+          android.graphics.Color.TRANSPARENT,
+          CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+          borderColor,
+          null,
+        ),
+      )
+      setFractionalTextSize((fontSize.coerceIn(8, 160) / 1000f).coerceIn(0.01f, 0.16f))
+    }
   }
 
   fun play(uri: Uri, startPositionMs: Long = 0L, autoplay: Boolean = true) {
