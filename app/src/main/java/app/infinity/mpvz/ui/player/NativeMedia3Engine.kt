@@ -333,7 +333,9 @@ class NativeMedia3Engine(context: Context) {
     val groups = player.currentTracks.groups
     val chapters = groups.flatMap { group ->
       (0 until group.length).flatMap { index ->
-        group.getTrackFormat(index).metadata?.entries.orEmpty().mapNotNull { entry ->
+        group.getTrackFormat(index).metadata?.let { metadata ->
+          (0 until metadata.length).map { metadata.get(it) }
+        }.orEmpty().mapNotNull { entry ->
           if (entry.javaClass.simpleName != "Chapter") return@mapNotNull null
           val startUs = runCatching {
             entry.javaClass.getMethod("getStartTimeUs").invoke(entry) as Number
