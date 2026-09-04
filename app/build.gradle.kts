@@ -285,6 +285,7 @@ dependencies {
   implementation(libs.androidx.media3.ui)
   implementation(libs.androidx.media3.effect)
   implementation(libs.androidx.media3.transformer)
+  implementation(libs.jellyfin.media3.ffmpeg.decoder)
   implementation(platform(libs.sora.editor.bom))
   implementation(libs.sora.editor)
   implementation(libs.sora.language.textmate)
