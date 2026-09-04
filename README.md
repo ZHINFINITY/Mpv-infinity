@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="fastlane\metadata\android\en-US\images\icon.png" width="250" height="250" />
+  <img src="fastlane/metadata/android/en-US/images/icon.png?v=5502d61" width="250" height="250" />
 </p>
 
 <h1 align="center">Mpv∞</h1>
