@@ -796,7 +796,7 @@ class PlayerActivity :
           binding.media3Player.visibility = if (useNative) View.VISIBLE else View.GONE
           binding.player.visibility = if (useNative) View.GONE else View.VISIBLE
           val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
-          if (currentUri != null && isReady) {
+          if (currentUri != null && (isReady || outgoingEngine == PlaybackEngineMode.NATIVE)) {
             if (useNative) {
               nativeEngine.play(Uri.parse(currentUri), outgoingPositionMs, outgoingPlaying)
             } else if (mpvInitialized) {
@@ -1456,7 +1456,7 @@ class PlayerActivity :
       activity = this,
       mpvView = player,
       isAudioPlayer = { viewModel.isAudioOnly.value || isCurrentMediaKnownAudio() },
-      isVideoLoaded = { isReady },
+      isVideoLoaded = { isReady || isNativeEngineActive() },
       isNativeEngine = { isNativeEngineActive() },
       isPlaying = { if (isNativeEngineActive()) nativeEngine.currentPlayer.isPlaying else PlaybackSession.getPropertyBoolean("pause") == false },
       onPlay = { if (isNativeEngineActive()) nativeEngine.setPlaying(true) else PlaybackSession.setPropertyBoolean("pause", false) },
