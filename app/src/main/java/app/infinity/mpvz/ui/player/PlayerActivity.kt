@@ -5831,7 +5831,8 @@ class PlayerActivity :
       if (positionRestoreOverride != null) {
         positionRestoreOverride.positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
       } else if (restoreSavedPosition && !item.isDefinitelyAudioOnly()) {
-        resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+        (resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+          ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier))
           ?.lastPosition
           ?.takeIf { it > 0 }
           ?.toDouble()
