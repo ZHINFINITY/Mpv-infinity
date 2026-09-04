@@ -12,11 +12,17 @@ import java.util.regex.Pattern
 
 object LyricsUtils {
 
-  private val LRC_LINE_REGEX = Pattern.compile("^\\[(\\d{1,2}):(\\d{2})[.:](\\d{2,3})](.*)$")
-  private val LRC_WORD_REGEX = Pattern.compile("<(\\d{1,2}):(\\d{2})[.:](\\d{2,3})>([^<]*)")
-  private val LRC_WORD_TAG_REGEX = Regex("<\\d{1,2}:\\d{2}[.:]\\d{2,3}>")
-  private val LRC_WORD_SPLIT_REGEX = Regex("(?=<\\d{1,2}:\\d{2}[.:]\\d{2,3}>)")
+  // The fractional component is optional in standard LRC. In particular, many embedded USLT
+  // tags contain whole-second timestamps such as `[00:54]`; treating those as plain text leaks
+  // the timestamp into the UI and disables the synced-line animations.
+  private val LRC_LINE_REGEX =
+    Pattern.compile("^\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?](.*)$")
+  private val LRC_WORD_REGEX =
+    Pattern.compile("<(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?>([^<]*)")
+  private val LRC_WORD_TAG_REGEX = Regex("<\\d{1,3}:\\d{2}(?:[.:]\\d{1,3})?>")
+  private val LRC_WORD_SPLIT_REGEX = Regex("(?=<\\d{1,3}:\\d{2}(?:[.:]\\d{1,3})?>)")
   private val LRC_METADATA_PATTERN = Pattern.compile("^\\[[a-zA-Z]+:.*]$")
+  private val LYRIC_WORD_REGEX = Regex("\\S+")
 
   fun parseLyrics(
     lyricsText: String?,
@@ -39,11 +45,10 @@ object LyricsUtils {
         isSynced = true
         val minutes = lineMatcher.group(1)?.toLong() ?: 0
         val seconds = lineMatcher.group(2)?.toLong() ?: 0
-        val fraction = lineMatcher.group(3)?.toLong() ?: 0
+        val fraction = fractionToMillis(lineMatcher.group(3))
         val rawText = lineMatcher.group(4)?.trim() ?: ""
 
-        val millis = if (lineMatcher.group(3)?.length == 2) fraction * 10 else fraction
-        val lineTimestamp = (minutes * 60 * 1000 + seconds * 1000 + millis).toInt()
+        val lineTimestamp = (minutes * 60 * 1000 + seconds * 1000 + fraction).toInt()
 
         val displayText = LRC_WORD_TAG_REGEX.replace(rawText, "").trim()
 
@@ -56,9 +61,8 @@ object LyricsUtils {
             if (wordMatcher.find()) {
               val wMin = wordMatcher.group(1)?.toLong() ?: 0
               val wSec = wordMatcher.group(2)?.toLong() ?: 0
-              val wFrac = wordMatcher.group(3)?.toLong() ?: 0
+              val wMillis = fractionToMillis(wordMatcher.group(3))
               val wText = (wordMatcher.group(4) ?: "").trim()
-              val wMillis = if (wordMatcher.group(3)?.length == 2) wFrac * 10 else wFrac
               val wTime = (wMin * 60 * 1000 + wSec * 1000 + wMillis).toInt()
 
               if (wText.isNotEmpty()) {
@@ -113,9 +117,19 @@ object LyricsUtils {
 
     return if (isSynced && syncedLines.isNotEmpty()) {
       val sorted = syncedLines.sortedBy { it.time }
-      val plainVersion = sorted.map { it.line }
+      val wordSynced =
+        sorted.mapIndexed { index, line ->
+          if (!line.words.isNullOrEmpty() || line.line.isBlank()) {
+            line
+          } else {
+            line.copy(
+              words = estimateWordTimings(line, sorted.getOrNull(index + 1)?.time),
+            )
+          }
+        }
+      val plainVersion = wordSynced.map { it.line }
       Lyrics(
-        synced = sorted,
+        synced = wordSynced,
         plain = plainVersion,
         areFromRemote = (sourceType == LyricsSourceType.ONLINE),
         sourceType = sourceType,
@@ -126,6 +140,43 @@ object LyricsUtils {
         synced = null,
         areFromRemote = (sourceType == LyricsSourceType.ONLINE),
         sourceType = sourceType,
+      )
+    }
+  }
+
+  /** Converts LRC tenths, centiseconds, or milliseconds to milliseconds. */
+  private fun fractionToMillis(fraction: String?): Long =
+    when (fraction?.length) {
+      null, 0 -> 0L
+      1 -> fraction.toLong() * 100L
+      2 -> fraction.toLong() * 10L
+      else -> fraction.toLong()
+    }
+
+  private fun estimateWordTimings(
+    line: SyncedLine,
+    nextLineTimeMs: Int?,
+  ): List<SyncedWord>? {
+    val words = LYRIC_WORD_REGEX.findAll(line.line).map { it.value }.toList()
+    if (words.isEmpty()) return null
+
+    val weights = words.map { word -> word.count(Char::isLetterOrDigit).coerceAtLeast(1) }
+    val totalWeight = weights.sum().coerceAtLeast(1)
+    val naturalDurationMs = (totalWeight * 90L).coerceIn(1_200L, 6_000L)
+    val availableDurationMs =
+      nextLineTimeMs
+        ?.takeIf { it > line.time }
+        ?.let { (it - line.time).toLong().coerceAtMost(8_000L) }
+        ?: naturalDurationMs
+
+    var elapsedWeight = 0
+    return words.mapIndexed { index, word ->
+      val wordTimeMs = line.time.toLong() + availableDurationMs * elapsedWeight / totalWeight
+      elapsedWeight += weights[index]
+      SyncedWord(
+        time = wordTimeMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        word = word,
+        startsNewWord = true,
       )
     }
   }

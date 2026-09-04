@@ -15,15 +15,28 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class MediaScanOptions(
   val includeNoMediaFolders: Boolean = false,
+  val hiddenFolderMarkerNames: Set<String> = setOf(".nomedia"),
   val includeAudio: Boolean = false,
   val minimumAudioDurationSeconds: Int = 0,
 ) {
+  val normalizedHiddenFolderMarkerNames: Set<String> =
+    hiddenFolderMarkerNames.mapNotNull(::normalizeHiddenMarkerName).toSet()
+
   val excludeNoMediaFolders: Boolean
     get() = !includeNoMediaFolders
 
   val cacheKey: String
-    get() =
-      "includeNoMedia=$includeNoMediaFolders|includeAudio=$includeAudio|minAudio=$minimumAudioDurationSeconds"
+    get() {
+      val markers = normalizedHiddenFolderMarkerNames.sorted().joinToString("") { "${it.length}:$it" }
+      return "hiddenScanV3=$includeNoMediaFolders|markers=$markers|" +
+        "includeAudio=$includeAudio|minAudio=$minimumAudioDurationSeconds"
+    }
+
+  val rootDiscoveryCacheKey: String
+    get() {
+      val markers = normalizedHiddenFolderMarkerNames.sorted().joinToString("") { "${it.length}:$it" }
+      return "hiddenRootDiscoveryV1|markers=$markers"
+    }
 
   fun includesAudioDuration(durationMs: Long): Boolean =
     minimumAudioDurationSeconds == 0 || durationMs >= minimumAudioDurationSeconds * 1000L
@@ -45,21 +58,22 @@ class NoMediaPathFilter(
       return false
     }
 
-    return hasNoMediaMarkerInPath(directory)
+    return hasHiddenMarkerInPath(directory)
   }
 
   fun shouldExcludeFile(file: File): Boolean = shouldExcludeDirectory(file.parentFile)
 
-  private fun hasNoMediaMarkerInPath(directory: File): Boolean {
+  private fun hasHiddenMarkerInPath(directory: File): Boolean {
     val path = runCatching { directory.absolutePath }.getOrElse { return false }
     exclusionCache[path]?.let { return it }
 
     val result =
       runCatching {
-        File(directory, ".nomedia").exists() ||
-          directory.parentFile?.let(::hasNoMediaMarkerInPath) == true
+        directory.name.startsWith(".") ||
+          options.normalizedHiddenFolderMarkerNames.any { File(directory, it).isFile } ||
+          directory.parentFile?.let(::hasHiddenMarkerInPath) == true
       }.getOrElse { error ->
-        Log.w(TAG, "Failed checking .nomedia ancestry for $path", error)
+        Log.w(TAG, "Failed checking hidden-folder ancestry for $path", error)
         false
       }
 
@@ -70,4 +84,10 @@ class NoMediaPathFilter(
   private companion object {
     const val TAG = "NoMediaPathFilter"
   }
+}
+
+internal fun normalizeHiddenMarkerName(value: String): String? {
+  val name = value.trim()
+  if (name.isEmpty() || name == "." || name == ".." || '/' in name || '\\' in name) return null
+  return if (name.startsWith('.')) name else ".$name"
 }

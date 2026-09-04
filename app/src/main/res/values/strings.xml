@@ -1996,6 +1996,7 @@
 
   <!-- Notifications -->
   <string name="notification_add_to_favorites">Add to favorites</string>
+  <string name="notification_saved_to_favorites">Saved to favorites</string>
   <string name="notification_close">Close</string>
 
   <!-- Onboarding -->

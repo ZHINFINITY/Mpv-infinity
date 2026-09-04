@@ -12,6 +12,8 @@ package app.infinity.mpvz.utils.media
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import app.infinity.mpvz.network.awaitResponse
+import app.infinity.mpvz.ui.player.resolveLocalPath
 import java.io.BufferedReader
 import java.io.File
 import java.io.FilterInputStream
@@ -27,16 +29,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.Credentials
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
-import kotlin.coroutines.resume
 
 data class M3UPlaylistItem(
   val url: String,
@@ -140,7 +137,7 @@ object M3UParser {
       }.getOrElse { return error("Invalid playlist request") }
 
     return try {
-      httpClient.newCall(request).await().use { response ->
+      httpClient.newCall(request).awaitResponse().use { response ->
         if (!response.isSuccessful) return error("HTTP error: ${response.code}")
         if (response.body.contentLength() > limits.maxBytes) return error(byteLimitMessage(limits))
         parseFromStream(
@@ -163,9 +160,9 @@ object M3UParser {
   ): M3UParseResult =
     withContext(Dispatchers.IO) {
       try {
-        // Do not call the player fd resolver here: its fallback detaches an fd for libmpv, while
-        // this parser opens its own stream and would otherwise leak the detached descriptor.
-        val sourceUrl = uri.toString()
+        // Identity-only resolution never detaches an fd, but recovers the parent directory for
+        // relative entries in primary-storage document URIs.
+        val sourceUrl = uri.resolveLocalPath(context) ?: uri.toString()
         val rawFilename =
           context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -247,6 +244,19 @@ object M3UParser {
   /** Removes `user:password@` from a source before it is logged, persisted, or used as an entry base. */
   fun sanitizeSourceUrl(sourceUrl: String): String = stripUriUserInfo(sourceUrl)
 
+  /** Converts file URIs and encoded absolute paths into one decoded filesystem representation. */
+  fun normalizeLocalMediaReference(reference: String): String {
+    val resource = reference.substringBefore('|')
+    val parsed = parseUriLeniently(resource) ?: return reference
+    val localPath =
+      when {
+        parsed.scheme == null && resource.startsWith('/') -> parsed.path
+        parsed.scheme.equals("file", ignoreCase = true) -> parsed.path
+        else -> null
+      }
+    return localPath?.takeIf(String::isNotBlank) ?: reference
+  }
+
   private fun parseReader(
     reader: BufferedReader,
     sourceUrl: String?,
@@ -267,6 +277,10 @@ object M3UParser {
 
       val line = normalizeLine(rawLine)
       if (line.isEmpty()) continue
+      val firstCharacter = line.first()
+      if (items.isEmpty() && (firstCharacter == '<' || firstCharacter == '{' || firstCharacter == '[')) {
+        return error("URL did not return an M3U playlist")
+      }
       foundContent = true
 
       when {
@@ -377,7 +391,10 @@ object M3UParser {
     if (resource.isEmpty()) return ""
     val parsedEntry = parseUriLeniently(resource)
 
-    if (parsedEntry?.isAbsolute == true) return stripUriUserInfo(resource) + optionSuffix
+    if (parsedEntry?.isAbsolute == true) {
+      return normalizeLocalMediaReference(stripUriUserInfo(resource) + optionSuffix)
+    }
+    if (File(resource).isAbsolute) return normalizeLocalMediaReference(resource + optionSuffix)
     val source = sourceUrl ?: return stripUriUserInfo(resource) + optionSuffix
     val parsedSource = parseUriLeniently(source)
 
@@ -394,11 +411,13 @@ object M3UParser {
     if (parsedSource != null && (parsedSource.isAbsolute || parsedSource.rawAuthority != null)) {
       val safeBase = stripUserInfo(parsedSource).withoutQueryOrFragment().resolve(".")
       val resolved = runCatching { safeBase.resolve(parsedEntry ?: URI(resource)).normalize() }.getOrNull()
-      if (resolved != null) return stripUserInfo(resolved).toString() + optionSuffix
+      if (resolved != null) {
+        return normalizeLocalMediaReference(stripUserInfo(resolved).toString() + optionSuffix)
+      }
     }
 
     val parent = File(source).parentFile ?: return stripUriUserInfo(resource) + optionSuffix
-    return File(parent, resource).normalize().path + optionSuffix
+    return normalizeLocalMediaReference(File(parent, resource).normalize().path + optionSuffix)
   }
 
   private fun stripUriUserInfo(value: String): String {
@@ -497,30 +516,6 @@ object M3UParser {
   private fun error(message: String): M3UParseResult.Error = M3UParseResult.Error(message)
 
   private fun byteLimitMessage(limits: M3ULimits): String = "Playlist exceeds ${limits.maxBytes} bytes"
-
-  private suspend fun Call.await(): Response =
-    suspendCancellableCoroutine { continuation ->
-      continuation.invokeOnCancellation { cancel() }
-      enqueue(
-        object : Callback {
-          override fun onFailure(
-            call: Call,
-            e: IOException,
-          ) {
-            if (continuation.isActive) continuation.resumeWith(Result.failure(e))
-          }
-
-          override fun onResponse(
-            call: Call,
-            response: Response,
-          ) {
-            // The resource-aware resume overload closes the response if cancellation wins either
-            // before dispatch or while the resumed coroutine is waiting to run.
-            continuation.resume(response) { _, rejectedResponse, _ -> rejectedResponse.close() }
-          }
-        },
-      )
-    }
 
   private class PendingEntry {
     var title: String? = null

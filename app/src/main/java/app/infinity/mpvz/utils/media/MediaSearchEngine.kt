@@ -47,12 +47,12 @@ object MediaSearchEngine {
     folderMap.clear()
 
     for (folder in folders) {
-      val name = folder.name
+      val searchableText = "${folder.name} ${folder.path}"
       folderMap[folder.path] =
         FolderIndex(
           folder = folder,
-          nameLower = name.lowercase(),
-          tokens = tokenize(name),
+          nameLower = searchableText.lowercase(),
+          tokens = tokenize(searchableText),
         )
 
       // Optimization: Skip folders with no videos to save memory and loop time
@@ -84,7 +84,7 @@ object MediaSearchEngine {
   ): List<Any> {
     if (query.isBlank()) return emptyList()
 
-    val q = query.lowercase()
+    val q = query.trim().lowercase()
     val qTokens = tokenize(q)
 
     // Optimization: Pre-allocate ArrayList capacity to avoid internal array resizing
@@ -103,6 +103,26 @@ object MediaSearchEngine {
     // Optimization: Filter out non-matches BEFORE sorting to drastically reduce sort time
     return results
       .filter { it.second > 0 }
+      .sortedByDescending { it.second }
+      .take(limit)
+      .map { it.first }
+  }
+
+  /** Searches a supplied video collection using the same fuzzy scoring as global search. */
+  fun searchVideos(
+    query: String,
+    videos: List<Video>,
+    limit: Int = 50,
+  ): List<Video> {
+    if (query.isBlank()) return emptyList()
+
+    val q = query.trim().lowercase()
+    val qTokens = tokenize(q)
+    return videos
+      .map { video ->
+        val name = video.displayName.lowercase()
+        video to score(name, tokenize(name), q, qTokens)
+      }.filter { it.second > 0 }
       .sortedByDescending { it.second }
       .take(limit)
       .map { it.first }
