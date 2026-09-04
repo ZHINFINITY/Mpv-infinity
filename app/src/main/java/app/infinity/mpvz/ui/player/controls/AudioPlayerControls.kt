@@ -46,6 +46,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -1589,9 +1590,13 @@ fun AudioPlayerControls(
               when {
                 liquidGlassSurfaces -> MaterialTheme.colorScheme.surface.copy(alpha = 0.32f)
                 playerControlsTheme.name == "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
-                playerControlsTheme.name == "Glossy" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                playerControlsTheme.name == "Glossy" -> Color.Black.copy(alpha = 0.34f)
                 else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
               },
+            )
+            .border(
+              BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+              RoundedCornerShape(26.dp),
             )
             .padding(horizontal = 6.dp)
         } else {
