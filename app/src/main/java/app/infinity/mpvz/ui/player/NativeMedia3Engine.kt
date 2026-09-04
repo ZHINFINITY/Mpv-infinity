@@ -9,6 +9,8 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,7 +47,25 @@ data class NativeTrack(
 
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(context: Context) {
-  private val player = ExoPlayer.Builder(context.applicationContext).build()
+  private val player = ExoPlayer.Builder(context.applicationContext)
+    .setRenderersFactory(
+      DefaultRenderersFactory(context.applicationContext)
+        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER),
+    )
+    .setLoadControl(
+      DefaultLoadControl.Builder()
+        // Keep substantially more data ahead so large forward seeks on network media do not
+        // immediately stall. The byte target still bounds memory use on high-bitrate 4K files.
+        .setBufferDurationsMs(
+          120_000,
+          900_000,
+          4_000,
+          10_000,
+        )
+        .setTargetBufferBytes(128 * 1024 * 1024)
+        .build(),
+    )
+    .build()
   private var attachedView: PlayerView? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100

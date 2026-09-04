@@ -1641,7 +1641,9 @@ class PlayerActivity :
     val playbackWasInitialized = mpvInitialized
     val nativeWasActive =
       activeEngineMode == PlaybackEngineMode.NATIVE &&
-        (nativeEngine.currentPlayer.isPlaying || nativeEngine.snapshot.value.isReady)
+        (nativeEngine.currentPlayer.currentMediaItem != null ||
+          nativeEngine.currentPlayer.isPlaying ||
+          nativeEngine.snapshot.value.isReady)
     if (ownsPlaybackSession && (playbackWasInitialized || nativeWasActive) && wasInPipMode && !isChangingConfigurations) {
       commitPipDismissal()
     }
@@ -2067,13 +2069,23 @@ class PlayerActivity :
   private fun hasActivePlaybackEngine(): Boolean =
     mpvInitialized ||
       (activeEngineMode == PlaybackEngineMode.NATIVE &&
-        (nativeEngine.currentPlayer.isPlaying || nativeEngine.snapshot.value.isReady))
+        (nativeEngine.currentPlayer.currentMediaItem != null ||
+          nativeEngine.currentPlayer.isPlaying ||
+          nativeEngine.snapshot.value.isReady))
 
   private fun commitPipDismissal(): Boolean {
     val nativePlaybackActive =
       activeEngineMode == PlaybackEngineMode.NATIVE &&
-        (nativeEngine.currentPlayer.isPlaying || nativeEngine.snapshot.value.isReady)
-    if (handledPipDismissal || (!mpvInitialized && !nativePlaybackActive) || !ownsPlaybackSession()) return false
+        (nativeEngine.currentPlayer.currentMediaItem != null ||
+          nativeEngine.currentPlayer.isPlaying ||
+          nativeEngine.snapshot.value.isReady)
+    if (handledPipDismissal || (!mpvInitialized && !nativePlaybackActive)) return false
+    if (!ownsPlaybackSession()) {
+      nativeEngine.setPlaying(false)
+      nativeEngine.stop()
+      handledPipDismissal = true
+      return true
+    }
 
     Log.d(TAG, "PiP dismissed; stopping terminal playback exactly once")
     pendingPipExitResolution = false
