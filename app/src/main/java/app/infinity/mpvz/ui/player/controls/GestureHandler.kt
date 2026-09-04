@@ -708,7 +708,7 @@ fun GestureHandler(
                       when (gestureType) {
                         "speed_control" -> {
                           dynamicSpeedStartX = currentPosition.x
-                          dynamicSpeedStartValue = PlaybackSession.getPropertyFloat("speed") ?: multipleSpeedGesture
+                          dynamicSpeedStartValue = viewModel.activePlaybackSpeed()
                         }
                         "vertical" -> {
                           if ((brightnessGesture || volumeGesture) && !isLongPressing) {
@@ -958,7 +958,7 @@ fun GestureHandler(
               hasSwipedEnough = false
               if (!isSpeedLocked) {
                 // Ramp speed back down incrementally to avoid audio filter stutter
-                val currentSpeed = PlaybackSession.getPropertyFloat("speed") ?: multipleSpeedGesture
+                val currentSpeed = viewModel.activePlaybackSpeed()
                 val targetSpeed = originalSpeed
                 val steps = 5
                 val stepDelay = 16L
@@ -1066,8 +1066,15 @@ fun GestureHandler(
                   currentPanX = viewModel.videoPanX.value
                   currentPanY = viewModel.videoPanY.value
 
-                  val hasActiveSub = getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
-                  val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
+                  val hasActiveSub =
+                    if (viewModel.isNativeEngineActive()) {
+                      subtitleTracks.any { it.isSelected }
+                    } else {
+                      getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
+                    }
+                  val subPos =
+                    if (viewModel.isNativeEngineActive()) subtitlesPreferences.subPos.get()
+                    else PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
                   val subtitleScreenY = getSubtitleScreenY(subPos, sw, sh)
                   val isCenterPinchX = midX in (sw * 0.2f)..(sw * 0.8f)
                   val (lowerBound, upperBound) = getSubtitleHitboxBounds(sw, sh)
@@ -1075,7 +1082,9 @@ fun GestureHandler(
 
                   if (pinchToZoomSubtitles && hasActiveSub && isSubtitlePinch) {
                     isSubZoomMode = true
-                    initialSubScale = PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
+                    initialSubScale =
+                      if (viewModel.isNativeEngineActive()) subtitlesPreferences.subScale.get()
+                      else PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
                     initialDist = dist
                     lastCalculatedSubScale = initialSubScale
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {

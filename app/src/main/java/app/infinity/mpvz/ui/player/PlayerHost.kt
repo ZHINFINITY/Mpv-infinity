@@ -74,6 +74,8 @@ interface PlayerHost {
 
   fun isNativePlaying(): Boolean = false
 
+  fun nativePlaybackSpeed(): Float = 1f
+
   fun nativePauseUnpause() {}
 
   fun nativePause() {}
