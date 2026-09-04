@@ -1532,6 +1532,7 @@ private fun ListContent(
         )
       }
     }
+    }
 
     // Scrollbar with bottom padding
     if (folders.isNotEmpty() && scrollbarAlpha > 0.01f) {
