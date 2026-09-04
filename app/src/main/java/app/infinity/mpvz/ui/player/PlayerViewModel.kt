@@ -4496,6 +4496,13 @@ class PlayerViewModel : ViewModel(),
     playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
   }
 
+  fun setSubtitleScale(scale: Float) {
+    val clamped = scale.coerceIn(0.1f, 5f)
+    if (host.isNativeEngineActive()) host.nativeSetSubtitleScale(clamped)
+    else PlaybackSession.setPropertyFloat("sub-scale", clamped)
+    playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
+  }
+
   private fun syncSubtitleLayout(primaryPosition: Int = subtitlesPreferences.subPos.get()) {
     applySubtitleLayout(primaryPosition, subtitlesPreferences.overrideAssSubs.get())
   }
@@ -6553,11 +6560,3 @@ private fun String.md5(): String {
   val digest = MessageDigest.getInstance("MD5").digest(toByteArray())
   return digest.joinToString("") { byte -> "%02x".format(byte) }
 }
-  fun setSubtitleScale(scale: Float) {
-    val clamped = scale.coerceIn(0.1f, 5f)
-    if (host.isNativeEngineActive()) host.nativeSetSubtitleScale(clamped)
-    else PlaybackSession.setPropertyFloat("sub-scale", clamped)
-    playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
-  }
-
-  private fun syncSubtitleLayout(primaryPosition: Int = subtitlesPreferences.subPos.get()) {
