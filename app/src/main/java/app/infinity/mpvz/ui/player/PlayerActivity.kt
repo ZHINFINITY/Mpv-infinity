@@ -191,6 +191,7 @@ class PlayerActivity :
    * Binding for the player layout.
    */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
+  private val googleMedia3Engine by lazy { GoogleMedia3Engine(this) }
 
   /**
    * Observer for MPV events.
@@ -631,6 +632,16 @@ class PlayerActivity :
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
+    googleMedia3Engine.attach(binding.media3Player)
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        decoderPreferences.playbackEngine.changes().collect { engine ->
+          val useMedia3 = engine == PlaybackEngineMode.MEDIA3
+          binding.media3Player.visibility = if (useMedia3) View.VISIBLE else View.GONE
+          binding.player.visibility = if (useMedia3) View.GONE else View.VISIBLE
+        }
+      }
+    }
     setupSystemBarsAutoHide()
     setupPipHelper()
 
@@ -1457,6 +1468,7 @@ class PlayerActivity :
       if (::castPlaybackController.isInitialized) castPlaybackController.release()
       cancelSystemBarsAutoHide()
       if (playbackWasInitialized && ownsPlaybackSession) saveVideoPlaybackState(fileName, immediate = true)
+      googleMedia3Engine.release()
       if (playbackWasInitialized && ownsPlaybackSession && !keepBackgroundPlaybackAlive) {
         reportJellyfinStop()
       }
@@ -5558,6 +5570,19 @@ class PlayerActivity :
       }
     if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
     ensureCurrentMediaRequest(requestGeneration)
+    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.MEDIA3 && !requiresYtdlp) {
+      withContext(Dispatchers.Main) {
+        binding.player.visibility = View.GONE
+        binding.media3Player.visibility = View.VISIBLE
+        googleMedia3Engine.play(
+          item.playableUri.toUri(),
+          startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),
+          autoplay = true,
+        )
+        viewModel.onVideoLoadCompleted()
+      }
+      return
+    }
     if (!PlaybackSession.awaitStopCompletion()) {
       throw IllegalStateException("Timed out waiting for previous playback to stop")
     }

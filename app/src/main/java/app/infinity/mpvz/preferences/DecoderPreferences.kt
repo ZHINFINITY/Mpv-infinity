@@ -14,10 +14,12 @@ import app.infinity.mpvz.preferences.preference.PreferenceStore
 import app.infinity.mpvz.preferences.preference.getEnum
 import app.infinity.mpvz.ui.player.Debanding
 import app.infinity.mpvz.ui.player.HdrScreenMode
+import app.infinity.mpvz.ui.player.PlaybackEngineMode
 
 class DecoderPreferences(
   preferenceStore: PreferenceStore,
 ) {
+  val playbackEngine = preferenceStore.getEnum("playback_engine", PlaybackEngineMode.MPV)
   val profile = preferenceStore.getString("mpv_profile", "fast")
   val tryHWDecoding = preferenceStore.getBoolean("try_hw_dec", true)
   val gpuNext = preferenceStore.getBoolean("gpu_next")

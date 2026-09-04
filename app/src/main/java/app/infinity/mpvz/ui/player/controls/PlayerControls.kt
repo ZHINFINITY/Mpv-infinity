@@ -123,6 +123,7 @@ import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
@@ -206,6 +207,8 @@ fun PlayerControls(
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
   val audioPreferences = koinInject<AudioPreferences>()
+  val decoderPreferences = koinInject<DecoderPreferences>()
+  val playbackEngine by decoderPreferences.playbackEngine.collectAsState()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
   val showControlsDrawer by playerPreferences.showControlsDrawer.collectAsState()
@@ -390,6 +393,8 @@ fun PlayerControls(
         },
         decoder = decoder,
         onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
+        selectedEngine = playbackEngine,
+        onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
         onSpeedChange = { PlaybackSession.setPropertyFloat("speed", it.toFixed(2)) },
         onMakeDefaultSpeed = { playerPreferences.defaultSpeed.set(it.toFixed(2)) },

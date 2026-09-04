@@ -59,6 +59,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Debanding
 import app.infinity.mpvz.ui.player.MPVProfile
+import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -138,6 +139,18 @@ object DecoderPreferencesScreen : Screen {
 
           item {
             PreferenceCard {
+              val playbackEngine by preferences.playbackEngine.collectAsState()
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_engine_title),
+                value = playbackEngine,
+                onValueChange = { preferences.playbackEngine.set(it) },
+                values = PlaybackEngineMode.entries,
+                title = { Text(stringResource(R.string.pref_decoder_engine_title)) },
+                summary = { Text(playbackEngine.title, color = MaterialTheme.colorScheme.outline) },
+              )
+
+              PreferenceDivider()
+
               val profile by preferences.profile.collectAsState()
               val currentProfile = MPVProfile.fromValue(profile)
               ListPreference(

@@ -25,6 +25,7 @@ import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.player.Decoder
 import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.TrackNode
 import app.infinity.mpvz.ui.player.controls.components.MpvConfigOwnedSheet
@@ -71,6 +72,8 @@ fun PlayerSheets(
   // Decoders sheet
   decoder: Decoder,
   onUpdateDecoder: (Decoder) -> Unit,
+  selectedEngine: PlaybackEngineMode = PlaybackEngineMode.MPV,
+  onSelectEngine: (PlaybackEngineMode) -> Unit = {},
   // Speed sheet
   speed: Float,
   speedPresets: List<Float>,
@@ -371,6 +374,8 @@ fun PlayerSheets(
       DecodersSheet(
         selectedDecoder = decoder,
         onSelect = onUpdateDecoder,
+        selectedEngine = selectedEngine,
+        onSelectEngine = onSelectEngine,
         onDismissRequest,
       )
     }
