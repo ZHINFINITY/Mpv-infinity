@@ -97,4 +97,6 @@ interface PlayerHost {
   fun nativeSetSubtitleScale(scale: Float) {}
 
   fun nativeSetSubtitlePosition(position: Int) {}
+
+  fun nativeAddSubtitle(uri: android.net.Uri, select: Boolean): Boolean = false
 }

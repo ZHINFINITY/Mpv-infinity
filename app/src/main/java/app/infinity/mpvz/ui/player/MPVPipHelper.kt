@@ -45,6 +45,15 @@ class MPVPipHelper(
   private val videoViewProvider: (() -> View?)? = null,
   private val isAudioPlayer: () -> Boolean = { false },
   private val isVideoLoaded: () -> Boolean = { false },
+  private val isNativeEngine: () -> Boolean = { false },
+  private val isPlaying: () -> Boolean = { PlaybackSession.getPropertyBoolean("pause") == false },
+  private val onPlay: () -> Unit = { PlaybackSession.setPropertyBoolean("pause", false) },
+  private val onPause: () -> Unit = { PlaybackSession.setPropertyBoolean("pause", true) },
+  private val onSeekBy: (Long) -> Unit = { offsetMs ->
+    PlaybackSession.command("seek", (offsetMs / 1000L).toString(), "relative")
+  },
+  private val onClose: () -> Unit = {},
+  private val nativeVideoSize: () -> Pair<Int, Int> = { 0 to 0 },
 ) : KoinComponent {
 
   constructor(
@@ -52,7 +61,14 @@ class MPVPipHelper(
     mpvView: MPVView,
     isAudioPlayer: () -> Boolean = { false },
     isVideoLoaded: () -> Boolean = { false },
-  ) : this(activity, { mpvView }, isAudioPlayer, isVideoLoaded)
+    isNativeEngine: () -> Boolean = { false },
+    isPlaying: () -> Boolean = { PlaybackSession.getPropertyBoolean("pause") == false },
+    onPlay: () -> Unit = { PlaybackSession.setPropertyBoolean("pause", false) },
+    onPause: () -> Unit = { PlaybackSession.setPropertyBoolean("pause", true) },
+    onSeekBy: (Long) -> Unit = { offsetMs -> PlaybackSession.command("seek", (offsetMs / 1000L).toString(), "relative") },
+    onClose: () -> Unit = {},
+    nativeVideoSize: () -> Pair<Int, Int> = { 0 to 0 },
+  ) : this(activity, { mpvView }, isAudioPlayer, isVideoLoaded, isNativeEngine, isPlaying, onPlay, onPause, onSeekBy, onClose, nativeVideoSize)
 
   private val playerPreferences: PlayerPreferences by inject()
   private var pipReceiver: BroadcastReceiver? = null
@@ -73,13 +89,13 @@ class MPVPipHelper(
           context: Context?,
           intent: Intent?,
         ) {
-          val seekMode = resolveSeekMode(playerPreferences)
           when (intent?.getIntExtra(PIP_INTENT_ACTION, 0)) {
-            PIP_PLAY -> PlaybackSession.setPropertyBoolean("pause", false)
-            PIP_PAUSE -> PlaybackSession.setPropertyBoolean("pause", true)
-            PIP_REWIND -> PlaybackSession.command("seek", "-10", seekMode)
-            PIP_FORWARD -> PlaybackSession.command("seek", "10", seekMode)
+            PIP_PLAY -> onPlay()
+            PIP_PAUSE -> onPause()
+            PIP_REWIND -> onSeekBy(-10_000L)
+            PIP_FORWARD -> onSeekBy(10_000L)
             PIP_CLOSE -> {
+              onClose()
               MediaPlaybackService.stopForTerminalDismissal()
               activity.finishAndRemoveTask()
               return
@@ -132,8 +148,9 @@ class MPVPipHelper(
       }.build()
 
   private fun getVideoAspectRatio(): Rational? {
-    val width = PlaybackSession.getPropertyInt("video-out-params/dw") ?: 0
-    val height = PlaybackSession.getPropertyInt("video-out-params/dh") ?: 0
+    val nativeSize = nativeVideoSize()
+    val width = if (isNativeEngine()) nativeSize.first else PlaybackSession.getPropertyInt("video-out-params/dw") ?: 0
+    val height = if (isNativeEngine()) nativeSize.second else PlaybackSession.getPropertyInt("video-out-params/dh") ?: 0
 
     if (width == 0 || height == 0) return null
 
@@ -166,11 +183,11 @@ class MPVPipHelper(
   }
 
   private fun createPipActions(): List<RemoteAction> {
-    val isPlaying = PlaybackSession.getPropertyBoolean("pause") == false
+    val playing = isPlaying()
 
     return listOf(
       createRemoteAction("rewind 10 seconds", Icons.Platform.Replay10, PIP_REWIND),
-      if (isPlaying) {
+      if (playing) {
         createRemoteAction("pause", Icons.Platform.Pause, PIP_PAUSE)
       } else {
         createRemoteAction("play", Icons.Platform.Play, PIP_PLAY)

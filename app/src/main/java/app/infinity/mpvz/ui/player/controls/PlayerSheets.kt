@@ -202,6 +202,7 @@ fun PlayerSheets(
         translationProgress = translationProgress,
         translationStatus = translationStatus,
         translationEnabled = aiEnabled && translationEnabled,
+        onToggleTranslation = { aiPreferences.subtitleTranslationEnabled.set(!translationEnabled) },
         isGeneratingSubtitles = isGeneratingSubtitles,
         subtitleGenerationProgress = subtitleGenerationProgress,
         subtitleGenerationStatus = subtitleGenerationStatus,
@@ -586,4 +587,3 @@ fun PlayerSheets(
     }
   }
 }
-

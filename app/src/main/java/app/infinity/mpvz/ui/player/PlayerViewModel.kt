@@ -2600,7 +2600,8 @@ class PlayerViewModel : ViewModel(),
           _remainingTime.value = time
           delay(1000)
         }
-        PlaybackSession.setPropertyBoolean("pause", true)
+        if (host.isNativeEngineActive()) host.nativePause()
+        else PlaybackSession.setPropertyBoolean("pause", true)
         showToast(appContext.getString(R.string.toast_sleep_timer_ended))
       }
   }
@@ -2700,6 +2701,16 @@ class PlayerViewModel : ViewModel(),
 
         val mpvPath = uri.resolveUri(appContext) ?: uri.toString()
         val mode = if (select) "select" else "auto"
+
+        if (host.isNativeEngineActive()) {
+          val attached = withContext(Dispatchers.Main) { host.nativeAddSubtitle(uri, select) }
+          if (!attached) throw Exception("Native subtitle renderer is not ready")
+          if (!_externalSubtitles.contains(uriString)) _externalSubtitles.add(uriString)
+          if (!silent) {
+            withContext(Dispatchers.Main) { showToast("$fileName added") }
+          }
+          return@withLock
+        }
 
         // Check if MPV already auto-loaded this subtitle (prevents duplication)
         val existingTrack = subtitleTracks.value.find { it.externalFilename == mpvPath }

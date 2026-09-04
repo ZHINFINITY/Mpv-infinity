@@ -31,6 +31,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -85,6 +86,7 @@ fun SubtitlesSheet(
   translationProgress: Float,
   translationStatus: String,
   translationEnabled: Boolean,
+  onToggleTranslation: () -> Unit = {},
   isGeneratingSubtitles: Boolean,
   subtitleGenerationProgress: Float,
   subtitleGenerationStatus: String,
@@ -406,6 +408,15 @@ fun SubtitlesSheet(
         }
       }
 
+      if (aiEnabled) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
+          Switch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
+        }
+      }
       LazyColumn {
         items(
           items,
