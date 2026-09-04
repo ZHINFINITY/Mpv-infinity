@@ -384,14 +384,14 @@ object AboutScreen : Screen {
                     .clickable {
                       SafeClipboard.copyPlainText(
                         context = context,
-                        label = "Mpv∞_upi_id",
-                        text = "panditritesh2001@okhdfcbank",
+                        label = "Mpv∞_support_link",
+                        text = "https://github.com/ZHINFINITY/Mpv-infinity",
                         showToast = false,
                       )
                       Toast
                         .makeText(
                           context,
-                          context.getString(app.infinity.mpvz.R.string.ui_upi_id_copied),
+                          context.getString(app.infinity.mpvz.R.string.ui_support_link_copied),
                           Toast.LENGTH_SHORT,
                         ).show()
                     }.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -402,7 +402,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res
-                        .stringResource(app.infinity.mpvz.R.string.ui_upi_id),
+                        .stringResource(app.infinity.mpvz.R.string.ui_support_link),
                     style = MaterialTheme.typography.labelSmall,
                     color = cs.outline,
                   )
@@ -410,7 +410,7 @@ object AboutScreen : Screen {
                   Text(
                     text =
                       androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_panditritesh2001_okhdfcbank,
+                        app.infinity.mpvz.R.string.ui_zhinfinity_github,
                       ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
@@ -432,17 +432,17 @@ object AboutScreen : Screen {
             Button(
               onClick = {
                 try {
-                  val upiIntent =
+                  val supportIntent =
                     Intent(
                       Intent.ACTION_VIEW,
-                      "upi://pay?pa=panditritesh2001@okhdfcbank&pn=Ritesh%20Pandit&cu=INR".toUri(),
+                      "https://github.com/ZHINFINITY/Mpv-infinity".toUri(),
                     )
-                  context.startActivity(upiIntent)
+                  context.startActivity(supportIntent)
                 } catch (_: Exception) {
                   Toast
                     .makeText(
                       context,
-                      context.getString(app.infinity.mpvz.R.string.ui_no_upi_app_found),
+                      "Unable to open support link",
                       Toast.LENGTH_SHORT,
                     ).show()
                 }
@@ -460,7 +460,7 @@ object AboutScreen : Screen {
               Spacer(Modifier.width(8.dp))
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_send_love),
+                  .stringResource(app.infinity.mpvz.R.string.ui_visit_github),
                 fontWeight = FontWeight.SemiBold,
               )
             }

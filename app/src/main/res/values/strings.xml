@@ -1543,14 +1543,14 @@
   <string name="ui_pan_zoom">Pan &amp; Zoom</string>
   <string name="ui_decrease_zoom">Decrease zoom</string>
   <string name="ui_increase_zoom">Increase zoom</string>
-  <string name="ui_by_ritesh_pandit">By Ritesh Pandit</string>
+  <string name="ui_by_ritesh_pandit">By ZHINFINITY</string>
   <string name="ui_github">GitHub</string>
   <string name="ui_device_info">Device Info</string>
   <string name="ui_buy_me_a_coffee">Buy Me a Coffee</string>
   <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">If you enjoy Mpv∞, consider supporting its development. Every bit helps!</string>
-  <string name="ui_upi_id">UPI ID</string>
-  <string name="ui_panditritesh2001_okhdfcbank">panditritesh2001@okhdfcbank</string>
-  <string name="ui_send_love">Send Love</string>
+  <string name="ui_support_link">UPI ID</string>
+  <string name="ui_zhinfinity_github">github.com/ZHINFINITY/Mpv-infinity</string>
+  <string name="ui_visit_github">Send Love</string>
   <string name="ui_auto_check_for_updates">Auto Check for Updates</string>
   <string name="ui_check_on_startup">Check on startup</string>
   <string name="ui_check_for_updates_now">Check for Updates Now</string>
@@ -1571,7 +1571,7 @@
   <string name="ui_core_open_source_dependencies_used_by_mpvrx">Core open source dependencies used by Mpv∞.</string>
   <string name="ui_copy_upi_id">Copy UPI ID</string>
   <string name="ui_already_using_latest_version">Already using latest version</string>
-  <string name="ui_upi_id_copied">UPI ID copied!</string>
+  <string name="ui_support_link_copied">UPI ID copied!</string>
   <string name="ui_no_upi_app_found">No UPI app found</string>
   <string name="ui_install_and_update_yt_dlp_for_streaming_support">Install and update yt-dlp for streaming support</string>
   <string name="ui_instructions_for_ai_file_renaming">Instructions for AI file renaming...</string>
