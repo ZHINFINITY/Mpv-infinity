@@ -1267,7 +1267,11 @@ fun GestureHandler(
                       if (claimGesture(GestureOwner.HORIZONTAL_SEEK)) {
                         gestureType = "horizontal_seek"
                         hasStartedSeeking = true
-                        initialVideoPosition = position?.toFloat() ?: 0f
+                        initialVideoPosition = if (viewModel.isNativeEngineActive()) {
+                          viewModel.nativePlaybackPositionSeconds().toFloat()
+                        } else {
+                          position?.toFloat() ?: 0f
+                        }
                         pendingSeekPosition = initialVideoPosition
 
                         // Show seekbar and start seeking mode (same as seekbar scrubbing)
@@ -1280,7 +1284,11 @@ fun GestureHandler(
                       // Calculate seek amount based on horizontal movement
                       val seekAmount = deltaX * seekSensitivity
                       val targetPosition = (initialVideoPosition + seekAmount).coerceAtLeast(0f)
-                      val maxDuration = duration?.toFloat() ?: 0f
+                      val maxDuration = if (viewModel.isNativeEngineActive()) {
+                        viewModel.nativePlaybackDurationSeconds().toFloat()
+                      } else {
+                        duration?.toFloat() ?: 0f
+                      }
                       val clampedPosition = targetPosition.coerceAtMost(maxDuration)
                       pendingSeekPosition = clampedPosition
                       viewModel.seekPreviewTo(clampedPosition)

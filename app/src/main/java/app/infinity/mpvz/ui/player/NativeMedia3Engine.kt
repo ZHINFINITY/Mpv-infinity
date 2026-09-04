@@ -2,6 +2,8 @@ package app.infinity.mpvz.ui.player
 
 import android.content.Context
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -34,6 +36,7 @@ data class NativePlaybackSnapshot(
   val speed: Float = 1f,
   val subtitleTracks: List<NativeTrack> = emptyList(),
   val audioTracks: List<NativeTrack> = emptyList(),
+  val chapters: List<NativeChapter> = emptyList(),
 )
 
 data class NativeTrack(
@@ -43,6 +46,11 @@ data class NativeTrack(
   val label: String,
   val language: String?,
   val selected: Boolean,
+)
+
+data class NativeChapter(
+  val title: String,
+  val startSeconds: Float,
 )
 
 /** A source-local Android Media3 playback engine. */
@@ -70,6 +78,20 @@ class NativeMedia3Engine(context: Context) {
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
+  private var loopASeconds: Double? = null
+  private var loopBSeconds: Double? = null
+  private val loopHandler = Handler(Looper.getMainLooper())
+  private val loopRunnable = object : Runnable {
+    override fun run() {
+      val a = loopASeconds
+      val b = loopBSeconds
+      if (a != null && b != null && b > a && player.currentPosition >= (b * 1000.0).toLong()) {
+        player.seekTo((a * 1000.0).toLong())
+        if (!player.isPlaying) player.play()
+      }
+      if (a != null && b != null) loopHandler.postDelayed(this, 150L)
+    }
+  }
   private var subtitleStyle = CaptionStyleCompat(
     android.graphics.Color.WHITE,
     android.graphics.Color.TRANSPARENT,
@@ -223,6 +245,27 @@ class NativeMedia3Engine(context: Context) {
     publishSnapshot()
   }
 
+  fun setLoopA(positionSeconds: Double?) {
+    loopASeconds = positionSeconds?.coerceAtLeast(0.0)
+    restartLoopMonitor()
+  }
+
+  fun setLoopB(positionSeconds: Double?) {
+    loopBSeconds = positionSeconds?.coerceAtLeast(0.0)
+    restartLoopMonitor()
+  }
+
+  fun clearLoop() {
+    loopASeconds = null
+    loopBSeconds = null
+    loopHandler.removeCallbacks(loopRunnable)
+  }
+
+  private fun restartLoopMonitor() {
+    loopHandler.removeCallbacks(loopRunnable)
+    if (loopASeconds != null && loopBSeconds != null) loopHandler.post(loopRunnable)
+  }
+
   fun setSpeed(speed: Float, pitchCorrection: Boolean = true) {
     val clampedSpeed = speed.coerceIn(0.25f, 4f)
     player.setPlaybackParameters(
@@ -272,12 +315,14 @@ class NativeMedia3Engine(context: Context) {
   fun removeListener(listener: Player.Listener) = player.removeListener(listener)
 
   fun stop() {
+    clearLoop()
     player.stop()
     player.clearMediaItems()
     publishSnapshot()
   }
 
   fun release() {
+    clearLoop()
     player.removeListener(listener)
     attachedView?.player = null
     attachedView = null
@@ -286,6 +331,20 @@ class NativeMedia3Engine(context: Context) {
 
   private fun publishSnapshot() {
     val groups = player.currentTracks.groups
+    val chapters = groups.flatMap { group ->
+      (0 until group.length).flatMap { index ->
+        group.getTrackFormat(index).metadata?.entries.orEmpty().mapNotNull { entry ->
+          if (entry.javaClass.simpleName != "Chapter") return@mapNotNull null
+          val startUs = runCatching {
+            entry.javaClass.getMethod("getStartTimeUs").invoke(entry) as Number
+          }.getOrNull() ?: return@mapNotNull null
+          val title = runCatching {
+            entry.javaClass.getMethod("getTitle").invoke(entry) as? String
+          }.getOrNull().orEmpty().ifBlank { "Chapter ${index + 1}" }
+          NativeChapter(title, (startUs.toLong() / 1_000_000f).coerceAtLeast(0f))
+        }
+      }
+    }.distinctBy { it.startSeconds to it.title }.sortedBy { it.startSeconds }
     fun tracksOfType(type: Int, fallback: String): List<NativeTrack> =
       groups.mapIndexedNotNull { groupIndex, group ->
         if (group.type != type) return@mapIndexedNotNull null
@@ -323,6 +382,7 @@ class NativeMedia3Engine(context: Context) {
       speed = player.playbackParameters.speed,
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
+      chapters = chapters,
     )
   }
 }
