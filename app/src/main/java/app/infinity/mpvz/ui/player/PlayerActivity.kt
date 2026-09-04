@@ -2031,6 +2031,9 @@ class PlayerActivity :
     MediaPlaybackService.activityForeground = false
     runCatching {
       pipHelper.onStop()
+      if (isNativeEngineActive() && fileName.isNotBlank()) {
+        saveVideoPlaybackState(fileName, immediate = true)
+      }
       if (!mpvInitialized) return@runCatching
 
       if (noisyReceiverRegistered) {
