@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -68,6 +69,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.preference.collectAsState
+import org.koin.compose.koinInject
 
 private val sheetAnimationSpec = tween<Float>(350)
 
@@ -84,6 +88,18 @@ fun PlayerSheet(
   swipeOffset: Float = 0f,
   content: @Composable () -> Unit,
 ) {
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
+  val sheetIsDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+  val glassSheetEnabled = liquidGlassSurfaces || playerControlsTheme.name != "Classic"
+  val resolvedSurfaceColor =
+    surfaceColor ?: if (glassSheetEnabled) {
+      if (sheetIsDark) Color.Black.copy(alpha = if (liquidGlassSurfaces) 0.30f else 0.24f)
+      else Color.White.copy(alpha = if (liquidGlassSurfaces) 0.34f else 0.26f)
+    } else {
+      MaterialTheme.colorScheme.surface
+    }
   val scope = rememberCoroutineScope()
   val density = LocalDensity.current
   val latestOnDismissRequest by rememberUpdatedState(onDismissRequest)
@@ -199,7 +215,7 @@ fun PlayerSheet(
               .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
           ).imePadding(),
       shape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
-      color = surfaceColor ?: MaterialTheme.colorScheme.surface,
+      color = resolvedSurfaceColor,
       tonalElevation = tonalElevation,
       content = {
         BackHandler(
