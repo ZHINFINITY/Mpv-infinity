@@ -5406,6 +5406,12 @@ class PlayerActivity :
 
     isBackgroundPlaybackSessionActive = false
     pendingBackgroundTransition = false
+    // PlayerActivity is singleTask. After closing a native PiP window Android can deliver the
+    // next media through onNewIntent on the same instance; clear terminal/PiP state so the PiP
+    // action is available again for the newly loaded video.
+    isUserFinishing = false
+    wasInPipMode = false
+    pendingPipExitResolution = false
     handledPipDismissal = false
     if (!isBackgroundPlaybackEnabled() && (serviceBound || mediaPlaybackService != null || MediaPlaybackService.isRunning())) {
       endBackgroundPlayback()
