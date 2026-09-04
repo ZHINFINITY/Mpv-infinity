@@ -88,6 +88,7 @@ import app.infinity.mpvz.utils.media.MediaInfoParser
 import app.infinity.mpvz.utils.media.ParsedMediaInfo
 import app.infinity.mpvz.utils.media.SubtitleHashUtils
 import app.infinity.mpvz.utils.media.fileExtension
+import dev.vivvvek.seeker.Segment
 import app.infinity.mpvz.utils.media.resolveSubtitleLookupDirectories
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.FastThumbnails
