@@ -4205,6 +4205,8 @@ class PlayerActivity :
           val height = player.height.takeIf { it > 0 }?.toFloat()
           applySubtitlePositions(primaryPosition, width, height)
         }
+        if (value.isBlank()) viewModel.clearEmbeddedSubtitleTranslationCue()
+        else viewModel.translateEmbeddedSubtitleCue(value)
       }
       else -> {
         when (property.substringBeforeLast("/")) {

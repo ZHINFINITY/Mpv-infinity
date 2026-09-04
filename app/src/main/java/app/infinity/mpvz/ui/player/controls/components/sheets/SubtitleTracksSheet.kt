@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,6 +94,8 @@ fun SubtitlesSheet(
   translatingTrackId: Int? = null,
   translatingTrackName: String = "",
   autoTranslateLanguages: String = "",
+  embeddedTranslationLanguage: String = "",
+  onEmbeddedTranslationLanguageChange: (String) -> Unit = {},
   aiEnabled: Boolean = true,
   realtimeSubsEnabled: Boolean = true,
   subtitlesOff: Boolean = false,
@@ -428,18 +431,27 @@ fun SubtitlesSheet(
           Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
           Switch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
         }
-        Text(
-          text =
-            if (configuredLanguages.isEmpty()) {
-              "Target language: choose one in AI Integration"
-            } else {
-              "Target language: " +
-                configuredLanguages.joinToString(", ") { codeToName[it] ?: it.uppercase() }
-            },
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.outline,
-          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
-        )
+        if (tracks.any { it.external != true } && translationEnabled && configuredLanguages.isNotEmpty()) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+          ) {
+            Text(
+              "Translation language",
+              style = MaterialTheme.typography.labelLarge,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
+              configuredLanguages.take(2).forEach { code ->
+                FilterChip(
+                  selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
+                  onClick = { onEmbeddedTranslationLanguageChange(code) },
+                  label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
+                )
+              }
+            }
+          }
+        }
       }
       LazyColumn {
         items(

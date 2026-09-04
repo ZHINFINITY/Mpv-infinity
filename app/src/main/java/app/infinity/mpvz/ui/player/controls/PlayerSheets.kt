@@ -182,6 +182,9 @@ fun PlayerSheets(
       val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
       val translationEnabled by aiPreferences.subtitleTranslationEnabled.collectAsState()
       val autoTranslateLanguages by aiPreferences.autoTranslateLanguages.collectAsState()
+      val embeddedTranslationLanguage by aiPreferences.embeddedSubtitleTargetLanguage.collectAsState()
+      val selectedEmbeddedLanguage =
+        embeddedTranslationLanguage.ifBlank { autoTranslateLanguages.split(",").firstOrNull { it.isNotBlank() }?.trim().orEmpty() }
 
       val subtitlesOff = subtitles.none { isSubtitleSelected(it.id) }
 
@@ -204,13 +207,19 @@ fun PlayerSheets(
         translationProgress = translationProgress,
         translationStatus = translationStatus,
         translationEnabled = embeddedTranslationAvailable && translationEnabled,
-        onToggleTranslation = { aiPreferences.subtitleTranslationEnabled.set(!translationEnabled) },
+        onToggleTranslation = {
+          val enabled = !translationEnabled
+          aiPreferences.subtitleTranslationEnabled.set(enabled)
+          if (!enabled) viewModel.resetEmbeddedSubtitleTranslation()
+        },
         isGeneratingSubtitles = isGeneratingSubtitles,
         subtitleGenerationProgress = subtitleGenerationProgress,
         subtitleGenerationStatus = subtitleGenerationStatus,
         translatingTrackId = translatingTrackId,
         translatingTrackName = translatingTrackName,
         autoTranslateLanguages = autoTranslateLanguages,
+        embeddedTranslationLanguage = selectedEmbeddedLanguage,
+        onEmbeddedTranslationLanguageChange = { aiPreferences.embeddedSubtitleTargetLanguage.set(it) },
         aiEnabled = embeddedTranslationAvailable,
         realtimeSubsEnabled = realtimeSubsEnabled,
         subtitlesOff = subtitlesOff,
