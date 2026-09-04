@@ -59,7 +59,8 @@ enum class PlaybackEngineMode(
   val title: String,
 ) {
   MPV("MPV"),
-  MEDIA3("Media3"),
+  MEDIA3("Media3");
+
   override fun toString(): String = title
 }
 
