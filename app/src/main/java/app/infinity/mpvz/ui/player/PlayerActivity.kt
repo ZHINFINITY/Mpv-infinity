@@ -4998,7 +4998,11 @@ class PlayerActivity :
         if (nativeEngineActive) nativeSnapshot.durationMs.toSecondsInt()
         else readMpvIntSeconds("duration", viewModel.duration ?: 0),
       isPositionRestorePending =
-        PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
+        if (nativeEngineActive) {
+          false
+        } else {
+          PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration)
+        },
       playbackSpeed = PlaybackSession.getPropertyDouble("speed") ?: DEFAULT_PLAYBACK_SPEED,
       videoZoom = PlaybackSession.getPropertyDouble("video-zoom")?.toFloat() ?: viewModel.videoZoom.value,
       sid = player.sid,
