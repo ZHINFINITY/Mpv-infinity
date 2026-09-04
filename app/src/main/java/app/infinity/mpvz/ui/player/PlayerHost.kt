@@ -72,6 +72,8 @@ interface PlayerHost {
 
   fun isNativeEngineActive(): Boolean = false
 
+  fun isNativePlaying(): Boolean = false
+
   fun nativePauseUnpause() {}
 
   fun nativePause() {}
