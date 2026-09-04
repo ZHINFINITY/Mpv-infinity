@@ -192,41 +192,41 @@ fun SeerrStatusChip(
   status: MediaStatus,
   modifier: Modifier = Modifier,
 ) {
-  val (bgColor, textColor, textRes): Triple<Color, Color, Int> = when (status) {
+  val (bgColor, textColor, textRes) = when (status) {
     MediaStatus.AVAILABLE -> Triple(
       Color(0xFF1B5E20).copy(alpha = 0.85f),
       Color(0xFFE8F5E9),
-      R.string.seerr_status_available,
+      "Available",
     )
     MediaStatus.PARTIALLY_AVAILABLE -> Triple(
       SeerrWarningContainer,
       SeerrOnWarningContainer,
-      R.string.seerr_status_partially_available,
+      "Partially Available",
     )
     MediaStatus.PROCESSING -> Triple(
       Color(0xFF0D47A1).copy(alpha = 0.85f),
       Color(0xFFE3F2FD),
-      R.string.seerr_status_processing,
+      "Processing",
     )
     MediaStatus.PENDING -> Triple(
       Color(0xFF4A148C).copy(alpha = 0.85f),
       Color(0xFFF3E5F5),
-      R.string.seerr_status_pending,
+      "Pending",
     )
     MediaStatus.DELETED -> Triple(
       Color(0xFFD32F2F).copy(alpha = 0.9f),
       Color(0xFFFFEBEE),
-      R.string.seerr_status_deleted,
+      "Deleted",
     )
     MediaStatus.BLACKLISTED -> Triple(
       Color(0xFF37474F).copy(alpha = 0.85f),
       Color(0xFFECEFF1),
-      R.string.seerr_status_blacklisted,
+      "Blacklisted",
     )
     else -> Triple(
       Color.Black.copy(alpha = 0.7f),
       Color.White,
-      R.string.seerr_status_requested,
+      "Requested",
     )
   }
 
@@ -237,7 +237,7 @@ fun SeerrStatusChip(
     modifier = modifier,
   ) {
     Text(
-      text = stringResource(textRes),
+      text = textRes,
       style = MaterialTheme.typography.labelSmall,
       fontWeight = FontWeight.Bold,
       fontSize = 9.5.sp,
@@ -251,31 +251,31 @@ fun SeerrRequestStatusChip(
   status: RequestStatus,
   modifier: Modifier = Modifier,
 ) {
-  val (bgColor, textColor, textRes): Triple<Color, Color, Int> = when (status) {
+  val (bgColor, textColor, textRes) = when (status) {
     RequestStatus.COMPLETED -> Triple(
       Color(0xFF1B5E20).copy(alpha = 0.85f),
       Color(0xFFE8F5E9),
-      R.string.seerr_status_available,
+      "Completed",
     )
     RequestStatus.APPROVED -> Triple(
       Color(0xFF0D47A1).copy(alpha = 0.85f),
       Color(0xFFE3F2FD),
-      R.string.seerr_status_processing,
+      "Approved",
     )
     RequestStatus.PENDING -> Triple(
       SeerrWarningContainer,
       SeerrOnWarningContainer,
-      R.string.seerr_status_pending,
+      "Pending",
     )
     RequestStatus.DECLINED -> Triple(
       Color(0xFFB71C1C).copy(alpha = 0.85f),
       Color(0xFFFFEBEE),
-      R.string.seerr_decline,
+      "Declined",
     )
     RequestStatus.FAILED -> Triple(
       Color(0xFFB71C1C).copy(alpha = 0.85f),
       Color(0xFFFFEBEE),
-      R.string.clip_cancel,
+      "Failed",
     )
   }
 
@@ -286,7 +286,7 @@ fun SeerrRequestStatusChip(
     modifier = modifier,
   ) {
     Text(
-      text = stringResource(textRes),
+      text = textRes,
       style = MaterialTheme.typography.labelSmall,
       fontWeight = FontWeight.Bold,
       fontSize = 10.sp,

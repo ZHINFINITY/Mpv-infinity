@@ -227,7 +227,54 @@ object MediaUtils {
     context.startActivity(intent)
   }
 
-  fun playFiles(vararg args: Any?) {}
+  /**
+   * Play a list of videos as a queue starting at [startIndex].
+   *
+   * Builds a PlayerActivity intent that carries the full list of playback URIs plus a start index,
+   * so the queue advances through the whole selection instead of stopping after the first item.
+   * Mirrors the existing PlaylistDetailScreen launch pattern.
+   */
+  fun playFiles(
+    videos: List<Video>,
+    context: Context,
+    startIndex: Int = 0,
+  ) {
+    if (videos.isEmpty()) return
+    val startIdx = startIndex.coerceIn(0, videos.lastIndex)
+
+    val uris = ArrayList<Uri>(videos.size)
+    val localPaths = ArrayList<String?>(videos.size)
+    for (video in videos) {
+      uris.add(playbackUriFor(video))
+      localPaths.add(video.path.takeIf { it.isNotBlank() && File(it).isFile })
+    }
+
+    val first = videos[startIdx]
+    val intent =
+      Intent(Intent.ACTION_VIEW, uris[startIdx]).apply {
+        setClass(context, PlayerActivity::class.java)
+        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        putExtra("internal_launch", true) // Enables subtitle autoload
+        putExtra("playlist", uris)
+        putExtra("playlist_index", startIdx)
+        putExtra("is_audio", first.isAudio)
+        putExtra("launch_source", "playlist")
+        localPaths[startIdx]?.let { putExtra("local_media_path", it) }
+      }
+    context.startActivity(intent)
+  }
+
+  /** Resolve a [Video] to the URI used for playback, preferring its MediaStore URI. */
+  private fun playbackUriFor(video: Video): Uri {
+    val contentUri = video.uri.takeIf { it != Uri.EMPTY && it.toString().isNotBlank() }
+    if (contentUri != null) return contentUri
+    return if (video.path.isNotBlank() && video.path.startsWith("/")) {
+      Uri.fromFile(File(video.path))
+    } else {
+      video.path.toUri()
+    }
+  }
 
   private fun String?.isHistoryResumeLaunch(): Boolean =
     this == "recently_played" ||

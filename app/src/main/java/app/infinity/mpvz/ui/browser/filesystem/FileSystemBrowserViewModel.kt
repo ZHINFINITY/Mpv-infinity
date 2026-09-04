@@ -405,12 +405,6 @@ class FileSystemBrowserViewModel(
     return super.renameVideo(video, newDisplayName)
   }
 
-  fun playFiles(files: Any?, startIndex: Int = 0) {}
-
-  fun playFiles(files: List<Any>) {}
-
-  fun renameFolder(folder: Any?, newName: String) {}
-
   suspend fun renameFolder(
     folder: FileSystemItem.Folder,
     newName: String,

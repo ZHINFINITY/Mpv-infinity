@@ -1836,4 +1836,84 @@
   <string name="downloads_download">Download</string>
   <string name="downloads_downloaded">Downloaded</string>
   <string name="downloads_open_downloads">Open Downloads</string>
+
+  <!-- Generic -->
+  <string name="generic_configure">Configure</string>
+  <string name="generic_install">Install</string>
+
+  <!-- Seerr (Jellyseerr/Overseerr) -->
+  <string name="seerr_search_placeholder">Search for movies or TV shows…</string>
+  <string name="seerr_connect_server">Connect Server</string>
+  <string name="seerr_not_connected">Not connected</string>
+  <string name="seerr_connect_cta">Connect to a Jellyseerr/Overseerr server to browse, request, and manage your media library.</string>
+  <string name="seerr_recently_added">Recently Added</string>
+  <string name="seerr_requests">Requests</string>
+  <string name="seerr_trending">Trending</string>
+  <string name="seerr_popular_movies">Popular Movies</string>
+  <string name="seerr_popular_tv">Popular TV Shows</string>
+  <string name="seerr_upcoming_movies">Upcoming Movies</string>
+  <string name="seerr_upcoming_tv">Upcoming TV Shows</string>
+  <string name="seerr_disconnect">Disconnect</string>
+  <string name="seerr_server_url">Server URL</string>
+  <string name="seerr_server_url_hint">https://your-jellyseerr.example.com</string>
+  <string name="seerr_api_key">API Key</string>
+  <string name="seerr_api_key_hint">Your Jellyseerr/Overseerr API key</string>
+  <string name="seerr_password">Password</string>
+  <string name="seerr_login">Log In</string>
+  <string name="seerr_play_in_jellyfin">Play in Jellyfin</string>
+  <string name="seerr_status_available">Available</string>
+  <string name="seerr_status_processing">Processing</string>
+  <string name="seerr_status_pending">Pending</string>
+  <string name="seerr_request_tv">Request TV Show</string>
+  <string name="seerr_request_movie">Request Movie</string>
+  <string name="seerr_select_seasons">Select Seasons</string>
+  <string name="seerr_approve">Approve</string>
+  <string name="seerr_decline">Decline</string>
+
+  <!-- yt-dlp -->
+  <string name="ui_checking_yt_dlp">Checking yt-dlp…</string>
+  <string name="ui_install_stable_to_play_web_links">Install the stable release to play web links</string>
+  <string name="ui_reading_installed_version">Reading installed version…</string>
+  <string name="ui_version_unavailable">Version unavailable</string>
+  <string name="ui_yt_dlp_build_and_commit">%1$s (%2$s)</string>
+  <string name="ui_yt_dlp_commit">Commit %s</string>
+  <string name="ui_yt_dlp_custom_build">Custom Build</string>
+  <string name="ui_yt_dlp_installed_build">Installed Build</string>
+  <string name="ui_yt_dlp_master_build">Master Build</string>
+  <string name="ui_yt_dlp_nightly_build">Nightly Build</string>
+  <string name="ui_yt_dlp_not_installed">yt-dlp is not installed</string>
+  <string name="ui_yt_dlp_stable_release">Stable Release</string>
+  <string name="ui_yt_dlp_version">Version %s</string>
+  <string name="ytdlp_installing">Installing yt-dlp…</string>
+  <string name="ytdlp_install_prompt_subtitle">yt-dlp is required to play web links. Install it now?</string>
+  <string name="ytdlp_install_failed">Failed to install yt-dlp</string>
+
+  <!-- Update -->
+  <string name="update_available">Update Available</string>
+  <string name="update_beta_build_format">Beta Build %1$s</string>
+  <string name="update_no_release_notes">No release notes</string>
+  <string name="update_ready_to_install">Ready to Install</string>
+  <string name="update_release_date">Release Date</string>
+  <string name="update_size">Size</string>
+  <string name="update_unknown_size">Unknown size</string>
+  <string name="update_version_format">Version %1$s</string>
+  <string name="update_whats_new">What\'s New</string>
+
+  <!-- mpv.conf ownership -->
+  <string name="mpv_config_owned_title">mpv.conf is owned by you</string>
+  <string name="mpv_config_owned_message">Your mpv.conf takes precedence. In-app settings will only be applied where your configuration does not override them.</string>
+
+  <!-- Network downloads / bookmarks -->
+  <string name="downloads_location_invalid">Download location is invalid</string>
+  <string name="downloads_started">Download started</string>
+  <string name="network_bookmark_add">Add bookmark</string>
+  <string name="network_bookmark_remove">Remove bookmark</string>
+  <string name="network_bookmarks_empty_description">Bookmarked network folders will appear here for quick access.</string>
+  <string name="network_bookmarks_empty_title">No bookmarks yet</string>
+  <string name="network_bookmarks_manage">Manage bookmarks</string>
+  <string name="network_bookmark_source_format">%1$s · %2$s</string>
+  <string name="network_bookmarks_title">Bookmarks</string>
+  <string name="ui_no_saved_media_description">Media you save from the player will appear here.</string>
+  <string name="ui_no_saved_media_title">No saved media yet</string>
+  <string name="ui_saved_media">Saved Media</string>
 </resources>
