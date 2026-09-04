@@ -609,6 +609,7 @@ class PlayerViewModel : ViewModel(),
   // These MPV-backed state flows must be initialized before any init block collects them.
   private val nativeSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeAudioTracks = MutableStateFlow<List<TrackNode>>(emptyList())
+  private val nativeChapters = MutableStateFlow<List<Segment>>(emptyList())
   private var nativeSubtitleToggleListener: ((Int) -> Unit)? = null
   private var nativeAudioToggleListener: ((Int) -> Unit)? = null
 
@@ -632,6 +633,9 @@ class PlayerViewModel : ViewModel(),
         selected = track.selected,
         external = false,
       )
+    }
+    nativeChapters.value = snapshot.chapters.map { chapter ->
+      Segment(chapter.title, chapter.startSeconds)
     }
   }
 
@@ -863,12 +867,17 @@ class PlayerViewModel : ViewModel(),
       .map { tracks -> tracks.any { it.isAlbumArtwork } }
       .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-  val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
+  private val mpvChapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
     PlaybackSession.propNode["chapter-list"]
       .map { node ->
         runCatching { node?.toObject<List<ChapterNode>>(json) }.getOrNull()?.map { it.toSegment() }?.toImmutableList()
           ?: persistentListOf()
       }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
+
+  val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
+    combine(mpvChapters, nativeChapters, decoderPreferences.playbackEngine.changes()) { mpv, native, engine ->
+      if (engine == PlaybackEngineMode.NATIVE && native.isNotEmpty()) native else mpv
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   // Audio player UI state
   val albumArtBounds = MutableStateFlow<android.graphics.Rect?>(null)
