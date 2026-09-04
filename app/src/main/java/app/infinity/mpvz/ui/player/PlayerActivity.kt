@@ -5846,7 +5846,10 @@ class PlayerActivity :
       }
     if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
     ensureCurrentMediaRequest(requestGeneration)
-    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE && !requiresYtdlp) {
+    // Native Media3 is used for video, while MPV remains the audio pipeline. This keeps the
+    // music player, visualizer, and background audio service working even when Native is the
+    // default decoder preference.
+    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE && !requiresYtdlp && !item.isDefinitelyAudioOnly()) {
       withContext(Dispatchers.Main) {
         activeSaveMediaIdentifier = item.stableId
         activeEngineMode = PlaybackEngineMode.NATIVE
