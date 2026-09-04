@@ -39,7 +39,7 @@
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.mpvrx"
+        android:theme="@style/Theme.mpvinfinity"
         android:largeHeap="true"
         android:hardwareAccelerated="true"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -68,7 +68,7 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
-            android:theme="@style/Theme.mpvrx">
+            android:theme="@style/Theme.mpvinfinity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -89,7 +89,7 @@
             android:documentLaunchMode="never"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
-            android:theme="@style/Theme.mpvrx.Player">
+            android:theme="@style/Theme.mpvinfinity.Player">
             <!-- MIME-only discovery lets external-player pickers find mpvRx before they
                  attach the final stream URI. URI playback remains constrained below. -->
             <intent-filter>
@@ -374,7 +374,7 @@
             android:name=".ui.torrent.TorrentSelectionActivity"
             android:exported="true"
             android:grantUriPermissions="true"
-            android:theme="@style/Theme.mpvrx">
+            android:theme="@style/Theme.mpvinfinity">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
@@ -423,18 +423,18 @@
             android:name=".ui.cast.CastRemoteControllerActivity"
             android:exported="false"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.mpvrx" />
+            android:theme="@style/Theme.mpvinfinity" />
         <activity
             android:name=".ui.cast.CastExpandedControlsActivity"
             android:exported="false"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.mpvrx" />
+            android:theme="@style/Theme.mpvinfinity" />
         <activity android:name=".presentation.crash.CrashActivity" />
 
         <activity
             android:name=".ui.mediainfo.MediaInfoActivity"
             android:exported="true"
-            android:theme="@style/Theme.mpvrx"
+            android:theme="@style/Theme.mpvinfinity"
             android:label="@string/ui_media_info" />
 
         <activity-alias

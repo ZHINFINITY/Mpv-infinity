@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.mpvrx" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar" />
+    <style name="Theme.mpvinfinity" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar" />
 
-    <style name="Theme.mpvrx.Player" parent="Theme.mpvrx">
+    <style name="Theme.mpvinfinity.Player" parent="Theme.mpvinfinity">
         <item name="android:windowBackground">@android:color/black</item>
     </style>
 
