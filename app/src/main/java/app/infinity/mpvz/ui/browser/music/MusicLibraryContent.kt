@@ -899,40 +899,40 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                content = { Text("Play") },
-                leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val target = song
                   selectedSongForOptions = null
                   musicViewModel.playSong(context, target, songs)
-                }
+                },
+                content = { Text("Play") },
+                leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Add to Playlist") },
-                leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val target = song
                   selectedSongForOptions = null
                   selectedVideosForAddToPlaylist = listOf(target.toVideo())
-                }
+                },
+                content = { Text("Add to Playlist") },
+                leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Share") },
-                leadingContent = { Icon(Icons.RoundedFilled.Share, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val target = song
                   selectedSongForOptions = null
                   MediaUtils.shareVideos(context, listOf(target.toVideo()))
-                }
+                },
+                content = { Text("Share") },
+                leadingContent = { Icon(Icons.RoundedFilled.Share, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Delete Song", color = MaterialTheme.colorScheme.error) },
-                leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val target = song
                   selectedSongForOptions = null
                   selectedSongForDelete = target
-                }
+                },
+                content = { Text("Delete Song", color = MaterialTheme.colorScheme.error) },
+                leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
               )
             }
           }
@@ -1023,40 +1023,40 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                content = { Text("View Album Tracks") },
-                leadingContent = { Icon(Icons.RoundedFilled.Audiotrack, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val target = album
                   selectedAlbumForOptions = null
                   musicViewModel.selectAlbum(target)
-                }
+                },
+                content = { Text("View Album Tracks") },
+                leadingContent = { Icon(Icons.RoundedFilled.Audiotrack, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Play Album") },
-                leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val list = albumSongs
                   selectedAlbumForOptions = null
                   musicViewModel.playAllSongs(context, list, shuffle = false)
-                }
+                },
+                content = { Text("Play Album") },
+                leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Shuffle Album") },
-                leadingContent = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val list = albumSongs
                   selectedAlbumForOptions = null
                   musicViewModel.playAllSongs(context, list, shuffle = true)
-                }
+                },
+                content = { Text("Shuffle Album") },
+                leadingContent = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Add Album to Playlist") },
-                leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val list = albumSongs
                   selectedAlbumForOptions = null
                   selectedVideosForAddToPlaylist = list.map { it.toVideo() }
-                }
+                },
+                content = { Text("Add Album to Playlist") },
+                leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
               )
             }
           }
@@ -1092,40 +1092,40 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                content = { Text("View Artist Songs") },
-                leadingContent = { Icon(Icons.RoundedFilled.Person, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val target = artist
                   selectedArtistForOptions = null
                   musicViewModel.selectArtist(target)
-                }
+                },
+                content = { Text("View Artist Songs") },
+                leadingContent = { Icon(Icons.RoundedFilled.Person, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Play Artist Songs") },
-                leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val list = artistSongs
                   selectedArtistForOptions = null
                   musicViewModel.playAllSongs(context, list, shuffle = false)
-                }
+                },
+                content = { Text("Play Artist Songs") },
+                leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Shuffle Artist Songs") },
-                leadingContent = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val list = artistSongs
                   selectedArtistForOptions = null
                   musicViewModel.playAllSongs(context, list, shuffle = true)
-                }
+                },
+                content = { Text("Shuffle Artist Songs") },
+                leadingContent = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
               )
               ListItem(
-                content = { Text("Add Artist Songs to Playlist") },
-                leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val list = artistSongs
                   selectedArtistForOptions = null
                   selectedVideosForAddToPlaylist = list.map { it.toVideo() }
-                }
+                },
+                content = { Text("Add Artist Songs to Playlist") },
+                leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
               )
             }
           }
@@ -1155,23 +1155,23 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                content = { Text("Open Playlist") },
-                leadingContent = { Icon(Icons.RoundedFilled.PlaylistPlay, contentDescription = null) },
-                modifier = Modifier.clickable {
+                onClick = {
                   val target = playlist
                   selectedPlaylistForOptions = null
                   selectedPlaylistForDetail = target
-                }
+                },
+                content = { Text("Open Playlist") },
+                leadingContent = { Icon(Icons.RoundedFilled.PlaylistPlay, contentDescription = null) },
               )
               if (!playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)) {
                 ListItem(
-                  content = { Text("Delete Playlist", color = MaterialTheme.colorScheme.error) },
-                  leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                  modifier = Modifier.clickable {
+                  onClick = {
                     val target = playlist
                     selectedPlaylistForOptions = null
                     showDeletePlaylistDialog = target
-                  }
+                  },
+                  content = { Text("Delete Playlist", color = MaterialTheme.colorScheme.error) },
+                  leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                 )
               }
             }

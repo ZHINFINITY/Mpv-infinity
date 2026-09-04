@@ -500,5 +500,47 @@ object PermissionUtils {
           Result.failure(e)
         }
       }
+
+    /**
+     * Rename a folder (requires MANAGE_EXTERNAL_STORAGE on Android 11+)
+     */
+    suspend fun renameFolder(
+      context: Context,
+      folderPath: String,
+      newName: String,
+    ): Boolean =
+      withContext(Dispatchers.IO) {
+        try {
+          val folder = File(folderPath)
+          if (!folder.exists() || !folder.isDirectory) {
+            Log.w(TAG, "✗ Folder does not exist or is not a directory: $folderPath")
+            return@withContext false
+          }
+
+          val parent = folder.parentFile
+          if (parent == null) {
+            Log.w(TAG, "✗ Cannot rename root folder")
+            return@withContext false
+          }
+
+          val newFolder = File(parent, newName)
+          if (newFolder.exists()) {
+            Log.w(TAG, "✗ Target folder already exists: ${newFolder.absolutePath}")
+            return@withContext false
+          }
+
+          val success = folder.renameTo(newFolder)
+          if (success) {
+            MediaLibraryEvents.notifyChanged()
+            Log.d(TAG, "✓ Renamed folder: $folderPath -> ${newFolder.absolutePath}")
+          } else {
+            Log.w(TAG, "✗ Failed to rename folder: $folderPath")
+          }
+          success
+        } catch (e: Exception) {
+          Log.e(TAG, "✗ Error renaming folder: $folderPath", e)
+          false
+        }
+      }
   }
 }
