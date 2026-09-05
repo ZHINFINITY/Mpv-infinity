@@ -903,7 +903,11 @@ class PlayerActivity :
                 currentPlayableUri = handoffSource
                 isReady = false
                 viewModel.onVideoLoadStarted()
-                startMediaLoad(handoffSource, handoffSource)
+                startMediaLoad(
+                  playableUri = handoffSource,
+                  originalUri = handoffSource,
+                  preserveTorrentSession = activeTorrentSourceUri != null,
+                )
               }
               engineHandoffJob = lifecycleScope.launch {
                 val ready = withTimeoutOrNull(15_000L) {
@@ -5738,6 +5742,7 @@ class PlayerActivity :
     playableUri: String,
     originalUri: String? = null,
     expandM3u: Boolean = false,
+    preserveTorrentSession: Boolean = false,
   ) {
     if (!ownsPlaybackSession()) return
     mediaLoadJob?.cancel()
@@ -5757,7 +5762,7 @@ class PlayerActivity :
     val keepsActiveTorrent =
       activeTorrentSourceUri != null &&
         (originalUri == null || isTorrentSource(incomingSource, sourceIntent.type))
-    if (!keepsActiveTorrent && !isTorrentSource(incomingSource, sourceIntent.type)) {
+    if (!preserveTorrentSession && !keepsActiveTorrent && !isTorrentSource(incomingSource, sourceIntent.type)) {
       activeTorrentSourceUri = null
     }
     val requestedSource = if (keepsActiveTorrent) activeTorrentSourceUri!! else incomingSource
@@ -5769,7 +5774,8 @@ class PlayerActivity :
       )
     val requestedTorrentFileIndex = sourceIntent.getIntExtra("torrent_file_index", -1).takeIf { it >= 0 }
     val isTorrentRequest =
-      keepsActiveTorrent ||
+      preserveTorrentSession ||
+        keepsActiveTorrent ||
         isTorrentSource(requestedSource, sourceIntent.type) ||
         isTorrentSource(playableUri, sourceIntent.type)
     mediaLoadJob =

@@ -69,10 +69,10 @@ class NativeMedia3Engine(context: Context) {
     .setLoadControl(
       DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-          30_000,
+          10_000,
           120_000,
+          1_000,
           2_000,
-          5_000,
         )
         .setTargetBufferBytes(64 * 1024 * 1024)
         .build(),
