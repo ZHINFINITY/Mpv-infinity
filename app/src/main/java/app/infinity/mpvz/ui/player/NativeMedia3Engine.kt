@@ -15,7 +15,6 @@ import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.CaptionStyleCompat
@@ -70,19 +69,6 @@ class NativeMedia3Engine(context: Context) {
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         .setEnableDecoderFallback(true),
-    )
-    .setLoadControl(
-      DefaultLoadControl.Builder()
-        // Start promptly and refill only a short window after seeks. A long minimum buffer makes
-        // local HDR and torrent streams appear frozen while Media3 waits before rendering.
-        .setBufferDurationsMs(
-          5_000,
-          60_000,
-          500,
-          1_500,
-        )
-        .setTargetBufferBytes(64 * 1024 * 1024)
-        .build(),
     )
     .build()
     .also { it.setSeekParameters(SeekParameters.CLOSEST_SYNC) }
