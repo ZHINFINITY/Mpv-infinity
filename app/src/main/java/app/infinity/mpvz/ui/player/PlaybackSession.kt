@@ -1612,9 +1612,12 @@ object PlaybackSession : MPVLib.EventObserver {
       return ResolvedPlayable(refreshedUri)
     }
 
-    if (!item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
-    val context = applicationContext ?: return ResolvedPlayable(item.playableUri)
-    return ResolvedPlayable(Uri.parse(item.playableUri).openContentFd(context) ?: item.playableUri)
+    // Media3 should receive the original MediaStore URI. Converting it to a raw
+    // /storage/emulated/0 path forces a slower file path access mode and was responsible for
+    // 10+ second HDR startup on Xiaomi devices. ContentResolver/MediaStore provides the seekable
+    // descriptor and lets Media3 use the platform data source efficiently.
+    if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
+    return ResolvedPlayable(item.playableUri)
   }
 
   private fun releaseActiveNetworkStream() {
