@@ -378,6 +378,12 @@ fun PlayerControls(
       DeclaredPlaybackMediaKind.AUDIO -> true
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
+  LaunchedEffect(useAudioPlayer) {
+    if (useAudioPlayer && statisticsPage in 1..5) {
+      advancedPreferences.enabledStatisticsPage.set(0)
+      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+    }
+  }
   if (useAudioPlayer) {
     val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
     val queuedTitle =
@@ -620,7 +626,9 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    if (statisticsPage in 1..6) {
+    // Statistics are a video overlay only. Keep them out of the audio/visualizer composition even
+    // when the previous video left the persisted statistics page enabled.
+    if (!useAudioPlayer && statisticsPage in 1..6) {
       val statsModifier =
         Modifier
           .align(Alignment.TopStart)
