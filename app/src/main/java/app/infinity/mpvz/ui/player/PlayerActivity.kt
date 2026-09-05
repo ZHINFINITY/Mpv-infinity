@@ -901,14 +901,19 @@ class PlayerActivity :
                   ?: intent.dataString
                   ?.takeIf { isTorrentSource(it, intent.type) }
                 val handoffSource = torrentSource
-                  ?: queueItem?.originalUri
-                  ?.takeIf { it.isNotBlank() }
+                  ?: queueItem?.originalUri?.takeIf { it.isNotBlank() }
                   ?: currentUri
-                currentPlayableUri = handoffSource
+                val handoffPlayableSource =
+                  if (isTorrentHandoff && currentUri != null && !isTorrentSource(currentUri, intent.type)) {
+                    currentUri
+                  } else {
+                    handoffSource
+                  }
+                currentPlayableUri = handoffPlayableSource
                 isReady = false
                 viewModel.onVideoLoadStarted()
                 startMediaLoad(
-                  playableUri = handoffSource,
+                  playableUri = handoffPlayableSource,
                   originalUri = handoffSource,
                   preserveTorrentSession = isTorrentHandoff,
                 )
@@ -5825,7 +5830,16 @@ class PlayerActivity :
           var resolvedMimeType = sourceIntent.type ?: "audio/*".takeIf { isKnownAudioLaunch(sourceIntent) }
           var torrentResult: TorrentStreamResult? = null
 
-          if (isTorrentRequest) {
+          if (isTorrentRequest && preserveTorrentSession) {
+            // The Native -> MPV renderer handoff must reuse the existing localhost proxy. Calling
+            // startStream() here would clean up the current libtorrent handle while the outgoing
+            // HTTP reader is still active; its ensureActive() would then throw "Torrent stream
+            // stopped" and MPV would report a curl connection failure.
+            resolvedPlayableUri = playableUri
+            resolvedOriginalUri = activeTorrentSourceUri ?: requestedSource
+            resolvedFileName = requestedFileName
+            resolvedMimeType = sourceIntent.type
+          } else if (isTorrentRequest) {
             val result =
               torrentStreamingEngine.startStream(
                 TorrentStreamRequest(
