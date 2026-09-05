@@ -75,7 +75,10 @@ class NativeMedia3Engine(context: Context) {
           3_000,
         )
         .setBackBuffer(30_000, true)
-        .setPrioritizeTimeOverSizeThresholds(true)
+        // Keep high-bitrate UHD playback from growing without a memory bound. 256 MiB gives a
+        // Poco F7 enough headroom for a 4K HDR remux while leaving memory for the codec and UI.
+        .setTargetBufferBytes(256 * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(false)
         .build(),
     )
     // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
