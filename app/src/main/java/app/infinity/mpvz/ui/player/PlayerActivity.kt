@@ -844,13 +844,23 @@ class PlayerActivity :
               nativeEngine.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
-              val handoffIndex =
-                PlaybackSession.queue.value.currentIndex.takeIf { it in playlist.indices }
-                  ?: playlistIndex.coerceAtLeast(0)
-              loadPlaylistItemInternal(
-                index = handoffIndex,
-                saveCurrentPlaybackState = false,
-              )
+              val queueItem = PlaybackSession.queue.value.currentItem
+              queueItem?.torrentFileIndex?.let { intent.putExtra("torrent_file_index", it) }
+              val handoffIndex = PlaybackSession.queue.value.currentIndex
+                .takeIf { it in playlist.indices }
+              if (handoffIndex != null) {
+                loadPlaylistItemInternal(index = handoffIndex, saveCurrentPlaybackState = false)
+              } else {
+                // Single-file/direct torrent sessions have no playlist entry. Reload from the
+                // original torrent source so MPV does not reopen the closed native/local URL.
+                val handoffSource = queueItem?.originalUri
+                  ?.takeIf { it.isNotBlank() }
+                  ?: currentUri
+                currentPlayableUri = handoffSource
+                isReady = false
+                viewModel.onVideoLoadStarted()
+                startMediaLoad(handoffSource, handoffSource)
+              }
               engineHandoffJob = lifecycleScope.launch {
                 val ready = withTimeoutOrNull(15_000L) {
                   PlaybackSession.state.first {
