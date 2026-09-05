@@ -9,7 +9,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
-import androidx.media3.common.SeekParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
@@ -71,7 +70,6 @@ class NativeMedia3Engine(context: Context) {
         .setEnableDecoderFallback(true),
     )
     .build()
-    .also { it.setSeekParameters(SeekParameters.CLOSEST_SYNC) }
   private var attachedView: PlayerView? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
