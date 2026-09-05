@@ -67,7 +67,9 @@ class NativeMedia3Engine(context: Context) {
       DefaultRenderersFactory(context.applicationContext)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        .setEnableDecoderFallback(true),
+        // Do not silently replace a failed hardware HDR decoder with a software decoder. That
+        // fallback is visibly worse than returning to MPV: it causes long startup and rebuffering.
+        .setEnableDecoderFallback(false),
     )
     .build()
   private var attachedView: PlayerView? = null

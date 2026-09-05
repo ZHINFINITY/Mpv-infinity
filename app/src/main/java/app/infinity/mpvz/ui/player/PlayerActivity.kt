@@ -5982,6 +5982,9 @@ class PlayerActivity :
     val canUseNative =
       selectedEngine == PlaybackEngineMode.NATIVE &&
         !nativeItem.isDefinitelyAudioOnly() &&
+        // Media3 cannot open a magnet/torrent source. Leave unresolved torrent items on MPV,
+        // which owns torrent resolution and can hand Media3 a real stream later.
+        !item.requiresTorrentResolution() &&
         (!requiresYtdlp || nativeResolvedUri != null)
     if (canUseNative) {
       withContext(Dispatchers.Main) {

@@ -61,6 +61,14 @@ object PermissionUtils {
     mediaRequestLauncher = launcher
   }
 
+  fun clearMediaAccessLauncher(launcher: ActivityResultLauncher<IntentSenderRequest>) {
+    if (mediaRequestLauncher === launcher) {
+      mediaRequestLauncher = null
+      resultOkCallback = {}
+      resultCancelledCallback = {}
+    }
+  }
+
   /**
    * Handle result from MainActivity's launcher callback.
    */

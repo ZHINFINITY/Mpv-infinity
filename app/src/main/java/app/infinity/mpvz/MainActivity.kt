@@ -560,6 +560,7 @@ class MainActivity : AppCompatActivity() {
     pendingPipExitResolution = false
     wasInPipMode = false
     isExpandingFromPip = false
+    PermissionUtils.clearMediaAccessLauncher(mediaAccessLauncher)
     try {
       super.onDestroy()
     } catch (e: Exception) {
