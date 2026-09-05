@@ -14,7 +14,9 @@ import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -61,7 +63,17 @@ data class NativeChapter(
 class NativeMedia3Engine(context: Context) {
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
+  private val loadControl = DefaultLoadControl.Builder()
+    .setAllocator(DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE))
+    .setBufferDurationsMs(
+      50_000,
+      100_000,
+      2_500,
+      5_000,
+    )
+    .build()
   private val player = ExoPlayer.Builder(context.applicationContext)
+    .setLoadControl(loadControl)
     .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
