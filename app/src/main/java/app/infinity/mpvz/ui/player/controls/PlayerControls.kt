@@ -284,9 +284,14 @@ fun PlayerControls(
   var isSeeking by remember { mutableStateOf(false) }
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsState()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
+  val activity = LocalActivity.current as? PlayerActivity
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
+    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
+  val nativeEngineActive = activity?.isNativeEngineActive() == true
+  val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
   val showBufferingIndicator =
-    bufferingState.visible &&
-      (controlsShown || playbackSessionState.phase == PlaybackPhase.LOADING) &&
+    (bufferingState.visible || isNativeBuffering) &&
+      (controlsShown || isNativeBuffering || playbackSessionState.phase == PlaybackPhase.LOADING) &&
       !isPlayerSeeking
   var stableDemuxerCacheTime by remember { mutableFloatStateOf(0f) }
   val currentDemuxerCacheTime =
@@ -356,10 +361,6 @@ fun PlayerControls(
   }
 
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
-  val activity = LocalActivity.current as? PlayerActivity
-  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
-    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
-  val nativeEngineActive = activity?.isNativeEngineActive() == true
   val mpvChapters by viewModel.chapters.collectAsState(persistentListOf())
   val chapters = if (nativeEngineActive && nativeSnapshot.chapters.isNotEmpty()) {
     nativeSnapshot.chapters.map { dev.vivvvek.seeker.Segment(it.title, it.startSeconds) }.toImmutableList()
