@@ -1617,6 +1617,7 @@ object PlaybackSession : MPVLib.EventObserver {
     // 10+ second HDR startup on Xiaomi devices. ContentResolver/MediaStore provides the seekable
     // descriptor and lets Media3 use the platform data source efficiently.
     if (item.playableUri.startsWith("content://")) return ResolvedPlayable(item.playableUri)
+    if (item.originalUri.startsWith("content://")) return ResolvedPlayable(item.originalUri)
     return ResolvedPlayable(item.playableUri)
   }
 
