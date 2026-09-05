@@ -74,6 +74,7 @@ class NativeMedia3Engine(context: Context) {
           1_000,
           2_000,
         )
+        .setBackBuffer(30_000, true)
         .setTargetBufferBytes(64 * 1024 * 1024)
         .build(),
     )
