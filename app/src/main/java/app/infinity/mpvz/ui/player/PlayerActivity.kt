@@ -5923,6 +5923,7 @@ class PlayerActivity :
           startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),
           autoplay = true,
           headers = item.headers,
+          mimeType = item.mimeType,
         )
         viewModel.onVideoLoadCompleted()
       }

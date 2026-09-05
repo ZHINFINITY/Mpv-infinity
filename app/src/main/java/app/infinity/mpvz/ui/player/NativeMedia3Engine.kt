@@ -27,6 +27,7 @@ import kotlin.math.pow
 data class NativePlaybackSnapshot(
   val isPlaying: Boolean = false,
   val isReady: Boolean = false,
+  val isBuffering: Boolean = false,
   val positionMs: Long = 0L,
   val durationMs: Long = 0L,
   val videoWidth: Int = 0,
@@ -272,13 +273,14 @@ class NativeMedia3Engine(context: Context) {
     startPositionMs: Long = 0L,
     autoplay: Boolean = true,
     headers: Map<String, String> = emptyMap(),
+    mimeType: String? = null,
   ) {
     _hasRenderedFirstFrame.value = false
     httpDataSourceFactory.setDefaultRequestProperties(headers)
     val mediaItem =
       MediaItem.Builder()
         .setUri(uri)
-        .apply { nativeContainerMimeType(uri)?.let(::setMimeType) }
+        .apply { (mimeType ?: nativeContainerMimeType(uri))?.let(::setMimeType) }
         .build()
     player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
     player.prepare()
@@ -435,6 +437,7 @@ class NativeMedia3Engine(context: Context) {
     _snapshot.value = NativePlaybackSnapshot(
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
+      isBuffering = player.playbackState == Player.STATE_BUFFERING,
       positionMs = player.currentPosition.coerceAtLeast(0L),
       durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
       videoWidth = video?.width ?: 0,
