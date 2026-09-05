@@ -111,10 +111,16 @@ class NativeMedia3Engine(context: Context) {
   )
   private val _snapshot = MutableStateFlow(NativePlaybackSnapshot())
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
+  private val _hasRenderedFirstFrame = MutableStateFlow(false)
+  val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
   val currentPlayer: Player get() = player
   private var metadataChapters: List<NativeChapter> = emptyList()
 
   private val listener = object : Player.Listener {
+    override fun onRenderedFirstFrame() {
+      _hasRenderedFirstFrame.value = true
+    }
+
     override fun onMetadata(metadata: Metadata) {
       metadataChapters = metadataEntriesToChapters(metadata)
       publishSnapshot()
@@ -255,6 +261,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun play(uri: Uri, startPositionMs: Long = 0L, autoplay: Boolean = true) {
+    _hasRenderedFirstFrame.value = false
     val mediaItem =
       MediaItem.Builder()
         .setUri(uri)
@@ -368,6 +375,7 @@ class NativeMedia3Engine(context: Context) {
     loopHandler.removeCallbacks(timelineRunnable)
     player.stop()
     player.clearMediaItems()
+    _hasRenderedFirstFrame.value = false
     publishSnapshot()
   }
 

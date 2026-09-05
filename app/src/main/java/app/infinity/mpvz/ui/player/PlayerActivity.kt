@@ -140,11 +140,13 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import okhttp3.OkHttpClient
@@ -792,15 +794,32 @@ class PlayerActivity :
             PlaybackSession.setPropertyBoolean("pause", true)
           }
 
-          activeEngineMode = engine
           val useNative = engine == PlaybackEngineMode.NATIVE
-          binding.media3Player.visibility = if (useNative) View.VISIBLE else View.GONE
-          binding.player.visibility = if (useNative) View.GONE else View.VISIBLE
           val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
           if (currentUri != null && (isReady || outgoingEngine == PlaybackEngineMode.NATIVE)) {
             if (useNative) {
+              // Keep MPV visible while Media3 opens the network source. Hiding the outgoing
+              // surface before Media3 renders a frame produces the black/stuck handoff seen on
+              // HDR WebDAV playback.
+              binding.media3Player.visibility = View.INVISIBLE
               nativeEngine.play(Uri.parse(currentUri), outgoingPositionMs, outgoingPlaying)
+              engineHandoffJob = lifecycleScope.launch {
+                val rendered = withTimeoutOrNull(15_000L) {
+                  nativeEngine.hasRenderedFirstFrame.first { it }
+                  true
+                } == true
+                if (!rendered || !ownsPlaybackSession()) {
+                  nativeEngine.stop()
+                  return@launch
+                }
+                activeEngineMode = PlaybackEngineMode.NATIVE
+                binding.media3Player.visibility = View.VISIBLE
+                binding.player.visibility = View.GONE
+              }
             } else if (mpvInitialized) {
+              activeEngineMode = PlaybackEngineMode.MPV
+              binding.media3Player.visibility = View.VISIBLE
+              binding.player.visibility = View.INVISIBLE
               nativeEngine.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
@@ -809,6 +828,16 @@ class PlayerActivity :
                 saveCurrentPlaybackState = false,
               )
               engineHandoffJob = lifecycleScope.launch {
+                val ready = withTimeoutOrNull(15_000L) {
+                  PlaybackSession.state.first {
+                    it.phase == PlaybackPhase.READY || it.phase == PlaybackPhase.BACKGROUND
+                  }
+                  true
+                } == true
+                if (ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
+                  binding.media3Player.visibility = View.GONE
+                  binding.player.visibility = View.VISIBLE
+                }
                 // MPV loads asynchronously. PiP transitions can delay the load completion, so
                 // apply the captured handoff state more than once instead of losing the first
                 // seek/play command while MPV is still replacing the file.
