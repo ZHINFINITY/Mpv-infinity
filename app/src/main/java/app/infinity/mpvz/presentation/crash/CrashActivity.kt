@@ -231,6 +231,26 @@ class CrashActivity : AppCompatActivity() {
       val logcat = StringBuilder()
       // reader.lines() looks much nicer so why not use it on devices that support it?
       reader.lines().forEach(logcat::appendLine)
+      val media3Lines =
+        logcat
+          .lineSequence()
+          .filter { line ->
+            listOf(
+              "Mpv∞-Media3",
+              "ExoPlayer",
+              "Media3",
+              "MediaCodec",
+              "CCodec",
+              "CCodecBufferChannel",
+              "DefaultRenderersFactory",
+              "MediaCodecVideoRenderer",
+              "SurfaceUtils",
+              "BufferQueue",
+            ).any { marker -> line.contains(marker, ignoreCase = true) }
+          }.joinToString("\n")
+      logcat.appendLine()
+      logcat.appendLine("===== Media3 / ExoPlayer / Codec diagnostics =====")
+      logcat.appendLine(if (media3Lines.isBlank()) "No matching Media3 lines captured." else media3Lines)
       return logcat.toString()
     }
 
