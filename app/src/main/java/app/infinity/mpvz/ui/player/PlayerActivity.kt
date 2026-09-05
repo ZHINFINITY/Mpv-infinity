@@ -4062,6 +4062,9 @@ class PlayerActivity :
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
     viewModel.onOrientationChanged()
+    if (isNativeEngineActive()) {
+      nativeEngine.refreshAfterConfigurationChange()
+    }
     binding.root.post(::updateVideoAmbientPlayerBounds)
     if (isReady) {
       handleConfigurationChange()

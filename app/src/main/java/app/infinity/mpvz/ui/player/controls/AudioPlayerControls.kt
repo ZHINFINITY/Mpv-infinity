@@ -963,7 +963,7 @@ fun AudioPlayerControls(
     key1 = albumArtBitmap,
     key2 = ambientModeEnabled,
   ) {
-    if (!ambientModeEnabled || albumArtBitmap == null) {
+    if (albumArtBitmap == null) {
       value = null
       return@produceState
     }
@@ -992,11 +992,9 @@ fun AudioPlayerControls(
   }
 
   val targetTopColor =
-    if (ambientModeEnabled) ambientColors?.first ?: Color.Transparent
-    else Color(visualizerPalette.primary).copy(alpha = 0.22f)
+    ambientColors?.first ?: Color(visualizerPalette.primary).copy(alpha = 0.38f)
   val targetBottomColor =
-    if (ambientModeEnabled) ambientColors?.second ?: Color.Transparent
-    else Color(visualizerPalette.secondary).copy(alpha = 0.22f)
+    ambientColors?.second ?: Color(visualizerPalette.secondary).copy(alpha = 0.30f)
 
   val animatedAmbientTop: Color by animateColorAsState(
     targetValue = targetTopColor,
@@ -1019,7 +1017,7 @@ fun AudioPlayerControls(
       modifier
         .fillMaxSize()
         .drawWithCache {
-          if (ambientModeEnabled && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
+          if (albumArtBitmap != null && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
             val radialGradient = Brush.radialGradient(
