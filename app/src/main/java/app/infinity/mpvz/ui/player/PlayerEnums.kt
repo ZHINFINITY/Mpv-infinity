@@ -58,6 +58,7 @@ enum class CustomKeyCodes(
 enum class PlaybackEngineMode(
   val title: String,
 ) {
+  AUTO("Auto"),
   MPV("MPV"),
   NATIVE("Native");
 
