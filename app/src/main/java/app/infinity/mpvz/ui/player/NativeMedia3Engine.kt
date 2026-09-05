@@ -80,7 +80,7 @@ class NativeMedia3Engine(context: Context) {
   private val timelineRunnable = object : Runnable {
     override fun run() {
       if (player.currentMediaItem == null) return
-      publishSnapshot()
+      publishPlaybackSnapshot()
       loopHandler.postDelayed(this, 100L)
     }
   }
@@ -450,6 +450,19 @@ class NativeMedia3Engine(context: Context) {
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
       chapters = chapters,
+    )
+  }
+
+  /** Publishes only rapidly changing playback values; track/metadata enumeration is expensive. */
+  private fun publishPlaybackSnapshot() {
+    val previous = _snapshot.value
+    _snapshot.value = previous.copy(
+      isPlaying = player.isPlaying,
+      isReady = player.playbackState == Player.STATE_READY,
+      isBuffering = player.playbackState == Player.STATE_BUFFERING,
+      positionMs = player.currentPosition.coerceAtLeast(0L),
+      durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
+      speed = player.playbackParameters.speed,
     )
   }
 
