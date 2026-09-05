@@ -5910,27 +5910,37 @@ class PlayerActivity :
           if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
         else -> configuredEngine
       }
-    if (selectedEngine == PlaybackEngineMode.NATIVE && !requiresYtdlp && !item.isDefinitelyAudioOnly()) {
+    val nativeResolvedUri =
+      if (selectedEngine == PlaybackEngineMode.NATIVE && requiresYtdlp) {
+        YtdlpManager.resolveDirectMediaUrl(this, item.playableUri) { message -> Log.d(TAG, message) }
+      } else {
+        null
+      }
+    val nativeItem = nativeResolvedUri?.let { item.copy(playableUri = it) } ?: item
+    val canUseNative =
+      selectedEngine == PlaybackEngineMode.NATIVE &&
+        !nativeItem.isDefinitelyAudioOnly() &&
+        (!requiresYtdlp || nativeResolvedUri != null)
+    if (canUseNative) {
       withContext(Dispatchers.Main) {
         activeSaveMediaIdentifier = item.stableId
         activeEngineMode = PlaybackEngineMode.NATIVE
         viewModel.setNativeEngineActive(true)
         binding.player.visibility = View.GONE
         binding.media3Player.visibility = View.VISIBLE
-        val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(item)
+        val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.play(
           nativePlayableUri.toUri(),
           startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),
           autoplay = true,
-          headers = item.headers,
-          mimeType = item.mimeType,
+          headers = nativeItem.headers,
+          mimeType = nativeItem.mimeType,
         )
         viewModel.onVideoLoadCompleted()
       }
       return
     }
-    // Media3 cannot resolve yt-dlp-backed web URLs. Use MPV deliberately for these sources and
-    // switch surfaces before loading so a previous Native frame cannot leave a black player.
+    // If a web source cannot be resolved to a direct Media3 URL, retain the MPV fallback.
     withContext(Dispatchers.Main) {
       if (requiresYtdlp || selectedEngine != PlaybackEngineMode.NATIVE) {
         activeEngineMode = PlaybackEngineMode.MPV

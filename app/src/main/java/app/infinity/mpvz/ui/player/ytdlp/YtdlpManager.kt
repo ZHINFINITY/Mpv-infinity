@@ -373,6 +373,42 @@ object YtdlpManager {
     }
   }
 
+  /** Resolves a web page to one combined audio/video URL that Media3 can play directly. */
+  suspend fun resolveDirectMediaUrl(
+    context: Context,
+    source: String,
+    onLog: (String) -> Unit = {},
+  ): String? =
+    withContext(Dispatchers.IO) {
+      if (!requiresYtdlp(source) || !isPlaybackRuntimeReady(context)) return@withContext source
+      val output = StringBuilder()
+      val ytdlFile = File(getYtdlDir(context), "yt-dlp")
+      val cookiesFile = AndroidCookieJar.playbackCookieFile(context).takeIf(File::isFile)
+      val command = buildList {
+        add(getExecutablePath(context))
+        add(ytdlFile.absolutePath)
+        add("--ignore-config")
+        add("--no-playlist")
+        add("--no-warnings")
+        add("--no-progress")
+        add("--get-url")
+        add("--format")
+        add("best[acodec!=none][vcodec!=none]/best")
+        cookiesFile?.let {
+          add("--cookies")
+          add(it.absolutePath)
+        }
+        add("--")
+        add(source)
+      }
+      val completed = executePythonProcess(command, context) { line -> output.appendLine(line) }
+      if (!completed) return@withContext null
+      output.lineSequence()
+        .map(String::trim)
+        .firstOrNull { it.startsWith("http://") || it.startsWith("https://") }
+        ?.also { onLog("Resolved direct native media URL") }
+    }
+
   /** Ensures the yt-dlp runtime is installed regardless of URL shape (used by the downloader). */
   suspend fun ensureRuntimeInstalled(
     context: Context,
