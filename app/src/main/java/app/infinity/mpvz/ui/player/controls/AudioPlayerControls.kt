@@ -2002,20 +2002,35 @@ fun AudioPlayerControls(
         }
       }
     } else {
+      // Landscape keeps the artwork and its metadata together on the left, while the right pane
+      // is reserved for the seekbar and controls. This prevents the metadata from pushing the
+      // lower action row below the available height on short landscape displays.
       Row(
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(24.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        centerVisualizerView(Modifier.weight(1f).fillMaxHeight())
+        Column(
+          modifier = Modifier.weight(1f).fillMaxHeight(),
+          verticalArrangement = Arrangement.Center,
+          horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+          centerVisualizerView(
+            Modifier
+              .weight(1f)
+              .fillMaxWidth()
+              .padding(vertical = 12.dp, horizontal = 24.dp),
+          )
+          Spacer(modifier = Modifier.height(12.dp))
+          trackMetadataView()
+        }
         Column(
           modifier = Modifier.weight(1.2f).fillMaxHeight(),
-          verticalArrangement = Arrangement.SpaceBetween,
+          verticalArrangement = Arrangement.SpaceEvenly,
           horizontalAlignment = Alignment.CenterHorizontally,
         ) {
           headerBar()
           losslessBadge()
-          trackMetadataView()
           seekbarView()
           playbackControlsRow()
           bottomActionRow()
