@@ -41,7 +41,13 @@ fun DecodersSheet(
       buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
     )
   var selectedTab by remember(selectedEngine) {
-    mutableIntStateOf(if (selectedEngine == PlaybackEngineMode.NATIVE) 1 else 0)
+    mutableIntStateOf(
+      when (selectedEngine) {
+        PlaybackEngineMode.AUTO -> 0
+        PlaybackEngineMode.MPV -> 1
+        PlaybackEngineMode.NATIVE -> 2
+      },
+    )
   }
 
   PlayerSheet(onDismissRequest) {
@@ -51,21 +57,29 @@ fun DecodersSheet(
           selected = selectedTab == 0,
           onClick = {
             selectedTab = 0
-            onSelectEngine(PlaybackEngineMode.MPV)
+            onSelectEngine(PlaybackEngineMode.AUTO)
           },
-          text = { Text("MPV") },
+          text = { Text("Auto") },
         )
         Tab(
           selected = selectedTab == 1,
           onClick = {
             selectedTab = 1
+            onSelectEngine(PlaybackEngineMode.MPV)
+          },
+          text = { Text("MPV") },
+        )
+        Tab(
+          selected = selectedTab == 2,
+          onClick = {
+            selectedTab = 2
             onSelectEngine(PlaybackEngineMode.NATIVE)
           },
           text = { Text("Native") },
         )
       }
       LazyColumn {
-        if (selectedTab == 1) {
+        if (selectedTab == 2) {
           item(key = "native-active") {
             AudioTrackRow(
               title = "Native playback engine active",
