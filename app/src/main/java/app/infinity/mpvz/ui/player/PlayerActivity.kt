@@ -802,6 +802,10 @@ class PlayerActivity :
               // surface before Media3 renders a frame produces the black/stuck handoff seen on
               // HDR WebDAV playback.
               binding.media3Player.visibility = View.INVISIBLE
+              if (outgoingEngine == PlaybackEngineMode.MPV) {
+                PlaybackSession.setPropertyBoolean("pause", true)
+                PlaybackSession.setPropertyBoolean("mute", true)
+              }
               val queuedItem = PlaybackSession.queue.value.currentItem
               val currentItem =
                 queuedItem?.takeUnless { it.requiresTorrentResolution() }
@@ -834,6 +838,7 @@ class PlayerActivity :
             } else if (mpvInitialized) {
               activeEngineMode = PlaybackEngineMode.MPV
               viewModel.setNativeEngineActive(false)
+              PlaybackSession.setPropertyBoolean("mute", false)
               binding.media3Player.visibility = View.VISIBLE
               binding.player.visibility = View.INVISIBLE
               nativeEngine.stop()
