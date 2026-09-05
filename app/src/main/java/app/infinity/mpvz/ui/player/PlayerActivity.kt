@@ -841,6 +841,12 @@ class PlayerActivity :
                     activeEngineMode = PlaybackEngineMode.MPV
                     viewModel.setNativeEngineActive(false)
                     PlaybackSession.setPropertyBoolean("mute", false)
+                    // Native can fail after MPV was frozen and muted for the handoff. Restore
+                    // both properties here; otherwise the fallback surface shows MPV's paused
+                    // frame and the user sees a permanent paused icon.
+                    PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
+                    PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
+                    if (outgoingPlaying) PlaybackSession.command("play")
                     binding.media3Player.visibility = View.GONE
                     binding.player.visibility = View.VISIBLE
                   }
