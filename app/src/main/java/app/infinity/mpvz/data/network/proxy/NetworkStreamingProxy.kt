@@ -402,7 +402,10 @@ class NetworkStreamingProxy private constructor() :
   private fun getKnownRegistrationMime(
     streamInfo: StreamInfo,
     path: NetworkPath,
-  ): String? = streamInfo.primaryMimeType.takeIf { path == streamInfo.primaryPath }
+  ): String? =
+    streamInfo.primaryMimeType
+      .takeIf { path == streamInfo.primaryPath }
+      ?.takeUnless { it.equals("application/octet-stream", ignoreCase = true) }
 
   private fun mimeTypeFor(
     streamInfo: StreamInfo,
