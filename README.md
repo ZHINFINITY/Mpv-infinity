@@ -321,6 +321,8 @@ Actual power use depends on the device, codec, resolution, refresh rate, rendere
   <a href="https://github.com/ZHINFINITY/Mpv-infinity/releases">
     <img src="https://img.shields.io/badge/Download-Stable_Release-blue?style=for-the-badge&logo=github" alt="Stable Release">
   </a>
+  <br>
+  <a href="obtainium://add/https://github.com/ZHINFINITY/Mpv-infinity">Add Mpv∞ to Obtainium for direct updates</a>
   <!-- <a href="https://ZHINFINITY.github.io/Mpv-/">
     <img src="https://img.shields.io/badge/Download-Preview_Build-orange?style=for-the-badge&logo=github" alt="Preview Build">
   </a> -->
