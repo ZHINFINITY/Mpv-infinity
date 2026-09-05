@@ -554,7 +554,7 @@ fun GestureHandler(
             // Track long press separately
             var longPressTriggered = false
             var isSubtitleHoldActive = false
-            val longPressDelay = 500L
+            val longPressDelay = 300L
             var longPressJob =
               coroutineScope.launch {
                 delay(longPressDelay)
@@ -589,16 +589,21 @@ fun GestureHandler(
                       longPressTriggeredDuringTouch = true
                       haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                       originalSpeed = viewModel.activePlaybackSpeed()
-                      // Ramp speed up incrementally to avoid audio filter stutter
+                      // Native Media3 applies speed synchronously; update it and the feedback
+                      // overlay immediately instead of waiting behind a ramp.
                       val startSpeed = originalSpeed
                       val targetSpeed = 2f
-                      val steps = 5
-                      val stepDelay = 16L // ~one frame per step
-                      for (i in 1..steps) {
-                        val t = i.toFloat() / steps
-                        val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
-                        viewModel.setPlaybackSpeed(intermediateSpeed)
-                        if (i < steps) delay(stepDelay)
+                      if (viewModel.isNativeEngineActive()) {
+                        viewModel.setPlaybackSpeed(targetSpeed)
+                      } else {
+                        val steps = 5
+                        val stepDelay = 16L // ~one frame per step
+                        for (i in 1..steps) {
+                          val t = i.toFloat() / steps
+                          val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
+                          viewModel.setPlaybackSpeed(intermediateSpeed)
+                          if (i < steps) delay(stepDelay)
+                        }
                       }
 
                       isDynamicSpeedControlActive = true
