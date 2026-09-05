@@ -99,6 +99,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -6646,6 +6647,9 @@ class PlayerViewModel : ViewModel(),
   }
 
   override fun onCleared() {
+    // ViewModel normally cancels this scope after onCleared; cancel it first so dispatcher workers
+    // cannot start another callback while the player resources below are being released.
+    viewModelScope.cancel()
     embeddedCueTranslationJob?.cancel()
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
