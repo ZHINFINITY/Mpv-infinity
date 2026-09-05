@@ -295,8 +295,15 @@ class NativeMedia3Engine(context: Context) {
         }
         .build()
     player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
-    player.prepare()
-    player.playWhenReady = autoplay
+    val prepare = Runnable {
+      // SurfaceView attachment/visibility is asynchronous during an MPV ↔ Media3 handoff.
+      // Preparing on the next traversal prevents the decoder from starting with no surface.
+      if (player.currentMediaItem?.localConfiguration?.uri == uri) {
+        player.prepare()
+        player.playWhenReady = autoplay
+      }
+    }
+    attachedView?.post(prepare) ?: prepare.run()
     publishSnapshot()
     startTimelineUpdates()
   }
