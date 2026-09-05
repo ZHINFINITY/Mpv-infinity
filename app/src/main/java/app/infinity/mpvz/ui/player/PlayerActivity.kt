@@ -884,11 +884,15 @@ class PlayerActivity :
               queueItem?.torrentFileIndex?.let { intent.putExtra("torrent_file_index", it) }
               val handoffIndex = PlaybackSession.queue.value.currentIndex
                 .takeIf { it in playlist.indices }
+              val isTorrentHandoff =
+                activeTorrentSourceUri != null ||
+                  queueItem?.torrentFileIndex != null ||
+                  queueItem?.originalUri?.let { isTorrentSource(it, intent.type) } == true
               // A resolved torrent has a temporary playable URL and may also have a queue item.
               // Reloading that queue item here can run the normal outgoing-item cleanup and stop
               // the proxy before MPV reconnects. Always use the retained torrent source directly
               // while a torrent session is active.
-              if (activeTorrentSourceUri == null && queueItem?.torrentFileIndex == null && handoffIndex != null) {
+              if (!isTorrentHandoff && handoffIndex != null) {
                 loadPlaylistItemInternal(index = handoffIndex, saveCurrentPlaybackState = false)
               } else {
                 // Single-file/direct torrent sessions have no playlist entry. Reload from the
@@ -906,7 +910,7 @@ class PlayerActivity :
                 startMediaLoad(
                   playableUri = handoffSource,
                   originalUri = handoffSource,
-                  preserveTorrentSession = activeTorrentSourceUri != null,
+                  preserveTorrentSession = isTorrentHandoff,
                 )
               }
               engineHandoffJob = lifecycleScope.launch {
@@ -5781,7 +5785,12 @@ class PlayerActivity :
     mediaLoadJob =
       lifecycleScope.launch(mediaLoadDispatcher) {
         try {
-          if (!isTorrentRequest) torrentStreamingEngine.stopStream()
+          // A renderer handoff may carry only the proxy's localhost URL. Never tear down the
+          // torrent from that load based on URI classification; the explicit handoff flag means
+          // the proxy is still owned by the current playback session.
+          if (!isTorrentRequest && !preserveTorrentSession) {
+            torrentStreamingEngine.stopStream()
+          }
           if (isTorrentRequest && !advancedPreferences.enableP2pStreaming.get()) {
             torrentStreamingEngine.stopStream()
             playWhenFileLoaded = false
