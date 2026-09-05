@@ -8241,7 +8241,9 @@ class PlayerActivity :
    * Disables video decoding to save battery when moving to background playback.
    */
   private fun disableVideoForBackground() {
-    if (!isReady || fileName.isBlank()) return
+    // Native-to-MPV handoff deliberately marks MPV as loading before the service owns it, so
+    // isReady can be false even though a playable native session existed moments earlier.
+    if (fileName.isBlank() || (!isReady && !nativeEngine.snapshot.value.isReady && !mpvInitialized)) return
     if (isMiniPlayerEnabled()) return
 
     val currentVid = PlaybackSession.getPropertyInt("vid") ?: -1

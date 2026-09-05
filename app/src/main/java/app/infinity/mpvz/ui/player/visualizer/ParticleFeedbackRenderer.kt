@@ -291,7 +291,7 @@ internal class ParticleFeedbackRenderer(
     val isDarkTheme = if (bgLuminance < 0.5f) 1.0f else 0.0f
 
     GLES30.glViewport(0, 0, viewportWidth, viewportHeight)
-    GLES30.glClearColor(0f, 0f, 0f, 0f)
+    GLES30.glClearColor(bgRgb[0], bgRgb[1], bgRgb[2], 1f)
     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
 
     GLES30.glEnable(GLES30.GL_BLEND)

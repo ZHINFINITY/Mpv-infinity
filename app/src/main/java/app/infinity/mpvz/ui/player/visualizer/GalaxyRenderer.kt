@@ -200,7 +200,13 @@ internal class GalaxyRenderer(
     updateMatrices(time, audio)
 
     GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
-    GLES30.glClearColor(0f, 0f, 0f, 0f)
+    val background = (appliedPalette ?: requestedPalette).background
+    GLES30.glClearColor(
+      Color.red(background) / 255f,
+      Color.green(background) / 255f,
+      Color.blue(background) / 255f,
+      1f,
+    )
     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
     GLES30.glEnable(GLES30.GL_BLEND)
     GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE)
@@ -344,7 +350,13 @@ internal class GalaxyRenderer(
     tertiaryR = Color.red(palette.tertiary) / 255f
     tertiaryG = Color.green(palette.tertiary) / 255f
     tertiaryB = Color.blue(palette.tertiary) / 255f
-    GLES30.glClearColor(0f, 0f, 0f, 0f)
+    val background = (appliedPalette ?: requestedPalette).background
+    GLES30.glClearColor(
+      Color.red(background) / 255f,
+      Color.green(background) / 255f,
+      Color.blue(background) / 255f,
+      1f,
+    )
   }
 
   private fun updateAdaptiveDrawCount() {

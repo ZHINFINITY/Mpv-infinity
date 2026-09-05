@@ -10,6 +10,7 @@
 package app.infinity.mpvz.ui.player.visualizer
 
 import android.content.Context
+import android.graphics.Color
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
@@ -176,7 +177,14 @@ internal class BlobRenderer(
     gl: GL10?,
     config: EGLConfig?,
   ) {
-    GLES30.glClearColor(0f, 0f, 0f, 0f)
+    val background = (appliedPalette ?: palette).background
+    GLES30.glClearColor(
+      Color.red(background) / 255f,
+      Color.green(background) / 255f,
+      Color.blue(background) / 255f,
+      1f,
+    )
+    GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
     GLES30.glDisable(GLES30.GL_CULL_FACE)
     GLES30.glDisable(GLES30.GL_DEPTH_TEST)
 
@@ -520,7 +528,13 @@ internal class BlobRenderer(
   private fun compositeToScreen() {
     GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
     GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
-    GLES30.glClearColor(0f, 0f, 0f, 0f)
+    val background = (appliedPalette ?: palette).background
+    GLES30.glClearColor(
+      Color.red(background) / 255f,
+      Color.green(background) / 255f,
+      Color.blue(background) / 255f,
+      1f,
+    )
     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
     GLES30.glUseProgram(compositeProgram)
     bindTexture(0, sceneTarget.texture, uCompositeScene)
