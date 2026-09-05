@@ -134,9 +134,24 @@ class NativeMedia3Engine(context: Context) {
     attachedView?.player = null
     attachedView = view
     view.useController = false
+    // Do not let a stale portrait measurement stretch native HDR video after rotation.
+    view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
     view.player = player
     configureSubtitleView()
     startTimelineUpdates()
+  }
+
+  /** Re-measure the Media3 surface after the host activity changes orientation. */
+  fun refreshAfterConfigurationChange() {
+    val view = attachedView ?: return
+    view.post {
+      if (attachedView !== view) return@post
+      view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+      view.requestLayout()
+      view.videoSurfaceView?.requestLayout()
+      view.invalidate()
+      configureSubtitleView()
+    }
   }
 
   fun setVideoAspect(aspect: VideoAspect) {
