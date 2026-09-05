@@ -827,11 +827,13 @@ class PlayerActivity :
                   return@launch
                 }
                 activeEngineMode = PlaybackEngineMode.NATIVE
+                viewModel.setNativeEngineActive(true)
                 binding.media3Player.visibility = View.VISIBLE
                 binding.player.visibility = View.GONE
               }
             } else if (mpvInitialized) {
               activeEngineMode = PlaybackEngineMode.MPV
+              viewModel.setNativeEngineActive(false)
               binding.media3Player.visibility = View.VISIBLE
               binding.player.visibility = View.INVISIBLE
               nativeEngine.stop()
