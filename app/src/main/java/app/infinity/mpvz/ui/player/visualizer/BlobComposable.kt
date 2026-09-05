@@ -10,7 +10,9 @@
 package app.infinity.mpvz.ui.player.visualizer
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.opengl.GLSurfaceView
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -153,6 +155,8 @@ private fun <T> VisualizerOverlay(
     modifier = modifier,
     update = { view ->
       view.updatePalette(palette)
+      view.setBackgroundColor(Color.TRANSPARENT)
+      view.holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
       view.setZOrderOnTop(false)
       view.setZOrderMediaOverlay(true)
       if (isSheetOpen) {

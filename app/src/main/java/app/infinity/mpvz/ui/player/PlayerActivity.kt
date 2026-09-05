@@ -5862,13 +5862,14 @@ class PlayerActivity :
     // Native Media3 is used for HDR-family video, while MPV remains the normal video/audio
     // pipeline. Auto keeps ordinary videos on MPV and routes HDR, HLG, and Dolby Vision to Native.
     val configuredEngine = decoderPreferences.playbackEngine.get()
+    val isSavedNetworkSource = item.networkSource != null || NetworkPlaybackUri.parse(item.playableUri) != null
     val selectedEngine =
       when (configuredEngine) {
         PlaybackEngineMode.AUTO ->
-          if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
+          if (item.isHdrOrDolbyVision() && !isSavedNetworkSource) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
         else -> configuredEngine
       }
-    if (selectedEngine == PlaybackEngineMode.NATIVE && !requiresYtdlp && !item.isDefinitelyAudioOnly()) {
+    if (selectedEngine == PlaybackEngineMode.NATIVE && !requiresYtdlp && !item.isDefinitelyAudioOnly() && !isSavedNetworkSource) {
       withContext(Dispatchers.Main) {
         activeSaveMediaIdentifier = item.stableId
         activeEngineMode = PlaybackEngineMode.NATIVE
@@ -5884,10 +5885,11 @@ class PlayerActivity :
       }
       return
     }
-    // Media3 cannot resolve yt-dlp-backed web URLs. Use MPV deliberately for these sources and
-    // switch surfaces before loading so a previous Native frame cannot leave a black player.
+    // Media3 cannot reliably decode saved WebDAV/network HDR streams. Use MPV deliberately for
+    // these sources and switch surfaces before loading so a previous Native frame cannot leave a
+    // black player.
     withContext(Dispatchers.Main) {
-      if (requiresYtdlp || selectedEngine != PlaybackEngineMode.NATIVE) {
+      if (requiresYtdlp || selectedEngine != PlaybackEngineMode.NATIVE || isSavedNetworkSource) {
         activeEngineMode = PlaybackEngineMode.MPV
         nativeEngine.stop()
         binding.media3Player.visibility = View.GONE
