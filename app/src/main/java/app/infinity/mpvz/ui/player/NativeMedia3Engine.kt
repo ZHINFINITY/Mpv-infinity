@@ -9,6 +9,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.SeekParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
@@ -72,18 +73,19 @@ class NativeMedia3Engine(context: Context) {
     )
     .setLoadControl(
       DefaultLoadControl.Builder()
-        // Keep the native pipeline responsive for high-bitrate files and long seeks without
-        // retaining a very large 4K buffer in memory.
+        // Start promptly and refill only a short window after seeks. A long minimum buffer makes
+        // local HDR and torrent streams appear frozen while Media3 waits before rendering.
         .setBufferDurationsMs(
-          30_000,
-          120_000,
-          2_000,
           5_000,
+          60_000,
+          500,
+          1_500,
         )
         .setTargetBufferBytes(64 * 1024 * 1024)
         .build(),
     )
     .build()
+    .also { it.setSeekParameters(SeekParameters.CLOSEST_SYNC) }
   private var attachedView: PlayerView? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
