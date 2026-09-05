@@ -374,9 +374,9 @@ private fun artworkVisualizerPalette(
       ?: materialPalette.primary
   val artworkTones = ribbonPaletteFromAccent(materialPalette, accent)
   return VisualizerPalette(
-    // Keep the renderer backdrop identical to the player surface. Accent colors belong to the
-    // visualizer itself; tinting this opaque fallback creates a visible rectangle around it.
-    background = materialPalette.background,
+    // Keep a restrained album-art tint behind the renderer so the visualizer blends with the
+    // player instead of falling back to a black or flat grey surface.
+    background = ColorUtils.blendARGB(materialPalette.background, accent, 0.20f),
     primary = ColorUtils.blendARGB(materialPalette.primary, accent, 0.48f),
     secondary = ColorUtils.blendARGB(materialPalette.secondary, artworkTones.secondary, 0.62f),
     tertiary = ColorUtils.blendARGB(materialPalette.tertiary, artworkTones.tertiary, 0.58f),

@@ -11,9 +11,12 @@ import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,7 +59,10 @@ data class NativeChapter(
 
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(context: Context) {
+  private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+  private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
+    .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
@@ -261,8 +267,14 @@ class NativeMedia3Engine(context: Context) {
     }
   }
 
-  fun play(uri: Uri, startPositionMs: Long = 0L, autoplay: Boolean = true) {
+  fun play(
+    uri: Uri,
+    startPositionMs: Long = 0L,
+    autoplay: Boolean = true,
+    headers: Map<String, String> = emptyMap(),
+  ) {
     _hasRenderedFirstFrame.value = false
+    httpDataSourceFactory.setDefaultRequestProperties(headers)
     val mediaItem =
       MediaItem.Builder()
         .setUri(uri)
