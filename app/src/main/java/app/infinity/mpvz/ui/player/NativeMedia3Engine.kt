@@ -77,6 +77,9 @@ class NativeMedia3Engine(context: Context) {
     .build()
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(loadControl)
+    // Xiaomi's 4K HDR decoder can spend longer than Media3's 4-second no-progress watchdog
+    // while a SurfaceView is being handed over from MPV. Do not abort that valid startup.
+    .setStuckBufferingDetectionTimeoutMs(30_000)
     .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
