@@ -1221,7 +1221,7 @@ class PlayerActivity :
       isMiniPlayerEnabled() ||
       PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnBack(
         backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),
-        mediaReady = isReady,
+        mediaReady = isReady || nativeEngine.snapshot.value.isReady,
       )
     ) {
       when (startBackgroundPlayback()) {
@@ -6804,7 +6804,7 @@ class PlayerActivity :
   }
 
   private fun startBackgroundPlaybackInternal(bindToActivity: Boolean): Boolean {
-    if (fileName.isBlank() || !isReady) {
+    if (fileName.isBlank() || (!isReady && !nativeEngine.snapshot.value.isReady)) {
       Log.w(TAG, "Cannot start background playback: video not ready")
       return false
     }
