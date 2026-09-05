@@ -69,6 +69,7 @@ class CastPlaybackController(
   private var remoteWasPlaying = false
   private var capturedRemoteEndState = false
   private var transferredByThisController = false
+  private var mediaReadinessRetries = 0
   private var positionPollingJob: Job? = null
   private var volumeDebounceJob: Job? = null
 
@@ -79,6 +80,7 @@ class CastPlaybackController(
         sessionId: String,
       ) {
         onSessionReady(session)
+        mediaReadinessRetries = 0
         loadCurrentMedia(session)
       }
 
@@ -270,8 +272,16 @@ class CastPlaybackController(
   private fun loadCurrentMedia(session: CastSession) {
     val snapshot = currentMedia()
     if (snapshot == null) {
-      notifyUser("Media is not ready to cast")
-      castContext?.sessionManager?.endCurrentSession(true)
+      if (mediaReadinessRetries < 4) {
+        mediaReadinessRetries++
+        scope.launch {
+          delay(350)
+          if (!released && castSession === session) loadCurrentMedia(session)
+        }
+      } else {
+        notifyUser("Media is not ready to cast")
+        castContext?.sessionManager?.endCurrentSession(true)
+      }
       return
     }
 
@@ -318,6 +328,7 @@ class CastPlaybackController(
     remote.load(request).setResultCallback { result ->
       activity.runOnUiThread {
         if (result.status.isSuccess) {
+          mediaReadinessRetries = 0
           localWasPlaying = snapshot.isPlaying
           lastRemotePositionMs = snapshot.positionMs
           remoteWasPlaying = snapshot.isPlaying
