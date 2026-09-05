@@ -43,7 +43,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1497,12 +1496,12 @@ fun CombiningChevronsAnimation(
   trigger: Int,
   modifier: Modifier = Modifier,
 ) {
-  // List of active animations (unique IDs)
-  val animations = remember { mutableStateListOf<Long>() }
+  // Keep one feedback animation visible. Repeated taps restart it rather than accumulating
+  // in-flight chevrons, which is especially noticeable during native 4K/HDR playback.
+  var animationKey by remember { mutableStateOf(0L) }
 
-  // Fire a new animation whenever trigger changes
   LaunchedEffect(trigger) {
-    animations.add(System.nanoTime())
+    animationKey++
   }
 
   Row(
@@ -1522,12 +1521,10 @@ fun CombiningChevronsAnimation(
         modifier = Modifier.size(48.dp),
       )
 
-      // Render active moving chevrons
-      animations.forEach { animId ->
-        key(animId) {
-          MovingChevron(
-            onFinished = { animations.remove(animId) },
-          )
+      // Changing the key cancels the previous animation and starts only the latest one.
+      key(animationKey) {
+        if (animationKey != 0L) {
+          MovingChevron()
         }
       }
     }
@@ -1535,7 +1532,7 @@ fun CombiningChevronsAnimation(
 }
 
 @Composable
-fun MovingChevron(onFinished: () -> Unit) {
+fun MovingChevron() {
   val progress = remember { Animatable(0f) }
 
   LaunchedEffect(Unit) {
@@ -1545,9 +1542,8 @@ fun MovingChevron(onFinished: () -> Unit) {
         spring(
           dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
           stiffness = AppMotion.Spatial.Standard.stiffness,
-        ),
+      ),
     )
-    onFinished()
   }
 
   val startOffsetDp = -15.dp
