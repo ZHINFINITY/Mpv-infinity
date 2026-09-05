@@ -855,7 +855,10 @@ class PlayerActivity :
               } else {
                 // Single-file/direct torrent sessions have no playlist entry. Reload from the
                 // original torrent source so MPV does not reopen the closed native/local URL.
-                val handoffSource = queueItem?.originalUri
+                val torrentSource = intent.dataString
+                  ?.takeIf { isTorrentSource(it, intent.type) }
+                val handoffSource = torrentSource
+                  ?: queueItem?.originalUri
                   ?.takeIf { it.isNotBlank() }
                   ?: currentUri
                 currentPlayableUri = handoffSource
