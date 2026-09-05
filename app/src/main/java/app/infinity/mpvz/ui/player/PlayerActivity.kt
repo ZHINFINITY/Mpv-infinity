@@ -5922,6 +5922,7 @@ class PlayerActivity :
           nativePlayableUri.toUri(),
           startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),
           autoplay = true,
+          headers = item.headers,
         )
         viewModel.onVideoLoadCompleted()
       }
