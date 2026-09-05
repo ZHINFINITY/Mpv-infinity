@@ -796,7 +796,9 @@ class PlayerActivity :
 
           val useNative = engine == PlaybackEngineMode.NATIVE
           val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
-          if (currentUri != null && (isReady || outgoingEngine == PlaybackEngineMode.NATIVE)) {
+          val sessionReady = PlaybackSession.state.value.phase == PlaybackPhase.READY ||
+            PlaybackSession.state.value.phase == PlaybackPhase.BACKGROUND
+          if (currentUri != null && (isReady || sessionReady || outgoingEngine == PlaybackEngineMode.NATIVE)) {
             if (useNative) {
               // Keep MPV visible while Media3 opens the network source. Hiding the outgoing
               // surface before Media3 renders a frame produces the black/stuck handoff seen on
@@ -872,12 +874,10 @@ class PlayerActivity :
                   binding.media3Player.visibility = View.GONE
                   binding.player.visibility = View.VISIBLE
                 }
-                // MPV loads asynchronously. PiP transitions can delay the load completion, so
-                // apply the captured handoff state more than once instead of losing the first
-                // seek/play command while MPV is still replacing the file.
-                repeat(5) {
-                  delay(250L)
-                  if (!ownsPlaybackSession() || !mpvInitialized || activeEngineMode != PlaybackEngineMode.MPV) return@launch
+                // Apply the captured state once after MPV is ready. Repeated time-pos writes
+                // during 4K/HDR handoff force repeated demuxer seeks and cause audible stalls.
+                delay(250L)
+                if (ownsPlaybackSession() && mpvInitialized && activeEngineMode == PlaybackEngineMode.MPV) {
                   PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
                   PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
                   if (outgoingPlaying) PlaybackSession.command("play")
@@ -5931,6 +5931,10 @@ class PlayerActivity :
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   ) {
     ensureCurrentMediaRequest(requestGeneration)
+    // A new item owns the renderer handoff. Do not let a previous video's delayed first-frame
+    // callback change visibility or playback state after this load has started.
+    engineHandoffJob?.cancel()
+    engineHandoffJob = null
     val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
     // Give mpv the resume point as a load-local option so the demuxer starts there instead of
     // decoding at zero and visibly seeking only after FILE_LOADED.
