@@ -103,6 +103,12 @@ class NativeMedia3Engine(context: Context) {
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
+  private var pendingSeekPositionMs: Long? = null
+  private val seekRunnable = Runnable {
+    val positionMs = pendingSeekPositionMs ?: return@Runnable
+    pendingSeekPositionMs = null
+    player.seekTo(positionMs.coerceAtLeast(0L))
+  }
   private val timelineRunnable = object : Runnable {
     override fun run() {
       if (player.currentMediaItem == null) return
@@ -346,13 +352,18 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun seekTo(positionMs: Long) {
-    player.seekTo(positionMs.coerceAtLeast(0L))
+    pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
+    loopHandler.removeCallbacks(seekRunnable)
+    loopHandler.postDelayed(seekRunnable, 60L)
     publishSnapshot()
     startTimelineUpdates()
   }
 
   fun seekBy(offsetMs: Long) {
-    player.seekTo((player.currentPosition + offsetMs).coerceAtLeast(0L))
+    val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
+    pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
+    loopHandler.removeCallbacks(seekRunnable)
+    loopHandler.postDelayed(seekRunnable, 60L)
     publishSnapshot()
     startTimelineUpdates()
   }
@@ -429,6 +440,8 @@ class NativeMedia3Engine(context: Context) {
   fun stop() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
+    loopHandler.removeCallbacks(seekRunnable)
+    pendingSeekPositionMs = null
     player.stop()
     player.clearMediaItems()
     _hasRenderedFirstFrame.value = false
@@ -438,6 +451,8 @@ class NativeMedia3Engine(context: Context) {
   fun release() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
+    loopHandler.removeCallbacks(seekRunnable)
+    pendingSeekPositionMs = null
     player.removeListener(listener)
     attachedView?.player = null
     attachedView = null
