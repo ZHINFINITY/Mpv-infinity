@@ -65,14 +65,15 @@ class NativeMedia3Engine(context: Context) {
     )
     .setLoadControl(
       DefaultLoadControl.Builder()
-        // Keep enough data ahead for network media without retaining nearly a gigabyte of 4K data.
+        // Keep substantially more data ahead so large forward seeks on network media do not
+        // immediately stall. The byte target still bounds memory use on high-bitrate 4K files.
         .setBufferDurationsMs(
-          30_000,
           120_000,
-          2_000,
-          5_000,
+          900_000,
+          4_000,
+          10_000,
         )
-        .setTargetBufferBytes(64 * 1024 * 1024)
+        .setTargetBufferBytes(128 * 1024 * 1024)
         .build(),
     )
     .build()
