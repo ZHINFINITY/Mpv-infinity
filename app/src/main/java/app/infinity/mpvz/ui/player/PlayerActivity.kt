@@ -6011,13 +6011,21 @@ class PlayerActivity :
         null
       }
     val nativeItem = nativeResolvedUri?.let { item.copy(playableUri = it) } ?: item
+    val nativeSourceIsPlayable = !isTorrentSource(nativeItem.playableUri, nativeItem.mimeType)
     val canUseNative =
       selectedEngine == PlaybackEngineMode.NATIVE &&
         !nativeItem.isDefinitelyAudioOnly() &&
         // Media3 cannot open a magnet/torrent source. Leave unresolved torrent items on MPV,
         // which owns torrent resolution and can hand Media3 a real stream later.
-        !item.requiresTorrentResolution() &&
+        (!item.requiresTorrentResolution() || nativeSourceIsPlayable) &&
         (!requiresYtdlp || nativeResolvedUri != null)
+    Log.i(
+      TAG,
+      "Native eligibility engine=$selectedEngine canUse=$canUseNative " +
+        "audioOnly=${nativeItem.isDefinitelyAudioOnly()} torrentUnresolved=${item.requiresTorrentResolution()} " +
+        "sourcePlayable=$nativeSourceIsPlayable ytdlp=$requiresYtdlp resolved=${nativeResolvedUri != null} " +
+        "uri=${nativeItem.playableUri}",
+    )
     if (canUseNative) {
       withContext(Dispatchers.Main) {
         activeSaveMediaIdentifier = item.stableId
