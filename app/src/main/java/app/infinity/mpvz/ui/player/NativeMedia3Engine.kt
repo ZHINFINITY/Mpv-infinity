@@ -59,7 +59,8 @@ class NativeMedia3Engine(context: Context) {
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
-        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER),
+        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+        .setEnableDecoderFallback(true),
     )
     .setLoadControl(
       DefaultLoadControl.Builder()
@@ -239,12 +240,26 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun play(uri: Uri, startPositionMs: Long = 0L, autoplay: Boolean = true) {
-    player.setMediaItem(MediaItem.fromUri(uri), startPositionMs.coerceAtLeast(0L))
+    val mediaItem =
+      MediaItem.Builder()
+        .setUri(uri)
+        .apply { nativeContainerMimeType(uri)?.let(::setMimeType) }
+        .build()
+    player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
     player.prepare()
     player.playWhenReady = autoplay
     publishSnapshot()
     startTimelineUpdates()
   }
+
+  private fun nativeContainerMimeType(uri: Uri): String? =
+    when (uri.getQueryParameter("format")?.lowercase() ?: uri.path?.substringAfterLast('.', "")?.lowercase()) {
+      "mkv", "mka" -> "video/x-matroska"
+      "ts", "m2ts", "mts" -> "video/mp2t"
+      "mp4", "m4v" -> "video/mp4"
+      "webm" -> "video/webm"
+      else -> null
+    }
 
   fun setPlaying(playing: Boolean) {
     if (playing) player.play() else player.pause()
