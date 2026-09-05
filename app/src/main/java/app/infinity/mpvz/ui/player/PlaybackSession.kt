@@ -1595,7 +1595,7 @@ object PlaybackSession : MPVLib.EventObserver {
     if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
       val context = applicationContext ?: error("Application context is unavailable for content URI playback")
       val refreshedUri =
-        Uri.parse(item.originalUri).openContentFd(context)
+        Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)).openContentFd(context)
           ?: error("Unable to reopen content URI for playback")
       return ResolvedPlayable(refreshedUri)
     }

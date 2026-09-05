@@ -1797,13 +1797,13 @@ class PlayerActivity :
 
             playlistIndex = index
             networkPlaylistConnectionId = item.networkSource?.connectionId ?: -1L
-            fileName = item.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(Uri.parse(item.originalUri))
+            fileName = item.title?.takeIf { it.isNotBlank() } ?: getFileNameFromUri(Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)))
             legacyMediaIdentifier = PlaybackIdentity.forUri(item.originalUri)
             mediaIdentifier = item.stableId
             currentPlayableUri = item.playableUri
             isReady = false
             viewModel.onVideoLoadStarted()
-            viewModel.calculateVideoHash(Uri.parse(item.originalUri))
+            viewModel.calculateVideoHash(Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)))
           }
       }
     }
@@ -1811,7 +1811,7 @@ class PlayerActivity :
 
   private fun syncPlaylistFromSession(queueState: PlaybackQueueState = PlaybackSession.queue.value) {
     val queueItems = queueState.items
-    playlist = queueItems.map { item -> Uri.parse(item.originalUri) }
+    playlist = queueItems.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
     networkPlaylistPaths = queueItems.map { item -> item.networkSource?.relativePath.orEmpty() }
@@ -2474,7 +2474,7 @@ class PlayerActivity :
     if (sessionState.phase !in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return false
 
     val queueState = PlaybackSession.queue.value
-    playlist = queueState.items.map { item -> Uri.parse(item.originalUri) }
+    playlist = queueState.items.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
     playlistIndex = queueState.currentIndex.coerceAtLeast(0)
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size
@@ -2562,7 +2562,7 @@ class PlayerActivity :
     playlistItems = emptyList()
     playlistEntity = null
     isM3uPlaylist = launch.isM3u
-    playlist = launch.items.map { item -> Uri.parse(item.originalUri) }
+    playlist = launch.items.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
     playlistIndex = requestedIndex
     playlistWindowOffset = 0
     playlistTotalCount = playlist.size

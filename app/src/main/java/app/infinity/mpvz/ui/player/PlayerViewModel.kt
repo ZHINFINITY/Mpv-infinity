@@ -5521,7 +5521,7 @@ class PlayerViewModel : ViewModel(),
       }
 
     return queue.items.mapIndexed { index, item ->
-      val uri = Uri.parse(item.originalUri)
+      val uri = Uri.parse(NetworkPlaybackUri.normalize(item.originalUri))
       val title = item.title?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment.orEmpty()
       val resolvedUri =
         if (uri.scheme == "content") {
@@ -5860,7 +5860,7 @@ class PlayerViewModel : ViewModel(),
         if (queue.isM3u) {
           val hasNetworkStreams =
             queue.items.any { item ->
-              val uri = Uri.parse(item.originalUri)
+              val uri = Uri.parse(NetworkPlaybackUri.normalize(item.originalUri))
               val scheme = uri.scheme?.lowercase()
               scheme == "http" ||
                 scheme == "https" ||
