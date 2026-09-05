@@ -4,10 +4,12 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -61,6 +63,7 @@ data class NativeChapter(
 
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(context: Context) {
+  private val logTag = "Mpv∞-Media3"
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
   private val loadControl = DefaultLoadControl.Builder()
@@ -126,7 +129,14 @@ class NativeMedia3Engine(context: Context) {
 
   private val listener = object : Player.Listener {
     override fun onRenderedFirstFrame() {
+      Log.d(logTag, "first frame rendered uri=${player.currentMediaItem?.localConfiguration?.uri}")
       _hasRenderedFirstFrame.value = true
+    }
+    override fun onPlaybackStateChanged(playbackState: Int) {
+      Log.d(logTag, "playback state=$playbackState uri=${player.currentMediaItem?.localConfiguration?.uri}")
+    }
+    override fun onPlayerError(error: PlaybackException) {
+      Log.e(logTag, "player error uri=${player.currentMediaItem?.localConfiguration?.uri}", error)
     }
 
     override fun onMetadata(metadata: Metadata) {
@@ -284,6 +294,7 @@ class NativeMedia3Engine(context: Context) {
     sourceUri: Uri? = null,
   ) {
     _hasRenderedFirstFrame.value = false
+    Log.d(logTag, "play uri=$uri source=$sourceUri positionMs=$startPositionMs autoplay=$autoplay")
     httpDataSourceFactory.setDefaultRequestProperties(headers)
     val mediaItem =
       MediaItem.Builder()
