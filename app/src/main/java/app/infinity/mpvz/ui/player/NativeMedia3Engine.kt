@@ -88,7 +88,7 @@ class NativeMedia3Engine(context: Context) {
     override fun run() {
       if (player.currentMediaItem == null) return
       publishSnapshot()
-      loopHandler.postDelayed(this, 250L)
+      loopHandler.postDelayed(this, 500L)
     }
   }
   private val loopRunnable = object : Runnable {
