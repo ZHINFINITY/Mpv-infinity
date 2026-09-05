@@ -5724,7 +5724,17 @@ class PlayerActivity :
     val requestedPlaylistIndex = playlistIndex
     val requestedQueueItem = PlaybackSession.queue.value.items.getOrNull(requestedPlaylistIndex)
     val requestGeneration = mediaRequestGeneration
-    val requestedSource = originalUri ?: extractUriFromIntent(sourceIntent)?.toString() ?: playableUri
+    val incomingSource = originalUri ?: extractUriFromIntent(sourceIntent)?.toString() ?: playableUri
+    // The torrent engine exposes a temporary localhost URL to the player. During an engine
+    // handoff that URL is not itself a torrent URI, so relying only on isTorrentSource() would
+    // call stopStream() and leave MPV with a dead curl connection.
+    val keepsActiveTorrent =
+      activeTorrentSourceUri != null &&
+        (originalUri == null || isTorrentSource(incomingSource, sourceIntent.type))
+    if (!keepsActiveTorrent && !isTorrentSource(incomingSource, sourceIntent.type)) {
+      activeTorrentSourceUri = null
+    }
+    val requestedSource = if (keepsActiveTorrent) activeTorrentSourceUri!! else incomingSource
     val requestedHeaders =
       buildPlaybackHeaders(
         Uri.parse(requestedSource),
@@ -5733,7 +5743,9 @@ class PlayerActivity :
       )
     val requestedTorrentFileIndex = sourceIntent.getIntExtra("torrent_file_index", -1).takeIf { it >= 0 }
     val isTorrentRequest =
-      isTorrentSource(requestedSource, sourceIntent.type) || isTorrentSource(playableUri, sourceIntent.type)
+      keepsActiveTorrent ||
+        isTorrentSource(requestedSource, sourceIntent.type) ||
+        isTorrentSource(playableUri, sourceIntent.type)
     mediaLoadJob =
       lifecycleScope.launch(mediaLoadDispatcher) {
         try {
