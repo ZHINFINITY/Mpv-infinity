@@ -69,13 +69,13 @@ class NativeMedia3Engine(context: Context) {
     .setLoadControl(
       DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-          10_000,
-          120_000,
+          30_000,
+          300_000,
           1_000,
-          2_000,
+          3_000,
         )
         .setBackBuffer(30_000, true)
-        .setTargetBufferBytes(64 * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(true)
         .build(),
     )
     // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
