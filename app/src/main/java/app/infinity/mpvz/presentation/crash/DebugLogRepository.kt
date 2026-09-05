@@ -65,6 +65,11 @@ internal object DebugLogReader {
     Regex(
       """^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)\s+(\d+)\s+([VDIWEF])\s+(.+?)\s*:\s?(.*)$""",
     )
+  // Xiaomi/MIUI emits `HH:mm:ss.SSS pid/tid L/Tag: message` on some builds.
+  private val slashThreadTimePattern =
+    Regex(
+      """^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(\d+)/(\d+)\s+([VDIWEF])/([^:]+):\s?(.*)$""",
+    )
   private val classicTimePattern =
     Regex(
       """^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+([VDIWEF])/([^\(]+)\(\s*(\d+)\):\s?(.*)$""",
@@ -187,6 +192,15 @@ internal object DebugLogReader {
     now: Long,
     occurrence: Int,
   ): DebugLogEntry? {
+    slashThreadTimePattern.matchEntire(line)?.let { match ->
+      val timeMillis = parseClockTimestamp(match.groupValues[1], now)
+      val pid = match.groupValues[2].toIntOrNull()
+      val tid = match.groupValues[3].toIntOrNull()
+      val level = match.groupValues[4].toDebugLogLevel() ?: return null
+      val tag = match.groupValues[5].trim()
+      val message = match.groupValues[6]
+      return buildEntry(timeMillis, pid, tid, level, tag, message, occurrence)
+    }
     threadTimePattern.matchEntire(line)?.let { match ->
       val timeMillis = parseAndroidTimestamp(match.groupValues[1], now) ?: now
       val pid = match.groupValues[2].toIntOrNull()
@@ -307,6 +321,20 @@ private fun buildEntryId(
     append(':')
     append(occurrence)
   }
+
+private fun parseClockTimestamp(
+  timestamp: String,
+  now: Long,
+): Long {
+  val parsed = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).parse(timestamp) ?: return now
+  val today = Calendar.getInstance().apply { timeInMillis = now }
+  return Calendar.getInstance().apply {
+    time = parsed
+    set(Calendar.YEAR, today.get(Calendar.YEAR))
+    set(Calendar.MONTH, today.get(Calendar.MONTH))
+    set(Calendar.DAY_OF_MONTH, today.get(Calendar.DAY_OF_MONTH))
+  }.timeInMillis
+}
 
 private fun parseAndroidTimestamp(
   timestamp: String,
