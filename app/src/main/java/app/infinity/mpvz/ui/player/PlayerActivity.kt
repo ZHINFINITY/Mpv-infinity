@@ -820,7 +820,7 @@ class PlayerActivity :
               // Keep MPV visible while Media3 opens the network source. Hiding the outgoing
               // surface before Media3 renders a frame produces the black/stuck handoff seen on
               // HDR WebDAV playback.
-              binding.media3Player.visibility = View.INVISIBLE
+              binding.media3Player.alpha = 0f
               if (outgoingEngine == PlaybackEngineMode.MPV) {
                 PlaybackSession.setPropertyBoolean("pause", true)
                 PlaybackSession.setPropertyBoolean("mute", true)
@@ -836,7 +836,7 @@ class PlayerActivity :
               // not leave controls and engine state on MPV while Media3 is opening the source.
               activeEngineMode = PlaybackEngineMode.NATIVE
               viewModel.setNativeEngineActive(true)
-              binding.media3Player.visibility = View.VISIBLE
+              binding.media3Player.alpha = 1f
               binding.player.visibility = View.GONE
               nativeEngine.play(
                 nativeUri,
@@ -863,19 +863,19 @@ class PlayerActivity :
                     PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
                     PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
                     if (outgoingPlaying) PlaybackSession.command("play")
-                    binding.media3Player.visibility = View.GONE
+                    binding.media3Player.alpha = 0f
                     binding.player.visibility = View.VISIBLE
                   }
                   return@launch
                 }
-                binding.media3Player.visibility = View.VISIBLE
+                binding.media3Player.alpha = 1f
                 binding.player.visibility = View.GONE
               }
             } else if (mpvInitialized) {
               activeEngineMode = PlaybackEngineMode.MPV
               viewModel.setNativeEngineActive(false)
               PlaybackSession.setPropertyBoolean("mute", false)
-              binding.media3Player.visibility = View.VISIBLE
+              binding.media3Player.alpha = 1f
               binding.player.visibility = View.INVISIBLE
               nativeEngine.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
@@ -926,7 +926,7 @@ class PlayerActivity :
                   true
                 } == true
                 if (ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
-                  binding.media3Player.visibility = View.GONE
+                  binding.media3Player.alpha = 0f
                   binding.player.visibility = View.VISIBLE
                 }
                 // Apply the captured state once after MPV is ready. Repeated time-pos writes
@@ -6081,7 +6081,7 @@ class PlayerActivity :
         activeEngineMode = PlaybackEngineMode.NATIVE
         viewModel.setNativeEngineActive(true)
         binding.player.visibility = View.GONE
-        binding.media3Player.visibility = View.VISIBLE
+        binding.media3Player.alpha = 1f
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.play(
           nativePlayableUri.toUri(),
@@ -6101,7 +6101,7 @@ class PlayerActivity :
         activeEngineMode = PlaybackEngineMode.MPV
         viewModel.setNativeEngineActive(false)
         nativeEngine.stop()
-        binding.media3Player.visibility = View.GONE
+        binding.media3Player.alpha = 0f
         binding.player.visibility = View.VISIBLE
       }
     }
@@ -7004,7 +7004,7 @@ class PlayerActivity :
       viewModel.setNativeEngineActive(false)
       decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
       nativeEngine.stop()
-      binding.media3Player.visibility = View.GONE
+      binding.media3Player.alpha = 0f
       binding.player.visibility = View.VISIBLE
       if (mpvInitialized) {
         loadPlaylistItem(playlistIndex.coerceAtLeast(0))
