@@ -216,6 +216,7 @@ fun PlayerSheet(
           ).imePadding(),
       shape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
       color = resolvedSurfaceColor,
+      contentColor = if (sheetIsDark) Color.White else Color.Black,
       tonalElevation = tonalElevation,
       content = {
         BackHandler(
