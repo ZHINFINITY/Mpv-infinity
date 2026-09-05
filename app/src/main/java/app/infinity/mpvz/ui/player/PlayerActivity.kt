@@ -5874,8 +5874,9 @@ class PlayerActivity :
         activeEngineMode = PlaybackEngineMode.NATIVE
         binding.player.visibility = View.GONE
         binding.media3Player.visibility = View.VISIBLE
+        val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(item)
         nativeEngine.play(
-          item.playableUri.toUri(),
+          nativePlayableUri.toUri(),
           startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),
           autoplay = true,
         )

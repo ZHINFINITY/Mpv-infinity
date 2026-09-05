@@ -102,6 +102,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.palette.graphics.Palette
 import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.repository.JellyfinRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.ui.browser.dialogs.AddToPlaylistDialog
@@ -583,6 +584,7 @@ fun AudioPlayerControls(
 ) {
   val speedConfigOwned = isMpvOptionOwnedByConfig("speed")
   val audioFiltersConfigOwned = isMpvOptionOwnedByConfig("af")
+  val advancedPreferences = koinInject<AdvancedPreferences>()
   val gesturePreferences = koinInject<GesturePreferences>()
   val audioSeekDuration by gesturePreferences.doubleTapToSeekDuration.collectAsState()
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
@@ -595,6 +597,11 @@ fun AudioPlayerControls(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentItem = playbackState.currentItem ?: queueState.currentItem
+  LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
+    if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {
+      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+    }
+  }
   val playlistItems by viewModel.playlistItems.collectAsState()
   val filteredPlaylist =
     remember(playlistItems) {

@@ -117,6 +117,14 @@ object YtdlpManager {
       return false
     }
 
+    // Jellyfin's authenticated stream endpoint is an HTTP URL without a file extension. It is
+    // already a direct media stream and must not be sent through yt-dlp, otherwise Native playback
+    // is rejected and the load falls back to MPV.
+    val isJellyfinStream =
+      uri.pathSegments.any { it.equals("Videos", ignoreCase = true) } &&
+        uri.queryParameterNames.any { it.equals("api_key", ignoreCase = true) || it.equals("apikey", ignoreCase = true) }
+    if (isJellyfinStream) return false
+
     return !HttpUtils.isDirectMediaUrl(uri)
   }
 

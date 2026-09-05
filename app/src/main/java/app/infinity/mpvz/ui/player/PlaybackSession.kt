@@ -1556,6 +1556,18 @@ object PlaybackSession : MPVLib.EventObserver {
       }
   }
 
+  /**
+   * Resolves a queued item for Native Media3 as well as MPV. Network-browser items use the
+   * credential-free custom URI and must be registered with the app proxy before Media3 can open
+   * them; the registration is retained as the active stream until the next playback transition.
+   */
+  fun resolvePlayableUriForNative(item: PlaybackItem): String {
+    releaseActiveNetworkStream()
+    val resolved = resolvePlayableUri(item)
+    nativeLock.withLock { activeNetworkStream = resolved.registration }
+    return resolved.uri
+  }
+
   private fun resolvePlayableUri(item: PlaybackItem): ResolvedPlayable {
     val reference =
       NetworkPlaybackUri.parse(item.playableUri)
