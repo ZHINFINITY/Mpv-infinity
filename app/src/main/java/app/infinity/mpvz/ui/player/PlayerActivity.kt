@@ -802,7 +802,18 @@ class PlayerActivity :
               // surface before Media3 renders a frame produces the black/stuck handoff seen on
               // HDR WebDAV playback.
               binding.media3Player.visibility = View.INVISIBLE
-              nativeEngine.play(Uri.parse(currentUri), outgoingPositionMs, outgoingPlaying)
+              val currentItem = PlaybackSession.queue.value.currentItem
+              val nativeUri =
+                currentItem?.let { PlaybackSession.resolvePlayableUriForNative(it) }?.toUri()
+                  ?: Uri.parse(currentUri)
+              nativeEngine.play(
+                nativeUri,
+                outgoingPositionMs,
+                outgoingPlaying,
+                headers = currentItem?.headers.orEmpty(),
+                mimeType = currentItem?.mimeType,
+                sourceUri = currentItem?.originalUri?.toUri(),
+              )
               engineHandoffJob = lifecycleScope.launch {
                 val rendered = withTimeoutOrNull(15_000L) {
                   nativeEngine.hasRenderedFirstFrame.first { it }
