@@ -1512,11 +1512,18 @@ class PlayerActivity :
       CastPlaybackController(
         activity = this,
         currentMedia = ::currentCastMediaSnapshot,
-        pauseLocal = viewModel::pause,
+        pauseLocal = {
+          if (isNativeEngineActive()) nativeEngine.setPlaying(false) else viewModel.pause()
+        },
         restoreLocal = { positionMs, play ->
           if (!isFinishing && !isDestroyed) {
-            viewModel.seekTo((positionMs / 1000L).toInt().coerceAtLeast(0))
-            if (play) viewModel.unpause() else viewModel.pause()
+            if (isNativeEngineActive()) {
+              nativeEngine.seekTo(positionMs)
+              nativeEngine.setPlaying(play)
+            } else {
+              viewModel.seekTo((positionMs / 1000L).toInt().coerceAtLeast(0))
+              if (play) viewModel.unpause() else viewModel.pause()
+            }
           }
         },
         notifyUser = viewModel::showToast,
@@ -1525,6 +1532,20 @@ class PlayerActivity :
   }
 
   private fun currentCastMediaSnapshot(): CastMediaSnapshot? {
+    if (isNativeEngineActive()) {
+      val nativeMediaItem = nativeEngine.currentPlayer.currentMediaItem ?: return null
+      val nativeUri = nativeMediaItem.localConfiguration?.uri ?: return null
+      val nativeScheme = nativeUri.scheme?.lowercase()
+      if (nativeScheme !in setOf("http", "https", "content", "file")) return null
+      return CastMediaSnapshot(
+        source = nativeUri,
+        title = getPreferredCurrentTitle().ifBlank { fileName.ifBlank { nativeUri.lastPathSegment.orEmpty() } },
+        mimeType = nativeMediaItem.localConfiguration?.mimeType ?: contentResolver.getType(nativeUri),
+        durationMs = nativeEngine.snapshot.value.durationMs,
+        positionMs = nativeEngine.snapshot.value.positionMs,
+        isPlaying = nativeEngine.currentPlayer.isPlaying,
+      )
+    }
     if (!isReady || fileName.isBlank()) return null
     val source =
       sequenceOf(
