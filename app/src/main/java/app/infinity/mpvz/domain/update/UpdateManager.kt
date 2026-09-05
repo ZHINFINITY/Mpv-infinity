@@ -146,9 +146,10 @@ class UpdateManager(
 
   private fun selectBestApkAsset(assets: List<Asset>): Asset? {
     val deviceArch = getDeviceArchitecture()
-    val compatibleAssets =
+      val compatibleAssets =
       assets.filter { asset ->
-        asset.name.startsWith("Mpv∞-", ignoreCase = true) &&
+        (asset.name.startsWith("Mpv∞-", ignoreCase = true) ||
+          asset.name.startsWith("mpv-infinity-", ignoreCase = true)) &&
           asset.name.endsWith(".apk", ignoreCase = true) &&
           asset.name.matchesApkVariant(BuildConfig.UPDATE_APK_VARIANT)
       }
