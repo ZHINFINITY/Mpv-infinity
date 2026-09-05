@@ -839,8 +839,11 @@ class PlayerActivity :
               nativeEngine.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
+              val handoffIndex =
+                PlaybackSession.queue.value.currentIndex.takeIf { it in playlist.indices }
+                  ?: playlistIndex.coerceAtLeast(0)
               loadPlaylistItemInternal(
-                index = playlistIndex.coerceAtLeast(0),
+                index = handoffIndex,
                 saveCurrentPlaybackState = false,
               )
               engineHandoffJob = lifecycleScope.launch {
