@@ -771,7 +771,23 @@ class PlayerActivity :
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         decoderPreferences.playbackEngine.changes().collect { engine ->
-          if (engine == activeEngineMode) return@collect
+          val currentQueueItem = PlaybackSession.queue.value.currentItem
+          val effectiveEngine =
+            when (engine) {
+              PlaybackEngineMode.AUTO ->
+                if (currentQueueItem?.isHdrOrDolbyVision() == true &&
+                  currentQueueItem.requiresTorrentResolution().not()
+                ) {
+                  PlaybackEngineMode.NATIVE
+                } else {
+                  PlaybackEngineMode.MPV
+                }
+              else -> engine
+            }
+          // AUTO is a preference, not a renderer. Resolve it before comparing with the active
+          // renderer; otherwise selecting AUTO while MPV is already active unnecessarily enters
+          // the handoff path and can stop an active torrent proxy.
+          if (effectiveEngine == activeEngineMode) return@collect
           engineHandoffJob?.cancel()
           val outgoingEngine = activeEngineMode
           val outgoingPositionMs =
@@ -795,7 +811,7 @@ class PlayerActivity :
             PlaybackSession.setPropertyBoolean("pause", true)
           }
 
-          val useNative = engine == PlaybackEngineMode.NATIVE
+          val useNative = effectiveEngine == PlaybackEngineMode.NATIVE
           val currentUri = currentPlayableUri?.takeIf { it.isNotBlank() }
           val sessionReady = PlaybackSession.state.value.phase == PlaybackPhase.READY ||
             PlaybackSession.state.value.phase == PlaybackPhase.BACKGROUND
