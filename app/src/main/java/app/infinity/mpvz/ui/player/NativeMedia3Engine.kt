@@ -79,9 +79,9 @@ class NativeMedia3Engine(context: Context) {
       DefaultRenderersFactory(context.applicationContext)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        // Do not silently replace a failed hardware HDR decoder with a software decoder. That
-        // fallback is visibly worse than returning to MPV: it causes long startup and rebuffering.
-        .setEnableDecoderFallback(false),
+        // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
+        // devices reject the first candidate even though a compatible Media3 decoder is available.
+        .setEnableDecoderFallback(true),
     )
     .build()
   private var attachedView: PlayerView? = null

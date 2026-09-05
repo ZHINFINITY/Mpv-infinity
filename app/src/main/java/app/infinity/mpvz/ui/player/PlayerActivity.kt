@@ -523,6 +523,7 @@ class PlayerActivity :
   private var lastBackgroundThumbnailKey: String? = null
   private var lastBackgroundThumbnail: Bitmap? = null
   private var currentPlayableUri: String? = null // Store current URI for notification re-entry
+  private var activeTorrentSourceUri: String? = null
   private val playbackRenderDispatcher = Dispatchers.Main
   private val mediaLoadDispatcher = Dispatchers.Default.limitedParallelism(1)
 
@@ -866,7 +867,8 @@ class PlayerActivity :
               } else {
                 // Single-file/direct torrent sessions have no playlist entry. Reload from the
                 // original torrent source so MPV does not reopen the closed native/local URL.
-                val torrentSource = intent.dataString
+                val torrentSource = activeTorrentSourceUri
+                  ?: intent.dataString
                   ?.takeIf { isTorrentSource(it, intent.type) }
                 val handoffSource = torrentSource
                   ?: queueItem?.originalUri
@@ -5784,6 +5786,7 @@ class PlayerActivity :
               throw CancellationException("Torrent request was replaced")
             }
             torrentResult = result
+            activeTorrentSourceUri = result.source
             resolvedPlayableUri = result.localUrl
             resolvedOriginalUri = result.source
             resolvedFileName = result.selectedFile.name
