@@ -870,10 +870,20 @@ class PlayerActivity :
     }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-                  nativeEngine.snapshot.collect { snapshot ->
-            viewModel.setNativeTracks(snapshot)
+        nativeEngine.snapshot.collect { snapshot ->
+          viewModel.setNativeTracks(snapshot)
+          if (playerPreferences.orientation.get() == PlayerOrientation.Video &&
+            snapshot.videoWidth > 0 && snapshot.videoHeight > 0
+          ) {
+            val targetOrientation =
+              if (snapshot.videoWidth > snapshot.videoHeight) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+              } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+              }
+            if (requestedOrientation != targetOrientation) requestedOrientation = targetOrientation
           }
-
+        }
       }
     }
     setupSystemBarsAutoHide()
@@ -6321,7 +6331,12 @@ class PlayerActivity :
 
     val width = sourceIntent.getIntExtra(EXTRA_VIDEO_WIDTH, 0)
     val height = sourceIntent.getIntExtra(EXTRA_VIDEO_HEIGHT, 0)
-    if (width <= 0 || height <= 0) return
+    if (width <= 0 || height <= 0) {
+      // Network/Jellyfin/WebDAV launches often do not carry dimensions in the intent. Start the
+      // video player in landscape, then the loaded source aspect corrects portrait videos.
+      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+      return
+    }
 
     val initialOrientation =
       if (width > height) {

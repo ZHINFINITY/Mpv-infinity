@@ -177,13 +177,7 @@ internal class BlobRenderer(
     gl: GL10?,
     config: EGLConfig?,
   ) {
-    val background = (appliedPalette ?: palette).background
-    GLES30.glClearColor(
-      Color.red(background) / 255f,
-      Color.green(background) / 255f,
-      Color.blue(background) / 255f,
-      1f,
-    )
+    GLES30.glClearColor(0f, 0f, 0f, 0f)
     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
     GLES30.glDisable(GLES30.GL_CULL_FACE)
     GLES30.glDisable(GLES30.GL_DEPTH_TEST)
@@ -528,13 +522,7 @@ internal class BlobRenderer(
   private fun compositeToScreen() {
     GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0)
     GLES30.glViewport(0, 0, surfaceWidth, surfaceHeight)
-    val background = (appliedPalette ?: palette).background
-    GLES30.glClearColor(
-      Color.red(background) / 255f,
-      Color.green(background) / 255f,
-      Color.blue(background) / 255f,
-      1f,
-    )
+    GLES30.glClearColor(0f, 0f, 0f, 0f)
     GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
     GLES30.glUseProgram(compositeProgram)
     bindTexture(0, sceneTarget.texture, uCompositeScene)
