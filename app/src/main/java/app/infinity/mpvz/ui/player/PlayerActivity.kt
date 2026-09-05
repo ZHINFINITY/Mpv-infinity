@@ -71,6 +71,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.C
 import androidx.lifecycle.repeatOnLifecycle
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
@@ -4991,14 +4992,16 @@ class PlayerActivity :
 
     val nativeSnapshot = nativeEngine.snapshot.value
     val nativeEngineActive = isNativeEngineActive()
+    val liveNativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
+    val liveNativeDurationMs = nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
     return PlaybackStateSnapshot(
       mediaIdentifier = saveIdentifier,
       mediaTitle = mediaTitle,
       currentPosition =
-        if (nativeEngineActive) nativeSnapshot.positionMs.toSecondsInt()
+        if (nativeEngineActive) maxOf(nativeSnapshot.positionMs, liveNativePositionMs).toSecondsInt()
         else readMpvIntSeconds("time-pos", viewModel.pos ?: 0),
       duration =
-        if (nativeEngineActive) nativeSnapshot.durationMs.toSecondsInt()
+        if (nativeEngineActive) maxOf(nativeSnapshot.durationMs, liveNativeDurationMs).toSecondsInt()
         else readMpvIntSeconds("duration", viewModel.duration ?: 0),
       isPositionRestorePending =
         if (nativeEngineActive) {

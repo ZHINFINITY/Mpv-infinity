@@ -354,24 +354,7 @@ class NativeMedia3Engine(context: Context) {
     val groups = player.currentTracks.groups
     val trackChapters = groups.flatMap { group ->
       (0 until group.length).flatMap { index ->
-        group.getTrackFormat(index).metadata?.let { metadata ->
-          (0 until metadata.length()).map { metadata.get(it) }
-        }.orEmpty().mapNotNull { entry ->
-          if (!entry.javaClass.simpleName.contains("chapter", ignoreCase = true)) {
-            return@mapNotNull null
-          }
-          val startUs = runCatching {
-            entry.javaClass.methods.firstOrNull { it.name == "getStartTimeUs" }?.invoke(entry) as? Number
-          }.getOrNull() ?: runCatching {
-            entry.javaClass.getDeclaredField("startTimeUs").apply { isAccessible = true }.get(entry) as Number
-          }.getOrNull() ?: return@mapNotNull null
-          val title = runCatching {
-            entry.javaClass.methods.firstOrNull { it.name == "getTitle" }?.invoke(entry) as? String
-          }.getOrNull() ?: runCatching {
-            entry.javaClass.getDeclaredField("title").apply { isAccessible = true }.get(entry) as? String
-          }.getOrNull().orEmpty().ifBlank { "Chapter ${index + 1}" }
-          NativeChapter(title, (startUs.toLong() / 1_000_000f).coerceAtLeast(0f))
-        }
+        group.getTrackFormat(index).metadata?.let(::metadataEntriesToChapters).orEmpty()
       }
     }
     val chapters = (metadataChapters + trackChapters)
@@ -421,7 +404,6 @@ class NativeMedia3Engine(context: Context) {
   private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =
     (0 until metadata.length()).mapNotNull { index ->
       val entry = metadata.get(index)
-      if (!entry.javaClass.simpleName.contains("chapter", ignoreCase = true)) return@mapNotNull null
       val startTimeMs = runCatching {
         entry.javaClass.methods.firstOrNull { it.name == "getStartTimeMs" }?.invoke(entry) as? Number
       }.getOrNull()
