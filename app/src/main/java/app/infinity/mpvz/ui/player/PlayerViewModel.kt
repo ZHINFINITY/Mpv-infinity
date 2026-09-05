@@ -108,6 +108,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -6639,6 +6640,22 @@ class PlayerViewModel : ViewModel(),
   }
 
   override fun onCleared() {
+    // Cancel every viewModelScope child before releasing references. This is explicit because
+    // render-prep and blocking IO children can otherwise keep a CoroutineScheduler worker alive
+    // long enough for LeakCanary to retain this ViewModel after onCleared.
+    viewModelScope.cancel()
+    ambientDebounceJob?.cancel()
+    autoCropJob?.cancel()
+    autoCropReadinessJob?.cancel()
+    androidSystemInfoBridgeJob?.cancel()
+    customButtonsSetupJob?.cancel()
+    videoHashJob?.cancel()
+    mediaSearchJob?.cancel()
+    subtitleSearchJob?.cancel()
+    frameSeekJob?.cancel()
+    seekCoalesceJob?.cancel()
+    seekPreviewJob?.cancel()
+    frameNavigationCollapseJob?.cancel()
     embeddedCueTranslationJob?.cancel()
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
