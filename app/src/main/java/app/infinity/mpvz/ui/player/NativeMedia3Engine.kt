@@ -77,9 +77,10 @@ class NativeMedia3Engine(context: Context) {
     .build()
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(loadControl)
-    // Xiaomi's 4K HDR decoder can spend longer than Media3's 4-second no-progress watchdog
-    // while a SurfaceView is being handed over from MPV. Do not abort that valid startup.
-    .setStuckBufferingDetectionTimeoutMs(30_000)
+    // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
+    // being handed over from MPV. Disable this watchdog for Native; a real player/codec error is
+    // still delivered through Player.Listener.onPlayerError.
+    .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
@@ -161,6 +162,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   init {
+    Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
     player.addListener(listener)
   }
 
