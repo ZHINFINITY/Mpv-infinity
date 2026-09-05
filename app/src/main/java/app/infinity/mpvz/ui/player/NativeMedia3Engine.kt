@@ -18,7 +18,6 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -66,17 +65,18 @@ class NativeMedia3Engine(context: Context) {
   private val logTag = "Mpv∞-Media3"
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
-  private val loadControl = DefaultLoadControl.Builder()
-    .setAllocator(DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE))
-    .setBufferDurationsMs(
-      50_000,
-      100_000,
-      2_500,
-      5_000,
-    )
-    .build()
   private val player = ExoPlayer.Builder(context.applicationContext)
-    .setLoadControl(loadControl)
+    .setLoadControl(
+      DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+          30_000,
+          120_000,
+          2_000,
+          5_000,
+        )
+        .setTargetBufferBytes(64 * 1024 * 1024)
+        .build(),
+    )
     // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
     // being handed over from MPV. Disable this watchdog for Native; a real player/codec error is
     // still delivered through Player.Listener.onPlayerError.
@@ -311,15 +311,11 @@ class NativeMedia3Engine(context: Context) {
         }
         .build()
     player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
-    val prepare = Runnable {
-      // SurfaceView attachment/visibility is asynchronous during an MPV ↔ Media3 handoff.
-      // Preparing on the next traversal prevents the decoder from starting with no surface.
-      if (player.currentMediaItem?.localConfiguration?.uri == uri) {
-        player.prepare()
-        player.playWhenReady = autoplay
-      }
-    }
-    attachedView?.post(prepare) ?: prepare.run()
+    // The PlayerView is attached once during Activity creation. Preparing immediately here is
+    // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
+    // without ever starting the local data pipeline on Xiaomi devices.
+    player.prepare()
+    player.playWhenReady = autoplay
     publishSnapshot()
     startTimelineUpdates()
   }
