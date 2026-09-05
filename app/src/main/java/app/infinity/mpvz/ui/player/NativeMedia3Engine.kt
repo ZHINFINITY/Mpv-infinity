@@ -106,7 +106,9 @@ class NativeMedia3Engine(context: Context) {
     override fun run() {
       if (player.currentMediaItem == null) return
       publishPlaybackSnapshot()
-      loopHandler.postDelayed(this, 100L)
+      // Keep the decoder/surface callbacks responsive during 4K Dolby Vision startup. Controls
+      // do not need a 10 Hz full Compose snapshot; direct seek/volume commands remain immediate.
+      loopHandler.postDelayed(this, 250L)
     }
   }
   private val loopRunnable = object : Runnable {
