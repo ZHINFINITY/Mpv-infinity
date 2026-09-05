@@ -157,8 +157,9 @@ private fun <T> VisualizerOverlay(
       view.updatePalette(palette)
       view.setBackgroundColor(Color.TRANSPARENT)
       view.holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
-      view.setZOrderOnTop(false)
-      view.setZOrderMediaOverlay(true)
+      // A translucent top layer is required for alpha-cleared GL frames to reveal the album art.
+      view.setZOrderOnTop(true)
+      view.setZOrderMediaOverlay(false)
       if (isSheetOpen) {
         // A sheet fully covers the expensive GLSurfaceView. Keep the last frame but stop the
         // continuous render loop (particle/galaxy renderers otherwise burn GPU underneath it).

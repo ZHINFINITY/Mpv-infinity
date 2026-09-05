@@ -35,7 +35,8 @@ internal class BlobVisualizerView(
     setEGLContextClientVersion(3)
     setEGLConfigChooser(8, 8, 8, 8, 16, 0)
     holder.setFormat(PixelFormat.TRANSLUCENT)
-    setZOrderMediaOverlay(true)
+    setZOrderOnTop(true)
+    setZOrderMediaOverlay(false)
     preserveEGLContextOnPause = true
     setRenderer(blobRenderer)
     renderMode = RENDERMODE_CONTINUOUSLY

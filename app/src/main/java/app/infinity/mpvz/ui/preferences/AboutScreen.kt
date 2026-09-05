@@ -494,6 +494,7 @@ object AboutScreen : Screen {
         PreferenceSectionHeader(title = "Updates")
         if (updateViewModel != null) {
           val autoUpdate by updateViewModel.isAutoUpdateEnabled.collectAsState()
+          val updateState by updateViewModel.updateState.collectAsState()
           PreferenceCard {
             Column(modifier = Modifier.padding(16.dp)) {
               Row(
@@ -513,6 +514,14 @@ object AboutScreen : Screen {
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = cs.surfaceVariant, contentColor = cs.onSurfaceVariant),
               ) { Text("Check for Updates Now") }
+              if (updateState is UpdateViewModel.UpdateState.NoUpdate) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                  text = stringResource(R.string.ui_already_using_latest_version),
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = cs.primary,
+                )
+              }
             }
           }
         }
