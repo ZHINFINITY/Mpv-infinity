@@ -115,8 +115,6 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
@@ -376,7 +374,9 @@ private fun artworkVisualizerPalette(
       ?: materialPalette.primary
   val artworkTones = ribbonPaletteFromAccent(materialPalette, accent)
   return VisualizerPalette(
-    background = ColorUtils.blendARGB(materialPalette.background, accent, 0.12f),
+    // Keep the renderer backdrop identical to the player surface. Accent colors belong to the
+    // visualizer itself; tinting this opaque fallback creates a visible rectangle around it.
+    background = materialPalette.background,
     primary = ColorUtils.blendARGB(materialPalette.primary, accent, 0.48f),
     secondary = ColorUtils.blendARGB(materialPalette.secondary, artworkTones.secondary, 0.62f),
     tertiary = ColorUtils.blendARGB(materialPalette.tertiary, artworkTones.tertiary, 0.58f),
@@ -391,8 +391,6 @@ private fun AudioVisualizerViewport(
   isSheetOpen: Boolean,
   volumeScale: Float,
   features: AudioFeatures,
-  topEdgeColor: Color,
-  bottomEdgeColor: Color,
   onClick: () -> Unit,
   onLongClick: () -> Unit,
   modifier: Modifier = Modifier,
@@ -452,38 +450,6 @@ private fun AudioVisualizerViewport(
         )
     }
 
-    Box(
-      modifier =
-        Modifier
-          .align(Alignment.TopCenter)
-          .fillMaxWidth()
-          .height(maxHeight * 0.24f)
-          .blur(28.dp, BlurredEdgeTreatment.Unbounded)
-          .background(
-            Brush.verticalGradient(
-              0f to topEdgeColor,
-              0.38f to topEdgeColor.copy(alpha = 0.84f),
-              0.72f to topEdgeColor.copy(alpha = 0.30f),
-              1f to Color.Transparent,
-            ),
-          ),
-    )
-    Box(
-      modifier =
-        Modifier
-          .align(Alignment.BottomCenter)
-          .fillMaxWidth()
-          .height(maxHeight * 0.28f)
-          .blur(32.dp, BlurredEdgeTreatment.Unbounded)
-          .background(
-            Brush.verticalGradient(
-              0f to Color.Transparent,
-              0.28f to bottomEdgeColor.copy(alpha = 0.28f),
-              0.66f to bottomEdgeColor.copy(alpha = 0.86f),
-              1f to bottomEdgeColor,
-            ),
-          ),
-    )
   }
 }
 
@@ -980,8 +946,8 @@ fun AudioPlayerControls(
         )
         if (vibrant == 0 && darkVibrant == 0) return@runCatching null
 
-        val topColor = Color(if (vibrant != 0) vibrant else darkVibrant).copy(alpha = 0.50f)
-        val bottomColor = Color(if (darkVibrant != 0) darkVibrant else vibrant).copy(alpha = 0.30f)
+        val topColor = Color(if (vibrant != 0) vibrant else darkVibrant).copy(alpha = 0.20f)
+        val bottomColor = Color(if (darkVibrant != 0) darkVibrant else vibrant).copy(alpha = 0.12f)
         Pair(topColor, bottomColor)
       }.onSuccess { colors ->
         value = colors
@@ -1007,11 +973,6 @@ fun AudioPlayerControls(
     animationSpec = tween(durationMillis = 800),
     label = "ambient_bottom_color",
   )
-  val visualizerTopEdgeColor =
-    Color(ColorUtils.compositeColors(animatedAmbientTop.toArgb(), colorScheme.surface.toArgb()))
-  val visualizerBottomEdgeColor =
-    Color(ColorUtils.compositeColors(animatedAmbientBottom.toArgb(), colorScheme.surface.toArgb()))
-
   Box(
     modifier =
       modifier
@@ -1212,8 +1173,6 @@ fun AudioPlayerControls(
               isSheetOpen = isSheetOpen,
               volumeScale = volumeScale,
               features = visualizerFeatures,
-              topEdgeColor = visualizerTopEdgeColor,
-              bottomEdgeColor = visualizerBottomEdgeColor,
               onClick = viewModel::toggleAudioVisualizer,
               onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
               modifier = Modifier.fillMaxSize(),

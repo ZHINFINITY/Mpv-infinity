@@ -28,7 +28,7 @@ class AudioPreferences(
   val audioBackgroundPlayback = preferenceStore.getBoolean("audio_player_background_playback", false)
   val volumeNormalization = preferenceStore.getBoolean("audio_volume_normalization", false)
   val drcEnabled = preferenceStore.getBoolean("audio_drc_enabled", false)
-  val showAudioVisualizer = preferenceStore.getBoolean("show_audio_visualizer", true)
+  val showAudioVisualizer = preferenceStore.getBoolean("show_audio_visualizer", false)
   val audioVisualizerStyle = preferenceStore.getEnum("audio_visualizer_style", AudioVisualizerStyle.Blob)
   val audioOrientation = preferenceStore.getEnum("audio_player_orientation", AudioPlayerOrientation.Auto)
   val audioAmbientMode = preferenceStore.getBoolean("audio_ambient_mode", true)

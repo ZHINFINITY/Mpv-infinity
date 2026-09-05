@@ -610,9 +610,13 @@ class PlayerViewModel : ViewModel(),
   // These MPV-backed state flows must be initialized before any init block collects them.
   private val nativeSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeAudioTracks = MutableStateFlow<List<TrackNode>>(emptyList())
+  private val nativeEngineActive = MutableStateFlow(false)
   private val nativeChapters = MutableStateFlow<List<Segment>>(emptyList())
   private var nativeSubtitleToggleListener: ((Int) -> Unit)? = null
   private var nativeAudioToggleListener: ((Int) -> Unit)? = null
+  fun setNativeEngineActive(active: Boolean) {
+    nativeEngineActive.value = active
+  }
 
   fun setNativeTracks(snapshot: NativePlaybackSnapshot) {
     nativeSubtitleTracks.value = snapshot.subtitleTracks.mapIndexed { index, track ->
@@ -658,13 +662,13 @@ class PlayerViewModel : ViewModel(),
       .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val subtitleTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, nativeSubtitleTracks, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, engine ->
-      if (engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isSubtitle }
+    combine(allTracks, nativeSubtitleTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, nativeActive, engine ->
+      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isSubtitle }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val audioTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, nativeAudioTracks, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, engine ->
-      if (engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isAudio }
+    combine(allTracks, nativeAudioTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, nativeActive, engine ->
+      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isAudio }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val videoQualityTracks: StateFlow<List<TrackNode>> =
@@ -736,7 +740,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun selectAudioTrack(track: TrackNode) {
-    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+    if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
       nativeAudioToggleListener?.invoke(track.id)
       return
     }
