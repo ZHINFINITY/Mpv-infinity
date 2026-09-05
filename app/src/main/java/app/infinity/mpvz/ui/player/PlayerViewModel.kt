@@ -4416,18 +4416,21 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun leftSeek() {
+    val currentPosition = if (host.isNativeEngineActive()) nativePlaybackPositionSeconds().toInt() else (pos ?: 0)
     _seekState.update { s ->
-      s.copy(amount = if ((pos ?: 0) > 0) s.amount - doubleTapToSeekDuration else s.amount, isForwards = false)
+      s.copy(amount = if (currentPosition > 0) s.amount - doubleTapToSeekDuration else s.amount, isForwards = false)
     }
     seekBy(-doubleTapToSeekDuration)
   }
 
   fun rightSeek() {
+    val currentPosition = if (host.isNativeEngineActive()) nativePlaybackPositionSeconds().toInt() else (pos ?: 0)
+    val currentDuration = if (host.isNativeEngineActive()) nativePlaybackDurationSeconds().toInt() else (duration ?: 0)
     _seekState.update { s ->
       s.copy(
         amount =
-          if ((pos ?: 0) <
-            (duration ?: 0)
+          if (currentPosition <
+            currentDuration
           ) {
             s.amount + doubleTapToSeekDuration
           } else {
