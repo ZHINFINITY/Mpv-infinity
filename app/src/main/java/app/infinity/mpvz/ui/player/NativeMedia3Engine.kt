@@ -59,20 +59,20 @@ class NativeMedia3Engine(context: Context) {
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
-        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+        // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
+        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         .setEnableDecoderFallback(true),
     )
     .setLoadControl(
       DefaultLoadControl.Builder()
-        // Keep substantially more data ahead so large forward seeks on network media do not
-        // immediately stall. The byte target still bounds memory use on high-bitrate 4K files.
+        // Keep enough data ahead for network media without retaining nearly a gigabyte of 4K data.
         .setBufferDurationsMs(
+          30_000,
           120_000,
-          900_000,
-          4_000,
-          10_000,
+          2_000,
+          5_000,
         )
-        .setTargetBufferBytes(128 * 1024 * 1024)
+        .setTargetBufferBytes(64 * 1024 * 1024)
         .build(),
     )
     .build()

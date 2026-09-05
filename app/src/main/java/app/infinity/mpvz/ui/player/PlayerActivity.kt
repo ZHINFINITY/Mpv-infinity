@@ -5904,6 +5904,7 @@ class PlayerActivity :
       withContext(Dispatchers.Main) {
         activeSaveMediaIdentifier = item.stableId
         activeEngineMode = PlaybackEngineMode.NATIVE
+        viewModel.setNativeEngineActive(true)
         binding.player.visibility = View.GONE
         binding.media3Player.visibility = View.VISIBLE
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(item)
@@ -5921,6 +5922,7 @@ class PlayerActivity :
     withContext(Dispatchers.Main) {
       if (requiresYtdlp || selectedEngine != PlaybackEngineMode.NATIVE) {
         activeEngineMode = PlaybackEngineMode.MPV
+        viewModel.setNativeEngineActive(false)
         nativeEngine.stop()
         binding.media3Player.visibility = View.GONE
         binding.player.visibility = View.VISIBLE
@@ -6817,6 +6819,7 @@ class PlayerActivity :
       val nativeWasPlaying = nativeEngine.snapshot.value.isPlaying
       nativeEngine.setPlaying(false)
       activeEngineMode = PlaybackEngineMode.MPV
+      viewModel.setNativeEngineActive(false)
       decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
       nativeEngine.stop()
       binding.media3Player.visibility = View.GONE
