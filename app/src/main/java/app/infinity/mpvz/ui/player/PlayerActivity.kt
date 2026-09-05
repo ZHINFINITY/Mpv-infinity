@@ -815,6 +815,12 @@ class PlayerActivity :
               val nativeUri =
                 currentItem?.let { PlaybackSession.resolvePlayableUriForNative(it) }?.toUri()
                   ?: Uri.parse(currentUri)
+              // Select Native immediately. The first-frame job only confirms readiness; it must
+              // not leave controls and engine state on MPV while Media3 is opening the source.
+              activeEngineMode = PlaybackEngineMode.NATIVE
+              viewModel.setNativeEngineActive(true)
+              binding.media3Player.visibility = View.VISIBLE
+              binding.player.visibility = View.GONE
               nativeEngine.play(
                 nativeUri,
                 outgoingPositionMs,
@@ -830,10 +836,15 @@ class PlayerActivity :
                 } == true
                 if (!rendered || !ownsPlaybackSession()) {
                   nativeEngine.stop()
+                  if (ownsPlaybackSession()) {
+                    activeEngineMode = PlaybackEngineMode.MPV
+                    viewModel.setNativeEngineActive(false)
+                    PlaybackSession.setPropertyBoolean("mute", false)
+                    binding.media3Player.visibility = View.GONE
+                    binding.player.visibility = View.VISIBLE
+                  }
                   return@launch
                 }
-                activeEngineMode = PlaybackEngineMode.NATIVE
-                viewModel.setNativeEngineActive(true)
                 binding.media3Player.visibility = View.VISIBLE
                 binding.player.visibility = View.GONE
               }
@@ -850,7 +861,7 @@ class PlayerActivity :
               queueItem?.torrentFileIndex?.let { intent.putExtra("torrent_file_index", it) }
               val handoffIndex = PlaybackSession.queue.value.currentIndex
                 .takeIf { it in playlist.indices }
-              if (handoffIndex != null) {
+              if (queueItem?.torrentFileIndex == null && handoffIndex != null) {
                 loadPlaylistItemInternal(index = handoffIndex, saveCurrentPlaybackState = false)
               } else {
                 // Single-file/direct torrent sessions have no playlist entry. Reload from the
