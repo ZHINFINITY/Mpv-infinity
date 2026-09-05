@@ -203,8 +203,21 @@ class NetworkStreamingProxy private constructor() :
     rangeHeader: String,
   ): Response {
     val fileSize = getFileSize(streamInfo, path)
-    if (fileSize < 0L) return upstreamFailure(headOnly)
-    val range = HttpByteRange.parse(rangeHeader, fileSize) ?: return rangeNotSatisfiable(fileSize)
+    if (fileSize < 0L) {
+      val start = HttpByteRange.parseStart(rangeHeader) ?: return rangeNotSatisfiable(headOnly)
+      val mimeType = mimeTypeFor(streamInfo, path)
+      val response =
+        if (headOnly) {
+          HeadResponse(Response.Status.PARTIAL_CONTENT, mimeType, 0L)
+        } else {
+          val inputStream = getStream(streamInfo, path, start) ?: return upstreamFailure(headOnly)
+          newChunkedResponse(Response.Status.PARTIAL_CONTENT, mimeType, inputStream)
+        }
+      response.addHeader("Accept-Ranges", "bytes")
+      response.addHeader("Content-Range", "bytes $start-/*")
+      return response
+    }
+    val range = HttpByteRange.parse(rangeHeader, fileSize) ?: return rangeNotSatisfiable(headOnly)
     val mimeType = mimeTypeFor(streamInfo, path)
 
     val response =
