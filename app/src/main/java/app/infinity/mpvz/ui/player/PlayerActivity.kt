@@ -884,7 +884,11 @@ class PlayerActivity :
               queueItem?.torrentFileIndex?.let { intent.putExtra("torrent_file_index", it) }
               val handoffIndex = PlaybackSession.queue.value.currentIndex
                 .takeIf { it in playlist.indices }
-              if (queueItem?.torrentFileIndex == null && handoffIndex != null) {
+              // A resolved torrent has a temporary playable URL and may also have a queue item.
+              // Reloading that queue item here can run the normal outgoing-item cleanup and stop
+              // the proxy before MPV reconnects. Always use the retained torrent source directly
+              // while a torrent session is active.
+              if (activeTorrentSourceUri == null && queueItem?.torrentFileIndex == null && handoffIndex != null) {
                 loadPlaylistItemInternal(index = handoffIndex, saveCurrentPlaybackState = false)
               } else {
                 // Single-file/direct torrent sessions have no playlist entry. Reload from the
