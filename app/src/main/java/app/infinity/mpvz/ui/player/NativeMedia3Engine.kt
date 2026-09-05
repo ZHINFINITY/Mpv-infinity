@@ -274,13 +274,18 @@ class NativeMedia3Engine(context: Context) {
     autoplay: Boolean = true,
     headers: Map<String, String> = emptyMap(),
     mimeType: String? = null,
+    sourceUri: Uri? = null,
   ) {
     _hasRenderedFirstFrame.value = false
     httpDataSourceFactory.setDefaultRequestProperties(headers)
     val mediaItem =
       MediaItem.Builder()
         .setUri(uri)
-        .apply { (mimeType ?: nativeContainerMimeType(uri))?.let(::setMimeType) }
+        .apply {
+          val declaredMime = mimeType?.takeUnless { it.equals("application/octet-stream", true) }
+          (declaredMime ?: nativeContainerMimeType(uri) ?: sourceUri?.let(::nativeContainerMimeType))
+            ?.let(::setMimeType)
+        }
         .build()
     player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
     player.prepare()

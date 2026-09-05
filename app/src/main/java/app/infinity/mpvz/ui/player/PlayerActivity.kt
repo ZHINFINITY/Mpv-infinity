@@ -5956,6 +5956,7 @@ class PlayerActivity :
           autoplay = true,
           headers = nativeItem.headers,
           mimeType = nativeItem.mimeType,
+          sourceUri = nativeItem.originalUri.toUri(),
         )
         viewModel.onVideoLoadCompleted()
       }

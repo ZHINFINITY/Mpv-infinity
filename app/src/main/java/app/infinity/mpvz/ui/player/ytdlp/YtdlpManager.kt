@@ -116,6 +116,7 @@ object YtdlpManager {
     if (!uri.scheme.equals("http", ignoreCase = true) && !uri.scheme.equals("https", ignoreCase = true)) {
       return false
     }
+    if (uri.host?.lowercase() in setOf("127.0.0.1", "localhost", "0.0.0.0")) return false
 
     // Jellyfin's authenticated stream endpoint is an HTTP URL without a file extension. It is
     // already a direct media stream and must not be sent through yt-dlp, otherwise Native playback
