@@ -36,7 +36,8 @@ class WebDavClient(
   companion object {
     private const val TAG = "WebDavClient"
     private const val SKIP_BUFFER_BYTES = 64 * 1024
-    private const val RANGE_CHUNK_BYTES = 8L * 1024 * 1024
+    // Larger sequential ranges reduce request-latency stalls for high-bitrate 4K/HDR media.
+    private const val RANGE_CHUNK_BYTES = 32L * 1024 * 1024
     private val rangeHttpClient by lazy {
       SharedHttpClient.derive {
         // A call timeout covers the entire response body and would terminate healthy long streams.
