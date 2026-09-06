@@ -2827,7 +2827,6 @@ class PlayerViewModel : ViewModel(),
         ?: java.util.Locale.getDefault().language.ifBlank { "en" }
     lastEmbeddedCue = cue
     _embeddedTranslatedSubtitle.value = null
-    if (native) nativeSubtitleVisibilityListener?.invoke(false)
     val requestId = ++embeddedTranslationRequestId
     embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {

@@ -161,9 +161,7 @@ fun TranslatedSubtitleText(
     fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
     fontStyle = if (italic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
     textAlign = textAlign,
-    style = androidx.compose.ui.text.TextStyle(
-      fontSize = fontSize,
-      lineHeight = fontSize,
+    style = MaterialTheme.typography.bodyLarge.copy(
       shadow = androidx.compose.ui.graphics.Shadow(
         color = outlineColor,
         blurRadius = (8f + outlineWidth * 2f).coerceAtLeast(1f),

@@ -51,6 +51,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.horizontalScroll
@@ -1008,7 +1009,17 @@ fun AudioPlayerControls(
           }
         }
         .windowInsetsPadding(WindowInsets.safeDrawing)
-        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
+        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+        .pointerInput(Unit) {
+          var totalDrag = 0f
+          detectVerticalDragGestures(
+            onDragStart = { totalDrag = 0f },
+            onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
+            onDragEnd = {
+              if (totalDrag > 160f) onBackPress()
+            },
+          )
+        },
   ) {
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {

@@ -887,10 +887,8 @@ fun PlayerControls(
           ) {
             embeddedTranslatedSubtitle?.takeIf { it.isNotBlank() }?.let { translated ->
               val translatedFontSize = with(density) {
-                // subtitleFontSize is an OSD-style pixel value. Do not multiply it by the
-                // physical controls height: on high-density phones that inflated the translated
-                // Compose overlay far beyond the original MPV/Media3 subtitle size.
-                val fontSizePx = subtitleFontSize * subtitleScale
+                val osdHeightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
+                val fontSizePx = subtitleFontSize * (osdHeightPx / 720f) * subtitleScale
                 (fontSizePx / density.density).coerceIn(8f, 120f).sp
               }
               TranslatedSubtitleText(
