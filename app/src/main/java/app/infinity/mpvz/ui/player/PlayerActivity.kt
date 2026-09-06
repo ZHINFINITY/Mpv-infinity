@@ -992,6 +992,13 @@ class PlayerActivity :
         }
       }
     }
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        nativeEngine.subtitleCueText.collect { cue ->
+          if (isNativeEngineActive()) viewModel.translateEmbeddedSubtitleCue(cue, native = true)
+        }
+      }
+    }
     setupSystemBarsAutoHide()
     setupPipHelper()
 
