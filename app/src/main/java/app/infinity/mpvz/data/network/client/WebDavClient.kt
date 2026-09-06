@@ -244,11 +244,15 @@ class WebDavClient(
       try {
         if (sardine == null) return@withContext Result.failure(IOException("Not connected"))
         val filePath = NetworkPath.from(path)
-        // Use the same authenticated HTTP path as streaming. A Sardine PROPFIND on the file can
-        // rewrite encoded WebDAV hrefs (notably '+' and spaces), producing a false 404 for titles
-        // whose names contain both characters. HEAD/range probes also work with hybrid DAV servers
-        // that omit getcontentlength from PROPFIND responses.
-        val size = probeSizeOverHttp(filePath)
+        // Prefer the authenticated DAV metadata response for TorBox and other hybrid servers.
+        // Their HEAD/range endpoint can return 404 for a valid file after switching folders, while
+        // PROPFIND still returns the file content length. Keep the HTTP probe as a fallback for
+        // servers that omit getcontentlength from PROPFIND responses.
+        val resourceSize =
+          runCatching {
+            sardine?.list(buildUrl(filePath.value), 0)?.firstOrNull()?.contentLength
+          }.getOrNull()?.takeIf { it >= 0L }
+        val size = resourceSize ?: probeSizeOverHttp(filePath)
         if (size == null || size < 0L) {
           Result.failure(IOException("WebDAV server did not provide a file size"))
         } else {
