@@ -1009,7 +1009,10 @@ class PlayerActivity :
           // Disabling the original Native subtitle track emits an empty onCues callback. Do not
           // treat that callback as a translation cancellation: the in-flight Google request must
           // be allowed to finish and populate the translated overlay.
-          if (isNativeEngineActive() && cue.isNotBlank()) {
+          // This flow is emitted only by NativeMedia3Engine, so isNativeEngineActive() is an
+          // incorrect gate during startup: Media3 can deliver its first cue before the Activity's
+          // readiness snapshot is published. That race left Native's original subtitle visible.
+          if (cue.isNotBlank()) {
             viewModel.translateEmbeddedSubtitleCue(cue, native = true)
           }
         }
