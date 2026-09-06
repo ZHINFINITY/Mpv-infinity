@@ -32,6 +32,10 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlin.math.pow
 
 data class NativePlaybackSnapshot(
@@ -71,6 +75,7 @@ data class NativeChapter(
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(context: Context) {
   private val logTag = "Mpv∞-Media3"
+  private val cueIndexScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
   private val extractorsFactory = ExtractorsFactory {
@@ -410,6 +415,9 @@ class NativeMedia3Engine(context: Context) {
     // without ever starting the local data pipeline on Xiaomi devices.
     player.prepare()
     fastStartNeedsSeekableSource = true
+    MkvCueIndex.start(cueIndexScope, mediaUri) { snapshot ->
+      Log.d(logTag, "background cue index complete=${snapshot.complete} points=${snapshot.points.size} uri=$mediaUri")
+    }
     Log.d(logTag, "prepare returned elapsedMs=${SystemClock.elapsedRealtime() - preparationStartedAtMs} uri=$preparationUri")
     player.playWhenReady = autoplay
     publishSnapshot()
@@ -536,6 +544,7 @@ class NativeMedia3Engine(context: Context) {
     player.removeListener(listener)
     attachedView?.player = null
     attachedView = null
+    cueIndexScope.cancel()
     player.release()
   }
 
