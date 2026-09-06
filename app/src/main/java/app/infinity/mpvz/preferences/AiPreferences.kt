@@ -85,9 +85,10 @@ class AiPreferences(
 
   val renameWithAi = preferenceStore.getBoolean("ai_rename_enabled", true)
   val subtitleFormatWithAi = preferenceStore.getBoolean("ai_subtitle_format_enabled", true)
-  val subtitleTranslationEnabled = preferenceStore.getBoolean("ai_subtitle_translation_enabled", false)
-  private val subtitleTranslationDefaultMigrated =
-    preferenceStore.getBoolean("ai_subtitle_translation_default_migrated_v1", false)
+  // A new key intentionally resets the Player > Subtitles translation switch to off for
+  // existing installations that may have retained the earlier opt-in value.
+  val subtitleTranslationEnabled =
+    preferenceStore.getBoolean("ai_subtitle_translation_enabled_v2", false)
 
   // Real-time subtitle generation (speech-to-text while playing)
   val realtimeSubsEnabled = preferenceStore.getBoolean("ai_realtime_subs_enabled", true)
@@ -96,12 +97,6 @@ class AiPreferences(
   val lastVerified = preferenceStore.getLong("ai_last_verified", 0L)
 
   init {
-    // The Player > Subtitles Google switch must start off after the feature was introduced.
-    // Preserve the user's choice after this one-time migration completes.
-    if (!subtitleTranslationDefaultMigrated.get()) {
-      subtitleTranslationEnabled.set(false)
-      subtitleTranslationDefaultMigrated.set(true)
-    }
     val currentProvider = provider.get()
     val providerModel = selectedModelFor(currentProvider)
     if (providerModel.get().isBlank() && selectedModel.get().isNotBlank()) {
