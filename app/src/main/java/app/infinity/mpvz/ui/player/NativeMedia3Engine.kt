@@ -457,6 +457,12 @@ class NativeMedia3Engine(context: Context) {
   fun selectTrack(track: NativeTrack) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
+    if (track.type == C.TRACK_TYPE_TEXT &&
+      !isSupportedNativeSubtitle(group.getTrackFormat(track.trackIndex).sampleMimeType)
+    ) {
+      Log.w(logTag, "Ignoring unsupported Native subtitle track")
+      return
+    }
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
@@ -475,6 +481,12 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
+    if (trackIndex !in 0 until group.length ||
+      !isSupportedNativeSubtitle(group.getTrackFormat(trackIndex).sampleMimeType)
+    ) {
+      Log.w(logTag, "Ignoring unsupported Native subtitle track")
+      return
+    }
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -529,8 +541,11 @@ class NativeMedia3Engine(context: Context) {
     fun tracksOfType(type: Int, fallback: String): List<NativeTrack> =
       groups.mapIndexedNotNull { groupIndex, group ->
         if (group.type != type) return@mapIndexedNotNull null
-        (0 until group.length).map { trackIndex ->
+        (0 until group.length).mapNotNull { trackIndex ->
           val format = group.getTrackFormat(trackIndex)
+          if (type == C.TRACK_TYPE_TEXT && !isSupportedNativeSubtitle(format.sampleMimeType)) {
+            return@mapNotNull null
+          }
           NativeTrack(
             groupIndex = groupIndex,
             trackIndex = trackIndex,
@@ -567,6 +582,11 @@ class NativeMedia3Engine(context: Context) {
       chapters = chapters,
     )
   }
+
+  private fun isSupportedNativeSubtitle(mimeType: String?): Boolean =
+    mimeType != "application/pgs" &&
+      mimeType != "application/vobsub" &&
+      mimeType != "application/dvbsubs"
 
   /** Publishes only rapidly changing playback values; track/metadata enumeration is expensive. */
   private fun publishPlaybackSnapshot() {
