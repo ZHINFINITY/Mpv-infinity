@@ -663,6 +663,16 @@ class PlayerViewModel : ViewModel(),
     nativeSubtitleVisibilityListener?.invoke(!nativeSubtitleHiddenForTranslation)
   }
 
+  /** Clears the old MPV translation before Native starts emitting its own subtitle cues. */
+  fun prepareNativeEngineHandoffForTranslation() {
+    if (!aiPreferences.subtitleTranslationEnabled.get()) return
+    clearEmbeddedSubtitleTranslationCue(native = true)
+    if (!nativeSubtitleHiddenForTranslation) {
+      nativeSubtitleVisibilityListener?.invoke(true)
+      nativeSubtitleHiddenForTranslation = true
+    }
+  }
+
   fun setNativeAudioToggleListener(listener: ((Int) -> Unit)?) {
     nativeAudioToggleListener = listener
   }
