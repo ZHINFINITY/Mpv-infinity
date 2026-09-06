@@ -659,10 +659,6 @@ class PlayerViewModel : ViewModel(),
     nativeSubtitleVisibilityListener = listener
   }
 
-  fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
-    nativeSubtitleVisibilityListener = listener
-  }
-
   fun setNativeAudioToggleListener(listener: ((Int) -> Unit)?) {
     nativeAudioToggleListener = listener
   }
