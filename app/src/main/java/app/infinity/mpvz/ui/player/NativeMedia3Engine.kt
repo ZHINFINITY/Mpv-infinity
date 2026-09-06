@@ -122,10 +122,17 @@ class NativeMedia3Engine(context: Context) {
       ),
     )
   }
+  private val indexedExtractorsFactory = ExtractorsFactory {
+    // The background player is allowed to seek to and parse Cues, producing the seekable timeline
+    // that the fast foreground player intentionally avoids during startup.
+    arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory()))
+  }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
     ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
-  private val player = ExoPlayer.Builder(context.applicationContext)
+  private val indexedLocalMediaSourceFactory =
+    ProgressiveMediaSource.Factory(directLocalDataSourceFactory, indexedExtractorsFactory)
+  private var player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
         .setBufferDurationsMs(
@@ -155,6 +162,12 @@ class NativeMedia3Engine(context: Context) {
         .setEnableDecoderFallback(true),
     )
     .build()
+  private var activePlayer: ExoPlayer = player
+  private val indexedPlayer = ExoPlayer.Builder(context.applicationContext)
+    .setMediaSourceFactory(
+      DefaultMediaSourceFactory(dataSourceFactory, indexedExtractorsFactory),
+    )
+    .build()
   private var attachedView: PlayerView? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
@@ -164,6 +177,8 @@ class NativeMedia3Engine(context: Context) {
   private val loopHandler = Handler(Looper.getMainLooper())
   private val metadataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private var metadataProbeJob: Job? = null
+  private var indexedHandoffStarted = false
+  private var indexedUri: Uri? = null
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
   private val seekRunnable = Runnable {
@@ -173,12 +188,12 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = targetMs
     // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
     // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
-    player.seekTo(targetMs)
+    activePlayer.seekTo(targetMs)
     publishPlaybackSnapshot()
   }
   private val timelineRunnable = object : Runnable {
     override fun run() {
-      if (player.currentMediaItem == null || (!player.isPlaying && !player.playWhenReady)) return
+      if (activePlayer.currentMediaItem == null || (!activePlayer.isPlaying && !activePlayer.playWhenReady)) return
       publishPlaybackSnapshot()
       // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
       // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
@@ -189,9 +204,9 @@ class NativeMedia3Engine(context: Context) {
     override fun run() {
       val a = loopASeconds
       val b = loopBSeconds
-      if (a != null && b != null && b > a && player.currentPosition >= (b * 1000.0).toLong()) {
-        player.seekTo((a * 1000.0).toLong())
-        if (!player.isPlaying) player.play()
+      if (a != null && b != null && b > a && activePlayer.currentPosition >= (b * 1000.0).toLong()) {
+        activePlayer.seekTo((a * 1000.0).toLong())
+        if (!activePlayer.isPlaying) activePlayer.play()
       }
       if (a != null && b != null) loopHandler.postDelayed(this, 150L)
     }
@@ -208,14 +223,14 @@ class NativeMedia3Engine(context: Context) {
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
   private val _hasRenderedFirstFrame = MutableStateFlow(false)
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
-  val currentPlayer: Player get() = player
+  val currentPlayer: Player get() = activePlayer
   private var metadataChapters: List<NativeChapter> = emptyList()
   private var preparationStartedAtMs: Long = 0L
   private var preparationUri: Uri? = null
 
   private val listener = object : Player.Listener {
     override fun onRenderedFirstFrame() {
-      val uri = player.currentMediaItem?.localConfiguration?.uri
+      val uri = activePlayer.currentMediaItem?.localConfiguration?.uri
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "first frame rendered uri=$uri prepareElapsedMs=$elapsed")
       _hasRenderedFirstFrame.value = true
@@ -223,10 +238,10 @@ class NativeMedia3Engine(context: Context) {
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
       if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
-      Log.d(logTag, "playback state=$playbackState uri=${player.currentMediaItem?.localConfiguration?.uri}")
+      Log.d(logTag, "playback state=$playbackState uri=${activePlayer.currentMediaItem?.localConfiguration?.uri}")
     }
     override fun onPlayerError(error: PlaybackException) {
-      Log.e(logTag, "player error uri=${player.currentMediaItem?.localConfiguration?.uri}", error)
+      Log.e(logTag, "player error uri=${activePlayer.currentMediaItem?.localConfiguration?.uri}", error)
     }
 
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -269,8 +284,17 @@ class NativeMedia3Engine(context: Context) {
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
-    player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
-    player.addListener(listener)
+    activePlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+    activePlayer.addListener(listener)
+    indexedPlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+    indexedPlayer.addListener(listener)
+    indexedPlayer.addListener(object : Player.Listener {
+      override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+        if (timeline.windowCount > 0 && indexedPlayer.currentMediaItem != null) {
+          handoffToIndexedPlayerIfReady()
+        }
+      }
+    })
   }
 
   fun attach(view: PlayerView) {
@@ -279,7 +303,7 @@ class NativeMedia3Engine(context: Context) {
     view.useController = false
     // Do not let a stale portrait measurement stretch native HDR video after rotation.
     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-    view.player = player
+    view.player = activePlayer
     configureSubtitleView()
     view.post { if (attachedView === view) configureSubtitleView() }
     startTimelineUpdates()
@@ -328,7 +352,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
-    val current = player.currentMediaItem?.localConfiguration ?: return false
+    val current = activePlayer.currentMediaItem?.localConfiguration ?: return false
     val mimeType = when (uri.toString().substringAfterLast('.', "").lowercase()) {
       "srt" -> "application/x-subrip"
       "vtt" -> "text/vtt"
@@ -339,15 +363,15 @@ class NativeMedia3Engine(context: Context) {
       .setMimeType(mimeType)
       .setSelectionFlags(if (select) C.SELECTION_FLAG_DEFAULT else 0)
       .build()
-    val wasPlaying = player.isPlaying
-    val positionMs = player.currentPosition.coerceAtLeast(0L)
+    val wasPlaying = activePlayer.isPlaying
+    val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
     val updated = MediaItem.Builder()
       .setUri(current.uri)
       .setSubtitleConfigurations(current.subtitleConfigurations + configuration)
       .build()
-    player.setMediaItem(updated, positionMs)
-    player.prepare()
-    player.playWhenReady = wasPlaying
+    activePlayer.setMediaItem(updated, positionMs)
+    activePlayer.prepare()
+    activePlayer.playWhenReady = wasPlaying
     return true
   }
 
@@ -416,6 +440,10 @@ class NativeMedia3Engine(context: Context) {
         uri
       }
     val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true)
+    indexedHandoffStarted = false
+    indexedUri = mediaUri.takeIf { isLocalUri }
+    indexedPlayer.stop()
+    indexedPlayer.clearMediaItems()
     Log.d(
       logTag,
       "play uri=$mediaUri scheme=${mediaUri.scheme} source=${if (isLocalUri) "direct-local" else "cached-network"} " +
@@ -441,16 +469,41 @@ class NativeMedia3Engine(context: Context) {
     } else {
       mediaSourceFactory.createMediaSource(mediaItem)
     }
-    player.setMediaSource(mediaSource, startPositionMs.coerceAtLeast(0L))
+    activePlayer.setMediaSource(mediaSource, startPositionMs.coerceAtLeast(0L))
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
     // without ever starting the local data pipeline on Xiaomi devices.
-    player.prepare()
+    activePlayer.prepare()
     Log.d(logTag, "prepare returned elapsedMs=${SystemClock.elapsedRealtime() - preparationStartedAtMs} uri=$preparationUri")
-    player.playWhenReady = autoplay
+    activePlayer.playWhenReady = autoplay
     publishSnapshot()
     startTimelineUpdates()
     startDeferredLocalMetadataProbe(mediaUri)
+    if (isLocalUri) {
+      val indexedSource = indexedLocalMediaSourceFactory.createMediaSource(mediaItem)
+      indexedPlayer.setMediaSource(indexedSource)
+      indexedPlayer.prepare()
+      Log.d(logTag, "indexed background prepare begin uri=$mediaUri")
+    }
+  }
+
+  private fun handoffToIndexedPlayerIfReady() {
+    if (indexedHandoffStarted || indexedUri == null) return
+    if (indexedPlayer.currentMediaItem?.localConfiguration?.uri != indexedUri) return
+    indexedHandoffStarted = true
+    val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
+    val wasPlaying = activePlayer.isPlaying || activePlayer.playWhenReady
+    Log.d(logTag, "indexed handoff begin uri=$indexedUri positionMs=$positionMs")
+    activePlayer.pause()
+    attachedView?.player = null
+    activePlayer = indexedPlayer
+    indexedPlayer.seekTo(positionMs)
+    indexedPlayer.playWhenReady = wasPlaying
+    attachedView?.player = indexedPlayer
+    player.stop()
+    player.clearMediaItems()
+    publishSnapshot()
+    Log.d(logTag, "indexed handoff complete uri=$indexedUri positionMs=$positionMs")
   }
 
   private fun startDeferredLocalMetadataProbe(uri: Uri) {
@@ -486,7 +539,7 @@ class NativeMedia3Engine(context: Context) {
     }
 
   fun setPlaying(playing: Boolean) {
-    if (playing) player.play() else player.pause()
+    if (playing) activePlayer.play() else activePlayer.pause()
     publishSnapshot()
     startTimelineUpdates()
   }
@@ -501,7 +554,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun seekBy(offsetMs: Long) {
-    val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
+    val basePositionMs = pendingSeekPositionMs ?: activePlayer.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
     loopHandler.postDelayed(seekRunnable, 300L)
@@ -533,16 +586,16 @@ class NativeMedia3Engine(context: Context) {
 
   fun setSpeed(speed: Float, pitchCorrection: Boolean = true) {
     val clampedSpeed = speed.coerceIn(0.25f, 4f)
-    player.setPlaybackParameters(
+    activePlayer.setPlaybackParameters(
       PlaybackParameters(clampedSpeed, if (pitchCorrection) 1f else clampedSpeed),
     )
     publishSnapshot()
   }
 
   fun selectTrack(track: NativeTrack) {
-    val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
+    val group = activePlayer.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
-    player.trackSelectionParameters = player.trackSelectionParameters
+    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
       .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
@@ -551,7 +604,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun selectAudioTrack(group: Tracks.Group, trackIndex: Int) {
-    player.trackSelectionParameters = player.trackSelectionParameters
+    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
       .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
@@ -561,7 +614,7 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
-    player.trackSelectionParameters = player.trackSelectionParameters
+    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
       .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
@@ -570,15 +623,15 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun disableSubtitles() {
-    player.trackSelectionParameters = player.trackSelectionParameters
+    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
       .build()
     publishSnapshot()
   }
 
-  fun addListener(listener: Player.Listener) = player.addListener(listener)
-  fun removeListener(listener: Player.Listener) = player.removeListener(listener)
+  fun addListener(listener: Player.Listener) = activePlayer.addListener(listener)
+  fun removeListener(listener: Player.Listener) = activePlayer.removeListener(listener)
 
   fun stop() {
     clearLoop()
@@ -587,8 +640,14 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekPositionMs = null
     pendingSeekDisplayPositionMs = null
     metadataProbeJob?.cancel()
-    player.stop()
-    player.clearMediaItems()
+    activePlayer.stop()
+    activePlayer.clearMediaItems()
+    if (activePlayer !== indexedPlayer) {
+      indexedPlayer.stop()
+      indexedPlayer.clearMediaItems()
+    }
+    indexedUri = null
+    indexedHandoffStarted = false
     _hasRenderedFirstFrame.value = false
     publishSnapshot()
   }
@@ -600,14 +659,16 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekPositionMs = null
     metadataProbeJob?.cancel()
     metadataScope.cancel()
-    player.removeListener(listener)
+    activePlayer.removeListener(listener)
+    indexedPlayer.removeListener(listener)
     attachedView?.player = null
     attachedView = null
-    player.release()
+    if (activePlayer !== indexedPlayer) activePlayer.release()
+    indexedPlayer.release()
   }
 
   private fun publishSnapshot() {
-    val groups = player.currentTracks.groups
+    val groups = activePlayer.currentTracks.groups
     val trackChapters = groups.flatMap { group ->
       (0 until group.length).flatMap { index ->
         group.getTrackFormat(index).metadata?.let(::metadataEntriesToChapters).orEmpty()
@@ -638,11 +699,11 @@ class NativeMedia3Engine(context: Context) {
     val audio = groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
       ?.getTrackFormat(0)
     _snapshot.value = NativePlaybackSnapshot(
-      isPlaying = player.isPlaying,
-      isReady = player.playbackState == Player.STATE_READY,
-      isBuffering = player.playbackState == Player.STATE_BUFFERING,
-      positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
-      durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
+      isPlaying = activePlayer.isPlaying,
+      isReady = activePlayer.playbackState == Player.STATE_READY,
+      isBuffering = activePlayer.playbackState == Player.STATE_BUFFERING,
+      positionMs = (pendingSeekDisplayPositionMs ?: activePlayer.currentPosition).coerceAtLeast(0L),
+      durationMs = activePlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
       videoWidth = video?.width ?: 0,
       videoHeight = video?.height ?: 0,
       videoMimeType = video?.sampleMimeType,
@@ -652,7 +713,7 @@ class NativeMedia3Engine(context: Context) {
       audioBitrate = audio?.bitrate?.takeIf { it > 0 } ?: 0,
       audioChannels = audio?.channelCount ?: 0,
       audioSampleRate = audio?.sampleRate ?: 0,
-      speed = player.playbackParameters.speed,
+      speed = activePlayer.playbackParameters.speed,
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
       chapters = chapters,
@@ -663,12 +724,12 @@ class NativeMedia3Engine(context: Context) {
   private fun publishPlaybackSnapshot() {
     val previous = _snapshot.value
     _snapshot.value = previous.copy(
-      isPlaying = player.isPlaying,
-      isReady = player.playbackState == Player.STATE_READY,
-      isBuffering = player.playbackState == Player.STATE_BUFFERING,
-      positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
-      durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
-      speed = player.playbackParameters.speed,
+      isPlaying = activePlayer.isPlaying,
+      isReady = activePlayer.playbackState == Player.STATE_READY,
+      isBuffering = activePlayer.playbackState == Player.STATE_BUFFERING,
+      positionMs = (pendingSeekDisplayPositionMs ?: activePlayer.currentPosition).coerceAtLeast(0L),
+      durationMs = activePlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
+      speed = activePlayer.playbackParameters.speed,
     )
   }
 
@@ -714,6 +775,6 @@ class NativeMedia3Engine(context: Context) {
 
   private fun startTimelineUpdates() {
     loopHandler.removeCallbacks(timelineRunnable)
-    if (player.currentMediaItem != null) loopHandler.post(timelineRunnable)
+    if (activePlayer.currentMediaItem != null) loopHandler.post(timelineRunnable)
   }
 }
