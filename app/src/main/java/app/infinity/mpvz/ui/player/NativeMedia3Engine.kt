@@ -19,6 +19,11 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.FileDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -32,11 +37,19 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlin.math.pow
+
+private object NativeMedia3Cache {
+  @Volatile private var cache: SimpleCache? = null
+  @Synchronized
+  fun get(context: Context): SimpleCache {
+    return cache ?: SimpleCache(
+      java.io.File(context.applicationContext.cacheDir, "media3-native-cache"),
+      LeastRecentlyUsedCacheEvictor(512L * 1024L * 1024L),
+      StandaloneDatabaseProvider(context.applicationContext),
+    ).also { cache = it }
+  }
+}
 
 data class NativePlaybackSnapshot(
   val isPlaying: Boolean = false,
@@ -76,48 +89,44 @@ data class NativeChapter(
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(context: Context) {
   private val logTag = "Mpv∞-Media3"
-  private val cueIndexScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-  private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
+    .setAllowCrossProtocolRedirects(true)
+    .setConnectTimeoutMs(15_000)
+    .setReadTimeoutMs(30_000)
+  private val cacheDataSourceFactory = CacheDataSource.Factory()
+    .setCache(NativeMedia3Cache.get(context))
+    .setUpstreamDataSourceFactory(httpDataSourceFactory)
+    .setCacheReadDataSourceFactory(FileDataSource.Factory())
+    .setFlags(
+      CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
+    )
+  private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
   private val extractorsFactory = ExtractorsFactory {
-    // Let Media3 automatically select and decode the embedded subtitle formats it supports.
-    arrayOf(
-      MatroskaExtractor(
-        DefaultSubtitleParserFactory(),
-      ),
-    )
+    // Use one normal seek-capable extractor for the complete lifetime of the media item.
+    arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory()))
   }
-  private val fastExtractorsFactory = ExtractorsFactory {
-    arrayOf(
-      MatroskaExtractor(
-        DefaultSubtitleParserFactory(),
-        MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES,
-      ),
-    )
-  }
-  private val fastMediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, fastExtractorsFactory)
-  private val seekableMediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+  private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
         .setBufferDurationsMs(
-          30_000,
-          300_000,
+          10_000,
+          120_000,
           1_000,
           3_000,
         )
-        .setBackBuffer(30_000, true)
-        // Keep high-bitrate UHD playback from growing without a memory bound. 256 MiB gives a
-        // Poco F7 enough headroom for a 4K HDR remux while leaving memory for the codec and UI.
-        .setTargetBufferBytes(256 * 1024 * 1024)
-        .setPrioritizeTimeOverSizeThresholds(false)
+        .setBackBuffer(10_000, false)
+        // Keep a bounded amount of compressed media buffered; the disk cache handles repeated
+        // network reads without forcing a large memory buffer on 4K HDR devices.
+        .setTargetBufferBytes(128 * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(true)
         .build(),
     )
     // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
     // being handed over from MPV. Disable this watchdog for Native; a real player/codec error is
     // still delivered through Player.Listener.onPlayerError.
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
-    .setMediaSourceFactory(fastMediaSourceFactory)
+    .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
@@ -136,31 +145,19 @@ class NativeMedia3Engine(context: Context) {
   private val loopHandler = Handler(Looper.getMainLooper())
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
-  private var fastStartNeedsSeekableSource = false
   private val seekRunnable = Runnable {
     val positionMs = pendingSeekPositionMs ?: return@Runnable
     pendingSeekPositionMs = null
     val targetMs = positionMs.coerceAtLeast(0L)
     pendingSeekDisplayPositionMs = targetMs
-    if (fastStartNeedsSeekableSource && player.currentMediaItem != null) {
-      val mediaItem = player.currentMediaItem ?: return@Runnable
-      val wasPlaying = player.isPlaying || player.playWhenReady
-      fastStartNeedsSeekableSource = false
-      Log.d(logTag, "switching to indexed Media3 source for first seek targetMs=$targetMs")
-      // The fast-start extractor intentionally skips cue indexing. Switch only once, on the first
-      // seek, so startup stays fast while later seeks remain on the already-indexed source.
-      _snapshot.value = _snapshot.value.copy(positionMs = targetMs, isBuffering = true)
-      player.setMediaSource(seekableMediaSourceFactory.createMediaSource(mediaItem), targetMs)
-      player.prepare()
-      player.playWhenReady = wasPlaying
-    } else {
-      player.seekTo(targetMs)
-      publishPlaybackSnapshot()
-    }
+    // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
+    // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
+    player.seekTo(targetMs)
+    publishPlaybackSnapshot()
   }
   private val timelineRunnable = object : Runnable {
     override fun run() {
-      if (player.currentMediaItem == null) return
+      if (player.currentMediaItem == null || (!player.isPlaying && !player.playWhenReady)) return
       publishPlaybackSnapshot()
       // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
       // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
@@ -418,10 +415,6 @@ class NativeMedia3Engine(context: Context) {
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
     // without ever starting the local data pipeline on Xiaomi devices.
     player.prepare()
-    fastStartNeedsSeekableSource = true
-    MkvCueIndex.start(cueIndexScope, mediaUri) { snapshot ->
-      Log.d(logTag, "background cue index complete=${snapshot.complete} points=${snapshot.points.size} uri=$mediaUri")
-    }
     Log.d(logTag, "prepare returned elapsedMs=${SystemClock.elapsedRealtime() - preparationStartedAtMs} uri=$preparationUri")
     player.playWhenReady = autoplay
     publishSnapshot()
@@ -552,7 +545,6 @@ class NativeMedia3Engine(context: Context) {
     player.removeListener(listener)
     attachedView?.player = null
     attachedView = null
-    cueIndexScope.cancel()
     player.release()
   }
 
