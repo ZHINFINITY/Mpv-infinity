@@ -98,6 +98,7 @@ class PlayerPreferences(
   val screenshotQuality = preferenceStore.getInt("screenshot_quality", 90)
   val screenshotPngCompression = preferenceStore.getInt("screenshot_png_compression", 7)
   val screenshotWebpLossless = preferenceStore.getBoolean("screenshot_webp_lossless", false)
+  val screenshotFolderUri = preferenceStore.getString("screenshot_folder_uri", "")
 
   val playlistMode = preferenceStore.getBoolean("playlist_mode", true)
   val playlistViewMode = preferenceStore.getBoolean("playlist_view_mode_list", true) // true = list, false = grid
