@@ -147,10 +147,15 @@ class WebDavClient(
             segments.take(requestedSegments.size) == requestedSegments
         }?.last()
 
-    // Reverse proxies sometimes rewrite the collection prefix in response hrefs. Sardine's name
-    // remains the decoded final path component, so use it only when exact URI resolution cannot
-    // identify the child. Exclude a rewritten collection-self response by its trailing directory.
-    val fallbackName = resource.name?.trimEnd('/')?.takeIf(String::isNotBlank)
+    // Reverse proxies sometimes rewrite the collection prefix in response hrefs. Prefer the href's
+    // decoded final path component for fallback identity: Sardine's resource.name may parse a
+    // literal '+' as a form-style space, turning "[Hindi + English]" into "[Hindi   English]".
+    // URI.path preserves '+' while decoding percent escapes, so it keeps the WebDAV filename exact.
+    val hrefName = href.path
+      ?.trimEnd('/')
+      ?.substringAfterLast('/')
+      ?.takeIf(String::isNotBlank)
+    val fallbackName = hrefName ?: resource.name?.trimEnd('/')?.takeIf(String::isNotBlank)
     if (
       exactChildName == null &&
       resource.isDirectory &&
