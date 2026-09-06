@@ -715,6 +715,8 @@ class PlayerActivity :
       bold = subtitlesPreferences.bold.get(),
       italic = subtitlesPreferences.italic.get(),
     )
+    nativeEngine.setSubtitleScale(subtitlesPreferences.subScale.get())
+    nativeEngine.setSubtitlePosition(subtitlesPreferences.subPos.get())
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         combine(
