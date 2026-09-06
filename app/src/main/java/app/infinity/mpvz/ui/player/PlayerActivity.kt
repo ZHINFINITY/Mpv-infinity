@@ -717,6 +717,14 @@ class PlayerActivity :
     )
     nativeEngine.setSubtitleScale(subtitlesPreferences.subScale.get())
     nativeEngine.setSubtitlePosition(subtitlesPreferences.subPos.get())
+    nativeEngine.setPreciseSeeking(playerPreferences.usePreciseSeeking.get())
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        playerPreferences.usePreciseSeeking.changes().collect { enabled ->
+          nativeEngine.setPreciseSeeking(enabled)
+        }
+      }
+    }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         combine(

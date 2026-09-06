@@ -259,6 +259,11 @@ class NativeMedia3Engine(context: Context) {
     activePlayer.addListener(listener)
   }
 
+  /** Select exact frame seeking or the faster nearest-keyframe seek mode. */
+  fun setPreciseSeeking(enabled: Boolean) {
+    activePlayer.setSeekParameters(if (enabled) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC)
+  }
+
   fun attach(view: PlayerView) {
     attachedView?.player = null
     attachedView = view
