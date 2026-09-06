@@ -2820,10 +2820,6 @@ class PlayerViewModel : ViewModel(),
         ?: java.util.Locale.getDefault().language.ifBlank { "en" }
     lastEmbeddedCue = cue
     _embeddedTranslatedSubtitle.value = null
-    if (!nativeSubtitleHiddenForTranslation) {
-      PlaybackSession.setPropertyBoolean("sub-visibility", false)
-      nativeSubtitleHiddenForTranslation = true
-    }
     val requestId = ++embeddedTranslationRequestId
     embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
@@ -2842,7 +2838,22 @@ class PlayerViewModel : ViewModel(),
       result.onSuccess { translated ->
         withContext(Dispatchers.Main.immediate) {
           if (requestId == embeddedTranslationRequestId && cue == lastEmbeddedCue) {
-            _embeddedTranslatedSubtitle.value = translated.trim().takeIf { it.isNotBlank() }
+            val cleanedTranslation = translated.trim().takeIf { it.isNotBlank() }
+            if (cleanedTranslation != null && !translationMatchesOriginal(cue, cleanedTranslation, target)) {
+              if (!nativeSubtitleHiddenForTranslation) {
+                PlaybackSession.setPropertyBoolean("sub-visibility", false)
+                nativeSubtitleHiddenForTranslation = true
+              }
+              _embeddedTranslatedSubtitle.value = cleanedTranslation
+            } else {
+              // Keep the native subtitle visible when it is already in the requested language.
+              // This preserves the original font, outline, position, and line layout exactly.
+              _embeddedTranslatedSubtitle.value = null
+              if (nativeSubtitleHiddenForTranslation) {
+                PlaybackSession.setPropertyBoolean("sub-visibility", true)
+                nativeSubtitleHiddenForTranslation = false
+              }
+            }
           }
           if (requestId == embeddedTranslationRequestId) _translationStatus.value = ""
         }
@@ -2852,6 +2863,13 @@ class PlayerViewModel : ViewModel(),
         }
       }
     }
+  }
+
+  private fun translationMatchesOriginal(original: String, translated: String, target: String): Boolean {
+    fun normalized(value: String) = value.trim().split(Regex("\\s+")).joinToString(" ")
+    if (normalized(original).equals(normalized(translated), ignoreCase = true)) return true
+    val language = target.trim().lowercase().substringBefore('-').substringBefore('_')
+    return language in setOf("ar", "ara") && original.any { it in '\u0600'..'\u06ff' }
   }
 
   fun translateSubtitle(
