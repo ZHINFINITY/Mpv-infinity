@@ -149,6 +149,7 @@ class NativeMedia3Engine(context: Context) {
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
+  private var subtitleOverlayVisible = true
   private var lastSelectedSubtitleTrack: NativeTrack? = null
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
@@ -329,6 +330,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun setSubtitleOverlayVisible(visible: Boolean) {
+    subtitleOverlayVisible = visible
     attachedView?.subtitleView?.visibility =
       if (visible) android.view.View.VISIBLE else android.view.View.GONE
   }
@@ -393,6 +395,7 @@ class NativeMedia3Engine(context: Context) {
       setApplyEmbeddedStyles(false)
       setApplyEmbeddedFontSizes(false)
       setStyle(subtitleStyle)
+      visibility = if (subtitleOverlayVisible) android.view.View.VISIBLE else android.view.View.GONE
       setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
       pivotX = width / 2f
       pivotY = height.toFloat()
