@@ -12,6 +12,7 @@ import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -180,6 +181,13 @@ class NativeMedia3Engine(context: Context) {
 
   init {
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
+    // Some UHD remuxes contain PGS image subtitles. On this Media3 build legacy PGS decoding is
+    // disabled, and allowing the default text renderer to select one aborts the whole playback
+    // with: "can't handle application/pgs samples". Keep text disabled for startup; the existing
+    // subtitle selection action explicitly enables a chosen compatible track when requested.
+    player.trackSelectionParameters = TrackSelectionParameters.Builder()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .build()
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
     player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
