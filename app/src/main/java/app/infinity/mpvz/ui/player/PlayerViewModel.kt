@@ -2792,7 +2792,6 @@ class PlayerViewModel : ViewModel(),
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
-    if (native) nativeSubtitleVisibilityListener?.invoke(false)
     if (!native && aiPreferences.subtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", false)
       nativeSubtitleHiddenForTranslation = true
@@ -2807,6 +2806,7 @@ class PlayerViewModel : ViewModel(),
     _translationStatus.value = ""
     _embeddedTranslatedSubtitle.value = null
     nativeSubtitleVisibilityListener?.invoke(false)
+    nativeSubtitleHiddenForTranslation = false
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
       nativeSubtitleHiddenForTranslation = false
@@ -2821,6 +2821,10 @@ class PlayerViewModel : ViewModel(),
       return
     }
     if (cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
+    if (native && !nativeSubtitleHiddenForTranslation) {
+      nativeSubtitleVisibilityListener?.invoke(true)
+      nativeSubtitleHiddenForTranslation = true
+    }
     val target =
       (aiPreferences.embeddedSubtitleTargetLanguage.get().trim().takeIf { it.isNotBlank() }
         ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
@@ -2852,12 +2856,14 @@ class PlayerViewModel : ViewModel(),
                 nativeSubtitleHiddenForTranslation = true
               }
               _embeddedTranslatedSubtitle.value = cleanedTranslation
-              if (native) nativeSubtitleVisibilityListener?.invoke(true)
             } else {
               // Keep the native subtitle visible when it is already in the requested language.
               // This preserves the original font, outline, position, and line layout exactly.
               _embeddedTranslatedSubtitle.value = null
-              if (native) nativeSubtitleVisibilityListener?.invoke(false)
+              if (native && nativeSubtitleHiddenForTranslation) {
+                nativeSubtitleVisibilityListener?.invoke(false)
+                nativeSubtitleHiddenForTranslation = false
+              }
               if (!native && nativeSubtitleHiddenForTranslation) {
                 PlaybackSession.setPropertyBoolean("sub-visibility", true)
                 nativeSubtitleHiddenForTranslation = false
