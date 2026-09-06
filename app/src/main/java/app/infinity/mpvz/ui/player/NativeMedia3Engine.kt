@@ -83,6 +83,17 @@ class NativeMedia3Engine(context: Context) {
       ),
     )
   }
+  private val fastExtractorsFactory = ExtractorsFactory {
+    arrayOf(
+      MatroskaExtractor(
+        SubtitleParser.Factory.UNSUPPORTED,
+        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA or
+          MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES,
+      ),
+    )
+  }
+  private val fastMediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, fastExtractorsFactory)
+  private val seekableMediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
@@ -103,7 +114,7 @@ class NativeMedia3Engine(context: Context) {
     // being handed over from MPV. Disable this watchdog for Native; a real player/codec error is
     // still delivered through Player.Listener.onPlayerError.
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
-    .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory))
+    .setMediaSourceFactory(fastMediaSourceFactory)
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
@@ -121,10 +132,22 @@ class NativeMedia3Engine(context: Context) {
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
   private var pendingSeekPositionMs: Long? = null
+  private var fastStartNeedsSeekableSource = false
   private val seekRunnable = Runnable {
     val positionMs = pendingSeekPositionMs ?: return@Runnable
     pendingSeekPositionMs = null
-    player.seekTo(positionMs.coerceAtLeast(0L))
+    val targetMs = positionMs.coerceAtLeast(0L)
+    if (fastStartNeedsSeekableSource && player.currentMediaItem != null) {
+      val mediaItem = player.currentMediaItem ?: return@Runnable
+      val wasPlaying = player.isPlaying || player.playWhenReady
+      fastStartNeedsSeekableSource = false
+      Log.d(logTag, "switching to indexed Media3 source for seek targetMs=$targetMs")
+      player.setMediaSource(seekableMediaSourceFactory.createMediaSource(mediaItem), targetMs)
+      player.prepare()
+      player.playWhenReady = wasPlaying
+    } else {
+      player.seekTo(targetMs)
+    }
   }
   private val timelineRunnable = object : Runnable {
     override fun run() {
@@ -388,6 +411,7 @@ class NativeMedia3Engine(context: Context) {
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
     // without ever starting the local data pipeline on Xiaomi devices.
     player.prepare()
+    fastStartNeedsSeekableSource = true
     Log.d(logTag, "prepare returned elapsedMs=${SystemClock.elapsedRealtime() - preparationStartedAtMs} uri=$preparationUri")
     player.playWhenReady = autoplay
     publishSnapshot()
