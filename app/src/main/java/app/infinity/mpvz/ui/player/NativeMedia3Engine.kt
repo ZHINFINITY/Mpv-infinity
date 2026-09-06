@@ -28,6 +28,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
@@ -101,11 +102,16 @@ class NativeMedia3Engine(context: Context) {
       CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
+  // Local files must not be routed through the network cache. Apart from adding an unnecessary
+  // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
+  private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
   private val extractorsFactory = ExtractorsFactory {
     // Use one normal seek-capable extractor for the complete lifetime of the media item.
     arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory()))
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+  private val directLocalMediaSourceFactory =
+    ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
@@ -394,7 +400,12 @@ class NativeMedia3Engine(context: Context) {
       } else {
         uri
       }
-    Log.d(logTag, "play uri=$mediaUri source=$sourceUri positionMs=$startPositionMs autoplay=$autoplay")
+    val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true)
+    Log.d(
+      logTag,
+      "play uri=$mediaUri scheme=${mediaUri.scheme} source=${if (isLocalUri) "direct-local" else "cached-network"} " +
+        "sourceUri=$sourceUri positionMs=$startPositionMs autoplay=$autoplay",
+    )
     httpDataSourceFactory.setDefaultRequestProperties(headers)
     val mediaItem =
       MediaItem.Builder()
@@ -410,7 +421,12 @@ class NativeMedia3Engine(context: Context) {
     preparationUri = mediaItem.localConfiguration?.uri
     metadataChapters = emptyList()
     Log.d(logTag, "prepare begin uri=$preparationUri")
-    player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
+    val mediaSource = if (isLocalUri) {
+      directLocalMediaSourceFactory.createMediaSource(mediaItem)
+    } else {
+      mediaSourceFactory.createMediaSource(mediaItem)
+    }
+    player.setMediaSource(mediaSource, startPositionMs.coerceAtLeast(0L))
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
     // without ever starting the local data pipeline on Xiaomi devices.
