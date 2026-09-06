@@ -1,0 +1,170 @@
+name: Make Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: Stable release tag
+        required: true
+        type: string
+        default: v1.0.8
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish stable release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            version_tag="${{ inputs.version_tag }}"
+          else
+            version_tag="${GITHUB_REF#refs/tags/}"
+          fi
+          if [[ ! "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid stable version tag: $version_tag"
+            exit 1
+          fi
+          if [[ "$version_tag" != "v1.0.8" ]]; then
+            echo "This workflow is currently prepared for v1.0.8; received $version_tag"
+            exit 1
+          fi
+          echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build all stable APK variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleFongmiRelease --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleNoVulkanRelease --stacktrace --no-daemon --max-workers=2
+
+      - name: Sign and verify all APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          test -x "$apksigner"
+          if [[ -z "${{ secrets.SIGNING_KEYSTORE }}" || -z "${{ secrets.SIGNING_KEY_ALIAS }}" || -z "${{ secrets.SIGNING_STORE_PASSWORD }}" || -z "${{ secrets.KEY_PASSWORD }}" ]]; then
+            echo "Stable releases require all signing secrets."
+            exit 1
+          fi
+          printf '%s' "${{ secrets.SIGNING_KEYSTORE }}" | base64 --decode > release.keystore
+          trap 'rm -f release.keystore' EXIT
+
+          sign_apk() {
+            local unsigned="$1"
+            local signed="$2"
+            test -f "$unsigned"
+            "$apksigner" sign \
+              --ks release.keystore \
+              --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
+              --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
+              --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+              --out "$signed" \
+              "$unsigned"
+            "$apksigner" verify --verbose "$signed"
+            rm -f "$unsigned"
+          }
+
+          release_dir="app/build/outputs/apk/standard/release"
+          for abi in universal arm64-v8a armeabi-v7a x86 x86_64; do
+            sign_apk \
+              "$release_dir/app-standard-${abi}-release-unsigned.apk" \
+              "$release_dir/app-standard-${abi}-release.apk"
+          done
+
+          sign_apk \
+            "app/build/outputs/apk/fongmi/release/app-fongmi-universal-release-unsigned.apk" \
+            "app/build/outputs/apk/fongmi/release/app-fongmi-universal-release.apk"
+
+          sign_apk \
+            "app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release-unsigned.apk" \
+            "app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release.apk"
+
+      - name: Prepare release assets and notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp app/build/outputs/apk/standard/release/app-standard-universal-release.apk release/Mpv∞-standard-universal-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-arm64-v8a-release.apk release/Mpv∞-standard-arm64-v8a-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-armeabi-v7a-release.apk release/Mpv∞-standard-armeabi-v7a-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-x86-release.apk release/Mpv∞-standard-x86-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-x86_64-release.apk release/Mpv∞-standard-x86_64-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/fongmi/release/app-fongmi-universal-release.apk release/Mpv∞-fongmi-universal-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release.apk release/Mpv∞-no-vulkan-universal-${VERSION_TAG}.apk
+
+          cat > release-notes.md <<'EOF'
+          ## Mpv∞ v1.0.8
+
+          ### Highlights
+
+          - Faster Native Media3 startup for local 4K and Dolby Vision files, while retaining seek-bar and gesture seeking.
+          - Embedded subtitle translation support in the Native player with configurable subtitle styling.
+          - Google translation in **Player → Subtitles** is opt-in and disabled by default.
+          - Playback speed controls up to **8×** in both MPV and Native engines, including hold-press gestures.
+          - Chromecast track controls for audio and subtitles, with a fully black playback interface and improved control placement.
+          - Custom screenshot storage with internal-storage, SD-card, and folder selection.
+          - Swipe-down gesture to minimize the music player.
+          - Per-video decoder selection no longer changes the global decoder preference.
+          - Improved WebDAV playback reliability and network-stream recovery.
+
+          ### Downloads
+
+          Choose the standard APK for most devices. Use the ARM64 variant for modern 64-bit ARM phones, ARMv7 for older 32-bit ARM devices, x86 or x86_64 for compatible emulator and Intel devices, Fongmi for that distribution, and no-Vulkan for devices where Vulkan playback is unavailable or unstable.
+          EOF
+
+          : > checksums.txt
+          for apk in release/*.apk; do sha256sum "$apk" | tee -a checksums.txt; done
+          {
+            printf '\n### SHA-256 checksums\n\n```text\n'
+            cat checksums.txt
+            printf '```\n'
+          } >> release-notes.md
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION_TAG }}
+          name: Mpv∞ ${{ env.VERSION_TAG }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files: |
+            release/Mpv∞-standard-universal-${{ env.VERSION_TAG }}.apk
+            release/Mpv∞-standard-arm64-v8a-${{ env.VERSION_TAG }}.apk
+            release/Mpv∞-standard-armeabi-v7a-${{ env.VERSION_TAG }}.apk
+            release/Mpv∞-standard-x86-${{ env.VERSION_TAG }}.apk
+            release/Mpv∞-standard-x86_64-${{ env.VERSION_TAG }}.apk
+            release/Mpv∞-fongmi-universal-${{ env.VERSION_TAG }}.apk
+            release/Mpv∞-no-vulkan-universal-${{ env.VERSION_TAG }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
