@@ -974,7 +974,9 @@ class PlayerActivity :
       }
     }
     viewModel.setNativeSubtitleVisibilityListener { hidden ->
-      if (!isNativeEngineActive()) return@setNativeSubtitleVisibilityListener
+      // Do not gate this on isNativeEngineActive(): during an MPV -> Native handoff Media3 may
+      // not have a media item yet. NativeMedia3Engine persists the requested state and reapplies
+      // it when its PlayerView is attached/reconfigured.
       nativeEngine.setSubtitleOverlayVisible(!hidden)
     }
     viewModel.setNativeAudioToggleListener { id ->
