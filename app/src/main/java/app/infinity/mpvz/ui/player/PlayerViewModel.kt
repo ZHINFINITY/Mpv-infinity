@@ -881,8 +881,8 @@ class PlayerViewModel : ViewModel(),
       }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
-    combine(mpvChapters, nativeChapters, decoderPreferences.playbackEngine.changes()) { mpv, native, engine ->
-      if (engine == PlaybackEngineMode.NATIVE && native.isNotEmpty()) native else mpv
+    combine(mpvChapters, nativeChapters, nativeEngineActive) { mpv, native, nativeActive ->
+      if (nativeActive && native.isNotEmpty()) native else mpv
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   // Audio player UI state

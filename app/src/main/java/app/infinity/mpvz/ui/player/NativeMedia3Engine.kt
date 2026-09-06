@@ -144,11 +144,16 @@ class NativeMedia3Engine(context: Context) {
       val wasPlaying = player.isPlaying || player.playWhenReady
       fastStartNeedsSeekableSource = false
       Log.d(logTag, "switching to indexed Media3 source for seek targetMs=$targetMs")
+      // ExoPlayer resets currentPosition while the replacement source is prepared. Publish the
+      // requested target immediately so the seekbar and controls do not jump back to zero during
+      // the unavoidable indexed-source handoff.
+      _snapshot.value = _snapshot.value.copy(positionMs = targetMs, isBuffering = true)
       player.setMediaSource(seekableMediaSourceFactory.createMediaSource(mediaItem), targetMs)
       player.prepare()
       player.playWhenReady = wasPlaying
     } else {
       player.seekTo(targetMs)
+      publishPlaybackSnapshot()
     }
   }
   private val timelineRunnable = object : Runnable {
@@ -220,7 +225,9 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onMetadata(metadata: Metadata) {
-      metadataChapters = metadataEntriesToChapters(metadata)
+      // Media3 emits transient metadata callbacks while the indexed source is replacing the fast
+      // source. Do not erase the already-published chapter list when that callback has no chapters.
+      metadataEntriesToChapters(metadata).takeIf { it.isNotEmpty() }?.let { metadataChapters = it }
       publishSnapshot()
     }
 
@@ -401,6 +408,7 @@ class NativeMedia3Engine(context: Context) {
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
+    metadataChapters = emptyList()
     Log.d(logTag, "prepare begin uri=$preparationUri")
     player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
@@ -435,7 +443,7 @@ class NativeMedia3Engine(context: Context) {
   fun seekTo(positionMs: Long) {
     pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 20L)
+    loopHandler.postDelayed(seekRunnable, 50L)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
@@ -445,7 +453,7 @@ class NativeMedia3Engine(context: Context) {
     val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 20L)
+    loopHandler.postDelayed(seekRunnable, 50L)
     // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
     publishPlaybackSnapshot()
     startTimelineUpdates()

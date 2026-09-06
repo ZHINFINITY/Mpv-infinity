@@ -336,10 +336,10 @@ class PlayerActivity :
   }
 
   override fun nativePlaybackPositionSeconds(): Double =
-    nativeEngine.snapshot.value.positionMs / 1000.0
+    nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L) / 1000.0
 
   override fun nativePlaybackDurationSeconds(): Double =
-    nativeEngine.snapshot.value.durationMs / 1000.0
+    nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L)?.div(1000.0) ?: 0.0
 
   override fun nativeSetLoopA(positionSeconds: Double?) = nativeEngine.setLoopA(positionSeconds)
 
@@ -792,13 +792,13 @@ class PlayerActivity :
           val outgoingEngine = activeEngineMode
           val outgoingPositionMs =
             if (outgoingEngine == PlaybackEngineMode.NATIVE) {
-              nativeEngine.snapshot.value.positionMs
+              nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
             } else {
               ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong()
             }.coerceAtLeast(0L)
           val outgoingPlaying =
             if (outgoingEngine == PlaybackEngineMode.NATIVE) {
-              nativeEngine.snapshot.value.isPlaying
+              nativeEngine.currentPlayer.isPlaying
             } else {
               PlaybackSession.getPropertyBoolean("pause") == false
             }
@@ -7010,8 +7010,8 @@ class PlayerActivity :
       // MediaPlaybackService is MPV-backed. Hand native playback to MPV before the service is
       // started; otherwise the service and Media3 decode the same item independently and the
       // Activity resumes with a stale native surface or no playable session.
-      val nativePositionMs = nativeEngine.snapshot.value.positionMs
-      val nativeWasPlaying = nativeEngine.snapshot.value.isPlaying
+      val nativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
+      val nativeWasPlaying = nativeEngine.currentPlayer.isPlaying
       nativeEngine.setPlaying(false)
       activeEngineMode = PlaybackEngineMode.MPV
       viewModel.setNativeEngineActive(false)
