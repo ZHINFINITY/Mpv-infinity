@@ -853,6 +853,10 @@ class PlayerActivity :
               // not leave controls and engine state on MPV while Media3 is opening the source.
               activeEngineMode = PlaybackEngineMode.NATIVE
               viewModel.setNativeEngineActive(true)
+              // Translation may have hidden MPV's subtitle renderer before this handoff. The
+              // current cue is unchanged, so no new translation callback will fire; explicitly
+              // apply the persisted state to Native's SubtitleView now.
+              viewModel.syncNativeSubtitleVisibility()
               binding.media3Player.alpha = 1f
               binding.player.visibility = View.GONE
               nativeEngine.play(

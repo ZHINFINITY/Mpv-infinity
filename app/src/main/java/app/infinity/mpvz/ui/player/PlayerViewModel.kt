@@ -658,6 +658,11 @@ class PlayerViewModel : ViewModel(),
     nativeSubtitleVisibilityListener = listener
   }
 
+  /** Re-applies the translation visibility state after switching playback engines. */
+  fun syncNativeSubtitleVisibility() {
+    nativeSubtitleVisibilityListener?.invoke(!nativeSubtitleHiddenForTranslation)
+  }
+
   fun setNativeAudioToggleListener(listener: ((Int) -> Unit)?) {
     nativeAudioToggleListener = listener
   }
