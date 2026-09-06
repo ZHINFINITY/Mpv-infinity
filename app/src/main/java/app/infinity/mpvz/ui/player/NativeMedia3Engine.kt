@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import java.io.File
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
@@ -315,17 +316,26 @@ class NativeMedia3Engine(context: Context) {
     sourceUri: Uri? = null,
   ) {
     _hasRenderedFirstFrame.value = false
-    Log.d(logTag, "play uri=$uri source=$sourceUri positionMs=$startPositionMs autoplay=$autoplay")
+    // Uri.parse("/storage/...") has no scheme. Make local paths explicit so Media3 selects
+    // FileDataSource instead of treating the original MediaStore URI as the playable source.
+    val mediaUri =
+      if (uri.scheme.isNullOrBlank() && uri.path?.startsWith("/") == true) {
+        Uri.fromFile(File(uri.path!!))
+      } else {
+        uri
+      }
+    Log.d(logTag, "play uri=$mediaUri source=$sourceUri positionMs=$startPositionMs autoplay=$autoplay")
     httpDataSourceFactory.setDefaultRequestProperties(headers)
     val mediaItem =
       MediaItem.Builder()
-        .setUri(uri)
+        .setUri(mediaUri)
         .apply {
           val declaredMime = mimeType?.takeUnless { it.equals("application/octet-stream", true) }
-          (declaredMime ?: nativeContainerMimeType(uri) ?: sourceUri?.let(::nativeContainerMimeType))
+          (declaredMime ?: nativeContainerMimeType(mediaUri) ?: sourceUri?.let(::nativeContainerMimeType))
             ?.let(::setMimeType)
         }
         .build()
+    Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
