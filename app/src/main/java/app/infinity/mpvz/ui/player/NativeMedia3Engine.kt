@@ -149,6 +149,7 @@ class NativeMedia3Engine(context: Context) {
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
+  private var lastSelectedSubtitleTrack: NativeTrack? = null
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
@@ -519,6 +520,7 @@ class NativeMedia3Engine(context: Context) {
   fun selectTrack(track: NativeTrack) {
     val group = activePlayer.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
+    if (track.type == C.TRACK_TYPE_TEXT) lastSelectedSubtitleTrack = track
     activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
@@ -538,6 +540,15 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
+    val format = group.getTrackFormat(trackIndex)
+    lastSelectedSubtitleTrack = NativeTrack(
+      groupIndex = activePlayer.currentTracks.groups.indexOf(group),
+      trackIndex = trackIndex,
+      type = C.TRACK_TYPE_TEXT,
+      label = format.label ?: "Subtitle ${trackIndex + 1}",
+      language = format.language,
+      selected = true,
+    )
     activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -552,6 +563,10 @@ class NativeMedia3Engine(context: Context) {
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
       .build()
     publishSnapshot()
+  }
+
+  fun restoreSubtitles() {
+    lastSelectedSubtitleTrack?.let(::selectTrack)
   }
 
   fun addListener(listener: Player.Listener) = activePlayer.addListener(listener)
