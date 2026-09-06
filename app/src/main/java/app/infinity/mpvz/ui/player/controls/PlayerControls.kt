@@ -199,6 +199,7 @@ fun <T> playerControlsEnterAnimationSpec(durationMillis: Int = 100): FiniteAnima
 fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
+  onSelectEngine: ((PlaybackEngineMode) -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
   val spacing = MaterialTheme.spacing
@@ -438,8 +439,9 @@ fun PlayerControls(
         },
         decoder = decoder,
         onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-        selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
-        onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
+        selectedEngine = activity?.currentEngineSelectionForControls()
+          ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+        onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
         onSpeedChange = {
         val speed = it.toFixed(2)
@@ -2186,7 +2188,8 @@ private fun NativeStatsPageOverlay(
   } else {
     "--"
   }
-  val bitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
+  val videoBitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
+  val audioBitrate = if (snapshot.audioBitrate > 0) "${snapshot.audioBitrate / 1000} kbps" else "--"
   Surface(
     modifier = modifier,
     color = Color.Transparent,
@@ -2195,24 +2198,40 @@ private fun NativeStatsPageOverlay(
     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
       Text("Native statistics — Page ${page.coerceIn(1, 6)}", style = MaterialTheme.typography.titleSmall, color = Color.White)
       Text("Engine: Native", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      if (page == 1) {
-        Text("Video output: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Output bitrate: $bitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Duration: ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      } else if (page == 2) {
-        Text("Audio: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Channels: ${snapshot.audioChannels}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Sample rate: ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Embedded audio tracks: ${snapshot.audioTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Embedded subtitles: ${snapshot.subtitleTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      } else {
-        Text("Video output: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Video codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Audio codec: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Audio tracks: ${snapshot.audioTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Subtitle tracks: ${snapshot.subtitleTracks.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-        Text("Position: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      when (page) {
+        1 -> {
+          Text("Video output: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video bitrate: $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Duration: ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        2 -> {
+          Text("Audio codec: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Channels: ${snapshot.audioChannels}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Sample rate: ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        3 -> {
+          Text("Tracks: ${snapshot.audioTracks.size} audio · ${snapshot.subtitleTracks.size} subtitles", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Selected audio: ${snapshot.audioTracks.count { it.selected }}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Selected subtitles: ${snapshot.subtitleTracks.count { it.selected }}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        4 -> {
+          Text("Position: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Speed: ${"%.2f".format(snapshot.speed)}×", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("State: ${if (snapshot.isBuffering) "Buffering" else if (snapshot.isPlaying) "Playing" else "Paused"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        5 -> {
+          Text("Video: $quality · ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio: ${snapshot.audioCodec ?: "--"} · $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Chapters: ${snapshot.chapters.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        else -> {
+          Text("Ready: ${snapshot.isReady}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video bitrate: $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Playback: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
       }
     }
   }

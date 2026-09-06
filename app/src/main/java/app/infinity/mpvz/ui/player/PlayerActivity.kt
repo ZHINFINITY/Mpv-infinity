@@ -142,6 +142,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
@@ -198,6 +200,8 @@ class PlayerActivity :
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
   private var activeEngineMode = PlaybackEngineMode.MPV
   private var engineHandoffJob: Job? = null
+  private var manualEngineOverride: Pair<String, PlaybackEngineMode>? = null
+  private val engineSelectionRequests = MutableSharedFlow<PlaybackEngineMode>(extraBufferCapacity = 1)
 
   /**
    * Observer for MPV events.
@@ -770,7 +774,10 @@ class PlayerActivity :
     }
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        decoderPreferences.playbackEngine.changes().collect { engine ->
+        merge(
+          decoderPreferences.playbackEngine.changes(),
+          engineSelectionRequests,
+        ).collect { engine ->
           val currentQueueItem = PlaybackSession.queue.value.currentItem
           val effectiveEngine =
             when (engine) {
@@ -1343,6 +1350,21 @@ class PlayerActivity :
     finish()
   }
 
+  fun selectEngineForCurrentVideo(engine: PlaybackEngineMode) {
+    val mediaId = PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
+    if (mediaId.isNotBlank()) manualEngineOverride = mediaId to engine
+    engineSelectionRequests.tryEmit(engine)
+  }
+
+  fun currentEngineSelectionForControls(): PlaybackEngineMode {
+    val mediaId = PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
+    return manualEngineOverride
+      ?.takeIf { it.first == mediaId }
+      ?.second
+      ?: if (activeEngineMode == PlaybackEngineMode.NATIVE) PlaybackEngineMode.NATIVE
+      else decoderPreferences.playbackEngine.get()
+  }
+
   private fun setupPlayerControls() {
     binding.controls.setContent {
       MpvInfinityTheme {
@@ -1350,6 +1372,7 @@ class PlayerActivity :
           PlayerControls(
             viewModel = viewModel,
             onBackPress = ::handleBackPress,
+            onSelectEngine = ::selectEngineForCurrentVideo,
             modifier = Modifier,
           )
         }
@@ -6059,7 +6082,11 @@ class PlayerActivity :
     ensureCurrentMediaRequest(requestGeneration)
     // Native Media3 is used for HDR-family video, while MPV remains the normal video/audio
     // pipeline. Auto keeps ordinary videos on MPV and routes HDR, HLG, and Dolby Vision to Native.
-    val configuredEngine = decoderPreferences.playbackEngine.get()
+    val configuredEngine =
+      manualEngineOverride
+        ?.takeIf { it.first == item.stableId }
+        ?.second
+        ?: decoderPreferences.playbackEngine.get()
     val selectedEngine =
       when (configuredEngine) {
         PlaybackEngineMode.AUTO ->

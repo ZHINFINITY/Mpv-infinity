@@ -50,6 +50,7 @@ data class NativePlaybackSnapshot(
   val videoCodec: String? = null,
   val videoBitrate: Int = 0,
   val audioCodec: String? = null,
+  val audioBitrate: Int = 0,
   val audioChannels: Int = 0,
   val audioSampleRate: Int = 0,
   val speed: Float = 1f,
@@ -139,22 +140,10 @@ class NativeMedia3Engine(context: Context) {
     val positionMs = pendingSeekPositionMs ?: return@Runnable
     pendingSeekPositionMs = null
     val targetMs = positionMs.coerceAtLeast(0L)
-    if (fastStartNeedsSeekableSource && player.currentMediaItem != null) {
-      val mediaItem = player.currentMediaItem ?: return@Runnable
-      val wasPlaying = player.isPlaying || player.playWhenReady
-      fastStartNeedsSeekableSource = false
-      Log.d(logTag, "switching to indexed Media3 source for seek targetMs=$targetMs")
-      // ExoPlayer resets currentPosition while the replacement source is prepared. Publish the
-      // requested target immediately so the seekbar and controls do not jump back to zero during
-      // the unavoidable indexed-source handoff.
-      _snapshot.value = _snapshot.value.copy(positionMs = targetMs, isBuffering = true)
-      player.setMediaSource(seekableMediaSourceFactory.createMediaSource(mediaItem), targetMs)
-      player.prepare()
-      player.playWhenReady = wasPlaying
-    } else {
-      player.seekTo(targetMs)
-      publishPlaybackSnapshot()
-    }
+    // Keep the already-prepared fast-start source and decoder alive. Replacing the source on the
+    // first seek forces a full re-prepare on large UHD/HDR files and causes repeated buffering.
+    player.seekTo(targetMs)
+    publishPlaybackSnapshot()
   }
   private val timelineRunnable = object : Runnable {
     override fun run() {
@@ -595,6 +584,7 @@ class NativeMedia3Engine(context: Context) {
       videoCodec = video?.codecs,
       videoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0,
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
+      audioBitrate = audio?.bitrate?.takeIf { it > 0 } ?: 0,
       audioChannels = audio?.channelCount ?: 0,
       audioSampleRate = audio?.sampleRate ?: 0,
       speed = player.playbackParameters.speed,
