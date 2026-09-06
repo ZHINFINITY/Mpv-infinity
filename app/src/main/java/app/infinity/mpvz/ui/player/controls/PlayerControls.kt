@@ -2064,8 +2064,11 @@ fun PlayerControls(
       },
       decoder = decoder,
       onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-      selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
-      onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
+      selectedEngine = activity?.currentEngineSelectionForControls()
+        ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+      onSelectEngine = { engine ->
+        activity?.selectEngineForCurrentVideo(engine) ?: decoderPreferences.playbackEngine.set(engine)
+      },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
       onSpeedChange = {
         val speed = it.toFixed(2)
