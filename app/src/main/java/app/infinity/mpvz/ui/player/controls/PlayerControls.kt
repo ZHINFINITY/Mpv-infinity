@@ -283,6 +283,7 @@ fun PlayerControls(
       Modifier
     }
   var isSeeking by remember { mutableStateOf(false) }
+  var nativeSeekPreviewPosition by remember { mutableStateOf<Float?>(null) }
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsState()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
   val activity = LocalActivity.current as? PlayerActivity
@@ -1708,7 +1709,11 @@ fun PlayerControls(
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
             val displayedSeekbarPosition =
-              if (nativeEngineActive) nativeSnapshot.positionMs / 1000f else precisePosition
+              if (nativeEngineActive) {
+                nativeSeekPreviewPosition ?: (nativeSnapshot.positionMs / 1000f)
+              } else {
+                precisePosition
+              }
             val displayedSeekbarDuration =
               if (nativeEngineActive) nativeSnapshot.durationMs / 1000f
               else if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
@@ -1761,11 +1766,18 @@ fun PlayerControls(
               onValueChange = {
                 isSeeking = true
                 resetControlsTimestamp = System.currentTimeMillis()
-                viewModel.seekPreviewTo(it)
+                if (nativeEngineActive) {
+                  // Do not flush the Dolby Vision decoder for every pointer event. The Seeker
+                  // already renders this local position; commit one real Media3 seek on release.
+                  nativeSeekPreviewPosition = it
+                } else {
+                  viewModel.seekPreviewTo(it)
+                }
               },
               onValueChangeFinished = { targetPosition ->
                 isSeeking = false
                 resetControlsTimestamp = System.currentTimeMillis()
+                nativeSeekPreviewPosition = null
                 viewModel.seekTo(targetPosition.toInt(), fast = false)
                 viewModel.showControls()
               },
