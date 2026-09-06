@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.media.MediaMetadataRetriever
 import java.io.File
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -38,6 +39,12 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlin.math.pow
 
 private object NativeMedia3Cache {
@@ -106,8 +113,14 @@ class NativeMedia3Engine(context: Context) {
   // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
   private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
   private val extractorsFactory = ExtractorsFactory {
-    // Use one normal seek-capable extractor for the complete lifetime of the media item.
-    arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory()))
+    // Start at the first cluster instead of blocking first-frame playback while seeking to a Cue
+    // element near the end of a large UHD MKV. Metadata is probed after playback starts below.
+    arrayOf(
+      MatroskaExtractor(
+        DefaultSubtitleParserFactory(),
+        MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES,
+      ),
+    )
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
@@ -149,6 +162,8 @@ class NativeMedia3Engine(context: Context) {
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
+  private val metadataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private var metadataProbeJob: Job? = null
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
   private val seekRunnable = Runnable {
@@ -435,6 +450,30 @@ class NativeMedia3Engine(context: Context) {
     player.playWhenReady = autoplay
     publishSnapshot()
     startTimelineUpdates()
+    startDeferredLocalMetadataProbe(mediaUri)
+  }
+
+  private fun startDeferredLocalMetadataProbe(uri: Uri) {
+    if (!uri.scheme.equals("file", ignoreCase = true)) return
+    val path = uri.path ?: return
+    metadataProbeJob?.cancel()
+    metadataProbeJob = metadataScope.launch {
+      val retriever = MediaMetadataRetriever()
+      try {
+        retriever.setDataSource(path)
+        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+        val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+        val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+        Log.d(
+          logTag,
+          "deferred local metadata uri=$uri durationMs=$durationMs size=${width}x$height cueIndex=deferred",
+        )
+      } catch (error: Exception) {
+        Log.w(logTag, "deferred local metadata probe failed uri=$uri", error)
+      } finally {
+        retriever.release()
+      }
+    }
   }
 
   private fun nativeContainerMimeType(uri: Uri): String? =
@@ -455,7 +494,7 @@ class NativeMedia3Engine(context: Context) {
   fun seekTo(positionMs: Long) {
     pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 120L)
+    loopHandler.postDelayed(seekRunnable, 300L)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
@@ -465,7 +504,7 @@ class NativeMedia3Engine(context: Context) {
     val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 120L)
+    loopHandler.postDelayed(seekRunnable, 300L)
     // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
     publishPlaybackSnapshot()
     startTimelineUpdates()
@@ -547,6 +586,7 @@ class NativeMedia3Engine(context: Context) {
     loopHandler.removeCallbacks(seekRunnable)
     pendingSeekPositionMs = null
     pendingSeekDisplayPositionMs = null
+    metadataProbeJob?.cancel()
     player.stop()
     player.clearMediaItems()
     _hasRenderedFirstFrame.value = false
@@ -558,6 +598,8 @@ class NativeMedia3Engine(context: Context) {
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
     pendingSeekPositionMs = null
+    metadataProbeJob?.cancel()
+    metadataScope.cancel()
     player.removeListener(listener)
     attachedView?.player = null
     attachedView = null
