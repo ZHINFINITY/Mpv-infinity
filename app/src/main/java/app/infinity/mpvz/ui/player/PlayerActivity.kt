@@ -1695,6 +1695,18 @@ class PlayerActivity :
           .takeIf { it >= 0 }
           ?.plus(1)
           ?.toLong(),
+        audioTracks = nativeEngine.snapshot.value.audioTracks.mapIndexed { index, track ->
+          app.infinity.mpvz.ui.cast.CastAudioTrack(
+            id = (1001 + index).toLong(),
+            name = track.label,
+            language = track.language,
+          )
+        },
+        activeAudioTrackId = nativeEngine.snapshot.value.audioTracks
+          .indexOfFirst { it.selected }
+          .takeIf { it >= 0 }
+          ?.plus(1001)
+          ?.toLong(),
       )
     }
     if (!isReady || fileName.isBlank()) return null
@@ -1735,6 +1747,19 @@ class PlayerActivity :
         .firstOrNull { it.type == "sub" && it.isSelected }
         ?.id
         ?.toLong(),
+      audioTracks = viewModel.audioTracks.value
+        .filter { it.type == "audio" }
+        .map { track ->
+          app.infinity.mpvz.ui.cast.CastAudioTrack(
+            id = (1000 + track.id).toLong(),
+            name = track.title ?: track.lang ?: "Audio ${track.id}",
+            language = track.lang,
+          )
+        },
+      activeAudioTrackId = viewModel.audioTracks.value
+        .firstOrNull { it.type == "audio" && it.isSelected }
+        ?.id
+        ?.let { (1000 + it).toLong() },
     )
   }
 

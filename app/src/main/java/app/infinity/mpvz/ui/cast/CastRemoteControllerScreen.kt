@@ -75,6 +75,7 @@ fun CastRemoteControllerScreen(
   var showSpeedDialog by remember { mutableStateOf(false) }
   var showBitrateDialog by remember { mutableStateOf(false) }
   var showSubtitleDialog by remember { mutableStateOf(false) }
+  var showAudioDialog by remember { mutableStateOf(false) }
 
   Box(
     modifier =
@@ -150,6 +151,7 @@ fun CastRemoteControllerScreen(
           onShowSpeed = { showSpeedDialog = true },
           onShowBitrate = { showBitrateDialog = true },
           onShowSubtitles = { showSubtitleDialog = true },
+          onShowAudio = { showAudioDialog = true },
         )
       }
 
@@ -179,6 +181,13 @@ fun CastRemoteControllerScreen(
       castState = castState,
       controller = controller,
       onDismiss = { showSubtitleDialog = false },
+    )
+  }
+  if (showAudioDialog) {
+    CastAudioDialog(
+      castState = castState,
+      controller = controller,
+      onDismiss = { showAudioDialog = false },
     )
   }
 }
@@ -291,6 +300,7 @@ private fun CastOptionsRow(
   onShowSpeed: () -> Unit,
   onShowBitrate: () -> Unit,
   onShowSubtitles: () -> Unit,
+  onShowAudio: () -> Unit,
 ) {
   Row(
     modifier =
@@ -305,6 +315,7 @@ private fun CastOptionsRow(
     CastOptionButton(icon = Icons.RoundedFilled.Speed, label = "Speed", onClick = onShowSpeed)
     CastOptionButton(icon = Icons.RoundedFilled.Settings, label = "Quality", onClick = onShowBitrate)
     CastOptionButton(icon = Icons.RoundedFilled.Subtitles, label = "Subtitles", onClick = onShowSubtitles)
+    CastOptionButton(icon = Icons.RoundedFilled.VolumeUp, label = "Audio", onClick = onShowAudio)
   }
 }
 
@@ -425,6 +436,43 @@ private fun CastSubtitleDialog(
         }
         if (castState.subtitleTracks.isEmpty()) {
           Text("No embedded subtitle tracks", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+      }
+    },
+    confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+  )
+}
+
+@Composable
+private fun CastAudioDialog(
+  castState: CastSessionState,
+  controller: CastPlaybackController,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Audio") },
+    text = {
+      Column {
+        castState.audioTracks.forEach { track ->
+          Row(
+            modifier = Modifier.fillMaxWidth().clickable {
+              controller.setAudioTrack(track.id)
+              onDismiss()
+            }.padding(vertical = 12.dp, horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            RadioButton(
+              selected = castState.activeAudioTrackId == track.id,
+              onClick = null,
+              colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary),
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(track.name, color = MaterialTheme.colorScheme.onSurface)
+          }
+        }
+        if (castState.audioTracks.isEmpty()) {
+          Text("No embedded audio tracks", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
       }
     },
