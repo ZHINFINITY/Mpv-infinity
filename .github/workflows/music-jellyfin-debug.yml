@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - music-jellyfin-debug
+      - manus/source-base-media3-port
   workflow_dispatch:
 
 permissions:
