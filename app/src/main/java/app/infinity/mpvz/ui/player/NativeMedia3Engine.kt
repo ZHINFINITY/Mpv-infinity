@@ -6,7 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
-import android.media.MediaMetadataRetriever
 import java.io.File
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -39,12 +38,6 @@ import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import kotlin.math.pow
 
 private object NativeMedia3Cache {
@@ -113,25 +106,13 @@ class NativeMedia3Engine(context: Context) {
   // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
   private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
   private val extractorsFactory = ExtractorsFactory {
-    // Start at the first cluster instead of blocking first-frame playback while seeking to a Cue
-    // element near the end of a large UHD MKV. Metadata is probed after playback starts below.
-    arrayOf(
-      MatroskaExtractor(
-        DefaultSubtitleParserFactory(),
-        MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES,
-      ),
-    )
-  }
-  private val indexedExtractorsFactory = ExtractorsFactory {
-    // The background player is allowed to seek to and parse Cues, producing the seekable timeline
-    // that the fast foreground player intentionally avoids during startup.
+    // Use the normal seek-capable extractor. Local MediaStore content URIs are opened through the
+    // direct data source below, avoiding the file:// FUSE path without sacrificing seeking.
     arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory()))
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
     ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
-  private val indexedLocalMediaSourceFactory =
-    ProgressiveMediaSource.Factory(directLocalDataSourceFactory, indexedExtractorsFactory)
   private var player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
@@ -163,11 +144,6 @@ class NativeMedia3Engine(context: Context) {
     )
     .build()
   private var activePlayer: ExoPlayer = player
-  private val indexedPlayer = ExoPlayer.Builder(context.applicationContext)
-    .setMediaSourceFactory(
-      DefaultMediaSourceFactory(dataSourceFactory, indexedExtractorsFactory),
-    )
-    .build()
   private var attachedView: PlayerView? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
@@ -175,11 +151,6 @@ class NativeMedia3Engine(context: Context) {
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
-  private val metadataScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-  private var metadataProbeJob: Job? = null
-  private var indexedHandoffStarted = false
-  private var indexedUri: Uri? = null
-  private var indexedPreparationIssued = false
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
   private val seekRunnable = Runnable {
@@ -262,8 +233,7 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onMetadata(metadata: Metadata) {
-      // Media3 emits transient metadata callbacks while the indexed source is replacing the fast
-      // source. Do not erase the already-published chapter list when that callback has no chapters.
+      // Do not erase the already-published chapter list when a transient callback has no chapters.
       metadataEntriesToChapters(metadata).takeIf { it.isNotEmpty() }?.let { metadataChapters = it }
       publishSnapshot()
     }
@@ -287,15 +257,6 @@ class NativeMedia3Engine(context: Context) {
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
     activePlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     activePlayer.addListener(listener)
-    indexedPlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
-    indexedPlayer.addListener(listener)
-    indexedPlayer.addListener(object : Player.Listener {
-      override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-        if (indexedPreparationIssued && timeline.windowCount > 0 && indexedPlayer.currentMediaItem != null) {
-          handoffToIndexedPlayerIfReady()
-        }
-      }
-    })
   }
 
   fun attach(view: PlayerView) {
@@ -440,13 +401,8 @@ class NativeMedia3Engine(context: Context) {
       } else {
         uri
       }
-    val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true)
-    indexedHandoffStarted = false
-    indexedPreparationIssued = false
-    indexedUri = null
-    indexedPlayer.stop()
-    indexedPlayer.clearMediaItems()
-    indexedUri = mediaUri.takeIf { isLocalUri }
+    val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true) ||
+      mediaUri.scheme.equals("content", ignoreCase = true)
     Log.d(
       logTag,
       "play uri=$mediaUri scheme=${mediaUri.scheme} source=${if (isLocalUri) "direct-local" else "cached-network"} " +
@@ -481,56 +437,6 @@ class NativeMedia3Engine(context: Context) {
     activePlayer.playWhenReady = autoplay
     publishSnapshot()
     startTimelineUpdates()
-    startDeferredLocalMetadataProbe(mediaUri)
-    if (isLocalUri) {
-      val indexedSource = indexedLocalMediaSourceFactory.createMediaSource(mediaItem)
-      indexedPlayer.setMediaSource(indexedSource)
-      indexedPlayer.prepare()
-      indexedPreparationIssued = true
-      Log.d(logTag, "indexed background prepare begin uri=$mediaUri")
-    }
-  }
-
-  private fun handoffToIndexedPlayerIfReady() {
-    if (indexedHandoffStarted || indexedUri == null) return
-    if (indexedPlayer.currentMediaItem?.localConfiguration?.uri != indexedUri) return
-    indexedHandoffStarted = true
-    val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
-    val wasPlaying = activePlayer.isPlaying || activePlayer.playWhenReady
-    Log.d(logTag, "indexed handoff begin uri=$indexedUri positionMs=$positionMs")
-    activePlayer.pause()
-    attachedView?.player = null
-    activePlayer = indexedPlayer
-    indexedPlayer.seekTo(positionMs)
-    indexedPlayer.playWhenReady = wasPlaying
-    attachedView?.player = indexedPlayer
-    player.stop()
-    player.clearMediaItems()
-    publishSnapshot()
-    Log.d(logTag, "indexed handoff complete uri=$indexedUri positionMs=$positionMs")
-  }
-
-  private fun startDeferredLocalMetadataProbe(uri: Uri) {
-    if (!uri.scheme.equals("file", ignoreCase = true)) return
-    val path = uri.path ?: return
-    metadataProbeJob?.cancel()
-    metadataProbeJob = metadataScope.launch {
-      val retriever = MediaMetadataRetriever()
-      try {
-        retriever.setDataSource(path)
-        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-        val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-        val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-        Log.d(
-          logTag,
-          "deferred local metadata uri=$uri durationMs=$durationMs size=${width}x$height cueIndex=deferred",
-        )
-      } catch (error: Exception) {
-        Log.w(logTag, "deferred local metadata probe failed uri=$uri", error)
-      } finally {
-        retriever.release()
-      }
-    }
   }
 
   private fun nativeContainerMimeType(uri: Uri): String? =
@@ -643,16 +549,8 @@ class NativeMedia3Engine(context: Context) {
     loopHandler.removeCallbacks(seekRunnable)
     pendingSeekPositionMs = null
     pendingSeekDisplayPositionMs = null
-    metadataProbeJob?.cancel()
     activePlayer.stop()
     activePlayer.clearMediaItems()
-    if (activePlayer !== indexedPlayer) {
-      indexedPlayer.stop()
-      indexedPlayer.clearMediaItems()
-    }
-    indexedUri = null
-    indexedHandoffStarted = false
-    indexedPreparationIssued = false
     _hasRenderedFirstFrame.value = false
     publishSnapshot()
   }
@@ -662,14 +560,10 @@ class NativeMedia3Engine(context: Context) {
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
     pendingSeekPositionMs = null
-    metadataProbeJob?.cancel()
-    metadataScope.cancel()
     activePlayer.removeListener(listener)
-    indexedPlayer.removeListener(listener)
     attachedView?.player = null
     attachedView = null
-    if (activePlayer !== indexedPlayer) activePlayer.release()
-    indexedPlayer.release()
+    activePlayer.release()
   }
 
   private fun publishSnapshot() {
