@@ -21,9 +21,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.extractor.ExtractorsFactory
-import androidx.media3.extractor.mkv.MatroskaExtractor
-import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,14 +67,6 @@ class NativeMedia3Engine(context: Context) {
   private val logTag = "Mpv∞-Media3"
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
-  private val extractorsFactory = ExtractorsFactory {
-    arrayOf(
-      MatroskaExtractor(
-        SubtitleParser.Factory.UNSUPPORTED,
-        MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES,
-      ),
-    )
-  }
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
@@ -98,11 +87,10 @@ class NativeMedia3Engine(context: Context) {
     // being handed over from MPV. Disable this watchdog for Native; a real player/codec error is
     // still delivered through Player.Listener.onPlayerError.
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
-    // Large UHD remuxes commonly place the MKV Cues element at the end of the file. The default
-    // Matroska extractor seeks to that element before starting, which caused the measured 7–8 s
-    // startup gap on the Poco F7. Start from the first cluster instead; seeking remains available
-    // through the extractor's sequential index as playback progresses.
-    .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory))
+    // Keep Media3's default extractor factory. The experimental Matroska cue-seek override made
+    // some large UHD files remain paused after preparation, so startup optimization must not trade
+    // away normal extractor seekability.
+    .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
     .setRenderersFactory(
       DefaultRenderersFactory(context.applicationContext)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
