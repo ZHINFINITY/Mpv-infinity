@@ -328,6 +328,11 @@ class NativeMedia3Engine(context: Context) {
     configureSubtitleView()
   }
 
+  fun setSubtitleOverlayVisible(visible: Boolean) {
+    attachedView?.subtitleView?.visibility =
+      if (visible) android.view.View.VISIBLE else android.view.View.GONE
+  }
+
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
     val current = activePlayer.currentMediaItem?.localConfiguration ?: return false
     val mimeType = when (uri.toString().substringAfterLast('.', "").lowercase()) {

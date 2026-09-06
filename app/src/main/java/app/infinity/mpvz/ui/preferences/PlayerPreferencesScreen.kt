@@ -11,6 +11,7 @@ package app.infinity.mpvz.ui.preferences
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -90,6 +91,20 @@ object PlayerPreferencesScreen : Screen {
     var showTemplateDialog by remember { mutableStateOf(false) }
     var templateDraft by remember { mutableStateOf("") }
     var showVideoMiniPlayerDependencyDialog by remember { mutableStateOf(false) }
+    val screenshotFolderUri by preferences.screenshotFolderUri.collectAsState()
+    val screenshotFolderPicker = rememberLauncherForActivityResult(
+      ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+      if (uri != null) {
+        runCatching {
+          context.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+          )
+        }
+        preferences.screenshotFolderUri.set(uri.toString())
+      }
+    }
     Scaffold(
       topBar = {
         TopAppBar(
@@ -877,6 +892,25 @@ object PlayerPreferencesScreen : Screen {
                   )
                 },
               )
+
+              PreferenceDivider()
+
+              Preference(
+                title = { Text("Screenshot save folder") },
+                summary = {
+                  Text(
+                    screenshotFolderUri.ifBlank { "Pictures/mpvSnaps (default)" },
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+                onClick = { screenshotFolderPicker.launch(null) },
+              )
+
+              if (screenshotFolderUri.isNotBlank()) {
+                TextButton(onClick = { preferences.screenshotFolderUri.set("") }) {
+                  Text("Use default Pictures folder")
+                }
+              }
 
               PreferenceDivider()
 

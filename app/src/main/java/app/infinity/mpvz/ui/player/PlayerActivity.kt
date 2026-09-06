@@ -971,11 +971,7 @@ class PlayerActivity :
     }
     viewModel.setNativeSubtitleVisibilityListener { hidden ->
       if (!isNativeEngineActive()) return@setNativeSubtitleVisibilityListener
-      if (hidden) {
-        nativeEngine.disableSubtitles()
-      } else {
-        nativeEngine.restoreSubtitles()
-      }
+      nativeEngine.setSubtitleOverlayVisible(!hidden)
     }
     viewModel.setNativeAudioToggleListener { id ->
       if (id <= -1001) {
