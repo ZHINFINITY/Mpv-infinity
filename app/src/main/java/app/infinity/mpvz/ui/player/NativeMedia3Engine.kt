@@ -225,6 +225,16 @@ class NativeMedia3Engine(context: Context) {
       _subtitleCueText.value = cueGroup.cues
         .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotBlank) }
         .joinToString("\n")
+      // Keep delivering cues to the ViewModel for translation, but do not allow Media3's
+      // SubtitleView to draw the original cue underneath the translated Compose overlay. Media3
+      // can repopulate SubtitleView after visibility/alpha changes, so clear it after dispatch.
+      if (!subtitleOverlayVisible) {
+        attachedView?.subtitleView?.post {
+          if (!subtitleOverlayVisible) {
+            attachedView?.subtitleView?.setCues(emptyList())
+          }
+        }
+      }
     }
 
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
