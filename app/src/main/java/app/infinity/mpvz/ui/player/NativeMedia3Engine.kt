@@ -331,8 +331,10 @@ class NativeMedia3Engine(context: Context) {
 
   fun setSubtitleOverlayVisible(visible: Boolean) {
     subtitleOverlayVisible = visible
-    attachedView?.subtitleView?.visibility =
-      if (visible) android.view.View.VISIBLE else android.view.View.GONE
+    attachedView?.subtitleView?.apply {
+      visibility = android.view.View.VISIBLE
+      alpha = if (visible) 1f else 0f
+    }
   }
 
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
@@ -395,7 +397,8 @@ class NativeMedia3Engine(context: Context) {
       setApplyEmbeddedStyles(false)
       setApplyEmbeddedFontSizes(false)
       setStyle(subtitleStyle)
-      visibility = if (subtitleOverlayVisible) android.view.View.VISIBLE else android.view.View.GONE
+      visibility = android.view.View.VISIBLE
+      alpha = if (subtitleOverlayVisible) 1f else 0f
       setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
       pivotX = width / 2f
       pivotY = height.toFloat()
