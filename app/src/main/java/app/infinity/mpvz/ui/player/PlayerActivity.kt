@@ -772,12 +772,14 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         decoderPreferences.playbackEngine.changes().collect { engine ->
           val currentQueueItem = PlaybackSession.queue.value.currentItem
+          val torrentBacked =
+            activeTorrentSourceUri != null ||
+              currentQueueItem?.requiresTorrentResolution() == true ||
+              currentQueueItem?.originalUri?.let { isTorrentSource(it, intent.type) } == true
           val effectiveEngine =
             when (engine) {
               PlaybackEngineMode.AUTO ->
-                if (currentQueueItem?.isHdrOrDolbyVision() == true &&
-                  currentQueueItem.requiresTorrentResolution().not()
-                ) {
+                if (currentQueueItem?.isHdrOrDolbyVision() == true && !torrentBacked) {
                   PlaybackEngineMode.NATIVE
                 } else {
                   PlaybackEngineMode.MPV
