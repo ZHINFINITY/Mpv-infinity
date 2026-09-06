@@ -74,6 +74,7 @@ fun CastRemoteControllerScreen(
 ) {
   var showSpeedDialog by remember { mutableStateOf(false) }
   var showBitrateDialog by remember { mutableStateOf(false) }
+  var showSubtitleDialog by remember { mutableStateOf(false) }
 
   Box(
     modifier =
@@ -148,6 +149,7 @@ fun CastRemoteControllerScreen(
         CastOptionsRow(
           onShowSpeed = { showSpeedDialog = true },
           onShowBitrate = { showBitrateDialog = true },
+          onShowSubtitles = { showSubtitleDialog = true },
         )
       }
 
@@ -170,6 +172,13 @@ fun CastRemoteControllerScreen(
       castState = castState,
       controller = controller,
       onDismiss = { showBitrateDialog = false },
+    )
+  }
+  if (showSubtitleDialog) {
+    CastSubtitleDialog(
+      castState = castState,
+      controller = controller,
+      onDismiss = { showSubtitleDialog = false },
     )
   }
 }
@@ -281,6 +290,7 @@ private fun CastPlaybackControls(
 private fun CastOptionsRow(
   onShowSpeed: () -> Unit,
   onShowBitrate: () -> Unit,
+  onShowSubtitles: () -> Unit,
 ) {
   Row(
     modifier =
@@ -294,6 +304,7 @@ private fun CastOptionsRow(
   ) {
     CastOptionButton(icon = Icons.RoundedFilled.Speed, label = "Speed", onClick = onShowSpeed)
     CastOptionButton(icon = Icons.RoundedFilled.Settings, label = "Quality", onClick = onShowBitrate)
+    CastOptionButton(icon = Icons.RoundedFilled.Subtitles, label = "Subtitles", onClick = onShowSubtitles)
   }
 }
 
@@ -367,6 +378,58 @@ private fun CastVolumeSlider(
       modifier = Modifier.width(36.dp),
     )
   }
+}
+
+@Composable
+private fun CastSubtitleDialog(
+  castState: CastSessionState,
+  controller: CastPlaybackController,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Subtitles") },
+    text = {
+      Column {
+        Row(
+          modifier = Modifier.fillMaxWidth().clickable {
+            controller.setSubtitleTrack(null)
+            onDismiss()
+          }.padding(vertical = 12.dp, horizontal = 8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          RadioButton(
+            selected = castState.activeSubtitleTrackId == null,
+            onClick = null,
+            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary),
+          )
+          Spacer(modifier = Modifier.width(16.dp))
+          Text("Off", color = MaterialTheme.colorScheme.onSurface)
+        }
+        castState.subtitleTracks.forEach { track ->
+          Row(
+            modifier = Modifier.fillMaxWidth().clickable {
+              controller.setSubtitleTrack(track.id)
+              onDismiss()
+            }.padding(vertical = 12.dp, horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            RadioButton(
+              selected = castState.activeSubtitleTrackId == track.id,
+              onClick = null,
+              colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary),
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(track.name, color = MaterialTheme.colorScheme.onSurface)
+          }
+        }
+        if (castState.subtitleTracks.isEmpty()) {
+          Text("No embedded subtitle tracks", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+      }
+    },
+    confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+  )
 }
 
 @Composable
