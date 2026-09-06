@@ -120,6 +120,7 @@ class SftpClient(
   override suspend fun getFileStream(
     path: String,
     offset: Long,
+    length: Long?,
   ): Result<InputStream> =
     withContext(Dispatchers.IO) {
       require(offset >= 0L) { "Stream offset must not be negative" }

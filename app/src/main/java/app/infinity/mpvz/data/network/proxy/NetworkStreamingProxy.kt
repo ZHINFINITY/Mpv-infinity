@@ -223,7 +223,7 @@ class NetworkStreamingProxy private constructor() :
         if (headOnly) {
           HeadResponse(Response.Status.PARTIAL_CONTENT, mimeType, 0L)
         } else {
-          val inputStream = getStream(streamInfo, path, start) ?: return upstreamFailure(headOnly)
+          val inputStream = getStream(streamInfo, path, start, null) ?: return upstreamFailure(headOnly)
           newChunkedResponse(Response.Status.PARTIAL_CONTENT, mimeType, inputStream)
         }
       response.addHeader("Accept-Ranges", "bytes")
@@ -237,7 +237,7 @@ class NetworkStreamingProxy private constructor() :
       if (headOnly) {
         HeadResponse(Response.Status.PARTIAL_CONTENT, mimeType, range.length)
       } else {
-        val inputStream = getStream(streamInfo, path, range.start)
+        val inputStream = getStream(streamInfo, path, range.start, range.length)
           ?: return upstreamFailure(headOnly)
         newFixedLengthResponse(
           Response.Status.PARTIAL_CONTENT,
@@ -270,7 +270,7 @@ class NetworkStreamingProxy private constructor() :
       return emptyResponse(Response.Status.OK, mimeType).apply { addHeader("Accept-Ranges", "bytes") }
     }
 
-    val inputStream = getStream(streamInfo, path, 0L) ?: return upstreamFailure(headOnly)
+    val inputStream = getStream(streamInfo, path, 0L, fileSize.takeIf { it >= 0L }) ?: return upstreamFailure(headOnly)
     return if (fileSize >= 0L) {
       newFixedLengthResponse(Response.Status.OK, mimeType, inputStream, fileSize).apply {
         addHeader("Accept-Ranges", "bytes")
@@ -310,6 +310,7 @@ class NetworkStreamingProxy private constructor() :
     streamInfo: StreamInfo,
     path: NetworkPath,
     offset: Long,
+    length: Long?,
   ): InputStream? {
     Log.d(
       TAG,
@@ -317,7 +318,7 @@ class NetworkStreamingProxy private constructor() :
     )
     val result =
       awaitProxyIo {
-        withConnectedClient(streamInfo) { client -> client.getFileStream(path.value, offset) }
+        withConnectedClient(streamInfo) { client -> client.getFileStream(path.value, offset, length) }
       }
     Log.d(
       TAG,

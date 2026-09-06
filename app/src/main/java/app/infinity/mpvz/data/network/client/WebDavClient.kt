@@ -319,12 +319,14 @@ class WebDavClient(
   override suspend fun getFileStream(
     path: String,
     offset: Long,
+    length: Long?,
   ): Result<InputStream> =
     withContext(Dispatchers.IO) {
       require(offset >= 0L) { "Stream offset must not be negative" }
+      require(length == null || length > 0L) { "Stream length must be positive when provided" }
       try {
-        if (offset > 0L) {
-          return@withContext getRangedFileStream(NetworkPath.from(path), offset)
+        if (offset > 0L || length != null) {
+          return@withContext getRangedFileStream(NetworkPath.from(path), offset, length)
         }
 
         // A per-call OkHttpSardine leaks its own OkHttpClient and applies a 10s read timeout
@@ -356,10 +358,11 @@ class WebDavClient(
   private fun getRangedFileStream(
     path: NetworkPath,
     offset: Long,
+    requestedLength: Long?,
   ): Result<InputStream> {
     val initial =
       try {
-        openRangedResponse(path, offset)
+        openRangedResponse(path, offset, requestedLength)
       } catch (error: Exception) {
         return Result.failure(error)
       }
@@ -369,8 +372,12 @@ class WebDavClient(
         private var current = initial
         private var stream = current.response.body.byteStream()
         private var position = current.start
-        private var bytesRemaining = current.endInclusive - current.start + 1L
+        private var bytesRemaining = minOf(
+          current.endInclusive - current.start + 1L,
+          requestedLength ?: Long.MAX_VALUE,
+        )
         private var totalLength = current.totalLength
+        private var delivered = 0L
         private var closed = false
 
         override fun read(): Int {
@@ -391,17 +398,21 @@ class WebDavClient(
           while (true) {
             if (bytesRemaining == 0L) {
               val completeLength = totalLength ?: return -1
-              if (position >= completeLength) return -1
+              if (position >= completeLength || requestedLength?.let { delivered >= it } == true) return -1
 
               current.response.close()
-              val next = openRangedResponse(path, position)
+              val remaining = requestedLength?.let { (it - delivered).coerceAtLeast(1L) }
+              val next = openRangedResponse(path, position, remaining)
               if (next.totalLength != null && next.totalLength != completeLength) {
                 next.response.close()
                 throw IOException("WebDAV resource length changed during streaming")
               }
               current = next
               stream = next.response.body.byteStream()
-              bytesRemaining = next.endInclusive - next.start + 1L
+              bytesRemaining = minOf(
+                next.endInclusive - next.start + 1L,
+                remaining ?: Long.MAX_VALUE,
+              )
               totalLength = next.totalLength ?: completeLength
             }
 
@@ -410,6 +421,7 @@ class WebDavClient(
             if (count > 0) {
               position += count
               bytesRemaining -= count
+              delivered += count
               return count
             }
             if (count == 0) continue
@@ -436,6 +448,7 @@ class WebDavClient(
   private fun openRangedResponse(
     path: NetworkPath,
     offset: Long,
+    requestedLength: Long? = null,
   ): RangedResponse {
     val requestBuilder =
       Request
@@ -444,7 +457,7 @@ class WebDavClient(
         .get()
         .header(
           "Range",
-          "bytes=$offset-${offset + RANGE_CHUNK_BYTES - 1L}",
+          "bytes=$offset-${offset + minOf(requestedLength ?: RANGE_CHUNK_BYTES, RANGE_CHUNK_BYTES) - 1L}",
         )
         .header("Accept-Encoding", "identity")
 
