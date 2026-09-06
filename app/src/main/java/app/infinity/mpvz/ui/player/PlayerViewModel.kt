@@ -300,6 +300,8 @@ class PlayerViewModel : ViewModel(),
   private var embeddedTranslationRequestId = 0L
   private var lastEmbeddedCue = ""
   private var nativeSubtitleHiddenForTranslation = false
+  private var nativeSubtitleVisibilityListener: ((Boolean) -> Unit)? = null
+  private var nativeSubtitleVisibilityListener: ((Boolean) -> Unit)? = null
 
   private val _isGeneratingSubtitles = MutableStateFlow(false)
   val isGeneratingSubtitles: StateFlow<Boolean> = _isGeneratingSubtitles.asStateFlow()
@@ -651,6 +653,14 @@ class PlayerViewModel : ViewModel(),
 
   fun setNativeSubtitleToggleListener(listener: ((Int) -> Unit)?) {
     nativeSubtitleToggleListener = listener
+  }
+
+  fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
+    nativeSubtitleVisibilityListener = listener
+  }
+
+  fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
+    nativeSubtitleVisibilityListener = listener
   }
 
   fun setNativeAudioToggleListener(listener: ((Int) -> Unit)?) {
@@ -2787,6 +2797,7 @@ class PlayerViewModel : ViewModel(),
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
+    if (native) nativeSubtitleVisibilityListener?.invoke(false)
     if (!native && aiPreferences.subtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", false)
       nativeSubtitleHiddenForTranslation = true
@@ -2800,6 +2811,7 @@ class PlayerViewModel : ViewModel(),
     lastEmbeddedCue = ""
     _translationStatus.value = ""
     _embeddedTranslatedSubtitle.value = null
+    nativeSubtitleVisibilityListener?.invoke(false)
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
       nativeSubtitleHiddenForTranslation = false
@@ -2820,6 +2832,7 @@ class PlayerViewModel : ViewModel(),
         ?: java.util.Locale.getDefault().language.ifBlank { "en" }
     lastEmbeddedCue = cue
     _embeddedTranslatedSubtitle.value = null
+    if (native) nativeSubtitleVisibilityListener?.invoke(false)
     val requestId = ++embeddedTranslationRequestId
     embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
@@ -2845,10 +2858,12 @@ class PlayerViewModel : ViewModel(),
                 nativeSubtitleHiddenForTranslation = true
               }
               _embeddedTranslatedSubtitle.value = cleanedTranslation
+              if (native) nativeSubtitleVisibilityListener?.invoke(true)
             } else {
               // Keep the native subtitle visible when it is already in the requested language.
               // This preserves the original font, outline, position, and line layout exactly.
               _embeddedTranslatedSubtitle.value = null
+              if (native) nativeSubtitleVisibilityListener?.invoke(false)
               if (!native && nativeSubtitleHiddenForTranslation) {
                 PlaybackSession.setPropertyBoolean("sub-visibility", true)
                 nativeSubtitleHiddenForTranslation = false

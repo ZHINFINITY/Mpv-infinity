@@ -969,6 +969,16 @@ class PlayerActivity :
         }
       }
     }
+    viewModel.setNativeSubtitleVisibilityListener { hidden ->
+      if (!isNativeEngineActive()) return@setNativeSubtitleVisibilityListener
+      if (hidden) {
+        nativeEngine.disableSubtitles()
+      } else {
+        nativeEngine.snapshot.value.subtitleTracks.firstOrNull { it.selected }?.let { track ->
+          nativeEngine.selectTrack(track)
+        }
+      }
+    }
     viewModel.setNativeAudioToggleListener { id ->
       if (id <= -1001) {
         nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let(nativeEngine::selectTrack)
