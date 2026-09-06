@@ -495,7 +495,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun setSpeed(speed: Float, pitchCorrection: Boolean = true) {
-    val clampedSpeed = speed.coerceIn(0.25f, 4f)
+    val clampedSpeed = speed.coerceIn(0.25f, 8f)
     activePlayer.setPlaybackParameters(
       PlaybackParameters(clampedSpeed, if (pitchCorrection) 1f else clampedSpeed),
     )
