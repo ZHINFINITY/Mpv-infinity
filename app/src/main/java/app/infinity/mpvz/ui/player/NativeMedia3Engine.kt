@@ -79,8 +79,7 @@ class NativeMedia3Engine(context: Context) {
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
   private val extractorsFactory = ExtractorsFactory {
-    // Use Media3's built-in parsers for PGS and text subtitles; the player keeps text disabled
-    // until the user selects a track.
+    // Let Media3 automatically select and decode the embedded subtitle formats it supports.
     arrayOf(
       MatroskaExtractor(
         DefaultSubtitleParserFactory(),
@@ -240,13 +239,6 @@ class NativeMedia3Engine(context: Context) {
 
   init {
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
-    // Some UHD remuxes contain PGS image subtitles. On this Media3 build legacy PGS decoding is
-    // disabled, and allowing the default text renderer to select one aborts the whole playback
-    // with: "can't handle application/pgs samples". Keep text disabled for startup; the existing
-    // subtitle selection action explicitly enables a chosen compatible track when requested.
-    player.trackSelectionParameters = TrackSelectionParameters.Builder()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-      .build()
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
     player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
@@ -360,14 +352,6 @@ class NativeMedia3Engine(context: Context) {
     configureSubtitleView()
   }
 
-  private fun isSelectableSubtitleMime(mimeType: String?): Boolean {
-    val mime = mimeType?.lowercase() ?: return true
-    return !mime.contains("pgs") &&
-      !mime.contains("vobsub") &&
-      !mime.contains("dvbsub") &&
-      !mime.startsWith("image/") &&
-      !mime.contains("subpicture")
-  }
 
   private fun configureSubtitleView() {
     val view = attachedView ?: return
@@ -499,12 +483,6 @@ class NativeMedia3Engine(context: Context) {
   fun selectTrack(track: NativeTrack) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
-    if (track.type == C.TRACK_TYPE_TEXT &&
-      !isSelectableSubtitleMime(group.getTrackFormat(track.trackIndex).sampleMimeType)
-    ) {
-      Log.w(logTag, "Ignoring unsupported subtitle mime=${group.getTrackFormat(track.trackIndex).sampleMimeType}")
-      return
-    }
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
@@ -524,11 +502,6 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
-    val mimeType = group.getTrackFormat(trackIndex).sampleMimeType
-    if (!isSelectableSubtitleMime(mimeType)) {
-      Log.w(logTag, "Ignoring unsupported subtitle mime=$mimeType")
-      return
-    }
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -586,7 +559,6 @@ class NativeMedia3Engine(context: Context) {
         if (group.type != type) return@mapIndexedNotNull null
         (0 until group.length).mapNotNull { trackIndex ->
           val format = group.getTrackFormat(trackIndex)
-          if (type == C.TRACK_TYPE_TEXT && !isSelectableSubtitleMime(format.sampleMimeType)) return@mapNotNull null
           NativeTrack(
             groupIndex = groupIndex,
             trackIndex = trackIndex,
