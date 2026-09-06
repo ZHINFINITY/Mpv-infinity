@@ -851,6 +851,7 @@ class PlayerActivity :
                   ?: Uri.parse(currentUri)
               // Select Native immediately. The first-frame job only confirms readiness; it must
               // not leave controls and engine state on MPV while Media3 is opening the source.
+              viewModel.prepareNativeEngineHandoffForTranslation()
               activeEngineMode = PlaybackEngineMode.NATIVE
               viewModel.setNativeEngineActive(true)
               // Translation may have hidden MPV's subtitle renderer before this handoff. The
