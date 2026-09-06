@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.mkv.MatroskaExtractor
+import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -73,22 +74,19 @@ class NativeMedia3Engine(context: Context) {
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
   private val extractorsFactory = ExtractorsFactory {
-    // PGS subtitle payloads are not decoded by this Media3 configuration. Emit them as raw
-    // samples. Keep normal cue indexing enabled because the cue-disabled fast-start mode makes
-    // large MKV files effectively unseekable for the seek bar and gesture seeks.
+    // Use Media3's built-in parsers for PGS and text subtitles; the player keeps text disabled
+    // until the user selects a track.
     arrayOf(
       MatroskaExtractor(
-        SubtitleParser.Factory.UNSUPPORTED,
-        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
+        DefaultSubtitleParserFactory(),
       ),
     )
   }
   private val fastExtractorsFactory = ExtractorsFactory {
     arrayOf(
       MatroskaExtractor(
-        SubtitleParser.Factory.UNSUPPORTED,
-        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA or
-          MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES,
+        DefaultSubtitleParserFactory(),
+        MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES,
       ),
     )
   }
@@ -482,12 +480,6 @@ class NativeMedia3Engine(context: Context) {
   fun selectTrack(track: NativeTrack) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
-    if (track.type == C.TRACK_TYPE_TEXT &&
-      !isSupportedNativeSubtitle(group.getTrackFormat(track.trackIndex).sampleMimeType)
-    ) {
-      Log.w(logTag, "Ignoring unsupported Native subtitle track")
-      return
-    }
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
@@ -506,12 +498,6 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
-    if (trackIndex !in 0 until group.length ||
-      !isSupportedNativeSubtitle(group.getTrackFormat(trackIndex).sampleMimeType)
-    ) {
-      Log.w(logTag, "Ignoring unsupported Native subtitle track")
-      return
-    }
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -568,9 +554,6 @@ class NativeMedia3Engine(context: Context) {
         if (group.type != type) return@mapIndexedNotNull null
         (0 until group.length).mapNotNull { trackIndex ->
           val format = group.getTrackFormat(trackIndex)
-          if (type == C.TRACK_TYPE_TEXT && !isSupportedNativeSubtitle(format.sampleMimeType)) {
-            return@mapNotNull null
-          }
           NativeTrack(
             groupIndex = groupIndex,
             trackIndex = trackIndex,
@@ -607,11 +590,6 @@ class NativeMedia3Engine(context: Context) {
       chapters = chapters,
     )
   }
-
-  private fun isSupportedNativeSubtitle(mimeType: String?): Boolean =
-    mimeType != "application/pgs" &&
-      mimeType != "application/vobsub" &&
-      mimeType != "application/dvbsubs"
 
   /** Publishes only rapidly changing playback values; track/metadata enumeration is expensive. */
   private fun publishPlaybackSnapshot() {
