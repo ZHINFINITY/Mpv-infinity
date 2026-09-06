@@ -179,6 +179,7 @@ class NativeMedia3Engine(context: Context) {
   private var metadataProbeJob: Job? = null
   private var indexedHandoffStarted = false
   private var indexedUri: Uri? = null
+  private var indexedPreparationIssued = false
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
   private val seekRunnable = Runnable {
@@ -290,7 +291,7 @@ class NativeMedia3Engine(context: Context) {
     indexedPlayer.addListener(listener)
     indexedPlayer.addListener(object : Player.Listener {
       override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-        if (timeline.windowCount > 0 && indexedPlayer.currentMediaItem != null) {
+        if (indexedPreparationIssued && timeline.windowCount > 0 && indexedPlayer.currentMediaItem != null) {
           handoffToIndexedPlayerIfReady()
         }
       }
@@ -441,9 +442,11 @@ class NativeMedia3Engine(context: Context) {
       }
     val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true)
     indexedHandoffStarted = false
-    indexedUri = mediaUri.takeIf { isLocalUri }
+    indexedPreparationIssued = false
+    indexedUri = null
     indexedPlayer.stop()
     indexedPlayer.clearMediaItems()
+    indexedUri = mediaUri.takeIf { isLocalUri }
     Log.d(
       logTag,
       "play uri=$mediaUri scheme=${mediaUri.scheme} source=${if (isLocalUri) "direct-local" else "cached-network"} " +
@@ -483,6 +486,7 @@ class NativeMedia3Engine(context: Context) {
       val indexedSource = indexedLocalMediaSourceFactory.createMediaSource(mediaItem)
       indexedPlayer.setMediaSource(indexedSource)
       indexedPlayer.prepare()
+      indexedPreparationIssued = true
       Log.d(logTag, "indexed background prepare begin uri=$mediaUri")
     }
   }
@@ -648,6 +652,7 @@ class NativeMedia3Engine(context: Context) {
     }
     indexedUri = null
     indexedHandoffStarted = false
+    indexedPreparationIssued = false
     _hasRenderedFirstFrame.value = false
     publishSnapshot()
   }
