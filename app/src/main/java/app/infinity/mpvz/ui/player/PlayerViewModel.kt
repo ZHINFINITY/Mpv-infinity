@@ -4251,16 +4251,13 @@ class PlayerViewModel : ViewModel(),
   fun nativePlaybackDurationSeconds(): Double = host.nativePlaybackDurationSeconds()
 
   /**
-   * Conflated live preview used by the legacy/full-screen seek mode and the audio seekbar.
-   * Pointer events can arrive much faster than a decoder can seek, so only the newest target is
-   * applied at a bounded rate. Preview seeks are keyframe-only and never spam Syncplay peers.
+   * Conflated live preview used by the legacy/full-screen seek mode and the MPV audio seekbar.
+   * Native preview is intentionally visual-only: every Media3 seek flushes the hardware decoder,
+   * so native playback commits one seek when the user releases the seekbar instead.
    */
   fun seekPreviewTo(position: Float) {
     cancelFrameSeek()
-    if (host.isNativeEngineActive()) {
-      host.nativeSeekTo((position * 1000f).toLong())
-      return
-    }
+    if (host.isNativeEngineActive()) return
     synchronized(seekPreviewLock) {
       pendingSeekPreviewPosition = position.coerceAtLeast(0f)
       if (seekPreviewJob?.isActive == true) return
