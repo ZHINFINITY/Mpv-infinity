@@ -157,7 +157,12 @@ class NetworkStreamingProxy private constructor() :
     }
 
     val route = "/$token${path.value}"
-    return URI("http", null, "127.0.0.1", listeningPort, route, null, null).toASCIIString()
+    // NanoHTTPD applies form-style URL decoding to the request URI, where a raw '+' becomes a
+    // space. URI.toASCIIString() leaves '+' literal in a path, so escape it explicitly at the
+    // loopback boundary; all other path characters are already encoded by URI.
+    return URI("http", null, "127.0.0.1", listeningPort, route, null, null)
+      .toASCIIString()
+      .replace("+", "%2B")
   }
 
   /** Unregisters the logical ID supplied to [registerStream]. */
