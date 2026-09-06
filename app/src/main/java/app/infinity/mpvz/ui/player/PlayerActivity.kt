@@ -1683,6 +1683,18 @@ class PlayerActivity :
         durationMs = nativeEngine.snapshot.value.durationMs,
         positionMs = nativeEngine.snapshot.value.positionMs,
         isPlaying = nativeEngine.currentPlayer.isPlaying,
+        subtitleTracks = nativeEngine.snapshot.value.subtitleTracks.mapIndexed { index, track ->
+          app.infinity.mpvz.ui.cast.CastSubtitleTrack(
+            id = (index + 1).toLong(),
+            name = track.label,
+            language = track.language,
+          )
+        },
+        activeSubtitleTrackId = nativeEngine.snapshot.value.subtitleTracks
+          .indexOfFirst { it.selected }
+          .takeIf { it >= 0 }
+          ?.plus(1)
+          ?.toLong(),
       )
     }
     if (!isReady || fileName.isBlank()) return null
@@ -1710,6 +1722,19 @@ class PlayerActivity :
       durationMs = ((PlaybackSession.getPropertyDouble("duration") ?: 0.0) * 1000.0).toLong(),
       positionMs = ((PlaybackSession.getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong(),
       isPlaying = PlaybackSession.getPropertyBoolean("pause") == false,
+      subtitleTracks = viewModel.subtitleTracks.value
+        .filter { it.type == "sub" }
+        .map { track ->
+          app.infinity.mpvz.ui.cast.CastSubtitleTrack(
+            id = track.id.toLong(),
+            name = track.title ?: track.lang ?: "Subtitle ${track.id}",
+            language = track.lang,
+          )
+        },
+      activeSubtitleTrackId = viewModel.subtitleTracks.value
+        .firstOrNull { it.type == "sub" && it.isSelected }
+        ?.id
+        ?.toLong(),
     )
   }
 
