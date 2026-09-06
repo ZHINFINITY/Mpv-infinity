@@ -4618,7 +4618,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun setPlaybackSpeed(speed: Float) {
-    val clamped = speed.coerceIn(0.25f, 4f)
+    val clamped = speed.coerceIn(0.25f, 8f)
     if (host.isNativeEngineActive()) host.nativeSetSpeed(clamped)
     else PlaybackSession.setPropertyFloat("speed", clamped)
   }

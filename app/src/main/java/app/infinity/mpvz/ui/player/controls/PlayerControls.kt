@@ -931,7 +931,7 @@ fun PlayerControls(
             when (currentPlayerUpdate) {
               is PlayerUpdates.MultipleSpeed ->
                 MultipleSpeedPlayerUpdate(
-                  currentSpeed = holdForMultipleSpeed.coerceIn(0.5f, 4f),
+                  currentSpeed = holdForMultipleSpeed.coerceIn(0.5f, 8f),
                 )
               is PlayerUpdates.DynamicSpeedControl -> {
                 val speedUpdate = currentPlayerUpdate as PlayerUpdates.DynamicSpeedControl
