@@ -10,6 +10,7 @@
 package app.infinity.mpvz.data.network.client
 
 import android.net.Uri
+import android.util.Log
 import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.domain.network.NetworkFile
 import app.infinity.mpvz.domain.network.NetworkPath
@@ -33,6 +34,7 @@ class WebDavClient(
   private val connection: NetworkConnection,
 ) : NetworkClient {
   companion object {
+    private const val TAG = "WebDavClient"
     private const val SKIP_BUFFER_BYTES = 64 * 1024
     private const val RANGE_CHUNK_BYTES = 8L * 1024 * 1024
     private val rangeHttpClient by lazy {
@@ -68,13 +70,23 @@ class WebDavClient(
   }
 
   private fun executeWithAuthentication(request: Request): Response {
+    val initialAuthorization = request.header("Authorization")
+    Log.d(
+      TAG,
+      "request method=${request.method} url=${request.url} range=${request.header("Range") ?: "none"} auth=${if (initialAuthorization == null) "none" else "configured"}",
+    )
     val response = rangeHttpClient.newCall(request).execute()
     val fallbackAuthorization = torboxFallbackAuthorization()
-    if (response.code != 401 || fallbackAuthorization == null) return response
+    if (response.code != 401 || fallbackAuthorization == null) {
+      Log.d(TAG, "response method=${request.method} url=${request.url} code=${response.code} contentLength=${response.header("Content-Length") ?: "none"} contentRange=${response.header("Content-Range") ?: "none"} authRetry=false")
+      return response
+    }
+    Log.d(TAG, "response method=${request.method} url=${request.url} code=401 authRetry=true")
     response.close()
-    return rangeHttpClient.newCall(
-      request.newBuilder().header("Authorization", fallbackAuthorization).build(),
-    ).execute()
+    val retryRequest = request.newBuilder().header("Authorization", fallbackAuthorization).build()
+    return rangeHttpClient.newCall(retryRequest).execute().also { retryResponse ->
+      Log.d(TAG, "response method=${retryRequest.method} url=${retryRequest.url} code=${retryResponse.code} contentLength=${retryResponse.header("Content-Length") ?: "none"} contentRange=${retryResponse.header("Content-Range") ?: "none"} authRetry=true")
+    }
   }
 
   /**
@@ -244,6 +256,7 @@ class WebDavClient(
       try {
         if (sardine == null) return@withContext Result.failure(IOException("Not connected"))
         val filePath = NetworkPath.from(path)
+        Log.d(TAG, "size path=${filePath.value} url=${buildUrl(filePath.value)}")
         // Prefer the authenticated DAV metadata response for TorBox and other hybrid servers.
         // Their HEAD/range endpoint can return 404 for a valid file after switching folders, while
         // PROPFIND still returns the file content length. Keep the HTTP probe as a fallback for
@@ -320,7 +333,9 @@ class WebDavClient(
         if (!connection.isAnonymous) {
           requestBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
         }
-        val response = executeWithAuthentication(requestBuilder.build())
+        val request = requestBuilder.build()
+        Log.d(TAG, "stream path=${NetworkPath.from(path).value} offset=$offset url=${request.url} range=none")
+        val response = executeWithAuthentication(request)
         if (!response.isSuccessful) {
           response.close()
           throw IOException("WebDAV request failed with HTTP ${response.code}")
@@ -432,7 +447,9 @@ class WebDavClient(
       requestBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
     }
 
-    val response = executeWithAuthentication(requestBuilder.build())
+    val request = requestBuilder.build()
+    Log.d(TAG, "stream path=${path.value} offset=$offset url=${request.url} range=${request.header("Range") ?: "none"}")
+    val response = executeWithAuthentication(request)
     val rangeMatch = contentRangePattern.matchEntire(response.header("Content-Range").orEmpty())
     val returnedStart = rangeMatch?.groupValues?.get(1)?.toLongOrNull()
     val returnedEnd = rangeMatch?.groupValues?.get(2)?.toLongOrNull()

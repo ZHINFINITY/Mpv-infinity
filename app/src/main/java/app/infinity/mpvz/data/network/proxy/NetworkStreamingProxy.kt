@@ -148,6 +148,10 @@ class NetworkStreamingProxy private constructor() :
       )
 
     streamsByToken[token] = streamInfo
+    Log.d(
+      TAG,
+      "register streamId=$streamId token=$token connectionId=$connectionId path=${path.value} fileSize=$fileSize mime=${streamInfo.primaryMimeType}",
+    )
     tokenByRegistration.put(streamId, token)?.let { previousToken ->
       streamsByToken.remove(previousToken)?.let(::closeAsync)
     }
@@ -168,6 +172,11 @@ class NetworkStreamingProxy private constructor() :
     val route = parseRoute(session.uri) ?: return notFound(headOnly)
     val streamInfo = streamsByToken[route.token] ?: return notFound(headOnly)
     val requestedPath = route.path ?: streamInfo.primaryPath
+    val rangeHeader = session.headers["range"]
+    Log.d(
+      TAG,
+      "request method=${session.method} token=${route.token} connectionId=${streamInfo.connectionId} path=${requestedPath.value} range=${rangeHeader ?: "none"}",
+    )
 
     if (session.method != Method.GET && session.method != Method.HEAD) {
       return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, MIME_PLAINTEXT, "Method not allowed")
@@ -175,7 +184,6 @@ class NetworkStreamingProxy private constructor() :
     }
 
     return try {
-      val rangeHeader = session.headers["range"]
       val response =
         if (rangeHeader == null) {
           handleFullRequest(headOnly, streamInfo, requestedPath)
@@ -273,10 +281,19 @@ class NetworkStreamingProxy private constructor() :
   ): Long {
     streamInfo.knownSizes[path]?.let { return it }
 
-    val discovered =
+    Log.d(
+      TAG,
+      "size request connectionId=${streamInfo.connectionId} path=${path.value} cached=${streamInfo.knownSizes.containsKey(path)}",
+    )
+    val discoveredResult =
       awaitProxyIo {
         withConnectedClient(streamInfo) { client -> client.getFileSize(path.value) }
-      }.getOrNull() ?: -1L
+      }
+    val discovered = discoveredResult.getOrNull() ?: -1L
+    Log.d(
+      TAG,
+      "size result connectionId=${streamInfo.connectionId} path=${path.value} size=$discovered error=${discoveredResult.exceptionOrNull()?.message ?: "none"}",
+    )
 
     if (discovered >= 0L) {
       streamInfo.knownSizes.putIfAbsent(path, discovered)
@@ -288,10 +305,21 @@ class NetworkStreamingProxy private constructor() :
     streamInfo: StreamInfo,
     path: NetworkPath,
     offset: Long,
-  ): InputStream? =
-    awaitProxyIo {
-      withConnectedClient(streamInfo) { client -> client.getFileStream(path.value, offset) }
-    }.getOrNull()
+  ): InputStream? {
+    Log.d(
+      TAG,
+      "stream request connectionId=${streamInfo.connectionId} path=${path.value} offset=$offset",
+    )
+    val result =
+      awaitProxyIo {
+        withConnectedClient(streamInfo) { client -> client.getFileStream(path.value, offset) }
+      }
+    Log.d(
+      TAG,
+      "stream result connectionId=${streamInfo.connectionId} path=${path.value} offset=$offset success=${result.isSuccess} error=${result.exceptionOrNull()?.message ?: "none"}",
+    )
+    return result.getOrNull()
+  }
 
   /**
    * NanoHTTPD's serve API is synchronous, but upstream clients are suspend-based. Do not use
