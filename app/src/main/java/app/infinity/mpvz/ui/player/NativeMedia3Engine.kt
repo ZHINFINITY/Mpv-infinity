@@ -135,24 +135,36 @@ class NativeMedia3Engine(context: Context) {
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
   private var pendingSeekPositionMs: Long? = null
+  private var pendingSeekDisplayPositionMs: Long? = null
   private var fastStartNeedsSeekableSource = false
   private val seekRunnable = Runnable {
     val positionMs = pendingSeekPositionMs ?: return@Runnable
     pendingSeekPositionMs = null
     val targetMs = positionMs.coerceAtLeast(0L)
-    // Keep the already-prepared fast-start source and decoder alive. Replacing the source on the
-    // first seek forces a full re-prepare on large UHD/HDR files and causes repeated buffering.
-    player.seekTo(targetMs)
-    publishPlaybackSnapshot()
+    pendingSeekDisplayPositionMs = targetMs
+    if (fastStartNeedsSeekableSource && player.currentMediaItem != null) {
+      val mediaItem = player.currentMediaItem ?: return@Runnable
+      val wasPlaying = player.isPlaying || player.playWhenReady
+      fastStartNeedsSeekableSource = false
+      Log.d(logTag, "switching to indexed Media3 source for first seek targetMs=$targetMs")
+      // The fast-start extractor intentionally skips cue indexing. Switch only once, on the first
+      // seek, so startup stays fast while later seeks remain on the already-indexed source.
+      _snapshot.value = _snapshot.value.copy(positionMs = targetMs, isBuffering = true)
+      player.setMediaSource(seekableMediaSourceFactory.createMediaSource(mediaItem), targetMs)
+      player.prepare()
+      player.playWhenReady = wasPlaying
+    } else {
+      player.seekTo(targetMs)
+      publishPlaybackSnapshot()
+    }
   }
   private val timelineRunnable = object : Runnable {
     override fun run() {
       if (player.currentMediaItem == null) return
       publishPlaybackSnapshot()
-      // Keep the decoder/surface callbacks responsive during 4K Dolby Vision startup. Controls
-      // do not need a 10 Hz full Compose snapshot; direct seek/volume commands remain immediate.
-      // Keep UHD controls responsive without recomposing on every decoder callback.
-      loopHandler.postDelayed(this, 100L)
+      // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
+      // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
+      loopHandler.postDelayed(this, 250L)
     }
   }
   private val loopRunnable = object : Runnable {
@@ -189,8 +201,10 @@ class NativeMedia3Engine(context: Context) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "first frame rendered uri=$uri prepareElapsedMs=$elapsed")
       _hasRenderedFirstFrame.value = true
+      attachedView?.post { configureSubtitleView() }
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
+      if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
       Log.d(logTag, "playback state=$playbackState uri=${player.currentMediaItem?.localConfiguration?.uri}")
     }
     override fun onPlayerError(error: PlaybackException) {
@@ -249,6 +263,7 @@ class NativeMedia3Engine(context: Context) {
     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
     view.player = player
     configureSubtitleView()
+    view.post { if (attachedView === view) configureSubtitleView() }
     startTimelineUpdates()
   }
 
@@ -337,9 +352,7 @@ class NativeMedia3Engine(context: Context) {
     }
     subtitleStyle = CaptionStyleCompat(
       textColor,
-      // MPV's background preference is not a cue rectangle. Keeping it transparent prevents
-      // the black artifact behind text and signs reported on Native playback.
-      android.graphics.Color.TRANSPARENT,
+      backgroundColor,
       android.graphics.Color.TRANSPARENT,
       CaptionStyleCompat.EDGE_TYPE_OUTLINE,
       borderColor,
@@ -352,7 +365,8 @@ class NativeMedia3Engine(context: Context) {
   private fun configureSubtitleView() {
     val view = attachedView ?: return
     view.subtitleView?.apply {
-      setApplyEmbeddedStyles(true)
+      // Player subtitle preferences must win over embedded ASS/Matroska style metadata.
+      setApplyEmbeddedStyles(false)
       setApplyEmbeddedFontSizes(false)
       setStyle(subtitleStyle)
       setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
@@ -432,7 +446,7 @@ class NativeMedia3Engine(context: Context) {
   fun seekTo(positionMs: Long) {
     pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 50L)
+    loopHandler.postDelayed(seekRunnable, 120L)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
@@ -442,7 +456,7 @@ class NativeMedia3Engine(context: Context) {
     val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 50L)
+    loopHandler.postDelayed(seekRunnable, 120L)
     // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
     publishPlaybackSnapshot()
     startTimelineUpdates()
@@ -523,6 +537,7 @@ class NativeMedia3Engine(context: Context) {
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
     pendingSeekPositionMs = null
+    pendingSeekDisplayPositionMs = null
     player.stop()
     player.clearMediaItems()
     _hasRenderedFirstFrame.value = false
@@ -576,7 +591,7 @@ class NativeMedia3Engine(context: Context) {
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
-      positionMs = player.currentPosition.coerceAtLeast(0L),
+      positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
       videoWidth = video?.width ?: 0,
       videoHeight = video?.height ?: 0,
@@ -601,7 +616,7 @@ class NativeMedia3Engine(context: Context) {
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
-      positionMs = player.currentPosition.coerceAtLeast(0L),
+      positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
       speed = player.playbackParameters.speed,
     )
