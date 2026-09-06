@@ -272,10 +272,12 @@ class CastPlaybackController(
   private fun loadCurrentMedia(session: CastSession) {
     val snapshot = currentMedia()
     if (snapshot == null) {
-      if (mediaReadinessRetries < 4) {
+      if (mediaReadinessRetries < MAX_MEDIA_READINESS_RETRIES) {
         mediaReadinessRetries++
         scope.launch {
-          delay(350)
+          // Native Media3 may publish its current MediaItem only after the extractor has opened
+          // the source. Do not abort a valid Cast session during that preparation window.
+          delay(MEDIA_READINESS_RETRY_DELAY_MS)
           if (!released && castSession === session) loadCurrentMedia(session)
         }
       } else {
@@ -431,6 +433,8 @@ class CastPlaybackController(
 
   companion object {
     const val TAG = "CastPlaybackController"
+    private const val MEDIA_READINESS_RETRY_DELAY_MS = 750L
+    private const val MAX_MEDIA_READINESS_RETRIES = 12
 
     @Volatile
     var instance: CastPlaybackController? = null
