@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import java.io.File
 import androidx.media3.common.C
@@ -159,10 +160,14 @@ class NativeMedia3Engine(context: Context) {
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
   val currentPlayer: Player get() = player
   private var metadataChapters: List<NativeChapter> = emptyList()
+  private var preparationStartedAtMs: Long = 0L
+  private var preparationUri: Uri? = null
 
   private val listener = object : Player.Listener {
     override fun onRenderedFirstFrame() {
-      Log.d(logTag, "first frame rendered uri=${player.currentMediaItem?.localConfiguration?.uri}")
+      val uri = player.currentMediaItem?.localConfiguration?.uri
+      val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
+      Log.d(logTag, "first frame rendered uri=$uri prepareElapsedMs=$elapsed")
       _hasRenderedFirstFrame.value = true
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -170,6 +175,22 @@ class NativeMedia3Engine(context: Context) {
     }
     override fun onPlayerError(error: PlaybackException) {
       Log.e(logTag, "player error uri=${player.currentMediaItem?.localConfiguration?.uri}", error)
+    }
+
+    override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+      val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
+      Log.d(logTag, "timeline changed reason=$reason windowCount=${timeline.windowCount} prepareElapsedMs=$elapsed uri=$preparationUri")
+    }
+
+    override fun onTracksChanged(tracks: Tracks) {
+      val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
+      val types = tracks.groups.joinToString(",") { it.type.toString() }
+      Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types prepareElapsedMs=$elapsed uri=$preparationUri")
+    }
+
+    override fun onIsLoadingChanged(isLoading: Boolean) {
+      val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
+      Log.d(logTag, "loading=$isLoading prepareElapsedMs=$elapsed uri=$preparationUri")
     }
 
     override fun onMetadata(metadata: Metadata) {
@@ -358,11 +379,15 @@ class NativeMedia3Engine(context: Context) {
         }
         .build()
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
+    preparationStartedAtMs = SystemClock.elapsedRealtime()
+    preparationUri = mediaItem.localConfiguration?.uri
+    Log.d(logTag, "prepare begin uri=$preparationUri")
     player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
     // without ever starting the local data pipeline on Xiaomi devices.
     player.prepare()
+    Log.d(logTag, "prepare returned elapsedMs=${SystemClock.elapsedRealtime() - preparationStartedAtMs} uri=$preparationUri")
     player.playWhenReady = autoplay
     publishSnapshot()
     startTimelineUpdates()
