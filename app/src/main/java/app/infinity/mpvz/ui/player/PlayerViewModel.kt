@@ -301,7 +301,6 @@ class PlayerViewModel : ViewModel(),
   private var lastEmbeddedCue = ""
   private var nativeSubtitleHiddenForTranslation = false
   private var nativeSubtitleVisibilityListener: ((Boolean) -> Unit)? = null
-  private var nativeSubtitleVisibilityListener: ((Boolean) -> Unit)? = null
 
   private val _isGeneratingSubtitles = MutableStateFlow(false)
   val isGeneratingSubtitles: StateFlow<Boolean> = _isGeneratingSubtitles.asStateFlow()
