@@ -48,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,15 +79,7 @@ fun CastRemoteControllerScreen(
     modifier =
       modifier
         .fillMaxSize()
-        .background(
-          Brush.verticalGradient(
-            colors =
-              listOf(
-                Color.Black.copy(alpha = 0.85f),
-                Color.Black.copy(alpha = 0.95f),
-              ),
-          ),
-        ),
+        .background(Color.Black),
   ) {
     Column(
       modifier =
@@ -294,10 +285,11 @@ private fun CastOptionsRow(
   Row(
     modifier =
       Modifier
+        .fillMaxWidth()
         .clip(RoundedCornerShape(50))
         .background(Color.White.copy(alpha = 0.1f))
-        .padding(vertical = 4.dp, horizontal = 8.dp),
-    horizontalArrangement = Arrangement.spacedBy(4.dp),
+        .padding(vertical = 6.dp, horizontal = 12.dp),
+    horizontalArrangement = Arrangement.SpaceEvenly,
     verticalAlignment = Alignment.CenterVertically,
   ) {
     CastOptionButton(icon = Icons.RoundedFilled.Speed, label = "Speed", onClick = onShowSpeed)
@@ -311,7 +303,7 @@ private fun CastOptionButton(
   label: String,
   onClick: () -> Unit,
 ) {
-  IconButton(onClick = onClick) {
+  IconButton(onClick = onClick, modifier = Modifier.width(92.dp).height(58.dp)) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
       Icon(
         imageVector = icon,
