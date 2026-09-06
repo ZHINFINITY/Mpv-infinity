@@ -974,9 +974,7 @@ class PlayerActivity :
       if (hidden) {
         nativeEngine.disableSubtitles()
       } else {
-        nativeEngine.snapshot.value.subtitleTracks.firstOrNull { it.selected }?.let { track ->
-          nativeEngine.selectTrack(track)
-        }
+        nativeEngine.restoreSubtitles()
       }
     }
     viewModel.setNativeAudioToggleListener { id ->
@@ -1005,7 +1003,12 @@ class PlayerActivity :
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         nativeEngine.subtitleCueText.collect { cue ->
-          if (isNativeEngineActive()) viewModel.translateEmbeddedSubtitleCue(cue, native = true)
+          // Disabling the original Native subtitle track emits an empty onCues callback. Do not
+          // treat that callback as a translation cancellation: the in-flight Google request must
+          // be allowed to finish and populate the translated overlay.
+          if (isNativeEngineActive() && cue.isNotBlank()) {
+            viewModel.translateEmbeddedSubtitleCue(cue, native = true)
+          }
         }
       }
     }

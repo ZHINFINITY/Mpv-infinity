@@ -2821,10 +2821,6 @@ class PlayerViewModel : ViewModel(),
       return
     }
     if (cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
-    if (native && !nativeSubtitleHiddenForTranslation) {
-      nativeSubtitleVisibilityListener?.invoke(true)
-      nativeSubtitleHiddenForTranslation = true
-    }
     val target =
       (aiPreferences.embeddedSubtitleTargetLanguage.get().trim().takeIf { it.isNotBlank() }
         ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
@@ -2851,6 +2847,10 @@ class PlayerViewModel : ViewModel(),
           if (requestId == embeddedTranslationRequestId && cue == lastEmbeddedCue) {
             val cleanedTranslation = translated.trim().takeIf { it.isNotBlank() }
             if (cleanedTranslation != null && !translationMatchesOriginal(cue, cleanedTranslation, target)) {
+              if (native && !nativeSubtitleHiddenForTranslation) {
+                nativeSubtitleVisibilityListener?.invoke(true)
+                nativeSubtitleHiddenForTranslation = true
+              }
               if (!native && !nativeSubtitleHiddenForTranslation) {
                 PlaybackSession.setPropertyBoolean("sub-visibility", false)
                 nativeSubtitleHiddenForTranslation = true
@@ -2874,7 +2874,14 @@ class PlayerViewModel : ViewModel(),
         }
       }.onFailure {
         if (requestId == embeddedTranslationRequestId) {
-          withContext(Dispatchers.Main.immediate) { _translationStatus.value = "" }
+          withContext(Dispatchers.Main.immediate) {
+            if (native && nativeSubtitleHiddenForTranslation) {
+              nativeSubtitleVisibilityListener?.invoke(false)
+              nativeSubtitleHiddenForTranslation = false
+            }
+            _embeddedTranslatedSubtitle.value = null
+            _translationStatus.value = ""
+          }
         }
       }
     }
