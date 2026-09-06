@@ -7052,7 +7052,6 @@ class PlayerActivity :
       nativeEngine.setPlaying(false)
       activeEngineMode = PlaybackEngineMode.MPV
       viewModel.setNativeEngineActive(false)
-      decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
       nativeEngine.stop()
       binding.media3Player.alpha = 0f
       binding.player.visibility = View.VISIBLE
