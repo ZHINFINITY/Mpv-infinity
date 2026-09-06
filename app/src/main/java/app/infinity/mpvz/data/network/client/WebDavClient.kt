@@ -55,6 +55,28 @@ class WebDavClient(
   private var sardine: Sardine? = null
 
   /**
+   * TorBox supports either account-email/account-password or torbox/API-key authentication.
+   * Keep the configured credentials as the primary choice, but retry a 401 with the documented
+   * API-key form when the saved username is an email and the saved password is an API key.
+   */
+  private fun torboxFallbackAuthorization(): String? {
+    if (connection.isAnonymous || connection.password.isBlank()) return null
+    if (!connection.host.equals("webdav.torbox.app", ignoreCase = true)) return null
+    if (connection.username.equals("torbox", ignoreCase = true)) return null
+    return Credentials.basic("torbox", connection.password)
+  }
+
+  private fun executeWithAuthentication(request: Request): Response {
+    val response = rangeHttpClient.newCall(request).execute()
+    val fallbackAuthorization = torboxFallbackAuthorization()
+    if (response.code != 401 || fallbackAuthorization == null) return response
+    response.close()
+    return rangeHttpClient.newCall(
+      request.newBuilder().header("Authorization", fallbackAuthorization).build(),
+    ).execute()
+  }
+
+  /**
    * Builds WebDAV request URLs from decoded path segments. HttpUrl owns the wire encoding so
    * reserved filename characters such as '[', ']', '%', '#', '?' and spaces are encoded exactly
    * once and are never reparsed through java.net.URI.
@@ -142,30 +164,48 @@ class WebDavClient(
 
   override suspend fun connect(): Result<Unit> =
     withContext(Dispatchers.IO) {
-      try {
-        val candidate = OkHttpSardine()
-        if (!connection.isAnonymous) {
-          candidate.setCredentials(connection.username, connection.password)
-        }
+      var lastError: Exception? = null
+      val credentialAttempts =
+        buildList {
+          if (connection.isAnonymous) {
+            add(null)
+          } else {
+            add(connection.username to connection.password)
+            if (connection.host.equals("webdav.torbox.app", ignoreCase = true) &&
+              !connection.username.equals("torbox", ignoreCase = true) &&
+              connection.password.isNotBlank()
+            ) {
+              add("torbox" to connection.password)
+            }
+          }
+        }.distinct()
 
-        // Reachability/credential probe only. Reverse proxies commonly reject or empty out a
-        // depth-0 PROPFIND at the share root while every file below it stays fully streamable,
-        // so only credential rejections are conclusive failures here.
+      for (credentials in credentialAttempts) {
         try {
-          candidate.list(buildUrl("", trailingSlash = true), 0)
-        } catch (probeError: SardineException) {
-          if (probeError.statusCode == 401 || probeError.statusCode == 403) throw probeError
-        }
+          val candidate = OkHttpSardine()
+          credentials?.let { (username, password) -> candidate.setCredentials(username, password) }
 
-        sardine = candidate
-        Result.success(Unit)
-      } catch (cancellation: CancellationException) {
-        sardine = null
-        throw cancellation
-      } catch (error: Exception) {
-        sardine = null
-        Result.failure(error)
+          // Reachability/credential probe only. Reverse proxies commonly reject or empty out a
+          // depth-0 PROPFIND at the share root while every file below it stays fully streamable,
+          // so only credential rejections are conclusive failures here.
+          try {
+            candidate.list(buildUrl("", trailingSlash = true), 0)
+          } catch (probeError: SardineException) {
+            if (probeError.statusCode == 401 || probeError.statusCode == 403) throw probeError
+          }
+
+          sardine = candidate
+          return@withContext Result.success(Unit)
+        } catch (cancellation: CancellationException) {
+          sardine = null
+          throw cancellation
+        } catch (error: Exception) {
+          lastError = error
+        }
       }
+
+      sardine = null
+      Result.failure(lastError ?: IOException("Unable to connect to WebDAV"))
     }
 
   override suspend fun disconnect() {
@@ -233,7 +273,7 @@ class WebDavClient(
     if (!connection.isAnonymous) {
       headBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
     }
-    rangeHttpClient.newCall(headBuilder.build()).execute().use { response ->
+    executeWithAuthentication(headBuilder.build()).use { response ->
       if (response.isSuccessful) {
         response.header("Content-Length")?.toLongOrNull()?.takeIf { it >= 0L }?.let { return it }
       }
@@ -250,7 +290,7 @@ class WebDavClient(
     if (!connection.isAnonymous) {
       rangeBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
     }
-    rangeHttpClient.newCall(rangeBuilder.build()).execute().use { response ->
+    executeWithAuthentication(rangeBuilder.build()).use { response ->
       val match = contentRangePattern.matchEntire(response.header("Content-Range").orEmpty())
       return match?.groupValues?.get(3)?.takeUnless { it == "*" }?.toLongOrNull()
     }
@@ -278,7 +318,7 @@ class WebDavClient(
         if (!connection.isAnonymous) {
           requestBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
         }
-        val response = rangeHttpClient.newCall(requestBuilder.build()).execute()
+        val response = executeWithAuthentication(requestBuilder.build())
         if (!response.isSuccessful) {
           response.close()
           throw IOException("WebDAV request failed with HTTP ${response.code}")
@@ -387,7 +427,7 @@ class WebDavClient(
       requestBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
     }
 
-    val response = rangeHttpClient.newCall(requestBuilder.build()).execute()
+    val response = executeWithAuthentication(requestBuilder.build())
     val rangeMatch = contentRangePattern.matchEntire(response.header("Content-Range").orEmpty())
     val returnedStart = rangeMatch?.groupValues?.get(1)?.toLongOrNull()
     val returnedEnd = rangeMatch?.groupValues?.get(2)?.toLongOrNull()
