@@ -772,14 +772,12 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         decoderPreferences.playbackEngine.changes().collect { engine ->
           val currentQueueItem = PlaybackSession.queue.value.currentItem
-          val torrentBacked =
-            activeTorrentSourceUri != null ||
-              currentQueueItem?.requiresTorrentResolution() == true ||
-              currentQueueItem?.originalUri?.let { isTorrentSource(it, intent.type) } == true
           val effectiveEngine =
             when (engine) {
               PlaybackEngineMode.AUTO ->
-                if (currentQueueItem?.isHdrOrDolbyVision() == true && !torrentBacked) {
+                if (currentQueueItem?.isHdrOrDolbyVision() == true &&
+                  currentQueueItem.requiresTorrentResolution().not()
+                ) {
                   PlaybackEngineMode.NATIVE
                 } else {
                   PlaybackEngineMode.MPV
@@ -5761,6 +5759,9 @@ class PlayerActivity :
     playWhenFileLoaded = true
     val sourceIntent = Intent(intent)
     val requestedFileName = fileName
+    val isWebDavPlayback =
+      sourceIntent.getStringExtra("network_file_path")?.isNotBlank() == true &&
+        sourceIntent.getLongExtra("network_connection_id", -1L) != -1L
     val requestedMediaIdentifier = mediaIdentifier
     val requestedLegacyMediaIdentifier = legacyMediaIdentifier
     val requestedPlaylistIndex = playlistIndex
@@ -5792,6 +5793,16 @@ class PlayerActivity :
     mediaLoadJob =
       lifecycleScope.launch(mediaLoadDispatcher) {
         try {
+          // A closed WebDAV item can leave the process-wide PlaybackSession holding the previous
+          // proxy registration while the singleTask activity receives the next intent. Stop and
+          // await that session before resolving the replacement item so both MPV and Media3 get a
+          // fresh proxy registration and upstream client.
+          if (isWebDavPlayback && !preserveTorrentSession) {
+            PlaybackSession.stop(clearQueue = false)
+            if (!PlaybackSession.awaitStopCompletion()) {
+              throw IllegalStateException("Timed out stopping previous WebDAV playback")
+            }
+          }
           // A renderer handoff may carry only the proxy's localhost URL. Never tear down the
           // torrent from that load based on URI classification; the explicit handoff flag means
           // the proxy is still owned by the current playback session.
