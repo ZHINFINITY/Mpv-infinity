@@ -34,6 +34,7 @@ class WebDavClient(
 ) : NetworkClient {
   companion object {
     private const val SKIP_BUFFER_BYTES = 64 * 1024
+    private const val RANGE_CHUNK_BYTES = 8L * 1024 * 1024
     private val rangeHttpClient by lazy {
       SharedHttpClient.derive {
         // A call timeout covers the entire response body and would terminate healthy long streams.
@@ -420,7 +421,10 @@ class WebDavClient(
         .Builder()
         .url(buildUrl(path.value))
         .get()
-        .header("Range", "bytes=$offset-")
+        .header(
+          "Range",
+          "bytes=$offset-${offset + RANGE_CHUNK_BYTES - 1L}",
+        )
         .header("Accept-Encoding", "identity")
 
     if (!connection.isAnonymous) {
