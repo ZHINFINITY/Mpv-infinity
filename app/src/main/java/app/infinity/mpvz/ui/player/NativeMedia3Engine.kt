@@ -74,15 +74,12 @@ class NativeMedia3Engine(context: Context) {
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
   private val extractorsFactory = ExtractorsFactory {
     // PGS subtitle payloads are not decoded by this Media3 configuration. Emit them as raw
-    // samples, and do not seek to a distant MKV Cues element during startup. The previous
-    // cue-only experiment failed because it left subtitle transcoding enabled, causing the
-    // application/pgs legacy-decoder exception. Keeping both flags avoids that failure while
-    // allowing the first cluster to reach the video decoder immediately.
+    // samples. Keep normal cue indexing enabled because the cue-disabled fast-start mode makes
+    // large MKV files effectively unseekable for the seek bar and gesture seeks.
     arrayOf(
       MatroskaExtractor(
         SubtitleParser.Factory.UNSUPPORTED,
-        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA or
-          MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES,
+        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
       ),
     )
   }
