@@ -2781,13 +2781,13 @@ class PlayerViewModel : ViewModel(),
 
   private var translationJob: Job? = null
 
-  fun clearEmbeddedSubtitleTranslationCue() {
+  fun clearEmbeddedSubtitleTranslationCue(native: Boolean = false) {
     embeddedTranslationRequestId += 1L
     embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
-    if (aiPreferences.subtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
+    if (!native && aiPreferences.subtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", false)
       nativeSubtitleHiddenForTranslation = true
     }
@@ -2806,10 +2806,10 @@ class PlayerViewModel : ViewModel(),
     }
   }
 
-  fun translateEmbeddedSubtitleCue(rawCue: String) {
+  fun translateEmbeddedSubtitleCue(rawCue: String, native: Boolean = false) {
     val cue = rawCue.trim()
     if (cue.isBlank()) {
-      if (aiPreferences.subtitleTranslationEnabled.get()) clearEmbeddedSubtitleTranslationCue()
+      if (aiPreferences.subtitleTranslationEnabled.get()) clearEmbeddedSubtitleTranslationCue(native)
       else resetEmbeddedSubtitleTranslation()
       return
     }
@@ -2840,7 +2840,7 @@ class PlayerViewModel : ViewModel(),
           if (requestId == embeddedTranslationRequestId && cue == lastEmbeddedCue) {
             val cleanedTranslation = translated.trim().takeIf { it.isNotBlank() }
             if (cleanedTranslation != null && !translationMatchesOriginal(cue, cleanedTranslation, target)) {
-              if (!nativeSubtitleHiddenForTranslation) {
+              if (!native && !nativeSubtitleHiddenForTranslation) {
                 PlaybackSession.setPropertyBoolean("sub-visibility", false)
                 nativeSubtitleHiddenForTranslation = true
               }
@@ -2849,7 +2849,7 @@ class PlayerViewModel : ViewModel(),
               // Keep the native subtitle visible when it is already in the requested language.
               // This preserves the original font, outline, position, and line layout exactly.
               _embeddedTranslatedSubtitle.value = null
-              if (nativeSubtitleHiddenForTranslation) {
+              if (!native && nativeSubtitleHiddenForTranslation) {
                 PlaybackSession.setPropertyBoolean("sub-visibility", true)
                 nativeSubtitleHiddenForTranslation = false
               }

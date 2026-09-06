@@ -8,6 +8,7 @@ import android.os.SystemClock
 import android.util.Log
 import java.io.File
 import androidx.media3.common.C
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
@@ -195,6 +196,8 @@ class NativeMedia3Engine(context: Context) {
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
   private val _hasRenderedFirstFrame = MutableStateFlow(false)
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
+  private val _subtitleCueText = MutableStateFlow("")
+  val subtitleCueText: StateFlow<String> = _subtitleCueText.asStateFlow()
   val currentPlayer: Player get() = activePlayer
   private var metadataChapters: List<NativeChapter> = emptyList()
   private var preparationStartedAtMs: Long = 0L
@@ -214,6 +217,12 @@ class NativeMedia3Engine(context: Context) {
     }
     override fun onPlayerError(error: PlaybackException) {
       Log.e(logTag, "player error uri=${activePlayer.currentMediaItem?.localConfiguration?.uri}", error)
+    }
+
+    override fun onCues(cueGroup: CueGroup) {
+      _subtitleCueText.value = cueGroup.cues
+        .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotBlank) }
+        .joinToString("\n")
     }
 
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -556,6 +565,7 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = null
     activePlayer.stop()
     activePlayer.clearMediaItems()
+    _subtitleCueText.value = ""
     _hasRenderedFirstFrame.value = false
     publishSnapshot()
   }
