@@ -287,7 +287,7 @@ fun PlayerControls(
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsState()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
   val activity = LocalActivity.current as? PlayerActivity
-  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsStateWithLifecycle()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
   val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
