@@ -223,35 +223,32 @@ class UpdateManager(
   ): Flow<Float> =
     flow {
       val request = Request.Builder().url(url).build()
-      val response = client.newCall(request).execute()
-      if (!response.isSuccessful) throw IOException("Unexpected code $response")
+      client.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw IOException("Unexpected code $response")
 
-      val body = response.body
-      val contentLength = body.contentLength()
-      val inputStream = body.byteStream()
-      val outputStream = FileOutputStream(destination)
+        response.body.use { body ->
+          val contentLength = body.contentLength()
+          val inputStream = body.byteStream()
+          FileOutputStream(destination).use { outputStream ->
+            val buffer = ByteArray(8 * 1024)
+            var bytesRead: Int
+            var totalBytesRead: Long = 0
 
-      try {
-        val buffer = ByteArray(8 * 1024)
-        var bytesRead: Int
-        var totalBytesRead: Long = 0
-
-        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-          outputStream.write(buffer, 0, bytesRead)
-          totalBytesRead += bytesRead
-          val progress =
-            if (contentLength > 0) {
-              (totalBytesRead.toFloat() / contentLength.toFloat()) * 100
-            } else {
-              -1f
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+              outputStream.write(buffer, 0, bytesRead)
+              totalBytesRead += bytesRead
+              val progress =
+                if (contentLength > 0) {
+                  (totalBytesRead.toFloat() / contentLength.toFloat()) * 100
+                } else {
+                  -1f
+                }
+              emit(progress)
             }
-          emit(progress)
+            outputStream.flush()
+            emit(100f)
+          }
         }
-        outputStream.flush()
-        emit(100f)
-      } finally {
-        inputStream.close()
-        outputStream.close()
       }
     }.flowOn(Dispatchers.IO)
 
