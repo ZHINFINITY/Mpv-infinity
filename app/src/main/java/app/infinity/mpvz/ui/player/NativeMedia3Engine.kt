@@ -132,7 +132,8 @@ class NativeMedia3Engine(context: Context) {
       publishPlaybackSnapshot()
       // Keep the decoder/surface callbacks responsive during 4K Dolby Vision startup. Controls
       // do not need a 10 Hz full Compose snapshot; direct seek/volume commands remain immediate.
-      loopHandler.postDelayed(this, 250L)
+      // Keep UHD controls responsive without recomposing on every decoder callback.
+      loopHandler.postDelayed(this, 100L)
     }
   }
   private val loopRunnable = object : Runnable {
@@ -411,7 +412,7 @@ class NativeMedia3Engine(context: Context) {
   fun seekTo(positionMs: Long) {
     pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 60L)
+    loopHandler.postDelayed(seekRunnable, 20L)
     publishSnapshot()
     startTimelineUpdates()
   }
@@ -420,7 +421,7 @@ class NativeMedia3Engine(context: Context) {
     val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 60L)
+    loopHandler.postDelayed(seekRunnable, 20L)
     publishSnapshot()
     startTimelineUpdates()
   }
