@@ -46,6 +46,8 @@ data class CastMediaSnapshot(
   val isPlaying: Boolean,
   val subtitleTracks: List<CastSubtitleTrack> = emptyList(),
   val activeSubtitleTrackId: Long? = null,
+  val audioTracks: List<CastAudioTrack> = emptyList(),
+  val activeAudioTrackId: Long? = null,
 )
 
 class CastPlaybackController(
@@ -258,8 +260,15 @@ class CastPlaybackController(
   }
 
   fun setSubtitleTrack(trackId: Long?) {
-    remoteMediaClient?.setActiveMediaTracks(trackId?.let(::longArrayOf) ?: longArrayOf())
+    val audioId = _castState.value.activeAudioTrackId
+    remoteMediaClient?.setActiveMediaTracks(listOfNotNull(trackId, audioId).toLongArray())
     _castState.update { it.copy(activeSubtitleTrackId = trackId) }
+  }
+
+  fun setAudioTrack(trackId: Long?) {
+    val subtitleId = _castState.value.activeSubtitleTrackId
+    remoteMediaClient?.setActiveMediaTracks(listOfNotNull(subtitleId, trackId).toLongArray())
+    _castState.update { it.copy(activeAudioTrackId = trackId) }
   }
 
   fun disconnect() {
@@ -325,6 +334,11 @@ class CastPlaybackController(
             .setName(track.name)
             .apply { track.language?.let(::setLanguage) }
             .build()
+        } + snapshot.audioTracks.map { track ->
+          MediaTrack.Builder(track.id, MediaTrack.TYPE_AUDIO)
+            .setName(track.name)
+            .apply { track.language?.let(::setLanguage) }
+            .build()
         })
         .setStreamDuration(snapshot.durationMs.coerceAtLeast(0L))
         .build()
@@ -334,7 +348,9 @@ class CastPlaybackController(
         .setMediaInfo(mediaInfo)
         .setAutoplay(snapshot.isPlaying)
         .setCurrentTime(snapshot.positionMs.coerceAtLeast(0L))
-        .setActiveTrackIds(snapshot.activeSubtitleTrackId?.let(::longArrayOf))
+        .setActiveTrackIds(
+          listOfNotNull(snapshot.activeSubtitleTrackId, snapshot.activeAudioTrackId).toLongArray(),
+        )
         .build()
     val remote =
       session.remoteMediaClient ?: run {
@@ -358,6 +374,8 @@ class CastPlaybackController(
               currentPosition = snapshot.positionMs.coerceAtLeast(0L),
               subtitleTracks = snapshot.subtitleTracks,
               activeSubtitleTrackId = snapshot.activeSubtitleTrackId,
+              audioTracks = snapshot.audioTracks,
+              activeAudioTrackId = snapshot.activeAudioTrackId,
             )
           }
           pauseLocal()
