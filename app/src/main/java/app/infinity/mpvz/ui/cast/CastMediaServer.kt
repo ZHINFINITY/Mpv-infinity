@@ -21,6 +21,7 @@ import java.io.FileInputStream
 import java.io.InputStream
 import java.net.Inet4Address
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /** Serves one Android-local media item to the selected Cast receiver. */
 internal class CastMediaServer private constructor(
@@ -30,8 +31,13 @@ internal class CastMediaServer private constructor(
   private val contentLength: Long,
   private val token: String,
 ) : NanoHTTPD("0.0.0.0", 0) {
+  private val subtitleSources = ConcurrentHashMap<String, Uri>()
+
   override fun serve(session: IHTTPSession): Response {
     Log.i(TAG, "Cast HTTP request method=" + session.method + " uri=" + session.uri + " range=" + session.headers["range"] + " length=" + contentLength)
+    if (session.uri.startsWith("/$token/subs/")) {
+      return serveSubtitle(session, subtitleSources[session.uri.removePrefix("/$token/subs/")])
+    }
     if (session.uri != "/$token") return textResponse(Response.Status.NOT_FOUND, "Not found")
     if (session.method == Method.OPTIONS) {
       return newFixedLengthResponse(Response.Status.NO_CONTENT, mimeType, "").apply {
@@ -104,6 +110,25 @@ internal class CastMediaServer private constructor(
     val input = openAt(start) ?: return textResponse(Response.Status.NOT_FOUND, "Media unavailable")
     return newFixedLengthResponse(Response.Status.PARTIAL_CONTENT, mimeType, input, length)
       .withRangeHeaders(start, end, length)
+  }
+
+  private fun serveSubtitle(session: IHTTPSession, source: Uri?): Response {
+    if (source == null) return textResponse(Response.Status.NOT_FOUND, "Subtitle unavailable")
+    if (session.method != Method.GET && session.method != Method.HEAD) return textResponse(Response.Status.METHOD_NOT_ALLOWED, "Method not allowed")
+    return runCatching {
+      val input = if (source.scheme == "file") FileInputStream(source.path ?: error("missing path")) else appContext.contentResolver.openInputStream(source) ?: error("unreadable")
+      val text = input.bufferedReader(Charsets.UTF_8).use { it.readText() }
+      val vtt = if (source.path.orEmpty().substringAfterLast('.', "").lowercase() == "srt") srtToVtt(text) else text
+      if (session.method == Method.HEAD) newFixedLengthResponse(Response.Status.OK, "text/vtt", "")
+      else newFixedLengthResponse(Response.Status.OK, "text/vtt", vtt)
+    }.getOrElse { textResponse(Response.Status.NOT_FOUND, "Subtitle unavailable") }
+  }
+
+  private fun srtToVtt(srt: String): String = buildString {
+    append("WEBVTT\n\n")
+    srt.replace("\r\n", "\n").replace("\r", "\n").lines().forEach { line ->
+      append(line.replace(',', '.')).append('\n')
+    }
   }
 
   private fun openAt(offset: Long): InputStream? {
@@ -208,6 +233,15 @@ internal class CastMediaServer private constructor(
     @Synchronized
     fun exposeGenerated(context: Context, file: File, mimeType: String): String? =
       expose(context, Uri.fromFile(file), mimeType)
+
+    @Synchronized
+    fun exposeSubtitle(context: Context, source: Uri): String? {
+      val server = active ?: return null
+      val id = UUID.randomUUID().toString().replace("-", "") + ".vtt"
+      server.subtitleSources[id] = source
+      val host = findLanAddress(context) ?: return null
+      return "http://$host:${server.listeningPort}/${server.token}/subs/$id"
+    }
 
     @Synchronized
     fun stop() {

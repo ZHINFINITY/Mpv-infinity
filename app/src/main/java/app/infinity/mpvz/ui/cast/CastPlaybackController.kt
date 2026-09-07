@@ -274,6 +274,12 @@ class CastPlaybackController(
 
   fun setSubtitleTrack(trackId: Long?) {
     if (sendJellyfinTrackCommand("SetSubtitleStreamIndex", trackId)) return
+    val snapshot = currentMedia()
+    if (snapshot != null && jellyfinPayload(snapshot) == null && remoteMediaClient != null) {
+      remoteMediaClient?.setActiveMediaTracks(trackId?.let(::longArrayOf) ?: longArrayOf())
+      _castState.update { it.copy(activeSubtitleTrackId = trackId) }
+      return
+    }
     applyActiveTracks(trackId, _castState.value.activeAudioTrackId)
   }
 
@@ -394,6 +400,19 @@ class CastPlaybackController(
       put("audioStreamIndex", activeAudioIndex ?: JSONObject.NULL)
       put("subtitleStreamIndex", activeSubtitleIndex ?: JSONObject.NULL)
     }
+    val castSubtitleTracks = snapshot.subtitleTracks.mapNotNull { track ->
+      val subtitleUrl = track.contentUrl?.let { raw ->
+        val uri = Uri.parse(raw)
+        if (uri.scheme == "file" || uri.scheme == "content") CastMediaServer.exposeSubtitle(activity, uri) else raw
+      } ?: return@mapNotNull null
+      MediaTrack.Builder(track.id, MediaTrack.TYPE_TEXT)
+        .setSubtype(MediaTrack.SUBTYPE_SUBTITLES)
+        .setContentId(subtitleUrl)
+        .setContentType("text/vtt")
+        .setName(track.name)
+        .apply { track.language?.let(::setLanguage) }
+        .build()
+    }
     val mediaInfo =
       MediaInfo
         .Builder(contentUrl)
@@ -402,12 +421,7 @@ class CastPlaybackController(
         ).setContentType(contentType)
         .setMetadata(metadata)
         .setCustomData(customData)
-        .setMediaTracks(if (selectedSource == null) snapshot.subtitleTracks.map { track ->
-          MediaTrack.Builder(track.id, MediaTrack.TYPE_TEXT)
-            .setName(track.name)
-            .apply { track.language?.let(::setLanguage) }
-            .build()
-        } + snapshot.audioTracks.map { track ->
+        .setMediaTracks(if (selectedSource == null) castSubtitleTracks + snapshot.audioTracks.map { track ->
           MediaTrack.Builder(track.id, MediaTrack.TYPE_AUDIO)
             .setName(track.name)
             .apply { track.language?.let(::setLanguage) }

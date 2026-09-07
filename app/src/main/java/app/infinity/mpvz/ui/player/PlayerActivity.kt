@@ -1750,6 +1750,7 @@ class PlayerActivity :
             id = track.id.toLong(),
             name = track.title ?: track.lang ?: "Subtitle ${track.id}",
             language = track.lang,
+            contentUrl = track.externalFilename?.let { path -> Uri.fromFile(File(path)).toString() },
           )
         },
       activeSubtitleTrackId = viewModel.subtitleTracks.value

@@ -13,6 +13,7 @@ data class CastSubtitleTrack(
   val id: Long,
   val name: String,
   val language: String?,
+  val contentUrl: String? = null,
 )
 
 data class CastAudioTrack(
