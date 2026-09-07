@@ -254,42 +254,11 @@ class CastPlaybackController(
     _castState.update { it.copy(playbackSpeed = speed) }
   }
 
-  private fun applyActiveTracks(
-    subtitleId: Long?,
-    audioId: Long?,
-    attempt: Int = 0,
-  ) {
-    val remote = remoteMediaClient ?: return
-    val mediaStatus = remote.mediaStatus
-    Log.i(TAG, "Cast receiver status=" + mediaStatus)
-    if (mediaStatus?.mediaInfo == null) {
-      if (attempt < 8) {
-        scope.launch {
-          delay(250L)
-          applyActiveTracks(subtitleId, audioId, attempt + 1)
-        }
-      } else {
-        Log.w(TAG, "Cast media was not ready for track selection")
-      }
-      return
-    }
-    val requested = listOfNotNull(subtitleId, audioId).toLongArray()
-    Log.i(TAG, "Cast requested track IDs=" + requested.contentToString())
-    remote.setActiveMediaTracks(requested).setResultCallback { result ->
-      Log.i(TAG, "Cast track command result success=" + result.status.isSuccess + " code=" + result.status.statusCode + " message=" + result.status.statusMessage)
-      if (result.status.isSuccess) {
-        _castState.update {
-          it.copy(activeSubtitleTrackId = subtitleId, activeAudioTrackId = audioId)
-        }
-      } else if (attempt < 8) {
-        scope.launch {
-          delay(250L)
-          applyActiveTracks(subtitleId, audioId, attempt + 1)
-        }
-      } else {
-        Log.w(TAG, "Cast track selection failed: ")
-      }
-    }
+  private fun applyActiveTracks(subtitleId: Long?, audioId: Long?) {
+    val session = castSession ?: return
+    Log.i(TAG, "Cast reloading media with track IDs subtitle=" + subtitleId + " audio=" + audioId)
+    mediaReadinessRetries = 0
+    loadCurrentMedia(session, subtitleId, audioId)
   }
 
   fun setSubtitleTrack(trackId: Long?) {
@@ -315,7 +284,7 @@ class CastPlaybackController(
     activity.startActivity(Intent(activity, CastRemoteControllerActivity::class.java))
   }
 
-  private fun loadCurrentMedia(session: CastSession) {
+  private fun loadCurrentMedia(session: CastSession, requestedSubtitleId: Long? = null, requestedAudioId: Long? = null) {
     val snapshot = currentMedia()
     if (snapshot == null) {
       Log.w(TAG, "Cast media snapshot unavailable retry=" + mediaReadinessRetries)
@@ -379,6 +348,13 @@ class CastPlaybackController(
         .setMediaInfo(mediaInfo)
         .setAutoplay(snapshot.isPlaying)
         .setCurrentTime(snapshot.positionMs.coerceAtLeast(0L))
+        .apply {
+          if (requestedSubtitleId != null || requestedAudioId != null) {
+            val selectedTrackIds = listOfNotNull(requestedSubtitleId, requestedAudioId).toLongArray()
+            Log.i(TAG, "Cast load active track IDs=" + selectedTrackIds.contentToString())
+            setActiveTrackIds(selectedTrackIds)
+          }
+        }
         .build()
     val remote =
       session.remoteMediaClient ?: run {
