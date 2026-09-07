@@ -27,6 +27,7 @@ import app.infinity.mpvz.utils.media.MetadataRetrieval
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps
 import app.infinity.mpvz.utils.storage.FolderViewScanner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -343,6 +344,8 @@ class FolderListViewModel(
                 }
 
                 FolderWithNewCount(folder, newCount)
+              } catch (e: CancellationException) {
+                throw e
               } catch (e: Exception) {
                 Log.e(TAG, "Error counting new videos for folder ${folder.name}", e)
                 FolderWithNewCount(folder, 0)
@@ -352,6 +355,8 @@ class FolderListViewModel(
           if (generation == newCountGeneration) {
             _foldersWithNewCount.value = foldersWithCounts
           }
+        } catch (e: CancellationException) {
+          throw e
         } catch (e: Exception) {
           Log.e(TAG, "Error calculating new video counts", e)
           if (generation == newCountGeneration) {
@@ -367,16 +372,21 @@ class FolderListViewModel(
     // Set loading state
     _isLoading.value = true
 
-    // Clear all caches to force fresh data from filesystem
-    MediaFileRepository.clearCache()
-    FolderViewScanner.clearCache()
+    // Cache invalidation and the root MediaStore scan both cross into Android's content-provider
+    // service. Keep the complete refresh behavior, but never run those calls on the Compose/UI
+    // thread; a slow provider transaction can otherwise stall the renderer.
+    viewModelScope.launch(Dispatchers.IO) {
+      // Clear all caches to force fresh data from filesystem
+      MediaFileRepository.clearCache()
+      FolderViewScanner.clearCache()
 
-    // Force the direct hidden index first; MediaScanner cannot see .nomedia trees.
-    loadVideoFolders(forceFileSystemCheck = true)
+      // Force the direct hidden index first; MediaScanner cannot see .nomedia trees.
+      loadVideoFolders(forceFileSystemCheck = true)
 
-    // Preserve full Refresh semantics for ordinary files copied by other apps. Completion emits a
-    // debounced MediaLibraryEvents update, while this asynchronous pass never blocks hidden results.
-    triggerMediaScan()
+      // Preserve full Refresh semantics for ordinary files copied by other apps. Completion emits
+      // a debounced MediaLibraryEvents update, while this asynchronous pass never blocks the UI.
+      triggerMediaScan()
+    }
   }
 
   private fun triggerMediaScan() {
