@@ -8,6 +8,7 @@
  */
 
 package app.infinity.mpvz.ui.cast
+import android.util.Log
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -404,6 +405,7 @@ private fun CastSubtitleDialog(
       Column {
         Row(
           modifier = Modifier.fillMaxWidth().clickable {
+            Log.i(CastPlaybackController.TAG, "Cast UI subtitles off clicked")
             controller.setSubtitleTrack(null)
             onDismiss()
           }.padding(vertical = 12.dp, horizontal = 8.dp),
@@ -420,6 +422,7 @@ private fun CastSubtitleDialog(
         castState.subtitleTracks.forEach { track ->
           Row(
             modifier = Modifier.fillMaxWidth().clickable {
+              Log.i(CastPlaybackController.TAG, "Cast UI subtitle clicked id=" + track.id)
               controller.setSubtitleTrack(track.id)
               onDismiss()
             }.padding(vertical = 12.dp, horizontal = 8.dp),
@@ -457,6 +460,7 @@ private fun CastAudioDialog(
         castState.audioTracks.forEach { track ->
           Row(
             modifier = Modifier.fillMaxWidth().clickable {
+              Log.i(CastPlaybackController.TAG, "Cast UI audio clicked id=" + track.id)
               controller.setAudioTrack(track.id)
               onDismiss()
             }.padding(vertical = 12.dp, horizontal = 8.dp),
