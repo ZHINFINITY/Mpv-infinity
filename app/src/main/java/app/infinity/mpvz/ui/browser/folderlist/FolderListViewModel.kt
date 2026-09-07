@@ -458,6 +458,9 @@ class FolderListViewModel(
         )
         PlaybackStateEvents.notifyChanged(identifier)
       }
+      // A video screen can remain retained in Navigation3 while the folder screen is visible.
+      // Notify it after the complete batch so it reloads the folder override and child NEW state.
+      MediaLibraryEvents.notifyChanged()
     }
   }
 
