@@ -30,8 +30,8 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ExtractorsFactory
-import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
@@ -106,11 +106,9 @@ class NativeMedia3Engine(context: Context) {
   // Local files must not be routed through the network cache. Apart from adding an unnecessary
   // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
   private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
-  private val extractorsFactory = ExtractorsFactory {
-    // Use the normal seek-capable extractor. Local MediaStore content URIs are opened through the
-    // direct data source below, avoiding the file:// FUSE path without sacrificing seeking.
-    arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory()))
-  }
+  private val extractorsFactory: ExtractorsFactory =
+    DefaultExtractorsFactory()
+      .setSubtitleParserFactory(DefaultSubtitleParserFactory())
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
     ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
