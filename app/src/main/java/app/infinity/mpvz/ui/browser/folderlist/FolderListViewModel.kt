@@ -111,7 +111,7 @@ class FolderListViewModel(
   private fun loadFolderWatchedOverrides(): Map<String, Boolean> =
     getApplication<Application>()
       .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
-      .getStringSet("values", emptySet())
+      .getStringSet("values", emptySet()) ?: emptySet()
       .mapNotNull { value ->
         val split = value.split("\u001f", limit = 2)
         if (split.size == 2) split[0] to (split[1] == "1") else null
