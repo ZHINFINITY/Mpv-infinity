@@ -94,6 +94,7 @@ class FolderListViewModel(
   private var currentScanJob: Job? = null
   private var newCountJob: Job? = null
   private var cacheWriteJob: Job? = null
+  private var newCountGeneration = 0L
 
     companion object {
     private const val TAG = "FolderListViewModel"
@@ -280,6 +281,7 @@ class FolderListViewModel(
 
   private fun calculateNewVideoCounts(folders: List<VideoFolder>) {
     newCountJob?.cancel()
+    val generation = ++newCountGeneration
     newCountJob =
       viewModelScope.launch(Dispatchers.IO) {
         delay(400)
@@ -287,7 +289,9 @@ class FolderListViewModel(
           val showLabel = appearancePreferences.showUnplayedOldVideoLabel.get()
           if (!showLabel) {
             // If feature is disabled, just return folders with 0 count
-            _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+            if (generation == newCountGeneration) {
+              _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+            }
             return@launch
           }
 
@@ -304,11 +308,16 @@ class FolderListViewModel(
                   app.infinity.mpvz.repository.MediaFileRepository
                     .getVideosInFolder(getApplication(), folder.bucketId)
 
-                // Count new unplayed videos
+                // Count new unplayed videos. An explicit folder override is authoritative:
+                // watched hides the badge, while unwatched includes older files as well.
+                val watchedOverride = folderWatchedOverrides.value[folder.bucketId]
                 val newCount =
-                  folderWatchedOverrides.value[folder.bucketId]?.let { if (it) 0 else null } ?: run {
+                  if (watchedOverride == true) {
+                    0
+                  } else {
                   videos.count { video ->
-                    // Check if video was modified within threshold days
+                    // Check if video was modified within threshold days unless the user
+                    // explicitly marked the whole folder as unwatched.
                     val videoAge = currentTime - (video.dateModified * 1000)
                     val isRecent = videoAge <= thresholdMillis
 
@@ -329,7 +338,7 @@ class FolderListViewModel(
                         playbackState == null
                       }
 
-                    isRecent && isUnplayed
+                    (watchedOverride == false || isRecent) && isUnplayed
                   }
                 }
 
@@ -340,10 +349,14 @@ class FolderListViewModel(
               }
             }
 
-          _foldersWithNewCount.value = foldersWithCounts
+          if (generation == newCountGeneration) {
+            _foldersWithNewCount.value = foldersWithCounts
+          }
         } catch (e: Exception) {
           Log.e(TAG, "Error calculating new video counts", e)
-          _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+          if (generation == newCountGeneration) {
+            _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+          }
         }
       }
   }
@@ -390,6 +403,7 @@ class FolderListViewModel(
   }
 
   fun setFolderWatched(folder: VideoFolder, watched: Boolean) {
+    newCountGeneration++
     val updatedOverrides = folderWatchedOverrides.value + (folder.bucketId to watched)
     folderWatchedOverrides.value = updatedOverrides
     saveFolderWatchedOverrides(updatedOverrides)
