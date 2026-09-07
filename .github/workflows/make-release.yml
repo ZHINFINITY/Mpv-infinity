@@ -112,13 +112,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
-          cp app/build/outputs/apk/standard/release/app-standard-universal-release.apk release/Mpv∞-standard-universal-${VERSION_TAG}.apk
-          cp app/build/outputs/apk/standard/release/app-standard-arm64-v8a-release.apk release/Mpv∞-standard-arm64-v8a-${VERSION_TAG}.apk
-          cp app/build/outputs/apk/standard/release/app-standard-armeabi-v7a-release.apk release/Mpv∞-standard-armeabi-v7a-${VERSION_TAG}.apk
-          cp app/build/outputs/apk/standard/release/app-standard-x86-release.apk release/Mpv∞-standard-x86-${VERSION_TAG}.apk
-          cp app/build/outputs/apk/standard/release/app-standard-x86_64-release.apk release/Mpv∞-standard-x86_64-${VERSION_TAG}.apk
-          cp app/build/outputs/apk/fongmi/release/app-fongmi-universal-release.apk release/Mpv∞-fongmi-universal-${VERSION_TAG}.apk
-          cp app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release.apk release/Mpv∞-no-vulkan-universal-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-universal-release.apk release/mpv-infinity-standard-universal-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-arm64-v8a-release.apk release/mpv-infinity-standard-arm64-v8a-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-armeabi-v7a-release.apk release/mpv-infinity-standard-armeabi-v7a-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-x86-release.apk release/mpv-infinity-standard-x86-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/standard/release/app-standard-x86_64-release.apk release/mpv-infinity-standard-x86_64-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/fongmi/release/app-fongmi-universal-release.apk release/mpv-infinity-fongmi-universal-${VERSION_TAG}.apk
+          cp app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release.apk release/mpv-infinity-no-vulkan-universal-${VERSION_TAG}.apk
 
           cat > release-notes.md <<'EOF'
           ## Mpv∞ v1.0.8
@@ -159,12 +159,12 @@ jobs:
           generate_release_notes: false
           fail_on_unmatched_files: true
           files: |
-            release/Mpv∞-standard-universal-${{ env.VERSION_TAG }}.apk
-            release/Mpv∞-standard-arm64-v8a-${{ env.VERSION_TAG }}.apk
-            release/Mpv∞-standard-armeabi-v7a-${{ env.VERSION_TAG }}.apk
-            release/Mpv∞-standard-x86-${{ env.VERSION_TAG }}.apk
-            release/Mpv∞-standard-x86_64-${{ env.VERSION_TAG }}.apk
-            release/Mpv∞-fongmi-universal-${{ env.VERSION_TAG }}.apk
-            release/Mpv∞-no-vulkan-universal-${{ env.VERSION_TAG }}.apk
+            release/mpv-infinity-standard-universal-${{ env.VERSION_TAG }}.apk
+            release/mpv-infinity-standard-arm64-v8a-${{ env.VERSION_TAG }}.apk
+            release/mpv-infinity-standard-armeabi-v7a-${{ env.VERSION_TAG }}.apk
+            release/mpv-infinity-standard-x86-${{ env.VERSION_TAG }}.apk
+            release/mpv-infinity-standard-x86_64-${{ env.VERSION_TAG }}.apk
+            release/mpv-infinity-fongmi-universal-${{ env.VERSION_TAG }}.apk
+            release/mpv-infinity-no-vulkan-universal-${{ env.VERSION_TAG }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
