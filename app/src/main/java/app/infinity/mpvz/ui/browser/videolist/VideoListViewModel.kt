@@ -335,7 +335,7 @@ class VideoListViewModel(
     val updatedItem =
       buildVideoWithPlaybackInfo(
         video = video,
-        playbackState = playbackStateRepository.getVideoDataByTitle(mediaIdentifier),
+        playbackState = findPlaybackState(video),
         currentTimeMillis = System.currentTimeMillis(),
         newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
         watchedThreshold = browserPreferences.watchedThreshold.get(),
