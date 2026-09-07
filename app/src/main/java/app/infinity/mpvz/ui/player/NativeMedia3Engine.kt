@@ -105,7 +105,7 @@ class NativeMedia3Engine(context: Context) {
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
   // Local files must not be routed through the network cache. Apart from adding an unnecessary
   // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
-  private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
+  private val directLocalDataSourceFactory = FileDataSource.Factory()
   private val extractorsFactory: ExtractorsFactory =
     DefaultExtractorsFactory()
       .setSubtitleParserFactory(DefaultSubtitleParserFactory())
