@@ -577,18 +577,35 @@ class CastPlaybackController(
     if (!isJellyfinStream) return null
     val audioIndex = requestedAudioId?.let { id -> snapshot.audioTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
     val subtitleIndex = requestedSubtitleId?.let { id -> snapshot.subtitleTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
-    return source.buildUpon().apply {
+    val overridden = setOf(
+      "static",
+      "VideoCodec",
+      "AudioCodec",
+      "AllowVideoStreamCopy",
+      "AllowAudioStreamCopy",
+      "EnableAutoStreamCopy",
+      "TranscodingContainer",
+      "TranscodingProtocol",
+      "AudioStreamIndex",
+      "SubtitleStreamIndex",
+    )
+    return source.buildUpon().clearQuery().apply {
+      source.queryParameterNames
+        .filterNot { it in overridden }
+        .forEach { name ->
+          source.getQueryParameters(name).forEach { value -> appendQueryParameter(name, value) }
+        }
       // The Jellyfin app's normal static stream can be an HEVC/DTS/MKV source that the
       // Chromecast receiver accepts as audio while rejecting the video track. Force a
       // receiver-compatible transport for Cast; the server performs the expensive work.
-      setQueryParameter("static", "false")
-      setQueryParameter("VideoCodec", "h264")
-      setQueryParameter("AudioCodec", "aac")
-      setQueryParameter("AllowVideoStreamCopy", "false")
-      setQueryParameter("AllowAudioStreamCopy", "false")
-      setQueryParameter("EnableAutoStreamCopy", "false")
-      setQueryParameter("TranscodingContainer", "ts")
-      setQueryParameter("TranscodingProtocol", "http")
+      appendQueryParameter("static", "false")
+      appendQueryParameter("VideoCodec", "h264")
+      appendQueryParameter("AudioCodec", "aac")
+      appendQueryParameter("AllowVideoStreamCopy", "false")
+      appendQueryParameter("AllowAudioStreamCopy", "false")
+      appendQueryParameter("EnableAutoStreamCopy", "false")
+      appendQueryParameter("TranscodingContainer", "ts")
+      appendQueryParameter("TranscodingProtocol", "http")
       audioIndex?.let { appendQueryParameter("AudioStreamIndex", it.toString()) }
       subtitleIndex?.let { appendQueryParameter("SubtitleStreamIndex", it.toString()) }
     }.build().also {
