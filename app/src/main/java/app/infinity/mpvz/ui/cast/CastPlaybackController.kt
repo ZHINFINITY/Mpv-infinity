@@ -259,16 +259,47 @@ class CastPlaybackController(
     _castState.update { it.copy(playbackSpeed = speed) }
   }
 
+  private fun applyActiveTracks(
+    subtitleId: Long?,
+    audioId: Long?,
+    attempt: Int = 0,
+  ) {
+    val remote = remoteMediaClient ?: return
+    val mediaStatus = remote.mediaStatus
+    if (mediaStatus?.mediaInfo == null) {
+      if (attempt < 8) {
+        scope.launch {
+          delay(250L)
+          applyActiveTracks(subtitleId, audioId, attempt + 1)
+        }
+      } else {
+        Log.w(TAG, "Cast media was not ready for track selection")
+      }
+      return
+    }
+    val requested = listOfNotNull(subtitleId, audioId).toLongArray()
+    remote.setActiveMediaTracks(requested).setResultCallback { result ->
+      if (result.status.isSuccess) {
+        _castState.update {
+          it.copy(activeSubtitleTrackId = subtitleId, activeAudioTrackId = audioId)
+        }
+      } else if (attempt < 8) {
+        scope.launch {
+          delay(250L)
+          applyActiveTracks(subtitleId, audioId, attempt + 1)
+        }
+      } else {
+        Log.w(TAG, "Cast track selection failed: ")
+      }
+    }
+  }
+
   fun setSubtitleTrack(trackId: Long?) {
-    val audioId = _castState.value.activeAudioTrackId
-    remoteMediaClient?.setActiveMediaTracks(listOfNotNull(trackId, audioId).toLongArray())
-    _castState.update { it.copy(activeSubtitleTrackId = trackId) }
+    applyActiveTracks(trackId, _castState.value.activeAudioTrackId)
   }
 
   fun setAudioTrack(trackId: Long?) {
-    val subtitleId = _castState.value.activeSubtitleTrackId
-    remoteMediaClient?.setActiveMediaTracks(listOfNotNull(subtitleId, trackId).toLongArray())
-    _castState.update { it.copy(activeAudioTrackId = trackId) }
+    applyActiveTracks(_castState.value.activeSubtitleTrackId, trackId)
   }
 
   fun disconnect() {
