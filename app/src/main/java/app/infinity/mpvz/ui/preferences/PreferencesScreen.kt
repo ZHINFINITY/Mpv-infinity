@@ -305,6 +305,19 @@ object PreferencesScreen : Screen {
           ),
       ),
       SettingsSection(
+        title = stringResource(R.string.extra_features_title),
+        tint = colorScheme.onSurfaceVariant,
+        items =
+          listOf(
+            SettingsDestination(
+              title = stringResource(R.string.extra_features_title),
+              summary = stringResource(R.string.extra_features_intro),
+              icon = Icons.RoundedFilled.Tune,
+              screen = ExtraFeaturesScreen,
+            ),
+          ),
+      ),
+      SettingsSection(
         title = stringResource(R.string.pref_section_advanced),
         tint = colorScheme.onSurfaceVariant,
         items =

@@ -2069,4 +2069,20 @@
   <string name="downloads_episodes_queued">%1$d episodes queued for download</string>
   <string name="downloads_play">Play</string>
   <string name="downloads_open_downloads">Open downloads</string>
+  <string name="extra_features_title">Extra features</string>
+  <string name="extra_features_section_safe">Optional tools</string>
+  <string name="extra_features_intro">Enable additional library tools as you need them. These features are opt-in and do not change playback behavior by default.</string>
+  <string name="extra_features_smart_collections">Smart collections</string>
+  <string name="extra_features_smart_collections_summary">Show dynamic collections for unwatched, partially watched, recently added, and recently played media.</string>
+  <string name="extra_features_watch_statistics">Watch statistics</string>
+  <string name="extra_features_watch_statistics_summary">Track watch time, completion progress, and library activity summaries.</string>
+  <string name="extra_features_watch_statistics_count">Recently played entries tracked: %1$d</string>
+  <string name="extra_features_playback_diagnostics">Playback diagnostics</string>
+  <string name="extra_features_playback_diagnostics_summary">Keep useful playback failure details for troubleshooting and support reports.</string>
+  <string name="extra_features_library_health">Library health report</string>
+  <string name="extra_features_library_health_summary">Find missing files, unreadable media, stale entries, and thumbnail failures.</string>
+  <string name="extra_features_quality_filters">Media quality filters</string>
+  <string name="extra_features_quality_filters_summary">Filter media by resolution, HDR, codec, bitrate, duration, and subtitle availability.</string>
+  <string name="extra_features_activity_log">Library activity log</string>
+  <string name="extra_features_activity_log_summary">See recent library additions, removals, renames, scans, and watched-state changes.</string>
 </resources>
