@@ -64,6 +64,7 @@ internal fun buildVideoWithPlaybackInfo(
   currentTimeMillis: Long,
   newLabelDays: Int,
   watchedThreshold: Int,
+  folderMarkedUnwatched: Boolean = false,
 ): VideoWithPlaybackInfo {
   val durationSeconds = video.duration / 1000L
   val progressValue =
@@ -78,7 +79,8 @@ internal fun buildVideoWithPlaybackInfo(
       (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f)
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
-  val isWithinNewLabelWindow = newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
+  val isWithinNewLabelWindow =
+    folderMarkedUnwatched || newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
 
   return VideoWithPlaybackInfo(
     video = video,
@@ -98,6 +100,16 @@ class VideoListViewModel(
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val appearancePreferences: app.infinity.mpvz.preferences.AppearancePreferences by inject()
   private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
+
+  private val folderMarkedUnwatched: Boolean
+    get() =
+      getApplication<Application>()
+        .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+        .getStringSet("values", emptySet<String>())
+        ?.any { value ->
+          val split = value.split("\u001f", limit = 2)
+          split.size == 2 && split[0] == bucketId && split[1] == "0"
+        } == true
   private val recentlyPlayedRepository: app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
   // Using MediaFileRepository singleton directly
 
@@ -312,6 +324,7 @@ class VideoListViewModel(
           currentTimeMillis = now,
           newLabelDays = newLabelDays,
           watchedThreshold = watchedThreshold,
+          folderMarkedUnwatched = folderMarkedUnwatched,
         )
       }
     _videosWithPlaybackInfo.value = videosWithInfo
@@ -339,6 +352,7 @@ class VideoListViewModel(
         currentTimeMillis = System.currentTimeMillis(),
         newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
         watchedThreshold = browserPreferences.watchedThreshold.get(),
+        folderMarkedUnwatched = folderMarkedUnwatched,
       )
     if (currentItems[index] == updatedItem) return
 
