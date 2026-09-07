@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.ArrayDeque
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicLong
@@ -1563,8 +1564,22 @@ object PlaybackSession : MPVLib.EventObserver {
    */
   fun resolvePlayableUriForNative(item: PlaybackItem): String {
     releaseActiveNetworkStream()
-    // Keep MediaStore content URIs for Media3. ContentDataSource can obtain the provider's
-    // descriptor directly; converting this back to file:// reintroduces the slow FUSE path.
+    // Prefer the real path for Media3 when the provider exposes one. This avoids repeated
+    // ContentResolver/MediaStore reads during extractor probing. Keep content:// as a safe
+    // fallback for cloud/document providers that do not expose a readable local path.
+    val context = applicationContext
+    if (context != null) {
+      val localPath = sequenceOf(item.playableUri, item.originalUri)
+        .mapNotNull { candidate ->
+          if (!candidate.startsWith("content://")) return@mapNotNull null
+          Uri.parse(candidate).resolveLocalPath(context)
+        }
+        .firstOrNull { path -> File(path).isFile && File(path).canRead() }
+      if (localPath != null) {
+        Log.d(TAG, "Using filesystem path for Native Media3: $localPath")
+        return localPath
+      }
+    }
     if (item.playableUri.startsWith("content://")) return item.playableUri
     if (item.originalUri.startsWith("content://")) return item.originalUri
     val resolved = resolvePlayableUri(item)
