@@ -29,7 +29,6 @@ internal class CastMediaServer private constructor(
   private val token: String,
 ) : NanoHTTPD("0.0.0.0", 0) {
   override fun serve(session: IHTTPSession): Response {
-    Log.i(TAG, "Cast HTTP request method=" + session.method + " uri=" + session.uri + " range=" + session.headers["range"] + " source=" + source + " length=" + contentLength)
     if (session.uri != "/$token") return textResponse(Response.Status.NOT_FOUND, "Not found")
     if (session.method == Method.OPTIONS) {
       return newFixedLengthResponse(Response.Status.NO_CONTENT, mimeType, "").apply {
@@ -56,7 +55,6 @@ internal class CastMediaServer private constructor(
   }
 
   private fun serveFull(session: IHTTPSession): Response {
-    Log.i(TAG, "Cast HTTP full response method=" + session.method + " mime=" + mimeType + " length=" + contentLength)
     if (session.method == Method.HEAD) {
       return newFixedLengthResponse(Response.Status.OK, mimeType, "").withMediaHeaders(contentLength)
     }
@@ -72,7 +70,6 @@ internal class CastMediaServer private constructor(
   }
 
   private fun serveRange(
-    Log.i(TAG, "Cast HTTP range response range=" + rangeHeader + " length=" + contentLength)
     session: IHTTPSession,
     rangeHeader: String,
   ): Response {
@@ -102,7 +99,6 @@ internal class CastMediaServer private constructor(
     }
 
     val input = openAt(start) ?: return textResponse(Response.Status.NOT_FOUND, "Media unavailable")
-    Log.w(TAG, "Cast HTTP could not open source at offset=" + start)
     return newFixedLengthResponse(Response.Status.PARTIAL_CONTENT, mimeType, input, length)
       .withRangeHeaders(start, end, length)
   }
@@ -173,7 +169,6 @@ internal class CastMediaServer private constructor(
     ): String? {
       stop()
       val host = runCatching { findLanAddress(context) }.getOrNull() ?: return null
-      Log.i(TAG, "Cast server expose source=" + source + " mime=" + mimeType)
       val token = UUID.randomUUID().toString().replace("-", "")
       val server =
         CastMediaServer(
@@ -186,7 +181,6 @@ internal class CastMediaServer private constructor(
       return runCatching {
         server.start(SOCKET_READ_TIMEOUT, false)
         active = server
-        Log.i(TAG, "Cast server started URL=http://" + host + ":" + server.listeningPort + "/" + token + " length=" + server.contentLength)
         "http://$host:${server.listeningPort}/$token"
       }.onFailure { error ->
         Log.e(TAG, "Unable to start Cast media server", error)
@@ -197,7 +191,6 @@ internal class CastMediaServer private constructor(
     @Synchronized
     fun stop() {
       active?.stop()
-      Log.i(TAG, "Cast server stopped")
       active = null
     }
 
