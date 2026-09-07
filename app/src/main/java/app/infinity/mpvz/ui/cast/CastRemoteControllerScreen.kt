@@ -313,20 +313,21 @@ private fun CastOptionsRow(
     horizontalArrangement = Arrangement.SpaceEvenly,
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    CastOptionButton(icon = Icons.RoundedFilled.Speed, label = "Speed", onClick = onShowSpeed)
-    CastOptionButton(icon = Icons.RoundedFilled.Settings, label = "Quality", onClick = onShowBitrate)
-    CastOptionButton(icon = Icons.RoundedFilled.Subtitles, label = "Subtitles", onClick = onShowSubtitles)
-    CastOptionButton(icon = Icons.RoundedFilled.VolumeUp, label = "Audio", onClick = onShowAudio)
+    CastOptionButton(modifier = Modifier.weight(1f), icon = Icons.RoundedFilled.Speed, label = "Speed", onClick = onShowSpeed)
+    CastOptionButton(modifier = Modifier.weight(1f), icon = Icons.RoundedFilled.Settings, label = "Quality", onClick = onShowBitrate)
+    CastOptionButton(modifier = Modifier.weight(1f), icon = Icons.RoundedFilled.Subtitles, label = "Subtitles", onClick = onShowSubtitles)
+    CastOptionButton(modifier = Modifier.weight(1f), icon = Icons.RoundedFilled.VolumeUp, label = "Audio", onClick = onShowAudio)
   }
 }
 
 @Composable
 private fun CastOptionButton(
+  modifier: Modifier,
   icon: AppIcon,
   label: String,
   onClick: () -> Unit,
 ) {
-  IconButton(onClick = onClick, modifier = Modifier.fillMaxWidth(0.25f).height(58.dp)) {
+  IconButton(onClick = onClick, modifier = modifier.height(58.dp)) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
       Icon(
         imageVector = icon,
