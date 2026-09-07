@@ -401,6 +401,9 @@ fun JellyfinContent(
           additionalActions = {
             if (!selectionManager.isInSelectionMode) {
               IconButton(
+              IconButton(onClick = { isManageServersOpen = true }, modifier = Modifier.padding(horizontal = 2.dp)) {
+                Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers", modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.secondary)
+              }
                 onClick = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
                 modifier = Modifier.padding(horizontal = 2.dp),
               ) {
