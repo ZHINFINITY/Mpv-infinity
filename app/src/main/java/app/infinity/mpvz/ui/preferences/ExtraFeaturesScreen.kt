@@ -6,6 +6,7 @@ package app.infinity.mpvz.ui.preferences
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -32,6 +33,7 @@ import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
+import java.io.File
 
 @Serializable
 object ExtraFeaturesScreen : Screen {
@@ -47,9 +49,15 @@ object ExtraFeaturesScreen : Screen {
     val libraryHealth by preferences.enableLibraryHealthReport.collectAsState()
     val qualityFilters by preferences.enableMediaQualityFilters.collectAsState()
     val activityLog by preferences.enableLibraryActivityLog.collectAsState()
-    val recentlyPlayedCount by produceState(initialValue = 0, watchStatistics) {
-      value = recentlyPlayedRepository.getRecentlyPlayedCount()
+    val showExtraData = smartCollections || watchStatistics || playbackDiagnostics || libraryHealth || qualityFilters || activityLog
+    val recentEntries by produceState(emptyList(), showExtraData) {
+      value = if (showExtraData) recentlyPlayedRepository.getRecentlyPlayed(200) else emptyList()
     }
+    val recentlyPlayedCount = recentEntries.size
+    val partiallyWatchedCount = recentEntries.count { it.duration > 0L }
+    val missingFileCount = recentEntries.count { it.filePath.startsWith("/") && !File(it.filePath).exists() }
+    val highQualityCount = recentEntries.count { it.width >= 1920 || it.height >= 1080 }
+    val mediaCandidateCount = recentEntries.count { it.fileName.substringAfterLast('.', "").lowercase() in setOf("mkv", "mp4", "webm", "avi") }
 
     Scaffold(
       topBar = {
@@ -89,6 +97,9 @@ object ExtraFeaturesScreen : Screen {
               summary = { Text(stringResource(R.string.extra_features_smart_collections_summary)) },
             )
           }
+          if (smartCollections) {
+            item { ExtraFeatureStatus(stringResource(R.string.extra_features_smart_collections_count, recentlyPlayedCount, partiallyWatchedCount)) }
+          }
           item {
             SwitchPreference(
               value = watchStatistics,
@@ -98,14 +109,7 @@ object ExtraFeaturesScreen : Screen {
             )
           }
           if (watchStatistics) {
-            item {
-              Text(
-                text = stringResource(R.string.extra_features_watch_statistics_count, recentlyPlayedCount),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-              )
-            }
+            item { ExtraFeatureStatus(stringResource(R.string.extra_features_watch_statistics_count, recentlyPlayedCount)) }
           }
           item {
             SwitchPreference(
@@ -115,6 +119,9 @@ object ExtraFeaturesScreen : Screen {
               summary = { Text(stringResource(R.string.extra_features_playback_diagnostics_summary)) },
             )
           }
+          if (playbackDiagnostics) {
+            item { ExtraFeatureStatus(stringResource(R.string.extra_features_playback_diagnostics_status)) }
+          }
           item {
             SwitchPreference(
               value = libraryHealth,
@@ -122,6 +129,14 @@ object ExtraFeaturesScreen : Screen {
               title = { Text(stringResource(R.string.extra_features_library_health)) },
               summary = { Text(stringResource(R.string.extra_features_library_health_summary)) },
             )
+          }
+          if (libraryHealth) {
+            item {
+              ExtraFeatureStatus(
+                text = stringResource(R.string.extra_features_library_health_count, missingFileCount),
+                isWarning = missingFileCount > 0,
+              )
+            }
           }
           item {
             SwitchPreference(
@@ -131,6 +146,9 @@ object ExtraFeaturesScreen : Screen {
               summary = { Text(stringResource(R.string.extra_features_quality_filters_summary)) },
             )
           }
+          if (qualityFilters) {
+            item { ExtraFeatureStatus(stringResource(R.string.extra_features_quality_filters_count, highQualityCount, mediaCandidateCount)) }
+          }
           item {
             SwitchPreference(
               value = activityLog,
@@ -139,8 +157,31 @@ object ExtraFeaturesScreen : Screen {
               summary = { Text(stringResource(R.string.extra_features_activity_log_summary)) },
             )
           }
+          if (activityLog) {
+            items(recentEntries.take(5), key = { it.id }) { entry ->
+              Text(
+                text = stringResource(R.string.extra_features_activity_log_entry, entry.fileName),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 3.dp),
+              )
+            }
+          }
         }
       }
     }
   }
+}
+
+@Composable
+private fun ExtraFeatureStatus(
+  text: String,
+  isWarning: Boolean = false,
+) {
+  Text(
+    text = text,
+    style = MaterialTheme.typography.bodyMedium,
+    color = if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+  )
 }
