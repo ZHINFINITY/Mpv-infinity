@@ -13,22 +13,12 @@ data class CastSubtitleTrack(
   val id: Long,
   val name: String,
   val language: String?,
-  val contentUrl: String? = null,
 )
 
 data class CastAudioTrack(
   val id: Long,
   val name: String,
   val language: String?,
-)
-
-data class JellyfinCastPayload(
-  val serverId: String? = null,
-  val userId: String? = null,
-  val accessToken: String? = null,
-  val mediaSourceId: String? = null,
-  val itemId: String? = null,
-  val playSessionId: String? = null,
 )
 
 data class CastSessionState(

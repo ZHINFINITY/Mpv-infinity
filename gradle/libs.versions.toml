@@ -92,7 +92,6 @@ androidx-media3-exoplayer-dash = { module = "androidx.media3:media3-exoplayer-da
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 androidx-media3-effect = { module = "androidx.media3:media3-effect", version.ref = "media3" }
 androidx-media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "media3" }
-androidx-media3-cast = { module = "androidx.media3:media3-cast", version.ref = "media3" }
 jellyfin-media3-ffmpeg-decoder = { module = "org.jellyfin.media3:media3-ffmpeg-decoder", version.ref = "jellyfinMedia3Ffmpeg" }
 sora-editor-bom = { module = "io.github.rosemoe:editor-bom", version.ref = "soraEditor" }
 sora-editor = { module = "io.github.rosemoe:editor" }
