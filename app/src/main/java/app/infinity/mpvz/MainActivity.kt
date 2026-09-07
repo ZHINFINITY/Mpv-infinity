@@ -28,8 +28,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -120,19 +123,15 @@ private fun screenNavTransition(
   speed: Float = 1f,
 ): ContentTransform {
   val dir = if (forward) 1 else -1
+  val durationMs = (180f / speed.coerceAtLeast(0.1f)).toInt().coerceIn(100, 280)
 
   return when (style) {
     NavigationAnimStyle.None ->
       EnterTransition.None togetherWith ExitTransition.None
 
     NavigationAnimStyle.Minimal ->
-      fadeIn(
-        spring(
-          dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-          stiffness = AppMotion.Spatial.Standard.stiffness,
-        ),
-      ) togetherWith
-        fadeOut(spring(stiffness = AppMotion.Spatial.Standard.stiffness))
+      fadeIn(tween(durationMillis = durationMs, easing = LinearOutSlowInEasing)) togetherWith
+        fadeOut(tween(durationMillis = durationMs, easing = FastOutLinearInEasing))
 
     NavigationAnimStyle.FlipFade ->
       (
@@ -612,11 +611,6 @@ class MainActivity : AppCompatActivity() {
 
     val appNavStyle by playerPreferences.appNavStyle.collectAsState()
     val animSpeed by playerPreferences.animationSpeed.collectAsState()
-    // Keep navigation animated, but avoid composing two full-screen settings surfaces with
-    // spring/scale transforms while the destination is still initializing. A fade keeps the
-    // animation feature enabled while staying within the frame budget on quick settings exits.
-    val frameSafeNavStyle =
-      if (appNavStyle == NavigationAnimStyle.None) NavigationAnimStyle.None else NavigationAnimStyle.Minimal
 
     val context = LocalContext.current
     val currentVersion =
@@ -677,10 +671,10 @@ class MainActivity : AppCompatActivity() {
               }
             },
             sizeTransform = null,
-            transitionSpec = { screenNavTransition(forward = true, style = frameSafeNavStyle, speed = animSpeed) },
-            popTransitionSpec = { screenNavTransition(forward = false, style = frameSafeNavStyle, speed = animSpeed) },
+            transitionSpec = { screenNavTransition(forward = true, style = appNavStyle, speed = animSpeed) },
+            popTransitionSpec = { screenNavTransition(forward = false, style = appNavStyle, speed = animSpeed) },
             predictivePopTransitionSpec = { _: Int ->
-              screenNavTransition(forward = false, style = frameSafeNavStyle, speed = animSpeed)
+              screenNavTransition(forward = false, style = appNavStyle, speed = animSpeed)
             },
           )
 
