@@ -264,18 +264,6 @@ class CastPlaybackController(
 
   private fun applyActiveTracks(subtitleId: Long?, audioId: Long?) {
     val session = castSession ?: return
-    val snapshot = currentMedia()
-    val scheme = snapshot?.source?.scheme?.lowercase()
-    val mime = snapshot?.mimeType?.lowercase().orEmpty()
-    // The Default Cast receiver cannot switch embedded tracks in progressive local files
-    // (MKV/MP4). Re-loading those files with synthetic MediaTrack IDs makes the receiver
-    // reject the media entirely. Leave the current stream running and report the limitation.
-    val adaptive = mime.contains("mpegurl") || mime.contains("dash") || mime.contains("m3u8") || mime.contains("mpd")
-    if (snapshot != null && !adaptive && scheme in setOf("content", "file")) {
-      Log.w(TAG, "Cast track switch skipped: receiver does not support embedded tracks for local progressive media scheme=" + scheme + " mime=" + mime)
-      notifyUser("Audio/subtitle switching is not supported by this Cast receiver for this local file")
-      return
-    }
     Log.i(TAG, "Cast reloading media with track IDs subtitle=" + subtitleId + " audio=" + audioId)
     mediaReadinessRetries = 0
     loadCurrentMedia(session, subtitleId, audioId)
