@@ -68,6 +68,7 @@ class CastPlaybackController(
   private var castContext: CastContext? = null
   private var castSession: CastSession? = null
   private var remoteMediaClient: RemoteMediaClient? = null
+  private var registeredRemoteMediaClient: RemoteMediaClient? = null
   private var released = false
   private var localWasPlaying = false
   private var lastRemotePositionMs = 0L
@@ -163,8 +164,13 @@ class CastPlaybackController(
   private fun onSessionReady(session: CastSession) {
     Log.i(TAG, "Cast session ready device=" + session.castDevice?.friendlyName)
     castSession = session
-    remoteMediaClient = session.remoteMediaClient
-    remoteMediaClient?.registerCallback(remoteMediaClientCallback)
+    val nextRemote = session.remoteMediaClient
+    if (registeredRemoteMediaClient !== nextRemote) {
+      registeredRemoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
+      nextRemote?.registerCallback(remoteMediaClientCallback)
+      registeredRemoteMediaClient = nextRemote
+    }
+    remoteMediaClient = nextRemote
     _castState.update {
       it.copy(
         isConnected = true,
@@ -203,9 +209,11 @@ class CastPlaybackController(
     stopPositionPolling()
     volumeDebounceJob?.cancel()
     val context = castContext
-    castContext = null
+    registeredRemoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
+    registeredRemoteMediaClient = null
     remoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
     remoteMediaClient = null
+    castContext = null
     castSession = null
     context?.sessionManager?.removeSessionManagerListener(sessionListener, CastSession::class.java)
     if (context?.sessionManager?.currentCastSession?.isConnected != true) {
