@@ -75,8 +75,9 @@ internal fun buildVideoWithPlaybackInfo(
       null
     }
   val isWatched =
-    playbackState?.hasBeenWatched == true ||
-      (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f)
+    !folderMarkedUnwatched &&
+      (playbackState?.hasBeenWatched == true ||
+        (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
   val isWithinNewLabelWindow =
