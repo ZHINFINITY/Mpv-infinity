@@ -16,6 +16,8 @@ import android.provider.OpenableColumns
 import android.util.Log
 import fi.iki.elonen.NanoHTTPD
 import java.io.FilterInputStream
+import java.io.File
+import java.io.FileInputStream
 import java.io.InputStream
 import java.net.Inet4Address
 import java.util.UUID
@@ -105,6 +107,9 @@ internal class CastMediaServer private constructor(
   }
 
   private fun openAt(offset: Long): InputStream? {
+    if (source.scheme?.lowercase() == "file") {
+      return FileInputStream(source.path ?: return null).also { it.skipFully(offset) }
+    }
     val descriptor = appContext.contentResolver.openAssetFileDescriptor(source, "r") ?: return null
     val input = descriptor.createInputStream()
     var remaining = offset
@@ -157,6 +162,15 @@ internal class CastMediaServer private constructor(
       addHeader("Access-Control-Allow-Origin", "*")
     }
 
+  private fun InputStream.skipFully(offset: Long) {
+    var remaining = offset
+    while (remaining > 0L) {
+      val skipped = skip(remaining)
+      if (skipped <= 0L) break
+      remaining -= skipped
+    }
+  }
+
   companion object {
     private const val TAG = "CastMediaServer"
 
@@ -192,6 +206,10 @@ internal class CastMediaServer private constructor(
     }
 
     @Synchronized
+    fun exposeGenerated(context: Context, file: File, mimeType: String): String? =
+      expose(context, Uri.fromFile(file), mimeType)
+
+    @Synchronized
     fun stop() {
       active?.stop()
       active = null
@@ -201,6 +219,7 @@ internal class CastMediaServer private constructor(
       context: Context,
       uri: Uri,
     ): Long {
+      if (uri.scheme?.lowercase() == "file") return File(uri.path ?: return -1L).length()
       context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
         if (descriptor.length >= 0L) return descriptor.length
       }

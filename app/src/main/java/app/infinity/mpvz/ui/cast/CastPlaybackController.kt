@@ -111,6 +111,7 @@ class CastPlaybackController(
         error: Int,
       ) {
         CastMediaServer.stop()
+        CastRemuxPipeline.clear()
         stopPositionPolling()
         if (transferredByThisController) {
           restoreLocal(
@@ -311,14 +312,15 @@ class CastPlaybackController(
       return
     }
 
-    val contentUrl = resolveContentUrl(snapshot)
+    val remuxedSnapshot = remuxLocalSnapshot(snapshot, requestedSubtitleId, requestedAudioId)
+    val contentUrl = resolveContentUrl(remuxedSnapshot)
     if (contentUrl == null) {
       notifyUser("This media source cannot be reached by the Cast device")
       castContext?.sessionManager?.endCurrentSession(true)
       return
     }
 
-    val contentType = snapshot.mimeType ?: inferMimeType(snapshot.source)
+    val contentType = remuxedSnapshot.mimeType ?: inferMimeType(remuxedSnapshot.source)
     Log.i(TAG, "Cast snapshot subtitleCount=" + snapshot.subtitleTracks.size + " audioCount=" + snapshot.audioTracks.size + " activeSubtitle=" + snapshot.activeSubtitleTrackId + " activeAudio=" + snapshot.activeAudioTrackId)
     val metadataType =
       if (contentType.startsWith("audio/")) {
@@ -334,7 +336,7 @@ class CastPlaybackController(
       MediaInfo
         .Builder(contentUrl)
         .setStreamType(
-          if (snapshot.durationMs > 0L) MediaInfo.STREAM_TYPE_BUFFERED else MediaInfo.STREAM_TYPE_LIVE,
+          if (remuxedSnapshot.durationMs > 0L) MediaInfo.STREAM_TYPE_BUFFERED else MediaInfo.STREAM_TYPE_LIVE,
         ).setContentType(contentType)
         .setMetadata(metadata)
         .setMediaTracks(snapshot.subtitleTracks.map { track ->
@@ -348,7 +350,7 @@ class CastPlaybackController(
             .apply { track.language?.let(::setLanguage) }
             .build()
         })
-        .setStreamDuration(snapshot.durationMs.coerceAtLeast(0L))
+        .setStreamDuration(remuxedSnapshot.durationMs.coerceAtLeast(0L))
         .build()
     val request =
       MediaLoadRequestData
@@ -471,6 +473,22 @@ class CastPlaybackController(
       )
     }
     return null
+  }
+
+  private fun remuxLocalSnapshot(
+    snapshot: CastMediaSnapshot,
+    requestedSubtitleId: Long?,
+    requestedAudioId: Long?,
+  ): CastMediaSnapshot {
+    val scheme = snapshot.source.scheme?.lowercase()
+    if (scheme !in setOf("content", "file") || (snapshot.audioTracks.isEmpty() && snapshot.subtitleTracks.isEmpty())) return snapshot
+    val audioIndex = requestedAudioId?.let { id -> snapshot.audioTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+      ?: snapshot.activeAudioTrackId?.let { id -> snapshot.audioTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+    val subtitleIndex = requestedSubtitleId?.let { id -> snapshot.subtitleTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+      ?: snapshot.activeSubtitleTrackId?.let { id -> snapshot.subtitleTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+    val result = CastRemuxPipeline.remux(activity, snapshot.source, audioIndex, subtitleIndex) ?: return snapshot
+    Log.i(TAG, "Cast remuxed local source audioIndex=$audioIndex subtitleIndex=$subtitleIndex file=${result.file.name}")
+    return snapshot.copy(source = Uri.fromFile(result.file), mimeType = "video/mp4")
   }
 
   private fun inferMimeType(uri: Uri): String {
