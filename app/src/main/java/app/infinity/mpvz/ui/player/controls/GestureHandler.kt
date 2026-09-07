@@ -200,6 +200,7 @@ fun GestureHandler(
   val brightnessGesture by playerPreferences.brightnessGesture.collectAsState()
   val volumeGesture by playerPreferences.volumeGesture.collectAsState()
   val swapVolumeAndBrightness by playerPreferences.swapVolumeAndBrightness.collectAsState()
+  val showVolumeGestureOverlay by playerPreferences.showVolumeGestureOverlay.collectAsState()
   val pinchToZoomGesture by playerPreferences.pinchToZoomGesture.collectAsState()
   val panAndZoomEnabled by playerPreferences.panAndZoomEnabled.collectAsState()
   val horizontalSwipeToSeek by playerPreferences.horizontalSwipeToSeek.collectAsState()
@@ -878,7 +879,10 @@ fun GestureHandler(
                                 ).coerceIn(0, 100)
 
                               if (newVolumePercent != lastVolumePercentValue) {
-                                viewModel.changeVolumePercentTo(newVolumePercent)
+                                viewModel.changeVolumePercentTo(
+                                  newVolumePercent,
+                                  showUi = !showVolumeGestureOverlay,
+                                )
                                 lastVolumePercentValue = newVolumePercent
                               }
                             }
