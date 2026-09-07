@@ -612,6 +612,11 @@ class MainActivity : AppCompatActivity() {
 
     val appNavStyle by playerPreferences.appNavStyle.collectAsState()
     val animSpeed by playerPreferences.animationSpeed.collectAsState()
+    // Keep navigation animated, but avoid composing two full-screen settings surfaces with
+    // spring/scale transforms while the destination is still initializing. A fade keeps the
+    // animation feature enabled while staying within the frame budget on quick settings exits.
+    val frameSafeNavStyle =
+      if (appNavStyle == NavigationAnimStyle.None) NavigationAnimStyle.None else NavigationAnimStyle.Minimal
 
     val context = LocalContext.current
     val currentVersion =
@@ -672,10 +677,10 @@ class MainActivity : AppCompatActivity() {
               }
             },
             sizeTransform = null,
-            transitionSpec = { screenNavTransition(forward = true, style = appNavStyle, speed = animSpeed) },
-            popTransitionSpec = { screenNavTransition(forward = false, style = appNavStyle, speed = animSpeed) },
+            transitionSpec = { screenNavTransition(forward = true, style = frameSafeNavStyle, speed = animSpeed) },
+            popTransitionSpec = { screenNavTransition(forward = false, style = frameSafeNavStyle, speed = animSpeed) },
             predictivePopTransitionSpec = { _: Int ->
-              screenNavTransition(forward = false, style = appNavStyle, speed = animSpeed)
+              screenNavTransition(forward = false, style = frameSafeNavStyle, speed = animSpeed)
             },
           )
 
