@@ -144,7 +144,9 @@ class MediaLibraryViewModel(
     val updatedItem =
       buildVideoWithPlaybackInfo(
         video = video,
-        playbackState = playbackStateRepository.getVideoDataByTitle(mediaIdentifier),
+        playbackState = videoPlaybackIdentifiers(video).firstNotNullOfOrNull { identifier ->
+          playbackStateRepository.getVideoDataByTitle(identifier)
+        },
         currentTimeMillis = System.currentTimeMillis(),
         newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
         watchedThreshold = browserPreferences.watchedThreshold.get(),
