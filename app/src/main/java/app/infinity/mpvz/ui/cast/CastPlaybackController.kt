@@ -339,7 +339,7 @@ class CastPlaybackController(
           if (remuxedSnapshot.durationMs > 0L) MediaInfo.STREAM_TYPE_BUFFERED else MediaInfo.STREAM_TYPE_LIVE,
         ).setContentType(contentType)
         .setMetadata(metadata)
-        .setMediaTracks(snapshot.subtitleTracks.map { track ->
+        .setMediaTracks(if (remuxedSnapshot === snapshot) snapshot.subtitleTracks.map { track ->
           MediaTrack.Builder(track.id, MediaTrack.TYPE_TEXT)
             .setName(track.name)
             .apply { track.language?.let(::setLanguage) }
@@ -349,7 +349,7 @@ class CastPlaybackController(
             .setName(track.name)
             .apply { track.language?.let(::setLanguage) }
             .build()
-        })
+        } else emptyList())
         .setStreamDuration(remuxedSnapshot.durationMs.coerceAtLeast(0L))
         .build()
     val request =
@@ -359,7 +359,7 @@ class CastPlaybackController(
         .setAutoplay(snapshot.isPlaying)
         .setCurrentTime(snapshot.positionMs.coerceAtLeast(0L))
         .apply {
-          if (requestedSubtitleId != null || requestedAudioId != null) {
+          if (remuxedSnapshot === snapshot && (requestedSubtitleId != null || requestedAudioId != null)) {
             val selectedTrackIds = listOfNotNull(requestedSubtitleId, requestedAudioId).toLongArray()
             Log.i(TAG, "Cast load active track IDs=" + selectedTrackIds.contentToString())
             setActiveTrackIds(selectedTrackIds)
@@ -481,13 +481,11 @@ class CastPlaybackController(
     requestedAudioId: Long?,
   ): CastMediaSnapshot {
     val scheme = snapshot.source.scheme?.lowercase()
-    if (scheme !in setOf("content", "file") || (snapshot.audioTracks.isEmpty() && snapshot.subtitleTracks.isEmpty())) return snapshot
+    if (requestedAudioId == null || requestedSubtitleId != null || scheme !in setOf("content", "file") || snapshot.audioTracks.isEmpty()) return snapshot
     val audioIndex = requestedAudioId?.let { id -> snapshot.audioTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
       ?: snapshot.activeAudioTrackId?.let { id -> snapshot.audioTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
-    val subtitleIndex = requestedSubtitleId?.let { id -> snapshot.subtitleTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
-      ?: snapshot.activeSubtitleTrackId?.let { id -> snapshot.subtitleTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
-    val result = CastRemuxPipeline.remux(activity, snapshot.source, audioIndex, subtitleIndex) ?: return snapshot
-    Log.i(TAG, "Cast remuxed local source audioIndex=$audioIndex subtitleIndex=$subtitleIndex file=${result.file.name}")
+    val result = CastRemuxPipeline.remux(activity, snapshot.source, audioIndex) ?: return snapshot
+    Log.i(TAG, "Cast remuxed local source audioIndex=$audioIndex file=${result.file.name}")
     return snapshot.copy(source = Uri.fromFile(result.file), mimeType = "video/mp4")
   }
 

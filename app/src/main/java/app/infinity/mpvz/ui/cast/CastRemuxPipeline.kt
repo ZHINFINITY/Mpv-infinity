@@ -5,6 +5,7 @@
 package app.infinity.mpvz.ui.cast
 
 import android.content.Context
+import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
@@ -16,12 +17,14 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Creates a receiver-compatible progressive MP4 containing the selected tracks.
- * The Cast default receiver cannot change embedded tracks in a local MKV/MP4
- * served as-is, but it can play a normal MP4 whose track set has been remuxed.
+ * Produces a Cast-compatible MP4 for a local source.
+ *
+ * Only audio and video elementary streams are copied. Embedded subtitle formats
+ * are deliberately not passed to MediaMuxer because Android cannot reliably
+ * mux arbitrary MKV text or bitmap subtitle codecs into MP4.
  */
 internal object CastRemuxPipeline {
-  data class Result(val file: File, val subtitleTrackIds: List<Long>)
+  data class Result(val file: File)
 
   private val cache = ConcurrentHashMap<String, Result>()
 
@@ -29,91 +32,102 @@ internal object CastRemuxPipeline {
     context: Context,
     source: Uri,
     audioTrackIndex: Int?,
-    subtitleTrackIndex: Int?,
   ): Result? {
-    val key = "$source|$audioTrackIndex|$subtitleTrackIndex"
-    cache[key]?.takeIf { it.file.exists() }?.let { return it }
-    val input = openInput(context, source) ?: return null
-    val extractor = MediaExtractor()
-    val output = File(context.cacheDir, "cast-remux-${key.hashCode().toUInt().toString(16)}.mp4")
+    val key = "$source|$audioTrackIndex"
+    cache[key]?.takeIf { it.file.isFile && it.file.length() > 0L }?.let { return it }
+
+    val inputFile = File(context.cacheDir, "cast-input-${key.hashCode()}")
+    val outputFile = File(context.cacheDir, "cast-remux-${key.hashCode()}.mp4")
+    if (outputFile.exists()) outputFile.delete()
+
     return runCatching {
-      input.use { stream ->
-        FileOutputStream(File(context.cacheDir, "cast-input-${key.hashCode()}")).use { temp ->
-          stream.copyTo(temp)
+      copySourceToFile(context, source, inputFile)
+      val extractor = MediaExtractor()
+      var muxer: MediaMuxer? = null
+      try {
+        extractor.setDataSource(inputFile.absolutePath)
+        val selectedTracks = selectTracks(extractor, audioTrackIndex)
+        if (selectedTracks.isEmpty()) return@runCatching null
+
+        muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val muxTrackByExtractorTrack = selectedTracks.associateWith { extractorTrack ->
+          muxer.addTrack(extractor.getTrackFormat(extractorTrack))
         }
+        muxer.start()
+        selectedTracks.forEach(extractor::selectTrack)
+        copySamples(extractor, muxer, muxTrackByExtractorTrack)
+        muxer.stop()
+        Result(outputFile).also { cache[key] = it }
+      } finally {
+        runCatching { muxer?.release() }
+        runCatching { extractor.release() }
+        inputFile.delete()
       }
-      val tempInput = File(context.cacheDir, "cast-input-${key.hashCode()}")
-      extractor.setDataSource(tempInput.absolutePath)
-      val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-      val selected = mutableListOf<Int>()
-      var selectedSubtitle = -1
-      for (index in 0 until extractor.trackCount) {
-        val format = extractor.getTrackFormat(index)
-        val mime = format.getString(MediaFormat.KEY_MIME).orEmpty()
-        when {
-          mime.startsWith("video/") && selected.none { it == index } -> selected += index
-          mime.startsWith("audio/") && index == (audioTrackIndex ?: firstTrack(extractor, "audio/")) -> selected += index
-          mime.startsWith("text/") && index == subtitleTrackIndex -> {
-            // Some MP4 text codecs are accepted by MediaMuxer; retain them when possible.
-            selectedSubtitle = index
-            selected += index
-          }
-        }
-      }
-      if (selected.none { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/") || extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("audio/") }) {
-        muxer.release()
-        tempInput.delete()
-        error("No playable audio or video track")
-      }
-      val muxTrack = HashMap<Int, Int>()
-      selected.forEach { index ->
-        muxTrack[index] = muxer.addTrack(extractor.getTrackFormat(index))
-      }
-      muxer.start()
-      val buffer = ByteBuffer.allocate(1024 * 1024)
-      val info = android.media.MediaCodec.BufferInfo()
-      selected.forEach { extractor.unselectTrack(it) }
-      selected.forEach { extractor.selectTrack(it) }
-      while (true) {
-        val track = extractor.sampleTrackIndex
-        if (track < 0) break
-        val size = extractor.readSampleData(buffer, 0)
-        if (size <= 0) {
-          extractor.advance()
-          continue
-        }
-        info.offset = 0
-        info.size = size
-        info.presentationTimeUs = extractor.sampleTime.coerceAtLeast(0L)
-        info.flags = extractor.sampleFlags
-        muxer.writeSampleData(muxTrack.getValue(track), buffer, info)
-        extractor.advance()
-      }
-      muxer.stop()
-      muxer.release()
-      tempInput.delete()
-      Result(output, if (selectedSubtitle >= 0) listOf((selectedSubtitle + 1).toLong()) else emptyList()).also { cache[key] = it }
     }.getOrNull().also {
-      if (it == null) {
-      runCatching { extractor.release() }
-      runCatching { output.delete() }
-      }
+      if (it == null) outputFile.delete()
     }
   }
 
   fun clear() {
-    cache.values.forEach { runCatching { it.file.delete() } }
+    cache.values.forEach { result -> runCatching { result.file.delete() } }
     cache.clear()
   }
 
-  private fun firstTrack(extractor: MediaExtractor, prefix: String): Int? =
-    (0 until extractor.trackCount).firstOrNull {
-      extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith(prefix)
+  private fun selectTracks(extractor: MediaExtractor, requestedAudioTrack: Int?): List<Int> {
+    val videoTrack = (0 until extractor.trackCount).firstOrNull { index ->
+      extractor.mimeAt(index).startsWith("video/")
     }
-
-  private fun openInput(context: Context, uri: Uri) = when (uri.scheme?.lowercase()) {
-    "file" -> uri.path?.let(::FileInputStream)
-    "content" -> context.contentResolver.openInputStream(uri)
-    else -> null
+    val audioTracks = (0 until extractor.trackCount).filter { index ->
+      extractor.mimeAt(index).startsWith("audio/")
+    }
+    val audioTrack = requestedAudioTrack
+      ?.takeIf { it in audioTracks }
+      ?: audioTracks.firstOrNull()
+    return listOfNotNull(videoTrack, audioTrack).distinct()
   }
+
+  private fun copySamples(
+    extractor: MediaExtractor,
+    muxer: MediaMuxer,
+    muxTrackByExtractorTrack: Map<Int, Int>,
+  ) {
+    val buffer = ByteBuffer.allocate(BUFFER_SIZE)
+    val info = MediaCodec.BufferInfo()
+    while (true) {
+      val extractorTrack = extractor.sampleTrackIndex
+      if (extractorTrack < 0) return
+      val muxTrack = muxTrackByExtractorTrack[extractorTrack]
+      if (muxTrack != null) {
+        buffer.clear()
+        val sampleSize = extractor.readSampleData(buffer, 0)
+        if (sampleSize > 0) {
+          info.set(
+            0,
+            sampleSize,
+            extractor.sampleTime.coerceAtLeast(0L),
+            extractor.sampleFlags,
+          )
+          muxer.writeSampleData(muxTrack, buffer, info)
+        }
+      }
+      extractor.advance()
+    }
+  }
+
+  private fun copySourceToFile(context: Context, source: Uri, target: File) {
+    val input = when (source.scheme?.lowercase()) {
+      "file" -> FileInputStream(source.path ?: error("Missing file path"))
+      "content" -> context.contentResolver.openInputStream(source)
+        ?: error("Unable to open content source")
+      else -> error("Unsupported local source scheme")
+    }
+    input.use { stream ->
+      FileOutputStream(target).use { output -> stream.copyTo(output) }
+    }
+  }
+
+  private fun MediaExtractor.mimeAt(index: Int): String =
+    getTrackFormat(index).getString(MediaFormat.KEY_MIME).orEmpty().lowercase()
+
+  private const val BUFFER_SIZE = 1024 * 1024
 }
