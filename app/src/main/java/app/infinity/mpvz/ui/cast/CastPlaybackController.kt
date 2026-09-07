@@ -388,10 +388,6 @@ class CastPlaybackController(
         .setAutoplay(snapshot.isPlaying)
         .setCurrentTime(snapshot.positionMs.coerceAtLeast(0L))
         .build()
-        .setActiveTrackIds(
-          listOfNotNull(snapshot.activeSubtitleTrackId, snapshot.activeAudioTrackId).toLongArray(),
-        )
-        .build()
     val remote =
       session.remoteMediaClient ?: run {
         notifyUser("Cast receiver is not ready")
