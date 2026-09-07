@@ -1713,7 +1713,8 @@ class PlayerActivity :
         },
         activeAudioTrackId = nativeEngine.snapshot.value.audioTracks
           .indexOfFirst { it.selected }
-          .takeIf { it >= 0 }
+          .let { selectedIndex -> if (selectedIndex >= 0) selectedIndex else 0 }
+          .takeIf { nativeEngine.snapshot.value.audioTracks.isNotEmpty() }
           ?.plus(1001)
           ?.toLong(),
       )
@@ -1768,7 +1769,8 @@ class PlayerActivity :
       activeAudioTrackId = viewModel.audioTracks.value
         .firstOrNull { it.type == "audio" && it.isSelected }
         ?.id
-        ?.let { (1000 + it).toLong() },
+        ?.let { (1000 + it).toLong() }
+        ?: viewModel.audioTracks.value.firstOrNull { it.type == "audio" }?.id?.let { (1000 + it).toLong() },
     )
   }
 
