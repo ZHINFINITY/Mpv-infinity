@@ -610,8 +610,11 @@ class MainActivity : AppCompatActivity() {
     @Suppress("UNCHECKED_CAST")
     val typedBackstack = backstack as NavBackStack<Screen>
 
-    val appNavStyle by playerPreferences.appNavStyle.collectAsState()
     val animSpeed by playerPreferences.animationSpeed.collectAsState()
+    // Keep the main navigator from composing and animating two full screens at once. The
+    // previous spring/scale transitions produced 1-second HWUI frames on large Compose screens
+    // and could leave the outgoing surface visible while MainActivity was being replaced.
+    val mainNavStyle = NavigationAnimStyle.None
 
     val context = LocalContext.current
     val currentVersion =
@@ -672,10 +675,10 @@ class MainActivity : AppCompatActivity() {
               }
             },
             sizeTransform = null,
-            transitionSpec = { screenNavTransition(forward = true, style = appNavStyle, speed = animSpeed) },
-            popTransitionSpec = { screenNavTransition(forward = false, style = appNavStyle, speed = animSpeed) },
+            transitionSpec = { screenNavTransition(forward = true, style = mainNavStyle, speed = animSpeed) },
+            popTransitionSpec = { screenNavTransition(forward = false, style = mainNavStyle, speed = animSpeed) },
             predictivePopTransitionSpec = { _: Int ->
-              screenNavTransition(forward = false, style = appNavStyle, speed = animSpeed)
+              screenNavTransition(forward = false, style = mainNavStyle, speed = animSpeed)
             },
           )
 
