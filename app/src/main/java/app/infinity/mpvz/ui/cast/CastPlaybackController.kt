@@ -173,6 +173,7 @@ class CastPlaybackController(
       registeredRemoteMediaClient = nextRemote
     }
     remoteMediaClient = nextRemote
+    sendJellyfinSessionInit(session)
     _castState.update {
       it.copy(
         isConnected = true,
@@ -283,7 +284,8 @@ class CastPlaybackController(
 
   private fun sendJellyfinTrackCommand(command: String, trackId: Long?): Boolean {
     val snapshot = currentMedia() ?: return false
-    if (jellyfinPayload(snapshot) == null || castSession == null) return false
+    val connection = jellyfinConnection(snapshot) ?: return false
+    if (castSession == null) return false
     val index = trackId?.let { id ->
       if (command == "SetAudioStreamIndex") snapshot.audioTracks.indexOfFirst { it.id == id }
       else snapshot.subtitleTracks.indexOfFirst { it.id == id }
@@ -291,6 +293,9 @@ class CastPlaybackController(
     val message = JSONObject().apply {
       put("command", command)
       put("options", JSONObject().put("index", index))
+      put("serverAddress", connection.serverAddress)
+      put("userId", connection.userId)
+      put("accessToken", connection.accessToken)
     }
     return runCatching {
       castSession?.sendMessage(JELLYFIN_COMMAND_NAMESPACE, message.toString())
@@ -302,6 +307,21 @@ class CastPlaybackController(
       Log.w(TAG, "Unable to send Jellyfin Cast command: $command", it)
       false
     }
+  }
+
+  private fun sendJellyfinSessionInit(session: CastSession) {
+    val snapshot = currentMedia() ?: return
+    val connection = jellyfinConnection(snapshot) ?: return
+    val message = JSONObject().apply {
+      put("command", "Identify")
+      put("options", JSONObject())
+      put("serverAddress", connection.serverAddress)
+      put("userId", connection.userId)
+      put("accessToken", connection.accessToken)
+      put("receiverName", activity.applicationInfo.loadLabel(activity.packageManager).toString())
+    }
+    runCatching { session.sendMessage(JELLYFIN_COMMAND_NAMESPACE, message.toString()) }
+      .onFailure { Log.w(TAG, "Unable to initialize Jellyfin Cast receiver", it) }
   }
 
   fun disconnect() {
@@ -551,6 +571,22 @@ class CastPlaybackController(
       mediaSourceId = source.getQueryParameter("MediaSourceId"),
       itemId = itemId,
     )
+  }
+
+  private data class JellyfinConnection(
+    val serverAddress: String,
+    val userId: String,
+    val accessToken: String,
+  )
+
+  private fun jellyfinConnection(snapshot: CastMediaSnapshot): JellyfinConnection? {
+    val source = snapshot.source
+    val token = source.getQueryParameter("api_key") ?: snapshot.jellyfin?.accessToken ?: return null
+    val userId = source.getQueryParameter("userId") ?: snapshot.jellyfin?.userId ?: return null
+    val scheme = source.scheme ?: return null
+    val host = source.host ?: return null
+    val port = source.port.takeIf { it > 0 }?.let { ":$it" }.orEmpty()
+    return JellyfinConnection("$scheme://$host$port", userId, token)
   }
 
   private fun inferMimeType(uri: Uri): String {
