@@ -64,7 +64,7 @@ class FolderListViewModel(
 
   private val _foldersWithNewCount = MutableStateFlow<List<FolderWithNewCount>>(emptyList())
   val foldersWithNewCount: StateFlow<List<FolderWithNewCount>> = _foldersWithNewCount.asStateFlow()
-  private val folderWatchedOverrides = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+  private val folderWatchedOverrides = MutableStateFlow<Map<String, Boolean>>(loadFolderWatchedOverrides())
 
   // Only show loading on fresh install (when there's no cached data)
   private val _isLoading = MutableStateFlow(false)
@@ -106,6 +106,22 @@ class FolderListViewModel(
       @Suppress("UNCHECKED_CAST")
       override fun <T : ViewModel> create(modelClass: Class<T>): T = FolderListViewModel(application, audioOnly) as T
     }
+  }
+
+  private fun loadFolderWatchedOverrides(): Map<String, Boolean> =
+    getApplication<Application>()
+      .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+      .getStringSet("values", emptySet())
+      .mapNotNull { value ->
+        val split = value.split("\u001f", limit = 2)
+        if (split.size == 2) split[0] to (split[1] == "1") else null
+      }.toMap()
+
+  private fun saveFolderWatchedOverrides(values: Map<String, Boolean>) {
+    val encoded = values.map { (key, watched) -> key + "\u001f" + if (watched) "1" else "0" }.toSet()
+    getApplication<Application>()
+      .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+      .edit().putStringSet("values", encoded).apply()
   }
 
   init {
@@ -371,7 +387,10 @@ class FolderListViewModel(
   }
 
   fun setFolderWatched(folder: VideoFolder, watched: Boolean) {
-    folderWatchedOverrides.value = folderWatchedOverrides.value + (folder.bucketId to watched)
+    val updatedOverrides = folderWatchedOverrides.value + (folder.bucketId to watched)
+    folderWatchedOverrides.value = updatedOverrides
+    saveFolderWatchedOverrides(updatedOverrides)
+    newCountJob?.cancel()
     _foldersWithNewCount.value =
       _foldersWithNewCount.value.map { entry ->
         if (entry.folder.bucketId == folder.bucketId) {
