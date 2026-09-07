@@ -49,14 +49,15 @@ internal object CastRemuxPipeline {
         val selectedTracks = selectTracks(extractor, audioTrackIndex)
         if (selectedTracks.isEmpty()) return@runCatching null
 
-        muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val activeMuxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        muxer = activeMuxer
         val muxTrackByExtractorTrack = selectedTracks.associateWith { extractorTrack ->
-          muxer.addTrack(extractor.getTrackFormat(extractorTrack))
+          activeMuxer.addTrack(extractor.getTrackFormat(extractorTrack))
         }
-        muxer.start()
+        activeMuxer.start()
         selectedTracks.forEach(extractor::selectTrack)
-        copySamples(extractor, muxer, muxTrackByExtractorTrack)
-        muxer.stop()
+        copySamples(extractor, activeMuxer, muxTrackByExtractorTrack)
+        activeMuxer.stop()
         Result(outputFile).also { cache[key] = it }
       } finally {
         runCatching { muxer?.release() }
