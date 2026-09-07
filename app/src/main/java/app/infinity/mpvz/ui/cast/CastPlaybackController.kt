@@ -94,17 +94,9 @@ class CastPlaybackController(
         wasSuspended: Boolean,
       ) {
         onSessionReady(session)
-        val remote = session.remoteMediaClient
-        if (remote?.mediaInfo != null) {
-          transferredByThisController = true
-          localWasPlaying = currentMedia()?.isPlaying == true
-          pauseLocal()
-          startPositionPolling()
-        } else {
-          loadCurrentMedia(session)
-        }
+        mediaReadinessRetries = 0
+        loadCurrentMedia(session)
       }
-
       override fun onSessionEnding(session: CastSession) {
         session.remoteMediaClient?.let { remote ->
           lastRemotePositionMs = remote.approximateStreamPosition
