@@ -31,6 +31,8 @@ import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
 import kotlinx.serialization.Serializable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 import java.io.File
@@ -51,11 +53,25 @@ object ExtraFeaturesScreen : Screen {
     val activityLog by preferences.enableLibraryActivityLog.collectAsState()
     val showExtraData = smartCollections || watchStatistics || playbackDiagnostics || libraryHealth || qualityFilters || activityLog
     val recentEntries by produceState(emptyList(), showExtraData) {
-      value = if (showExtraData) recentlyPlayedRepository.getRecentlyPlayed(200) else emptyList()
+      value =
+        if (showExtraData) {
+          withContext(Dispatchers.IO) { recentlyPlayedRepository.getRecentlyPlayed(200) }
+        } else {
+          emptyList()
+        }
     }
     val recentlyPlayedCount = recentEntries.size
     val partiallyWatchedCount = recentEntries.count { it.duration > 0L }
-    val missingFileCount = recentEntries.count { it.filePath.startsWith("/") && !File(it.filePath).exists() }
+    val missingFileCount by produceState(0, recentEntries, libraryHealth) {
+      value =
+        if (libraryHealth) {
+          withContext(Dispatchers.IO) {
+            recentEntries.count { it.filePath.startsWith("/") && !File(it.filePath).exists() }
+          }
+        } else {
+          0
+        }
+    }
     val highQualityCount = recentEntries.count { it.width >= 1920 || it.height >= 1080 }
     val mediaCandidateCount = recentEntries.count { it.fileName.substringAfterLast('.', "").lowercase() in setOf("mkv", "mp4", "webm", "avi") }
 

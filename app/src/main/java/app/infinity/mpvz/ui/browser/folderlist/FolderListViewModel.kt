@@ -342,7 +342,7 @@ class FolderListViewModel(
                         playbackState == null
                       }
 
-                    (watchedOverride == false || isRecent) && isUnplayed
+                    if (watchedOverride == false) true else isRecent && isUnplayed
                   }
                 }
 
