@@ -10,7 +10,6 @@
 package app.infinity.mpvz.ui.cast
 
 import android.content.Context
-import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.framework.CastOptions
 import com.google.android.gms.cast.framework.OptionsProvider
 import com.google.android.gms.cast.framework.SessionProvider
@@ -33,11 +32,15 @@ class MpvRxCastOptionsProvider : OptionsProvider {
 
     return CastOptions
       .Builder()
-      .setReceiverApplicationId(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID)
+      .setReceiverApplicationId(JELLYFIN_CAST_RECEIVER_APP_ID)
       .setCastMediaOptions(mediaOptions)
       .setRemoteToLocalEnabled(true)
       .build()
   }
 
   override fun getAdditionalSessionProviders(context: Context): List<SessionProvider>? = null
+
+  companion object {
+    private const val JELLYFIN_CAST_RECEIVER_APP_ID = "F007D354"
+  }
 }

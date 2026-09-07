@@ -13,6 +13,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
+import org.json.JSONObject
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.google.android.gms.cast.MediaInfo
@@ -48,6 +49,7 @@ data class CastMediaSnapshot(
   val activeSubtitleTrackId: Long? = null,
   val audioTracks: List<CastAudioTrack> = emptyList(),
   val activeAudioTrackId: Long? = null,
+  val jellyfin: JellyfinCastPayload? = null,
 )
 
 class CastPlaybackController(
@@ -270,11 +272,36 @@ class CastPlaybackController(
   }
 
   fun setSubtitleTrack(trackId: Long?) {
+    if (sendJellyfinTrackCommand("SetSubtitleStreamIndex", trackId)) return
     applyActiveTracks(trackId, _castState.value.activeAudioTrackId)
   }
 
   fun setAudioTrack(trackId: Long?) {
+    if (sendJellyfinTrackCommand("SetAudioStreamIndex", trackId)) return
     applyActiveTracks(_castState.value.activeSubtitleTrackId, trackId)
+  }
+
+  private fun sendJellyfinTrackCommand(command: String, trackId: Long?): Boolean {
+    val snapshot = currentMedia() ?: return false
+    if (jellyfinPayload(snapshot) == null || castSession == null) return false
+    val index = trackId?.let { id ->
+      if (command == "SetAudioStreamIndex") snapshot.audioTracks.indexOfFirst { it.id == id }
+      else snapshot.subtitleTracks.indexOfFirst { it.id == id }
+    }?.takeIf { it >= 0 } ?: -1
+    val message = JSONObject().apply {
+      put("command", command)
+      put("options", JSONObject().put("index", index))
+    }
+    return runCatching {
+      castSession?.sendMessage(JELLYFIN_COMMAND_NAMESPACE, message.toString())
+        ?.setResultCallback { result ->
+          if (!result.status.isSuccess) Log.w(TAG, "Jellyfin Cast command failed: $command")
+        }
+      true
+    }.getOrElse {
+      Log.w(TAG, "Unable to send Jellyfin Cast command: $command", it)
+      false
+    }
   }
 
   fun disconnect() {
@@ -332,6 +359,21 @@ class CastPlaybackController(
       MediaMetadata(metadataType).apply {
         putString(MediaMetadata.KEY_TITLE, snapshot.title)
       }
+    val jellyfinPayload = jellyfinPayload(snapshot)
+    val activeAudioIndex = requestedAudioId?.let { id -> snapshot.audioTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+      ?: snapshot.activeAudioTrackId?.let { id -> snapshot.audioTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+    val activeSubtitleIndex = requestedSubtitleId?.let { id -> snapshot.subtitleTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+      ?: snapshot.activeSubtitleTrackId?.let { id -> snapshot.subtitleTracks.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+    val customData = JSONObject().apply {
+      jellyfinPayload?.serverId?.let { put("serverId", it) }
+      jellyfinPayload?.userId?.let { put("userId", it) }
+      jellyfinPayload?.accessToken?.let { put("accessToken", it) }
+      jellyfinPayload?.mediaSourceId?.let { put("mediaSourceId", it) }
+      jellyfinPayload?.itemId?.let { put("itemId", it) }
+      jellyfinPayload?.playSessionId?.let { put("playSessionId", it) }
+      put("audioStreamIndex", activeAudioIndex ?: JSONObject.NULL)
+      put("subtitleStreamIndex", activeSubtitleIndex ?: JSONObject.NULL)
+    }
     val mediaInfo =
       MediaInfo
         .Builder(contentUrl)
@@ -339,6 +381,7 @@ class CastPlaybackController(
           if (selectedSnapshot.durationMs > 0L) MediaInfo.STREAM_TYPE_BUFFERED else MediaInfo.STREAM_TYPE_LIVE,
         ).setContentType(contentType)
         .setMetadata(metadata)
+        .setCustomData(customData)
         .setMediaTracks(if (selectedSource == null) snapshot.subtitleTracks.map { track ->
           MediaTrack.Builder(track.id, MediaTrack.TYPE_TEXT)
             .setName(track.name)
@@ -496,6 +539,20 @@ class CastPlaybackController(
     }
   }
 
+  private fun jellyfinPayload(snapshot: CastMediaSnapshot): JellyfinCastPayload? {
+    val source = snapshot.source
+    if (source.path.orEmpty().contains("/Videos/").not() || source.getQueryParameter("api_key") == null) return snapshot.jellyfin
+    val segments = source.pathSegments
+    val itemId = segments.getOrNull(segments.indexOf("Videos") + 1)
+    return snapshot.jellyfin ?: JellyfinCastPayload(
+      serverId = source.getQueryParameter("serverId"),
+      userId = source.getQueryParameter("userId"),
+      accessToken = source.getQueryParameter("api_key"),
+      mediaSourceId = source.getQueryParameter("MediaSourceId"),
+      itemId = itemId,
+    )
+  }
+
   private fun inferMimeType(uri: Uri): String {
     activity.contentResolver.getType(uri)?.let { return it }
     val extension = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
@@ -506,6 +563,7 @@ class CastPlaybackController(
     const val TAG = "CastPlaybackController"
     private const val MEDIA_READINESS_RETRY_DELAY_MS = 750L
     private const val MAX_MEDIA_READINESS_RETRIES = 12
+    private const val JELLYFIN_COMMAND_NAMESPACE = "urn:x-cast:com.connectsdk"
 
     @Volatile
     var instance: CastPlaybackController? = null
