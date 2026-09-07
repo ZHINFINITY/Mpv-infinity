@@ -157,6 +157,17 @@ class MediaLibraryViewModel(
   }
 
   fun setWatched(video: Video, watched: Boolean) {
+    _videosWithPlaybackInfo.update { videos ->
+      videos.map { item ->
+        if (item.video.path == video.path) {
+          item.copy(
+            timeRemaining = if (watched) 0L else (video.duration / 1000L).coerceAtLeast(0L),
+            progressPercentage = null,
+            isWatched = watched,
+          )
+        } else item
+      }
+    }
     viewModelScope.launch(Dispatchers.IO) {
       val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
       val identifiers = videoPlaybackIdentifiers(video)
