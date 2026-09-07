@@ -108,14 +108,17 @@ class FolderListViewModel(
     }
   }
 
-  private fun loadFolderWatchedOverrides(): Map<String, Boolean> =
-    getApplication<Application>()
-      .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
-      .getStringSet("values", emptySet())
-      .mapNotNull { value ->
-        val split = value.split("\u001f", limit = 2)
-        if (split.size == 2) split[0] to (split[1] == "1") else null
-      }.toMap()
+  private fun loadFolderWatchedOverrides(): Map<String, Boolean> {
+    val stored =
+      getApplication<Application>()
+        .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+        .getStringSet("values", emptySet<String>())
+        ?: emptySet<String>()
+    return stored.mapNotNull { value ->
+      val split = value.split("\u001f", limit = 2)
+      if (split.size == 2) split[0] to (split[1] == "1") else null
+    }.toMap()
+  }
 
   private fun saveFolderWatchedOverrides(values: Map<String, Boolean>) {
     val encoded = values.map { (key, watched) -> key + "\u001f" + if (watched) "1" else "0" }.toSet()
