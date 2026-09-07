@@ -358,7 +358,7 @@ class VideoListViewModel(
           item.copy(
             timeRemaining = if (watched) 0L else (video.duration / 1000L).coerceAtLeast(0L),
             progressPercentage = null,
-            isOldAndUnplayed = item.isOldAndUnplayed && !watched,
+            isOldAndUnplayed = !watched && (appearancePreferences.unplayedOldVideoDays.get() == 0 || System.currentTimeMillis() - video.dateModified * 1000L <= appearancePreferences.unplayedOldVideoDays.get().toLong() * 24L * 60L * 60L * 1000L),
             isWatched = watched,
           )
         } else {
