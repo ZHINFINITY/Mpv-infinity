@@ -343,7 +343,6 @@ class CastPlaybackController(
     }
 
     val contentUrl = resolveContentUrl(snapshot)
-    Log.i(TAG, "Cast content URL resolved=" + contentUrl + " source=" + snapshot.source + " mime=" + (snapshot.mimeType ?: inferMimeType(snapshot.source)))
     if (contentUrl == null) {
       notifyUser("This media source cannot be reached by the Cast device")
       castContext?.sessionManager?.endCurrentSession(true)
@@ -388,19 +387,14 @@ class CastPlaybackController(
         .setMediaInfo(mediaInfo)
         .setAutoplay(snapshot.isPlaying)
         .setCurrentTime(snapshot.positionMs.coerceAtLeast(0L))
-        // Do not activate local MPV track IDs during the initial Cast load. The receiver
-        // must load the media first; track changes are sent afterward by applyActiveTracks().
-          listOfNotNull(snapshot.activeSubtitleTrackId, snapshot.activeAudioTrackId).toLongArray(),
-        )
-        .build()
     val remote =
       session.remoteMediaClient ?: run {
         notifyUser("Cast receiver is not ready")
         return
       }
 
+    Log.i(TAG, "Cast load requested url=" + contentUrl + " autoplay=" + snapshot.isPlaying + " positionMs=" + snapshot.positionMs + " trackCount=" + mediaInfo.mediaTracks.size)
     remote.load(request).setResultCallback { result ->
-    Log.i(TAG, "Cast load requested autoplay=" + snapshot.isPlaying + " positionMs=" + snapshot.positionMs + " trackCount=" + mediaInfo.mediaTracks.size)
       activity.runOnUiThread {
       Log.i(TAG, "Cast load result success=" + result.status.isSuccess + " code=" + result.status.statusCode + " message=" + result.status.statusMessage)
         if (result.status.isSuccess) {
