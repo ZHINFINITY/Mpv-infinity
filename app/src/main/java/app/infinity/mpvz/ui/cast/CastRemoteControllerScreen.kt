@@ -326,7 +326,7 @@ private fun CastOptionButton(
   label: String,
   onClick: () -> Unit,
 ) {
-  IconButton(onClick = onClick, modifier = Modifier.weight(1f).height(58.dp)) {
+  IconButton(onClick = onClick, modifier = Modifier.fillMaxWidth(0.25f).height(58.dp)) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
       Icon(
         imageVector = icon,
