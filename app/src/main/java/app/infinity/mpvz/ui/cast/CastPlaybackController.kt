@@ -94,21 +94,9 @@ class CastPlaybackController(
         wasSuspended: Boolean,
       ) {
         onSessionReady(session)
-        val remote = session.remoteMediaClient
-        if (remote?.mediaInfo != null) {
-          transferredByThisController = true
-          localWasPlaying = currentMedia()?.isPlaying == true
-          pauseLocal()
-          scope.launch {
-            delay(500L)
-            applyActiveTracks(snapshot.activeSubtitleTrackId, snapshot.activeAudioTrackId)
-          }
-          startPositionPolling()
-        } else {
-          loadCurrentMedia(session)
-        }
+        mediaReadinessRetries = 0
+        loadCurrentMedia(session)
       }
-
       override fun onSessionEnding(session: CastSession) {
         session.remoteMediaClient?.let { remote ->
           lastRemotePositionMs = remote.approximateStreamPosition
@@ -420,10 +408,6 @@ class CastPlaybackController(
             )
           }
           pauseLocal()
-          scope.launch {
-            delay(500L)
-            applyActiveTracks(snapshot.activeSubtitleTrackId, snapshot.activeAudioTrackId)
-          }
           startPositionPolling()
           openRemoteController()
         } else {
