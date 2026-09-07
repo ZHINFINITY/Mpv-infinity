@@ -201,6 +201,7 @@ class JellyfinRepository(
       itemId = item.id,
       token = server.accessToken,
       isAudio = item.isAudio,
+      userId = server.userId,
     )
 
   fun getImageUrl(

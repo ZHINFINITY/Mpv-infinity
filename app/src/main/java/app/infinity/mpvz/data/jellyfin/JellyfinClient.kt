@@ -140,10 +140,12 @@ class JellyfinClient(
       itemId: String,
       token: String,
       isAudio: Boolean = false,
+      userId: String? = null,
     ): String {
       val base = normalizeUrl(serverUrl)
       val endpoint = if (isAudio) "Audio" else "Videos"
-      return "$base/$endpoint/$itemId/stream?static=true&api_key=$token"
+      val userParam = userId?.takeIf { it.isNotBlank() }?.let { "&userId=$it" }.orEmpty()
+      return "$base/$endpoint/$itemId/stream?static=true&api_key=$token$userParam"
     }
 
     fun getImageUrl(
@@ -719,7 +721,8 @@ class JellyfinClient(
     itemId: String,
     token: String,
     isAudio: Boolean = false,
-  ): String = Companion.getStreamUrl(serverUrl, itemId, token, isAudio)
+    userId: String? = null,
+  ): String = Companion.getStreamUrl(serverUrl, itemId, token, isAudio, userId)
 
   fun getImageUrl(
     serverUrl: String,
