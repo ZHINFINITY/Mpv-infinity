@@ -93,6 +93,9 @@ class FolderListViewModel(
 
   // Track the current scan job to prevent concurrent scans
   private var currentScanJob: Job? = null
+  // The newest manual refresh wins. This prevents rapid gestures or repeated taps from starting
+  // competing MediaStore/provider scans and emitting stale lists while Compose is animating.
+  private var refreshJob: Job? = null
   private var newCountJob: Job? = null
   private var cacheWriteJob: Job? = null
   private var newCountGeneration = 0L
@@ -371,11 +374,12 @@ class FolderListViewModel(
 
     // Set loading state
     _isLoading.value = true
+    refreshJob?.cancel()
 
     // Cache invalidation and the root MediaStore scan both cross into Android's content-provider
     // service. Keep the complete refresh behavior, but never run those calls on the Compose/UI
     // thread; a slow provider transaction can otherwise stall the renderer.
-    viewModelScope.launch(Dispatchers.IO) {
+    refreshJob = viewModelScope.launch(Dispatchers.IO) {
       // Clear all caches to force fresh data from filesystem
       MediaFileRepository.clearCache()
       FolderViewScanner.clearCache()
