@@ -28,6 +28,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -115,17 +116,18 @@ class NativeMedia3Engine(context: Context) {
   private var player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
+        .setAllocator(DefaultAllocator(true, 256 * 1024))
         .setBufferDurationsMs(
-          10_000,
-          120_000,
-          1_000,
+          15_000,
+          300_000,
           3_000,
+          8_000,
         )
         .setBackBuffer(10_000, false)
         // Keep a bounded amount of compressed media buffered; the disk cache handles repeated
         // network reads without forcing a large memory buffer on 4K HDR devices.
-        .setTargetBufferBytes(128 * 1024 * 1024)
-        .setPrioritizeTimeOverSizeThresholds(true)
+        .setTargetBufferBytes(256 * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(false)
         .build(),
     )
     // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
