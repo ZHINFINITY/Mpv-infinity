@@ -1684,7 +1684,6 @@ class PlayerActivity :
       val nativeMediaItem = nativeEngine.currentPlayer.currentMediaItem ?: return null
       val nativeUri = sequenceOf(currentPlayableUri, nativeMediaItem.localConfiguration?.uri?.toString()).filterNotNull().map { Uri.parse(it) }.firstOrNull { uri -> uri.scheme?.lowercase() in setOf("http", "https", "content", "file") } ?: return null
       Log.i("CastPlaybackController", "Native Cast source=" + nativeUri + " playableUri=" + currentPlayableUri)
-      if (nativeScheme !in setOf("http", "https", "content", "file")) return null
       return CastMediaSnapshot(
         source = nativeUri,
         title = getPreferredCurrentTitle().ifBlank { fileName.ifBlank { nativeUri.lastPathSegment.orEmpty() } },
