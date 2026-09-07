@@ -284,7 +284,7 @@ class CastPlaybackController(
     val requested = listOfNotNull(subtitleId, audioId).toLongArray()
     Log.i(TAG, "Cast requested track IDs=" + requested.contentToString())
     remote.setActiveMediaTracks(requested).setResultCallback { result ->
-      Log.i(TAG, "Cast load result success=" + result.status.isSuccess + " code=" + result.status.statusCode + " message=" + result.status.statusMessage)
+      Log.i(TAG, "Cast track command result success=" + result.status.isSuccess + " code=" + result.status.statusCode + " message=" + result.status.statusMessage)
       if (result.status.isSuccess) {
         _castState.update {
           it.copy(activeSubtitleTrackId = subtitleId, activeAudioTrackId = audioId)
@@ -387,16 +387,20 @@ class CastPlaybackController(
         .setMediaInfo(mediaInfo)
         .setAutoplay(snapshot.isPlaying)
         .setCurrentTime(snapshot.positionMs.coerceAtLeast(0L))
+        .build()
+        .setActiveTrackIds(
+          listOfNotNull(snapshot.activeSubtitleTrackId, snapshot.activeAudioTrackId).toLongArray(),
+        )
+        .build()
     val remote =
       session.remoteMediaClient ?: run {
         notifyUser("Cast receiver is not ready")
         return
       }
 
-    Log.i(TAG, "Cast load requested url=" + contentUrl + " autoplay=" + snapshot.isPlaying + " positionMs=" + snapshot.positionMs + " trackCount=" + mediaInfo.mediaTracks.size)
     remote.load(request).setResultCallback { result ->
       activity.runOnUiThread {
-      Log.i(TAG, "Cast load result success=" + result.status.isSuccess + " code=" + result.status.statusCode + " message=" + result.status.statusMessage)
+      Log.i(TAG, "Cast track command result success=" + result.status.isSuccess + " code=" + result.status.statusCode + " message=" + result.status.statusMessage)
         if (result.status.isSuccess) {
           mediaReadinessRetries = 0
           localWasPlaying = snapshot.isPlaying
