@@ -26,6 +26,15 @@ data class CatalogState(
   val isLoading: Boolean = false,
   val resolvingId: Int? = null,
   val error: String? = null,
+  val streamOptions: List<StreamOption> = emptyList(),
+  val streamTitle: String? = null,
+)
+
+data class StreamOption(
+  val url: String,
+  val title: String,
+  val mimeType: String? = null,
+  val headers: Map<String, String> = emptyMap(),
 )
 
 @Serializable
@@ -53,7 +62,11 @@ data class TmdbDetails(
   @SerialName("poster_path") val posterPath: String? = null,
   @SerialName("backdrop_path") val backdropPath: String? = null,
   val seasons: List<TmdbSeason> = emptyList(),
+  @SerialName("external_ids") val externalIds: TmdbExternalIds? = null,
 )
+
+@Serializable
+data class TmdbExternalIds(val imdb_id: String? = null)
 
 @Serializable
 data class TmdbSeason(

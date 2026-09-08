@@ -44,21 +44,37 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun resolve(item: MediaItem) {
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, error = null) }
-      runCatching { resolver.resolve(item).url }
-        .onSuccess { _resolvedUrl.value = it }
+      runCatching {
+        val identifiedItem = repository.details(item)
+        resolver.resolve(identifiedItem)
+      }
+        .onSuccess { streams ->
+          if (streams.isEmpty()) {
+            _state.update { it.copy(error = "Resolver returned no playable streams.") }
+          } else {
+            _state.update { it.copy(streamOptions = streams, streamTitle = item.title) }
+          }
+        }
         .onFailure { _state.update { state -> state.copy(error = it.message ?: "Unable to resolve stream") } }
       _state.update { it.copy(resolvingId = null) }
     }
   }
 
+  fun playStream(stream: StreamOption) {
+    _resolvedUrl.value = stream.url
+    _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) }
+  }
+
+  fun dismissStreams() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) } }
   fun consumeResolvedUrl() { _resolvedUrl.value = null }
-  fun saveSettings(tmdbKey: String, resolverUrl: String, resolverToken: String) {
+  fun saveSettings(tmdbKey: String, resolverUrl: String, resolverToken: String, resolverPath: String) {
     settings.tmdbApiKey = tmdbKey
     settings.resolverBaseUrl = resolverUrl
     settings.resolverToken = resolverToken
+    settings.resolverPath = resolverPath
     loadTrending()
   }
-  fun currentSettings(): Triple<String, String, String> = Triple(settings.tmdbApiKey, settings.resolverBaseUrl, settings.resolverToken)
+  fun currentSettings(): Quadruple = Quadruple(settings.tmdbApiKey, settings.resolverBaseUrl, settings.resolverToken, settings.resolverPath)
 
   private fun loadTrending() {
     viewModelScope.launch {
@@ -76,3 +92,5 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message) } }
   }
 }
+
+data class Quadruple(val tmdbKey: String, val resolverUrl: String, val resolverToken: String, val resolverPath: String)

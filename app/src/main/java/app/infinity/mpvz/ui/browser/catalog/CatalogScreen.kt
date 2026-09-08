@@ -43,6 +43,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import app.infinity.mpvz.catalog.CatalogViewModel
 import app.infinity.mpvz.catalog.MediaItem
+import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
@@ -93,6 +94,14 @@ fun CatalogScreen() {
     }
   }
   if (showSettings) CatalogSettingsDialog(viewModel) { showSettings = false }
+  if (state.streamOptions.isNotEmpty()) {
+    StreamSelectionDialog(
+      title = state.streamTitle ?: "Available streams",
+      streams = state.streamOptions,
+      onSelect = viewModel::playStream,
+      onDismiss = viewModel::dismissStreams,
+    )
+  }
 }
 
 @Composable
@@ -115,9 +124,10 @@ private fun CatalogCard(item: MediaItem, resolving: Boolean, onClick: () -> Unit
 @Composable
 private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> Unit) {
   val initial = remember { viewModel.currentSettings() }
-  var tmdbKey by remember { mutableStateOf(initial.first) }
-  var resolverUrl by remember { mutableStateOf(initial.second) }
-  var resolverToken by remember { mutableStateOf(initial.third) }
+  var tmdbKey by remember { mutableStateOf(initial.tmdbKey) }
+  var resolverUrl by remember { mutableStateOf(initial.resolverUrl) }
+  var resolverToken by remember { mutableStateOf(initial.resolverToken) }
+  var resolverPath by remember { mutableStateOf(initial.resolverPath) }
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text("Catalog and resolver") },
@@ -127,9 +137,34 @@ private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> 
         OutlinedTextField(tmdbKey, { tmdbKey = it }, label = { Text("TMDB API key") }, singleLine = true)
         OutlinedTextField(resolverUrl, { resolverUrl = it }, label = { Text("Resolver HTTPS base URL") }, singleLine = true)
         OutlinedTextField(resolverToken, { resolverToken = it }, label = { Text("Resolver bearer token") }, singleLine = true)
+        OutlinedTextField(resolverPath, { resolverPath = it }, label = { Text("Stream endpoint path") }, singleLine = true)
+        Text("Use {type}, {imdbId}, or {tmdbId}. Default: /stream/{type}/{imdbId}.json", style = MaterialTheme.typography.labelSmall)
       }
     },
-    confirmButton = { Button(onClick = { viewModel.saveSettings(tmdbKey, resolverUrl, resolverToken); onDismiss() }) { Text("Save") } },
+    confirmButton = { Button(onClick = { viewModel.saveSettings(tmdbKey, resolverUrl, resolverToken, resolverPath); onDismiss() }) { Text("Save") } },
     dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+  )
+}
+
+@Composable
+private fun StreamSelectionDialog(
+  title: String,
+  streams: List<StreamOption>,
+  onSelect: (StreamOption) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Streams for $title") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        streams.forEach { stream ->
+          Button(onClick = { onSelect(stream) }, modifier = Modifier.fillMaxWidth()) {
+            Text(stream.title.ifBlank { stream.url }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+          }
+        }
+      }
+    },
+    confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
   )
 }

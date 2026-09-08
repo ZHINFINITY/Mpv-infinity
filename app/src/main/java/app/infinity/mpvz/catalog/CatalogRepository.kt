@@ -6,6 +6,13 @@ import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -20,6 +27,7 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 private const val TMDB_BASE_URL = "https://api.themoviedb.org/3"
 private const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
 private const val PREFS = "catalog_secure_settings"
+private const val DEFAULT_STREAM_PATH = "/stream/{type}/{imdbId}.json"
 
 private interface TmdbApi {
   @GET("trending/all/week")
@@ -27,7 +35,7 @@ private interface TmdbApi {
   @GET("search/multi")
   suspend fun search(@Query("api_key") apiKey: String, @Query("query") query: String): TmdbPage
   @GET("{type}/{id}")
-  suspend fun details(@Path("type") type: String, @Path("id") id: Int, @Query("api_key") apiKey: String): TmdbDetails
+  suspend fun details(@Path("type") type: String, @Path("id") id: Int, @Query("api_key") apiKey: String, @Query("append_to_response") append: String = "external_ids"): TmdbDetails
 }
 
 class CatalogSettings(context: Context) {
@@ -47,6 +55,9 @@ class CatalogSettings(context: Context) {
   var resolverToken: String
     get() = prefs.getString("resolver_token", "") ?: ""
     set(value) = prefs.edit().putString("resolver_token", value.trim()).apply()
+  var resolverPath: String
+    get() = prefs.getString("resolver_path", DEFAULT_STREAM_PATH) ?: DEFAULT_STREAM_PATH
+    set(value) = prefs.edit().putString("resolver_path", value.trim().ifBlank { DEFAULT_STREAM_PATH }).apply()
 }
 
 class TmdbCatalogRepository(private val settings: CatalogSettings) {
@@ -80,6 +91,7 @@ class TmdbCatalogRepository(private val settings: CatalogSettings) {
         overview = details.overview ?: item.overview,
         posterUrl = details.posterPath?.let { IMAGE_BASE_URL + it } ?: item.posterUrl,
         backdropUrl = details.backdropPath?.let { IMAGE_BASE_URL + it } ?: item.backdropUrl,
+        imdbId = details.externalIds?.imdb_id ?: item.imdbId,
         seasons = details.seasons.map { season ->
           Season(season.season_number, season.episodes.map { episode ->
             Episode(episode.episode_number, episode.name, episode.overview.orEmpty(), episode.stillPath?.let { IMAGE_BASE_URL + it })
@@ -100,7 +112,7 @@ class TmdbCatalogRepository(private val settings: CatalogSettings) {
 }
 
 interface StreamResolver {
-  suspend fun resolve(item: MediaItem): ResolverResponse
+  suspend fun resolve(item: MediaItem): List<StreamOption>
 }
 
 /**
@@ -112,41 +124,60 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
 
-  override suspend fun resolve(item: MediaItem): ResolverResponse = withContext(Dispatchers.IO) {
-    val baseUrl = settings.resolverBaseUrl.ifBlank { error("Configure a resolver endpoint in Catalog settings first.") }
+  override suspend fun resolve(item: MediaItem): List<StreamOption> = withContext(Dispatchers.IO) {
+    val baseUrl = settings.resolverBaseUrl.ifBlank { error("Configure a resolver base URL in Catalog settings first.") }
+    val identifier = item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
+    val type = if (item.type == MediaType.TV) "tv" else "movie"
+    val path = settings.resolverPath
+      .replace("{type}", type)
+      .replace("{imdbId}", identifier)
+      .replace("{tmdbId}", item.id.toString())
+      .let { if (it.startsWith("/")) it else "/$it" }
     val request = Request.Builder()
-      .url("$baseUrl/resolve")
-      .addHeader("Authorization", "Bearer ${settings.resolverToken}")
-      .post(
-        json.encodeToString(ResolverRequest.serializer(), ResolverRequest(item.id, item.imdbId, item.title, item.type))
-          .toRequestBody("application/json".toMediaType()),
-      )
+      .url(baseUrl.trimEnd('/') + path)
+      .apply { if (settings.resolverToken.isNotBlank()) addHeader("Authorization", "Bearer ${settings.resolverToken}") }
+      .get()
       .build()
     client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Resolver request failed (${response.code})")
-      resolveReturnedResource(json.decodeFromString<ResolverResponse>(response.body.string()), depth = 0)
+      parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
     }
   }
 
-  private fun resolveReturnedResource(result: ResolverResponse, depth: Int): ResolverResponse {
-    val url = result.url.trim()
-    if (url.startsWith("http://") || url.startsWith("https://")) return result.copy(url = url)
-    require(url.startsWith("stremio://")) {
-      "Resolver returned unsupported URL scheme '$url'. Return a direct http(s) URL or a Stremio resource."
+  private fun parseStreams(element: JsonElement, depth: Int): List<StreamOption> {
+    val candidates = when (element) {
+      is JsonArray -> element.flatMap { parseCandidate(it) }
+      is JsonObject -> element["streams"]?.let { parseStreams(it, depth) } ?: parseCandidate(element)
+      else -> parseCandidate(element)
     }
+    return candidates.mapNotNull { candidate ->
+      val clean = sanitizeUrl(candidate.first)
+      when {
+        clean.startsWith("http://") || clean.startsWith("https://") -> StreamOption(clean, candidate.second)
+        clean.startsWith("stremio://") -> resolveStremioResource(clean, candidate.second, depth)
+        else -> null
+      }
+    }
+  }
+
+  private fun parseCandidate(element: JsonElement): List<Pair<String, String>> = when (element) {
+    is JsonPrimitive -> listOf(element.content to "Stream")
+    is JsonObject -> listOfNotNull(
+      (element["url"] ?: element["externalUrl"] ?: element["stream"])
+        ?.jsonPrimitive?.content?.let { it to (element["title"]?.jsonPrimitive?.content ?: element["name"]?.jsonPrimitive?.content ?: "Stream") },
+    )
+    else -> emptyList()
+  }
+
+  private fun sanitizeUrl(value: String): String = value.trim().removeSurrounding("[").removeSurrounding("]").trim('"', '\'', ' ', '\n', '\r', '\t')
+
+  private fun resolveStremioResource(url: String, title: String, depth: Int): StreamOption? {
     require(depth < 2) { "Stremio resolver returned too many nested resources." }
     val resourceUrl = url.replaceFirst("stremio://", "https://")
     val request = Request.Builder().url(resourceUrl).build()
     return client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Stremio resource request failed (${response.code})")
-      val streams = json.decodeFromString<StremioStreamResponse>(response.body.string()).streams
-      val stream = streams.firstOrNull { candidate ->
-        listOf(candidate.url, candidate.externalUrl).any { it?.startsWith("http://") == true || it?.startsWith("https://") == true }
-      } ?: error("Stremio addon returned no playable HTTP(S) streams.")
-      val playableUrl = stream.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-        ?: stream.externalUrl?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-        ?: error("Stremio addon returned an invalid stream URL.")
-      result.copy(url = playableUrl)
+      parseStreams(json.parseToJsonElement(response.body.string()), depth + 1).firstOrNull()?.copy(title = title)
     }
   }
 }
