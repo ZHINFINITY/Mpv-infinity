@@ -80,6 +80,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
         putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
         putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+        if (item.seasons.isNotEmpty()) putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
         selectedEpisode?.let { episode ->
           putExtra("episode_season", season)
           putExtra("episode_number", episodeNumber)
@@ -190,11 +191,19 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
   val initial = remember { viewModel.currentSettings() }
   var endpoints by remember(persistedResolvers) { mutableStateOf(persistedResolvers) }
   var newUrl by remember { mutableStateOf("") }
+  var autoChooseBest by remember { mutableStateOf(viewModel.autoChooseBestTorrent) }
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text("Stream resolvers") },
     text = {
       androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+          androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
+            Text("Automatically choose best torrent")
+            Text("Use the highest-quality torrent when available.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+          androidx.compose.material3.Switch(checked = autoChooseBest, onCheckedChange = { autoChooseBest = it })
+        }
         endpoints.forEachIndexed { index, endpoint ->
           Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             androidx.compose.material3.Switch(checked = endpoint.enabled, onCheckedChange = { checked -> endpoints = endpoints.toMutableList().also { it[index] = endpoint.copy(enabled = checked) } })
@@ -207,7 +216,7 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
         androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { val updated = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); viewModel.saveResolvers(updated); endpoints = updated; newUrl = "" } }) { Text("Add resolver") }
       }
     },
-    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } },
+    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveAutoChooseBestTorrent(autoChooseBest); viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } },
     dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
   )
 }

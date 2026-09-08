@@ -40,6 +40,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   val resolvedUrl: StateFlow<String?> = _resolvedUrl.asStateFlow()
   private val _torrentLaunch = MutableSharedFlow<TorrentLaunchRequest>(extraBufferCapacity = 1)
   val torrentLaunch: SharedFlow<TorrentLaunchRequest> = _torrentLaunch
+  val autoChooseBestTorrent: Boolean get() = settings.autoChooseBestTorrent
 
   init { loadTrending() }
 
@@ -81,9 +82,15 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       _state.update { it.copy(resolvingId = item.id, selectedItem = null, error = null) }
       runCatching { resolver.resolve(item) }
         .onSuccess { streams ->
-          val stream = streams.firstOrNull { !it.isPlayable } ?: streams.firstOrNull()
-          if (stream == null) _state.update { it.copy(error = "No streams were returned by the configured resolver.") }
-          else if (stream.isPlayable) playStream(stream) else _torrentLaunch.emit(TorrentLaunchRequest(item, stream))
+          val torrent = streams.filterNot { it.isPlayable }
+            .maxWithOrNull(compareBy<StreamOption> { it.qualityRank }.thenBy { it.seeders })
+          val stream = torrent ?: streams.firstOrNull()
+          when {
+            stream == null -> _state.update { it.copy(error = "No streams were returned by the configured resolver.") }
+            stream.isPlayable && item.type == MediaType.TV -> _state.update { it.copy(error = "This series resolver returned no torrent source. Add a torrent-capable resolver.") }
+            stream.isPlayable && settings.autoChooseBestTorrent -> playStream(stream)
+            else -> _torrentLaunch.emit(TorrentLaunchRequest(item, stream))
+          }
         }
         .onFailure { error -> _state.update { it.copy(error = error.message ?: "Unable to resolve stream") } }
       _state.update { it.copy(resolvingId = null) }
@@ -116,6 +123,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     settings.resolverPath = resolverPath
     loadTrending()
   }
+  fun saveAutoChooseBestTorrent(value: Boolean) { settings.autoChooseBestTorrent = value }
   fun saveResolvers(value: List<ResolverEndpoint>) {
     settings.saveResolvers(value)
     _resolvers.value = settings.resolvers()

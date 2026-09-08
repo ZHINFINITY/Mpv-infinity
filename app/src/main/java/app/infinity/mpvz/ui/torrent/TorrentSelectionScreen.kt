@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 
@@ -97,6 +98,7 @@ private fun TorrentReadyScreen(
   var searchQuery by rememberSaveable { mutableStateOf("") }
   var isSearchOpen by rememberSaveable { mutableStateOf(false) }
   var sortDescending by rememberSaveable { mutableStateOf(false) }
+  var selectedSeason by rememberSaveable { mutableStateOf<Int?>(null) }
 
   Surface(
     modifier = Modifier.fillMaxSize(),
@@ -184,7 +186,8 @@ private fun TorrentReadyScreen(
                     (file.index + 1).toString() == query
                 }
               }
-            if (sortDescending) filtered.reversed() else filtered
+            val seasonFiltered = selectedSeason?.let { season -> filtered.filter { file -> (parseEpisode(file.name) ?: parseEpisode(file.path))?.season == season } } ?: filtered
+            if (sortDescending) seasonFiltered.reversed() else seasonFiltered
           }
 
         // File list header
@@ -194,6 +197,14 @@ private fun TorrentReadyScreen(
               .fillMaxWidth()
               .padding(horizontal = 20.dp, vertical = 4.dp),
         ) {
+          if (artwork.seasons.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              FilterChip(selected = selectedSeason == null, onClick = { selectedSeason = null }, label = { Text("All") })
+              artwork.seasons.forEach { season ->
+                FilterChip(selected = selectedSeason == season.number, onClick = { selectedSeason = season.number }, label = { Text("Season ${season.number}") })
+              }
+            }
+          }
           Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -318,6 +329,7 @@ private fun TorrentReadyScreen(
             ) { position, file ->
               TorrentFileRow(
                 file = file,
+                episodeArtwork = (parseEpisode(file.name) ?: parseEpisode(file.path))?.let { parsed -> artwork.seasons.firstOrNull { it.number == parsed.season }?.episodes?.firstOrNull { it.number == parsed.episode && it.stillUrl != null } },
                 position = position,
                 enabled = state.launchingFileIndex == null,
                 launching = state.launchingFileIndex == file.index,
@@ -506,6 +518,7 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
 @Composable
 private fun TorrentFileRow(
   file: TorrentFileItem,
+  episodeArtwork: app.infinity.mpvz.catalog.Episode?,
   position: Int,
   enabled: Boolean,
   launching: Boolean,
@@ -530,6 +543,14 @@ private fun TorrentFileRow(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+      episodeArtwork?.stillUrl?.let { thumbnail ->
+        RemoteImage(
+          url = thumbnail,
+          contentDescription = episodeArtwork.title,
+          modifier = Modifier.width(92.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)),
+          contentScale = ContentScale.Crop,
+        )
+      }
       Surface(
         modifier = Modifier.size(42.dp),
         shape = RoundedCornerShape(10.dp),

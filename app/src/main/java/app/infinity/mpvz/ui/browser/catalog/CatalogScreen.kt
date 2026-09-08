@@ -88,6 +88,7 @@ fun CatalogScreen() {
       putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
       putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
       putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+      if (item.seasons.isNotEmpty()) putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
       episode?.let {
         putExtra("episode_season", request.season)
         putExtra("episode_number", request.episode)
