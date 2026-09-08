@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -100,19 +101,8 @@ class TorrentCatalogActivity : AppCompatActivity() {
           }.onFailure { error = it.message ?: "Unable to find torrents" }
           loading = false
         }
-        TorrentCatalogScreen(item, resolvedStreams, loading, error, onBack = ::finish) { stream ->
-          startActivity(Intent(this, PlayerActivity::class.java).apply {
-            action = Intent.ACTION_VIEW
-            data = Uri.parse(stream.url)
-            putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
-            putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
-            putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
-            putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
-            putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
-            putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, stream.torrentFileIndex ?: 0)
-            putExtra("title", stream.title)
-            putExtra("seasons_json", Json.encodeToString(item.seasons))
-          })
+        Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+          if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error) else CircularProgressIndicator()
         }
       }
     }
