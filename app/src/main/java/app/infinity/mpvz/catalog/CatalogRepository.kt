@@ -29,6 +29,7 @@ private const val TMDB_BASE_URL = "https://api.themoviedb.org/3"
 private const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
 private const val PREFS = "catalog_secure_settings"
 private const val DEFAULT_STREAM_PATH = "/stream/{type}/{imdbId}.json"
+private const val JIKAN_BASE_URL = "https://api.jikan.moe/v4/"
 
 private interface TmdbApi {
   @GET("trending/all/week")
@@ -37,6 +38,13 @@ private interface TmdbApi {
   suspend fun search(@Query("api_key") apiKey: String, @Query("query") query: String): TmdbPage
   @GET("{type}/{id}")
   suspend fun details(@Path("type") type: String, @Path("id") id: Int, @Query("api_key") apiKey: String, @Query("append_to_response") append: String = "external_ids"): TmdbDetails
+}
+
+private interface JikanApi {
+  @GET("top/anime")
+  suspend fun top(@Query("limit") limit: Int = 24): JikanPage
+  @GET("anime")
+  suspend fun search(@Query("q") query: String, @Query("limit") limit: Int = 24): JikanPage
 }
 
 class CatalogSettings(context: Context) {
@@ -112,6 +120,29 @@ class TmdbCatalogRepository(private val settings: CatalogSettings) {
   )
 }
 
+class JikanAnimeRepository {
+  private val json = Json { ignoreUnknownKeys = true }
+  private val api = Retrofit.Builder()
+    .baseUrl(JIKAN_BASE_URL)
+    .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+    .build()
+    .create(JikanApi::class.java)
+
+  suspend fun trending(): List<MediaItem> = withContext(Dispatchers.IO) { api.top().data.map { it.toMediaItem() } }
+  suspend fun search(query: String): List<MediaItem> = withContext(Dispatchers.IO) { api.search(query).data.map { it.toMediaItem() } }
+
+  private fun JikanAnime.toMediaItem() = MediaItem(
+    id = -mal_id,
+    provider = CatalogProvider.MYANIMELIST,
+    providerId = mal_id.toString(),
+    type = if (type.equals("movie", ignoreCase = true)) MediaType.MOVIE else MediaType.TV,
+    title = title,
+    overview = synopsis.orEmpty(),
+    posterUrl = images?.jpg?.large_image_url ?: images?.jpg?.image_url,
+    backdropUrl = images?.jpg?.large_image_url ?: images?.jpg?.image_url,
+  )
+}
+
 interface StreamResolver {
   suspend fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null): List<StreamOption>
 }
@@ -127,7 +158,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
 
   override suspend fun resolve(item: MediaItem, season: Int?, episode: Int?): List<StreamOption> = withContext(Dispatchers.IO) {
     val baseUrl = settings.resolverBaseUrl.ifBlank { error("Configure a resolver base URL in Catalog settings first.") }
-    val identifier = item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
+    val identifier = item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
     val type = if (item.type == MediaType.TV) "series" else "movie"
     val path = settings.resolverPath
       .replace("{type}", type)

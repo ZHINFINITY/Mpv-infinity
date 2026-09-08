@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -26,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -44,6 +48,7 @@ import coil3.compose.AsyncImage
 import app.infinity.mpvz.catalog.CatalogViewModel
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.StreamOption
+import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.media.MediaUtils
@@ -70,6 +75,32 @@ fun CatalogScreen() {
     }
   }
 
+  state.selectedItem?.let { item ->
+    CatalogDetailsPage(
+      item = item,
+      streams = state.streamOptions,
+      sourceFilter = state.sourceFilter,
+      isLoading = state.resolvingId == item.id,
+      onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) },
+      onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
+      onFilter = viewModel::setSourceFilter,
+      onSelect = { stream ->
+        if (stream.isPlayable) viewModel.playStream(stream) else context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
+          action = Intent.ACTION_VIEW
+          data = Uri.parse(stream.url)
+          putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
+          putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
+          putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
+          putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
+          putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+          stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
+        })
+      },
+      onBack = viewModel::closeDetails,
+    )
+    return
+  }
+
   Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
       OutlinedTextField(
@@ -80,6 +111,23 @@ fun CatalogScreen() {
         label = { Text("Search movies and TV") },
       )
       IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Catalog settings") }
+    }
+    Row(
+      modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      FilterChip(
+        selected = state.enabledProviders.size == 2,
+        onClick = viewModel::enableAllProviders,
+        label = { Text("All") },
+      )
+      CatalogProvider.entries.forEach { provider ->
+        FilterChip(
+          selected = provider in state.enabledProviders,
+          onClick = { viewModel.toggleProvider(provider) },
+          label = { Text(if (provider == CatalogProvider.MYANIMELIST) "MyAnimeList" else "TMDB") },
+        )
+      }
     }
     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
     if (state.isLoading) Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -139,6 +187,70 @@ private fun CatalogCard(item: MediaItem, resolving: Boolean, onClick: () -> Unit
       Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
       Text(if (resolving) "Resolving…" else item.type.name, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 0.dp))
       Spacer(Modifier.height(8.dp))
+    }
+  }
+}
+
+@Composable
+private fun CatalogDetailsPage(
+  item: MediaItem,
+  streams: List<StreamOption>,
+  sourceFilter: String,
+  isLoading: Boolean,
+  onLoadSources: () -> Unit,
+  onEpisode: (Int, Int) -> Unit,
+  onFilter: (String) -> Unit,
+  onSelect: (StreamOption) -> Unit,
+  onBack: () -> Unit,
+) {
+  Column(
+    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
+    verticalArrangement = Arrangement.spacedBy(14.dp),
+  ) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+      TextButton(onClick = onBack) { Text("‹ Back") }
+      Text(item.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+    }
+    AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Crop)
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Text(item.title, style = MaterialTheme.typography.headlineMedium)
+      Text(item.provider.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+      if (item.overview.isNotBlank()) Text(item.overview, style = MaterialTheme.typography.bodyLarge)
+      if (item.type == app.infinity.mpvz.catalog.MediaType.TV && item.seasons.isNotEmpty()) {
+        Text("Seasons and episodes", style = MaterialTheme.typography.titleLarge)
+        item.seasons.forEach { season ->
+          Text("Season ${season.number}", style = MaterialTheme.typography.titleMedium)
+          season.episodes.forEach { episode ->
+            Card(Modifier.fillMaxWidth().clickable { onEpisode(season.number, episode.number) }) {
+              Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(model = episode.stillUrl, contentDescription = episode.title, modifier = Modifier.size(110.dp, 62.dp), contentScale = ContentScale.Crop)
+                Column(Modifier.padding(start = 10.dp)) {
+                  Text("${episode.number}. ${episode.title}", style = MaterialTheme.typography.titleSmall)
+                  Text(episode.overview, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+              }
+            }
+          }
+        }
+      } else if (streams.isEmpty()) {
+        Button(onClick = onLoadSources, enabled = !isLoading, modifier = Modifier.fillMaxWidth()) { Text(if (isLoading) "Finding sources…" else "Find sources") }
+      }
+      Text("Sources", style = MaterialTheme.typography.titleLarge)
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("All", "WatchHub", "Torrentio").forEach { filter -> TextButton(onClick = { onFilter(filter) }) { Text(if (filter == sourceFilter) "● $filter" else filter) } }
+      }
+      val visibleStreams = streams.filter { sourceFilter == "All" || (sourceFilter == "Torrentio" && !it.isPlayable) || (sourceFilter == "WatchHub" && it.isPlayable) }
+      visibleStreams.forEach { stream ->
+        val metadata = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.seeders.takeIf { it > 0 }?.let { "$it seeders" }, stream.size, stream.source).joinToString(" • ")
+        Card(Modifier.fillMaxWidth().clickable { onSelect(stream) }) {
+          Column(Modifier.padding(14.dp)) {
+            Text(stream.title, style = MaterialTheme.typography.titleMedium)
+            if (metadata.isNotBlank()) Text(metadata, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            Text(if (stream.isPlayable) "Play source" else "Stream torrent", style = MaterialTheme.typography.labelLarge)
+          }
+        }
+      }
+      if (streams.isEmpty() && !isLoading && item.type == app.infinity.mpvz.catalog.MediaType.TV) Text("Select an episode to load sources.", style = MaterialTheme.typography.bodyMedium)
     }
   }
 }
