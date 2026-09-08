@@ -207,7 +207,9 @@ androidComponents {
           .find { it.filterType == FilterConfiguration.FilterType.ABI }
           ?.identifier
 
-      if (isUniversalOnly && abi != null) {
+      // Keep universal packages for these flavors, but also publish the arm64-v8a split for
+      // modern devices that need the architecture-specific native playback profile.
+      if (isUniversalOnly && abi != null && abi != "arm64-v8a") {
         output.enabled.set(false)
       }
 
