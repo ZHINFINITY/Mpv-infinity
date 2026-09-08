@@ -2,6 +2,29 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 1.0.9 - Playback Stability, Navigation & Library Improvements
+
+### Playback & HDR
+- Restored the fast Native Media3 local playback and seek path used by the stable v1.0.8 release.
+- Restored default Media3 load control to avoid excessive memory pressure on high-bitrate 4K HDR and Dolby Vision files.
+- Preserved direct local content-URI playback, HDR decoder fallback, and Native playback diagnostics.
+- Improved navigation animation behavior and bounded transition work so rapid settings navigation remains responsive.
+
+### Folder State & Library
+- Fixed folder swipe actions so watched/new state propagates to child videos and their NEW badges.
+- Refreshed retained video lists after folder-wide watched-state changes.
+- Kept explicit folder overrides authoritative for child watched and NEW state calculations.
+
+### Optional Extra Features
+- Added a Settings > Extra features sub-screen with persisted opt-in controls.
+- Added read-only watch-history summaries and library-oriented status checks using existing data.
+- Moved the missing-file check and history loading off the UI thread.
+
+### Network & UI
+- Improved WebDAV/network media thumbnail handling through the authenticated network stream path.
+- Restored configurable screen animations while using bounded animation specs to reduce rapid-open/close UI lag.
+- Reverted Navigation3 to stable 1.1.1 after testing newer versions with rapid nested-settings transitions.
+
 ## 2.5.0 - Frame Review, Auto Crop & Library Performance
 
 > [!IMPORTANT]
