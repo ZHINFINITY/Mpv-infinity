@@ -171,7 +171,7 @@ private fun TorrentReadyScreen(
         }
 
         val displayedFiles =
-          remember(state.catalog.playableFiles, searchQuery, sortDescending) {
+          remember(state.catalog.playableFiles, searchQuery, sortDescending, selectedSeason) {
             val baseList =
               state.catalog.playableFiles.sortedWith { f1, f2 ->
                 MediaInfoParser.compareMediaFiles(f1.name, f1.index, f2.name, f2.index)
