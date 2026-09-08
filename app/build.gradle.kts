@@ -282,6 +282,7 @@ dependencies {
   implementation(libs.retrofit)
   implementation(libs.retrofit.kotlinx.serialization)
   implementation(libs.coil.compose)
+  implementation(libs.coil.network.okhttp)
   implementation(libs.androidx.security.crypto)
   implementation(libs.jsoup)
   implementation(libs.androidx.media3.common)
