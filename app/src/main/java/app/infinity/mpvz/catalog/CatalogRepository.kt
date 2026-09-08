@@ -210,9 +210,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
         Log.w("CloudStreamResolver", "Resolver ${request.url} returned HTTP ${response.code}")
         error("Resolver request failed (${response.code})")
       }
-      val body = response.body.string()
-      Log.d("CloudStreamResolver", "Resolver ${request.url} returned ${body.length} bytes")
-      val parsed = parseStreams(json.parseToJsonElement(body), depth = 0)
+      val parsed = parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
       require(parsed.isNotEmpty()) {
         "Resolver returned no streams. Expected a streams array with url, magnet, or infoHash entries."
       }
@@ -222,15 +220,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
 
   private fun parseStreams(element: JsonElement, depth: Int): List<StreamOption> {
     if (element is JsonObject) {
-      element.entries.firstOrNull { it.key.equals("streams", ignoreCase = true) || it.key.equals("stream", ignoreCase = true) || it.key.equals("results", ignoreCase = true) }?.value?.let { return parseStreams(it, depth) }
-      if (element.keys.any { it.equals("url", true) || it.equals("magnet", true) || it.equals("infoHash", true) || it.equals("infohash", true) }) {
-        return parseCandidate(element).mapNotNull { candidate ->
-          val clean = sanitizeUrl(candidate.url)
-          candidate.copy(url = clean, isPlayable = clean.startsWith("http://") || clean.startsWith("https://"))
-        }
-      }
-      val nested = element.values.flatMap { value -> if (value is JsonObject || value is JsonArray) parseStreams(value, depth + 1) else emptyList() }
-      if (nested.isNotEmpty()) return nested
+      element["streams"]?.let { return parseStreams(it, depth) }
     }
     val candidates = when (element) {
       is JsonArray -> element.flatMap { parseCandidate(it) }
@@ -265,7 +255,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
           )
         }
-        ?: (element["infoHash"] ?: element["infohash"])?.jsonPrimitive?.content?.let { hash ->
+        ?: element["infoHash"]?.jsonPrimitive?.content?.let { hash ->
           val title = element["title"]?.jsonPrimitive?.content ?: element["name"]?.jsonPrimitive?.content ?: "Torrent"
           StreamOption(
             url = "magnet:?xt=urn:btih:${hash.trim()}",
@@ -300,7 +290,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   private fun resolveStremioResource(url: String, title: String, depth: Int): StreamOption? {
     require(depth < 2) { "Stremio resolver returned too many nested resources." }
     val resourceUrl = url.replaceFirst("stremio://", "https://")
-    val request = Request.Builder().url(resourceUrl).header("User-Agent", "Mozilla/5.0 (Android) mpv-infinity/1.0").header("Accept", "application/json").build()
+    val request = Request.Builder().url(resourceUrl).build()
     return client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Stremio resource request failed (${response.code})")
       parseStreams(json.parseToJsonElement(response.body.string()), depth + 1).firstOrNull()?.copy(title = title)
