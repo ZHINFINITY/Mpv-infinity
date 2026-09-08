@@ -6,6 +6,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +46,9 @@ fun MediaDetailsSheet(
       TextButton(onClick = onBack) { Text("‹ Back") }
       Text(item.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
     }
-    AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Crop)
+    AnimatedVisibility(visible = true, enter = fadeIn(tween(300))) {
+      AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Crop)
+    }
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(item.title, style = MaterialTheme.typography.headlineMedium)
       Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

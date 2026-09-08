@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -30,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -49,13 +51,16 @@ import app.infinity.mpvz.ui.utils.popSafely
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
+@kotlinx.serialization.Serializable
 object StreamScreen : app.infinity.mpvz.presentation.Screen {
   @Composable override fun Content() {
     val backstack = LocalBackStack.current
     val context = LocalContext.current
     val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
     val state by viewModel.state.collectAsState()
-    var showSettings by remember { mutableStateOf(false) }
+    val catalogSources by viewModel.catalogSources.collectAsState()
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showCatalogs by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
       viewModel.resolvedUrl.collect { url ->
         if (url != null) {
@@ -69,7 +74,10 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         TopAppBar(
           title = { Text("Stream") },
           navigationIcon = { IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
-          actions = { IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Stream settings") } },
+          actions = {
+            IconButton(onClick = { showCatalogs = true }) { Icon(Icons.RoundedFilled.Explore, "Catalogs") }
+            IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Resolvers") }
+          },
           colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
         )
       },
@@ -84,21 +92,23 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             query = state.query,
             onQueryChange = viewModel::setQuery,
             onSearch = viewModel::setQuery,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             placeholder = { Text("Search streams") },
             leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
             tonalElevation = 0.dp,
+            windowInsets = WindowInsets(0.dp),
           )
         }
         state.items.firstOrNull()?.let { hero -> item { StreamHero(hero) { viewModel.openDetails(hero) } } }
-        StreamRail("Trending Movies", state.items.filter { it.type.name == "MOVIE" && it.provider != CatalogProvider.KITSU }) { viewModel.openDetails(it) }
-        StreamRail("Popular Series", state.items.filter { it.type.name == "TV" && it.provider != CatalogProvider.KITSU }) { viewModel.openDetails(it) }
-        StreamRail("Top Anime", state.items.filter { it.provider == CatalogProvider.KITSU }) { viewModel.openDetails(it) }
+        if (catalogSources.any { it.id == "cinemeta-movies" && it.isEnabled }) StreamRail("Trending Movies", state.items.filter { it.type.name == "MOVIE" && it.provider != CatalogProvider.KITSU }) { viewModel.openDetails(it) }
+        if (catalogSources.any { it.id == "cinemeta-series" && it.isEnabled }) StreamRail("Popular Series", state.items.filter { it.type.name == "TV" && it.provider != CatalogProvider.KITSU }) { viewModel.openDetails(it) }
+        if (catalogSources.any { it.id == "kitsu-anime" && it.isEnabled }) StreamRail("Top Anime", state.items.filter { it.provider == CatalogProvider.KITSU }) { viewModel.openDetails(it) }
         if (state.isLoading) item { Text("Loading streams…", modifier = Modifier.padding(16.dp)) }
         if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
       }
     }
     if (showSettings) StreamResolverSettingsDialog(viewModel) { showSettings = false }
+    if (showCatalogs) CatalogProvidersDialog(viewModel) { showCatalogs = false }
     state.selectedItem?.let { item -> MediaDetailsSheet(item = item, streams = state.streamOptions, sourceFilter = state.sourceFilter, sourceSort = state.sourceSort, isLoading = state.resolvingId == item.id, onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) }, onEpisode = { s, e -> viewModel.resolve(item, s, e) }, onFilter = viewModel::setSourceFilter, onSort = viewModel::setSourceSort, onSelect = { viewModel.playStream(it) }, onBack = viewModel::closeDetails) }
   }
 }
@@ -145,6 +155,31 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
       }
     },
     confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } },
+    dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+  )
+}
+
+@Composable private fun CatalogProvidersDialog(viewModel: CatalogViewModel, onDismiss: () -> Unit) {
+  val initial = remember { viewModel.currentCatalogSources() }
+  var sources by remember { mutableStateOf(initial) }
+  var newUrl by remember { mutableStateOf("") }
+  androidx.compose.material3.AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Catalog providers") },
+    text = {
+      androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        sources.forEachIndexed { index, source ->
+          Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            androidx.compose.material3.Switch(checked = source.isEnabled, onCheckedChange = { enabled -> sources = sources.toMutableList().also { it[index] = source.copy(isEnabled = enabled) } })
+            Text(source.name, modifier = Modifier.weight(1f), maxLines = 1)
+            IconButton(onClick = { sources = sources.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
+          }
+        }
+        androidx.compose.material3.OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Stremio manifest URL") }, singleLine = true)
+        androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { sources = sources + app.infinity.mpvz.catalog.CatalogSource("custom-${newUrl.hashCode()}", "Custom catalog", newUrl.trim()); newUrl = "" } }) { Text("Add catalog") }
+      }
+    },
+    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }) { Text("Save") } },
     dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
   )
 }
