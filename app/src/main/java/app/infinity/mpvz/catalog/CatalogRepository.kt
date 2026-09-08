@@ -143,7 +143,11 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .build()
     client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Resolver request failed (${response.code})")
-      parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
+      val parsed = parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
+      require(parsed.isNotEmpty()) {
+        "Resolver returned no streams. Expected a streams array with url, magnet, or infoHash entries."
+      }
+      parsed
     }
   }
 
@@ -169,7 +173,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   private fun parseCandidate(element: JsonElement): List<StreamOption> = when (element) {
     is JsonPrimitive -> listOf(StreamOption(element.content, "Stream", qualityRank = qualityRank(element.content)))
     is JsonObject -> listOfNotNull(
-      (element["url"] ?: element["externalUrl"] ?: element["stream"])
+      (element["url"] ?: element["externalUrl"] ?: element["stream"] ?: element["magnet"])
         ?.jsonPrimitive?.content?.let { url ->
           val title = element["title"]?.jsonPrimitive?.content ?: element["name"]?.jsonPrimitive?.content ?: "Stream"
           StreamOption(
@@ -179,6 +183,19 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
             size = element["size"]?.jsonPrimitive?.content,
             source = element["source"]?.jsonPrimitive?.content,
+            torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
+          )
+        }
+        ?: element["infoHash"]?.jsonPrimitive?.content?.let { hash ->
+          val title = element["title"]?.jsonPrimitive?.content ?: element["name"]?.jsonPrimitive?.content ?: "Torrent"
+          StreamOption(
+            url = "magnet:?xt=urn:btih:${hash.trim()}",
+            title = title,
+            qualityRank = qualityRank("$title ${element["title"]?.jsonPrimitive?.content.orEmpty()}"),
+            seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
+            size = element["size"]?.jsonPrimitive?.content,
+            source = element["source"]?.jsonPrimitive?.content,
+            torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
           )
         },
     )

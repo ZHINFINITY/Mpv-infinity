@@ -44,6 +44,7 @@ data class StreamOption(
   val size: String? = null,
   val source: String? = null,
   val isPlayable: Boolean = url.startsWith("http://") || url.startsWith("https://"),
+  val torrentFileIndex: Int? = null,
 )
 
 @Serializable
