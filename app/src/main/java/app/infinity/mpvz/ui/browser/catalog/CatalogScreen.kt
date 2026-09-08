@@ -184,7 +184,6 @@ fun CatalogScreen() {
           selected = provider in state.enabledProviders,
           onClick = { viewModel.toggleProvider(provider) },
           label = { Text(when (provider) {
-            CatalogProvider.TMDB -> "TMDB"
             CatalogProvider.CINEMETA -> "Cinemeta"
             CatalogProvider.KITSU -> "Kitsu Anime"
           }) },
@@ -262,7 +261,7 @@ fun CatalogScreen() {
 }
 
 @Composable
-private fun CatalogHero(item: MediaItem) {
+fun CatalogHero(item: MediaItem) {
   Box(Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(22.dp))) {
     AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color.Transparent, androidx.compose.ui.graphics.Color(0xFF090A0F)))))
@@ -289,26 +288,21 @@ private fun CatalogStatusState(message: String, onRetry: () -> Unit, onEdit: (()
 @Composable
 private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> Unit) {
   val initial = remember { viewModel.currentSettings() }
-  var tmdbKey by remember { mutableStateOf(initial.tmdbKey) }
-  var resolverUrl by remember { mutableStateOf(initial.resolverUrl) }
-  var resolverToken by remember { mutableStateOf(initial.resolverToken) }
-  var resolverPath by remember { mutableStateOf(initial.resolverPath) }
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text("Catalog and resolver") },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Keys and tokens are stored with Android encrypted preferences.", style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(tmdbKey, { tmdbKey = it }, label = { Text("TMDB API key") }, singleLine = true)
-        OutlinedTextField(resolverUrl, { resolverUrl = it }, label = { Text("Resolver HTTPS base URL") }, singleLine = true)
-        OutlinedTextField(resolverToken, { resolverToken = it }, label = { Text("Resolver bearer token") }, singleLine = true)
-        OutlinedTextField(resolverPath, { resolverPath = it }, label = { Text("Stream endpoint path") }, singleLine = true)
-        Text("Use {type}, {imdbId}, or {tmdbId}. Default: /stream/{type}/{imdbId}.json", style = MaterialTheme.typography.labelSmall)
+  var endpoints by remember { mutableStateOf(initial.resolvers) }
+  var newUrl by remember { mutableStateOf("") }
+  AlertDialog(onDismissRequest = onDismiss, title = { Text("Stream resolvers") }, text = {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      endpoints.forEachIndexed { index, endpoint ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          androidx.compose.material3.Switch(checked = endpoint.enabled, onCheckedChange = { enabled -> endpoints = endpoints.toMutableList().also { it[index] = endpoint.copy(enabled = enabled) } })
+          Text(endpoint.baseUrl, modifier = Modifier.weight(1f), maxLines = 1)
+          IconButton(onClick = { endpoints = endpoints.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
+        }
       }
-    },
-    confirmButton = { Button(onClick = { viewModel.saveSettings(tmdbKey, resolverUrl, resolverToken, resolverPath); onDismiss() }) { Text("Save") } },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-  )
+      OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Resolver base URL") }, singleLine = true)
+      TextButton(onClick = { if (newUrl.isNotBlank()) { endpoints = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); newUrl = "" } }) { Text("Add resolver") }
+    }
+  }, confirmButton = { Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
 
 @Composable

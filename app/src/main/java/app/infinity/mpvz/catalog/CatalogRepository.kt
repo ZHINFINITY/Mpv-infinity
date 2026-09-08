@@ -28,23 +28,10 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.net.URLEncoder
 
-private const val TMDB_BASE_URL = "https://api.themoviedb.org/3"
-private const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
 private const val PREFS = "catalog_secure_settings"
 private const val DEFAULT_STREAM_PATH = "/stream/{type}/{imdbId}.json"
 private const val KITSU_CATALOG_URL = "https://anime-kitsu.strem.fun/catalog/anime/kitsu-anime-popular.json"
 private const val CINEMETA_BASE_URL = "https://v3-cinemeta.strem.io/catalog"
-
-private interface TmdbApi {
-  @GET("trending/all/week")
-  suspend fun trending(@Query("api_key") apiKey: String, @Query("page") page: Int = 1): TmdbPage
-  @GET("search/multi")
-  suspend fun search(@Query("api_key") apiKey: String, @Query("query") query: String, @Query("page") page: Int = 1): TmdbPage
-  @GET("{type}/{id}")
-  suspend fun details(@Path("type") type: String, @Path("id") id: Int, @Query("api_key") apiKey: String, @Query("append_to_response") append: String = "external_ids"): TmdbDetails
-  @GET("tv/{id}/season/{season}")
-  suspend fun season(@Path("id") id: Int, @Path("season") season: Int, @Query("api_key") apiKey: String): TmdbSeason
-}
 
 class CatalogSettings(context: Context) {
   private val prefs = EncryptedSharedPreferences.create(
@@ -54,70 +41,17 @@ class CatalogSettings(context: Context) {
     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
   )
-  var tmdbApiKey: String
-    get() = prefs.getString("tmdb_api_key", "") ?: ""
-    set(value) = prefs.edit().putString("tmdb_api_key", value.trim()).apply()
-  var resolverBaseUrl: String
-    get() = prefs.getString("resolver_base_url", "") ?: ""
-    set(value) = prefs.edit().putString("resolver_base_url", value.trim().trimEnd('/')).apply()
   var resolverToken: String
     get() = prefs.getString("resolver_token", "") ?: ""
     set(value) = prefs.edit().putString("resolver_token", value.trim()).apply()
   var resolverPath: String
     get() = prefs.getString("resolver_path", DEFAULT_STREAM_PATH) ?: DEFAULT_STREAM_PATH
     set(value) = prefs.edit().putString("resolver_path", value.trim().ifBlank { DEFAULT_STREAM_PATH }).apply()
-}
-
-class TmdbCatalogRepository(private val settings: CatalogSettings) {
-  private val json = Json { ignoreUnknownKeys = true }
-  private val api = Retrofit.Builder()
-    .baseUrl("$TMDB_BASE_URL/")
-    .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-    .build()
-    .create(TmdbApi::class.java)
-
-  suspend fun search(query: String, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-    require(settings.tmdbApiKey.isNotBlank()) { "Add a TMDB API key in Catalog settings first." }
-    api.search(settings.tmdbApiKey, query, page).results
-        .filter { it.mediaType == "movie" || it.mediaType == "tv" }
-        .map { it.toMediaItem() }
+  fun resolvers(): List<ResolverEndpoint> = prefs.getStringSet("resolver_endpoints", emptySet()).orEmpty().mapNotNull { encoded ->
+    val parts = encoded.split("|", limit = 2)
+    parts.getOrNull(0)?.takeIf { it.isNotBlank() }?.let { ResolverEndpoint(it, parts.getOrNull(1)?.toBooleanStrictOrNull() ?: true) }
   }
-
-  suspend fun trending(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-    require(settings.tmdbApiKey.isNotBlank()) { "Add a TMDB API key in Catalog settings first." }
-    api.trending(settings.tmdbApiKey, page).results
-        .filter { it.mediaType == "movie" || it.mediaType == "tv" }
-        .map { it.toMediaItem() }
-  }
-
-  suspend fun details(item: MediaItem): MediaItem = withContext(Dispatchers.IO) {
-    require(settings.tmdbApiKey.isNotBlank()) { "Add a TMDB API key in Catalog settings first." }
-    val type = if (item.type == MediaType.TV) "tv" else "movie"
-    api.details(type, item.id, settings.tmdbApiKey).let { details ->
-      item.copy(
-        title = details.title ?: details.name ?: item.title,
-        overview = details.overview ?: item.overview,
-        posterUrl = details.posterPath?.let { IMAGE_BASE_URL + it } ?: item.posterUrl,
-        backdropUrl = details.backdropPath?.let { IMAGE_BASE_URL + it } ?: item.backdropUrl,
-        imdbId = details.externalIds?.imdb_id ?: item.imdbId,
-        seasons = details.seasons.map { season ->
-          val episodeSeason = runCatching { api.season(item.id, season.season_number, settings.tmdbApiKey) }.getOrDefault(season)
-          Season(season.season_number, episodeSeason.episodes.map { episode ->
-            Episode(episode.episode_number, episode.name, episode.overview.orEmpty(), episode.stillPath?.let { IMAGE_BASE_URL + it })
-          })
-        },
-      )
-    }
-  }
-
-  private fun TmdbResult.toMediaItem() = MediaItem(
-    id = id,
-    type = if (mediaType == "tv" || name != null) MediaType.TV else MediaType.MOVIE,
-    title = title ?: name.orEmpty(),
-    overview = overview.orEmpty(),
-    posterUrl = posterPath?.let { IMAGE_BASE_URL + it },
-    backdropUrl = backdropPath?.let { IMAGE_BASE_URL + it },
-  )
+  fun saveResolvers(value: List<ResolverEndpoint>) { prefs.edit().putStringSet("resolver_endpoints", value.map { "${it.baseUrl}|${it.enabled}" }.toSet()).apply() }
 }
 
 class KitsuAnimeRepository {
@@ -182,6 +116,8 @@ class CinemetaCatalogRepository {
   }
 }
 
+data class ResolverEndpoint(val baseUrl: String, val enabled: Boolean = true)
+
 interface StreamResolver {
   suspend fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null): List<StreamOption>
 }
@@ -196,7 +132,18 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   private val json = Json { ignoreUnknownKeys = true }
 
   override suspend fun resolve(item: MediaItem, season: Int?, episode: Int?): List<StreamOption> = withContext(Dispatchers.IO) {
-    val baseUrl = settings.resolverBaseUrl.ifBlank { error("Configure a resolver base URL in Catalog settings first.") }
+    val endpoints = settings.resolvers().filter { it.enabled }.ifEmpty {
+      listOfNotNull(settings.resolvers().firstOrNull(), null).filter { it.enabled }
+    }
+    require(endpoints.isNotEmpty()) { "Add an active stream resolver in Stream settings first." }
+    return kotlinx.coroutines.coroutineScope {
+      endpoints.map { endpoint -> kotlinx.coroutines.async { resolveFromEndpoint(endpoint.baseUrl, item, season, episode) } }.awaitAll().flatten()
+        .distinctBy { it.url }
+        .sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
+    }
+  }
+
+  private suspend fun resolveFromEndpoint(baseUrl: String, item: MediaItem, season: Int?, episode: Int?): List<StreamOption> {
     val identifier = item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
     val type = if (item.type == MediaType.TV) "series" else "movie"
     val configuredPath = settings.resolverPath
