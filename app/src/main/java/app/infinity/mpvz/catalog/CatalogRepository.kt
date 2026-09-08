@@ -14,6 +14,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,14 +32,17 @@ private const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
 private const val PREFS = "catalog_secure_settings"
 private const val DEFAULT_STREAM_PATH = "/stream/{type}/{imdbId}.json"
 private const val JIKAN_BASE_URL = "https://api.jikan.moe/v4/"
+private const val ANILIST_URL = "https://graphql.anilist.co"
 
 private interface TmdbApi {
   @GET("trending/all/week")
-  suspend fun trending(@Query("api_key") apiKey: String): TmdbPage
+  suspend fun trending(@Query("api_key") apiKey: String, @Query("page") page: Int = 1): TmdbPage
   @GET("search/multi")
-  suspend fun search(@Query("api_key") apiKey: String, @Query("query") query: String): TmdbPage
+  suspend fun search(@Query("api_key") apiKey: String, @Query("query") query: String, @Query("page") page: Int = 1): TmdbPage
   @GET("{type}/{id}")
   suspend fun details(@Path("type") type: String, @Path("id") id: Int, @Query("api_key") apiKey: String, @Query("append_to_response") append: String = "external_ids"): TmdbDetails
+  @GET("tv/{id}/season/{season}")
+  suspend fun season(@Path("id") id: Int, @Path("season") season: Int, @Query("api_key") apiKey: String): TmdbSeason
 }
 
 private interface JikanApi {
@@ -77,16 +82,16 @@ class TmdbCatalogRepository(private val settings: CatalogSettings) {
     .build()
     .create(TmdbApi::class.java)
 
-  suspend fun search(query: String): List<MediaItem> = withContext(Dispatchers.IO) {
+  suspend fun search(query: String, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
     require(settings.tmdbApiKey.isNotBlank()) { "Add a TMDB API key in Catalog settings first." }
-    api.search(settings.tmdbApiKey, query).results
+    api.search(settings.tmdbApiKey, query, page).results
         .filter { it.mediaType == "movie" || it.mediaType == "tv" }
         .map { it.toMediaItem() }
   }
 
-  suspend fun trending(): List<MediaItem> = withContext(Dispatchers.IO) {
+  suspend fun trending(page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
     require(settings.tmdbApiKey.isNotBlank()) { "Add a TMDB API key in Catalog settings first." }
-    api.trending(settings.tmdbApiKey).results
+    api.trending(settings.tmdbApiKey, page).results
         .filter { it.mediaType == "movie" || it.mediaType == "tv" }
         .map { it.toMediaItem() }
   }
@@ -102,7 +107,8 @@ class TmdbCatalogRepository(private val settings: CatalogSettings) {
         backdropUrl = details.backdropPath?.let { IMAGE_BASE_URL + it } ?: item.backdropUrl,
         imdbId = details.externalIds?.imdb_id ?: item.imdbId,
         seasons = details.seasons.map { season ->
-          Season(season.season_number, season.episodes.map { episode ->
+          val episodeSeason = runCatching { api.season(item.id, season.season_number, settings.tmdbApiKey) }.getOrDefault(season)
+          Season(season.season_number, episodeSeason.episodes.map { episode ->
             Episode(episode.episode_number, episode.name, episode.overview.orEmpty(), episode.stillPath?.let { IMAGE_BASE_URL + it })
           })
         },
@@ -141,6 +147,50 @@ class JikanAnimeRepository {
     posterUrl = images?.jpg?.large_image_url ?: images?.jpg?.image_url,
     backdropUrl = images?.jpg?.large_image_url ?: images?.jpg?.image_url,
   )
+}
+
+class AniListAnimeRepository {
+  private val client = OkHttpClient()
+  private val json = Json { ignoreUnknownKeys = true }
+  private val query = """
+    query {
+      Page(perPage: 24) { media(type: ANIME, sort: POPULARITY_DESC) {
+        id title { romaji english native } description format coverImage { large }
+      } }
+    }
+  """.trimIndent()
+
+
+  suspend fun popular(): List<MediaItem> = request(null)
+  suspend fun search(value: String): List<MediaItem> = request(value)
+
+  private suspend fun request(value: String?): List<MediaItem> = withContext(Dispatchers.IO) {
+    val searchClause = value?.let { ", search: ${json.encodeToString(it)}" }.orEmpty()
+    val requestQuery = query.replace("sort: POPULARITY_DESC", "sort: POPULARITY_DESC$searchClause")
+    val body = "{\"query\":${json.encodeToString(requestQuery)}}"
+      .toRequestBody("application/json".toMediaType())
+    val response = client.newCall(Request.Builder().url(ANILIST_URL).post(body).build()).execute()
+    response.use {
+      if (!it.isSuccessful) error("AniList request failed (${it.code})")
+      val media = json.parseToJsonElement(it.body.string()).jsonObject["data"]?.jsonObject?.get("Page")?.jsonObject?.get("media")?.jsonArray.orEmpty()
+      media.mapNotNull { entry ->
+        val obj = entry.jsonObject
+        val title = obj["title"]?.jsonObject?.let { it["english"]?.jsonPrimitive?.contentOrNull ?: it["romaji"]?.jsonPrimitive?.contentOrNull ?: it["native"]?.jsonPrimitive?.contentOrNull }.orEmpty()
+        title.takeIf { it.isNotBlank() }?.let { name ->
+          MediaItem(
+            id = -obj["id"]!!.jsonPrimitive.int,
+            type = MediaType.TV,
+            title = name,
+            overview = obj["description"]?.jsonPrimitive?.contentOrNull?.replace("<br>", " ").orEmpty(),
+            posterUrl = obj["coverImage"]?.jsonObject?.get("large")?.jsonPrimitive?.contentOrNull,
+            backdropUrl = null,
+            provider = CatalogProvider.ANILIST,
+            providerId = obj["id"]!!.jsonPrimitive.content,
+          )
+        }
+      }
+    }
+  }
 }
 
 interface StreamResolver {

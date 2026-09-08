@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class MediaType { MOVIE, TV }
-enum class CatalogProvider { TMDB, MYANIMELIST }
+enum class CatalogProvider { TMDB, MYANIMELIST, ANILIST }
 
 data class MediaItem(
   val id: Int,
@@ -27,6 +27,9 @@ data class CatalogState(
   val query: String = "",
   val items: List<MediaItem> = emptyList(),
   val isLoading: Boolean = false,
+  val isLoadingMore: Boolean = false,
+  val catalogPage: Int = 1,
+  val canLoadMore: Boolean = true,
   val resolvingId: Int? = null,
   val error: String? = null,
   val streamOptions: List<StreamOption> = emptyList(),
@@ -35,7 +38,7 @@ data class CatalogState(
   val selectedSeason: Int? = null,
   val selectedEpisode: Int? = null,
   val sourceFilter: String = "All",
-  val enabledProviders: Set<CatalogProvider> = setOf(CatalogProvider.TMDB, CatalogProvider.MYANIMELIST),
+  val enabledProviders: Set<CatalogProvider> = CatalogProvider.entries.toSet(),
 )
 
 data class StreamOption(
@@ -52,7 +55,7 @@ data class StreamOption(
 )
 
 @Serializable
-data class TmdbPage(val results: List<TmdbResult> = emptyList())
+data class TmdbPage(val page: Int = 1, val total_pages: Int = 1, val results: List<TmdbResult> = emptyList())
 
 @Serializable
 data class TmdbResult(
@@ -102,7 +105,7 @@ data class JikanImage(val image_url: String? = null, val large_image_url: String
 
 @Serializable
 data class TmdbSeason(
-  val season_number: Int,
+  val season_number: Int = 0,
   val episodes: List<TmdbEpisode> = emptyList(),
 )
 
