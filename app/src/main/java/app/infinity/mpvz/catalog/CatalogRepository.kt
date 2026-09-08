@@ -137,7 +137,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     require(depth < 2) { "Stremio resolver returned too many nested resources." }
     val resourceUrl = url.replaceFirst("stremio://", "https://")
     val request = Request.Builder().url(resourceUrl).build()
-    client.newCall(request).execute().use { response ->
+    return client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Stremio resource request failed (${response.code})")
       val streams = json.decodeFromString<StremioStreamResponse>(response.body.string()).streams
       val stream = streams.firstOrNull { candidate ->
