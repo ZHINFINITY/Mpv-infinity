@@ -22,6 +22,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       }
   }
   private val settings = CatalogSettings(application)
+  private val _resolvers = MutableStateFlow(settings.resolvers())
+  val resolvers: StateFlow<List<ResolverEndpoint>> = _resolvers.asStateFlow()
   private val _catalogSources = MutableStateFlow(settings.catalogSources())
   val catalogSources: StateFlow<List<CatalogSource>> = _catalogSources.asStateFlow()
   private val animeRepository = KitsuAnimeRepository()
@@ -101,10 +103,14 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun setSourceSort(sort: String) { _state.update { it.copy(sourceSort = sort) } }
   fun consumeResolvedUrl() { _resolvedUrl.value = null }
   fun saveSettings(resolvers: List<ResolverEndpoint>, resolverToken: String, resolverPath: String) {
-    settings.saveResolvers(resolvers)
+    saveResolvers(resolvers)
     settings.resolverToken = resolverToken
     settings.resolverPath = resolverPath
     loadTrending()
+  }
+  fun saveResolvers(value: List<ResolverEndpoint>) {
+    settings.saveResolvers(value)
+    _resolvers.value = settings.resolvers()
   }
   fun currentSettings(): ResolverSettings = ResolverSettings(settings.resolvers(), settings.resolverToken, settings.resolverPath)
   fun currentCatalogSources(): List<CatalogSource> = settings.catalogSources()
