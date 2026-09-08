@@ -32,9 +32,9 @@ private interface TmdbApi {
 
 class CatalogSettings(context: Context) {
   private val prefs = EncryptedSharedPreferences.create(
-    PREFS,
-    MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
     context,
+    PREFS,
+    MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build().keyAlias,
     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
   )
