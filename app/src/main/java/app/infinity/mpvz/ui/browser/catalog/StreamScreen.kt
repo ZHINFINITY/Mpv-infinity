@@ -154,38 +154,35 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             windowInsets = WindowInsets(0.dp),
           )
         }
-        if (heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { viewModel.showDetails(it) } }
-        if (catalogSources.any { it.id == "cinemeta-movies" && it.isEnabled }) StreamRail("Trending Movies", state.items.filter { it.type.name == "MOVIE" && it.provider != CatalogProvider.KITSU }) { viewModel.showDetails(it) }
-        if (catalogSources.any { it.id == "cinemeta-series" && it.isEnabled }) StreamRail("Popular Series", state.items.filter { it.type.name == "TV" && it.provider != CatalogProvider.KITSU }) { viewModel.showDetails(it) }
-        if (catalogSources.any { it.id == "kitsu-anime" && it.isEnabled }) StreamRail("Top Anime", state.items.filter { it.provider == CatalogProvider.KITSU }) { viewModel.showDetails(it) }
+        if (heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
+        if (catalogSources.any { it.id == "cinemeta-movies" && it.isEnabled }) StreamRail("Trending Movies", state.items.filter { it.type.name == "MOVIE" && it.provider != CatalogProvider.KITSU }) { openResolverChooser(context, it) }
+        if (catalogSources.any { it.id == "cinemeta-series" && it.isEnabled }) StreamRail("Popular Series", state.items.filter { it.type.name == "TV" && it.provider != CatalogProvider.KITSU }) { openResolverChooser(context, it) }
+        if (catalogSources.any { it.id == "kitsu-anime" && it.isEnabled }) StreamRail("Top Anime", state.items.filter { it.provider == CatalogProvider.KITSU }) { openResolverChooser(context, it) }
         if (state.isLoading) item { Text("Loading streams…", modifier = Modifier.padding(16.dp)) }
         if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
       }
     }
     if (showSettings) StreamResolverSettingsDialog(viewModel) { showSettings = false }
     if (showCatalogs) CatalogProvidersDialog(viewModel) { showCatalogs = false }
-    state.selectedItem?.let { item ->
-      MediaDetailsSheet(
-        item = item,
-        streams = state.streamOptions,
-        sourceFilter = state.sourceFilter,
-        sourceSort = state.sourceSort,
-        isLoading = state.resolvingId == item.id,
-        onLoadSources = { if (item.type == MediaType.MOVIE) viewModel.resolve(item) },
-        onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
-        onFilter = viewModel::setSourceFilter,
-        onSort = viewModel::setSourceSort,
-        onSelect = { stream ->
-          if (stream.isPlayable) {
-            viewModel.playStream(stream)
-          } else {
-            openTorrent(item, stream, state.streamOptions, state.selectedSeason, state.selectedEpisode)
-          }
-        },
-        onBack = viewModel::closeDetails,
-      )
-    }
   }
+}
+
+private fun openResolverChooser(context: android.content.Context, item: MediaItem) {
+  context.startActivity(Intent(context, TorrentCatalogActivity::class.java).apply {
+    action = Intent.ACTION_VIEW
+    putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
+    putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
+    putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
+    putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+    putExtra("catalog_provider_id", item.providerId)
+    putExtra("catalog_imdb_id", item.imdbId)
+    putExtra("catalog_release_year", item.releaseYear)
+    putExtra("catalog_rating", item.contentRating)
+    putExtra("catalog_duration", item.duration)
+    putExtra("catalog_genres", item.genres.joinToString(" • "))
+    putExtra("is_series", item.type == MediaType.TV)
+    putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
+  })
 }
 
 private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onClick: (MediaItem) -> Unit) {
