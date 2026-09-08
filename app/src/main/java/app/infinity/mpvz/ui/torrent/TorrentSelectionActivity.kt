@@ -77,6 +77,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
           episodeTitle = intent.getStringExtra("episode_title"),
           episodeOverview = intent.getStringExtra("episode_overview"),
           episodeThumbnail = intent.getStringExtra("episode_thumbnail"),
+          seasonsJson = intent.getStringExtra("seasons_json"),
         ),
     )
 

@@ -35,6 +35,7 @@ data class TorrentSelectionInput(
   val episodeTitle: String? = null,
   val episodeOverview: String? = null,
   val episodeThumbnail: String? = null,
+  val seasonsJson: String? = null,
 )
 
 data class TorrentArtwork(
@@ -49,6 +50,7 @@ data class TorrentArtwork(
   val episodeTitle: String? = null,
   val episodeOverview: String? = null,
   val episodeThumbnail: String? = null,
+  val seasons: List<app.infinity.mpvz.catalog.Season> = emptyList(),
 )
 
 sealed interface TorrentSelectionUiState {
@@ -146,6 +148,7 @@ class TorrentSelectionViewModel(
               episodeTitle = value.episodeTitle,
               episodeOverview = value.episodeOverview,
               episodeThumbnail = safeRemoteImageUrl(value.episodeThumbnail),
+              seasons = value.seasonsJson?.let { raw -> runCatching { kotlinx.serialization.json.Json.decodeFromString<List<app.infinity.mpvz.catalog.Season>>(raw) }.getOrDefault(emptyList()) } ?: emptyList(),
             )
           val needsArtworkLookup =
             initialArtwork.description == null ||

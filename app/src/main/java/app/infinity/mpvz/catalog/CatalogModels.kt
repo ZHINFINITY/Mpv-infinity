@@ -31,7 +31,9 @@ data class MediaItem(
   val genres: List<String> = emptyList(),
 )
 
+@Serializable
 data class Season(val number: Int, val episodes: List<Episode> = emptyList())
+@Serializable
 data class Episode(val number: Int, val title: String, val overview: String, val stillUrl: String?, val runtime: String? = null)
 
 data class CatalogState(

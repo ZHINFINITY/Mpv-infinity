@@ -56,6 +56,9 @@ class CatalogSettings(context: Context) {
   var resolverPath: String
     get() = prefs.getString("resolver_path", DEFAULT_STREAM_PATH) ?: DEFAULT_STREAM_PATH
     set(value) = prefs.edit().putString("resolver_path", value.trim().ifBlank { DEFAULT_STREAM_PATH }).apply()
+  var autoChooseBestTorrent: Boolean
+    get() = prefs.getBoolean("auto_choose_best_torrent", false)
+    set(value) = prefs.edit().putBoolean("auto_choose_best_torrent", value).apply()
   fun resolvers(): List<ResolverEndpoint> = prefs.getStringSet("resolver_endpoints", emptySet()).orEmpty().mapNotNull { encoded ->
     val parts = encoded.split("|", limit = 2)
     parts.getOrNull(0)?.takeIf { it.isNotBlank() }?.let { ResolverEndpoint(sanitizeResolverBaseUrl(it), parts.getOrNull(1)?.toBooleanStrictOrNull() ?: true) }
