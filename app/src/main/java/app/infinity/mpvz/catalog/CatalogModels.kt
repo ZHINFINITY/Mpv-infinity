@@ -28,6 +28,7 @@ data class CatalogState(
   val error: String? = null,
   val streamOptions: List<StreamOption> = emptyList(),
   val streamTitle: String? = null,
+  val selectedItem: MediaItem? = null,
 )
 
 data class StreamOption(
@@ -35,6 +36,11 @@ data class StreamOption(
   val title: String,
   val mimeType: String? = null,
   val headers: Map<String, String> = emptyMap(),
+  val qualityRank: Int = 0,
+  val seeders: Int = 0,
+  val size: String? = null,
+  val source: String? = null,
+  val isPlayable: Boolean = url.startsWith("http://") || url.startsWith("https://"),
 )
 
 @Serializable
