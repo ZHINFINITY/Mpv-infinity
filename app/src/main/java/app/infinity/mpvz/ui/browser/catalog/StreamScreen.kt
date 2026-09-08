@@ -80,6 +80,8 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
         putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
         putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+        putExtra("catalog_provider_id", item.providerId)
+        putExtra("catalog_imdb_id", item.imdbId)
         putExtra("is_series", item.type == app.infinity.mpvz.catalog.MediaType.TV)
         putExtra("streams_json", kotlinx.serialization.json.Json.encodeToString(streams))
         if (item.seasons.isNotEmpty()) putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
