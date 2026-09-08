@@ -81,12 +81,24 @@ class TorrentCatalogActivity : AppCompatActivity() {
         var error by remember { mutableStateOf<String?>(null) }
         var loading by remember { mutableStateOf(streams.isEmpty()) }
         LaunchedEffect(item.providerId, item.imdbId, item.title) {
-          if (streams.isEmpty()) {
-            runCatching { CloudStreamResolver(CatalogSettings(applicationContext)).resolve(item) }
-              .onSuccess { resolvedStreams = it }
-              .onFailure { error = it.message ?: "Unable to find torrents" }
-            loading = false
-          }
+          val result = if (streams.isEmpty()) runCatching { CloudStreamResolver(CatalogSettings(applicationContext)).resolve(item) } else Result.success(streams)
+          result.onSuccess { resolved ->
+            val selected = resolved.filterNot { it.isPlayable }.maxWithOrNull(compareBy<StreamOption> { it.qualityRank }.thenBy { it.seeders }) ?: resolved.firstOrNull()
+            if (selected != null) {
+              startActivity(Intent(this@TorrentCatalogActivity, TorrentSelectionActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = Uri.parse(selected.url)
+                putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, selected.url)
+                putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
+                putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
+                putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
+                putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+                putExtra("seasons_json", Json.encodeToString(item.seasons))
+              })
+              finish()
+            } else error = "No torrent sources found for this title."
+          }.onFailure { error = it.message ?: "Unable to find torrents" }
+          loading = false
         }
         TorrentCatalogScreen(item, resolvedStreams, loading, error, onBack = ::finish) { stream ->
           startActivity(Intent(this, PlayerActivity::class.java).apply {
