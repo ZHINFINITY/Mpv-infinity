@@ -22,7 +22,6 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       }
   }
   private val settings = CatalogSettings(application)
-  private val repository = TmdbCatalogRepository(settings)
   private val animeRepository = KitsuAnimeRepository()
   private val cinemetaRepository = CinemetaCatalogRepository()
   private val resolver = CloudStreamResolver(settings)
@@ -58,11 +57,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   fun loadMore() {
     val current = _state.value
-    if (current.isLoadingMore || !current.canLoadMore || CatalogProvider.TMDB !in current.enabledProviders) return
+    if (current.isLoadingMore || !current.canLoadMore || false) return
     viewModelScope.launch {
       _state.update { it.copy(isLoadingMore = true) }
       val nextPage = current.catalogPage + 1
-      val more = runCatching { if (current.query.isBlank()) repository.trending(nextPage) else repository.search(current.query, nextPage) }.getOrDefault(emptyList())
+      val more = emptyList<MediaItem>()
       _state.update { it.copy(items = (it.items + more).distinctBy { item -> "${item.provider}:${item.providerId ?: item.id}" }, catalogPage = nextPage, canLoadMore = more.isNotEmpty(), isLoadingMore = false) }
     }
   }
@@ -71,8 +70,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, selectedItem = item, error = null) }
       runCatching {
-        val identifiedItem = if (item.provider == CatalogProvider.TMDB) repository.details(item) else item
-        identifiedItem
+        val identifiedItem = item
       }
         .onSuccess { identifiedItem ->
           _state.update { it.copy(selectedItem = identifiedItem, error = null) }
@@ -102,14 +100,13 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun setSourceFilter(filter: String) { _state.update { it.copy(sourceFilter = filter) } }
   fun setSourceSort(sort: String) { _state.update { it.copy(sourceSort = sort) } }
   fun consumeResolvedUrl() { _resolvedUrl.value = null }
-  fun saveSettings(tmdbKey: String, resolverUrl: String, resolverToken: String, resolverPath: String) {
-    settings.tmdbApiKey = tmdbKey
-    settings.resolverBaseUrl = resolverUrl
+  fun saveSettings(resolvers: List<ResolverEndpoint>, resolverToken: String, resolverPath: String) {
+    settings.saveResolvers(resolvers)
     settings.resolverToken = resolverToken
     settings.resolverPath = resolverPath
     loadTrending()
   }
-  fun currentSettings(): Quadruple = Quadruple(settings.tmdbApiKey, settings.resolverBaseUrl, settings.resolverToken, settings.resolverPath)
+  fun currentSettings(): ResolverSettings = ResolverSettings(settings.resolvers(), settings.resolverToken, settings.resolverPath)
   fun retry() { if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) } }
 
   private fun loadTrending() {
@@ -130,17 +127,14 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   private suspend fun loadFromProviders(query: String?): List<MediaItem> {
     val providers = _state.value.enabledProviders
-    val tmdb = if (CatalogProvider.TMDB in providers) {
-      runCatching { if (query.isNullOrBlank()) repository.trending() else repository.search(query) }.getOrDefault(emptyList())
-    } else emptyList()
     val cinemeta = if (CatalogProvider.CINEMETA in providers) {
       runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }.getOrDefault(emptyList())
     } else emptyList()
     val anime = if (CatalogProvider.KITSU in providers && query.isNullOrBlank()) {
       runCatching { animeRepository.popular() }.getOrDefault(emptyList())
     } else emptyList()
-    return (tmdb + cinemeta + anime).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
+    return (cinemeta + anime).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
   }
 }
 
-data class Quadruple(val tmdbKey: String, val resolverUrl: String, val resolverToken: String, val resolverPath: String)
+data class ResolverSettings(val resolvers: List<ResolverEndpoint>, val resolverToken: String, val resolverPath: String)

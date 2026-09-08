@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class MediaType { MOVIE, TV }
-enum class CatalogProvider { TMDB, CINEMETA, KITSU }
+enum class CatalogProvider { CINEMETA, KITSU }
 
 data class MediaItem(
   val id: Int,
@@ -16,7 +16,7 @@ data class MediaItem(
   val backdropUrl: String?,
   val imdbId: String? = null,
   val seasons: List<Season> = emptyList(),
-  val provider: CatalogProvider = CatalogProvider.TMDB,
+  val provider: CatalogProvider = CatalogProvider.CINEMETA,
   val providerId: String? = null,
   val releaseYear: String? = null,
   val contentRating: String? = null,
@@ -57,69 +57,6 @@ data class StreamOption(
   val source: String? = null,
   val isPlayable: Boolean = url.startsWith("http://") || url.startsWith("https://"),
   val torrentFileIndex: Int? = null,
-)
-
-@Serializable
-data class TmdbPage(val page: Int = 1, val total_pages: Int = 1, val results: List<TmdbResult> = emptyList())
-
-@Serializable
-data class TmdbResult(
-  val id: Int,
-  val title: String? = null,
-  val name: String? = null,
-  val overview: String? = null,
-  @SerialName("poster_path") val posterPath: String? = null,
-  @SerialName("backdrop_path") val backdropPath: String? = null,
-  @SerialName("media_type") val mediaType: String? = null,
-  @SerialName("first_air_date") val firstAirDate: String? = null,
-  @SerialName("release_date") val releaseDate: String? = null,
-)
-
-@Serializable
-data class TmdbDetails(
-  val id: Int,
-  val name: String? = null,
-  val title: String? = null,
-  val overview: String? = null,
-  @SerialName("poster_path") val posterPath: String? = null,
-  @SerialName("backdrop_path") val backdropPath: String? = null,
-  val seasons: List<TmdbSeason> = emptyList(),
-  @SerialName("external_ids") val externalIds: TmdbExternalIds? = null,
-)
-
-@Serializable
-data class TmdbExternalIds(val imdb_id: String? = null)
-
-@Serializable
-data class JikanPage(val data: List<JikanAnime> = emptyList())
-
-@Serializable
-data class JikanAnime(
-  val mal_id: Int,
-  val title: String = "",
-  val synopsis: String? = null,
-  val type: String? = null,
-  val images: JikanImages? = null,
-)
-
-@Serializable
-data class JikanImages(val jpg: JikanImage? = null)
-
-@Serializable
-data class JikanImage(val image_url: String? = null, val large_image_url: String? = null)
-
-@Serializable
-data class TmdbSeason(
-  val season_number: Int = 0,
-  val episodes: List<TmdbEpisode> = emptyList(),
-)
-
-@Serializable
-data class TmdbEpisode(
-  val episode_number: Int,
-  val name: String = "",
-  val overview: String? = null,
-  @SerialName("still_path") val stillPath: String? = null,
 )
 
 @Serializable
