@@ -145,9 +145,12 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   }
 
   private fun parseStreams(element: JsonElement, depth: Int): List<StreamOption> {
+    if (element is JsonObject) {
+      element["streams"]?.let { return parseStreams(it, depth) }
+    }
     val candidates = when (element) {
       is JsonArray -> element.flatMap { parseCandidate(it) }
-      is JsonObject -> element["streams"]?.let { parseStreams(it, depth) } ?: parseCandidate(element)
+      is JsonObject -> parseCandidate(element)
       else -> parseCandidate(element)
     }
     return candidates.mapNotNull { candidate ->
