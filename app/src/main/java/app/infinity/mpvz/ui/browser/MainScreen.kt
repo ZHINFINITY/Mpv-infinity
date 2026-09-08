@@ -96,7 +96,6 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
-import app.infinity.mpvz.ui.browser.catalog.CatalogScreen
 import app.infinity.mpvz.ui.browser.music.MusicLibraryContent
 import app.infinity.mpvz.ui.browser.networkstreaming.NetworkStreamingScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistScreen
@@ -115,7 +114,6 @@ import kotlin.math.roundToInt
 object MainScreen : Screen {
   internal enum class MainTab {
     HOME,
-    CATALOG,
     MUSIC,
     RECENTS,
     PLAYLISTS,
@@ -186,7 +184,6 @@ object MainScreen : Screen {
       ) {
         buildList {
           if (showHomeTab) add(MainTab.HOME)
-          add(MainTab.CATALOG)
           if (showMusicTab) add(MainTab.MUSIC)
           if (showRecentsTab) add(MainTab.RECENTS)
           if (showPlaylistsTab) add(MainTab.PLAYLISTS)
@@ -307,7 +304,6 @@ object MainScreen : Screen {
     val selectedTabTitleLength =
       when (selectedTab) {
         MainTab.HOME -> 36.dp
-        MainTab.CATALOG -> 50.dp
         MainTab.MUSIC -> 36.dp
         MainTab.RECENTS -> 48.dp
         MainTab.PLAYLISTS -> 52.dp
@@ -385,12 +381,11 @@ object MainScreen : Screen {
               modifier = Modifier.fillMaxSize(),
               beyondViewportPageCount = 1,
               flingBehavior = pagerFlingBehavior,
-              userScrollEnabled = !isPermissionDenied && selectedTab != MainTab.CATALOG,
+              userScrollEnabled = !isPermissionDenied,
             ) { page ->
               val tab = visibleTabs.getOrNull(page) ?: return@HorizontalPager
               when (tab) {
                 MainTab.HOME -> FolderListScreen.Content()
-                MainTab.CATALOG -> CatalogScreen()
                 MainTab.MUSIC -> MusicLibraryContent()
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
@@ -535,7 +530,6 @@ private fun ExpressivePillNavigationBar(
   fun activeTabWidth(tab: MainScreen.MainTab): androidx.compose.ui.unit.Dp =
     when (tab) {
       MainScreen.MainTab.HOME -> 92.dp
-      MainScreen.MainTab.CATALOG -> 108.dp
       MainScreen.MainTab.MUSIC -> 92.dp
       MainScreen.MainTab.RECENTS -> 104.dp
       MainScreen.MainTab.PLAYLISTS -> 108.dp
@@ -654,13 +648,6 @@ private fun ExpressivePillNavigationBar(
                     tint = contentColor,
                     modifier = Modifier.size(22.dp),
                   )
-                MainScreen.MainTab.CATALOG ->
-                  Icon(
-                    Icons.RoundedFilled.Search,
-                    contentDescription = "Catalog",
-                    tint = contentColor,
-                    modifier = Modifier.size(22.dp),
-                  )
                 MainScreen.MainTab.MUSIC ->
                   Icon(
                     Icons.RoundedFilled.Audiotrack,
@@ -704,7 +691,6 @@ private fun ExpressivePillNavigationBar(
                   text =
                     when (tab) {
                       MainScreen.MainTab.HOME -> stringResource(R.string.ui_home)
-                      MainScreen.MainTab.CATALOG -> "Catalog"
                       MainScreen.MainTab.MUSIC -> stringResource(R.string.ui_music)
                       MainScreen.MainTab.RECENTS -> stringResource(R.string.ui_recents)
                       MainScreen.MainTab.PLAYLISTS -> stringResource(R.string.ui_playlists)

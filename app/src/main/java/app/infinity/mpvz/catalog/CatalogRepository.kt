@@ -32,8 +32,7 @@ private const val TMDB_BASE_URL = "https://api.themoviedb.org/3"
 private const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
 private const val PREFS = "catalog_secure_settings"
 private const val DEFAULT_STREAM_PATH = "/stream/{type}/{imdbId}.json"
-private const val JIKAN_BASE_URL = "https://api.jikan.moe/v4/"
-private const val ANILIST_URL = "https://graphql.anilist.co"
+private const val KITSU_CATALOG_URL = "https://anime-kitsu.strem.fun/catalog/anime/kitsu-anime-popular.json"
 private const val CINEMETA_BASE_URL = "https://v3-cinemeta.strem.io/catalog"
 
 private interface TmdbApi {
@@ -45,13 +44,6 @@ private interface TmdbApi {
   suspend fun details(@Path("type") type: String, @Path("id") id: Int, @Query("api_key") apiKey: String, @Query("append_to_response") append: String = "external_ids"): TmdbDetails
   @GET("tv/{id}/season/{season}")
   suspend fun season(@Path("id") id: Int, @Path("season") season: Int, @Query("api_key") apiKey: String): TmdbSeason
-}
-
-private interface JikanApi {
-  @GET("top/anime")
-  suspend fun top(@Query("limit") limit: Int = 24): JikanPage
-  @GET("anime")
-  suspend fun search(@Query("q") query: String, @Query("limit") limit: Int = 24): JikanPage
 }
 
 class CatalogSettings(context: Context) {
@@ -128,68 +120,30 @@ class TmdbCatalogRepository(private val settings: CatalogSettings) {
   )
 }
 
-class JikanAnimeRepository {
-  private val json = Json { ignoreUnknownKeys = true }
-  private val api = Retrofit.Builder()
-    .baseUrl(JIKAN_BASE_URL)
-    .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-    .build()
-    .create(JikanApi::class.java)
-
-  suspend fun trending(): List<MediaItem> = withContext(Dispatchers.IO) { api.top().data.map { it.toMediaItem() } }
-  suspend fun search(query: String): List<MediaItem> = withContext(Dispatchers.IO) { api.search(query).data.map { it.toMediaItem() } }
-
-  private fun JikanAnime.toMediaItem() = MediaItem(
-    id = -mal_id,
-    provider = CatalogProvider.MYANIMELIST,
-    providerId = mal_id.toString(),
-    type = if (type.equals("movie", ignoreCase = true)) MediaType.MOVIE else MediaType.TV,
-    title = title,
-    overview = synopsis.orEmpty(),
-    posterUrl = images?.jpg?.large_image_url ?: images?.jpg?.image_url,
-    backdropUrl = images?.jpg?.large_image_url ?: images?.jpg?.image_url,
-  )
-}
-
-class AniListAnimeRepository {
+class KitsuAnimeRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
-  private val query = """
-    query {
-      Page(perPage: 24) { media(type: ANIME, sort: POPULARITY_DESC) {
-        id title { romaji english native } description format coverImage { large }
-      } }
-    }
-  """.trimIndent()
 
-
-  suspend fun popular(): List<MediaItem> = request(null)
-  suspend fun search(value: String): List<MediaItem> = request(value)
-
-  private suspend fun request(value: String?): List<MediaItem> = withContext(Dispatchers.IO) {
-    val searchClause = value?.let { ", search: ${json.encodeToString(it)}" }.orEmpty()
-    val requestQuery = query.replace("sort: POPULARITY_DESC", "sort: POPULARITY_DESC$searchClause")
-    val body = "{\"query\":${json.encodeToString(requestQuery)}}"
-      .toRequestBody("application/json".toMediaType())
-    val response = client.newCall(Request.Builder().url(ANILIST_URL).post(body).build()).execute()
-    response.use {
-      if (!it.isSuccessful) error("AniList request failed (${it.code})")
-      val media = json.parseToJsonElement(it.body.string()).jsonObject["data"]?.jsonObject?.get("Page")?.jsonObject?.get("media")?.jsonArray.orEmpty()
-      media.mapNotNull { entry ->
-        val obj = entry.jsonObject
-        val title = obj["title"]?.jsonObject?.let { it["english"]?.jsonPrimitive?.contentOrNull ?: it["romaji"]?.jsonPrimitive?.contentOrNull ?: it["native"]?.jsonPrimitive?.contentOrNull }.orEmpty()
-        title.takeIf { it.isNotBlank() }?.let { name ->
-          MediaItem(
-            id = -obj["id"]!!.jsonPrimitive.int,
-            type = MediaType.TV,
-            title = name,
-            overview = obj["description"]?.jsonPrimitive?.contentOrNull?.replace("<br>", " ").orEmpty(),
-            posterUrl = obj["coverImage"]?.jsonObject?.get("large")?.jsonPrimitive?.contentOrNull,
-            backdropUrl = null,
-            provider = CatalogProvider.ANILIST,
-            providerId = obj["id"]!!.jsonPrimitive.content,
-          )
-        }
+  suspend fun popular(): List<MediaItem> = withContext(Dispatchers.IO) {
+    client.newCall(Request.Builder().url(KITSU_CATALOG_URL).get().build()).execute().use { response ->
+      if (!response.isSuccessful) error("Kitsu catalog request failed (${response.code})")
+      val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
+      metas.mapNotNull { entry ->
+        val meta = entry.jsonObject
+        val id = meta["kitsu_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+        MediaItem(
+          id = -id.hashCode(), provider = CatalogProvider.KITSU, providerId = id,
+          type = if (meta["type"]?.jsonPrimitive?.contentOrNull == "movie") MediaType.MOVIE else MediaType.TV,
+          title = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+          overview = meta["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+          posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
+          backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
+          imdbId = meta["imdb_id"]?.jsonPrimitive?.contentOrNull,
+          releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
+          contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
+          duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
+          genres = meta["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
+        )
       }
     }
   }

@@ -105,6 +105,7 @@ import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
 import app.infinity.mpvz.utils.media.MediaInfoParser
 import app.infinity.mpvz.ui.browser.cards.NetworkConnectionCard
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.catalog.CatalogScreen
 import app.infinity.mpvz.ui.browser.dialogs.AddConnectionSheet
 import app.infinity.mpvz.ui.browser.dialogs.EditConnectionSheet
 import app.infinity.mpvz.ui.components.InlineSearchBar
@@ -131,6 +132,7 @@ private const val VIEWED_TORRENT_FILES_PREFS = "torrent_viewed_files"
 
 private enum class NetworkTab(val titleResId: Int) {
   LOCAL_NETWORK(R.string.ui_local_network),
+  DISCOVER(R.string.seerr_discover),
   MEDIA(R.string.ui_media),
   SYNC_PLAY(R.string.syncplay_title),
 }
@@ -534,6 +536,7 @@ object NetworkStreamingScreen : Screen {
                 onManageBookmarks = { backstack.add(NetworkBookmarksScreen) },
               )
             }
+            NetworkTab.DISCOVER -> CatalogScreen()
             NetworkTab.MEDIA -> {
               MediaContent(
                 mediaGroups = filteredMediaGroups,
