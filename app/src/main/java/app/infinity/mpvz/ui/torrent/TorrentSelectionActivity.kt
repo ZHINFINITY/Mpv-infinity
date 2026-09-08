@@ -134,8 +134,9 @@ class TorrentSelectionActivity : AppCompatActivity() {
       Json.decodeFromString<List<Season>>(intent.getStringExtra("seasons_json").orEmpty())
     }.getOrDefault(emptyList())
     return MediaItem(
-      id = 0,
-      type = if (intent.getBooleanExtra("is_series", false)) MediaType.TV else MediaType.MOVIE,
+      id = intent.getIntExtra("catalog_id", 0),
+      type = intent.getStringExtra("catalog_type")?.let { runCatching { MediaType.valueOf(it) }.getOrNull() }
+        ?: if (intent.getBooleanExtra("is_series", false)) MediaType.TV else MediaType.MOVIE,
       title = title,
       overview = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION).orEmpty(),
       posterUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL),
