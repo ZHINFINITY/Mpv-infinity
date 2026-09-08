@@ -68,11 +68,16 @@ class TorrentSelectionActivity : AppCompatActivity() {
           intent.getStringExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL)
             ?: intent.getStringExtra("poster")
             ?: intent.getStringExtra("poster_url"),
-        backdropUrl =
-          intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL)
-            ?: intent.getStringExtra("backdrop")
-            ?: intent.getStringExtra("backdrop_url"),
-      ),
+          backdropUrl =
+            intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL)
+              ?: intent.getStringExtra("backdrop")
+              ?: intent.getStringExtra("backdrop_url"),
+          season = intent.getIntExtra("episode_season", -1).takeIf { it >= 0 },
+          episode = intent.getIntExtra("episode_number", -1).takeIf { it >= 0 },
+          episodeTitle = intent.getStringExtra("episode_title"),
+          episodeOverview = intent.getStringExtra("episode_overview"),
+          episodeThumbnail = intent.getStringExtra("episode_thumbnail"),
+        ),
     )
 
     setContent {
