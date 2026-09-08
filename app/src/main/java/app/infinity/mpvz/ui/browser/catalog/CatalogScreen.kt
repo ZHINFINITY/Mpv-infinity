@@ -45,6 +45,8 @@ import app.infinity.mpvz.catalog.CatalogViewModel
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
+import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
 
@@ -103,7 +105,21 @@ fun CatalogScreen() {
       onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) },
       onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
       onFilter = viewModel::setSourceFilter,
-      onSelect = viewModel::playStream,
+      onSelect = { stream ->
+        if (stream.isPlayable) {
+          viewModel.playStream(stream)
+        } else {
+          context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            data = Uri.parse(stream.url)
+            putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
+            putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
+            putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
+            putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
+            putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+          })
+        }
+      },
       onDismiss = viewModel::closeDetails,
     )
   }
@@ -197,15 +213,11 @@ private fun MediaDetailsDialog(
             stream.size,
             stream.source,
           ).joinToString(" • ")
-          if (stream.isPlayable) {
-            Button(onClick = { onSelect(stream) }, modifier = Modifier.fillMaxWidth()) {
-              Text(listOf(stream.title, metadata).filter { it.isNotBlank() }.joinToString("\n"), maxLines = 3, overflow = TextOverflow.Ellipsis)
-            }
-          } else {
+          Button(onClick = { onSelect(stream) }, modifier = Modifier.fillMaxWidth()) {
             Text(
-              listOf(stream.title, metadata, "Torrent/magnet source — requires a debrid resolver").filter { it.isNotBlank() }.joinToString("\n"),
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              style = MaterialTheme.typography.bodySmall,
+              listOf(stream.title, metadata, if (stream.isPlayable) "Play stream" else "Open torrent source").filter { it.isNotBlank() }.joinToString("\n"),
+              maxLines = 3,
+              overflow = TextOverflow.Ellipsis,
             )
           }
         }
