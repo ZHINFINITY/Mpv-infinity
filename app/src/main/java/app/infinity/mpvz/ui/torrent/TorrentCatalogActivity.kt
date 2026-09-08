@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
@@ -35,8 +37,9 @@ class TorrentCatalogActivity : AppCompatActivity() {
       posterUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL),
       backdropUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL),
     )
-    MpvInfinityTheme {
-      TorrentCatalogScreen(item, streams, intent.getStringExtra("seasons_json"), onBack = ::finish) { stream ->
+    setContent {
+      MpvInfinityTheme {
+        TorrentCatalogScreen(item, streams, intent.getStringExtra("seasons_json"), onBack = ::finish) { stream ->
         startActivity(Intent(this, if (stream.isPlayable) PlayerActivity::class.java else TorrentSelectionActivity::class.java).apply {
           action = Intent.ACTION_VIEW
           data = Uri.parse(stream.url)
@@ -47,6 +50,7 @@ class TorrentCatalogActivity : AppCompatActivity() {
           putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
           putExtra("seasons_json", intent.getStringExtra("seasons_json"))
         })
+        }
       }
     }
   }
