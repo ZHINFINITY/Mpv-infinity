@@ -85,6 +85,20 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
+  fun showDetails(item: MediaItem) {
+    _state.update {
+      it.copy(
+        resolvingId = null,
+        selectedItem = item,
+        streamOptions = emptyList(),
+        streamTitle = null,
+        selectedSeason = null,
+        selectedEpisode = null,
+        error = null,
+      )
+    }
+  }
+
   fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null) {
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode) }
