@@ -77,6 +77,28 @@ fun CatalogScreen() {
   val context = LocalContext.current
   val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
   val state by viewModel.state.collectAsState()
+  fun launchTorrent(request: app.infinity.mpvz.catalog.TorrentLaunchRequest) {
+    val item = request.item
+    val episode = request.season?.let { season -> request.episode?.let { number -> item.seasons.firstOrNull { it.number == season }?.episodes?.firstOrNull { it.number == number } } }
+    context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
+      action = Intent.ACTION_VIEW
+      data = Uri.parse(request.stream.url)
+      putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, request.stream.url)
+      putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
+      putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
+      putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
+      putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+      episode?.let {
+        putExtra("episode_season", request.season)
+        putExtra("episode_number", request.episode)
+        putExtra("episode_title", it.title)
+        putExtra("episode_overview", it.overview)
+        putExtra("episode_thumbnail", it.stillUrl)
+      }
+      request.stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
+    })
+  }
+  LaunchedEffect(Unit) { viewModel.torrentLaunch.collect { launchTorrent(it) } }
   var showSettings by remember { mutableStateOf(false) }
   val featured = state.items.firstOrNull()
   val railItems = remember(state.items) {
@@ -100,45 +122,6 @@ fun CatalogScreen() {
         viewModel.consumeResolvedUrl()
       }
     }
-  }
-
-  state.selectedItem?.let { item ->
-    fun openTorrent(stream: StreamOption) {
-      val episode = state.selectedSeason?.let { season -> state.selectedEpisode?.let { number -> item.seasons.firstOrNull { it.number == season }?.episodes?.firstOrNull { it.number == number } } }
-      context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
-        action = Intent.ACTION_VIEW
-        data = Uri.parse(stream.url)
-        putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
-        putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
-        putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
-        putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
-        putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
-        episode?.let {
-          putExtra("episode_season", state.selectedSeason)
-          putExtra("episode_number", state.selectedEpisode)
-          putExtra("episode_title", it.title)
-          putExtra("episode_overview", it.overview)
-          putExtra("episode_thumbnail", it.stillUrl)
-        }
-        stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
-      })
-    }
-    MediaDetailsSheet(
-      item = item,
-      streams = state.streamOptions,
-      sourceFilter = state.sourceFilter,
-      sourceSort = state.sourceSort,
-      isLoading = state.resolvingId == item.id,
-      onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) },
-      onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
-      onFilter = viewModel::setSourceFilter,
-      onSort = viewModel::setSourceSort,
-      onSelect = { stream ->
-        if (stream.isPlayable) viewModel.playStream(stream) else openTorrent(stream)
-      },
-      onBack = viewModel::closeDetails,
-    )
-    return
   }
 
   Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 96.dp)) {
@@ -215,34 +198,6 @@ fun CatalogScreen() {
     }
   }
   if (showSettings) CatalogSettingsDialog(viewModel) { showSettings = false }
-  state.selectedItem?.let { item ->
-    MediaDetailsDialog(
-      item = item,
-      streams = state.streamOptions,
-      sourceFilter = state.sourceFilter,
-      isLoading = state.resolvingId == item.id,
-      onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) },
-      onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
-      onFilter = viewModel::setSourceFilter,
-      onSelect = { stream ->
-        if (stream.isPlayable) {
-          viewModel.playStream(stream)
-        } else {
-          context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
-            action = Intent.ACTION_VIEW
-            data = Uri.parse(stream.url)
-            putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
-            putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
-            putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
-            putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
-            putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
-            stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
-          })
-        }
-      },
-      onDismiss = viewModel::closeDetails,
-    )
-  }
 }
 
 @Composable
@@ -288,65 +243,4 @@ private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> 
       TextButton(onClick = { if (newUrl.isNotBlank()) { endpoints = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); newUrl = "" } }) { Text("Add resolver") }
     }
   }, confirmButton = { Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
-}
-
-@Composable
-private fun MediaDetailsDialog(
-  item: MediaItem,
-  streams: List<StreamOption>,
-  sourceFilter: String,
-  isLoading: Boolean,
-  onLoadSources: () -> Unit,
-  onEpisode: (Int, Int) -> Unit,
-  onFilter: (String) -> Unit,
-  onSelect: (StreamOption) -> Unit,
-  onDismiss: () -> Unit,
-) {
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(item.title) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item.overview.takeIf { it.isNotBlank() }?.let {
-          Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 5, overflow = TextOverflow.Ellipsis)
-        }
-        if (item.type == app.infinity.mpvz.catalog.MediaType.TV && item.seasons.isNotEmpty()) {
-          Text("Seasons", style = MaterialTheme.typography.titleSmall)
-          item.seasons.forEach { season ->
-            Text("Season ${season.number}", style = MaterialTheme.typography.labelLarge)
-            season.episodes.forEach { episode ->
-              TextButton(onClick = { onEpisode(season.number, episode.number) }, modifier = Modifier.fillMaxWidth()) {
-                Text("${episode.number}. ${episode.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
-              }
-            }
-          }
-        } else if (streams.isEmpty()) {
-          Button(onClick = onLoadSources, enabled = !isLoading, modifier = Modifier.fillMaxWidth()) {
-            Text(if (isLoading) "Finding sources…" else "Find sources")
-          }
-        }
-        Text("Sources (best quality first)", style = MaterialTheme.typography.titleSmall)
-        listOf("All", "WatchHub", "Torrentio").forEach { filter ->
-          TextButton(onClick = { onFilter(filter) }) { Text(if (filter == sourceFilter) "[$filter]" else filter) }
-        }
-        streams.filter { sourceFilter == "All" || (sourceFilter == "Torrentio" && !it.isPlayable) || (sourceFilter == "WatchHub" && it.isPlayable) }.forEach { stream ->
-          val metadata = listOfNotNull(
-            stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" },
-            stream.seeders.takeIf { it > 0 }?.let { "$it seeders" },
-            stream.size,
-            stream.source,
-          ).joinToString(" • ")
-          Button(onClick = { onSelect(stream) }, modifier = Modifier.fillMaxWidth()) {
-            Text(
-              listOf(stream.title, metadata, if (stream.isPlayable) "Play stream" else "Open torrent source").filter { it.isNotBlank() }.joinToString("\n"),
-              maxLines = 3,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-        }
-        if (streams.isEmpty()) Text("No sources returned by the resolver.")
-      }
-    },
-    confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-  )
 }
