@@ -3,6 +3,7 @@ package app.infinity.mpvz.ui.browser.catalog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -124,7 +125,11 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     }
     if (showSettings) StreamResolverSettingsDialog(viewModel) { showSettings = false }
     if (showCatalogs) CatalogProvidersDialog(viewModel) { showCatalogs = false }
-    state.selectedItem?.let { item -> MediaDetailsSheet(item = item, streams = state.streamOptions, sourceFilter = state.sourceFilter, sourceSort = state.sourceSort, isLoading = state.resolvingId == item.id, onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) }, onEpisode = { s, e -> viewModel.resolve(item, s, e) }, onFilter = viewModel::setSourceFilter, onSort = viewModel::setSourceSort, onSelect = { viewModel.playStream(it) }, onBack = viewModel::closeDetails) }
+    state.selectedItem?.let { item ->
+      androidx.compose.material3.Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        MediaDetailsSheet(item = item, streams = state.streamOptions, sourceFilter = state.sourceFilter, sourceSort = state.sourceSort, isLoading = state.resolvingId == item.id, onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) }, onEpisode = { s, e -> viewModel.resolve(item, s, e) }, onFilter = viewModel::setSourceFilter, onSort = viewModel::setSourceSort, onSelect = { viewModel.playStream(it) }, onBack = viewModel::closeDetails)
+      }
+    }
   }
 }
 
@@ -166,8 +171,9 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
     text = {
       androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         endpoints.forEachIndexed { index, endpoint ->
-          Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+          Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             androidx.compose.material3.Switch(checked = endpoint.enabled, onCheckedChange = { checked -> endpoints = endpoints.toMutableList().also { it[index] = endpoint.copy(enabled = checked) } })
+            Spacer(Modifier.width(16.dp))
             Text(endpoint.baseUrl, modifier = Modifier.weight(1f), maxLines = 1)
             IconButton(onClick = { endpoints = endpoints.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
           }
@@ -191,13 +197,14 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
     text = {
       androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         sources.forEachIndexed { index, source ->
-          Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+          Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             androidx.compose.material3.Switch(checked = source.isEnabled, onCheckedChange = { enabled -> sources = sources.toMutableList().also { it[index] = source.copy(isEnabled = enabled) } })
+            Spacer(Modifier.width(16.dp))
             Text(source.name, modifier = Modifier.weight(1f), maxLines = 1)
             IconButton(onClick = { sources = sources.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
           }
         }
-        androidx.compose.material3.OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Stremio manifest URL") }, singleLine = true)
+        androidx.compose.material3.OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Add catalog provider (API or endpoint URL)") }, supportingText = { Text("Supports custom catalog endpoints and public metadata APIs.") }, singleLine = true)
         androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { sources = sources + app.infinity.mpvz.catalog.CatalogSource("custom-${newUrl.hashCode()}", "Custom catalog", newUrl.trim()); newUrl = "" } }) { Text("Add catalog") }
       }
     },
