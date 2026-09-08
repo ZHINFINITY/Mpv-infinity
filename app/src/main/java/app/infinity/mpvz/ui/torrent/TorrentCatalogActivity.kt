@@ -25,6 +25,7 @@ import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.Season
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.ui.browser.catalog.MediaDetailsSheet
+import app.infinity.mpvz.ui.torrent.TorrentResolverChooserScreen
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.serialization.json.Json
@@ -125,8 +126,6 @@ internal fun ResolverChooser(
 
   LaunchedEffect(item.providerId, item.imdbId, item.title, initialStreams, selectedSeason, selectedEpisode) {
     val isEpisodeRequest = selectedSeason != null && selectedEpisode != null
-    val isSeasonRequest = item.type == MediaType.TV && selectedSeason != null && selectedEpisode == null
-    if (item.type == MediaType.TV && !isEpisodeRequest && !isSeasonRequest) return@LaunchedEffect
     if (initialStreams.isNotEmpty() && !isEpisodeRequest) {
       streams = initialStreams
       return@LaunchedEffect
@@ -135,12 +134,13 @@ internal fun ResolverChooser(
     loading = true
     error = null
     runCatching {
-      if (isSeasonRequest) {
-        val seasonNumber = selectedSeason ?: return@runCatching emptyList<StreamOption>()
-        val season = item.seasons.firstOrNull { it.number == selectedSeason }
-        season?.episodes.orEmpty().flatMap { episode ->
-          CloudStreamResolver(catalogSettings).resolve(item, seasonNumber, episode.number).map {
-            it.copy(season = seasonNumber, episode = episode.number)
+      if (item.type == MediaType.TV && !isEpisodeRequest) {
+        val seasons = item.seasons.filter { selectedSeason == null || it.number == selectedSeason }
+        seasons.flatMap { season ->
+          season.episodes.flatMap { episode ->
+            CloudStreamResolver(catalogSettings).resolve(item, season.number, episode.number).map {
+              it.copy(season = season.number, episode = episode.number)
+            }
           }
         }.distinctBy(StreamOption::url)
       } else {
@@ -165,13 +165,14 @@ internal fun ResolverChooser(
     return
   }
 
-  MediaDetailsSheet(
+  TorrentResolverChooserScreen(
     item = item,
     streams = streams,
+    loading = loading,
+    error = error,
+    selectedSeason = selectedSeason,
     sourceFilter = sourceFilter,
     sourceSort = sourceSort,
-    isLoading = loading,
-    onLoadSources = {},
     onSeason = { season ->
       selectedSeason = season
       selectedEpisode = null
@@ -184,12 +185,7 @@ internal fun ResolverChooser(
     onSort = { sourceSort = it },
     onSelect = { stream ->
       if (!stream.isPlayable) {
-        onTorrentSelected(
-          item,
-          stream,
-          stream.season ?: selectedSeason,
-          stream.episode ?: selectedEpisode,
-        )
+        onTorrentSelected(item, stream, stream.season ?: selectedSeason, stream.episode ?: selectedEpisode)
       }
     },
     onBack = onBack,
