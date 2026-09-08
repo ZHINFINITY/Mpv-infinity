@@ -96,9 +96,9 @@ fun TorrentResolverChooserScreen(
 ) {
   BackHandler { onBack() }
   var query by rememberSaveable { mutableStateOf("") }
+  var searchOpen by rememberSaveable { mutableStateOf(false) }
   val visible = streams
     .filter { selectedSeason == null || it.season == null || it.season == selectedSeason }
-    .filter { sourceFilter == "All" || (sourceFilter == "Torrentio" && !it.isPlayable) || (sourceFilter == "WatchHub" && it.isPlayable) }
     .filter { query.isBlank() || it.title.contains(query, true) || it.url.contains(query, true) }
     .let { source ->
       when (sourceSort) {
@@ -116,35 +116,19 @@ fun TorrentResolverChooserScreen(
         if (loading) CircularProgressIndicator(Modifier.size(22.dp).padding(end = 8.dp), strokeWidth = 2.dp)
       }
       Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(item.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        if (item.overview.isNotBlank()) Text(item.overview, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
-        if (item.seasons.isNotEmpty()) {
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = selectedSeason == null, onClick = { onSeason(null) }, label = { Text("All") })
-            item.seasons.forEach { season ->
-              FilterChip(selected = selectedSeason == season.number, onClick = { onSeason(season.number) }, label = { Text("Season ${season.number}") })
-            }
+        TorrentHeroBanner(TorrentArtwork(title = item.title, description = item.overview, posterUrl = item.posterUrl, backdropUrl = item.backdropUrl, seasons = item.seasons))
+        if (item.seasons.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(selected = selectedSeason == null, onClick = { onSeason(null) }, label = { Text("All") })
+          item.seasons.forEach { season ->
+            FilterChip(selected = selectedSeason == season.number, onClick = { onSeason(season.number) }, label = { Text("Season ${season.number}") })
           }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          listOf("All", "Torrentio", "WatchHub").forEach { filter ->
-            FilterChip(selected = sourceFilter == filter, onClick = { onFilter(filter) }, label = { Text(filter) })
-          }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+          Text("${visible.size} playable files", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+          IconButton(onClick = { searchOpen = !searchOpen }, modifier = Modifier.size(36.dp)) { Icon(Icons.RoundedFilled.Search, "Search") }
+          IconButton(onClick = { onSort(if (sourceSort == "Best") "Size" else "Best") }, modifier = Modifier.size(36.dp)) { Icon(Icons.RoundedFilled.SwapVert, "Sort") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          listOf("Best", "Quality", "Seeders", "Size").forEach { sort ->
-            FilterChip(selected = sourceSort == sort, onClick = { onSort(sort) }, label = { Text(sort) })
-          }
-        }
-        app.infinity.mpvz.ui.components.InlineSearchBar(
-          query = query,
-          onQueryChange = { query = it },
-          onSearch = {},
-          modifier = Modifier.fillMaxWidth(),
-          windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
-          placeholder = { Text("Search torrents or episodes") },
-          leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = null) },
-        )
+        if (searchOpen) app.infinity.mpvz.ui.components.InlineSearchBar(query = query, onQueryChange = { query = it }, onSearch = {}, modifier = Modifier.fillMaxWidth(), windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp), placeholder = { Text("Search episodes") }, leadingIcon = { Icon(Icons.RoundedFilled.Search, null) })
       }
       if (error != null && streams.isEmpty()) {
         Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(20.dp))
@@ -152,17 +136,59 @@ fun TorrentResolverChooserScreen(
         Text("No torrents found for this selection.", modifier = Modifier.padding(20.dp))
       } else {
         LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)) {
-          itemsIndexed(visible, key = { _, stream -> stream.url }) { _, stream ->
-            Card(Modifier.fillMaxWidth().clickable { onSelect(stream) }) {
-              Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(stream.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(listOfNotNull(stream.season?.let { season -> stream.episode?.let { episode -> "S%02dE%02d".format(season, episode) } }, stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.seeders.takeIf { it > 0 }?.let { "$it peers" }, stream.size, stream.source).joinToString(" • "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                Text("Select torrent", style = MaterialTheme.typography.labelLarge)
-              }
-            }
+          itemsIndexed(visible, key = { _, stream -> stream.url }) { position, stream ->
+            TorrentResolverFileRow(stream, position, onSelect)
           }
         }
       }
+    }
+  }
+}
+
+@Composable
+private fun TorrentResolverFileRow(
+  stream: app.infinity.mpvz.catalog.StreamOption,
+  position: Int,
+  onSelect: (app.infinity.mpvz.catalog.StreamOption) -> Unit,
+) {
+  Card(
+    modifier = Modifier.fillMaxWidth().clickable { onSelect(stream) },
+    shape = RoundedCornerShape(14.dp),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Surface(Modifier.size(58.dp), shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+        Box(contentAlignment = Alignment.Center) {
+          Text(
+            text = stream.episode?.let { episode -> "E%02d".format(episode) } ?: (position + 1).toString().padStart(2, '0'),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+          )
+        }
+      }
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(
+          text = stream.season?.let { season -> stream.episode?.let { episode -> "Season $season • Episode $episode" } } ?: "Torrent source",
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.primary,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Text(stream.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+          listOfNotNull(
+            stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" },
+            stream.seeders.takeIf { it > 0 }?.let { "$it peers" },
+            stream.size,
+            stream.source,
+          ).joinToString("  •  "),
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      Text("Play", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     }
   }
 }
