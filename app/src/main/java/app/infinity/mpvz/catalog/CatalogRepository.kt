@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -136,8 +139,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       listOfNotNull(settings.resolvers().firstOrNull(), null).filter { it.enabled }
     }
     require(endpoints.isNotEmpty()) { "Add an active stream resolver in Stream settings first." }
-    return kotlinx.coroutines.coroutineScope {
-      endpoints.map { endpoint -> kotlinx.coroutines.async { resolveFromEndpoint(endpoint.baseUrl, item, season, episode) } }.awaitAll().flatten()
+    return coroutineScope {
+      endpoints.map { endpoint -> async { resolveFromEndpoint(endpoint.baseUrl, item, season, episode) } }.awaitAll().flatten()
         .distinctBy { it.url }
         .sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
     }
