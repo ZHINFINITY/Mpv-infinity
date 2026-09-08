@@ -125,7 +125,8 @@ internal fun ResolverChooser(
 
   LaunchedEffect(item.providerId, item.imdbId, item.title, initialStreams, selectedSeason, selectedEpisode) {
     val isEpisodeRequest = selectedSeason != null && selectedEpisode != null
-    if (item.type == MediaType.TV && !isEpisodeRequest) return@LaunchedEffect
+    val isSeasonRequest = item.type == MediaType.TV && selectedSeason != null && selectedEpisode == null
+    if (item.type == MediaType.TV && !isEpisodeRequest && !isSeasonRequest) return@LaunchedEffect
     if (initialStreams.isNotEmpty() && !isEpisodeRequest) {
       streams = initialStreams
       return@LaunchedEffect
@@ -133,7 +134,19 @@ internal fun ResolverChooser(
 
     loading = true
     error = null
-    runCatching { CloudStreamResolver(catalogSettings).resolve(item, selectedSeason, selectedEpisode) }
+    runCatching {
+      if (isSeasonRequest) {
+        val seasonNumber = selectedSeason ?: return@runCatching emptyList<StreamOption>()
+        val season = item.seasons.firstOrNull { it.number == selectedSeason }
+        season?.episodes.orEmpty().flatMap { episode ->
+          CloudStreamResolver(catalogSettings).resolve(item, seasonNumber, episode.number).map {
+            it.copy(season = seasonNumber, episode = episode.number)
+          }
+        }.distinctBy(StreamOption::url)
+      } else {
+        CloudStreamResolver(catalogSettings).resolve(item, selectedSeason, selectedEpisode)
+      }
+    }
       .onSuccess {
         streams = it
         loading = false
@@ -159,6 +172,10 @@ internal fun ResolverChooser(
     sourceSort = sourceSort,
     isLoading = loading,
     onLoadSources = {},
+    onSeason = { season ->
+      selectedSeason = season
+      selectedEpisode = null
+    },
     onEpisode = { season, episode ->
       selectedSeason = season
       selectedEpisode = episode
@@ -166,7 +183,14 @@ internal fun ResolverChooser(
     onFilter = { sourceFilter = it },
     onSort = { sourceSort = it },
     onSelect = { stream ->
-      if (!stream.isPlayable) onTorrentSelected(item, stream, selectedSeason, selectedEpisode)
+      if (!stream.isPlayable) {
+        onTorrentSelected(
+          item,
+          stream,
+          stream.season ?: selectedSeason,
+          stream.episode ?: selectedEpisode,
+        )
+      }
     },
     onBack = onBack,
   )

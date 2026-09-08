@@ -253,6 +253,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
             videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
             torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
+            season = element["season"]?.jsonPrimitive?.intOrNull,
+            episode = element["episode"]?.jsonPrimitive?.intOrNull,
           )
         }
         ?: element["infoHash"]?.jsonPrimitive?.content?.let { hash ->
@@ -267,6 +269,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
             videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
             torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
+            season = element["season"]?.jsonPrimitive?.intOrNull,
+            episode = element["episode"]?.jsonPrimitive?.intOrNull,
           )
         },
     )
