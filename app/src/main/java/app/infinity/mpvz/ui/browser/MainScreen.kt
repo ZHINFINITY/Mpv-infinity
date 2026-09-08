@@ -385,7 +385,7 @@ object MainScreen : Screen {
               modifier = Modifier.fillMaxSize(),
               beyondViewportPageCount = 1,
               flingBehavior = pagerFlingBehavior,
-              userScrollEnabled = !isPermissionDenied,
+              userScrollEnabled = !isPermissionDenied && selectedTab != MainTab.CATALOG,
             ) { page ->
               val tab = visibleTabs.getOrNull(page) ?: return@HorizontalPager
               when (tab) {
