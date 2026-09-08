@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - fix/native-local-direct-source-4ef92fe
   pull_request:
   workflow_dispatch:
     inputs:
