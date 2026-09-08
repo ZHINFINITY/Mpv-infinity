@@ -144,7 +144,7 @@ fun CatalogScreen() {
     return
   }
 
-  Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, bottom = 96.dp)) {
+  Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 96.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
       OutlinedTextField(
         value = state.query,

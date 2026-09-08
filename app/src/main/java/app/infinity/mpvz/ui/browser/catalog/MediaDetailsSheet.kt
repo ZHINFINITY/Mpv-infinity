@@ -34,7 +34,7 @@ fun MediaDetailsSheet(
 ) {
   var activeSeason by remember(item.id) { mutableStateOf(item.seasons.firstOrNull()?.number) }
   Column(
-    modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, bottom = 112.dp),
+    modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 112.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -100,4 +100,3 @@ fun MediaDetailsSheet(
     }
   }
 }
-
