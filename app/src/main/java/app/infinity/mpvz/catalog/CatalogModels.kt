@@ -55,6 +55,7 @@ data class CatalogState(
   val enabledProviders: Set<CatalogProvider> = CatalogProvider.entries.toSet(),
 )
 
+@Serializable
 data class StreamOption(
   val url: String,
   val title: String,

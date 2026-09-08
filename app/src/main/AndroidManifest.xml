@@ -377,6 +377,11 @@
         </activity-alias>
 
         <activity
+            android:name=".ui.torrent.TorrentCatalogActivity"
+            android:exported="false"
+            android:theme="@style/Theme.mpvinfinity" />
+
+        <activity
             android:name=".ui.torrent.TorrentSelectionActivity"
             android:exported="true"
             android:grantUriPermissions="true"
@@ -529,4 +534,3 @@
         </provider>
     </application>
 </manifest>
-

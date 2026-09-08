@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import androidx.lifecycle.ViewModelProvider
 
-data class TorrentLaunchRequest(val item: MediaItem, val stream: StreamOption, val season: Int? = null, val episode: Int? = null)
+data class TorrentLaunchRequest(val item: MediaItem, val stream: StreamOption, val streams: List<StreamOption> = listOf(stream), val season: Int? = null, val episode: Int? = null)
 
 class CatalogViewModel(application: Application) : AndroidViewModel(application) {
   companion object {
@@ -87,9 +87,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
           val stream = torrent ?: streams.firstOrNull()
           when {
             stream == null -> _state.update { it.copy(error = "No streams were returned by the configured resolver.") }
-            stream.isPlayable && item.type == MediaType.TV -> _state.update { it.copy(error = "This series resolver returned no torrent source. Add a torrent-capable resolver.") }
-            stream.isPlayable && settings.autoChooseBestTorrent -> playStream(stream)
-            else -> _torrentLaunch.emit(TorrentLaunchRequest(item, stream))
+            else -> _torrentLaunch.emit(TorrentLaunchRequest(item, stream, streams))
           }
         }
         .onFailure { error -> _state.update { it.copy(error = error.message ?: "Unable to resolve stream") } }
