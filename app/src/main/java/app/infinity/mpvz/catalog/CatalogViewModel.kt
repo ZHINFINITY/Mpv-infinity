@@ -111,6 +111,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     loadTrending()
   }
   fun currentSettings(): Quadruple = Quadruple(settings.tmdbApiKey, settings.resolverBaseUrl, settings.resolverToken, settings.resolverPath)
+  fun retry() { if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) } }
 
   private fun loadTrending() {
     viewModelScope.launch {

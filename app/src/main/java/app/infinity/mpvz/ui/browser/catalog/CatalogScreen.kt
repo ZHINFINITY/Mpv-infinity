@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.AnimatedContent
@@ -65,6 +68,7 @@ import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.player.components.expressive.ExpressiveElevatedCard
 
 @Composable
 fun CatalogScreen() {
@@ -72,6 +76,7 @@ fun CatalogScreen() {
   val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
   val state by viewModel.state.collectAsState()
   var showSettings by remember { mutableStateOf(false) }
+  var showStreamPicker by remember { mutableStateOf(false) }
 
   LaunchedEffect(Unit) {
     viewModel.resolvedUrl.collect { url ->
@@ -87,14 +92,14 @@ fun CatalogScreen() {
   }
 
   state.selectedItem?.let { item ->
-    CatalogDetailsPage(
+    MediaDetailsSheet(
       item = item,
-      streams = state.streamOptions,
+      streams = if (showStreamPicker) emptyList() else state.streamOptions,
       sourceFilter = state.sourceFilter,
       sourceSort = state.sourceSort,
       isLoading = state.resolvingId == item.id,
-      onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) },
-      onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
+      onLoadSources = { showStreamPicker = true; viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) },
+      onEpisode = { season, episode -> showStreamPicker = true; viewModel.resolve(item, season, episode) },
       onFilter = viewModel::setSourceFilter,
       onSort = viewModel::setSourceSort,
       onSelect = { stream ->
@@ -111,10 +116,35 @@ fun CatalogScreen() {
       },
       onBack = viewModel::closeDetails,
     )
+    if (showStreamPicker) {
+      StreamPickerSheet(
+        streams = state.streamOptions,
+        loading = state.resolvingId == item.id,
+        error = state.error,
+        sourceFilter = state.sourceFilter,
+        sourceSort = state.sourceSort,
+        onFilter = viewModel::setSourceFilter,
+        onSort = viewModel::setSourceSort,
+        onSelect = { stream ->
+          showStreamPicker = false
+          if (stream.isPlayable) viewModel.playStream(stream) else context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            data = Uri.parse(stream.url)
+            putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
+            putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
+            putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
+            putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
+            putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+            stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
+          })
+        },
+        onDismiss = { showStreamPicker = false },
+      )
+    }
     return
   }
 
-  Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+  Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, bottom = 96.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
       OutlinedTextField(
         value = state.query,
@@ -147,11 +177,12 @@ fun CatalogScreen() {
         )
       }
     }
-    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
+    state.error?.let { CatalogStatusState(message = it, onRetry = viewModel::retry, onEdit = { showSettings = true }) }
     AnimatedContent(targetState = state.items.firstOrNull(), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "catalogHero") { hero ->
       if (state.query.isBlank() && hero != null) CatalogHero(hero) else Spacer(Modifier.height(4.dp))
     }
     if (state.isLoading) Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    if (!state.isLoading && state.items.isEmpty() && state.error == null) CatalogStatusState("No catalog items found", viewModel::retry) { showSettings = true }
     LazyVerticalGrid(
       columns = GridCells.Adaptive(130.dp),
       contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
@@ -161,7 +192,7 @@ fun CatalogScreen() {
     ) {
       itemsIndexed(state.items, key = { _, item -> "${item.provider}-${item.providerId ?: item.id}" }) { index, item ->
         if (index >= state.items.size - 4) viewModel.loadMore()
-        CatalogCard(item, state.resolvingId == item.id) { viewModel.openDetails(item) }
+        CatalogGridItem(item, state.resolvingId == item.id) { viewModel.openDetails(item) }
       }
       if (state.isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
     }
@@ -198,23 +229,6 @@ fun CatalogScreen() {
 }
 
 @Composable
-private fun CatalogCard(item: MediaItem, resolving: Boolean, onClick: () -> Unit) {
-  Card(Modifier.fillMaxWidth().animateContentSize().clickable(enabled = !resolving, onClick = onClick), shape = RoundedCornerShape(16.dp)) {
-    Column {
-      AsyncImage(
-        model = item.posterUrl,
-        contentDescription = item.title,
-        modifier = Modifier.fillMaxWidth().height(190.dp),
-        contentScale = ContentScale.Crop,
-      )
-      Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
-      Text(if (resolving) "Resolving…" else item.type.name, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 0.dp))
-      Spacer(Modifier.height(8.dp))
-    }
-  }
-}
-
-@Composable
 private fun CatalogHero(item: MediaItem) {
   Box(Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(22.dp))) {
     AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -228,84 +242,13 @@ private fun CatalogHero(item: MediaItem) {
 }
 
 @Composable
-private fun CatalogDetailsPage(
-  item: MediaItem,
-  streams: List<StreamOption>,
-  sourceFilter: String,
-  sourceSort: String,
-  isLoading: Boolean,
-  onLoadSources: () -> Unit,
-  onEpisode: (Int, Int) -> Unit,
-  onFilter: (String) -> Unit,
-  onSort: (String) -> Unit,
-  onSelect: (StreamOption) -> Unit,
-  onBack: () -> Unit,
-) {
-  var activeSeason by remember(item.id) { mutableStateOf(item.seasons.firstOrNull()?.number) }
-  Column(
-    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
-    verticalArrangement = Arrangement.spacedBy(14.dp),
-  ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-      TextButton(onClick = onBack) { Text("‹ Back") }
-      Text(item.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-    }
-    AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Crop)
-    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text(item.title, style = MaterialTheme.typography.headlineMedium)
-      Text(item.provider.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-      if (item.overview.isNotBlank()) Text(item.overview, style = MaterialTheme.typography.bodyLarge)
-      if (item.type == app.infinity.mpvz.catalog.MediaType.TV && item.seasons.isNotEmpty()) {
-        Text("Seasons and episodes", style = MaterialTheme.typography.titleLarge)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          items(item.seasons) { season ->
-            FilterChip(selected = activeSeason == season.number, onClick = { activeSeason = season.number }, label = { Text("Season ${season.number}") })
-          }
-        }
-        item.seasons.firstOrNull { it.number == activeSeason }?.let { season ->
-          season.episodes.forEach { episode ->
-            Card(Modifier.fillMaxWidth().clickable { onEpisode(season.number, episode.number) }) {
-              Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(model = episode.stillUrl, contentDescription = episode.title, modifier = Modifier.size(110.dp, 62.dp), contentScale = ContentScale.Crop)
-                Column(Modifier.padding(start = 10.dp)) {
-                  Text("${episode.number}. ${episode.title}", style = MaterialTheme.typography.titleSmall)
-                  Text(episode.overview, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-              }
-            }
-          }
-        }
-      } else if (streams.isEmpty()) {
-        Button(onClick = onLoadSources, enabled = !isLoading, modifier = Modifier.fillMaxWidth()) { Text(if (isLoading) "Finding sources…" else "Find sources") }
-      }
-      Text("Sources", style = MaterialTheme.typography.titleLarge)
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("All", "WatchHub", "Torrentio").forEach { filter -> TextButton(onClick = { onFilter(filter) }) { Text(if (filter == sourceFilter) "● $filter" else filter) } }
-      }
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Best", "Quality", "Seeders", "Size").forEach { sort ->
-          FilterChip(selected = sourceSort == sort, onClick = { onSort(sort) }, label = { Text(sort) })
-        }
-      }
-      val visibleStreams = streams.filter { sourceFilter == "All" || (sourceFilter == "Torrentio" && !it.isPlayable) || (sourceFilter == "WatchHub" && it.isPlayable) }.let { source ->
-        when (sourceSort) {
-          "Quality" -> source.sortedByDescending { it.qualityRank }
-          "Seeders" -> source.sortedByDescending { it.seeders }
-          "Size" -> source.sortedByDescending { it.size?.filter(Char::isDigit)?.toLongOrNull() ?: 0L }
-          else -> source.sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
-        }
-      }
-      visibleStreams.forEach { stream ->
-        val metadata = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.seeders.takeIf { it > 0 }?.let { "$it seeders" }, stream.size, stream.source).joinToString(" • ")
-        Card(Modifier.fillMaxWidth().clickable { onSelect(stream) }) {
-          Column(Modifier.padding(14.dp)) {
-            Text(stream.title, style = MaterialTheme.typography.titleMedium)
-            if (metadata.isNotBlank()) Text(metadata, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            Text(if (stream.isPlayable) "Play source" else "Stream torrent", style = MaterialTheme.typography.labelLarge)
-          }
-        }
-      }
-      if (streams.isEmpty() && !isLoading && item.type == app.infinity.mpvz.catalog.MediaType.TV) Text("Select an episode to load sources.", style = MaterialTheme.typography.bodyMedium)
+private fun CatalogStatusState(message: String, onRetry: () -> Unit, onEdit: (() -> Unit)? = null) {
+  Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Text("◌", style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
+    Text(message, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      Button(onClick = onRetry) { Text("Retry") }
+      onEdit?.let { TextButton(onClick = it) { Text("Edit settings") } }
     }
   }
 }
