@@ -18,7 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import app.infinity.mpvz.catalog.CatalogSettings
+import app.infinity.mpvz.catalog.CloudStreamResolver
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.Season
@@ -69,41 +69,25 @@ class TorrentSelectionActivity : AppCompatActivity() {
       val state by viewModel.uiState.collectAsState()
       LaunchedEffect(viewModel) { viewModel.launches.collect(::openPlayer) }
       MpvInfinityTheme {
-        var resolverMode by remember { mutableStateOf(resolverItem != null && source.isNullOrBlank()) }
-        var resolverSelectionStarted by remember { mutableStateOf(false) }
-        if (resolverItem != null && resolverMode && !resolverSelectionStarted) {
-          ResolverChooser(
-            item = resolverItem,
-            initialStreams = emptyList(),
-            catalogSettings = CatalogSettings(applicationContext),
-            onTorrentSelected = { item, stream, season, episode ->
-              // Keep this activity on the resolver-populated chooser until the torrent engine
-              // emits a playback launch. Do not expose TorrentReadyScreen here: that is the old
-              // post-metadata file chooser and caused the one-frame chooser flash.
-              resolverSelectionStarted = true
-              viewModel.open(
-                torrentInput(
-                  source = stream.url,
-                  intent = intent,
-                  item = item,
-                  stream = stream,
-                  season = season,
-                  episode = episode,
-                ),
-              )
-            },
-            onBack = ::closePicker,
-          )
-        } else if (resolverItem != null && resolverMode && resolverSelectionStarted) {
-          TorrentLoadingScreen(::closePicker)
-        } else {
-          TorrentSelectionScreen(
-            state = state,
-            onBack = ::closePicker,
-            onRetry = viewModel::retry,
-            onSelect = viewModel::select,
-          )
+        LaunchedEffect(resolverItem) {
+          if (resolverItem != null && source.isNullOrBlank()) {
+            val resolver = CloudStreamResolver(app.infinity.mpvz.catalog.CatalogSettings(applicationContext))
+            val allStreams = resolverItem.seasons.flatMap { season ->
+              season.episodes.flatMap { episode ->
+                resolver.resolve(resolverItem, season.number, episode.number).map {
+                  it.copy(season = season.number, episode = episode.number)
+                }
+              }
+            }.distinctBy(StreamOption::url)
+            viewModel.initializeResolver(torrentInput("", intent, resolverItem), allStreams)
+          }
         }
+        TorrentSelectionScreen(
+          state = state,
+          onBack = ::closePicker,
+          onRetry = viewModel::retry,
+          onSelect = viewModel::select,
+        )
       }
     }
   }

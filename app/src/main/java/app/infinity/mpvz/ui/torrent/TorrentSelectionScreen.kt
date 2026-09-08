@@ -135,9 +135,21 @@ fun TorrentResolverChooserScreen(
       } else if (!loading && visible.isEmpty()) {
         Text("No torrents found for this selection.", modifier = Modifier.padding(20.dp))
       } else {
+        val grouped = visible.groupBy { it.season to it.episode }.entries.toList()
         LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp)) {
-          itemsIndexed(visible, key = { _, stream -> stream.url }) { position, stream ->
-            TorrentResolverFileRow(stream, position, onSelect)
+          grouped.forEach { (episodeKey, episodeStreams) ->
+            item(key = "episode-header-${episodeKey.first}-${episodeKey.second}") {
+              Text(
+                text = episodeKey.first?.let { season -> episodeKey.second?.let { episode -> "Season $season • Episode $episode" } } ?: "Movie torrents",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+              )
+            }
+            itemsIndexed(episodeStreams, key = { _, stream -> stream.url }) { position, stream ->
+              TorrentResolverFileRow(stream, position, onSelect)
+            }
           }
         }
       }
