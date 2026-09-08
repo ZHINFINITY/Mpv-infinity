@@ -97,7 +97,7 @@ class CinemetaCatalogRepository {
     listOf("movie", "series").flatMap { type ->
       val suffix = value?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
       val request = Request.Builder().url("$CINEMETA_BASE_URL/$type/top$suffix.json").get().build()
-      return client.newCall(request).execute().use { response ->
+      client.newCall(request).execute().use { response ->
         if (!response.isSuccessful) return@flatMap emptyList()
         val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
         metas.mapNotNull { entry ->
@@ -174,7 +174,6 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
         "Resolver returned no streams. Expected a streams array with url, magnet, or infoHash entries."
       }
       parsed
-    }
     }
   }
 
