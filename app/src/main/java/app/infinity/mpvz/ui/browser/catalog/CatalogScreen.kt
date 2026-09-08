@@ -19,7 +19,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -117,7 +119,7 @@ fun CatalogScreen() {
       horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       FilterChip(
-        selected = state.enabledProviders.size == 2,
+        selected = state.enabledProviders.size == CatalogProvider.entries.size,
         onClick = viewModel::enableAllProviders,
         label = { Text("All") },
       )
@@ -125,7 +127,11 @@ fun CatalogScreen() {
         FilterChip(
           selected = provider in state.enabledProviders,
           onClick = { viewModel.toggleProvider(provider) },
-          label = { Text(if (provider == CatalogProvider.MYANIMELIST) "MyAnimeList" else "TMDB") },
+          label = { Text(when (provider) {
+            CatalogProvider.TMDB -> "TMDB"
+            CatalogProvider.MYANIMELIST -> "MyAnimeList"
+            CatalogProvider.ANILIST -> "AniList"
+          }) },
         )
       }
     }
@@ -138,9 +144,11 @@ fun CatalogScreen() {
       verticalArrangement = Arrangement.spacedBy(12.dp),
       modifier = Modifier.fillMaxSize(),
     ) {
-      items(state.items, key = { "${it.type}-${it.id}" }) { item ->
+      itemsIndexed(state.items, key = { _, item -> "${item.provider}-${item.providerId ?: item.id}" }) { index, item ->
+        if (index >= state.items.size - 4) viewModel.loadMore()
         CatalogCard(item, state.resolvingId == item.id) { viewModel.openDetails(item) }
       }
+      if (state.isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
     }
   }
   if (showSettings) CatalogSettingsDialog(viewModel) { showSettings = false }
@@ -203,6 +211,7 @@ private fun CatalogDetailsPage(
   onSelect: (StreamOption) -> Unit,
   onBack: () -> Unit,
 ) {
+  var activeSeason by remember(item.id) { mutableStateOf(item.seasons.firstOrNull()?.number) }
   Column(
     modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 32.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -218,8 +227,12 @@ private fun CatalogDetailsPage(
       if (item.overview.isNotBlank()) Text(item.overview, style = MaterialTheme.typography.bodyLarge)
       if (item.type == app.infinity.mpvz.catalog.MediaType.TV && item.seasons.isNotEmpty()) {
         Text("Seasons and episodes", style = MaterialTheme.typography.titleLarge)
-        item.seasons.forEach { season ->
-          Text("Season ${season.number}", style = MaterialTheme.typography.titleMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          items(item.seasons) { season ->
+            FilterChip(selected = activeSeason == season.number, onClick = { activeSeason = season.number }, label = { Text("Season ${season.number}") })
+          }
+        }
+        item.seasons.firstOrNull { it.number == activeSeason }?.let { season ->
           season.episodes.forEach { episode ->
             Card(Modifier.fillMaxWidth().clickable { onEpisode(season.number, episode.number) }) {
               Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {

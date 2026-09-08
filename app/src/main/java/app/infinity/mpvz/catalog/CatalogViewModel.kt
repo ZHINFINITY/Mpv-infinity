@@ -24,6 +24,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private val settings = CatalogSettings(application)
   private val repository = TmdbCatalogRepository(settings)
   private val animeRepository = JikanAnimeRepository()
+  private val aniListRepository = AniListAnimeRepository()
   private val resolver = CloudStreamResolver(settings)
   private val _state = MutableStateFlow(CatalogState())
   val state: StateFlow<CatalogState> = _state.asStateFlow()
@@ -53,6 +54,17 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun enableAllProviders() {
     _state.update { it.copy(enabledProviders = CatalogProvider.entries.toSet()) }
     if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) }
+  }
+
+  fun loadMore() {
+    val current = _state.value
+    if (current.isLoadingMore || !current.canLoadMore || CatalogProvider.TMDB !in current.enabledProviders) return
+    viewModelScope.launch {
+      _state.update { it.copy(isLoadingMore = true) }
+      val nextPage = current.catalogPage + 1
+      val more = runCatching { if (current.query.isBlank()) repository.trending(nextPage) else repository.search(current.query, nextPage) }.getOrDefault(emptyList())
+      _state.update { it.copy(items = (it.items + more).distinctBy { item -> "${item.provider}:${item.providerId ?: item.id}" }, catalogPage = nextPage, canLoadMore = more.isNotEmpty(), isLoadingMore = false) }
+    }
   }
 
   fun openDetails(item: MediaItem) {
@@ -102,7 +114,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       _state.update { it.copy(isLoading = true, error = null) }
       runCatching { loadFromProviders(null) }
-        .onSuccess { items -> _state.update { it.copy(items = items, isLoading = false) } }
+        .onSuccess { items -> _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
         .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message) } }
     }
   }
@@ -110,7 +122,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private suspend fun runSearch(query: String) {
     _state.update { it.copy(isLoading = true) }
     runCatching { loadFromProviders(query) }
-      .onSuccess { items -> _state.update { it.copy(items = items, isLoading = false) } }
+      .onSuccess { items -> _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
       .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message) } }
   }
 
@@ -122,7 +134,10 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     val anime = if (CatalogProvider.MYANIMELIST in providers) {
       runCatching { if (query.isNullOrBlank()) animeRepository.trending() else animeRepository.search(query) }.getOrDefault(emptyList())
     } else emptyList()
-    return (tmdb + anime).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
+    val aniList = if (CatalogProvider.ANILIST in providers) {
+      runCatching { if (query.isNullOrBlank()) aniListRepository.popular() else aniListRepository.search(query) }.getOrDefault(emptyList())
+    } else emptyList()
+    return (tmdb + anime + aniList).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
   }
 }
 
