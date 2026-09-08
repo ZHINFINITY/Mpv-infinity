@@ -18,6 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import app.infinity.mpvz.catalog.CatalogSettings
+import app.infinity.mpvz.catalog.CloudStreamResolver
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
@@ -39,7 +44,18 @@ class TorrentCatalogActivity : AppCompatActivity() {
     )
     setContent {
       MpvInfinityTheme {
-        TorrentCatalogScreen(item, streams, intent.getStringExtra("seasons_json"), onBack = ::finish) { stream ->
+        var resolvedStreams by remember { mutableStateOf(streams) }
+        var error by remember { mutableStateOf<String?>(null) }
+        var loading by remember { mutableStateOf(streams.isEmpty()) }
+        LaunchedEffect(item.id) {
+          if (streams.isEmpty()) {
+            runCatching { CloudStreamResolver(CatalogSettings(applicationContext)).resolve(item) }
+              .onSuccess { resolvedStreams = it }
+              .onFailure { error = it.message ?: "Unable to find torrents" }
+            loading = false
+          }
+        }
+        TorrentCatalogScreen(item, resolvedStreams, intent.getStringExtra("seasons_json"), loading, error, onBack = ::finish) { stream ->
         startActivity(Intent(this, if (stream.isPlayable) PlayerActivity::class.java else TorrentSelectionActivity::class.java).apply {
           action = Intent.ACTION_VIEW
           data = Uri.parse(stream.url)
@@ -57,7 +73,7 @@ class TorrentCatalogActivity : AppCompatActivity() {
 }
 
 @androidx.compose.runtime.Composable
-private fun TorrentCatalogScreen(item: MediaItem, streams: List<StreamOption>, seasonsJson: String?, onBack: () -> Unit, onSelect: (StreamOption) -> Unit) {
+private fun TorrentCatalogScreen(item: MediaItem, streams: List<StreamOption>, seasonsJson: String?, loading: Boolean, error: String?, onBack: () -> Unit, onSelect: (StreamOption) -> Unit) {
   val episodePattern = Regex("(?i)\\bS(\\d{1,2})[ ._-]*E(\\d{1,4})\\b")
   var quality by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("All") }
   var sort by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("Best") }
@@ -70,6 +86,8 @@ private fun TorrentCatalogScreen(item: MediaItem, streams: List<StreamOption>, s
       androidx.compose.material3.TopAppBar(title = { androidx.compose.material3.Text("Choose what to play") }, navigationIcon = { androidx.compose.material3.IconButton(onClick = onBack) { app.infinity.mpvz.ui.icons.Icon(app.infinity.mpvz.ui.icons.Icons.RoundedFilled.ArrowBack, "Back") } })
       androidx.compose.foundation.lazy.LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
         item { androidx.compose.material3.Text(item.title, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall) }
+        if (loading) item { androidx.compose.material3.CircularProgressIndicator() }
+        if (error != null) item { androidx.compose.material3.Text(error, color = androidx.compose.material3.MaterialTheme.colorScheme.error) }
         if (seasons.isNotEmpty()) item { androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) { item { androidx.compose.material3.FilterChip(selected = season == null, onClick = { season = null }, label = { androidx.compose.material3.Text("All seasons") }) }; items(seasons) { value -> androidx.compose.material3.FilterChip(selected = season == value, onClick = { season = value }, label = { androidx.compose.material3.Text("Season $value") }) } } }
         item { androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) { listOf("All", "4K", "1080p", "720p").forEach { value -> item { androidx.compose.material3.FilterChip(selected = quality == value, onClick = { quality = value }, label = { androidx.compose.material3.Text(value) }) } }; listOf("Best", "Quality", "Seeders", "Size").forEach { value -> item { androidx.compose.material3.FilterChip(selected = sort == value, onClick = { sort = value }, label = { androidx.compose.material3.Text(value) }) } } } }
         visible.groupBy { episodePattern.find(it.title)?.value ?: "Other sources" }.forEach { (episodeLabel, episodeStreams) ->

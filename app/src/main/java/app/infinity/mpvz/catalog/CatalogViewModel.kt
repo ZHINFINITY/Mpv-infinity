@@ -80,17 +80,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun openDetails(item: MediaItem) {
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, selectedItem = null, error = null) }
-      runCatching { resolver.resolve(item) }
-        .onSuccess { streams ->
-          val torrent = streams.filterNot { it.isPlayable }
-            .maxWithOrNull(compareBy<StreamOption> { it.qualityRank }.thenBy { it.seeders })
-          val stream = torrent ?: streams.firstOrNull()
-          when {
-            stream == null -> _state.update { it.copy(error = "No streams were returned by the configured resolver.") }
-            else -> _torrentLaunch.emit(TorrentLaunchRequest(item, stream, streams))
-          }
-        }
-        .onFailure { error -> _state.update { it.copy(error = error.message ?: "Unable to resolve stream") } }
+      _torrentLaunch.emit(TorrentLaunchRequest(item, StreamOption(url = "", title = "Loading"), emptyList()))
       _state.update { it.copy(resolvingId = null) }
     }
   }
