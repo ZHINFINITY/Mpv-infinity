@@ -72,10 +72,14 @@ class TorrentSelectionActivity : AppCompatActivity() {
         LaunchedEffect(resolverItem) {
           if (resolverItem != null && source.isNullOrBlank()) {
             val resolver = CloudStreamResolver(app.infinity.mpvz.catalog.CatalogSettings(applicationContext))
-            val allStreams = resolverItem.seasons.flatMap { season ->
-              season.episodes.flatMap { episode ->
-                resolver.resolve(resolverItem, season.number, episode.number).map {
-                  it.copy(season = season.number, episode = episode.number)
+            val allStreams = if (resolverItem.type == MediaType.MOVIE || resolverItem.seasons.isEmpty()) {
+              resolver.resolve(resolverItem, null, null)
+            } else {
+              resolverItem.seasons.flatMap { season ->
+                season.episodes.flatMap { episode ->
+                  resolver.resolve(resolverItem, season.number, episode.number).map {
+                    it.copy(season = season.number, episode = episode.number)
+                  }
                 }
               }
             }.distinctBy(StreamOption::url)
