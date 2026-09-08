@@ -40,13 +40,15 @@ fun MediaDetailsSheet(
   var activeSeason by remember(item.id) { mutableStateOf(item.seasons.firstOrNull()?.number) }
   var expandedSynopsis by remember(item.id) { mutableStateOf(false) }
   LaunchedEffect(item.id) { onLoadSources() }
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   ModalBottomSheet(
     onDismissRequest = onBack,
+    sheetState = sheetState,
     containerColor = MaterialTheme.colorScheme.surface,
     tonalElevation = 3.dp,
   ) {
   Column(
-    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 112.dp),
+    modifier = Modifier.fillMaxHeight(0.95f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 112.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -79,7 +81,7 @@ fun MediaDetailsSheet(
                 AsyncImage(model = episode.stillUrl, contentDescription = episode.title, modifier = Modifier.size(132.dp, 74.dp), contentScale = ContentScale.Crop)
                 Column(Modifier.padding(start = 10.dp)) {
                   Text("${episode.number}. ${episode.title}", style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                  Text(episode.overview, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                  Text(listOfNotNull(episode.runtime, episode.overview.takeIf { it.isNotBlank() }).joinToString(" • "), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
               }
             }
@@ -104,11 +106,12 @@ fun MediaDetailsSheet(
         }
       }
       visibleStreams.forEach { stream ->
-        val metadata = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.seeders.takeIf { it > 0 }?.let { "$it seeders" }, stream.size, stream.source).joinToString(" • ")
+        val metadata = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { if (it >= 2160) "4K" else "${it}p" }, stream.seeders.takeIf { it > 0 }?.let { "$it seeders" }, stream.size, stream.source).joinToString(" • ")
         Card(Modifier.fillMaxWidth().clickable { onSelect(stream) }) {
           Column(Modifier.padding(14.dp)) {
             Text(stream.title, style = MaterialTheme.typography.titleMedium)
-            if (metadata.isNotBlank()) Text(metadata, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            val technical = listOfNotNull(stream.audioCodec, stream.videoCodec).joinToString(" • ")
+            if (metadata.isNotBlank() || technical.isNotBlank()) Text(listOf(metadata, technical).filter { it.isNotBlank() }.joinToString(" • "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             Text(if (stream.isPlayable) "Play source" else "Stream torrent", style = MaterialTheme.typography.labelLarge)
           }
         }

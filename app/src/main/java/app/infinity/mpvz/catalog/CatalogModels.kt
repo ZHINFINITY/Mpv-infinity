@@ -32,7 +32,7 @@ data class MediaItem(
 )
 
 data class Season(val number: Int, val episodes: List<Episode> = emptyList())
-data class Episode(val number: Int, val title: String, val overview: String, val stillUrl: String?)
+data class Episode(val number: Int, val title: String, val overview: String, val stillUrl: String?, val runtime: String? = null)
 
 data class CatalogState(
   val query: String = "",
@@ -62,6 +62,8 @@ data class StreamOption(
   val seeders: Int = 0,
   val size: String? = null,
   val source: String? = null,
+  val audioCodec: String? = null,
+  val videoCodec: String? = null,
   val isPlayable: Boolean = url.startsWith("http://") || url.startsWith("https://"),
   val torrentFileIndex: Int? = null,
 )

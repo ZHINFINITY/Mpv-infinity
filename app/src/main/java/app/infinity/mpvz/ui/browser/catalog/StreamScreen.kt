@@ -162,8 +162,9 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
 }
 
 @Composable private fun StreamResolverSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> Unit) {
+  val persistedResolvers by viewModel.resolvers.collectAsState()
   val initial = remember { viewModel.currentSettings() }
-  var endpoints by remember { mutableStateOf(initial.resolvers) }
+  var endpoints by remember(persistedResolvers) { mutableStateOf(persistedResolvers) }
   var newUrl by remember { mutableStateOf("") }
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
@@ -179,7 +180,7 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
           }
         }
         androidx.compose.material3.OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Resolver base URL") }, singleLine = true)
-        androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { endpoints = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); newUrl = "" } }) { Text("Add resolver") }
+        androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { val updated = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); viewModel.saveResolvers(updated); endpoints = updated; newUrl = "" } }) { Text("Add resolver") }
       }
     },
     confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } },

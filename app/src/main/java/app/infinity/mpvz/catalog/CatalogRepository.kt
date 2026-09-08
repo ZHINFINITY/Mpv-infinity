@@ -1,6 +1,7 @@
 package app.infinity.mpvz.catalog
 
 import android.content.Context
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.Dispatchers
@@ -122,6 +123,18 @@ class CinemetaCatalogRepository {
         metas.mapNotNull { entry ->
           val meta = entry.jsonObject
           val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+          val seasons = meta["videos"]?.jsonArray.orEmpty().mapNotNull { videoElement ->
+            val video = videoElement.jsonObject
+            val season = video["season"]?.jsonPrimitive?.intOrNull
+            val episode = video["episode"]?.jsonPrimitive?.intOrNull
+            if (season == null || episode == null) null else Season(season, listOf(Episode(
+              number = episode,
+              title = video["title"]?.jsonPrimitive?.contentOrNull ?: "Episode $episode",
+              overview = video["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+              stillUrl = video["thumbnail"]?.jsonPrimitive?.contentOrNull,
+              runtime = video["runtime"]?.jsonPrimitive?.contentOrNull,
+            )))
+          }.groupBy { it.number }.map { (number, grouped) -> Season(number, grouped.flatMap { it.episodes }.sortedBy { it.number }) }.sortedBy { it.number }
           MediaItem(
             id = providerId.hashCode(),
             type = if (type == "series") MediaType.TV else MediaType.MOVIE,
@@ -131,6 +144,7 @@ class CinemetaCatalogRepository {
             backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
             provider = CatalogProvider.CINEMETA,
             providerId = providerId,
+            seasons = seasons,
           )
         }
       }
@@ -187,7 +201,10 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .get()
       .build()
     return client.newCall(request).execute().use { response ->
-      if (!response.isSuccessful) error("Resolver request failed (${response.code})")
+      if (!response.isSuccessful) {
+        Log.w("CloudStreamResolver", "Resolver ${request.url} returned HTTP ${response.code}")
+        error("Resolver request failed (${response.code})")
+      }
       val parsed = parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
       require(parsed.isNotEmpty()) {
         "Resolver returned no streams. Expected a streams array with url, magnet, or infoHash entries."
@@ -228,6 +245,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
             size = element["size"]?.jsonPrimitive?.content,
             source = element["source"]?.jsonPrimitive?.content,
+            audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
+            videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
             torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
           )
         }
@@ -240,6 +259,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
             size = element["size"]?.jsonPrimitive?.content,
             source = element["source"]?.jsonPrimitive?.content,
+            audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
+            videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
             torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
           )
         },
