@@ -62,6 +62,7 @@ sealed interface TorrentSelectionUiState {
     val artwork: TorrentArtwork,
     val isLookingUpArtwork: Boolean,
     val launchingFileIndex: Int? = null,
+    val resolverInputs: Map<Int, TorrentSelectionInput> = emptyMap(),
   ) : TorrentSelectionUiState
 
   data class Error(
@@ -96,6 +97,40 @@ class TorrentSelectionViewModel(
     open(value)
   }
 
+  fun initializeResolver(value: TorrentSelectionInput, streams: List<app.infinity.mpvz.catalog.StreamOption>) {
+    if (input != null) return
+    input = value
+    val files = streams.mapIndexed { index, stream ->
+      val episodePrefix = stream.season?.let { season -> stream.episode?.let { episode -> "S%02dE%02d ".format(season, episode) } }.orEmpty()
+      TorrentFileItem(index, "$episodePrefix${stream.title}", "$episodePrefix${stream.title}", parseResolverSize(stream.size), "video/x-matroska")
+    }
+    val resolverInputs = streams.mapIndexed { index, stream ->
+      index to value.copy(
+        source = stream.url,
+        season = stream.season ?: value.season,
+        episode = stream.episode ?: value.episode,
+        fileIndex = stream.torrentFileIndex,
+      )
+    }.toMap()
+    _uiState.value = TorrentSelectionUiState.Ready(
+      catalog = TorrentCatalog("resolver", "", "resolver", value.title ?: "Resolver results", files),
+      artwork = TorrentArtwork(
+        title = value.title ?: "Choose what to play",
+        description = value.description,
+        posterUrl = value.posterUrl,
+        backdropUrl = value.backdropUrl,
+        season = value.season,
+        episode = value.episode,
+        episodeTitle = value.episodeTitle,
+        episodeOverview = value.episodeOverview,
+        episodeThumbnail = value.episodeThumbnail,
+        seasons = value.seasonsJson?.let { raw -> runCatching { kotlinx.serialization.json.Json.decodeFromString<List<app.infinity.mpvz.catalog.Season>>(raw) }.getOrDefault(emptyList()) } ?: emptyList(),
+      ),
+      isLookingUpArtwork = false,
+      resolverInputs = resolverInputs,
+    )
+  }
+
   /** Opens a new torrent in the same picker host, replacing any previous picker session. */
   fun open(value: TorrentSelectionInput) {
     input = value
@@ -111,7 +146,7 @@ class TorrentSelectionViewModel(
     val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
     if (ready.launchingFileIndex != null) return
     val file = ready.catalog.playableFiles.firstOrNull { it.index == fileIndex } ?: return
-    launch(ready.catalog, file)
+    ready.resolverInputs[fileIndex]?.let { resolverInput -> open(resolverInput) } ?: launch(ready.catalog, file)
   }
 
   fun cancel() {
@@ -383,3 +418,15 @@ private fun String?.safeText(maxLength: Int): String? =
     ?.trim()
     ?.takeIf(String::isNotBlank)
     ?.take(maxLength)
+
+private fun parseResolverSize(raw: String?): Long {
+  val value = raw?.trim()?.uppercase() ?: return 0L
+  val number = Regex("[0-9]+(?:\\.[0-9]+)?").find(value)?.value?.toDoubleOrNull() ?: return 0L
+  return when {
+    "TB" in value -> (number * 1024 * 1024 * 1024 * 1024).toLong()
+    "GB" in value -> (number * 1024 * 1024 * 1024).toLong()
+    "MB" in value -> (number * 1024 * 1024).toLong()
+    "KB" in value -> (number * 1024).toLong()
+    else -> number.toLong()
+  }
+}
