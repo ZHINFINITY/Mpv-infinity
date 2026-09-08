@@ -35,6 +35,11 @@ private const val PREFS = "catalog_secure_settings"
 private const val DEFAULT_STREAM_PATH = "/stream/{type}/{imdbId}.json"
 private const val KITSU_CATALOG_URL = "https://anime-kitsu.strem.fun/catalog/anime/kitsu-anime-popular.json"
 private const val CINEMETA_BASE_URL = "https://v3-cinemeta.strem.io/catalog"
+private val DEFAULT_CATALOG_SOURCES = listOf(
+  CatalogSource("cinemeta-movies", "Cinemeta Movies", "https://v3-cinemeta.strem.io/manifest.json"),
+  CatalogSource("cinemeta-series", "Cinemeta Series", "https://v3-cinemeta.strem.io/manifest.json"),
+  CatalogSource("kitsu-anime", "Kitsu Anime", "https://anime-kitsu.strem.fun/manifest.json"),
+)
 
 class CatalogSettings(context: Context) {
   private val prefs = EncryptedSharedPreferences.create(
@@ -55,6 +60,11 @@ class CatalogSettings(context: Context) {
     parts.getOrNull(0)?.takeIf { it.isNotBlank() }?.let { ResolverEndpoint(it, parts.getOrNull(1)?.toBooleanStrictOrNull() ?: true) }
   }
   fun saveResolvers(value: List<ResolverEndpoint>) { prefs.edit().putStringSet("resolver_endpoints", value.map { "${it.baseUrl}|${it.enabled}" }.toSet()).apply() }
+  fun catalogSources(): List<CatalogSource> = prefs.getStringSet("catalog_sources", null)?.mapNotNull { encoded ->
+    val parts = encoded.split("|", limit = 4)
+    if (parts.size >= 4) CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true) else null
+  } ?: DEFAULT_CATALOG_SOURCES
+  fun saveCatalogSources(value: List<CatalogSource>) { prefs.edit().putStringSet("catalog_sources", value.map { "${it.id}|${it.name}|${it.manifestUrl}|${it.isEnabled}" }.toSet()).apply() }
 }
 
 class KitsuAnimeRepository {

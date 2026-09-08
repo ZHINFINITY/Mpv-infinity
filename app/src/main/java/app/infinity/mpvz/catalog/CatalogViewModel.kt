@@ -22,6 +22,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       }
   }
   private val settings = CatalogSettings(application)
+  private val _catalogSources = MutableStateFlow(settings.catalogSources())
+  val catalogSources: StateFlow<List<CatalogSource>> = _catalogSources.asStateFlow()
   private val animeRepository = KitsuAnimeRepository()
   private val cinemetaRepository = CinemetaCatalogRepository()
   private val resolver = CloudStreamResolver(settings)
@@ -105,6 +107,12 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     loadTrending()
   }
   fun currentSettings(): ResolverSettings = ResolverSettings(settings.resolvers(), settings.resolverToken, settings.resolverPath)
+  fun currentCatalogSources(): List<CatalogSource> = settings.catalogSources()
+  fun saveCatalogSources(sources: List<CatalogSource>) {
+    settings.saveCatalogSources(sources)
+    _catalogSources.value = sources
+    loadTrending()
+  }
   fun retry() { if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) } }
 
   private fun loadTrending() {
@@ -125,10 +133,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   private suspend fun loadFromProviders(query: String?): List<MediaItem> {
     val providers = _state.value.enabledProviders
-    val cinemeta = if (CatalogProvider.CINEMETA in providers) {
+    val sources = settings.catalogSources().filter { it.isEnabled }.map { it.id }.toSet()
+    val cinemeta = if (CatalogProvider.CINEMETA in providers && sources.any { it.startsWith("cinemeta-") || it.startsWith("custom-") }) {
       runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }.getOrDefault(emptyList())
     } else emptyList()
-    val anime = if (CatalogProvider.KITSU in providers && query.isNullOrBlank()) {
+    val anime = if (CatalogProvider.KITSU in providers && "kitsu-anime" in sources && query.isNullOrBlank()) {
       runCatching { animeRepository.popular() }.getOrDefault(emptyList())
     } else emptyList()
     return (cinemeta + anime).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }

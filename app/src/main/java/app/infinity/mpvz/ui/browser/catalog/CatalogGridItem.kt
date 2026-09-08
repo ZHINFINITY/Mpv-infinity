@@ -30,7 +30,7 @@ fun CatalogGridItem(item: MediaItem, resolving: Boolean, onClick: () -> Unit) {
     modifier = Modifier.fillMaxWidth().animateContentSize(),
     onClick = onClick,
   ) {
-    Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp))) {
+    Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceVariant).clip(RoundedCornerShape(12.dp))) {
       AsyncImage(
         model = item.posterUrl,
         contentDescription = item.title,
@@ -40,7 +40,7 @@ fun CatalogGridItem(item: MediaItem, resolving: Boolean, onClick: () -> Unit) {
       Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xE6090A0F)))))
       Column(Modifier.align(Alignment.BottomStart).padding(12.dp)) {
         Text(item.title, style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(if (resolving) "Resolving…" else "${item.provider.name} • ${item.type.name}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = .8f))
+        if (resolving) Text("Resolving…", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = .8f))
       }
     }
   }
