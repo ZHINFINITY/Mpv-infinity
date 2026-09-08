@@ -55,7 +55,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
+import app.infinity.mpvz.ui.torrent.TorrentCatalogActivity
 import app.infinity.mpvz.utils.media.MediaUtils
 import coil3.compose.AsyncImage
 
@@ -68,11 +68,11 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
     val state by viewModel.state.collectAsState()
     val catalogSources by viewModel.catalogSources.collectAsState()
-    fun openTorrent(item: MediaItem, stream: app.infinity.mpvz.catalog.StreamOption, season: Int? = state.selectedSeason, episodeNumber: Int? = state.selectedEpisode) {
+    fun openTorrent(item: MediaItem, stream: app.infinity.mpvz.catalog.StreamOption, streams: List<app.infinity.mpvz.catalog.StreamOption> = listOf(stream), season: Int? = state.selectedSeason, episodeNumber: Int? = state.selectedEpisode) {
       val selectedEpisode = season?.let { seasonNumber ->
         episodeNumber?.let { number -> item.seasons.firstOrNull { it.number == seasonNumber }?.episodes?.firstOrNull { it.number == number } }
       }
-      context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
+      context.startActivity(Intent(context, TorrentCatalogActivity::class.java).apply {
         action = Intent.ACTION_VIEW
         data = Uri.parse(stream.url)
         putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
@@ -80,6 +80,8 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
         putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
         putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+        putExtra("is_series", item.type == app.infinity.mpvz.catalog.MediaType.TV)
+        putExtra("streams_json", kotlinx.serialization.json.Json.encodeToString(streams))
         if (item.seasons.isNotEmpty()) putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
         selectedEpisode?.let { episode ->
           putExtra("episode_season", season)
@@ -92,7 +94,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
       })
     }
     LaunchedEffect(Unit) {
-      viewModel.torrentLaunch.collect { request -> openTorrent(request.item, request.stream, request.season, request.episode) }
+      viewModel.torrentLaunch.collect { request -> openTorrent(request.item, request.stream, request.streams, request.season, request.episode) }
     }
     var heroItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     LaunchedEffect(state.items) { heroItems = state.items.shuffled().take(7) }
