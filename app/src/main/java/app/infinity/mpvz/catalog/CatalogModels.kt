@@ -69,6 +69,8 @@ data class StreamOption(
   val videoCodec: String? = null,
   val isPlayable: Boolean = url.startsWith("http://") || url.startsWith("https://"),
   val torrentFileIndex: Int? = null,
+  val season: Int? = null,
+  val episode: Int? = null,
 )
 
 @Serializable

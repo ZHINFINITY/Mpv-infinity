@@ -31,6 +31,7 @@ fun MediaDetailsSheet(
   sourceSort: String,
   isLoading: Boolean,
   onLoadSources: () -> Unit,
+  onSeason: (Int?) -> Unit = {},
   onEpisode: (Int, Int) -> Unit,
   onFilter: (String) -> Unit,
   onSort: (String) -> Unit,
@@ -70,8 +71,8 @@ fun MediaDetailsSheet(
       if (item.type == app.infinity.mpvz.catalog.MediaType.TV && item.seasons.isNotEmpty()) {
         Text("Seasons and episodes", style = MaterialTheme.typography.titleLarge)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          items(item.seasons) { season ->
-            FilterChip(selected = activeSeason == season.number, onClick = { activeSeason = season.number }, label = { Text("Season ${season.number}") })
+            items(item.seasons) { season ->
+            FilterChip(selected = activeSeason == season.number, onClick = { activeSeason = season.number; onSeason(season.number) }, label = { Text("Season ${season.number}") })
           }
         }
         item.seasons.firstOrNull { it.number == activeSeason }?.let { season ->
