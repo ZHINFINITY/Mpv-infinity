@@ -5,12 +5,16 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import androidx.lifecycle.ViewModelProvider
+
+data class TorrentLaunchRequest(val item: MediaItem, val stream: StreamOption, val season: Int? = null, val episode: Int? = null)
 
 class CatalogViewModel(application: Application) : AndroidViewModel(application) {
   companion object {
@@ -34,6 +38,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private var searchJob: Job? = null
   private val _resolvedUrl = MutableStateFlow<String?>(null)
   val resolvedUrl: StateFlow<String?> = _resolvedUrl.asStateFlow()
+  private val _torrentLaunch = MutableSharedFlow<TorrentLaunchRequest>(extraBufferCapacity = 1)
+  val torrentLaunch: SharedFlow<TorrentLaunchRequest> = _torrentLaunch
 
   init { loadTrending() }
 
@@ -72,12 +78,14 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   fun openDetails(item: MediaItem) {
     viewModelScope.launch {
-      _state.update { it.copy(resolvingId = item.id, selectedItem = item, error = null) }
-      runCatching { item }
-        .onSuccess { identifiedItem ->
-          _state.update { it.copy(selectedItem = identifiedItem, error = null) }
+      _state.update { it.copy(resolvingId = item.id, selectedItem = null, error = null) }
+      runCatching { resolver.resolve(item) }
+        .onSuccess { streams ->
+          val stream = streams.firstOrNull { !it.isPlayable } ?: streams.firstOrNull()
+          if (stream == null) _state.update { it.copy(error = "No streams were returned by the configured resolver.") }
+          else if (stream.isPlayable) playStream(stream) else _torrentLaunch.emit(TorrentLaunchRequest(item, stream))
         }
-        .onFailure { _state.update { state -> state.copy(error = it.message ?: "Unable to resolve stream") } }
+        .onFailure { error -> _state.update { it.copy(error = error.message ?: "Unable to resolve stream") } }
       _state.update { it.copy(resolvingId = null) }
     }
   }
