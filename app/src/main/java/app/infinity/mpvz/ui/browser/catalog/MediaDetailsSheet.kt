@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.animateContentSize
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,8 +39,13 @@ fun MediaDetailsSheet(
   var activeSeason by remember(item.id) { mutableStateOf(item.seasons.firstOrNull()?.number) }
   var expandedSynopsis by remember(item.id) { mutableStateOf(false) }
   LaunchedEffect(item.id) { onLoadSources() }
+  ModalBottomSheet(
+    onDismissRequest = onBack,
+    containerColor = MaterialTheme.colorScheme.surface,
+    tonalElevation = 3.dp,
+  ) {
   Column(
-    modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 112.dp),
+    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 112.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -67,11 +73,11 @@ fun MediaDetailsSheet(
         }
         item.seasons.firstOrNull { it.number == activeSeason }?.let { season ->
           season.episodes.forEach { episode ->
-            Card(Modifier.fillMaxWidth().clickable { onEpisode(season.number, episode.number) }) {
+            Card(Modifier.fillMaxWidth().animateContentSize().clickable { onEpisode(season.number, episode.number) }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), shape = RoundedCornerShape(12.dp)) {
               Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(model = episode.stillUrl, contentDescription = episode.title, modifier = Modifier.size(110.dp, 62.dp), contentScale = ContentScale.Crop)
+                AsyncImage(model = episode.stillUrl, contentDescription = episode.title, modifier = Modifier.size(132.dp, 74.dp), contentScale = ContentScale.Crop)
                 Column(Modifier.padding(start = 10.dp)) {
-                  Text("${episode.number}. ${episode.title}", style = MaterialTheme.typography.titleSmall)
+                  Text("${episode.number}. ${episode.title}", style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                   Text(episode.overview, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
               }
@@ -108,5 +114,6 @@ fun MediaDetailsSheet(
       }
       if (streams.isEmpty() && !isLoading && item.type == app.infinity.mpvz.catalog.MediaType.TV) Text("Select an episode to load sources.", style = MaterialTheme.typography.bodyMedium)
     }
+  }
   }
 }
