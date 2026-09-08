@@ -57,15 +57,24 @@ class CatalogSettings(context: Context) {
     set(value) = prefs.edit().putString("resolver_path", value.trim().ifBlank { DEFAULT_STREAM_PATH }).apply()
   fun resolvers(): List<ResolverEndpoint> = prefs.getStringSet("resolver_endpoints", emptySet()).orEmpty().mapNotNull { encoded ->
     val parts = encoded.split("|", limit = 2)
-    parts.getOrNull(0)?.takeIf { it.isNotBlank() }?.let { ResolverEndpoint(it, parts.getOrNull(1)?.toBooleanStrictOrNull() ?: true) }
+    parts.getOrNull(0)?.takeIf { it.isNotBlank() }?.let { ResolverEndpoint(sanitizeResolverBaseUrl(it), parts.getOrNull(1)?.toBooleanStrictOrNull() ?: true) }
   }
-  fun saveResolvers(value: List<ResolverEndpoint>) { prefs.edit().putStringSet("resolver_endpoints", value.map { "${it.baseUrl}|${it.enabled}" }.toSet()).apply() }
+  fun saveResolvers(value: List<ResolverEndpoint>) {
+    prefs.edit().putStringSet("resolver_endpoints", value.mapNotNull { endpoint ->
+      sanitizeResolverBaseUrl(endpoint.baseUrl).takeIf { it.isNotBlank() }?.let { "$it|${endpoint.enabled}" }
+    }.toSet()).commit()
+  }
   fun catalogSources(): List<CatalogSource> = prefs.getStringSet("catalog_sources", null)?.mapNotNull { encoded ->
     val parts = encoded.split("|", limit = 4)
     if (parts.size >= 4) CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true) else null
   } ?: DEFAULT_CATALOG_SOURCES
   fun saveCatalogSources(value: List<CatalogSource>) { prefs.edit().putStringSet("catalog_sources", value.map { "${it.id}|${it.name}|${it.manifestUrl}|${it.isEnabled}" }.toSet()).apply() }
 }
+
+private fun sanitizeResolverBaseUrl(value: String): String = value.trim().trimEnd('/')
+  .removeSuffix("/manifest.json")
+  .removeSuffix("/stream")
+  .trimEnd('/')
 
 class KitsuAnimeRepository {
   private val client = OkHttpClient()
