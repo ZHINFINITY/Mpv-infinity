@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -127,7 +128,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   override suspend fun resolve(item: MediaItem): List<StreamOption> = withContext(Dispatchers.IO) {
     val baseUrl = settings.resolverBaseUrl.ifBlank { error("Configure a resolver base URL in Catalog settings first.") }
     val identifier = item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
-    val type = if (item.type == MediaType.TV) "tv" else "movie"
+    val type = if (item.type == MediaType.TV) "series" else "movie"
     val path = settings.resolverPath
       .replace("{type}", type)
       .replace("{imdbId}", identifier)
@@ -154,22 +155,44 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       else -> parseCandidate(element)
     }
     return candidates.mapNotNull { candidate ->
-      val clean = sanitizeUrl(candidate.first)
+      val clean = sanitizeUrl(candidate.url)
       when {
-        clean.startsWith("http://") || clean.startsWith("https://") -> StreamOption(clean, candidate.second)
-        clean.startsWith("stremio://") -> resolveStremioResource(clean, candidate.second, depth)
+        clean.startsWith("stremio://") -> resolveStremioResource(clean, candidate.title, depth)
+        clean.isNotBlank() -> candidate.copy(url = clean, isPlayable = clean.startsWith("http://") || clean.startsWith("https://"))
         else -> null
       }
-    }
+    }.sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
   }
 
-  private fun parseCandidate(element: JsonElement): List<Pair<String, String>> = when (element) {
-    is JsonPrimitive -> listOf(element.content to "Stream")
+  private fun parseCandidate(element: JsonElement): List<StreamOption> = when (element) {
+    is JsonPrimitive -> listOf(StreamOption(element.content, "Stream", qualityRank = qualityRank(element.content)))
     is JsonObject -> listOfNotNull(
       (element["url"] ?: element["externalUrl"] ?: element["stream"])
-        ?.jsonPrimitive?.content?.let { it to (element["title"]?.jsonPrimitive?.content ?: element["name"]?.jsonPrimitive?.content ?: "Stream") },
+        ?.jsonPrimitive?.content?.let { url ->
+          val title = element["title"]?.jsonPrimitive?.content ?: element["name"]?.jsonPrimitive?.content ?: "Stream"
+          StreamOption(
+            url = url,
+            title = title,
+            qualityRank = qualityRank("$title $url"),
+            seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
+            size = element["size"]?.jsonPrimitive?.content,
+            source = element["source"]?.jsonPrimitive?.content,
+          )
+        },
     )
     else -> emptyList()
+  }
+
+  private fun qualityRank(value: String): Int {
+    val normalized = value.lowercase()
+    return when {
+      "2160p" in normalized || "4k" in normalized -> 2160
+      "1440p" in normalized -> 1440
+      "1080p" in normalized -> 1080
+      "720p" in normalized -> 720
+      "480p" in normalized -> 480
+      else -> 0
+    }
   }
 
   private fun sanitizeUrl(value: String): String = value.trim().removeSurrounding("[").removeSurrounding("]").trim('"', '\'', ' ', '\n', '\r', '\t')

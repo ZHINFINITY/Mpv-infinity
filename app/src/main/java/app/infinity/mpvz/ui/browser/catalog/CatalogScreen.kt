@@ -94,12 +94,12 @@ fun CatalogScreen() {
     }
   }
   if (showSettings) CatalogSettingsDialog(viewModel) { showSettings = false }
-  if (state.streamOptions.isNotEmpty()) {
-    StreamSelectionDialog(
-      title = state.streamTitle ?: "Available streams",
+  state.selectedItem?.let { item ->
+    MediaDetailsDialog(
+      item = item,
       streams = state.streamOptions,
       onSelect = viewModel::playStream,
-      onDismiss = viewModel::dismissStreams,
+      onDismiss = viewModel::closeDetails,
     )
   }
 }
@@ -147,22 +147,41 @@ private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> 
 }
 
 @Composable
-private fun StreamSelectionDialog(
-  title: String,
+private fun MediaDetailsDialog(
+  item: MediaItem,
   streams: List<StreamOption>,
   onSelect: (StreamOption) -> Unit,
   onDismiss: () -> Unit,
 ) {
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Streams for $title") },
+    title = { Text(item.title) },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item.overview.takeIf { it.isNotBlank() }?.let {
+          Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 5, overflow = TextOverflow.Ellipsis)
+        }
+        Text("Sources (best quality first)", style = MaterialTheme.typography.titleSmall)
         streams.forEach { stream ->
-          Button(onClick = { onSelect(stream) }, modifier = Modifier.fillMaxWidth()) {
-            Text(stream.title.ifBlank { stream.url }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+          val metadata = listOfNotNull(
+            stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" },
+            stream.seeders.takeIf { it > 0 }?.let { "$it seeders" },
+            stream.size,
+            stream.source,
+          ).joinToString(" • ")
+          if (stream.isPlayable) {
+            Button(onClick = { onSelect(stream) }, modifier = Modifier.fillMaxWidth()) {
+              Text(listOf(stream.title, metadata).filter { it.isNotBlank() }.joinToString("\n"), maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+          } else {
+            Text(
+              listOf(stream.title, metadata, "Torrent/magnet source — requires a debrid resolver").filter { it.isNotBlank() }.joinToString("\n"),
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              style = MaterialTheme.typography.bodySmall,
+            )
           }
         }
+        if (streams.isEmpty()) Text("No sources returned by the resolver.")
       }
     },
     confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

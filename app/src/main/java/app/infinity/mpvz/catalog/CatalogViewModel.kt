@@ -46,13 +46,14 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       _state.update { it.copy(resolvingId = item.id, error = null) }
       runCatching {
         val identifiedItem = repository.details(item)
-        resolver.resolve(identifiedItem)
+        identifiedItem to resolver.resolve(identifiedItem)
       }
-        .onSuccess { streams ->
+        .onSuccess { (identifiedItem, streams) ->
+          _state.update { it.copy(selectedItem = identifiedItem) }
           if (streams.isEmpty()) {
             _state.update { it.copy(error = "Resolver returned no playable streams.") }
           } else {
-            _state.update { it.copy(streamOptions = streams, streamTitle = item.title) }
+            _state.update { it.copy(streamOptions = streams, streamTitle = identifiedItem.title, error = null) }
           }
         }
         .onFailure { _state.update { state -> state.copy(error = it.message ?: "Unable to resolve stream") } }
@@ -66,6 +67,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun dismissStreams() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) } }
+  fun closeDetails() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, selectedItem = null) } }
   fun consumeResolvedUrl() { _resolvedUrl.value = null }
   fun saveSettings(tmdbKey: String, resolverUrl: String, resolverToken: String, resolverPath: String) {
     settings.tmdbApiKey = tmdbKey
