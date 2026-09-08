@@ -126,8 +126,8 @@ class NativeMedia3Engine(context: Context) {
           5_000,
         )
         .setBackBuffer(10_000, false)
-        // Bound memory use for high-bitrate HDR while allowing enough compressed data for 8x.
-        .setTargetBufferBytes(128 * 1024 * 1024)
+        // Allow a large forward buffer for sustained 8x playback of high-bitrate 4K HDR files.
+        .setTargetBufferBytes(1024 * 1024 * 1024)
         .setPrioritizeTimeOverSizeThresholds(false)
         .build(),
     )
