@@ -716,7 +716,7 @@ private fun TorrentFileRow(
 }
 
 @Composable
-private fun TorrentLoadingScreen(onBack: () -> Unit) {
+fun TorrentLoadingScreen(onBack: () -> Unit) {
   BackHandler { onBack() }
   Surface(
     modifier = Modifier.fillMaxSize(),
