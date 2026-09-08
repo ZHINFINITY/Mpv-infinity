@@ -200,6 +200,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .let { if (it.startsWith("/")) it else "/$it" }
     val request = Request.Builder()
       .url(baseUrl.trimEnd('/') + path)
+      .header("User-Agent", "Mozilla/5.0 (Android) mpv-infinity/1.0")
+      .header("Accept", "application/json")
       .apply { if (settings.resolverToken.isNotBlank()) addHeader("Authorization", "Bearer ${settings.resolverToken}") }
       .get()
       .build()
@@ -288,7 +290,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   private fun resolveStremioResource(url: String, title: String, depth: Int): StreamOption? {
     require(depth < 2) { "Stremio resolver returned too many nested resources." }
     val resourceUrl = url.replaceFirst("stremio://", "https://")
-    val request = Request.Builder().url(resourceUrl).build()
+    val request = Request.Builder().url(resourceUrl).header("User-Agent", "Mozilla/5.0 (Android) mpv-infinity/1.0").header("Accept", "application/json").build()
     return client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Stremio resource request failed (${response.code})")
       parseStreams(json.parseToJsonElement(response.body.string()), depth + 1).firstOrNull()?.copy(title = title)
