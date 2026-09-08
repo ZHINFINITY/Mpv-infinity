@@ -26,6 +26,7 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.net.URLEncoder
 
 private const val TMDB_BASE_URL = "https://api.themoviedb.org/3"
 private const val IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
@@ -33,6 +34,7 @@ private const val PREFS = "catalog_secure_settings"
 private const val DEFAULT_STREAM_PATH = "/stream/{type}/{imdbId}.json"
 private const val JIKAN_BASE_URL = "https://api.jikan.moe/v4/"
 private const val ANILIST_URL = "https://graphql.anilist.co"
+private const val CINEMETA_BASE_URL = "https://v3-cinemeta.strem.io/catalog"
 
 private interface TmdbApi {
   @GET("trending/all/week")
@@ -193,6 +195,39 @@ class AniListAnimeRepository {
   }
 }
 
+class CinemetaCatalogRepository {
+  private val client = OkHttpClient()
+  private val json = Json { ignoreUnknownKeys = true }
+
+  suspend fun popular(): List<MediaItem> = request(null)
+  suspend fun search(value: String): List<MediaItem> = request(value)
+
+  private suspend fun request(value: String?): List<MediaItem> = withContext(Dispatchers.IO) {
+    listOf("movie", "series").flatMap { type ->
+      val suffix = value?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+      val request = Request.Builder().url("$CINEMETA_BASE_URL/$type/top$suffix.json").get().build()
+      client.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) return@flatMap emptyList()
+        val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
+        metas.mapNotNull { entry ->
+          val meta = entry.jsonObject
+          val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+          MediaItem(
+            id = providerId.hashCode(),
+            type = if (type == "series") MediaType.TV else MediaType.MOVIE,
+            title = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            overview = meta["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
+            backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
+            provider = CatalogProvider.CINEMETA,
+            providerId = providerId,
+          )
+        }
+      }
+    }
+  }
+}
+
 interface StreamResolver {
   suspend fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null): List<StreamOption>
 }
@@ -210,9 +245,13 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     val baseUrl = settings.resolverBaseUrl.ifBlank { error("Configure a resolver base URL in Catalog settings first.") }
     val identifier = item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
     val type = if (item.type == MediaType.TV) "series" else "movie"
-    val path = settings.resolverPath
+    val configuredPath = settings.resolverPath
+    val resourceIdentifier = if (type == "series" && season != null && episode != null) "$identifier:$season:$episode" else identifier
+    val path = if (configuredPath == DEFAULT_STREAM_PATH && resourceIdentifier != identifier) {
+      "/stream/series/$resourceIdentifier.json"
+    } else configuredPath
       .replace("{type}", type)
-      .replace("{imdbId}", identifier)
+      .replace("{imdbId}", resourceIdentifier)
       .replace("{tmdbId}", item.id.toString())
       .replace("{season}", season?.toString().orEmpty())
       .replace("{episode}", episode?.toString().orEmpty())

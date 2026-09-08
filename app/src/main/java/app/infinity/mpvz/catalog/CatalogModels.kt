@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class MediaType { MOVIE, TV }
-enum class CatalogProvider { TMDB, MYANIMELIST, ANILIST }
+enum class CatalogProvider { TMDB, CINEMETA, MYANIMELIST, ANILIST }
 
 data class MediaItem(
   val id: Int,
@@ -38,6 +38,7 @@ data class CatalogState(
   val selectedSeason: Int? = null,
   val selectedEpisode: Int? = null,
   val sourceFilter: String = "All",
+  val sourceSort: String = "Best",
   val enabledProviders: Set<CatalogProvider> = CatalogProvider.entries.toSet(),
 )
 

@@ -25,6 +25,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private val repository = TmdbCatalogRepository(settings)
   private val animeRepository = JikanAnimeRepository()
   private val aniListRepository = AniListAnimeRepository()
+  private val cinemetaRepository = CinemetaCatalogRepository()
   private val resolver = CloudStreamResolver(settings)
   private val _state = MutableStateFlow(CatalogState())
   val state: StateFlow<CatalogState> = _state.asStateFlow()
@@ -100,6 +101,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun dismissStreams() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) } }
   fun closeDetails() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, selectedItem = null, selectedSeason = null, selectedEpisode = null) } }
   fun setSourceFilter(filter: String) { _state.update { it.copy(sourceFilter = filter) } }
+  fun setSourceSort(sort: String) { _state.update { it.copy(sourceSort = sort) } }
   fun consumeResolvedUrl() { _resolvedUrl.value = null }
   fun saveSettings(tmdbKey: String, resolverUrl: String, resolverToken: String, resolverPath: String) {
     settings.tmdbApiKey = tmdbKey
@@ -131,13 +133,16 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     val tmdb = if (CatalogProvider.TMDB in providers) {
       runCatching { if (query.isNullOrBlank()) repository.trending() else repository.search(query) }.getOrDefault(emptyList())
     } else emptyList()
+    val cinemeta = if (CatalogProvider.CINEMETA in providers) {
+      runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }.getOrDefault(emptyList())
+    } else emptyList()
     val anime = if (CatalogProvider.MYANIMELIST in providers) {
       runCatching { if (query.isNullOrBlank()) animeRepository.trending() else animeRepository.search(query) }.getOrDefault(emptyList())
     } else emptyList()
     val aniList = if (CatalogProvider.ANILIST in providers) {
       runCatching { if (query.isNullOrBlank()) aniListRepository.popular() else aniListRepository.search(query) }.getOrDefault(emptyList())
     } else emptyList()
-    return (tmdb + anime + aniList).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
+    return (tmdb + cinemeta + anime + aniList).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
   }
 }
 

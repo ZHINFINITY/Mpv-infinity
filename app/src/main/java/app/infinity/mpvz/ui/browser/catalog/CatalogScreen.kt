@@ -14,6 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -42,6 +49,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,10 +91,12 @@ fun CatalogScreen() {
       item = item,
       streams = state.streamOptions,
       sourceFilter = state.sourceFilter,
+      sourceSort = state.sourceSort,
       isLoading = state.resolvingId == item.id,
       onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) },
       onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
       onFilter = viewModel::setSourceFilter,
+      onSort = viewModel::setSourceSort,
       onSelect = { stream ->
         if (stream.isPlayable) viewModel.playStream(stream) else context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
           action = Intent.ACTION_VIEW
@@ -129,6 +140,7 @@ fun CatalogScreen() {
           onClick = { viewModel.toggleProvider(provider) },
           label = { Text(when (provider) {
             CatalogProvider.TMDB -> "TMDB"
+            CatalogProvider.CINEMETA -> "Cinemeta"
             CatalogProvider.MYANIMELIST -> "MyAnimeList"
             CatalogProvider.ANILIST -> "AniList"
           }) },
@@ -136,6 +148,9 @@ fun CatalogScreen() {
       }
     }
     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
+    AnimatedContent(targetState = state.items.firstOrNull(), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "catalogHero") { hero ->
+      if (state.query.isBlank() && hero != null) CatalogHero(hero) else Spacer(Modifier.height(4.dp))
+    }
     if (state.isLoading) Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     LazyVerticalGrid(
       columns = GridCells.Adaptive(130.dp),
@@ -184,7 +199,7 @@ fun CatalogScreen() {
 
 @Composable
 private fun CatalogCard(item: MediaItem, resolving: Boolean, onClick: () -> Unit) {
-  Card(Modifier.fillMaxWidth().clickable(enabled = !resolving, onClick = onClick)) {
+  Card(Modifier.fillMaxWidth().animateContentSize().clickable(enabled = !resolving, onClick = onClick), shape = RoundedCornerShape(16.dp)) {
     Column {
       AsyncImage(
         model = item.posterUrl,
@@ -200,14 +215,29 @@ private fun CatalogCard(item: MediaItem, resolving: Boolean, onClick: () -> Unit
 }
 
 @Composable
+private fun CatalogHero(item: MediaItem) {
+  Box(Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(22.dp))) {
+    AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color.Transparent, androidx.compose.ui.graphics.Color(0xFF090A0F)))))
+    Column(Modifier.align(Alignment.BottomStart).padding(18.dp)) {
+      Text(item.provider.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+      Text(item.title, style = MaterialTheme.typography.headlineSmall, color = androidx.compose.ui.graphics.Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+      Text(item.type.name, style = MaterialTheme.typography.labelMedium, color = androidx.compose.ui.graphics.Color.White.copy(alpha = .75f))
+    }
+  }
+}
+
+@Composable
 private fun CatalogDetailsPage(
   item: MediaItem,
   streams: List<StreamOption>,
   sourceFilter: String,
+  sourceSort: String,
   isLoading: Boolean,
   onLoadSources: () -> Unit,
   onEpisode: (Int, Int) -> Unit,
   onFilter: (String) -> Unit,
+  onSort: (String) -> Unit,
   onSelect: (StreamOption) -> Unit,
   onBack: () -> Unit,
 ) {
@@ -252,7 +282,19 @@ private fun CatalogDetailsPage(
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf("All", "WatchHub", "Torrentio").forEach { filter -> TextButton(onClick = { onFilter(filter) }) { Text(if (filter == sourceFilter) "● $filter" else filter) } }
       }
-      val visibleStreams = streams.filter { sourceFilter == "All" || (sourceFilter == "Torrentio" && !it.isPlayable) || (sourceFilter == "WatchHub" && it.isPlayable) }
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("Best", "Quality", "Seeders", "Size").forEach { sort ->
+          FilterChip(selected = sourceSort == sort, onClick = { onSort(sort) }, label = { Text(sort) })
+        }
+      }
+      val visibleStreams = streams.filter { sourceFilter == "All" || (sourceFilter == "Torrentio" && !it.isPlayable) || (sourceFilter == "WatchHub" && it.isPlayable) }.let { source ->
+        when (sourceSort) {
+          "Quality" -> source.sortedByDescending { it.qualityRank }
+          "Seeders" -> source.sortedByDescending { it.seeders }
+          "Size" -> source.sortedByDescending { it.size?.filter(Char::isDigit)?.toLongOrNull() ?: 0L }
+          else -> source.sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
+        }
+      }
       visibleStreams.forEach { stream ->
         val metadata = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.seeders.takeIf { it > 0 }?.let { "$it seeders" }, stream.size, stream.source).joinToString(" • ")
         Card(Modifier.fillMaxWidth().clickable { onSelect(stream) }) {
