@@ -124,9 +124,29 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .build()
     client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Resolver request failed (${response.code})")
-      json.decodeFromString<ResolverResponse>(response.body.string()).also {
-        require(it.url.startsWith("https://") || it.url.startsWith("http://")) { "Resolver returned an invalid media URL." }
-      }
+      resolveReturnedResource(json.decodeFromString<ResolverResponse>(response.body.string()), depth = 0)
+    }
+  }
+
+  private fun resolveReturnedResource(result: ResolverResponse, depth: Int): ResolverResponse {
+    val url = result.url.trim()
+    if (url.startsWith("http://") || url.startsWith("https://")) return result.copy(url = url)
+    require(url.startsWith("stremio://")) {
+      "Resolver returned unsupported URL scheme '$url'. Return a direct http(s) URL or a Stremio resource."
+    }
+    require(depth < 2) { "Stremio resolver returned too many nested resources." }
+    val resourceUrl = url.replaceFirst("stremio://", "https://")
+    val request = Request.Builder().url(resourceUrl).build()
+    client.newCall(request).execute().use { response ->
+      if (!response.isSuccessful) error("Stremio resource request failed (${response.code})")
+      val streams = json.decodeFromString<StremioStreamResponse>(response.body.string()).streams
+      val stream = streams.firstOrNull { candidate ->
+        listOf(candidate.url, candidate.externalUrl).any { it?.startsWith("http://") == true || it?.startsWith("https://") == true }
+      } ?: error("Stremio addon returned no playable HTTP(S) streams.")
+      val playableUrl = stream.url?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+        ?: stream.externalUrl?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+        ?: error("Stremio addon returned an invalid stream URL.")
+      result.copy(url = playableUrl)
     }
   }
 }
