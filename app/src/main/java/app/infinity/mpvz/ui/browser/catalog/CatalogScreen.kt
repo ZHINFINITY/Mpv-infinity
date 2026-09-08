@@ -117,6 +117,7 @@ fun CatalogScreen() {
             putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
             putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
             putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+            stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
           })
         }
       },
