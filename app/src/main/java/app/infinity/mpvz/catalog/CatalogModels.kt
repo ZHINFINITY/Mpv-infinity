@@ -29,6 +29,9 @@ data class CatalogState(
   val streamOptions: List<StreamOption> = emptyList(),
   val streamTitle: String? = null,
   val selectedItem: MediaItem? = null,
+  val selectedSeason: Int? = null,
+  val selectedEpisode: Int? = null,
+  val sourceFilter: String = "All",
 )
 
 data class StreamOption(

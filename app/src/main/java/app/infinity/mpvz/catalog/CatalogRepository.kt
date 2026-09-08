@@ -113,7 +113,7 @@ class TmdbCatalogRepository(private val settings: CatalogSettings) {
 }
 
 interface StreamResolver {
-  suspend fun resolve(item: MediaItem): List<StreamOption>
+  suspend fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null): List<StreamOption>
 }
 
 /**
@@ -125,7 +125,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
 
-  override suspend fun resolve(item: MediaItem): List<StreamOption> = withContext(Dispatchers.IO) {
+  override suspend fun resolve(item: MediaItem, season: Int?, episode: Int?): List<StreamOption> = withContext(Dispatchers.IO) {
     val baseUrl = settings.resolverBaseUrl.ifBlank { error("Configure a resolver base URL in Catalog settings first.") }
     val identifier = item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
     val type = if (item.type == MediaType.TV) "series" else "movie"
@@ -133,6 +133,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .replace("{type}", type)
       .replace("{imdbId}", identifier)
       .replace("{tmdbId}", item.id.toString())
+      .replace("{season}", season?.toString().orEmpty())
+      .replace("{episode}", episode?.toString().orEmpty())
       .let { if (it.startsWith("/")) it else "/$it" }
     val request = Request.Builder()
       .url(baseUrl.trimEnd('/') + path)

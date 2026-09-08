@@ -41,22 +41,27 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
-  fun resolve(item: MediaItem) {
+  fun openDetails(item: MediaItem) {
     viewModelScope.launch {
-      _state.update { it.copy(resolvingId = item.id, error = null) }
+      _state.update { it.copy(resolvingId = item.id, selectedItem = item, error = null) }
       runCatching {
         val identifiedItem = repository.details(item)
-        identifiedItem to resolver.resolve(identifiedItem)
+        identifiedItem
       }
-        .onSuccess { (identifiedItem, streams) ->
-          _state.update { it.copy(selectedItem = identifiedItem) }
-          if (streams.isEmpty()) {
-            _state.update { it.copy(error = "Resolver returned no playable streams.") }
-          } else {
-            _state.update { it.copy(streamOptions = streams, streamTitle = identifiedItem.title, error = null) }
-          }
+        .onSuccess { identifiedItem ->
+          _state.update { it.copy(selectedItem = identifiedItem, error = null) }
         }
         .onFailure { _state.update { state -> state.copy(error = it.message ?: "Unable to resolve stream") } }
+      _state.update { it.copy(resolvingId = null) }
+    }
+  }
+
+  fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null) {
+    viewModelScope.launch {
+      _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode) }
+      runCatching { resolver.resolve(item, season, episode) }
+        .onSuccess { streams -> _state.update { it.copy(streamOptions = streams, streamTitle = item.title, error = if (streams.isEmpty()) "Resolver returned no streams." else null) } }
+        .onFailure { error -> _state.update { it.copy(error = error.message ?: "Unable to resolve stream") } }
       _state.update { it.copy(resolvingId = null) }
     }
   }
@@ -67,7 +72,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun dismissStreams() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) } }
-  fun closeDetails() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, selectedItem = null) } }
+  fun closeDetails() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, selectedItem = null, selectedSeason = null, selectedEpisode = null) } }
+  fun setSourceFilter(filter: String) { _state.update { it.copy(sourceFilter = filter) } }
   fun consumeResolvedUrl() { _resolvedUrl.value = null }
   fun saveSettings(tmdbKey: String, resolverUrl: String, resolverToken: String, resolverPath: String) {
     settings.tmdbApiKey = tmdbKey
