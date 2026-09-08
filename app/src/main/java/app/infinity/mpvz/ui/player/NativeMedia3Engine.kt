@@ -26,9 +26,7 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -114,23 +112,6 @@ class NativeMedia3Engine(context: Context) {
   private val directLocalMediaSourceFactory =
     ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
   private var player = ExoPlayer.Builder(context.applicationContext)
-    .setLoadControl(
-      DefaultLoadControl.Builder()
-        .setAllocator(DefaultAllocator(true, 256 * 1024))
-        // A 10-second minimum starts quickly after a seek, while the 120-second ceiling gives
-        // 8x 4K/HDR playback enough media-time headroom without the old 5-minute refill wait.
-        .setBufferDurationsMs(
-          10_000,
-          120_000,
-          2_000,
-          5_000,
-        )
-        .setBackBuffer(10_000, false)
-        // Allow a large forward buffer for sustained 8x playback of high-bitrate 4K HDR files.
-        .setTargetBufferBytes(1024 * 1024 * 1024)
-        .setPrioritizeTimeOverSizeThresholds(false)
-        .build(),
-    )
     // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
     // being handed over from MPV. Disable this watchdog for Native; a real player/codec error is
     // still delivered through Player.Listener.onPlayerError.
