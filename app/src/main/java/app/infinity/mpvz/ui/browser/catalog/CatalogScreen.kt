@@ -89,7 +89,7 @@ fun CatalogScreen() {
       modifier = Modifier.fillMaxSize(),
     ) {
       items(state.items, key = { "${it.type}-${it.id}" }) { item ->
-        CatalogCard(item, state.resolvingId == item.id) { viewModel.resolve(item) }
+        CatalogCard(item, state.resolvingId == item.id) { viewModel.openDetails(item) }
       }
     }
   }
@@ -98,6 +98,11 @@ fun CatalogScreen() {
     MediaDetailsDialog(
       item = item,
       streams = state.streamOptions,
+      sourceFilter = state.sourceFilter,
+      isLoading = state.resolvingId == item.id,
+      onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) },
+      onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
+      onFilter = viewModel::setSourceFilter,
       onSelect = viewModel::playStream,
       onDismiss = viewModel::closeDetails,
     )
@@ -150,6 +155,11 @@ private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> 
 private fun MediaDetailsDialog(
   item: MediaItem,
   streams: List<StreamOption>,
+  sourceFilter: String,
+  isLoading: Boolean,
+  onLoadSources: () -> Unit,
+  onEpisode: (Int, Int) -> Unit,
+  onFilter: (String) -> Unit,
   onSelect: (StreamOption) -> Unit,
   onDismiss: () -> Unit,
 ) {
@@ -161,8 +171,26 @@ private fun MediaDetailsDialog(
         item.overview.takeIf { it.isNotBlank() }?.let {
           Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 5, overflow = TextOverflow.Ellipsis)
         }
+        if (item.type == app.infinity.mpvz.catalog.MediaType.TV && item.seasons.isNotEmpty()) {
+          Text("Seasons", style = MaterialTheme.typography.titleSmall)
+          item.seasons.forEach { season ->
+            Text("Season ${season.number}", style = MaterialTheme.typography.labelLarge)
+            season.episodes.forEach { episode ->
+              TextButton(onClick = { onEpisode(season.number, episode.number) }, modifier = Modifier.fillMaxWidth()) {
+                Text("${episode.number}. ${episode.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+              }
+            }
+          }
+        } else if (streams.isEmpty()) {
+          Button(onClick = onLoadSources, enabled = !isLoading, modifier = Modifier.fillMaxWidth()) {
+            Text(if (isLoading) "Finding sources…" else "Find sources")
+          }
+        }
         Text("Sources (best quality first)", style = MaterialTheme.typography.titleSmall)
-        streams.forEach { stream ->
+        listOf("All", "WatchHub", "Torrentio").forEach { filter ->
+          TextButton(onClick = { onFilter(filter) }) { Text(if (filter == sourceFilter) "[$filter]" else filter) }
+        }
+        streams.filter { sourceFilter == "All" || (sourceFilter == "Torrentio" && !it.isPlayable) || (sourceFilter == "WatchHub" && it.isPlayable) }.forEach { stream ->
           val metadata = listOfNotNull(
             stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" },
             stream.seeders.takeIf { it > 0 }?.let { "$it seeders" },
