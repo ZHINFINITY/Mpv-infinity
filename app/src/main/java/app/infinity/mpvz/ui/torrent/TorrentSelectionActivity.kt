@@ -70,13 +70,17 @@ class TorrentSelectionActivity : AppCompatActivity() {
       LaunchedEffect(viewModel) { viewModel.launches.collect(::openPlayer) }
       MpvInfinityTheme {
         var resolverMode by remember { mutableStateOf(resolverItem != null && source.isNullOrBlank()) }
-        if (resolverItem != null && resolverMode) {
+        var resolverSelectionStarted by remember { mutableStateOf(false) }
+        if (resolverItem != null && resolverMode && !resolverSelectionStarted) {
           ResolverChooser(
             item = resolverItem,
             initialStreams = emptyList(),
             catalogSettings = CatalogSettings(applicationContext),
             onTorrentSelected = { item, stream, season, episode ->
-              resolverMode = false
+              // Keep this activity on the resolver-populated chooser until the torrent engine
+              // emits a playback launch. Do not expose TorrentReadyScreen here: that is the old
+              // post-metadata file chooser and caused the one-frame chooser flash.
+              resolverSelectionStarted = true
               viewModel.open(
                 torrentInput(
                   source = stream.url,
@@ -90,6 +94,8 @@ class TorrentSelectionActivity : AppCompatActivity() {
             },
             onBack = ::closePicker,
           )
+        } else if (resolverItem != null && resolverMode && resolverSelectionStarted) {
+          TorrentLoadingScreen(::closePicker)
         } else {
           TorrentSelectionScreen(
             state = state,
