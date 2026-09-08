@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +45,7 @@ import app.infinity.mpvz.catalog.CatalogViewModel
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.icons.Icon
 
 @Composable
 fun CatalogScreen() {
