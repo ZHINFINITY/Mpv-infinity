@@ -36,6 +36,7 @@ data class TorrentSelectionInput(
   val episodeOverview: String? = null,
   val episodeThumbnail: String? = null,
   val seasonsJson: String? = null,
+  val fileIndex: Int? = null,
 )
 
 data class TorrentArtwork(
@@ -162,10 +163,20 @@ class TorrentSelectionViewModel(
               isLookingUpArtwork = needsArtworkLookup && catalog.playableFiles.size > 1,
             )
 
-          if (catalog.playableFiles.size == 1) {
-            launch(catalog, catalog.playableFiles.single())
-          } else if (needsArtworkLookup) {
-            launchArtworkLookup(catalog, initialArtwork)
+          val requestedFile =
+            value.fileIndex?.let { index -> catalog.playableFiles.firstOrNull { it.index == index } }
+              ?: if (value.season != null && value.episode != null) {
+                catalog.playableFiles.firstOrNull { file ->
+                val byName = MediaInfoParser.parse(file.name)
+                val byPath = MediaInfoParser.parse(file.path)
+                (byName.season == value.season && byName.episode == value.episode) ||
+                  (byPath.season == value.season && byPath.episode == value.episode)
+                }
+              } else null
+          when {
+            requestedFile != null -> launch(catalog, requestedFile)
+            catalog.playableFiles.size == 1 -> launch(catalog, catalog.playableFiles.single())
+            needsArtworkLookup -> launchArtworkLookup(catalog, initialArtwork)
           }
         } catch (cancellation: CancellationException) {
           throw cancellation
