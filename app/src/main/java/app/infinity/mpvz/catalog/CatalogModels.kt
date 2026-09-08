@@ -83,3 +83,13 @@ data class ResolverResponse(
   val mimeType: String? = null,
   val headers: Map<String, String> = emptyMap(),
 )
+
+@Serializable
+data class StremioStreamResponse(val streams: List<StremioStream> = emptyList())
+
+@Serializable
+data class StremioStream(
+  val url: String? = null,
+  val externalUrl: String? = null,
+  val behaviorHints: Map<String, String> = emptyMap(),
+)
