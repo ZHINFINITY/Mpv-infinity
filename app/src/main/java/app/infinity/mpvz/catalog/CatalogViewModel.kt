@@ -23,8 +23,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
   private val settings = CatalogSettings(application)
   private val repository = TmdbCatalogRepository(settings)
-  private val animeRepository = JikanAnimeRepository()
-  private val aniListRepository = AniListAnimeRepository()
+  private val animeRepository = KitsuAnimeRepository()
   private val cinemetaRepository = CinemetaCatalogRepository()
   private val resolver = CloudStreamResolver(settings)
   private val _state = MutableStateFlow(CatalogState())
@@ -137,13 +136,10 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     val cinemeta = if (CatalogProvider.CINEMETA in providers) {
       runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }.getOrDefault(emptyList())
     } else emptyList()
-    val anime = if (CatalogProvider.MYANIMELIST in providers) {
-      runCatching { if (query.isNullOrBlank()) animeRepository.trending() else animeRepository.search(query) }.getOrDefault(emptyList())
+    val anime = if (CatalogProvider.KITSU in providers && query.isNullOrBlank()) {
+      runCatching { animeRepository.popular() }.getOrDefault(emptyList())
     } else emptyList()
-    val aniList = if (CatalogProvider.ANILIST in providers) {
-      runCatching { if (query.isNullOrBlank()) aniListRepository.popular() else aniListRepository.search(query) }.getOrDefault(emptyList())
-    } else emptyList()
-    return (tmdb + cinemeta + anime + aniList).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
+    return (tmdb + cinemeta + anime).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
   }
 }
 

@@ -69,6 +69,7 @@ import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.player.components.expressive.ExpressiveElevatedCard
+import app.infinity.mpvz.ui.components.InlineSearchBar
 
 @Composable
 fun CatalogScreen() {
@@ -77,6 +78,16 @@ fun CatalogScreen() {
   val state by viewModel.state.collectAsState()
   var showSettings by remember { mutableStateOf(false) }
   var showStreamPicker by remember { mutableStateOf(false) }
+  val featured = state.items.firstOrNull()
+  val railItems = remember(state.items) {
+    state.items.drop(1).groupBy { item ->
+      when {
+        item.provider == CatalogProvider.KITSU -> "Top Anime"
+        item.type == app.infinity.mpvz.catalog.MediaType.TV -> "Popular Series"
+        else -> "Trending Movies"
+      }
+    }.values.flatten().distinctBy { "${it.provider}:${it.providerId ?: it.id}" }.take(12)
+  }
 
   LaunchedEffect(Unit) {
     viewModel.resolvedUrl.collect { url ->
@@ -146,12 +157,15 @@ fun CatalogScreen() {
 
   Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 96.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-      OutlinedTextField(
-        value = state.query,
-        onValueChange = viewModel::setQuery,
+      InlineSearchBar(
+        query = state.query,
+        onQueryChange = viewModel::setQuery,
+        onSearch = viewModel::setQuery,
         modifier = Modifier.weight(1f),
-        singleLine = true,
-        label = { Text("Search movies and TV") },
+        placeholder = { Text("Search movies and TV") },
+        leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
+        shape = RoundedCornerShape(24.dp),
+        tonalElevation = 0.dp,
       )
       IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Catalog settings") }
     }
@@ -171,15 +185,33 @@ fun CatalogScreen() {
           label = { Text(when (provider) {
             CatalogProvider.TMDB -> "TMDB"
             CatalogProvider.CINEMETA -> "Cinemeta"
-            CatalogProvider.MYANIMELIST -> "MyAnimeList"
-            CatalogProvider.ANILIST -> "AniList"
+            CatalogProvider.KITSU -> "Kitsu Anime"
           }) },
         )
       }
     }
     state.error?.let { CatalogStatusState(message = it, onRetry = viewModel::retry, onEdit = { showSettings = true }) }
-    AnimatedContent(targetState = state.items.firstOrNull(), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "catalogHero") { hero ->
+    AnimatedContent(targetState = featured, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "catalogHero") { hero ->
       if (state.query.isBlank() && hero != null) CatalogHero(hero) else Spacer(Modifier.height(4.dp))
+    }
+    if (state.query.isBlank()) {
+      listOf("Trending Movies", "Popular Series", "Top Anime").forEach { railTitle ->
+        val items = railItems.filter { item ->
+          when (railTitle) {
+            "Top Anime" -> item.provider == CatalogProvider.KITSU
+            "Popular Series" -> item.type == app.infinity.mpvz.catalog.MediaType.TV && item.provider != CatalogProvider.KITSU
+            else -> item.type == app.infinity.mpvz.catalog.MediaType.MOVIE && item.provider != CatalogProvider.KITSU
+          }
+        }
+        if (items.isNotEmpty()) {
+          Text(railTitle, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp))
+          LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+            items(items, key = { "rail-${it.provider}-${it.providerId ?: it.id}" }) { item ->
+              Box(Modifier.width(130.dp)) { CatalogGridItem(item, state.resolvingId == item.id) { viewModel.openDetails(item) } }
+            }
+          }
+        }
+      }
     }
     if (state.isLoading) Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     if (!state.isLoading && state.items.isEmpty() && state.error == null) CatalogStatusState("No catalog items found", viewModel::retry) { showSettings = true }
@@ -190,8 +222,8 @@ fun CatalogScreen() {
       verticalArrangement = Arrangement.spacedBy(12.dp),
       modifier = Modifier.fillMaxSize(),
     ) {
-      itemsIndexed(state.items, key = { _, item -> "${item.provider}-${item.providerId ?: item.id}" }) { index, item ->
-        if (index >= state.items.size - 4) viewModel.loadMore()
+      itemsIndexed(state.items.filterNot { it in railItems }.drop(1), key = { _, item -> "${item.provider}-${item.providerId ?: item.id}" }) { index, item ->
+        if (index >= state.items.size - railItems.size - 3) viewModel.loadMore()
         CatalogGridItem(item, state.resolvingId == item.id) { viewModel.openDetails(item) }
       }
       if (state.isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }

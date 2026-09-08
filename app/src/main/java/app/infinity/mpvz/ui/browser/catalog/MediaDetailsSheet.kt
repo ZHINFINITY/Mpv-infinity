@@ -33,6 +33,8 @@ fun MediaDetailsSheet(
   onBack: () -> Unit,
 ) {
   var activeSeason by remember(item.id) { mutableStateOf(item.seasons.firstOrNull()?.number) }
+  var expandedSynopsis by remember(item.id) { mutableStateOf(false) }
+  LaunchedEffect(item.id) { onLoadSources() }
   Column(
     modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 112.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -44,8 +46,13 @@ fun MediaDetailsSheet(
     AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Crop)
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(item.title, style = MaterialTheme.typography.headlineMedium)
-      Text(item.provider.name, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-      if (item.overview.isNotBlank()) Text(item.overview, style = MaterialTheme.typography.bodyLarge)
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOfNotNull(item.releaseYear, item.contentRating, item.duration, item.genres.firstOrNull()).forEach { AssistChip(onClick = {}, label = { Text(it) }) }
+      }
+      if (item.overview.isNotBlank()) {
+        Text(item.overview, style = MaterialTheme.typography.bodyLarge, maxLines = if (expandedSynopsis) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis)
+        TextButton(onClick = { expandedSynopsis = !expandedSynopsis }) { Text(if (expandedSynopsis) "Show less" else "Read more") }
+      }
       if (item.type == app.infinity.mpvz.catalog.MediaType.TV && item.seasons.isNotEmpty()) {
         Text("Seasons and episodes", style = MaterialTheme.typography.titleLarge)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,8 +73,6 @@ fun MediaDetailsSheet(
             }
           }
         }
-      } else if (streams.isEmpty()) {
-        Button(onClick = onLoadSources, enabled = !isLoading, modifier = Modifier.fillMaxWidth()) { Text(if (isLoading) "Finding sources…" else "Find sources") }
       }
       Text("Sources", style = MaterialTheme.typography.titleLarge)
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
