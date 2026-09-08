@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -32,6 +34,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -59,6 +63,17 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
     val state by viewModel.state.collectAsState()
     val catalogSources by viewModel.catalogSources.collectAsState()
+    var heroItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    LaunchedEffect(state.items) { heroItems = state.items.shuffled().take(7) }
+    val heroPagerState = rememberPagerState(pageCount = { heroItems.size })
+    LaunchedEffect(heroItems.size) {
+      if (heroItems.size > 1) {
+        while (true) {
+          delay(5500)
+          if (!heroPagerState.isScrollInProgress) heroPagerState.animateScrollToPage((heroPagerState.currentPage + 1) % heroItems.size, animationSpec = tween(800))
+        }
+      }
+    }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showCatalogs by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -99,7 +114,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             windowInsets = WindowInsets(0.dp),
           )
         }
-        state.items.firstOrNull()?.let { hero -> item { StreamHero(hero) { viewModel.openDetails(hero) } } }
+        if (heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { viewModel.openDetails(it) } }
         if (catalogSources.any { it.id == "cinemeta-movies" && it.isEnabled }) StreamRail("Trending Movies", state.items.filter { it.type.name == "MOVIE" && it.provider != CatalogProvider.KITSU }) { viewModel.openDetails(it) }
         if (catalogSources.any { it.id == "cinemeta-series" && it.isEnabled }) StreamRail("Popular Series", state.items.filter { it.type.name == "TV" && it.provider != CatalogProvider.KITSU }) { viewModel.openDetails(it) }
         if (catalogSources.any { it.id == "kitsu-anime" && it.isEnabled }) StreamRail("Top Anime", state.items.filter { it.provider == CatalogProvider.KITSU }) { viewModel.openDetails(it) }
@@ -126,11 +141,18 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
 }
 
 @Composable private fun itemHeader(title: String) { Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
-@Composable private fun StreamHero(item: MediaItem, onClick: () -> Unit) {
-  androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick)) {
-    AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xFF0D0F14)))))
-    Text(item.title, style = MaterialTheme.typography.headlineSmall, color = Color.White, modifier = Modifier.padding(16.dp).align(androidx.compose.ui.Alignment.BottomStart))
+@Composable private fun StreamHeroCarousel(items: List<MediaItem>, pagerState: androidx.compose.foundation.pager.PagerState, onClick: (MediaItem) -> Unit) {
+  HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { page ->
+    val item = items[page]
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp)).clickable { onClick(item) }) {
+      AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+      androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .8f), MaterialTheme.colorScheme.background))))
+      androidx.compose.foundation.layout.Column(Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.material3.AssistChip(onClick = { onClick(item) }, label = { Text("${item.type.name.lowercase().replaceFirstChar { it.uppercase() }}${item.releaseYear?.let { " • $it" }.orEmpty()}") })
+        Text(item.title, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground, maxLines = 2)
+        androidx.compose.material3.Button(onClick = { onClick(item) }) { Icon(Icons.RoundedFilled.PlayArrow, "Details"); Text("Watch / Details", modifier = Modifier.padding(start = 6.dp)) }
+      }
+    }
   }
 }
 
