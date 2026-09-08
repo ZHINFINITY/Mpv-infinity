@@ -108,7 +108,7 @@ class TorrentCatalogActivity : AppCompatActivity() {
 }
 
 @Composable
-private fun ResolverChooser(
+internal fun ResolverChooser(
   item: MediaItem,
   initialStreams: List<StreamOption>,
   catalogSettings: CatalogSettings,

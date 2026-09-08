@@ -56,7 +56,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.ui.torrent.TorrentCatalogActivity
+import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.media.MediaUtils
 import coil3.compose.AsyncImage
 
@@ -73,7 +73,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
       val selectedEpisode = season?.let { seasonNumber ->
         episodeNumber?.let { number -> item.seasons.firstOrNull { it.number == seasonNumber }?.episodes?.firstOrNull { it.number == number } }
       }
-      context.startActivity(Intent(context, TorrentCatalogActivity::class.java).apply {
+      context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
         action = Intent.ACTION_VIEW
         data = Uri.parse(stream.url)
         putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
@@ -168,7 +168,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
 }
 
 private fun openResolverChooser(context: android.content.Context, item: MediaItem) {
-  context.startActivity(Intent(context, TorrentCatalogActivity::class.java).apply {
+  context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
     action = Intent.ACTION_VIEW
     putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
     putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
