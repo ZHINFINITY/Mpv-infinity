@@ -41,6 +41,8 @@ class TorrentCatalogActivity : AppCompatActivity() {
       overview = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION).orEmpty(),
       posterUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL),
       backdropUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL),
+      imdbId = intent.getStringExtra("catalog_imdb_id"),
+      providerId = intent.getStringExtra("catalog_provider_id"),
     )
     setContent {
       MpvInfinityTheme {
