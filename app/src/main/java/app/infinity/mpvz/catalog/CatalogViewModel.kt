@@ -69,9 +69,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun openDetails(item: MediaItem) {
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, selectedItem = item, error = null) }
-      runCatching {
-        val identifiedItem = item
-      }
+      runCatching { item }
         .onSuccess { identifiedItem ->
           _state.update { it.copy(selectedItem = identifiedItem, error = null) }
         }
