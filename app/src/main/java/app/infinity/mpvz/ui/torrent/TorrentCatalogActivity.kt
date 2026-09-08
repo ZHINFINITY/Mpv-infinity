@@ -89,7 +89,7 @@ class TorrentCatalogActivity : AppCompatActivity() {
           }
         }
         TorrentCatalogScreen(item, resolvedStreams, loading, error, onBack = ::finish) { stream ->
-          startActivity(Intent(this, if (stream.isPlayable) PlayerActivity::class.java else TorrentSelectionActivity::class.java).apply {
+          startActivity(Intent(this, PlayerActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             data = Uri.parse(stream.url)
             putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
@@ -97,6 +97,8 @@ class TorrentCatalogActivity : AppCompatActivity() {
             putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
             putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
             putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+            putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, stream.torrentFileIndex ?: 0)
+            putExtra("title", stream.title)
             putExtra("seasons_json", Json.encodeToString(item.seasons))
           })
         }
