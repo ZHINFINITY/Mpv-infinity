@@ -348,6 +348,8 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
     listOfNotNull(
       artwork.releaseYear,
       artwork.mediaType,
+      artwork.season?.let { season -> artwork.episode?.let { episode -> "S%02dE%02d".format(season, episode) } },
+      artwork.episodeTitle,
     ).joinToString("  •  ")
 
   Column(
@@ -466,6 +468,22 @@ private fun TorrentHeroBanner(artwork: TorrentArtwork) {
             )
           }
         }
+      }
+    }
+
+    if (!artwork.episodeThumbnail.isNullOrBlank()) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        RemoteImage(
+          url = artwork.episodeThumbnail,
+          contentDescription = artwork.episodeTitle,
+          modifier = Modifier.width(132.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)),
+          contentScale = ContentScale.Crop,
+        )
+        Text(artwork.episodeOverview ?: "Episode details", style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
       }
     }
 

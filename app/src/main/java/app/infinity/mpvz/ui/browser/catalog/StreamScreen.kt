@@ -44,6 +44,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.catalog.CatalogViewModel
@@ -53,6 +55,8 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
+import app.infinity.mpvz.utils.media.MediaUtils
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +68,28 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
     val state by viewModel.state.collectAsState()
     val catalogSources by viewModel.catalogSources.collectAsState()
+    fun openTorrent(item: MediaItem, stream: app.infinity.mpvz.catalog.StreamOption) {
+      val selectedEpisode = state.selectedSeason?.let { seasonNumber ->
+        state.selectedEpisode?.let { episodeNumber -> item.seasons.firstOrNull { it.number == seasonNumber }?.episodes?.firstOrNull { it.number == episodeNumber } }
+      }
+      context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
+        action = Intent.ACTION_VIEW
+        data = Uri.parse(stream.url)
+        putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
+        putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
+        putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
+        putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
+        putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
+        selectedEpisode?.let { episode ->
+          putExtra("episode_season", state.selectedSeason)
+          putExtra("episode_number", state.selectedEpisode)
+          putExtra("episode_title", episode.title)
+          putExtra("episode_overview", episode.overview)
+          putExtra("episode_thumbnail", episode.stillUrl)
+        }
+        stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
+      })
+    }
     var heroItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     LaunchedEffect(state.items) { heroItems = state.items.shuffled().take(7) }
     val heroPagerState = rememberPagerState(pageCount = { heroItems.size })
@@ -127,7 +153,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     if (showCatalogs) CatalogProvidersDialog(viewModel) { showCatalogs = false }
     state.selectedItem?.let { item ->
       androidx.compose.material3.Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        MediaDetailsSheet(item = item, streams = state.streamOptions, sourceFilter = state.sourceFilter, sourceSort = state.sourceSort, isLoading = state.resolvingId == item.id, onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) }, onEpisode = { s, e -> viewModel.resolve(item, s, e) }, onFilter = viewModel::setSourceFilter, onSort = viewModel::setSourceSort, onSelect = { viewModel.playStream(it) }, onBack = viewModel::closeDetails)
+        MediaDetailsSheet(item = item, streams = state.streamOptions, sourceFilter = state.sourceFilter, sourceSort = state.sourceSort, isLoading = state.resolvingId == item.id, onLoadSources = { viewModel.resolve(item, state.selectedSeason, state.selectedEpisode) }, onEpisode = { s, e -> viewModel.resolve(item, s, e) }, onFilter = viewModel::setSourceFilter, onSort = viewModel::setSourceSort, onSelect = { stream -> if (stream.isPlayable) viewModel.playStream(stream) else openTorrent(item, stream) }, onBack = viewModel::closeDetails)
       }
     }
   }

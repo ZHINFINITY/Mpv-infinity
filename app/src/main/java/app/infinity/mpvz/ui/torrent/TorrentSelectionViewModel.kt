@@ -30,6 +30,11 @@ data class TorrentSelectionInput(
   val description: String? = null,
   val posterUrl: String? = null,
   val backdropUrl: String? = null,
+  val season: Int? = null,
+  val episode: Int? = null,
+  val episodeTitle: String? = null,
+  val episodeOverview: String? = null,
+  val episodeThumbnail: String? = null,
 )
 
 data class TorrentArtwork(
@@ -39,6 +44,11 @@ data class TorrentArtwork(
   val backdropUrl: String? = null,
   val releaseYear: String? = null,
   val mediaType: String? = null,
+  val season: Int? = null,
+  val episode: Int? = null,
+  val episodeTitle: String? = null,
+  val episodeOverview: String? = null,
+  val episodeThumbnail: String? = null,
 )
 
 sealed interface TorrentSelectionUiState {
@@ -128,9 +138,14 @@ class TorrentSelectionViewModel(
           val initialArtwork =
             TorrentArtwork(
               title = value.title.safeText(MAX_TITLE_LENGTH) ?: prettyTorrentTitle(catalog.torrentName),
-              description = value.description.safeText(MAX_DESCRIPTION_LENGTH),
+              description = (value.episodeOverview ?: value.description).safeText(MAX_DESCRIPTION_LENGTH),
               posterUrl = safeRemoteImageUrl(value.posterUrl),
               backdropUrl = safeRemoteImageUrl(value.backdropUrl),
+              season = value.season,
+              episode = value.episode,
+              episodeTitle = value.episodeTitle,
+              episodeOverview = value.episodeOverview,
+              episodeThumbnail = safeRemoteImageUrl(value.episodeThumbnail),
             )
           val needsArtworkLookup =
             initialArtwork.description == null ||
