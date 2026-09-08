@@ -24,7 +24,7 @@ import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.Season
 import app.infinity.mpvz.catalog.StreamOption
-import app.infinity.mpvz.ui.player.MpvInfinityTheme
+import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.serialization.json.Json
 
