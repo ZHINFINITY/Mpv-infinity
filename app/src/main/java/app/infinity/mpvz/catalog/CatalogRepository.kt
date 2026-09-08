@@ -97,7 +97,7 @@ class CinemetaCatalogRepository {
     listOf("movie", "series").flatMap { type ->
       val suffix = value?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
       val request = Request.Builder().url("$CINEMETA_BASE_URL/$type/top$suffix.json").get().build()
-      client.newCall(request).execute().use { response ->
+      return client.newCall(request).execute().use { response ->
         if (!response.isSuccessful) return@flatMap emptyList()
         val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
         metas.mapNotNull { entry ->
@@ -134,15 +134,17 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
 
-  override suspend fun resolve(item: MediaItem, season: Int?, episode: Int?): List<StreamOption> = withContext(Dispatchers.IO) {
+  override suspend fun resolve(item: MediaItem, season: Int?, episode: Int?): List<StreamOption> {
+    return withContext(Dispatchers.IO) {
     val endpoints = settings.resolvers().filter { it.enabled }.ifEmpty {
       listOfNotNull(settings.resolvers().firstOrNull(), null).filter { it.enabled }
     }
     require(endpoints.isNotEmpty()) { "Add an active stream resolver in Stream settings first." }
-    return coroutineScope {
+    coroutineScope {
       endpoints.map { endpoint -> async { resolveFromEndpoint(endpoint.baseUrl, item, season, episode) } }.awaitAll().flatten()
         .distinctBy { it.url }
         .sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
+    }
     }
   }
 
@@ -165,13 +167,14 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .apply { if (settings.resolverToken.isNotBlank()) addHeader("Authorization", "Bearer ${settings.resolverToken}") }
       .get()
       .build()
-    client.newCall(request).execute().use { response ->
+    return client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Resolver request failed (${response.code})")
       val parsed = parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
       require(parsed.isNotEmpty()) {
         "Resolver returned no streams. Expected a streams array with url, magnet, or infoHash entries."
       }
       parsed
+    }
     }
   }
 
