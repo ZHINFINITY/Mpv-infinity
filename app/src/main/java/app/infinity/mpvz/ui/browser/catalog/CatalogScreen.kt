@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +45,7 @@ import coil3.compose.AsyncImage
 import app.infinity.mpvz.catalog.CatalogViewModel
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.icons.Icons
 
 @Composable
 fun CatalogScreen() {
@@ -77,7 +76,7 @@ fun CatalogScreen() {
         singleLine = true,
         label = { Text("Search movies and TV") },
       )
-      IconButton(onClick = { showSettings = true }) { Icon(Icons.Default.Settings, "Catalog settings") }
+      IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Catalog settings") }
     }
     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
     if (state.isLoading) Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
