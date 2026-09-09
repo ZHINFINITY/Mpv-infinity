@@ -118,6 +118,13 @@ object YtdlpManager {
     }
     if (uri.host?.lowercase() in setOf("127.0.0.1", "localhost", "0.0.0.0")) return false
 
+    // HentaiStream's /video-proxy endpoint is already a direct MP4 stream. Sending it through
+    // yt-dlp causes an extra URL rewrite and makes mpv reopen the CDN with a different range
+    // request, which can select the addon's 5-second placeholder instead of the episode.
+    if (uri.host?.endsWith("hentaistream-addon.keypop3750.workers.dev") == true &&
+      uri.path.equals("/video-proxy", ignoreCase = true)
+    ) return false
+
     // Jellyfin's authenticated stream endpoint is an HTTP URL without a file extension. It is
     // already a direct media stream and must not be sent through yt-dlp, otherwise Native playback
     // is rejected and the load falls back to MPV.
