@@ -132,15 +132,16 @@ class StremioCatalogRepository {
       val manifest = getJson(source.manifestUrl).jsonObject
       val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
       catalogs.flatMap { catalogElement ->
-        val catalog = catalogElement.jsonObject
-        val type = catalog["type"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()
-        val id = catalog["id"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()
-        val extras = catalog["extra"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.lowercase() }
-        val supportsSearch = "search" in extras
-        val suffix = if (!query.isNullOrBlank() && supportsSearch) "/search=${URLEncoder.encode(query, "UTF-8")}" else ""
-        val base = source.manifestUrl.trimEnd('/').removeSuffix("manifest.json")
-        val payload = getJson("${base}catalog/$type/$id$suffix.json").jsonObject
-        payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
+        runCatching {
+          val catalog = catalogElement.jsonObject
+          val type = catalog["type"]?.jsonPrimitive?.contentOrNull ?: return@runCatching emptyList()
+          val id = catalog["id"]?.jsonPrimitive?.contentOrNull ?: return@runCatching emptyList()
+          val extras = catalog["extra"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.lowercase() }
+          val supportsSearch = "search" in extras
+          val suffix = if (!query.isNullOrBlank() && supportsSearch) "/search=${URLEncoder.encode(query, "UTF-8")}" else ""
+          val base = source.manifestUrl.trimEnd('/').removeSuffix("manifest.json")
+          val payload = getJson("${base}catalog/$type/$id$suffix.json").jsonObject
+          payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
           val meta = element.jsonObject
           val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
           MediaItem(
@@ -164,7 +165,8 @@ class StremioCatalogRepository {
               ?: meta["genre"]?.jsonPrimitive?.contentOrNull?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
               ?: emptyList(),
           )
-        }.filter { query.isNullOrBlank() || supportsSearch || it.title.contains(query, ignoreCase = true) || it.overview.contains(query, ignoreCase = true) }
+          }.filter { query.isNullOrBlank() || supportsSearch || it.title.contains(query, ignoreCase = true) || it.overview.contains(query, ignoreCase = true) }
+        }.getOrDefault(emptyList())
       }
     }.getOrDefault(emptyList())
   }
