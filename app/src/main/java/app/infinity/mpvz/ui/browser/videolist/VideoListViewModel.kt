@@ -373,7 +373,9 @@ class VideoListViewModel(
           item.copy(
             timeRemaining = if (watched) 0L else (video.duration / 1000L).coerceAtLeast(0L),
             progressPercentage = null,
-            isOldAndUnplayed = !watched && (appearancePreferences.unplayedOldVideoDays.get() == 0 || System.currentTimeMillis() - video.dateModified * 1000L <= appearancePreferences.unplayedOldVideoDays.get().toLong() * 24L * 60L * 60L * 1000L),
+            // Explicitly marking an item unwatched is a user action and restores NEW even when
+            // the file is older than the automatic age window.
+            isOldAndUnplayed = !watched,
             isWatched = watched,
           )
         } else {

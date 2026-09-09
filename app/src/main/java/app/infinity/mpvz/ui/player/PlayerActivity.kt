@@ -4383,7 +4383,11 @@ class PlayerActivity :
   ) {
     when (property) {
       "pause" -> {
-        handlePauseStateChange(value)
+        // MPV remains idle behind Native Media3 and can emit pause=true. Do not let that
+        // background event clear the screen-on flag or mark the active session paused.
+        if (activeEngineMode != PlaybackEngineMode.NATIVE) {
+          handlePauseStateChange(value)
+        }
       }
       "eof-reached" -> handleEndOfFile(value)
       "user-data/mpv/console/open" -> {
@@ -6219,6 +6223,7 @@ class PlayerActivity :
         activeSaveMediaIdentifier = item.stableId
         activeEngineMode = PlaybackEngineMode.NATIVE
         viewModel.setNativeEngineActive(true)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         binding.player.visibility = View.GONE
         binding.media3Player.alpha = 1f
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
