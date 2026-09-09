@@ -60,6 +60,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
       startActivity(Intent(this, PlayerActivity::class.java).apply {
         action = Intent.ACTION_VIEW
         data = Uri.parse(source)
+        putExtra(Intent.EXTRA_STREAM, Uri.parse(source))
         putExtra(MediaUtils.EXTRA_MEDIA_TITLE, intent.getStringExtra(MediaUtils.EXTRA_MEDIA_TITLE).orEmpty())
         putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, source)
       })

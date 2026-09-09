@@ -137,6 +137,14 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun consumeResolvedUrl() { _resolvedUrl.value = null }
   fun saveSettings(resolvers: List<ResolverEndpoint>, resolverToken: String, resolverPath: String) {
     saveResolvers(resolvers)
+    val enabledResolverBases = resolvers.filter { it.enabled }.map { it.baseUrl.trimEnd('/') }.toSet()
+    val synchronizedSources = settings.catalogSources().map { source ->
+      if (source.id.startsWith("resolver-")) {
+        source.copy(isEnabled = source.manifestUrl.removeSuffix("/manifest.json").trimEnd('/') in enabledResolverBases)
+      } else source
+    }
+    settings.saveCatalogSources(synchronizedSources)
+    _catalogSources.value = synchronizedSources
     settings.resolverToken = resolverToken
     settings.resolverPath = resolverPath
     loadTrending()
@@ -153,7 +161,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     if (catalogResolvers.isNotEmpty()) saveResolvers((settings.resolvers() + catalogResolvers).distinctBy { it.baseUrl.trimEnd('/') })
   }
   fun addResolverEndpoint(value: String) {
-    val endpoint = value.trim()
+    val endpoint = value.trim().removeSuffix("/manifest.json")
     if (endpoint.isBlank()) return
     val updatedResolvers = (settings.resolvers() + ResolverEndpoint(endpoint)).distinctBy { it.baseUrl.trimEnd('/') }
     saveResolvers(updatedResolvers)

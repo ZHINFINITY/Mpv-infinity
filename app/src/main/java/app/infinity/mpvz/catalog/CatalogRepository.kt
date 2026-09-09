@@ -316,7 +316,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .replace("{episode}", episode?.toString().orEmpty())
       .let { if (it.startsWith("/")) it else "/$it" }
     val request = Request.Builder()
-      .url(baseUrl.trimEnd('/') + path)
+      .url(baseUrl.trimEnd('/').removeSuffix("/manifest.json") + path)
       .header("User-Agent", "Mozilla/5.0 (Android) mpv-infinity/1.0")
       .header("Accept", "application/json")
       .apply { if (settings.resolverToken.isNotBlank()) addHeader("Authorization", "Bearer ${settings.resolverToken}") }
