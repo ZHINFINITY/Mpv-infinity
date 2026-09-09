@@ -28,6 +28,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -49,6 +51,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
@@ -113,15 +117,18 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     }
     var heroItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     LaunchedEffect(state.items) { heroItems = state.items.shuffled().take(7) }
-    val heroPagerState = rememberPagerState(pageCount = { heroItems.size })
-    LaunchedEffect(heroItems.size) {
+    val heroInitialPage = remember(heroItems) {
       if (heroItems.size > 1) {
-        while (true) {
-          delay(5500)
-          val pageCount = heroItems.size
-          if (pageCount > 1 && !heroPagerState.isScrollInProgress) {
-            heroPagerState.animateScrollToPage((heroPagerState.currentPage + 1) % pageCount, animationSpec = tween(800))
-          }
+        val middle = Int.MAX_VALUE / 2
+        middle - (middle % heroItems.size)
+      } else 0
+    }
+    val heroPagerState = rememberPagerState(initialPage = heroInitialPage, pageCount = { if (heroItems.size > 1) Int.MAX_VALUE else heroItems.size })
+    LaunchedEffect(heroPagerState.settledPage, heroItems.size) {
+      if (heroItems.size > 1) {
+        delay(5000)
+        if (!heroPagerState.isScrollInProgress) {
+          heroPagerState.animateScrollToPage(heroPagerState.currentPage + 1, animationSpec = tween(800))
         }
       }
     }
@@ -196,7 +203,17 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         if (searchActive) item {
           Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("All", "Movies", "TV Shows", "Episodes").forEach { filter ->
-              FilterChip(selected = searchFilter == filter, onClick = { searchFilter = filter }, label = { Text(filter) })
+              val selected = searchFilter == filter
+              FilterChip(
+                selected = selected,
+                onClick = { searchFilter = filter },
+                label = { Text(filter, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+                shape = RoundedCornerShape(12.dp),
+                colors = FilterChipDefaults.filterChipColors(
+                  selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                  selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+              )
             }
           }
         }
@@ -292,14 +309,17 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
   if (items.isEmpty()) return
   item {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-      Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+      Column(Modifier.weight(1f)) {
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Popular and recently added", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
       onSeeMore?.let { TextButton(onClick = it) { Text("See all") } }
     }
   }
   item {
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
       items(items.take(18), key = { "stream-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
-        androidx.compose.foundation.layout.Box(Modifier.width(130.dp)) { CatalogGridItem(item, false) { onClick(item) } }
+        androidx.compose.foundation.layout.Box(Modifier.width(144.dp)) { CatalogGridItem(item, false) { onClick(item) } }
       }
     }
   }
@@ -308,14 +328,21 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
 @Composable private fun itemHeader(title: String) { Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
 @Composable private fun StreamHeroCarousel(items: List<MediaItem>, pagerState: androidx.compose.foundation.pager.PagerState, onClick: (MediaItem) -> Unit) {
   HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { page ->
-    val item = items[page]
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp)).clickable { onClick(item) }) {
+    val item = items[page % items.size]
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(300.dp).clip(RoundedCornerShape(20.dp)).clickable { onClick(item) }) {
       AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-      androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .8f), MaterialTheme.colorScheme.background))))
-      androidx.compose.foundation.layout.Column(Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        androidx.compose.material3.AssistChip(onClick = { onClick(item) }, label = { Text("${item.type.name.lowercase().replaceFirstChar { it.uppercase() }}${item.releaseYear?.let { " • $it" }.orEmpty()}") })
-        Text(item.title, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onBackground, maxLines = 2)
-        androidx.compose.material3.Button(onClick = { onClick(item) }) { Icon(Icons.RoundedFilled.PlayArrow, "Details"); Text("Watch / Details", modifier = Modifier.padding(start = 6.dp)) }
+      androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .35f), Color.Transparent, MaterialTheme.colorScheme.background.copy(alpha = .96f)))))
+      androidx.compose.foundation.layout.Column(Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+          androidx.compose.material3.Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .9f)) {
+            Text(if (item.type == MediaType.TV) "SERIES" else "MOVIE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+          }
+          item.releaseYear?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Color.White) }
+          item.contentRating?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = .8f)) }
+        }
+        Text(item.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (item.overview.isNotBlank()) Text(item.overview, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .78f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Button(onClick = { onClick(item) }, shape = RoundedCornerShape(14.dp)) { Icon(Icons.RoundedFilled.PlayArrow, "Play"); Text("Watch / Details", modifier = Modifier.padding(start = 6.dp)) }
       }
     }
   }
