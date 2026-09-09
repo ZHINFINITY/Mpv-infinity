@@ -61,14 +61,29 @@ private class HentaiStreamLoggingDataSource(
   override fun addTransferListener(transferListener: TransferListener) = upstream.addTransferListener(transferListener)
 
   override fun open(dataSpec: DataSpec): Long {
-    val returned = runCatching { upstream.open(dataSpec) }.onFailure { error ->
+    val isHentai = dataSpec.uri.host?.contains("hentaistream-addon.", ignoreCase = true) == true &&
+      dataSpec.uri.path?.contains("/video-proxy", ignoreCase = true) == true
+    val requestSpec = if (isHentai) {
+      val start = dataSpec.position
+      val end = if (dataSpec.length == C.LENGTH_UNSET.toLong()) "end" else (start + dataSpec.length - 1).toString()
+      val separator = if (dataSpec.uri.query.isNullOrBlank()) "?" else "&"
+      val cacheKey = "${start}_$end_${System.nanoTime()}"
+      val requestUri = Uri.parse("${dataSpec.uri}$separator" + "mpvinfinity_range=$cacheKey")
+      val headers = dataSpec.httpRequestHeaders.toMutableMap().apply {
+        if (dataSpec.position == 0L && dataSpec.length == C.LENGTH_UNSET.toLong()) {
+          put("Range", "bytes=0-1048575")
+        }
+      }
+      dataSpec.buildUpon().setUri(requestUri).setHttpRequestHeaders(headers).build()
+    } else dataSpec
+    val returned = runCatching { upstream.open(requestSpec) }.onFailure { error ->
       Log.e("Mpv∞-StreamHTTP", "open failed uri=${dataSpec.uri} position=${dataSpec.position} length=${dataSpec.length}", error)
     }.getOrThrow()
     val headers = upstream.responseHeaders
     fun header(name: String): String = headers.entries.firstOrNull { it.key.equals(name, true) }?.value?.joinToString("|") ?: "unknown"
     Log.i(
       "Mpv∞-StreamHTTP",
-      "response uri=${dataSpec.uri} position=${dataSpec.position} requested=${dataSpec.length} " +
+      "response uri=${requestSpec.uri} position=${dataSpec.position} requested=${dataSpec.length} " +
         "returned=$returned contentLength=${header("Content-Length")} contentRange=${header("Content-Range")} " +
         "acceptRanges=${header("Accept-Ranges")} contentType=${header("Content-Type")}",
     )
