@@ -274,6 +274,14 @@ class CrashActivity : AppCompatActivity() {
       logcat.appendLine()
       logcat.appendLine("===== UI frame / Compose / window diagnostics =====")
       logcat.appendLine(if (uiLines.isBlank()) "No matching UI diagnostics captured." else uiLines)
+      val catalogLines =
+        logcat
+          .lineSequence()
+          .filter { line -> line.contains("MpvCatalogDiag", ignoreCase = true) }
+          .joinToString("\n")
+      logcat.appendLine()
+      logcat.appendLine("===== Catalog / resolver diagnostics =====")
+      logcat.appendLine(if (catalogLines.isBlank()) "No catalog diagnostics captured." else catalogLines)
       logcat.appendLine()
       logcat.appendLine("===== gfxinfo frame statistics =====")
       logcat.appendLine(
