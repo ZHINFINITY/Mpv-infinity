@@ -11,11 +11,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +35,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -54,6 +63,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
@@ -164,16 +174,21 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
       topBar = {
           TopAppBar(
           title = {
-            if (searchActive) InlineSearchBar(
-              query = state.query,
-              onQueryChange = viewModel::setQuery,
-              onSearch = viewModel::setQuery,
-              modifier = Modifier.fillMaxWidth(),
-              placeholder = { Text("Search streams") },
-              leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
-              tonalElevation = 0.dp,
-              windowInsets = WindowInsets(0.dp),
-            ) else Text(if (browseRail != null) "Browse" else "Stream")
+            if (searchActive) {
+              CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodyMedium) {
+                InlineSearchBar(
+                  query = state.query,
+                  onQueryChange = viewModel::setQuery,
+                  onSearch = viewModel::setQuery,
+                  modifier = Modifier.fillMaxWidth().height(48.dp),
+                  inputFieldModifier = Modifier.height(48.dp),
+                  placeholder = { Text("Search streams", style = MaterialTheme.typography.bodyMedium) },
+                  leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search", modifier = Modifier.size(20.dp)) },
+                  tonalElevation = 0.dp,
+                  windowInsets = WindowInsets(0.dp),
+                )
+              }
+            } else Text(if (browseRail != null) "Browse" else "Stream")
           },
           navigationIcon = { IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
           actions = {
@@ -355,11 +370,19 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
   var endpoints by remember(persistedResolvers) { mutableStateOf(persistedResolvers) }
   var newUrl by remember { mutableStateOf("") }
   var autoChooseBest by remember { mutableStateOf(viewModel.autoChooseBestTorrent) }
-  androidx.compose.material3.AlertDialog(
+  val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
+  ModalBottomSheet(
     onDismissRequest = onDismiss,
-    shape = RoundedCornerShape(28.dp),
-    title = { Text("Stream resolvers", style = MaterialTheme.typography.headlineSmall) },
-    text = {
+    sheetState = sheetState,
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    androidx.compose.foundation.layout.Column(
+      modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+      Text("Stream resolvers", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+      Text("Configure metadata and stream resolver sources", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
       androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
           androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
@@ -389,21 +412,32 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
           shape = RoundedCornerShape(24.dp),
         ) { Text("Add resolver + catalog rails") }
       }
-    },
-    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveAutoChooseBestTorrent(autoChooseBest); viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") } },
-    dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
-  )
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = onDismiss) { Text("Cancel") }
+        Button(onClick = { viewModel.saveAutoChooseBestTorrent(autoChooseBest); viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") }
+      }
+      Spacer(Modifier.height(8.dp))
+    }
+  }
 }
 
 @Composable private fun CatalogProvidersDialog(viewModel: CatalogViewModel, onDismiss: () -> Unit) {
   val initial = remember { viewModel.currentCatalogSources() }
   var sources by remember { mutableStateOf(initial) }
   var newUrl by remember { mutableStateOf("") }
-  androidx.compose.material3.AlertDialog(
+  val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
+  ModalBottomSheet(
     onDismissRequest = onDismiss,
-    shape = RoundedCornerShape(28.dp),
-    title = { Text("Catalog providers", style = MaterialTheme.typography.headlineSmall) },
-    text = {
+    sheetState = sheetState,
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    androidx.compose.foundation.layout.Column(
+      modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text("Catalog providers", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+      Text("Choose the metadata catalogs used on the Stream home", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
       androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         sources.forEachIndexed { index, source ->
           Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -435,8 +469,11 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
           }
         }, shape = RoundedCornerShape(24.dp)) { Text("Add catalog") }
       }
-    },
-    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") } },
-    dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
-  )
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = onDismiss) { Text("Cancel") }
+        Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") }
+      }
+      Spacer(Modifier.height(8.dp))
+    }
+  }
 }

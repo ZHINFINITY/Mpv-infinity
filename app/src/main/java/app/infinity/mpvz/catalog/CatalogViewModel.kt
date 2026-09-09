@@ -76,7 +76,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     searchJob?.cancel()
     homeLoadJob?.cancel()
     searchJob = viewModelScope.launch {
-      delay(350)
+      delay(200)
       if (normalized.isBlank()) loadTrending() else runSearch(normalized)
     }
   }
@@ -267,7 +267,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }
           .map { source ->
             async {
-              val items = withTimeoutOrNull(8_000L) {
+              val items = withTimeoutOrNull(3_000L) {
                 runCatching { StremioCatalogRepository().load(source, query) }.onFailure { error ->
                   if (error is CancellationException) throw error
                   Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)
