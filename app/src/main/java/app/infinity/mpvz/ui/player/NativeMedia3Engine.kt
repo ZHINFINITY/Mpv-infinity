@@ -102,6 +102,12 @@ class NativeMedia3Engine(context: Context) {
       CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
+  // HentaiStream proxy responses are cache-keyed upstream and may change between requests. A
+  // local Media3 cache can otherwise preserve a 5-second placeholder and replay it for a later
+  // episode or seek. Keep this path network-only; Torrentio and ordinary HTTP sources retain the
+  // existing cache behavior.
+  private val directNetworkDataSourceFactory =
+    DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
   // Local files must not be routed through the network cache. Apart from adding an unnecessary
   // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
   private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
@@ -111,6 +117,8 @@ class NativeMedia3Engine(context: Context) {
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
     ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
+  private val directNetworkMediaSourceFactory =
+    ProgressiveMediaSource.Factory(directNetworkDataSourceFactory, extractorsFactory)
   private var player = ExoPlayer.Builder(context.applicationContext)
     // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
     // being handed over from MPV. Disable this watchdog for Native; a real player/codec error is
@@ -421,9 +429,15 @@ class NativeMedia3Engine(context: Context) {
       }
     val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true) ||
       mediaUri.scheme.equals("content", ignoreCase = true)
+    val isHentaiStreamUri = mediaUri.host?.contains("hentaistream-addon.", ignoreCase = true) == true &&
+      mediaUri.path?.contains("/video-proxy", ignoreCase = true) == true
     Log.d(
       logTag,
-      "play uri=$mediaUri scheme=${mediaUri.scheme} source=${if (isLocalUri) "direct-local" else "cached-network"} " +
+      "play uri=$mediaUri scheme=${mediaUri.scheme} source=${when {
+        isLocalUri -> "direct-local"
+        isHentaiStreamUri -> "direct-network"
+        else -> "cached-network"
+      }} " +
         "sourceUri=$sourceUri positionMs=$startPositionMs autoplay=$autoplay",
     )
     httpDataSourceFactory.setDefaultRequestProperties(headers)
@@ -441,10 +455,10 @@ class NativeMedia3Engine(context: Context) {
     preparationUri = mediaItem.localConfiguration?.uri
     metadataChapters = emptyList()
     Log.d(logTag, "prepare begin uri=$preparationUri")
-    val mediaSource = if (isLocalUri) {
-      directLocalMediaSourceFactory.createMediaSource(mediaItem)
-    } else {
-      mediaSourceFactory.createMediaSource(mediaItem)
+    val mediaSource = when {
+      isLocalUri -> directLocalMediaSourceFactory.createMediaSource(mediaItem)
+      isHentaiStreamUri -> directNetworkMediaSourceFactory.createMediaSource(mediaItem)
+      else -> mediaSourceFactory.createMediaSource(mediaItem)
     }
     activePlayer.setMediaSource(mediaSource, startPositionMs.coerceAtLeast(0L))
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
