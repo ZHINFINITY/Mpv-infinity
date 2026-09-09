@@ -38,9 +38,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -129,6 +131,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     var genreFilter by rememberSaveable { mutableStateOf("All") }
     var searchFilter by rememberSaveable { mutableStateOf("All") }
     val isRefreshing = remember { mutableStateOf(false) }
+    val refreshScope = rememberCoroutineScope()
     BackHandler(enabled = isSearching || browseRail != null) {
       if (browseRail != null) browseRail = null
       else {
@@ -171,7 +174,12 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     ) { padding ->
       PullRefreshBox(
         isRefreshing = isRefreshing,
-        onRefresh = { viewModel.refreshAll() },
+        onRefresh = {
+          if (!isRefreshing.value) refreshScope.launch {
+            isRefreshing.value = true
+            try { viewModel.refreshAll() } finally { isRefreshing.value = false }
+          }
+        },
         modifier = Modifier.fillMaxSize().padding(padding),
       ) {
         LazyColumn(
@@ -190,15 +198,16 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         if (!isSearching && state.query.isBlank() && browseRail == null && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
         val sourceNames = catalogSources.associate { it.id to it.name }
         val rails = state.items.groupBy { item ->
-          item.catalogName ?: when (item.catalogSourceId) {
+          val title = item.catalogName ?: when (item.catalogSourceId) {
             "cinemeta-movies" -> "Trending Movies"
             "cinemeta-series" -> "Popular Series"
             "kitsu-anime" -> "Top Anime"
             else -> sourceNames[item.catalogSourceId] ?: item.provider.name
           }
+          "${item.catalogSourceId.orEmpty()}|${item.catalogId.orEmpty()}|$title"
         }.mapValues { (_, sourceItems) -> sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" } }
         if (!isSearching && state.query.isBlank() && browseRail == null) rails.forEach { (title, sourceItems) ->
-          StreamRail(title, sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }) { openResolverChooser(context, it) }
+          StreamRail(title.substringAfterLast('|'), sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }) { openResolverChooser(context, it) }
         }
         if (!isSearching && state.query.isBlank() && browseRail != null) {
           val browseItems = rails[browseRail].orEmpty()
