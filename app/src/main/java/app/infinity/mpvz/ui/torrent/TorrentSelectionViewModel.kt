@@ -174,6 +174,14 @@ class TorrentSelectionViewModel(
     activePreparationId = null
   }
 
+  fun onPlayerReturned() {
+    handedToPlayer = false
+    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
+    if (ready.launchingFileIndex != null) {
+      _uiState.value = ready.copy(launchingFileIndex = null)
+    }
+  }
+
   private fun load(value: TorrentSelectionInput) {
     loadJob?.cancel()
     if (!handedToPlayer) activePreparationId?.let(torrentStreamingEngine::discardPreparation)

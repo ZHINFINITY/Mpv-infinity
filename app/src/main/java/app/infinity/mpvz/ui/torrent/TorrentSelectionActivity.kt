@@ -54,6 +54,14 @@ class TorrentSelectionActivity : AppCompatActivity() {
 
   private var playerLaunched = false
 
+  override fun onResume() {
+    super.onResume()
+    if (playerLaunched) {
+      playerLaunched = false
+      viewModel.onPlayerReturned()
+    }
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 

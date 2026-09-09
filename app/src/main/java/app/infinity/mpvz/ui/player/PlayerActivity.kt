@@ -6254,6 +6254,11 @@ class PlayerActivity :
             if (requestGeneration != mediaRequestGeneration) {
               -1L
             } else {
+              val isHentaiStream = item.playableUri.contains("hentaistream-addon.", ignoreCase = true) &&
+                item.playableUri.contains("/video-proxy?", ignoreCase = true)
+              // Stremio consumes this proxy as a sequential direct response. Allowing MPV to
+              // seek it with range requests reintroduces the CDN's cached 5-second variant.
+              PlaybackSession.setOptionString("http-seekable", if (isHentaiStream) "no" else "yes")
               if (requiresYtdlp) PlaybackSession.setPropertyString("ytdl-format", ytdlFormat.orEmpty())
               nativeLoad()
             }
