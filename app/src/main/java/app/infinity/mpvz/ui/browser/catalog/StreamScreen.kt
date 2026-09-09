@@ -58,6 +58,7 @@ import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import coil3.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,6 +120,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showCatalogs by rememberSaveable { mutableStateOf(false) }
+    val isRefreshing = remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
       viewModel.resolvedUrl.collect { url ->
         if (url != null) {
@@ -140,11 +142,16 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         )
       },
     ) { padding ->
-      LazyColumn(
+      PullRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = { viewModel.refreshAll() },
         modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
+        LazyColumn(
+          modifier = Modifier.fillMaxSize(),
+          contentPadding = PaddingValues(bottom = 96.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
         item {
           InlineSearchBar(
             query = state.query,
@@ -161,8 +168,13 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         if (catalogSources.any { it.id == "cinemeta-movies" && it.isEnabled }) StreamRail("Trending Movies", state.items.filter { it.type.name == "MOVIE" && it.provider != CatalogProvider.KITSU }) { openResolverChooser(context, it) }
         if (catalogSources.any { it.id == "cinemeta-series" && it.isEnabled }) StreamRail("Popular Series", state.items.filter { it.type.name == "TV" && it.provider != CatalogProvider.KITSU }) { openResolverChooser(context, it) }
         if (catalogSources.any { it.id == "kitsu-anime" && it.isEnabled }) StreamRail("Top Anime", state.items.filter { it.provider == CatalogProvider.KITSU }) { openResolverChooser(context, it) }
+        catalogSources.filter { it.id.startsWith("custom-") && it.isEnabled }.forEach { source ->
+          val sourceItems = state.items.filter { it.catalogSourceId == source.id }
+          if (sourceItems.isNotEmpty()) StreamRail(source.name, sourceItems) { openResolverChooser(context, it) }
+        }
         if (state.isLoading) item { Text("Loading streams…", modifier = Modifier.padding(16.dp)) }
         if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
+        }
       }
     }
     if (showSettings) StreamResolverSettingsDialog(viewModel) { showSettings = false }

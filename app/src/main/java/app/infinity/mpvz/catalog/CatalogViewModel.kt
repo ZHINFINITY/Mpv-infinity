@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import androidx.lifecycle.ViewModelProvider
 
 data class TorrentLaunchRequest(val item: MediaItem, val stream: StreamOption, val streams: List<StreamOption> = listOf(stream), val season: Int? = null, val episode: Int? = null)
@@ -138,6 +141,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     loadTrending()
   }
   fun retry() { if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) } }
+  suspend fun refreshAll() {
+    searchJob?.cancel()
+    if (_state.value.query.isBlank()) loadFromProviders(null).also { items -> _state.update { it.copy(items = items, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
+    else runSearch(_state.value.query)
+  }
 
   private fun loadTrending() {
     viewModelScope.launch {
@@ -159,14 +167,23 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     val providers = _state.value.enabledProviders
     val enabledSources = settings.catalogSources().filter { it.isEnabled }
     val sources = enabledSources.map { it.id }.toSet()
-    val cinemeta = if (CatalogProvider.CINEMETA in providers && sources.any { it.startsWith("cinemeta-") || it.startsWith("custom-") }) {
-      runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }.getOrDefault(emptyList())
-    } else emptyList()
-    val anime = if (CatalogProvider.KITSU in providers && "kitsu-anime" in sources && query.isNullOrBlank()) {
-      runCatching { animeRepository.popular() }.getOrDefault(emptyList())
-    } else emptyList()
-    val custom = enabledSources.filter { it.id.startsWith("custom-") }.flatMap { source ->
-      runCatching { StremioCatalogRepository().load(source, query) }.getOrDefault(emptyList())
+    val (cinemeta, anime, custom) = coroutineScope {
+      val cinemetaJob = async {
+        if (CatalogProvider.CINEMETA in providers && sources.any { it.startsWith("cinemeta-") }) {
+          runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }.getOrDefault(emptyList())
+        } else emptyList()
+      }
+      val animeJob = async {
+        if (CatalogProvider.KITSU in providers && "kitsu-anime" in sources) {
+          runCatching { animeRepository.popular(query) }.getOrDefault(emptyList())
+        } else emptyList()
+      }
+      val customJob = async {
+      enabledSources.filter { it.id.startsWith("custom-") }.map { source ->
+        async { runCatching { StremioCatalogRepository().load(source, query) }.getOrDefault(emptyList()) }
+        }.awaitAll().flatten()
+      }
+      Triple(cinemetaJob.await(), animeJob.await(), customJob.await())
     }
     return (cinemeta + anime + custom).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
   }
