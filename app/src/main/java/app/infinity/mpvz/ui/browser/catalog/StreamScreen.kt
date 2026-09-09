@@ -14,6 +14,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +26,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -35,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.tween
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
@@ -120,7 +124,17 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showCatalogs by rememberSaveable { mutableStateOf(false) }
+    var isSearching by rememberSaveable { mutableStateOf(false) }
+    var browseRail by rememberSaveable { mutableStateOf<String?>(null) }
+    var genreFilter by rememberSaveable { mutableStateOf("All") }
     val isRefreshing = remember { mutableStateOf(false) }
+    BackHandler(enabled = isSearching || browseRail != null) {
+      if (browseRail != null) browseRail = null
+      else {
+        isSearching = false
+        viewModel.setQuery("")
+      }
+    }
     LaunchedEffect(Unit) {
       viewModel.resolvedUrl.collect { url ->
         if (url != null) {
@@ -153,29 +167,44 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
         item {
-          InlineSearchBar(
-            query = state.query,
-            onQueryChange = viewModel::setQuery,
-            onSearch = viewModel::setQuery,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text("Search streams") },
-            leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
-            tonalElevation = 0.dp,
-            windowInsets = WindowInsets(0.dp),
-          )
+          Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            if (isSearching) InlineSearchBar(
+              query = state.query,
+              onQueryChange = viewModel::setQuery,
+              onSearch = viewModel::setQuery,
+              modifier = Modifier.weight(1f),
+              placeholder = { Text("Search streams") },
+              leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
+              tonalElevation = 0.dp,
+              windowInsets = WindowInsets(0.dp),
+            ) else Spacer(Modifier.weight(1f))
+            IconButton(onClick = { isSearching = !isSearching; if (!isSearching) viewModel.setQuery("") }) { Icon(Icons.RoundedFilled.Search, "Search") }
+          }
         }
-        if (heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
+        if (state.query.isBlank() && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
         val sourceNames = catalogSources.associate { it.id to it.name }
-        state.items.groupBy { item ->
+        val rails = state.items.groupBy { item ->
           item.catalogName ?: when (item.catalogSourceId) {
             "cinemeta-movies" -> "Trending Movies"
             "cinemeta-series" -> "Popular Series"
             "kitsu-anime" -> "Top Anime"
             else -> sourceNames[item.catalogSourceId] ?: item.provider.name
           }
-        }.forEach { (title, sourceItems) ->
-          StreamRail(title, sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" }) { openResolverChooser(context, it) }
+        }.mapValues { (_, sourceItems) -> sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" } }
+        if (state.query.isBlank()) rails.forEach { (title, sourceItems) ->
+          StreamRail(title, sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }) { openResolverChooser(context, it) }
         }
+        if (state.query.isBlank() && browseRail != null) {
+          val browseItems = rails[browseRail].orEmpty()
+          val genres = listOf("All") + browseItems.flatMap { it.genres }.distinct().sorted()
+          item {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              genres.forEach { genre -> FilterChip(selected = genreFilter == genre, onClick = { genreFilter = genre }, label = { Text(genre) }) }
+            }
+          }
+          StreamRail("${browseRail} — Browse", browseItems.filter { genreFilter == "All" || genreFilter in it.genres }, onSeeMore = null) { openResolverChooser(context, it) }
+        }
+        if (state.query.isNotBlank()) StreamRail("Search results", state.items, onSeeMore = null) { openResolverChooser(context, it) }
         if (state.isLoading) item { Text("Loading streams…", modifier = Modifier.padding(16.dp)) }
         if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
         }
@@ -209,9 +238,14 @@ private fun openResolverChooser(context: android.content.Context, item: MediaIte
   })
 }
 
-private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onClick: (MediaItem) -> Unit) {
+private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSeeMore: (() -> Unit)?, onClick: (MediaItem) -> Unit) {
   if (items.isEmpty()) return
-  item { itemHeader(title) }
+  item {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+      Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+      onSeeMore?.let { TextButton(onClick = it) { Text("See more") } }
+    }
+  }
   item {
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
       items(items.take(18), key = { "stream-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
@@ -264,7 +298,7 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
           }
         }
         androidx.compose.material3.OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Resolver base URL") }, singleLine = true)
-        androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { val updated = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); viewModel.saveResolvers(updated); endpoints = updated; newUrl = "" } }) { Text("Add resolver") }
+        androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { viewModel.addResolverEndpoint(newUrl); endpoints = viewModel.resolvers.value; newUrl = "" } }) { Text("Add resolver + catalog rails") }
       }
     },
     confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveAutoChooseBestTorrent(autoChooseBest); viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } },
