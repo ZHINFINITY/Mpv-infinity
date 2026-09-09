@@ -145,10 +145,22 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     }
     Scaffold(
       topBar = {
-        TopAppBar(
-          title = { Text("Stream") },
+          TopAppBar(
+          title = {
+            if (isSearching) InlineSearchBar(
+              query = state.query,
+              onQueryChange = viewModel::setQuery,
+              onSearch = viewModel::setQuery,
+              modifier = Modifier.fillMaxWidth(),
+              placeholder = { Text("Search streams") },
+              leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
+              tonalElevation = 0.dp,
+              windowInsets = WindowInsets(0.dp),
+            ) else Text(if (browseRail != null) "Browse" else "Stream")
+          },
           navigationIcon = { IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
           actions = {
+            IconButton(onClick = { isSearching = !isSearching; if (!isSearching) viewModel.setQuery("") }) { Icon(if (isSearching) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, if (isSearching) "Close search" else "Search") }
             IconButton(onClick = { showCatalogs = true }) { Icon(Icons.RoundedFilled.Explore, "Catalogs") }
             IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Resolvers") }
           },
@@ -166,21 +178,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           contentPadding = PaddingValues(bottom = 96.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-        item {
-          Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            if (isSearching) InlineSearchBar(
-              query = state.query,
-              onQueryChange = viewModel::setQuery,
-              onSearch = viewModel::setQuery,
-              modifier = Modifier.weight(1f),
-              placeholder = { Text("Search streams") },
-              leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
-              tonalElevation = 0.dp,
-              windowInsets = WindowInsets(0.dp),
-            ) else Spacer(Modifier.weight(1f))
-            IconButton(onClick = { isSearching = !isSearching; if (!isSearching) viewModel.setQuery("") }) { Icon(Icons.RoundedFilled.Search, "Search") }
-          }
-        }
+        item { Spacer(Modifier.height(4.dp)) }
         if (state.query.isBlank() && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
         val sourceNames = catalogSources.associate { it.id to it.name }
         val rails = state.items.groupBy { item ->
@@ -191,7 +189,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             else -> sourceNames[item.catalogSourceId] ?: item.provider.name
           }
         }.mapValues { (_, sourceItems) -> sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" } }
-        if (state.query.isBlank()) rails.forEach { (title, sourceItems) ->
+        if (state.query.isBlank() && browseRail == null) rails.forEach { (title, sourceItems) ->
           StreamRail(title, sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }) { openResolverChooser(context, it) }
         }
         if (state.query.isBlank() && browseRail != null) {
@@ -202,7 +200,16 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
               genres.forEach { genre -> FilterChip(selected = genreFilter == genre, onClick = { genreFilter = genre }, label = { Text(genre) }) }
             }
           }
-          StreamRail("${browseRail} — Browse", browseItems.filter { genreFilter == "All" || genreFilter in it.genres }, onSeeMore = null) { openResolverChooser(context, it) }
+          browseItems.filter { genreFilter == "All" || genreFilter in it.genres }.chunked(2).forEach { rowItems ->
+            item {
+              Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                rowItems.forEach { mediaItem ->
+                  androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { openResolverChooser(context, mediaItem) } }
+                }
+                if (rowItems.size == 1) Spacer(Modifier.weight(1f))
+              }
+            }
+          }
         }
         if (state.query.isNotBlank()) StreamRail("Search results", state.items, onSeeMore = null) { openResolverChooser(context, it) }
         if (state.isLoading) item { Text("Loading streams…", modifier = Modifier.padding(16.dp)) }

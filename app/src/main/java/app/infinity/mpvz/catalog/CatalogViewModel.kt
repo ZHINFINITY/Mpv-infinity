@@ -46,6 +46,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   val autoChooseBestTorrent: Boolean get() = settings.autoChooseBestTorrent
 
   init {
+    syncCatalogResolvers(_catalogSources.value)
     loadTrending()
     viewModelScope.launch {
       val repository = StremioCatalogRepository()
@@ -145,6 +146,12 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     settings.saveResolvers(value)
     _resolvers.value = settings.resolvers()
   }
+  private fun syncCatalogResolvers(sources: List<CatalogSource>) {
+    val catalogResolvers = sources
+      .filter { it.isEnabled && !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }
+      .map { source -> ResolverEndpoint(source.manifestUrl.removeSuffix("/manifest.json")) }
+    if (catalogResolvers.isNotEmpty()) saveResolvers((settings.resolvers() + catalogResolvers).distinctBy { it.baseUrl.trimEnd('/') })
+  }
   fun addResolverEndpoint(value: String) {
     val endpoint = value.trim()
     if (endpoint.isBlank()) return
@@ -162,6 +169,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun saveCatalogSources(sources: List<CatalogSource>) {
     settings.saveCatalogSources(sources)
     _catalogSources.value = sources
+    syncCatalogResolvers(sources)
     viewModelScope.launch {
       val repository = StremioCatalogRepository()
       val named = sources.map { source ->
