@@ -175,7 +175,10 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     val endpoints = settings.resolvers().filter { it.enabled }.ifEmpty {
       listOfNotNull(settings.resolvers().firstOrNull(), null).filter { it.enabled }
     }
-    require(endpoints.isNotEmpty()) { "Add an active stream resolver in Stream settings first." }
+    if (endpoints.isEmpty()) {
+      Log.w("CloudStreamResolver", "No active stream resolver is configured")
+      return@withContext emptyList()
+    }
     coroutineScope {
       endpoints.map { endpoint ->
         async {
