@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
 import androidx.lifecycle.ViewModelProvider
 
 data class TorrentLaunchRequest(val item: MediaItem, val stream: StreamOption, val streams: List<StreamOption> = listOf(stream), val season: Int? = null, val episode: Int? = null)
@@ -41,6 +42,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private val _state = MutableStateFlow(CatalogState())
   val state: StateFlow<CatalogState> = _state.asStateFlow()
   private var searchJob: Job? = null
+  private var homeLoadJob: Job? = null
   private val _resolvedUrl = MutableStateFlow<String?>(null)
   val resolvedUrl: StateFlow<String?> = _resolvedUrl.asStateFlow()
   private val _torrentLaunch = MutableSharedFlow<TorrentLaunchRequest>(extraBufferCapacity = 1)
@@ -68,6 +70,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     Log.i(TAG, "setQuery rawLength=${query.length} normalized=\"$normalized\"")
     _state.update { it.copy(query = normalized, items = if (normalized.isBlank()) it.items else emptyList(), error = null) }
     searchJob?.cancel()
+    homeLoadJob?.cancel()
     searchJob = viewModelScope.launch {
       delay(350)
       if (normalized.isBlank()) loadTrending() else runSearch(normalized)
@@ -198,16 +201,26 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun retry() { if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) } }
   suspend fun refreshAll() {
     searchJob?.cancel()
-    if (_state.value.query.isBlank()) loadFromProviders(null).also { items -> _state.update { it.copy(items = items, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
-    else runSearch(_state.value.query)
+    homeLoadJob?.cancel()
+    _state.update { it.copy(isLoading = true, error = null) }
+    if (_state.value.query.isBlank()) {
+      val items = loadFromProviders(null)
+      _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) }
+    } else {
+      runSearch(_state.value.query)
+    }
   }
 
   private fun loadTrending() {
-    viewModelScope.launch {
+    homeLoadJob?.cancel()
+    homeLoadJob = viewModelScope.launch {
       _state.update { it.copy(isLoading = true, error = null) }
       runCatching { loadFromProviders(null) }
         .onSuccess { items -> if (_state.value.query.isBlank()) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
-        .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message) } }
+        .onFailure { error ->
+          if (error is CancellationException) throw error
+          _state.update { it.copy(isLoading = false, error = error.message) }
+        }
     }
   }
 
@@ -220,6 +233,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         if (_state.value.query == query) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) }
       }
       .onFailure { error ->
+        if (error is CancellationException) throw error
         Log.e(TAG, "search failed query=\"$query\" message=${error.message}", error)
         if (_state.value.query == query) _state.update { it.copy(items = emptyList(), isLoading = false, error = error.message) }
       }
@@ -233,17 +247,22 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     val (cinemeta, anime, custom) = coroutineScope {
       val cinemetaJob = async {
         if (CatalogProvider.CINEMETA in providers && sources.any { it.startsWith("cinemeta-") }) {
-          runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }.getOrDefault(emptyList())
+          runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrDefault(emptyList())
         } else emptyList()
       }
       val animeJob = async {
         if (CatalogProvider.KITSU in providers && "kitsu-anime" in sources) {
-          runCatching { animeRepository.popular(query) }.getOrDefault(emptyList())
+          runCatching { animeRepository.popular(query) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrDefault(emptyList())
         } else emptyList()
       }
       val customJob = async {
       enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }.flatMap { source ->
         runCatching { StremioCatalogRepository().load(source, query) }.onFailure { error ->
+          if (error is CancellationException) throw error
           Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)
         }.getOrDefault(emptyList())
       }
