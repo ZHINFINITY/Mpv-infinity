@@ -173,7 +173,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       _state.update { it.copy(isLoading = true, error = null) }
       runCatching { loadFromProviders(null) }
-        .onSuccess { items -> _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
+        .onSuccess { items -> if (_state.value.query.isBlank()) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
         .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message) } }
     }
   }
@@ -181,7 +181,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private suspend fun runSearch(query: String) {
     _state.update { it.copy(isLoading = true) }
     runCatching { loadFromProviders(query) }
-      .onSuccess { items -> _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
+      .onSuccess { items -> if (_state.value.query == query) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
       .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message) } }
   }
 
@@ -207,7 +207,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       }
       Triple(cinemetaJob.await(), animeJob.await(), customJob.await())
     }
-    return (cinemeta + anime + custom).distinctBy { "${it.catalogSourceId ?: it.provider}:${it.providerId ?: it.id}" }
+    return (cinemeta + anime + custom).distinctBy { "${it.catalogSourceId ?: it.provider}:${it.catalogId ?: ""}:${it.providerId ?: it.id}" }
   }
 }
 

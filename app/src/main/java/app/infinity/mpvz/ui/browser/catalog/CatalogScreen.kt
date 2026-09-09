@@ -77,6 +77,7 @@ fun CatalogScreen() {
   val context = LocalContext.current
   val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
   val state by viewModel.state.collectAsState()
+  val catalogSources by viewModel.catalogSources.collectAsState()
   fun launchTorrent(request: app.infinity.mpvz.catalog.TorrentLaunchRequest) {
     val item = request.item
     val episode = request.season?.let { season -> request.episode?.let { number -> item.seasons.firstOrNull { it.number == season }?.episodes?.firstOrNull { it.number == number } } }
@@ -109,16 +110,22 @@ fun CatalogScreen() {
   }
   LaunchedEffect(Unit) { viewModel.torrentLaunch.collect { launchTorrent(it) } }
   var showSettings by remember { mutableStateOf(false) }
+  var searchOpen by remember { mutableStateOf(state.query.isNotBlank()) }
+  var browseRail by remember { mutableStateOf<String?>(null) }
+  var genreFilter by remember { mutableStateOf("All") }
   val featured = state.items.firstOrNull()
-  val railItems = remember(state.items) {
-    state.items.drop(1).groupBy { item ->
-      when {
-        item.provider == CatalogProvider.KITSU -> "Top Anime"
-        item.type == app.infinity.mpvz.catalog.MediaType.TV -> "Popular Series"
-        else -> "Trending Movies"
+  val rails = remember(state.items, catalogSources) {
+    val sourceNames = catalogSources.associate { it.id to it.name }
+    state.items.groupBy { item ->
+      item.catalogName ?: when (item.catalogSourceId) {
+        "kitsu-anime" -> "Top Anime"
+        "cinemeta-series" -> "Popular Series"
+        "cinemeta-movies" -> "Trending Movies"
+        else -> sourceNames[item.catalogSourceId] ?: item.provider.name
       }
-    }.values.flatten().distinctBy { "${it.provider}:${it.providerId ?: it.id}" }.take(12)
+    }.mapValues { (_, items) -> items.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" } }
   }
+  val railItems = rails.values.flatten().toSet()
 
   LaunchedEffect(Unit) {
     viewModel.resolvedUrl.collect { url ->
@@ -135,16 +142,17 @@ fun CatalogScreen() {
 
   Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 96.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-      InlineSearchBar(
-        query = state.query,
-        onQueryChange = viewModel::setQuery,
-        onSearch = viewModel::setQuery,
-        modifier = Modifier.weight(1f),
-        placeholder = { Text("Search movies and TV") },
-        leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
-        shape = RoundedCornerShape(24.dp),
-        tonalElevation = 0.dp,
-      )
+      if (searchOpen) InlineSearchBar(
+          query = state.query,
+          onQueryChange = viewModel::setQuery,
+          onSearch = viewModel::setQuery,
+          modifier = Modifier.weight(1f),
+          placeholder = { Text("Search movies and TV") },
+          leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search") },
+          shape = RoundedCornerShape(24.dp),
+          tonalElevation = 0.dp,
+        ) else Spacer(Modifier.weight(1f))
+      IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) viewModel.setQuery("") }) { Icon(Icons.RoundedFilled.Search, "Search") }
       IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Catalog settings") }
     }
     Row(
@@ -171,23 +179,25 @@ fun CatalogScreen() {
     AnimatedContent(targetState = featured, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "catalogHero") { hero ->
       if (state.query.isBlank() && hero != null) CatalogHero(hero) else Spacer(Modifier.height(4.dp))
     }
-    if (state.query.isBlank()) {
-      listOf("Trending Movies", "Popular Series", "Top Anime").forEach { railTitle ->
-        val items = railItems.filter { item ->
-          when (railTitle) {
-            "Top Anime" -> item.provider == CatalogProvider.KITSU
-            "Popular Series" -> item.type == app.infinity.mpvz.catalog.MediaType.TV && item.provider != CatalogProvider.KITSU
-            else -> item.type == app.infinity.mpvz.catalog.MediaType.MOVIE && item.provider != CatalogProvider.KITSU
-          }
-        }
+    if (state.query.isBlank() && browseRail == null) {
+      rails.forEach { (railTitle, items) ->
         if (items.isNotEmpty()) {
-          Text(railTitle, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 10.dp))
+          Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+            Text(railTitle, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            TextButton(onClick = { browseRail = railTitle; genreFilter = "All" }) { Text("See more") }
+          }
           LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
-            items(items, key = { "rail-${it.provider}-${it.providerId ?: it.id}" }) { item ->
+            items(items.take(12), key = { "rail-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
               Box(Modifier.width(130.dp)) { CatalogGridItem(item, state.resolvingId == item.id) { viewModel.openDetails(item) } }
             }
           }
         }
+      }
+    } else if (browseRail != null && state.query.isBlank()) {
+      val browseItems = rails[browseRail ?: ""].orEmpty()
+      val genres = listOf("All") + browseItems.flatMap { it.genres }.distinct().sorted()
+      Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        genres.forEach { genre -> FilterChip(selected = genreFilter == genre, onClick = { genreFilter = genre }, label = { Text(genre) }) }
       }
     }
     if (state.isLoading) Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -199,8 +209,9 @@ fun CatalogScreen() {
       verticalArrangement = Arrangement.spacedBy(12.dp),
       modifier = Modifier.fillMaxSize(),
     ) {
-      itemsIndexed(state.items.filterNot { it in railItems }.drop(1), key = { _, item -> "${item.provider}-${item.providerId ?: item.id}" }) { index, item ->
-        if (index >= state.items.size - railItems.size - 3) viewModel.loadMore()
+      val visibleItems = if (browseRail != null && state.query.isBlank()) rails[browseRail ?: ""].orEmpty().filter { genreFilter == "All" || genreFilter in it.genres } else state.items.filterNot { it in railItems }
+      itemsIndexed(visibleItems, key = { _, item -> "${item.catalogSourceId}-${item.catalogId}-${item.providerId ?: item.id}" }) { index, item ->
+        if (browseRail == null && index >= visibleItems.size - 3) viewModel.loadMore()
         CatalogGridItem(item, state.resolvingId == item.id) { viewModel.openDetails(item) }
       }
       if (state.isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
