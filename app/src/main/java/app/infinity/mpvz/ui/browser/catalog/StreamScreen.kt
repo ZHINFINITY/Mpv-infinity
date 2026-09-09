@@ -132,7 +132,8 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     var searchFilter by rememberSaveable { mutableStateOf("All") }
     val isRefreshing = remember { mutableStateOf(false) }
     val refreshScope = rememberCoroutineScope()
-    BackHandler(enabled = isSearching || browseRail != null) {
+    val searchActive = isSearching || state.query.isNotBlank()
+    BackHandler(enabled = searchActive || browseRail != null) {
       if (browseRail != null) browseRail = null
       else {
         isSearching = false
@@ -151,7 +152,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
       topBar = {
           TopAppBar(
           title = {
-            if (isSearching) InlineSearchBar(
+            if (searchActive) InlineSearchBar(
               query = state.query,
               onQueryChange = viewModel::setQuery,
               onSearch = viewModel::setQuery,
@@ -164,7 +165,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           },
           navigationIcon = { IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
           actions = {
-            IconButton(onClick = { isSearching = !isSearching; if (!isSearching) viewModel.setQuery("") }) { Icon(if (isSearching) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, if (isSearching) "Close search" else "Search") }
+            IconButton(onClick = { isSearching = !searchActive; if (searchActive) viewModel.setQuery("") }) { Icon(if (searchActive) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, if (searchActive) "Close search" else "Search") }
             IconButton(onClick = { showCatalogs = true }) { Icon(Icons.RoundedFilled.Explore, "Catalogs") }
             IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Resolvers") }
           },
@@ -188,14 +189,14 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
         item { Spacer(Modifier.height(4.dp)) }
-        if (isSearching) item {
+        if (searchActive) item {
           Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("All", "Movies", "TV Shows", "Episodes").forEach { filter ->
               FilterChip(selected = searchFilter == filter, onClick = { searchFilter = filter }, label = { Text(filter) })
             }
           }
         }
-        if (!isSearching && state.query.isBlank() && browseRail == null && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
+        if (!searchActive && state.query.isBlank() && browseRail == null && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
         val sourceNames = catalogSources.associate { it.id to it.name }
         val rails = state.items.groupBy { item ->
           val title = item.catalogName ?: when (item.catalogSourceId) {
@@ -206,10 +207,10 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           }
           "${item.catalogSourceId.orEmpty()}|${item.catalogId.orEmpty()}|$title"
         }.mapValues { (_, sourceItems) -> sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" } }
-        if (!isSearching && state.query.isBlank() && browseRail == null) rails.forEach { (title, sourceItems) ->
+        if (!searchActive && state.query.isBlank() && browseRail == null) rails.forEach { (title, sourceItems) ->
           StreamRail(title.substringAfterLast('|'), sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }) { openResolverChooser(context, it) }
         }
-        if (!isSearching && state.query.isBlank() && browseRail != null) {
+        if (!searchActive && state.query.isBlank() && browseRail != null) {
           val browseItems = rails[browseRail].orEmpty()
           val genres = listOf("All") + browseItems.flatMap { it.genres }.distinct().sorted()
           item {
@@ -228,7 +229,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             }
           }
         }
-        if (isSearching && state.query.isNotBlank()) {
+        if (searchActive && state.query.isNotBlank()) {
           val searchItems = state.items.filter { item ->
             when (searchFilter) {
               "Movies" -> item.type == MediaType.MOVIE
