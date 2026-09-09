@@ -178,6 +178,8 @@ class TorrentSelectionActivity : AppCompatActivity() {
       backdropUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL),
       imdbId = intent.getStringExtra("catalog_imdb_id"),
       providerId = intent.getStringExtra("catalog_provider_id"),
+      catalogSourceId = intent.getStringExtra("catalog_source_id"),
+      catalogType = intent.getStringExtra("catalog_type_name"),
       provider = intent.getStringExtra("catalog_provider")?.let { raw -> runCatching { CatalogProvider.valueOf(raw) }.getOrNull() } ?: CatalogProvider.CINEMETA,
       releaseYear = intent.getStringExtra("catalog_release_year"),
       contentRating = intent.getStringExtra("catalog_rating"),

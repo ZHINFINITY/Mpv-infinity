@@ -155,6 +155,7 @@ class StremioCatalogRepository {
             provider = CatalogProvider.CINEMETA,
             providerId = providerId,
             catalogSourceId = source.id,
+            catalogType = type,
             releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
             contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
             duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
@@ -256,7 +257,11 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     coroutineScope {
       endpoints.map { endpoint ->
         async {
-          val types = if (item.provider == CatalogProvider.KITSU) listOf("anime", "series", "movie") else listOf(null)
+          val types = when {
+            item.provider == CatalogProvider.KITSU -> listOf("anime", "series", "movie")
+            !item.catalogType.isNullOrBlank() -> listOf(item.catalogType)
+            else -> listOf(null)
+          }
           val identifiers = if (item.provider == CatalogProvider.KITSU) {
             listOfNotNull(item.providerId, item.imdbId, item.id.toString()).distinct()
           } else listOf(null)
@@ -284,13 +289,13 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     identifierOverride: String? = null,
   ): List<StreamOption> {
     val identifier = identifierOverride ?: item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
-    val type = typeOverride ?: when {
+    val type = typeOverride ?: item.catalogType ?: when {
       item.provider == CatalogProvider.KITSU -> "anime"
       item.type == MediaType.TV -> "series"
       else -> "movie"
     }
     val configuredPath = settings.resolverPath
-    val resourceIdentifier = if ((type == "series" || type == "anime") && season != null) {
+    val resourceIdentifier = if (item.type == MediaType.TV && season != null) {
       if (episode != null) "$identifier:$season:$episode" else "$identifier:$season"
     } else identifier
     val path = if (configuredPath == DEFAULT_STREAM_PATH && resourceIdentifier != identifier) {
