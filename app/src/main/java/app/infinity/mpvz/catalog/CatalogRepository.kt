@@ -10,6 +10,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -171,10 +172,16 @@ class StremioCatalogRepository {
               ?: emptyList(),
           )
           }.filter { query.isNullOrBlank() || supportsSearch || it.title.contains(query, ignoreCase = true) || it.overview.contains(query, ignoreCase = true) }
-        }.onFailure { error -> Log.e(DIAG_TAG, "catalog failed source=${source.id} message=${error.message}", error) }.getOrDefault(emptyList())
+        }.onFailure { error ->
+          if (error is CancellationException) throw error
+          Log.e(DIAG_TAG, "catalog failed source=${source.id} message=${error.message}", error)
+        }.getOrDefault(emptyList())
       }
     }.onSuccess { items -> Log.i(DIAG_TAG, "catalog complete source=${source.id} items=${items.size}") }
-      .onFailure { error -> Log.e(DIAG_TAG, "manifest failed source=${source.id} message=${error.message}", error) }
+      .onFailure { error ->
+        if (error is CancellationException) throw error
+        Log.e(DIAG_TAG, "manifest failed source=${source.id} message=${error.message}", error)
+      }
       .getOrDefault(emptyList())
   }
 
