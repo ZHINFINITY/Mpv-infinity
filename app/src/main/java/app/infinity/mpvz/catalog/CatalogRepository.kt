@@ -430,18 +430,57 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       val clean = sanitizeUrl(candidate.url)
       when {
         clean.startsWith("stremio://") -> resolveStremioResource(clean, candidate.title, depth)
-        clean.isNotBlank() -> {
+        clean.isNotBlank() && isPlayableRemoteStream(clean) -> {
           // HentaiStream's video proxy is cached by the full query string. The bare URL can
           // resolve to a cached 5-second ad MP4, while the same source with a harmless client
           // marker returns the actual episode file (the behavior observed by Stremio clients).
-          val playableUrl = if (clean.contains("hentaistream-addon.") && clean.contains("/video-proxy?") && !clean.contains("&stremio=")) {
-            "$clean&stremio=1&mpvinfinity=${System.currentTimeMillis()}"
+          val playableUrl = if (clean.contains("hentaistream-addon.") && clean.contains("/video-proxy?")) {
+            validatedHentaiStreamUrl(clean)
           } else clean
-          candidate.copy(url = playableUrl, isPlayable = playableUrl.startsWith("http://") || playableUrl.startsWith("https://"))
+          candidate.copy(url = playableUrl, isPlayable = isPlayableRemoteStream(playableUrl))
         }
         else -> null
       }
     }.sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
+  }
+
+  private fun isPlayableRemoteStream(url: String): Boolean {
+    val normalized = url.substringBefore('?').substringBefore('#').lowercase()
+    if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg") || normalized.endsWith(".png") ||
+      normalized.endsWith(".gif") || normalized.endsWith(".webp") || normalized.endsWith(".avif")) return false
+    // HentaiStream's addon also returns HentaiMama snapshot images in its streams array.
+    // Only its video-proxy endpoint is a playable HentaiSea stream.
+    if (url.contains("hentaistream-addon.", ignoreCase = true)) {
+      return url.contains("/video-proxy?", ignoreCase = true)
+    }
+    return url.startsWith("http://") || url.startsWith("https://")
+  }
+
+  private fun validatedHentaiStreamUrl(original: String): String {
+    var candidate = original
+    repeat(6) { attempt ->
+      val token = "${System.currentTimeMillis()}-${attempt}-${kotlin.random.Random.nextInt(1_000_000)}"
+      candidate = if (candidate.contains("&mpvinfinity=")) {
+        candidate.replace(Regex("&mpvinfinity=[^&]*"), "&mpvinfinity=$token")
+      } else {
+        "$candidate&stremio=1&mpvinfinity=$token"
+      }
+      val fullSize = runCatching {
+        client.newCall(
+          Request.Builder()
+            .url(candidate)
+            .header("User-Agent", "Mozilla/5.0 (Android) mpv-infinity/1.0")
+            .header("Referer", "https://hentaistream-addon.keypop3750.workers.dev")
+            .header("Range", "bytes=0-1")
+            .get()
+            .build(),
+        ).execute().use { response ->
+          response.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull() ?: 0L
+        }
+      }.getOrDefault(0L)
+      if (fullSize > 1_000_000L) return candidate
+    }
+    return candidate
   }
 
   private fun parseCandidate(element: JsonElement): List<StreamOption> = when (element) {
