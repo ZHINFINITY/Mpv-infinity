@@ -150,9 +150,10 @@ class StremioCatalogRepository {
           payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
           val meta = element.jsonObject
           val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+          val metaType = meta["type"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: type
           MediaItem(
             id = providerId.hashCode(),
-            type = if (type == "movie") MediaType.MOVIE else MediaType.TV,
+            type = if (metaType == "movie") MediaType.MOVIE else MediaType.TV,
             title = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             overview = meta["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
@@ -161,7 +162,7 @@ class StremioCatalogRepository {
             provider = CatalogProvider.CINEMETA,
             providerId = providerId,
             catalogSourceId = source.id,
-            catalogType = type,
+            catalogType = metaType,
             catalogId = id,
             catalogName = catalog["name"]?.jsonPrimitive?.contentOrNull ?: id,
             releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
