@@ -76,11 +76,14 @@ internal fun buildVideoWithPlaybackInfo(
     } else {
       null
     }
+  // Explicit child actions must override both the folder default and any stale playback row
+  // observed while the asynchronous persistence event is being delivered.
   val isWatched =
     explicitlyMarkedWatched ||
-      (!folderMarkedUnwatched &&
+      (!explicitlyMarkedUnwatched &&
+        !folderMarkedUnwatched &&
         (playbackState?.hasBeenWatched == true ||
-        (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))
+          (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))
       )
   // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
   // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
