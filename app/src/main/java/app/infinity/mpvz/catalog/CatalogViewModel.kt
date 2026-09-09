@@ -45,7 +45,19 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   val torrentLaunch: SharedFlow<TorrentLaunchRequest> = _torrentLaunch
   val autoChooseBestTorrent: Boolean get() = settings.autoChooseBestTorrent
 
-  init { loadTrending() }
+  init {
+    loadTrending()
+    viewModelScope.launch {
+      val repository = StremioCatalogRepository()
+      val named = _catalogSources.value.map { source ->
+        if (source.id.startsWith("custom-")) source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
+      }
+      if (named != _catalogSources.value) {
+        settings.saveCatalogSources(named)
+        _catalogSources.value = named
+      }
+    }
+  }
 
   fun setQuery(query: String) {
     _state.update { it.copy(query = query, error = null) }
@@ -138,6 +150,16 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun saveCatalogSources(sources: List<CatalogSource>) {
     settings.saveCatalogSources(sources)
     _catalogSources.value = sources
+    viewModelScope.launch {
+      val repository = StremioCatalogRepository()
+      val named = sources.map { source ->
+        if (source.id.startsWith("custom-")) source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
+      }
+      if (named != _catalogSources.value) {
+        settings.saveCatalogSources(named)
+        _catalogSources.value = named
+      }
+    }
     loadTrending()
   }
   fun retry() { if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) } }
@@ -185,7 +207,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       }
       Triple(cinemetaJob.await(), animeJob.await(), customJob.await())
     }
-    return (cinemeta + anime + custom).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
+    return (cinemeta + anime + custom).distinctBy { "${it.catalogSourceId ?: it.provider}:${it.providerId ?: it.id}" }
   }
 }
 

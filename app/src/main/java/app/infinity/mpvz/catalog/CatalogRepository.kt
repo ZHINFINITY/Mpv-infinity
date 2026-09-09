@@ -122,6 +122,10 @@ class StremioCatalogRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
 
+  suspend fun manifestName(url: String): String? = withContext(Dispatchers.IO) {
+    runCatching { getJson(url).jsonObject["name"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+  }
+
   suspend fun load(source: CatalogSource, query: String?): List<MediaItem> = withContext(Dispatchers.IO) {
     runCatching {
       val manifest = getJson(source.manifestUrl).jsonObject
