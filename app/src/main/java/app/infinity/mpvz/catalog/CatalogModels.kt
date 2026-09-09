@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 enum class MediaType { MOVIE, TV }
 enum class CatalogProvider { CINEMETA, KITSU }
 
+@Serializable
 data class CatalogSource(
   val id: String,
   val name: String,

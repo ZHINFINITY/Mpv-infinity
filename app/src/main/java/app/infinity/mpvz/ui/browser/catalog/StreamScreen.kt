@@ -272,7 +272,17 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
           }
         }
         androidx.compose.material3.OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Add catalog provider (API or endpoint URL)") }, supportingText = { Text("Supports custom catalog endpoints and public metadata APIs.") }, singleLine = true)
-        androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { sources = sources + app.infinity.mpvz.catalog.CatalogSource("custom-${newUrl.hashCode()}", "Custom catalog", newUrl.trim()); newUrl = "" } }) { Text("Add catalog") }
+        androidx.compose.material3.TextButton(onClick = {
+          val manifestUrl = newUrl.trim().let { value ->
+            if (value.endsWith("manifest.json", ignoreCase = true)) value else value.trimEnd('/') + "/manifest.json"
+          }
+          if (manifestUrl.startsWith("http://") || manifestUrl.startsWith("https://")) {
+            val name = manifestUrl.substringAfter("://").substringBefore('/').ifBlank { "Custom catalog" }
+            val source = app.infinity.mpvz.catalog.CatalogSource("custom-${manifestUrl.hashCode()}", name, manifestUrl)
+            sources = (sources.filterNot { it.manifestUrl.equals(manifestUrl, ignoreCase = true) } + source)
+            newUrl = ""
+          }
+        }) { Text("Add catalog") }
       }
     },
     confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }) { Text("Save") } },
