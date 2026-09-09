@@ -98,12 +98,14 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   fun loadMore() {
     val current = _state.value
-    if (current.isLoadingMore || !current.canLoadMore || false) return
+    if (current.isLoadingMore || !current.canLoadMore) return
     viewModelScope.launch {
       _state.update { it.copy(isLoadingMore = true) }
       val nextPage = current.catalogPage + 1
-      val more = emptyList<MediaItem>()
-      _state.update { it.copy(items = (it.items + more).distinctBy { item -> "${item.provider}:${item.providerId ?: item.id}" }, catalogPage = nextPage, canLoadMore = more.isNotEmpty(), isLoadingMore = false) }
+      val more = runCatching { loadFromProviders(current.query.takeIf { it.isNotBlank() }, nextPage) }.getOrDefault(emptyList())
+      val merged = (current.items + more).distinctBy { item -> "${item.catalogSourceId ?: item.provider}:${item.catalogId ?: ""}:${item.providerId ?: item.id}" }
+      val added = merged.size > current.items.size
+      _state.update { it.copy(items = merged, catalogPage = nextPage, canLoadMore = added && more.isNotEmpty(), isLoadingMore = false) }
     }
   }
 
@@ -280,7 +282,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
-  private suspend fun loadFromProviders(query: String?): List<MediaItem> {
+  private suspend fun loadFromProviders(query: String?, page: Int = 1): List<MediaItem> {
     val providers = _state.value.enabledProviders
     val enabledSources = settings.catalogSources().filter { it.isEnabled }
     Log.i(TAG, "load query=${query ?: "<home>"} providers=$providers sources=${enabledSources.map { it.id }}")
@@ -288,14 +290,14 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     val (cinemeta, anime, custom) = coroutineScope {
       val cinemetaJob = async {
         if (CatalogProvider.CINEMETA in providers && sources.any { it.startsWith("cinemeta-") }) {
-          runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }
+          runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular(page) else cinemetaRepository.search(query, page) }
             .onFailure { if (it is CancellationException) throw it }
             .getOrDefault(emptyList())
         } else emptyList()
       }
       val animeJob = async {
         if (CatalogProvider.KITSU in providers && "kitsu-anime" in sources) {
-          runCatching { animeRepository.popular(query) }
+          runCatching { animeRepository.popular(query, page) }
             .onFailure { if (it is CancellationException) throw it }
             .getOrDefault(emptyList())
         } else emptyList()
@@ -305,7 +307,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
           .map { source ->
             async {
               val items = withTimeoutOrNull(3_000L) {
-                runCatching { stremioRepository.load(source, query) }.onFailure { error ->
+                runCatching { stremioRepository.load(source, query, page) }.onFailure { error ->
                   if (error is CancellationException) throw error
                   Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)
                 }.getOrDefault(emptyList())
