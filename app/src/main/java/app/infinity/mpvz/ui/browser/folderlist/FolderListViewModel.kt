@@ -358,8 +358,13 @@ class FolderListViewModel(
                       ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.uri.toString()))
                       ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.path))
                       ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri("file://${video.path}"))
+                    val explicitlyUnwatched =
+                      getApplication<Application>()
+                        .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+                        .getStringSet("values", emptySet())
+                        ?.contains("${video.path}\\u001f0") == true
                     val isUnplayed =
-                      if (playbackState != null && video.duration > 0) {
+                      explicitlyUnwatched || if (playbackState != null && video.duration > 0) {
                         val durationSeconds = video.duration / 1000
                         val watched = durationSeconds - playbackState.timeRemaining.toLong()
                         val progressValue =
