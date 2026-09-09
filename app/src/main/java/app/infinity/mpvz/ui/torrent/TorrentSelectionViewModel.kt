@@ -150,7 +150,19 @@ class TorrentSelectionViewModel(
     val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
     if (ready.launchingFileIndex != null) return
     val file = ready.catalog.playableFiles.firstOrNull { it.index == fileIndex } ?: return
-    ready.resolverInputs[fileIndex]?.let { resolverInput -> open(resolverInput) } ?: launch(ready.catalog, file)
+    ready.resolverInputs[fileIndex]?.let { resolverInput ->
+      if (resolverInput.source.startsWith("http://") || resolverInput.source.startsWith("https://")) launchDirect(resolverInput, file)
+      else open(resolverInput)
+    } ?: launch(ready.catalog, file)
+  }
+
+  private fun launchDirect(input: TorrentSelectionInput, file: TorrentFileItem) {
+    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
+    if (ready.launchingFileIndex != null) return
+    _uiState.value = ready.copy(launchingFileIndex = file.index, isLookingUpArtwork = false)
+    handedToPlayer = true
+    activePreparationId = null
+    launchChannel.trySend(TorrentSelectionLaunch(source = input.source, file = file, preparationId = ""))
   }
 
   fun cancel() {
