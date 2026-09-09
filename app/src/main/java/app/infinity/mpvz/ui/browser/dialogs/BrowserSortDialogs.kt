@@ -67,6 +67,7 @@ fun FolderSortDialog(
   val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val maxColumns = 9
+  val folderMaxColumns = 4
 
   val folderGridColumns = if (isLandscape) folderGridColumnsLandscape else folderGridColumnsPortrait
   val videoGridColumns = if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
@@ -82,7 +83,7 @@ fun FolderSortDialog(
 
   val folderMinWidth = 100.dp
   val videoMinWidth = 130.dp
-  val dynamicFolderColumns = (usableFolderWidth / folderMinWidth).toInt().coerceIn(2, maxColumns)
+  val dynamicFolderColumns = (usableFolderWidth / folderMinWidth).toInt().coerceIn(2, folderMaxColumns)
   val dynamicVideoColumns = (usableVideoWidth / videoMinWidth).toInt().coerceIn(2, maxColumns)
 
   // The Music > Folders tab embeds the album-style folder list regardless of the Home screen's
@@ -95,7 +96,7 @@ fun FolderSortDialog(
     if (activeLayoutMode == MediaLayoutMode.GRID && manualGridColumnsEnabled) {
       GridColumnSelector(
         label = "Folder (${if (isLandscape) "Landscape" else "Portrait"})",
-        currentValue = folderGridColumns.coerceIn(2, maxColumns),
+        currentValue = folderGridColumns.coerceIn(2, folderMaxColumns),
         onValueChange = {
           if (isLandscape) {
             browserPreferences.folderGridColumnsLandscape.set(it)
@@ -103,8 +104,8 @@ fun FolderSortDialog(
             browserPreferences.folderGridColumnsPortrait.set(it)
           }
         },
-        valueRange = 2f..maxColumns.toFloat(),
-        steps = maxColumns - 2,
+        valueRange = 2f..folderMaxColumns.toFloat(),
+        steps = folderMaxColumns - 2,
       )
     } else {
       null
@@ -357,6 +358,7 @@ fun VideoSortDialog(
   val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val maxColumns = 9
+  val folderMaxColumns = 4
 
   val folderGridColumns = if (isLandscape) folderGridColumnsLandscape else folderGridColumnsPortrait
   val videoGridColumns = if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
@@ -372,14 +374,14 @@ fun VideoSortDialog(
 
   val folderMinWidth = 100.dp
   val videoMinWidth = 130.dp
-  val dynamicFolderColumns = (usableFolderWidth / folderMinWidth).toInt().coerceIn(2, maxColumns)
+  val dynamicFolderColumns = (usableFolderWidth / folderMinWidth).toInt().coerceIn(2, folderMaxColumns)
   val dynamicVideoColumns = (usableVideoWidth / videoMinWidth).toInt().coerceIn(2, maxColumns)
 
   val folderGridColumnSelector =
     if (activeLayoutMode == MediaLayoutMode.GRID && manualGridColumnsEnabled) {
       GridColumnSelector(
         label = "Folder (${if (isLandscape) "Landscape" else "Portrait"})",
-        currentValue = folderGridColumns.coerceIn(2, maxColumns),
+        currentValue = folderGridColumns.coerceIn(2, folderMaxColumns),
         onValueChange = {
           if (isLandscape) {
             browserPreferences.folderGridColumnsLandscape.set(it)
@@ -387,8 +389,8 @@ fun VideoSortDialog(
             browserPreferences.folderGridColumnsPortrait.set(it)
           }
         },
-        valueRange = 2f..maxColumns.toFloat(),
-        steps = maxColumns - 2,
+        valueRange = 2f..folderMaxColumns.toFloat(),
+        steps = folderMaxColumns - 2,
       )
     } else {
       null
@@ -657,6 +659,7 @@ fun FileSystemSortDialog(
   val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val maxColumns = 9
+  val folderMaxColumns = 4
 
   val folderGridColumns = if (isLandscape) folderGridColumnsLandscape else folderGridColumnsPortrait
   val videoGridColumns = if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
@@ -667,14 +670,14 @@ fun FileSystemSortDialog(
   val usableWidth = screenWidthDp - (contentHorizontalPadding * 2) - itemSpacing
   val folderMinWidth = 100.dp
   val videoMinWidth = 130.dp
-  val dynamicFolderColumns = (usableWidth / folderMinWidth).toInt().coerceIn(2, maxColumns)
+  val dynamicFolderColumns = (usableWidth / folderMinWidth).toInt().coerceIn(2, folderMaxColumns)
   val dynamicVideoColumns = (usableWidth / videoMinWidth).toInt().coerceIn(2, maxColumns)
 
   val folderGridColumnSelector =
     if (mediaLayoutMode == MediaLayoutMode.GRID && manualGridColumnsEnabled) {
       GridColumnSelector(
         label = "Folder (${if (isLandscape) "Landscape" else "Portrait"})",
-        currentValue = folderGridColumns.coerceIn(2, maxColumns),
+        currentValue = folderGridColumns.coerceIn(2, folderMaxColumns),
         onValueChange = {
           if (isLandscape) {
             browserPreferences.folderGridColumnsLandscape.set(it)
@@ -682,8 +685,8 @@ fun FileSystemSortDialog(
             browserPreferences.folderGridColumnsPortrait.set(it)
           }
         },
-        valueRange = 2f..maxColumns.toFloat(),
-        steps = maxColumns - 2,
+        valueRange = 2f..folderMaxColumns.toFloat(),
+        steps = folderMaxColumns - 2,
       )
     } else {
       null
@@ -933,6 +936,7 @@ fun NetworkSortDialog(
   val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val maxColumns = 9
+  val folderMaxColumns = 4
 
   val videoGridColumns = if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
 

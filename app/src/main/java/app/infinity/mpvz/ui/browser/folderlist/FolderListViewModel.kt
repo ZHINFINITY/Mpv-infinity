@@ -320,14 +320,21 @@ class FolderListViewModel(
                   if (watchedOverride == true) {
                     videos.count { video ->
                       val durationSeconds = video.duration / 1000L
+                      val explicitOverride =
+                        getApplication<Application>()
+                          .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+                          .getStringSet("values", emptySet())
+                          ?.contains("${video.path}\u001f0") == true
                       val playbackState = playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(video.path))
                         ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.uri.toString()))
                         ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.path))
                         ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri("file://${video.path}"))
-                      playbackState != null &&
-                        !playbackState.hasBeenWatched &&
-                        playbackState.lastPosition <= 0 &&
-                        playbackState.timeRemaining >= durationSeconds - 1
+                      explicitOverride || (
+                        playbackState != null &&
+                          !playbackState.hasBeenWatched &&
+                          playbackState.lastPosition <= 0 &&
+                          playbackState.timeRemaining >= durationSeconds - 1
+                      )
                     }
                   } else {
                   videos.count { video ->
