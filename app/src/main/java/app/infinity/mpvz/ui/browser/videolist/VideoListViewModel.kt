@@ -385,7 +385,7 @@ class VideoListViewModel(
   ) {
     val overrides = getApplication<Application>()
       .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
-    val values = overrides.getStringSet("values", emptySet()).toMutableSet()
+    val values = overrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
     values.removeIf { it.startsWith("${video.path}\u001f") }
     if (!watched) values.add("${video.path}\u001f0")
     overrides.edit().putStringSet("values", values).apply()
