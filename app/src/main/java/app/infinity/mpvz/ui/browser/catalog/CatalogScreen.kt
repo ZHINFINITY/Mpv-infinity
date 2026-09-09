@@ -250,17 +250,29 @@ private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> 
   val initial = remember { viewModel.currentSettings() }
   var endpoints by remember { mutableStateOf(initial.resolvers) }
   var newUrl by remember { mutableStateOf("") }
-  AlertDialog(onDismissRequest = onDismiss, title = { Text("Stream resolvers") }, text = {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    shape = RoundedCornerShape(28.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    title = { Text("Stream resolvers", style = MaterialTheme.typography.headlineSmall) },
+    text = {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
       endpoints.forEachIndexed { index, endpoint ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
           androidx.compose.material3.Switch(checked = endpoint.enabled, onCheckedChange = { enabled -> endpoints = endpoints.toMutableList().also { it[index] = endpoint.copy(enabled = enabled) } })
-          Text(endpoint.baseUrl, modifier = Modifier.weight(1f), maxLines = 1)
+          Text(endpoint.baseUrl, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
           IconButton(onClick = { endpoints = endpoints.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
         }
       }
-      OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Resolver base URL") }, singleLine = true)
-      TextButton(onClick = { if (newUrl.isNotBlank()) { endpoints = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); newUrl = "" } }) { Text("Add resolver") }
+      OutlinedTextField(
+        value = newUrl,
+        onValueChange = { newUrl = it },
+        placeholder = { Text("Resolver base URL") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+      )
+      Button(onClick = { if (newUrl.isNotBlank()) { endpoints = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); newUrl = "" } }, shape = RoundedCornerShape(24.dp), colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors()) { Text("Add resolver") }
     }
-  }, confirmButton = { Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+  }, confirmButton = { Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }

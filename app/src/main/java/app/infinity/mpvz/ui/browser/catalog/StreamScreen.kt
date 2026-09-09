@@ -357,29 +357,42 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
   var autoChooseBest by remember { mutableStateOf(viewModel.autoChooseBestTorrent) }
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Stream resolvers") },
+    shape = RoundedCornerShape(28.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    title = { Text("Stream resolvers", style = MaterialTheme.typography.headlineSmall) },
     text = {
-      androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
           androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
-            Text("Automatically choose best torrent")
-            Text("Use the highest-quality torrent when available.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Automatically choose best torrent", style = MaterialTheme.typography.titleMedium)
+            Text("Use the highest-quality torrent when available.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
           }
           androidx.compose.material3.Switch(checked = autoChooseBest, onCheckedChange = { autoChooseBest = it })
         }
         endpoints.forEachIndexed { index, endpoint ->
-          Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+          Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             androidx.compose.material3.Switch(checked = endpoint.enabled, onCheckedChange = { checked -> endpoints = endpoints.toMutableList().also { it[index] = endpoint.copy(enabled = checked) } })
             Spacer(Modifier.width(16.dp))
-            Text(endpoint.baseUrl, modifier = Modifier.weight(1f), maxLines = 1)
+            Text(endpoint.baseUrl, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             IconButton(onClick = { endpoints = endpoints.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
           }
         }
-        androidx.compose.material3.OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Resolver base URL") }, singleLine = true)
-        androidx.compose.material3.TextButton(onClick = { if (newUrl.isNotBlank()) { viewModel.addResolverEndpoint(newUrl); endpoints = viewModel.resolvers.value; newUrl = "" } }) { Text("Add resolver + catalog rails") }
+        androidx.compose.material3.OutlinedTextField(
+          value = newUrl,
+          onValueChange = { newUrl = it },
+          placeholder = { Text("Resolver base URL") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(12.dp),
+        )
+        androidx.compose.material3.Button(
+          onClick = { if (newUrl.isNotBlank()) { viewModel.addResolverEndpoint(newUrl); endpoints = viewModel.resolvers.value; newUrl = "" } },
+          shape = RoundedCornerShape(24.dp),
+          colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(),
+        ) { Text("Add resolver + catalog rails") }
       }
     },
-    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveAutoChooseBestTorrent(autoChooseBest); viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }) { Text("Save") } },
+    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveAutoChooseBestTorrent(autoChooseBest); viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") } },
     dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
   )
 }
@@ -390,19 +403,30 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
   var newUrl by remember { mutableStateOf("") }
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Catalog providers") },
+    shape = RoundedCornerShape(28.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    title = { Text("Catalog providers", style = MaterialTheme.typography.headlineSmall) },
     text = {
-      androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         sources.forEachIndexed { index, source ->
-          Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+          Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             androidx.compose.material3.Switch(checked = source.isEnabled, onCheckedChange = { enabled -> sources = sources.toMutableList().also { it[index] = source.copy(isEnabled = enabled) } })
             Spacer(Modifier.width(16.dp))
-            Text(source.name, modifier = Modifier.weight(1f), maxLines = 1)
+            Text(source.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             IconButton(onClick = { sources = sources.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
           }
         }
-        androidx.compose.material3.OutlinedTextField(newUrl, { newUrl = it }, label = { Text("Add catalog provider (API or endpoint URL)") }, supportingText = { Text("Supports custom catalog endpoints and public metadata APIs.") }, singleLine = true)
-        androidx.compose.material3.TextButton(onClick = {
+        androidx.compose.material3.OutlinedTextField(
+          value = newUrl,
+          onValueChange = { newUrl = it },
+          placeholder = { Text("Add catalog provider (API or endpoint URL)") },
+          supportingText = { Text("Supports custom catalog endpoints and public metadata APIs.") },
+          minLines = 2,
+          maxLines = 2,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(12.dp),
+        )
+        androidx.compose.material3.Button(onClick = {
           val manifestUrl = newUrl.trim().let { value ->
             if (value.endsWith("manifest.json", ignoreCase = true)) value else value.trimEnd('/') + "/manifest.json"
           }
@@ -412,10 +436,10 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
             sources = (sources.filterNot { it.manifestUrl.equals(manifestUrl, ignoreCase = true) } + source)
             newUrl = ""
           }
-        }) { Text("Add catalog") }
+        }, shape = RoundedCornerShape(24.dp), colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors()) { Text("Add catalog") }
       }
     },
-    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }) { Text("Save") } },
+    confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") } },
     dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
   )
 }
