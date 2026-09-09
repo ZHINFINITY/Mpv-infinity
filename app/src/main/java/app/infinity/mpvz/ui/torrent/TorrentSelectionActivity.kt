@@ -75,7 +75,8 @@ class TorrentSelectionActivity : AppCompatActivity() {
             val allStreams = if (resolverItem.type == MediaType.MOVIE || resolverItem.seasons.isEmpty()) {
               resolver.resolve(resolverItem, null, null)
             } else {
-              resolverItem.seasons.flatMap { season ->
+              val broadResults = runCatching { resolver.resolve(resolverItem, null, null) }.getOrDefault(emptyList())
+              broadResults + resolverItem.seasons.flatMap { season ->
                 season.episodes.flatMap { episode ->
                   resolver.resolve(resolverItem, season.number, episode.number).map {
                     it.copy(season = season.number, episode = episode.number)
@@ -83,7 +84,16 @@ class TorrentSelectionActivity : AppCompatActivity() {
                 }
               }
             }.distinctBy(StreamOption::url)
-            viewModel.initializeResolver(torrentInput("", intent, resolverItem), allStreams)
+            val resolverSeasons = allStreams.mapNotNull { stream ->
+              val season = stream.season ?: return@mapNotNull null
+              season to (stream.episode ?: 0)
+            }.groupBy({ it.first }, { it.second }).map { (number, episodes) ->
+              Season(number, episodes.filter { it > 0 }.distinct().sorted().map { episode ->
+                Episode(episode, "Episode $episode", "", null)
+              })
+            }
+            val completeItem = resolverItem.copy(seasons = (resolverItem.seasons + resolverSeasons).distinctBy(Season::number).sortedBy(Season::number))
+            viewModel.initializeResolver(torrentInput("", intent, completeItem), allStreams)
           }
         }
         TorrentSelectionScreen(
