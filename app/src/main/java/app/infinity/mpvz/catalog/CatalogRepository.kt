@@ -424,7 +424,15 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       val clean = sanitizeUrl(candidate.url)
       when {
         clean.startsWith("stremio://") -> resolveStremioResource(clean, candidate.title, depth)
-        clean.isNotBlank() -> candidate.copy(url = clean, isPlayable = clean.startsWith("http://") || clean.startsWith("https://"))
+        clean.isNotBlank() -> {
+          // HentaiStream's video proxy is cached by the full query string. The bare URL can
+          // resolve to a cached 5-second ad MP4, while the same source with a harmless client
+          // marker returns the actual episode file (the behavior observed by Stremio clients).
+          val playableUrl = if (clean.contains("hentaistream-addon.") && clean.contains("/video-proxy?") && !clean.contains("&stremio=")) {
+            "$clean&stremio=1"
+          } else clean
+          candidate.copy(url = playableUrl, isPlayable = playableUrl.startsWith("http://") || playableUrl.startsWith("https://"))
+        }
         else -> null
       }
     }.sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
