@@ -82,9 +82,10 @@ internal fun buildVideoWithPlaybackInfo(
   val isWatched =
     explicitlyMarkedWatched ||
       (!explicitlyMarkedUnwatched &&
-        (folderMarkedWatched || !folderMarkedUnwatched) &&
-        (playbackState?.hasBeenWatched == true ||
-          (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))
+        (folderMarkedWatched ||
+          (!folderMarkedUnwatched &&
+            (playbackState?.hasBeenWatched == true ||
+              (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))))
       )
   // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
   // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
