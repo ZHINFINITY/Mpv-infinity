@@ -78,10 +78,18 @@ internal fun buildVideoWithPlaybackInfo(
     !folderMarkedUnwatched &&
       (playbackState?.hasBeenWatched == true ||
         (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))
+  // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
+  // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
+  // is marked watched and the file is older than the automatic NEW-label age window.
+  val explicitlyMarkedUnwatched =
+    playbackState != null &&
+      !playbackState.hasBeenWatched &&
+      playbackState.lastPosition <= 0 &&
+      playbackState.timeRemaining >= durationSeconds - 1
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
   val isWithinNewLabelWindow =
-    folderMarkedUnwatched || newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
+    folderMarkedUnwatched || explicitlyMarkedUnwatched || newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
 
   return VideoWithPlaybackInfo(
     video = video,
