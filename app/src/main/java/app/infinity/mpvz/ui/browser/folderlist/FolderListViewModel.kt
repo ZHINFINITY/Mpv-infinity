@@ -362,7 +362,7 @@ class FolderListViewModel(
                       getApplication<Application>()
                         .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
                         .getStringSet("values", emptySet())
-                        ?.contains("${video.path}\\u001f0") == true
+                        ?.contains("${video.path}\u001f0") == true
                     val isUnplayed =
                       explicitlyUnwatched || if (playbackState != null && video.duration > 0) {
                         val durationSeconds = video.duration / 1000
@@ -469,7 +469,7 @@ class FolderListViewModel(
           .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
       val overrideValues = videoOverrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
       videos.forEach { video ->
-        overrideValues.removeIf { it.startsWith("${video.path}\\u001f") }
+        overrideValues.removeIf { it.startsWith("${video.path}\u001f") }
         if (!watched) {
           overrideValues.add("${video.path}\u001f0")
         }
