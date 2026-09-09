@@ -219,6 +219,7 @@ fun PlayerControls(
   val audioPreferences = koinInject<AudioPreferences>()
   val subtitlesPreferences = koinInject<SubtitlesPreferences>()
   val subtitlePosition by subtitlesPreferences.subPos.collectAsState()
+  val subtitleFont by subtitlesPreferences.font.collectAsState()
   val subtitleFontSize by subtitlesPreferences.fontSize.collectAsState()
   val subtitleScale by subtitlesPreferences.subScale.collectAsState()
   val subtitleTextColor by subtitlesPreferences.textColor.collectAsState()
@@ -229,6 +230,10 @@ fun PlayerControls(
   val subtitleBold by subtitlesPreferences.bold.collectAsState()
   val subtitleItalic by subtitlesPreferences.italic.collectAsState()
   val subtitleJustification by subtitlesPreferences.justification.collectAsState()
+  val translatedSubtitleFontFamily = remember(subtitleFont) {
+    val family = subtitleFont.trim().ifBlank { app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY }
+    androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.create(family, android.graphics.Typeface.NORMAL))
+  }
   val decoderPreferences = koinInject<DecoderPreferences>()
   val playbackEngine by decoderPreferences.playbackEngine.collectAsState()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
@@ -902,6 +907,7 @@ fun PlayerControls(
                 shadowOffset = subtitleShadowOffset.toFloat(),
                 bold = subtitleBold,
                 italic = subtitleItalic,
+                fontFamily = translatedSubtitleFontFamily,
                 textAlign = when (subtitleJustification.name.lowercase()) {
                   "left" -> androidx.compose.ui.text.style.TextAlign.Start
                   "right" -> androidx.compose.ui.text.style.TextAlign.End

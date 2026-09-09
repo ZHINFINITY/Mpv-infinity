@@ -65,6 +65,7 @@ internal fun buildVideoWithPlaybackInfo(
   newLabelDays: Int,
   watchedThreshold: Int,
   folderMarkedUnwatched: Boolean = false,
+  explicitlyMarkedUnwatched: Boolean = false,
 ): VideoWithPlaybackInfo {
   val durationSeconds = video.duration / 1000L
   val progressValue =
@@ -81,15 +82,14 @@ internal fun buildVideoWithPlaybackInfo(
   // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
   // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
   // is marked watched and the file is older than the automatic NEW-label age window.
-  val explicitlyMarkedUnwatched =
-    playbackState != null &&
+  val persistedUnwatched = explicitlyMarkedUnwatched || (playbackState != null &&
       !playbackState.hasBeenWatched &&
       playbackState.lastPosition <= 0 &&
-      playbackState.timeRemaining >= durationSeconds - 1
+      playbackState.timeRemaining >= durationSeconds - 1)
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
   val isWithinNewLabelWindow =
-    folderMarkedUnwatched || explicitlyMarkedUnwatched || newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
+    folderMarkedUnwatched || persistedUnwatched || newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
 
   return VideoWithPlaybackInfo(
     video = video,
@@ -119,6 +119,12 @@ class VideoListViewModel(
           val split = value.split("\u001f", limit = 2)
           split.size == 2 && split[0] == bucketId && split[1] == "0"
         } == true
+
+  private fun explicitlyMarkedUnwatched(video: Video): Boolean =
+    getApplication<Application>()
+      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+      .getStringSet("values", emptySet())
+      ?.any { it == "${video.path}\u001f0" } == true
   private val recentlyPlayedRepository: app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
   // Using MediaFileRepository singleton directly
 
@@ -334,6 +340,7 @@ class VideoListViewModel(
           newLabelDays = newLabelDays,
           watchedThreshold = watchedThreshold,
           folderMarkedUnwatched = folderMarkedUnwatched,
+          explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
         )
       }
     _videosWithPlaybackInfo.value = videosWithInfo
@@ -362,6 +369,7 @@ class VideoListViewModel(
         newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
         watchedThreshold = browserPreferences.watchedThreshold.get(),
         folderMarkedUnwatched = folderMarkedUnwatched,
+        explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
       )
     if (currentItems[index] == updatedItem) return
 
@@ -375,6 +383,12 @@ class VideoListViewModel(
     video: Video,
     watched: Boolean,
   ) {
+    val overrides = getApplication<Application>()
+      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+    val values = overrides.getStringSet("values", emptySet()).toMutableSet()
+    values.removeIf { it.startsWith("${video.path}\u001f") }
+    if (!watched) values.add("${video.path}\u001f0")
+    overrides.edit().putStringSet("values", values).apply()
     _videosWithPlaybackInfo.update { videos ->
       videos.map { item ->
         if (item.video.path == video.path) {
