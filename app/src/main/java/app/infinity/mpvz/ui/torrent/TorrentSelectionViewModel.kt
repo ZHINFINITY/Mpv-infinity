@@ -100,6 +100,10 @@ class TorrentSelectionViewModel(
   fun initializeResolver(value: TorrentSelectionInput, streams: List<app.infinity.mpvz.catalog.StreamOption>) {
     if (input != null) return
     input = value
+    if (streams.isEmpty()) {
+      _uiState.value = TorrentSelectionUiState.Error("Resolver returned no torrents for this title.")
+      return
+    }
     val files = streams.mapIndexed { index, stream ->
       val episodePrefix = stream.season?.let { season -> stream.episode?.let { episode -> "S%02dE%02d ".format(season, episode) } }.orEmpty()
       TorrentFileItem(index, "$episodePrefix${stream.title}", "$episodePrefix${stream.title}", parseResolverSize(stream.size), "video/x-matroska")
