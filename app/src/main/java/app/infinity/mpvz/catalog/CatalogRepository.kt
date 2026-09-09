@@ -109,6 +109,53 @@ class KitsuAnimeRepository {
   }
 }
 
+class StremioCatalogRepository {
+  private val client = OkHttpClient()
+  private val json = Json { ignoreUnknownKeys = true }
+
+  suspend fun load(source: CatalogSource, query: String?): List<MediaItem> = withContext(Dispatchers.IO) {
+    runCatching {
+      val manifest = getJson(source.manifestUrl).jsonObject
+      val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
+      catalogs.flatMap { catalogElement ->
+        val catalog = catalogElement.jsonObject
+        val type = catalog["type"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()
+        val id = catalog["id"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()
+        val extras = catalog["extra"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+        val suffix = when {
+          !query.isNullOrBlank() && "search" in extras -> "/search=${URLEncoder.encode(query, "UTF-8")}"
+          else -> ""
+        }
+        val base = source.manifestUrl.trimEnd('/').removeSuffix("manifest.json")
+        val payload = getJson("${base}catalog/$type/$id$suffix.json").jsonObject
+        payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
+          val meta = element.jsonObject
+          val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+          MediaItem(
+            id = providerId.hashCode(),
+            type = if (type == "movie") MediaType.MOVIE else MediaType.TV,
+            title = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            overview = meta["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
+            backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
+            imdbId = meta["imdb_id"]?.jsonPrimitive?.contentOrNull,
+            provider = CatalogProvider.CINEMETA,
+            providerId = providerId,
+            releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
+            contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
+            duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
+          )
+        }
+      }
+    }.getOrDefault(emptyList())
+  }
+
+  private fun getJson(url: String): JsonElement = client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+    if (!response.isSuccessful) error("Stremio catalog request failed (${response.code})")
+    json.parseToJsonElement(response.body.string())
+  }
+}
+
 class CinemetaCatalogRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }

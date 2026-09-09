@@ -157,14 +157,18 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   private suspend fun loadFromProviders(query: String?): List<MediaItem> {
     val providers = _state.value.enabledProviders
-    val sources = settings.catalogSources().filter { it.isEnabled }.map { it.id }.toSet()
+    val enabledSources = settings.catalogSources().filter { it.isEnabled }
+    val sources = enabledSources.map { it.id }.toSet()
     val cinemeta = if (CatalogProvider.CINEMETA in providers && sources.any { it.startsWith("cinemeta-") || it.startsWith("custom-") }) {
       runCatching { if (query.isNullOrBlank()) cinemetaRepository.popular() else cinemetaRepository.search(query) }.getOrDefault(emptyList())
     } else emptyList()
     val anime = if (CatalogProvider.KITSU in providers && "kitsu-anime" in sources && query.isNullOrBlank()) {
       runCatching { animeRepository.popular() }.getOrDefault(emptyList())
     } else emptyList()
-    return (cinemeta + anime).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
+    val custom = enabledSources.filter { it.id.startsWith("custom-") }.flatMap { source ->
+      runCatching { StremioCatalogRepository().load(source, query) }.getOrDefault(emptyList())
+    }
+    return (cinemeta + anime + custom).distinctBy { "${it.provider}:${it.providerId ?: it.id}" }
   }
 }
 
