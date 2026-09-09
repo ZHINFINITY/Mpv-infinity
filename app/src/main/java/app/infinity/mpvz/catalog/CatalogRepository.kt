@@ -470,7 +470,9 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
         client.newCall(
           Request.Builder()
             .url(candidate)
-            .header("User-Agent", "Mozilla/5.0 (Android) mpv-infinity/1.0")
+            // The addon selects its CDN variant from browser-like request headers. Do not seed
+            // the cache key with the app-specific mpv-infinity UA; Stremio uses a browser UA.
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/151.0.7922.199 Mobile Safari/537.36")
             .header("Referer", "https://hentaistream-addon.keypop3750.workers.dev")
             // MPV's first demuxer request is typically a 1 MiB range. A 2-byte probe can
             // report the full file while the subsequent MPV range still receives the cached
