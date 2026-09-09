@@ -127,6 +127,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var browseRail by rememberSaveable { mutableStateOf<String?>(null) }
     var genreFilter by rememberSaveable { mutableStateOf("All") }
+    var searchFilter by rememberSaveable { mutableStateOf("All") }
     val isRefreshing = remember { mutableStateOf(false) }
     BackHandler(enabled = isSearching || browseRail != null) {
       if (browseRail != null) browseRail = null
@@ -179,7 +180,14 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
         item { Spacer(Modifier.height(4.dp)) }
-        if (state.query.isBlank() && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
+        if (isSearching) item {
+          Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("All", "Movies", "TV Shows", "Episodes").forEach { filter ->
+              FilterChip(selected = searchFilter == filter, onClick = { searchFilter = filter }, label = { Text(filter) })
+            }
+          }
+        }
+        if (!isSearching && state.query.isBlank() && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
         val sourceNames = catalogSources.associate { it.id to it.name }
         val rails = state.items.groupBy { item ->
           item.catalogName ?: when (item.catalogSourceId) {
@@ -189,10 +197,10 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             else -> sourceNames[item.catalogSourceId] ?: item.provider.name
           }
         }.mapValues { (_, sourceItems) -> sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" } }
-        if (state.query.isBlank() && browseRail == null) rails.forEach { (title, sourceItems) ->
+        if (!isSearching && state.query.isBlank() && browseRail == null) rails.forEach { (title, sourceItems) ->
           StreamRail(title, sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }) { openResolverChooser(context, it) }
         }
-        if (state.query.isBlank() && browseRail != null) {
+        if (!isSearching && state.query.isBlank() && browseRail != null) {
           val browseItems = rails[browseRail].orEmpty()
           val genres = listOf("All") + browseItems.flatMap { it.genres }.distinct().sorted()
           item {
@@ -211,7 +219,27 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             }
           }
         }
-        if (state.query.isNotBlank()) StreamRail("Search results", state.items, onSeeMore = null) { openResolverChooser(context, it) }
+        if (state.query.isNotBlank()) {
+          val searchItems = state.items.filter { item ->
+            when (searchFilter) {
+              "Movies" -> item.type == MediaType.MOVIE
+              "TV Shows" -> item.type == MediaType.TV
+              "Episodes" -> item.type == MediaType.TV && item.seasons.any { season -> season.episodes.isNotEmpty() }
+              else -> true
+            }
+          }
+          if (searchItems.isEmpty() && !state.isLoading) item { Text("No results found for \"${state.query}\"", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+          searchItems.chunked(2).forEach { rowItems ->
+            item {
+              Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                rowItems.forEach { mediaItem ->
+                  androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { openResolverChooser(context, mediaItem) } }
+                }
+                if (rowItems.size == 1) Spacer(Modifier.weight(1f))
+              }
+            }
+          }
+        }
         if (state.isLoading) item { Text("Loading streams…", modifier = Modifier.padding(16.dp)) }
         if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
         }
@@ -250,7 +278,7 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
   item {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
       Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-      onSeeMore?.let { TextButton(onClick = it) { Text("See more") } }
+      onSeeMore?.let { TextButton(onClick = it) { Text("See all") } }
     }
   }
   item {
