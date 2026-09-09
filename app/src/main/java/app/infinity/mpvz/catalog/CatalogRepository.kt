@@ -214,7 +214,9 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       else -> "movie"
     }
     val configuredPath = settings.resolverPath
-    val resourceIdentifier = if ((type == "series" || type == "anime") && season != null && episode != null) "$identifier:$season:$episode" else identifier
+    val resourceIdentifier = if ((type == "series" || type == "anime") && season != null) {
+      if (episode != null) "$identifier:$season:$episode" else "$identifier:$season"
+    } else identifier
     val path = if (configuredPath == DEFAULT_STREAM_PATH && resourceIdentifier != identifier) {
       "/stream/$type/$resourceIdentifier.json"
     } else configuredPath
