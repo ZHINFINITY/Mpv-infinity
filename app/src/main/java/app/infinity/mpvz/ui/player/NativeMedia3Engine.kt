@@ -67,7 +67,7 @@ private class HentaiStreamLoggingDataSource(
       val start = dataSpec.position
       val end = if (dataSpec.length == C.LENGTH_UNSET.toLong()) "end" else (start + dataSpec.length - 1).toString()
       val separator = if (dataSpec.uri.query.isNullOrBlank()) "?" else "&"
-      val cacheKey = "${start}_$end_${System.nanoTime()}"
+      val cacheKey = "${start}_${end}_${System.nanoTime()}"
       val requestUri = Uri.parse("${dataSpec.uri}$separator" + "mpvinfinity_range=$cacheKey")
       val headers = dataSpec.httpRequestHeaders.toMutableMap().apply {
         if (dataSpec.position == 0L && dataSpec.length == C.LENGTH_UNSET.toLong()) {
