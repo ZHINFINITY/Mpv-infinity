@@ -21,6 +21,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -68,11 +69,18 @@ class CatalogSettings(context: Context) {
       sanitizeResolverBaseUrl(endpoint.baseUrl).takeIf { it.isNotBlank() }?.let { "$it|${endpoint.enabled}" }
     }.toSet()).commit()
   }
-  fun catalogSources(): List<CatalogSource> = prefs.getStringSet("catalog_sources", null)?.mapNotNull { encoded ->
-    val parts = encoded.split("|", limit = 4)
-    if (parts.size >= 4) CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true) else null
-  } ?: DEFAULT_CATALOG_SOURCES
-  fun saveCatalogSources(value: List<CatalogSource>) { prefs.edit().putStringSet("catalog_sources", value.map { "${it.id}|${it.name}|${it.manifestUrl}|${it.isEnabled}" }.toSet()).apply() }
+  fun catalogSources(): List<CatalogSource> {
+    prefs.getString("catalog_sources_json", null)?.let { encoded ->
+      runCatching { Json.decodeFromString<List<CatalogSource>>(encoded) }.getOrNull()?.let { return it }
+    }
+    return prefs.getStringSet("catalog_sources", null)?.mapNotNull { encoded ->
+      val parts = encoded.split("|", limit = 4)
+      if (parts.size >= 4) CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true) else null
+    } ?: DEFAULT_CATALOG_SOURCES
+  }
+  fun saveCatalogSources(value: List<CatalogSource>) {
+    prefs.edit().putString("catalog_sources_json", Json.encodeToString(value)).remove("catalog_sources").apply()
+  }
 }
 
 private fun sanitizeResolverBaseUrl(value: String): String = value.trim().trimEnd('/')
