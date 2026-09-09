@@ -420,6 +420,9 @@ class VideoListViewModel(
           ),
         )
         PlaybackStateEvents.notifyChanged(canonicalIdentifier)
+        // Folder badges aggregate child playback state. Invalidate that aggregate immediately
+        // so a child swipe updates the parent folder without requiring navigation or a second swipe.
+        MediaLibraryEvents.notifyChanged()
       }.onFailure { error ->
         Log.e(tag, "Failed to update watched state for ${video.displayName}", error)
         loadPlaybackInfo(_videos.value)

@@ -312,12 +312,23 @@ class FolderListViewModel(
                   app.infinity.mpvz.repository.MediaFileRepository
                     .getVideosInFolder(getApplication(), folder.bucketId)
 
-                // Count new unplayed videos. An explicit folder override is authoritative:
-                // watched hides the badge, while unwatched includes older files as well.
+                // Count new unplayed videos. A watched folder is the default state, but an
+                // explicit child swipe-to-unwatched must override that default for the folder
+                // badge as well.
                 val watchedOverride = folderWatchedOverrides.value[folder.bucketId]
                 val newCount =
                   if (watchedOverride == true) {
-                    0
+                    videos.count { video ->
+                      val durationSeconds = video.duration / 1000L
+                      val playbackState = playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(video.path))
+                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.uri.toString()))
+                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.path))
+                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri("file://${video.path}"))
+                      playbackState != null &&
+                        !playbackState.hasBeenWatched &&
+                        playbackState.lastPosition <= 0 &&
+                        playbackState.timeRemaining >= durationSeconds - 1
+                    }
                   } else {
                   videos.count { video ->
                     // Check if video was modified within threshold days unless the user
