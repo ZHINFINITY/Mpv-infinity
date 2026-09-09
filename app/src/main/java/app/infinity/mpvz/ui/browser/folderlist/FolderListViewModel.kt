@@ -459,6 +459,17 @@ class FolderListViewModel(
       }
     viewModelScope.launch(Dispatchers.IO) {
       val videos = MediaFileRepository.getVideosInFolder(getApplication(), folder.bucketId)
+      val videoOverrides =
+        getApplication<Application>()
+          .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+      val overrideValues = videoOverrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
+      videos.forEach { video ->
+        overrideValues.removeIf { it.startsWith("${video.path}\\u001f") }
+        if (!watched) {
+          overrideValues.add("${video.path}\\u001f0")
+        }
+      }
+      videoOverrides.edit().putStringSet("values", overrideValues).apply()
       videos.forEach { video ->
         val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val identifier = PlaybackIdentity.forLocalPath(video.path)
