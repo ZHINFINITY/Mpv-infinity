@@ -66,6 +66,7 @@ internal fun buildVideoWithPlaybackInfo(
   watchedThreshold: Int,
   folderMarkedUnwatched: Boolean = false,
   explicitlyMarkedUnwatched: Boolean = false,
+  explicitlyMarkedWatched: Boolean = false,
 ): VideoWithPlaybackInfo {
   val durationSeconds = video.duration / 1000L
   val progressValue =
@@ -76,9 +77,11 @@ internal fun buildVideoWithPlaybackInfo(
       null
     }
   val isWatched =
-    !folderMarkedUnwatched &&
-      (playbackState?.hasBeenWatched == true ||
+    explicitlyMarkedWatched ||
+      (!folderMarkedUnwatched &&
+        (playbackState?.hasBeenWatched == true ||
         (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))
+      )
   // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
   // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
   // is marked watched and the file is older than the automatic NEW-label age window.
@@ -125,6 +128,12 @@ class VideoListViewModel(
       .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
       .getStringSet("values", emptySet())
       ?.any { it == "${video.path}\u001f0" } == true
+
+  private fun explicitlyMarkedWatched(video: Video): Boolean =
+    getApplication<Application>()
+      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+      .getStringSet("values", emptySet())
+      ?.any { it == "${video.path}\u001f1" } == true
   private val recentlyPlayedRepository: app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
   // Using MediaFileRepository singleton directly
 
@@ -341,6 +350,7 @@ class VideoListViewModel(
           watchedThreshold = watchedThreshold,
           folderMarkedUnwatched = folderMarkedUnwatched,
           explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
+          explicitlyMarkedWatched = explicitlyMarkedWatched(video),
         )
       }
     _videosWithPlaybackInfo.value = videosWithInfo
@@ -370,6 +380,7 @@ class VideoListViewModel(
         watchedThreshold = browserPreferences.watchedThreshold.get(),
         folderMarkedUnwatched = folderMarkedUnwatched,
         explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
+        explicitlyMarkedWatched = explicitlyMarkedWatched(video),
       )
     if (currentItems[index] == updatedItem) return
 
@@ -387,7 +398,7 @@ class VideoListViewModel(
       .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
     val values = overrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
     values.removeIf { it.startsWith("${video.path}\u001f") }
-    if (!watched) values.add("${video.path}\u001f0")
+    values.add("${video.path}\u001f${if (watched) 1 else 0}")
     overrides.edit().putStringSet("values", values).apply()
     _videosWithPlaybackInfo.update { videos ->
       videos.map { item ->
