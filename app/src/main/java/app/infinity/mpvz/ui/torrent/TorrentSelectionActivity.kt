@@ -105,7 +105,6 @@ class TorrentSelectionActivity : AppCompatActivity() {
             val resolvedStreams = if (completeItem.type == MediaType.MOVIE) {
               resolver.resolve(completeItem, null, null)
             } else {
-              val broadResults = runCatching { resolver.resolve(completeItem, null, null) }.getOrDefault(emptyList())
               val knownSeasonResults = coroutineScope {
                 completeItem.seasons.flatMap { season ->
                   season.episodes.map { episode ->
@@ -117,10 +116,11 @@ class TorrentSelectionActivity : AppCompatActivity() {
                   }
                 }.awaitAll().flatten()
               }
-              // Addons such as HentaiStream expose concrete episode IDs in their metadata;
-              // the resolver expands those IDs. Do not probe twenty guessed seasons.
-              broadResults + knownSeasonResults
-            }.distinctBy(StreamOption::url)
+              // Addons such as HentaiStream expose concrete episode IDs in their metadata.
+              // Resolve those episodes directly; the broad parent request returns the same
+              // episodes again and used to fill the picker with duplicate/stale entries.
+              knownSeasonResults
+            }.distinctBy { stream -> stream.url.substringBefore("&mpvinfinity=") }
             val allStreams = resolvedStreams.map { stream ->
               if (stream.season != null && stream.episode != null) stream else {
                 val match = Regex("(?i)(?:^|[^a-z0-9])s(\\d{1,2})[ ._-]*e(\\d{1,3})(?:[^a-z0-9]|$)").find(stream.title)
