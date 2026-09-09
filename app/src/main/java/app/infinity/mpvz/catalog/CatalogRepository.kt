@@ -39,6 +39,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.net.URLEncoder
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -132,6 +133,7 @@ class KitsuAnimeRepository {
 class StremioCatalogRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
+  private val manifestCache = ConcurrentHashMap<String, JsonObject>()
 
   suspend fun manifestName(url: String): String? = withContext(Dispatchers.IO) {
     runCatching { getJson(url).jsonObject["name"]?.jsonPrimitive?.contentOrNull }.getOrNull()
@@ -140,7 +142,9 @@ class StremioCatalogRepository {
   suspend fun load(source: CatalogSource, query: String?): List<MediaItem> = withContext(Dispatchers.IO) {
     Log.i(DIAG_TAG, "catalog start source=${source.id} query=${query ?: "<home>"} manifest=${source.manifestUrl}")
     runCatching {
-      val manifest = getJson(source.manifestUrl).jsonObject
+      val manifest = manifestCache[source.manifestUrl] ?: getJson(source.manifestUrl).jsonObject.also {
+        manifestCache[source.manifestUrl] = it
+      }
       val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
           // Home only needs one representative rail from each addon. Loading every
           // catalog here fetched hundreds of metadata entries before the screen settled.

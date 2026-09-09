@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.lifecycle.ViewModelProvider
 
@@ -39,6 +40,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   val catalogSources: StateFlow<List<CatalogSource>> = _catalogSources.asStateFlow()
   private val animeRepository = KitsuAnimeRepository()
   private val cinemetaRepository = CinemetaCatalogRepository()
+  private val stremioRepository = StremioCatalogRepository()
   private val resolver = CloudStreamResolver(settings)
   private val _state = MutableStateFlow(CatalogState())
   val state: StateFlow<CatalogState> = _state.asStateFlow()
@@ -55,7 +57,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     syncCatalogResolvers(_catalogSources.value)
     loadTrending()
     viewModelScope.launch {
-      val repository = StremioCatalogRepository()
+      val repository = stremioRepository
       val named = _catalogSources.value.map { source ->
         if (!source.id.startsWith("cinemeta-") && source.id != "kitsu-anime") source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
       }
@@ -191,7 +193,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     _catalogSources.value = sources
     syncCatalogResolvers(sources)
     viewModelScope.launch {
-      val repository = StremioCatalogRepository()
+      val repository = stremioRepository
       val named = sources.map { source ->
         if (!source.id.startsWith("cinemeta-") && source.id != "kitsu-anime") source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
       }
@@ -230,17 +232,52 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   private suspend fun runSearch(query: String) {
     Log.i(TAG, "search start query=\"$query\"")
-    _state.update { it.copy(isLoading = true) }
-    runCatching { loadFromProviders(query) }
-      .onSuccess { items ->
-        Log.i(TAG, "search complete query=\"$query\" items=${items.size} rails=${items.map { it.catalogSourceId to it.catalogId }.distinct().size}")
-        if (_state.value.query == query) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) }
+    _state.update { it.copy(isLoading = true, error = null) }
+    runProgressiveSearch(query)
+  }
+
+  private suspend fun runProgressiveSearch(query: String) = coroutineScope {
+    val providers = _state.value.enabledProviders
+    val enabledSources = settings.catalogSources().filter { it.isEnabled }
+    val jobs = mutableListOf<Job>()
+
+    fun publish(items: List<MediaItem>) {
+      if (_state.value.query != query || items.isEmpty()) return
+      _state.update { state ->
+        val merged = (state.items + items).distinctBy { "${it.catalogSourceId ?: it.provider}:${it.catalogId ?: ""}:${it.providerId ?: it.id}" }
+        state.copy(items = merged, catalogPage = 1, canLoadMore = merged.isNotEmpty())
       }
-      .onFailure { error ->
-        if (error is CancellationException) throw error
-        Log.e(TAG, "search failed query=\"$query\" message=${error.message}", error)
-        if (_state.value.query == query) _state.update { it.copy(items = emptyList(), isLoading = false, error = error.message) }
+    }
+
+    if (CatalogProvider.CINEMETA in providers && enabledSources.any { it.id.startsWith("cinemeta-") }) {
+      jobs += launch {
+        runCatching { cinemetaRepository.search(query) }
+          .onSuccess { publish(it) }
+          .onFailure { if (it !is CancellationException) Log.w(TAG, "Cinemeta search failed: ${it.message}") }
       }
+    }
+    if (CatalogProvider.KITSU in providers && enabledSources.any { it.id == "kitsu-anime" }) {
+      jobs += launch {
+        runCatching { animeRepository.popular(query) }
+          .onSuccess { publish(it) }
+          .onFailure { if (it !is CancellationException) Log.w(TAG, "Kitsu search failed: ${it.message}") }
+      }
+    }
+    enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }.forEach { source ->
+      jobs += launch {
+        val items = withTimeoutOrNull(3_000L) {
+          runCatching { stremioRepository.load(source, query) }
+            .onFailure { if (it !is CancellationException) Log.w(TAG, "Catalog search failed source=${source.id}: ${it.message}") }
+            .getOrDefault(emptyList())
+        }.orEmpty()
+        publish(items)
+      }
+    }
+    jobs.joinAll()
+    if (_state.value.query == query) {
+      _state.update { it.copy(isLoading = false, catalogPage = 1, canLoadMore = it.items.isNotEmpty()) }
+      Log.i(TAG, "search complete query=\"$query\" items=${_state.value.items.size}")
+    }
   }
 
   private suspend fun loadFromProviders(query: String?): List<MediaItem> {
@@ -268,7 +305,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
           .map { source ->
             async {
               val items = withTimeoutOrNull(3_000L) {
-                runCatching { StremioCatalogRepository().load(source, query) }.onFailure { error ->
+                runCatching { stremioRepository.load(source, query) }.onFailure { error ->
                   if (error is CancellationException) throw error
                   Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)
                 }.getOrDefault(emptyList())
