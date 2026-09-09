@@ -208,11 +208,15 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
 
   private suspend fun resolveFromEndpoint(baseUrl: String, item: MediaItem, season: Int?, episode: Int?): List<StreamOption> {
     val identifier = item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
-    val type = if (item.type == MediaType.TV) "series" else "movie"
+    val type = when {
+      item.provider == CatalogProvider.KITSU -> "anime"
+      item.type == MediaType.TV -> "series"
+      else -> "movie"
+    }
     val configuredPath = settings.resolverPath
-    val resourceIdentifier = if (type == "series" && season != null && episode != null) "$identifier:$season:$episode" else identifier
+    val resourceIdentifier = if ((type == "series" || type == "anime") && season != null && episode != null) "$identifier:$season:$episode" else identifier
     val path = if (configuredPath == DEFAULT_STREAM_PATH && resourceIdentifier != identifier) {
-      "/stream/series/$resourceIdentifier.json"
+      "/stream/$type/$resourceIdentifier.json"
     } else configuredPath
       .replace("{type}", type)
       .replace("{imdbId}", resourceIdentifier)
