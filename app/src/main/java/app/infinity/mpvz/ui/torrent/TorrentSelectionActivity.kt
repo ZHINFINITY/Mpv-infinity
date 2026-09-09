@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -39,6 +40,7 @@ import kotlinx.coroutines.coroutineScope
 import org.koin.android.ext.android.inject
 
 class TorrentSelectionActivity : AppCompatActivity() {
+  private companion object { const val DIAG_TAG = "MpvCatalogDiag" }
   private val torrentStreamingEngine: TorrentStreamingEngine by inject()
   private val streamEntryRepository: NetworkStreamEntryRepository by inject()
   private val wyzieSearchRepository: WyzieSearchRepository by inject()
@@ -56,7 +58,9 @@ class TorrentSelectionActivity : AppCompatActivity() {
     super.onCreate(savedInstanceState)
 
     val source = extractTorrentSource(intent)
+    Log.i(DIAG_TAG, "selection entry sourceKind=${source?.let { if (it.startsWith("http")) "http" else if (it.startsWith("magnet")) "magnet" else "other" } ?: "none"} hasResolverItem=${source.isNullOrBlank() && intent.hasExtra("catalog_provider_id")}")
     if (source.isDirectPlayableUrl()) {
+      Log.i(DIAG_TAG, "direct playback dispatch urlHost=${runCatching { Uri.parse(source).host }.getOrNull()}")
       startActivity(Intent(this, PlayerActivity::class.java).apply {
         action = Intent.ACTION_VIEW
         data = Uri.parse(source)
@@ -135,6 +139,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
               })
             }
             val itemWithResolverSeasons = completeItem.copy(seasons = (completeItem.seasons + resolverSeasons).distinctBy(Season::number).sortedBy(Season::number))
+            Log.i(DIAG_TAG, "resolver item title=\"${completeItem.title}\" type=${completeItem.catalogType ?: completeItem.type} streams=${allStreams.size} playable=${allStreams.count { it.isPlayable }}")
             viewModel.initializeResolver(torrentInput("", intent, itemWithResolverSeasons), allStreams)
           }
         }

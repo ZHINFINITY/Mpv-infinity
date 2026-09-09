@@ -1,6 +1,7 @@
 package app.infinity.mpvz.catalog
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -21,6 +22,7 @@ data class TorrentLaunchRequest(val item: MediaItem, val stream: StreamOption, v
 
 class CatalogViewModel(application: Application) : AndroidViewModel(application) {
   companion object {
+    private const val TAG = "MpvCatalogDiag"
     fun Factory(application: Application): ViewModelProvider.Factory =
       object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -46,6 +48,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   val autoChooseBestTorrent: Boolean get() = settings.autoChooseBestTorrent
 
   init {
+    Log.i(TAG, "init sources=${_catalogSources.value.map { "${it.id}:${it.isEnabled}" }} resolvers=${_resolvers.value.map { "${it.baseUrl}:${it.enabled}" }}")
     syncCatalogResolvers(_catalogSources.value)
     loadTrending()
     viewModelScope.launch {
@@ -62,6 +65,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   fun setQuery(query: String) {
     val normalized = query.trim()
+    Log.i(TAG, "setQuery rawLength=${query.length} normalized=\"$normalized\"")
     _state.update { it.copy(query = normalized, items = if (normalized.isBlank()) it.items else emptyList(), error = null) }
     searchJob?.cancel()
     searchJob = viewModelScope.launch {
@@ -208,15 +212,23 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   private suspend fun runSearch(query: String) {
+    Log.i(TAG, "search start query=\"$query\"")
     _state.update { it.copy(isLoading = true) }
     runCatching { loadFromProviders(query) }
-      .onSuccess { items -> if (_state.value.query == query) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
-      .onFailure { error -> if (_state.value.query == query) _state.update { it.copy(items = emptyList(), isLoading = false, error = error.message) } }
+      .onSuccess { items ->
+        Log.i(TAG, "search complete query=\"$query\" items=${items.size} rails=${items.map { it.catalogSourceId to it.catalogId }.distinct().size}")
+        if (_state.value.query == query) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) }
+      }
+      .onFailure { error ->
+        Log.e(TAG, "search failed query=\"$query\" message=${error.message}", error)
+        if (_state.value.query == query) _state.update { it.copy(items = emptyList(), isLoading = false, error = error.message) }
+      }
   }
 
   private suspend fun loadFromProviders(query: String?): List<MediaItem> {
     val providers = _state.value.enabledProviders
     val enabledSources = settings.catalogSources().filter { it.isEnabled }
+    Log.i(TAG, "load query=${query ?: "<home>"} providers=$providers sources=${enabledSources.map { it.id }}")
     val sources = enabledSources.map { it.id }.toSet()
     val (cinemeta, anime, custom) = coroutineScope {
       val cinemetaJob = async {
@@ -236,7 +248,9 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       }
       Triple(cinemetaJob.await(), animeJob.await(), customJob.await())
     }
-    return (cinemeta + anime + custom).distinctBy { "${it.catalogSourceId ?: it.provider}:${it.catalogId ?: ""}:${it.providerId ?: it.id}" }
+    val result = (cinemeta + anime + custom).distinctBy { "${it.catalogSourceId ?: it.provider}:${it.catalogId ?: ""}:${it.providerId ?: it.id}" }
+    Log.i(TAG, "load complete query=${query ?: "<home>"} cinemeta=${cinemeta.size} anime=${anime.size} custom=${custom.size} total=${result.size}")
+    return result
   }
 }
 

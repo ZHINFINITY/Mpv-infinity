@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.catalog.CatalogViewModel
@@ -133,6 +134,9 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     val isRefreshing = remember { mutableStateOf(false) }
     val refreshScope = rememberCoroutineScope()
     val searchActive = isSearching || state.query.isNotBlank()
+    LaunchedEffect(searchActive, state.query, state.items.size, catalogSources) {
+      Log.i("MpvCatalogDiag", "screen searchActive=$searchActive query=\"${state.query}\" items=${state.items.size} sources=${catalogSources.map { "${it.id}:${it.isEnabled}" }} browseRail=${browseRail ?: "<home>"}")
+    }
     BackHandler(enabled = searchActive || browseRail != null) {
       if (browseRail != null) browseRail = null
       else {
@@ -261,6 +265,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
 }
 
 private fun openResolverChooser(context: android.content.Context, item: MediaItem) {
+  Log.i("MpvCatalogDiag", "item click title=\"${item.title}\" source=${item.catalogSourceId} catalog=${item.catalogId} type=${item.catalogType} providerId=${item.providerId}")
   context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
     action = Intent.ACTION_VIEW
     putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)

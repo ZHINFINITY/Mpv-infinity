@@ -34,6 +34,7 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.net.URLEncoder
 
 private const val PREFS = "catalog_secure_settings"
+private const val DIAG_TAG = "MpvCatalogDiag"
 private const val DEFAULT_STREAM_PATH = "/stream/{type}/{imdbId}.json"
 private const val KITSU_CATALOG_URL = "https://anime-kitsu.strem.fun/catalog/anime/kitsu-anime-popular.json"
 private const val CINEMETA_BASE_URL = "https://v3-cinemeta.strem.io/catalog"
@@ -128,6 +129,7 @@ class StremioCatalogRepository {
   }
 
   suspend fun load(source: CatalogSource, query: String?): List<MediaItem> = withContext(Dispatchers.IO) {
+    Log.i(DIAG_TAG, "catalog start source=${source.id} query=${query ?: "<home>"} manifest=${source.manifestUrl}")
     runCatching {
       val manifest = getJson(source.manifestUrl).jsonObject
       val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
@@ -140,6 +142,7 @@ class StremioCatalogRepository {
           val supportsSearch = "search" in extras
           val suffix = if (!query.isNullOrBlank() && supportsSearch) "/search=${URLEncoder.encode(query, "UTF-8")}" else ""
           val base = source.manifestUrl.trimEnd('/').removeSuffix("manifest.json")
+          Log.i(DIAG_TAG, "catalog request source=${source.id} type=$type id=$id supportsSearch=$supportsSearch url=${base}catalog/$type/$id$suffix.json")
           val payload = getJson("${base}catalog/$type/$id$suffix.json").jsonObject
           payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
           val meta = element.jsonObject
@@ -166,9 +169,11 @@ class StremioCatalogRepository {
               ?: emptyList(),
           )
           }.filter { query.isNullOrBlank() || supportsSearch || it.title.contains(query, ignoreCase = true) || it.overview.contains(query, ignoreCase = true) }
-        }.getOrDefault(emptyList())
+        }.onFailure { error -> Log.e(DIAG_TAG, "catalog failed source=${source.id} message=${error.message}", error) }.getOrDefault(emptyList())
       }
-    }.getOrDefault(emptyList())
+    }.onSuccess { items -> Log.i(DIAG_TAG, "catalog complete source=${source.id} items=${items.size}") }
+      .onFailure { error -> Log.e(DIAG_TAG, "manifest failed source=${source.id} message=${error.message}", error) }
+      .getOrDefault(emptyList())
   }
 
   private fun getJson(url: String): JsonElement = client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
@@ -262,6 +267,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       Log.w("CloudStreamResolver", "No active stream resolver is configured")
       return@withContext emptyList()
     }
+    Log.i(DIAG_TAG, "resolve start title=\"${item.title}\" type=${item.catalogType ?: item.type} providerId=${item.providerId ?: "<none>"} endpoints=${endpoints.map { it.baseUrl }} season=$season episode=$episode")
     coroutineScope {
       endpoints.map { endpoint ->
         async {
@@ -284,6 +290,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       }.awaitAll().flatten()
         .distinctBy { it.url }
         .sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
+        .also { Log.i(DIAG_TAG, "resolve complete title=\"${item.title}\" streams=${it.size} playable=${it.count { stream -> stream.isPlayable }}") }
     }
     }
   }
@@ -322,7 +329,9 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .apply { if (settings.resolverToken.isNotBlank()) addHeader("Authorization", "Bearer ${settings.resolverToken}") }
       .get()
       .build()
+    Log.i(DIAG_TAG, "resolver request endpoint=${baseUrl.trimEnd('/')} path=$path type=$type identifier=$identifier season=$season episode=$episode")
     return client.newCall(request).execute().use { response ->
+      Log.i(DIAG_TAG, "resolver response endpoint=${baseUrl.trimEnd('/')} path=$path status=${response.code}")
       if (!response.isSuccessful) {
         Log.w("CloudStreamResolver", "Resolver ${request.url} returned HTTP ${response.code}")
         error("Resolver request failed (${response.code})")
