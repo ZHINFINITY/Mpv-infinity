@@ -4496,6 +4496,12 @@ class PlayerActivity :
 
   private fun finishAtEofIfRequested() {
     isAdvancingAtEof = false
+    val currentUri = PlaybackSession.state.value.currentItem?.playableUri.orEmpty()
+    val duration = PlaybackSession.getPropertyDouble("duration") ?: 0.0
+    if (currentUri.contains("hentaistream-addon.") && currentUri.contains("/video-proxy?") && duration in 0.1..30.0) {
+      Log.w(TAG, "Keeping player open after suspicious short HentaiStream response duration=$duration uri=$currentUri")
+      return
+    }
     if (playerPreferences.closeAfterReachingEndOfVideo.get()) {
       finishAndRemoveTask()
     }
