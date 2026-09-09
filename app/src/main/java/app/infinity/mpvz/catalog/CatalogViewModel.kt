@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.lifecycle.ViewModelProvider
 
 data class TorrentLaunchRequest(val item: MediaItem, val stream: StreamOption, val streams: List<StreamOption> = listOf(stream), val season: Int? = null, val episode: Int? = null)
@@ -262,12 +263,19 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         } else emptyList()
       }
       val customJob = async {
-      enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }.flatMap { source ->
-        runCatching { StremioCatalogRepository().load(source, query) }.onFailure { error ->
-          if (error is CancellationException) throw error
-          Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)
-        }.getOrDefault(emptyList())
-      }
+        enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }
+          .map { source ->
+            async {
+              val items = withTimeoutOrNull(12_000L) {
+                runCatching { StremioCatalogRepository().load(source, query) }.onFailure { error ->
+                  if (error is CancellationException) throw error
+                  Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)
+                }.getOrDefault(emptyList())
+              }
+              if (items == null) Log.w("MpvCatalogDiag", "custom source timed out source=${source.id} query=${query ?: "<home>"}")
+              items.orEmpty()
+            }
+          }.awaitAll().flatten()
       }
       Triple(cinemetaJob.await(), animeJob.await(), customJob.await())
     }
