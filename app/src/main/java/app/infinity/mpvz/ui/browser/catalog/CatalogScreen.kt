@@ -253,7 +253,6 @@ private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> 
   AlertDialog(
     onDismissRequest = onDismiss,
     shape = RoundedCornerShape(28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     title = { Text("Stream resolvers", style = MaterialTheme.typography.headlineSmall) },
     text = {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -272,7 +271,7 @@ private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> 
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
       )
-      Button(onClick = { if (newUrl.isNotBlank()) { endpoints = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); newUrl = "" } }, shape = RoundedCornerShape(24.dp), colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors()) { Text("Add resolver") }
+      Button(onClick = { if (newUrl.isNotBlank()) { endpoints = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); newUrl = "" } }, shape = RoundedCornerShape(24.dp)) { Text("Add resolver") }
     }
   }, confirmButton = { Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }
