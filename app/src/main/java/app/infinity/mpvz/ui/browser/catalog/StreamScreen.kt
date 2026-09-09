@@ -110,7 +110,10 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
       if (heroItems.size > 1) {
         while (true) {
           delay(5500)
-          if (!heroPagerState.isScrollInProgress) heroPagerState.animateScrollToPage((heroPagerState.currentPage + 1) % heroItems.size, animationSpec = tween(800))
+          val pageCount = heroItems.size
+          if (pageCount > 1 && !heroPagerState.isScrollInProgress) {
+            heroPagerState.animateScrollToPage((heroPagerState.currentPage + 1) % pageCount, animationSpec = tween(800))
+          }
         }
       }
     }
