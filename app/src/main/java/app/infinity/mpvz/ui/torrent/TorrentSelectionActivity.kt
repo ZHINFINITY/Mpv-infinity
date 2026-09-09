@@ -106,12 +106,16 @@ class TorrentSelectionActivity : AppCompatActivity() {
               resolver.resolve(completeItem, null, null)
             } else {
               val broadResults = runCatching { resolver.resolve(completeItem, null, null) }.getOrDefault(emptyList())
-              val knownSeasonResults = completeItem.seasons.flatMap { season ->
-                season.episodes.flatMap { episode ->
-                  runCatching { resolver.resolve(completeItem, season.number, episode.number) }.getOrDefault(emptyList()).map {
-                    it.copy(season = season.number, episode = episode.number)
+              val knownSeasonResults = coroutineScope {
+                completeItem.seasons.flatMap { season ->
+                  season.episodes.map { episode ->
+                    async {
+                      runCatching { resolver.resolve(completeItem, season.number, episode.number) }
+                        .getOrDefault(emptyList())
+                        .map { it.copy(season = season.number, episode = episode.number) }
+                    }
                   }
-                }
+                }.awaitAll().flatten()
               }
               // Addons such as HentaiStream expose concrete episode IDs in their metadata;
               // the resolver expands those IDs. Do not probe twenty guessed seasons.
@@ -214,7 +218,8 @@ class TorrentSelectionActivity : AppCompatActivity() {
       putExtra("is_audio", request.file.mimeType.startsWith("audio/"))
     }
     startActivity(playbackIntent)
-    finishWithoutAnimation()
+    // Keep this picker underneath the player so Back returns to the episode list instead of
+    // dropping all the way to the stream home screen.
   }
 
   private fun closePicker() {
