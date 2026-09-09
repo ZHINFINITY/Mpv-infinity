@@ -242,9 +242,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         } else emptyList()
       }
       val customJob = async {
-      enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }.map { source ->
-        async { runCatching { StremioCatalogRepository().load(source, query) }.getOrDefault(emptyList()) }
-        }.awaitAll().flatten()
+      enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }.flatMap { source ->
+        runCatching { StremioCatalogRepository().load(source, query) }.onFailure { error ->
+          Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)
+        }.getOrDefault(emptyList())
+      }
       }
       Triple(cinemetaJob.await(), animeJob.await(), customJob.await())
     }
