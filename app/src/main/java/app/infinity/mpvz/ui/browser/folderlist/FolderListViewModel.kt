@@ -343,7 +343,7 @@ class FolderListViewModel(
                       getApplication<Application>()
                         .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
                         .getStringSet("values", emptySet())
-                        ?.contains("${video.path}\\u001f1") != true
+                        ?.contains("${video.path}\u001f1") != true
                     }
                   } else {
                   videos.count { video ->
