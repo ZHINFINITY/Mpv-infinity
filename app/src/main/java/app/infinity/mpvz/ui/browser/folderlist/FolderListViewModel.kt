@@ -466,7 +466,7 @@ class FolderListViewModel(
       videos.forEach { video ->
         overrideValues.removeIf { it.startsWith("${video.path}\\u001f") }
         if (!watched) {
-          overrideValues.add("${video.path}\\u001f0")
+          overrideValues.add("${video.path}\u001f0")
         }
       }
       videoOverrides.edit().putStringSet("values", overrideValues).apply()
