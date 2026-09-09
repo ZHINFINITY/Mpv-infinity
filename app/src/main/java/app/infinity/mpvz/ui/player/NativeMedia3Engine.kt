@@ -62,12 +62,12 @@ private class HentaiStreamLoggingDataSource(
 
   override fun open(dataSpec: DataSpec): Long {
     val returned = runCatching { upstream.open(dataSpec) }.onFailure { error ->
-      Log.e("Mpv∞-HentaiHTTP", "open failed uri=${dataSpec.uri} position=${dataSpec.position} length=${dataSpec.length}", error)
+      Log.e("Mpv∞-StreamHTTP", "open failed uri=${dataSpec.uri} position=${dataSpec.position} length=${dataSpec.length}", error)
     }.getOrThrow()
     val headers = upstream.responseHeaders
     fun header(name: String): String = headers.entries.firstOrNull { it.key.equals(name, true) }?.value?.joinToString("|") ?: "unknown"
     Log.i(
-      "Mpv∞-HentaiHTTP",
+      "Mpv∞-StreamHTTP",
       "response uri=${dataSpec.uri} position=${dataSpec.position} requested=${dataSpec.length} " +
         "returned=$returned contentLength=${header("Content-Length")} contentRange=${header("Content-Range")} " +
         "acceptRanges=${header("Accept-Ranges")} contentType=${header("Content-Type")}",
