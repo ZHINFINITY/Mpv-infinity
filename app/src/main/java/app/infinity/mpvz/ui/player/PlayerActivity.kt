@@ -182,6 +182,10 @@ private enum class BackgroundPlaybackStartResult {
  * @see MediaPlaybackService for background playback functionality
  */
 @Suppress("TooManyFunctions", "LargeClass")
+private fun isHentaiStreamDirect(uri: String): Boolean =
+  uri.contains("hentaistream-addon.", ignoreCase = true) &&
+    uri.contains("/video-proxy?", ignoreCase = true)
+
 class PlayerActivity :
   AppCompatActivity(),
   PlayerHost {
@@ -6183,7 +6187,9 @@ class PlayerActivity :
     val selectedEngine =
       when (configuredEngine) {
         PlaybackEngineMode.AUTO ->
-          if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
+          if (item.isHdrOrDolbyVision() || isHentaiStreamDirect(item.playableUri)) {
+            PlaybackEngineMode.NATIVE
+          } else PlaybackEngineMode.MPV
         else -> configuredEngine
       }
     val nativeResolvedUri =
