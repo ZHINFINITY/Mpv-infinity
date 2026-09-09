@@ -438,6 +438,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
           val playableUrl = if (clean.contains("hentaistream-addon.") && clean.contains("/video-proxy?")) {
             validatedHentaiStreamUrl(clean)
           } else clean
+          if (playableUrl == null) return@mapNotNull null
           candidate.copy(url = playableUrl, isPlayable = playableUrl.startsWith("magnet:", ignoreCase = true) || isPlayableRemoteStream(playableUrl))
         }
         else -> null
@@ -457,7 +458,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     return url.startsWith("http://") || url.startsWith("https://")
   }
 
-  private fun validatedHentaiStreamUrl(original: String): String {
+  private fun validatedHentaiStreamUrl(original: String): String? {
     var candidate = original
     repeat(6) { attempt ->
       val token = "${System.currentTimeMillis()}-${attempt}-${kotlin.random.Random.nextInt(1_000_000)}"
@@ -473,7 +474,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             // The addon selects its CDN variant from browser-like request headers. Do not seed
             // the cache key with the app-specific mpv-infinity UA; Stremio uses a browser UA.
             .header("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/151.0.7922.199 Mobile Safari/537.36")
-            .header("Referer", "https://hentaistream-addon.keypop3750.workers.dev")
+            .header("Referer", "https://hentaistream-addon.keypop3750.workers.dev/")
+            .header("Cache-Control", "no-cache")
             // MPV's first demuxer request is typically a 1 MiB range. A 2-byte probe can
             // report the full file while the subsequent MPV range still receives the cached
             // 233 KB HentaiSea placeholder.
@@ -481,12 +483,16 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             .get()
             .build(),
         ).execute().use { response ->
-          response.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull() ?: 0L
+          response.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
+            ?: response.header("Content-Length")?.toLongOrNull()
+            ?: 0L
         }
       }.getOrDefault(0L)
       if (fullSize > 1_000_000L) return candidate
     }
-    return candidate
+    // Never expose the known 5-second placeholder as a playable stream. It is better to show no
+    // stale link than to launch a valid MP4 that is only the addon’s access-warning clip.
+    return null
   }
 
   private fun parseCandidate(element: JsonElement): List<StreamOption> = when (element) {
