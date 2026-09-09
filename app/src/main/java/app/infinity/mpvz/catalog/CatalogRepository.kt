@@ -92,8 +92,9 @@ class KitsuAnimeRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
 
-  suspend fun popular(): List<MediaItem> = withContext(Dispatchers.IO) {
-    client.newCall(Request.Builder().url(KITSU_CATALOG_URL).get().build()).execute().use { response ->
+  suspend fun popular(query: String? = null): List<MediaItem> = withContext(Dispatchers.IO) {
+    val url = KITSU_CATALOG_URL.removeSuffix(".json") + (query?.takeIf { it.isNotBlank() }?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" } ?: "") + ".json"
+    client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
       if (!response.isSuccessful) error("Kitsu catalog request failed (${response.code})")
       val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
       metas.mapNotNull { entry ->
@@ -149,6 +150,7 @@ class StremioCatalogRepository {
             imdbId = meta["imdb_id"]?.jsonPrimitive?.contentOrNull,
             provider = CatalogProvider.CINEMETA,
             providerId = providerId,
+            catalogSourceId = source.id,
             releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
             contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
             duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
