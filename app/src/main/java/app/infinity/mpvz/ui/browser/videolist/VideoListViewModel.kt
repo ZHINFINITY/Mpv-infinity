@@ -127,6 +127,17 @@ class VideoListViewModel(
           split.size == 2 && split[0] == bucketId && split[1] == "0"
         } == true
 
+
+  private val folderMarkedWatched: Boolean
+    get() =
+      getApplication<Application>()
+        .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+        .getStringSet("values", emptySet<String>())
+        ?.any { value ->
+          val split = value.split("\u001f", limit = 2)
+          split.size == 2 && split[0] == bucketId && split[1] == "1"
+        } == true
+
   private fun explicitlyMarkedUnwatched(video: Video): Boolean =
     getApplication<Application>()
       .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
