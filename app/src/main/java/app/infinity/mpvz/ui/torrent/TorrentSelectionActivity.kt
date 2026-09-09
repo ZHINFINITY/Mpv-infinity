@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import app.infinity.mpvz.catalog.CloudStreamResolver
+import app.infinity.mpvz.catalog.CinemetaCatalogRepository
 import app.infinity.mpvz.catalog.Episode
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
@@ -76,13 +77,22 @@ class TorrentSelectionActivity : AppCompatActivity() {
         LaunchedEffect(resolverItem) {
           if (resolverItem != null && source.isNullOrBlank()) {
             val resolver = CloudStreamResolver(app.infinity.mpvz.catalog.CatalogSettings(applicationContext))
-            val allStreams = if (resolverItem.type == MediaType.MOVIE || resolverItem.seasons.isEmpty()) {
-              resolver.resolve(resolverItem, null, null)
+            val completeSeasons = if (resolverItem.type == MediaType.TV && !resolverItem.providerId.isNullOrBlank()) {
+              (resolverItem.seasons + runCatching { CinemetaCatalogRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList()))
+                .groupBy { it.number }
+                .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
+                .sortedBy { it.number }
             } else {
-              val broadResults = runCatching { resolver.resolve(resolverItem, null, null) }.getOrDefault(emptyList())
-              val knownSeasonResults = resolverItem.seasons.flatMap { season ->
+              resolverItem.seasons
+            }
+            val completeItem = resolverItem.copy(seasons = completeSeasons)
+            val allStreams = if (completeItem.type == MediaType.MOVIE || completeItem.seasons.isEmpty()) {
+              resolver.resolve(completeItem, null, null)
+            } else {
+              val broadResults = runCatching { resolver.resolve(completeItem, null, null) }.getOrDefault(emptyList())
+              val knownSeasonResults = completeItem.seasons.flatMap { season ->
                 season.episodes.flatMap { episode ->
-                  runCatching { resolver.resolve(resolverItem, season.number, episode.number) }.getOrDefault(emptyList()).map {
+                  runCatching { resolver.resolve(completeItem, season.number, episode.number) }.getOrDefault(emptyList()).map {
                     it.copy(season = season.number, episode = episode.number)
                   }
                 }
@@ -90,7 +100,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
               val discoveredSeasonResults = coroutineScope {
                 (1..20).map { seasonNumber ->
                   async {
-                    runCatching { resolver.resolve(resolverItem, seasonNumber, null) }
+                      runCatching { resolver.resolve(completeItem, seasonNumber, null) }
                       .getOrDefault(emptyList())
                       .map { stream -> stream.copy(season = stream.season ?: seasonNumber) }
                   }
@@ -106,8 +116,8 @@ class TorrentSelectionActivity : AppCompatActivity() {
                 Episode(episode, "Episode $episode", "", null)
               })
             }
-            val completeItem = resolverItem.copy(seasons = (resolverItem.seasons + resolverSeasons).distinctBy(Season::number).sortedBy(Season::number))
-            viewModel.initializeResolver(torrentInput("", intent, completeItem), allStreams)
+            val itemWithResolverSeasons = completeItem.copy(seasons = (completeItem.seasons + resolverSeasons).distinctBy(Season::number).sortedBy(Season::number))
+            viewModel.initializeResolver(torrentInput("", intent, itemWithResolverSeasons), allStreams)
           }
         }
         TorrentSelectionScreen(

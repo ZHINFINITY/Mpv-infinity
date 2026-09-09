@@ -112,9 +112,22 @@ class KitsuAnimeRepository {
 class CinemetaCatalogRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
-
   suspend fun popular(): List<MediaItem> = request(null)
   suspend fun search(value: String): List<MediaItem> = request(value)
+
+  suspend fun seasons(providerId: String): List<Season> = withContext(Dispatchers.IO) {
+    val request = Request.Builder().url("https://v3-cinemeta.strem.io/meta/series/${URLEncoder.encode(providerId, "UTF-8")}.json").get().build()
+    client.newCall(request).execute().use { response ->
+      if (!response.isSuccessful) return@withContext emptyList()
+      val videos = json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty()
+      videos.mapNotNull { element ->
+        val video = element.jsonObject
+        val season = video["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+        val episode = video["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+        season to Episode(episode, video["title"]?.jsonPrimitive?.contentOrNull ?: "Episode $episode", video["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), video["thumbnail"]?.jsonPrimitive?.contentOrNull, video["runtime"]?.jsonPrimitive?.contentOrNull)
+      }.groupBy({ it.first }, { it.second }).map { (number, episodes) -> Season(number, episodes.sortedBy { it.number }) }.sortedBy { it.number }
+    }
+  }
 
   private suspend fun request(value: String?): List<MediaItem> = withContext(Dispatchers.IO) {
     listOf("movie", "series").flatMap { type ->
