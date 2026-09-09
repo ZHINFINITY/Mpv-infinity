@@ -195,9 +195,17 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     coroutineScope {
       endpoints.map { endpoint ->
         async {
-          runCatching { resolveFromEndpoint(endpoint.baseUrl, item, season, episode) }
-            .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
-            .getOrDefault(emptyList())
+          val types = if (item.provider == CatalogProvider.KITSU) listOf("anime", "series", "movie") else listOf(null)
+          val identifiers = if (item.provider == CatalogProvider.KITSU) {
+            listOfNotNull(item.providerId, item.imdbId, item.id.toString()).distinct()
+          } else listOf(null)
+          types.flatMap { type ->
+            identifiers.map { identifier ->
+              runCatching { resolveFromEndpoint(endpoint.baseUrl, item, season, episode, type, identifier) }
+                .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
+                .getOrDefault(emptyList())
+            }.flatten()
+          }
         }
       }.awaitAll().flatten()
         .distinctBy { it.url }
@@ -206,9 +214,16 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     }
   }
 
-  private suspend fun resolveFromEndpoint(baseUrl: String, item: MediaItem, season: Int?, episode: Int?): List<StreamOption> {
-    val identifier = item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
-    val type = when {
+  private suspend fun resolveFromEndpoint(
+    baseUrl: String,
+    item: MediaItem,
+    season: Int?,
+    episode: Int?,
+    typeOverride: String? = null,
+    identifierOverride: String? = null,
+  ): List<StreamOption> {
+    val identifier = identifierOverride ?: item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
+    val type = typeOverride ?: when {
       item.provider == CatalogProvider.KITSU -> "anime"
       item.type == MediaType.TV -> "series"
       else -> "movie"
