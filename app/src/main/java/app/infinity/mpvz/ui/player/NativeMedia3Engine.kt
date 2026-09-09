@@ -440,7 +440,15 @@ class NativeMedia3Engine(context: Context) {
       }} " +
         "sourceUri=$sourceUri positionMs=$startPositionMs autoplay=$autoplay",
     )
-    httpDataSourceFactory.setDefaultRequestProperties(headers)
+    val requestHeaders = if (isHentaiStreamUri) {
+      headers.toMutableMap().apply {
+        put("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/151.0.7922.199 Mobile Safari/537.36")
+        put("Referer", "https://hentaistream-addon.keypop3750.workers.dev/")
+        put("Accept", "video/mp4,video/*;q=0.9,*/*;q=0.8")
+        put("Cache-Control", "no-cache")
+      }
+    } else headers
+    httpDataSourceFactory.setDefaultRequestProperties(requestHeaders)
     val mediaItem =
       MediaItem.Builder()
         .setUri(mediaUri)
