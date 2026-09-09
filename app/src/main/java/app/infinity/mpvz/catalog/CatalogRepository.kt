@@ -103,8 +103,10 @@ class KitsuAnimeRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
 
-  suspend fun popular(query: String? = null): List<MediaItem> = withContext(Dispatchers.IO) {
-    val url = KITSU_CATALOG_URL.removeSuffix(".json") + (query?.takeIf { it.isNotBlank() }?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" } ?: "") + ".json"
+  suspend fun popular(query: String? = null, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
+    val skip = if (page > 1) "/skip=${(page - 1) * 30}" else ""
+    val search = query?.takeIf { it.isNotBlank() }?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+    val url = KITSU_CATALOG_URL.removeSuffix(".json") + skip + search + ".json"
     client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
       if (!response.isSuccessful) error("Kitsu catalog request failed (${response.code})")
       val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
@@ -139,16 +141,16 @@ class StremioCatalogRepository {
     runCatching { getJson(url).jsonObject["name"]?.jsonPrimitive?.contentOrNull }.getOrNull()
   }
 
-  suspend fun load(source: CatalogSource, query: String?): List<MediaItem> = withContext(Dispatchers.IO) {
+  suspend fun load(source: CatalogSource, query: String?, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
     Log.i(DIAG_TAG, "catalog start source=${source.id} query=${query ?: "<home>"} manifest=${source.manifestUrl}")
     runCatching {
       val manifest = manifestCache[source.manifestUrl] ?: getJson(source.manifestUrl).jsonObject.also {
         manifestCache[source.manifestUrl] = it
       }
       val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
-          // Home only needs one representative rail from each addon. Loading every
-          // catalog here fetched hundreds of metadata entries before the screen settled.
-          val catalogsToLoad = if (query.isNullOrBlank()) catalogs.take(1) else catalogs
+          // Each advertised catalog is a distinct rail. Add-ons that expose only streams still
+          // contribute no catalog items and therefore do not affect the resolver path.
+          val catalogsToLoad = catalogs
           catalogsToLoad.flatMap { catalogElement ->
         runCatching {
           val catalog = catalogElement.jsonObject
@@ -157,7 +159,9 @@ class StremioCatalogRepository {
           val extras = catalog["extra"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.lowercase() }
           val supportsSearch = "search" in extras
           if (!query.isNullOrBlank() && !supportsSearch) return@runCatching emptyList()
-          val suffix = if (!query.isNullOrBlank()) "/search=${encodePathSegment(query)}" else ""
+          val skipSuffix = if (page > 1) "/skip=${(page - 1) * 30}" else ""
+          val searchSuffix = if (!query.isNullOrBlank()) "/search=${encodePathSegment(query)}" else ""
+          val suffix = skipSuffix + searchSuffix
           val base = source.manifestUrl.trimEnd('/').removeSuffix("manifest.json")
           Log.i(DIAG_TAG, "catalog request source=${source.id} type=$type id=$id supportsSearch=$supportsSearch url=${base}catalog/$type/$id$suffix.json")
           val payload = getJson("${base}catalog/$type/$id$suffix.json").jsonObject
@@ -236,8 +240,8 @@ class StremioCatalogRepository {
 class CinemetaCatalogRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
-  suspend fun popular(): List<MediaItem> = request(null)
-  suspend fun search(value: String): List<MediaItem> = request(value)
+  suspend fun popular(page: Int = 1): List<MediaItem> = request(null, page)
+  suspend fun search(value: String, page: Int = 1): List<MediaItem> = request(value, page)
 
   suspend fun seasons(providerId: String): List<Season> = withContext(Dispatchers.IO) {
     val request = Request.Builder().url("https://v3-cinemeta.strem.io/meta/series/${URLEncoder.encode(providerId, "UTF-8")}.json").get().build()
@@ -253,9 +257,11 @@ class CinemetaCatalogRepository {
     }
   }
 
-  private suspend fun request(value: String?): List<MediaItem> = withContext(Dispatchers.IO) {
+  private suspend fun request(value: String?, page: Int): List<MediaItem> = withContext(Dispatchers.IO) {
     listOf("movie", "series").flatMap { type ->
-      val suffix = value?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+      val skip = if (page > 1) "/skip=${(page - 1) * 30}" else ""
+      val search = value?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+      val suffix = skip + search
       val request = Request.Builder().url("$CINEMETA_BASE_URL/$type/top$suffix.json").get().build()
       client.newCall(request).execute().use { response ->
         if (!response.isSuccessful) return@flatMap emptyList()

@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -151,7 +152,16 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     var searchFilter by rememberSaveable { mutableStateOf("All") }
     val isRefreshing = remember { mutableStateOf(false) }
     val refreshScope = rememberCoroutineScope()
+    val streamListState = rememberLazyListState()
     val searchActive = isSearching || state.query.isNotBlank()
+    LaunchedEffect(browseRail) {
+      androidx.compose.runtime.snapshotFlow {
+        streamListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+      }.collect { lastVisibleIndex ->
+        val total = streamListState.layoutInfo.totalItemsCount
+        if (browseRail != null && total > 0 && lastVisibleIndex >= total - 4) viewModel.loadMore()
+      }
+    }
     LaunchedEffect(searchActive, state.query, state.items.size, catalogSources) {
       Log.i("MpvCatalogDiag", "screen searchActive=$searchActive query=\"${state.query}\" items=${state.items.size} sources=${catalogSources.map { "${it.id}:${it.isEnabled}" }} browseRail=${browseRail ?: "<home>"}")
     }
@@ -211,6 +221,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         modifier = Modifier.fillMaxSize().padding(padding),
       ) {
         LazyColumn(
+          state = streamListState,
           modifier = Modifier.fillMaxSize(),
           contentPadding = PaddingValues(bottom = 96.dp),
           verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -233,6 +244,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             }
           }
         }
+        if (state.isLoading && state.items.isEmpty()) item { StreamLoadingState(searching = searchActive) }
         if (!searchActive && state.query.isBlank() && browseRail == null && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
         val sourceNames = catalogSources.associate { it.id to it.name }
         val rails = state.items.groupBy { item ->
@@ -287,7 +299,8 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             }
           }
         }
-        if (state.isLoading) item { Text("Loading streams…", modifier = Modifier.padding(16.dp)) }
+        if (state.isLoading && state.items.isNotEmpty()) item { StreamLoadingState(searching = searchActive) }
+        if (state.isLoadingMore) item { StreamLoadingState(searching = false, compact = true) }
         if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
         }
       }
@@ -319,6 +332,30 @@ private fun openResolverChooser(context: android.content.Context, item: MediaIte
     putExtra("is_series", item.type == MediaType.TV)
     putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
   })
+}
+
+@Composable
+private fun StreamLoadingState(searching: Boolean, compact: Boolean = false) {
+  Box(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compact) 12.dp else 40.dp),
+    contentAlignment = androidx.compose.ui.Alignment.Center,
+  ) {
+    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Icon(
+        Icons.RoundedFilled.Movie,
+        contentDescription = if (searching) "Searching" else "Loading catalog",
+        modifier = Modifier.size(if (compact) 32.dp else 56.dp),
+        tint = MaterialTheme.colorScheme.primary,
+      )
+      if (!compact) {
+        Text(
+          if (searching) "Finding titles" else "Loading catalog",
+          style = MaterialTheme.typography.titleMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
+  }
 }
 
 private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSeeMore: (() -> Unit)?, onClick: (MediaItem) -> Unit) {
