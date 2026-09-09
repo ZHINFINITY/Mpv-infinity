@@ -71,7 +71,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     // of the next word and trimming it makes multi-word searches impossible.
     val normalized = query
     Log.i(TAG, "setQuery rawLength=${query.length} normalized=\"$normalized\"")
-    _state.update { it.copy(query = normalized, items = if (normalized.isBlank()) it.items else emptyList(), error = null) }
+    // Do not render the previous search while the home catalog is being restored.
+    _state.update { it.copy(query = normalized, items = emptyList(), isLoading = true, error = null) }
     searchJob?.cancel()
     homeLoadJob?.cancel()
     searchJob = viewModelScope.launch {
@@ -266,7 +267,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }
           .map { source ->
             async {
-              val items = withTimeoutOrNull(12_000L) {
+              val items = withTimeoutOrNull(8_000L) {
                 runCatching { StremioCatalogRepository().load(source, query) }.onFailure { error ->
                   if (error is CancellationException) throw error
                   Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)

@@ -113,16 +113,9 @@ class TorrentSelectionActivity : AppCompatActivity() {
                   }
                 }
               }
-              val discoveredSeasonResults = coroutineScope {
-                (1..20).map { seasonNumber ->
-                  async {
-                      runCatching { resolver.resolve(completeItem, seasonNumber, null) }
-                      .getOrDefault(emptyList())
-                      .map { stream -> stream.copy(season = stream.season ?: seasonNumber) }
-                  }
-                }.awaitAll().flatten()
-              }
-              broadResults + knownSeasonResults + discoveredSeasonResults
+              // Addons such as HentaiStream expose concrete episode IDs in their metadata;
+              // the resolver expands those IDs. Do not probe twenty guessed seasons.
+              broadResults + knownSeasonResults
             }.distinctBy(StreamOption::url)
             val allStreams = resolvedStreams.map { stream ->
               if (stream.season != null && stream.episode != null) stream else {
