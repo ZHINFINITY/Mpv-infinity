@@ -177,7 +177,13 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     }
     require(endpoints.isNotEmpty()) { "Add an active stream resolver in Stream settings first." }
     coroutineScope {
-      endpoints.map { endpoint -> async { resolveFromEndpoint(endpoint.baseUrl, item, season, episode) } }.awaitAll().flatten()
+      endpoints.map { endpoint ->
+        async {
+          runCatching { resolveFromEndpoint(endpoint.baseUrl, item, season, episode) }
+            .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
+            .getOrDefault(emptyList())
+        }
+      }.awaitAll().flatten()
         .distinctBy { it.url }
         .sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
     }
