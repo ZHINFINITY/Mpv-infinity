@@ -108,6 +108,7 @@ class KitsuAnimeRepository {
           posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
           backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
           imdbId = meta["imdb_id"]?.jsonPrimitive?.contentOrNull,
+          catalogSourceId = "kitsu-anime",
           releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
           contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
           duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
@@ -134,11 +135,9 @@ class StremioCatalogRepository {
         val catalog = catalogElement.jsonObject
         val type = catalog["type"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()
         val id = catalog["id"]?.jsonPrimitive?.contentOrNull ?: return@flatMap emptyList()
-        val extras = catalog["extra"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
-        val suffix = when {
-          !query.isNullOrBlank() && "search" in extras -> "/search=${URLEncoder.encode(query, "UTF-8")}"
-          else -> ""
-        }
+        val extras = catalog["extra"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.lowercase() }
+        val supportsSearch = "search" in extras
+        val suffix = if (!query.isNullOrBlank() && supportsSearch) "/search=${URLEncoder.encode(query, "UTF-8")}" else ""
         val base = source.manifestUrl.trimEnd('/').removeSuffix("manifest.json")
         val payload = getJson("${base}catalog/$type/$id$suffix.json").jsonObject
         payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
@@ -156,11 +155,16 @@ class StremioCatalogRepository {
             providerId = providerId,
             catalogSourceId = source.id,
             catalogType = type,
+            catalogId = id,
+            catalogName = catalog["name"]?.jsonPrimitive?.contentOrNull ?: id,
             releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
             contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
             duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
+            genres = meta["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+              ?: meta["genre"]?.jsonPrimitive?.contentOrNull?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+              ?: emptyList(),
           )
-        }
+        }.filter { query.isNullOrBlank() || supportsSearch || it.title.contains(query, ignoreCase = true) || it.overview.contains(query, ignoreCase = true) }
       }
     }.getOrDefault(emptyList())
   }
@@ -222,7 +226,9 @@ class CinemetaCatalogRepository {
             backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
             provider = CatalogProvider.CINEMETA,
             providerId = providerId,
+            catalogSourceId = if (type == "series") "cinemeta-series" else "cinemeta-movies",
             seasons = seasons,
+            genres = meta["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
           )
         }
       }

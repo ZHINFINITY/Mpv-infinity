@@ -165,12 +165,16 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           )
         }
         if (heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
-        if (catalogSources.any { it.id == "cinemeta-movies" && it.isEnabled }) StreamRail("Trending Movies", state.items.filter { it.type.name == "MOVIE" && it.provider != CatalogProvider.KITSU }) { openResolverChooser(context, it) }
-        if (catalogSources.any { it.id == "cinemeta-series" && it.isEnabled }) StreamRail("Popular Series", state.items.filter { it.type.name == "TV" && it.provider != CatalogProvider.KITSU }) { openResolverChooser(context, it) }
-        if (catalogSources.any { it.id == "kitsu-anime" && it.isEnabled }) StreamRail("Top Anime", state.items.filter { it.provider == CatalogProvider.KITSU }) { openResolverChooser(context, it) }
-        catalogSources.filter { it.id.startsWith("custom-") && it.isEnabled }.forEach { source ->
-          val sourceItems = state.items.filter { it.catalogSourceId == source.id }
-          if (sourceItems.isNotEmpty()) StreamRail(source.name, sourceItems) { openResolverChooser(context, it) }
+        val sourceNames = catalogSources.associate { it.id to it.name }
+        state.items.groupBy { item ->
+          item.catalogName ?: when (item.catalogSourceId) {
+            "cinemeta-movies" -> "Trending Movies"
+            "cinemeta-series" -> "Popular Series"
+            "kitsu-anime" -> "Top Anime"
+            else -> sourceNames[item.catalogSourceId] ?: item.provider.name
+          }
+        }.forEach { (title, sourceItems) ->
+          StreamRail(title, sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" }) { openResolverChooser(context, it) }
         }
         if (state.isLoading) item { Text("Loading streams…", modifier = Modifier.padding(16.dp)) }
         if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
@@ -210,7 +214,7 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onCl
   item { itemHeader(title) }
   item {
     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-      items(items.take(18), key = { "stream-${it.provider}-${it.providerId ?: it.id}" }) { item ->
+      items(items.take(18), key = { "stream-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
         androidx.compose.foundation.layout.Box(Modifier.width(130.dp)) { CatalogGridItem(item, false) { onClick(item) } }
       }
     }
