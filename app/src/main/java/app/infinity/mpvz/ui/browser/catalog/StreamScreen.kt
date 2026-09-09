@@ -358,7 +358,6 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
     shape = RoundedCornerShape(28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     title = { Text("Stream resolvers", style = MaterialTheme.typography.headlineSmall) },
     text = {
       androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -388,7 +387,6 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
         androidx.compose.material3.Button(
           onClick = { if (newUrl.isNotBlank()) { viewModel.addResolverEndpoint(newUrl); endpoints = viewModel.resolvers.value; newUrl = "" } },
           shape = RoundedCornerShape(24.dp),
-          colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(),
         ) { Text("Add resolver + catalog rails") }
       }
     },
@@ -404,7 +402,6 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
     shape = RoundedCornerShape(28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
     title = { Text("Catalog providers", style = MaterialTheme.typography.headlineSmall) },
     text = {
       androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -436,7 +433,7 @@ private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSe
             sources = (sources.filterNot { it.manifestUrl.equals(manifestUrl, ignoreCase = true) } + source)
             newUrl = ""
           }
-        }, shape = RoundedCornerShape(24.dp), colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors()) { Text("Add catalog") }
+        }, shape = RoundedCornerShape(24.dp)) { Text("Add catalog") }
       }
     },
     confirmButton = { androidx.compose.material3.Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") } },
