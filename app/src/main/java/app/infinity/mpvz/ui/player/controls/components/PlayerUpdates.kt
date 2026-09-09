@@ -146,6 +146,7 @@ fun TranslatedSubtitleText(
   shadowOffset: Float = 0f,
   bold: Boolean = false,
   italic: Boolean = false,
+  fontFamily: androidx.compose.ui.text.font.FontFamily = androidx.compose.ui.text.font.FontFamily.Default,
   textAlign: TextAlign = TextAlign.Center,
 ) {
   Text(
@@ -160,6 +161,7 @@ fun TranslatedSubtitleText(
     fontSize = fontSize,
     fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
     fontStyle = if (italic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
+    fontFamily = fontFamily,
     textAlign = textAlign,
     style = MaterialTheme.typography.bodyLarge.copy(
       shadow = androidx.compose.ui.graphics.Shadow(
