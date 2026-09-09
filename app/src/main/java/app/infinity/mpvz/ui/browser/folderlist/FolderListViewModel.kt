@@ -336,6 +336,15 @@ class FolderListViewModel(
                           playbackState.timeRemaining >= durationSeconds - 1
                       )
                     }
+                  } else if (watchedOverride == false) {
+                    videos.count { video ->
+                      // An unwatched folder makes children NEW by default, but an explicit
+                      // child swipe-to-watched must remove that child from the folder badge.
+                      getApplication<Application>()
+                        .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+                        .getStringSet("values", emptySet())
+                        ?.contains("${video.path}\\u001f1") != true
+                    }
                   } else {
                   videos.count { video ->
                     // Check if video was modified within threshold days unless the user
