@@ -65,6 +65,7 @@ internal fun buildVideoWithPlaybackInfo(
   newLabelDays: Int,
   watchedThreshold: Int,
   folderMarkedUnwatched: Boolean = false,
+  folderMarkedWatched: Boolean = false,
   explicitlyMarkedUnwatched: Boolean = false,
   explicitlyMarkedWatched: Boolean = false,
 ): VideoWithPlaybackInfo {
@@ -81,7 +82,7 @@ internal fun buildVideoWithPlaybackInfo(
   val isWatched =
     explicitlyMarkedWatched ||
       (!explicitlyMarkedUnwatched &&
-        !folderMarkedUnwatched &&
+        (folderMarkedWatched || !folderMarkedUnwatched) &&
         (playbackState?.hasBeenWatched == true ||
           (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))
       )
@@ -352,6 +353,7 @@ class VideoListViewModel(
           newLabelDays = newLabelDays,
           watchedThreshold = watchedThreshold,
           folderMarkedUnwatched = folderMarkedUnwatched,
+          folderMarkedWatched = folderMarkedWatched,
           explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
           explicitlyMarkedWatched = explicitlyMarkedWatched(video),
         )
@@ -382,6 +384,7 @@ class VideoListViewModel(
         newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
         watchedThreshold = browserPreferences.watchedThreshold.get(),
         folderMarkedUnwatched = folderMarkedUnwatched,
+        folderMarkedWatched = folderMarkedWatched,
         explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
         explicitlyMarkedWatched = explicitlyMarkedWatched(video),
       )
