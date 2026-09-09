@@ -66,7 +66,9 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun setQuery(query: String) {
-    val normalized = query.trim()
+    // Do not trim while the user is typing: a trailing space is the first character
+    // of the next word and trimming it makes multi-word searches impossible.
+    val normalized = query
     Log.i(TAG, "setQuery rawLength=${query.length} normalized=\"$normalized\"")
     _state.update { it.copy(query = normalized, items = if (normalized.isBlank()) it.items else emptyList(), error = null) }
     searchJob?.cancel()
