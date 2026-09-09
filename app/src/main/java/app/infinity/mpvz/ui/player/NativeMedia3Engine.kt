@@ -20,7 +20,10 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.FileDataSource
+import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -52,7 +55,33 @@ private object NativeMedia3Cache {
   }
 }
 
-data class NativePlaybackSnapshot(
+private class HentaiStreamLoggingDataSource(
+  private val upstream: DataSource,
+) : DataSource {
+  override fun addTransferListener(transferListener: TransferListener) = upstream.addTransferListener(transferListener)
+
+  override fun open(dataSpec: DataSpec): Long {
+    val returned = runCatching { upstream.open(dataSpec) }.onFailure { error ->
+      Log.e("Mpv∞-HentaiHTTP", "open failed uri=${dataSpec.uri} position=${dataSpec.position} length=${dataSpec.length}", error)
+    }.getOrThrow()
+    val headers = upstream.responseHeaders
+    fun header(name: String): String = headers.entries.firstOrNull { it.key.equals(name, true) }?.value?.joinToString("|") ?: "unknown"
+    Log.i(
+      "Mpv∞-HentaiHTTP",
+      "response uri=${dataSpec.uri} position=${dataSpec.position} requested=${dataSpec.length} " +
+        "returned=$returned contentLength=${header("Content-Length")} contentRange=${header("Content-Range")} " +
+        "acceptRanges=${header("Accept-Ranges")} contentType=${header("Content-Type")}",
+    )
+    return returned
+  }
+
+  override fun read(buffer: ByteArray, offset: Int, length: Int): Int = upstream.read(buffer, offset, length)
+  override fun getUri(): Uri? = upstream.uri
+  override fun getResponseHeaders(): Map<String, List<String>> = upstream.responseHeaders
+  override fun close() = upstream.close()
+}
+
+ data class NativePlaybackSnapshot(
   val isPlaying: Boolean = false,
   val isReady: Boolean = false,
   val isBuffering: Boolean = false,
@@ -107,7 +136,9 @@ class NativeMedia3Engine(context: Context) {
   // episode or seek. Keep this path network-only; Torrentio and ordinary HTTP sources retain the
   // existing cache behavior.
   private val directNetworkDataSourceFactory =
-    DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
+    DefaultDataSource.Factory(context.applicationContext, DataSource.Factory {
+      HentaiStreamLoggingDataSource(httpDataSourceFactory.createDataSource())
+    })
   // Local files must not be routed through the network cache. Apart from adding an unnecessary
   // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
   private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
