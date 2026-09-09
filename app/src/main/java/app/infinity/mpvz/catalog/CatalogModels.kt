@@ -27,6 +27,7 @@ data class MediaItem(
   val provider: CatalogProvider = CatalogProvider.CINEMETA,
   val providerId: String? = null,
   val catalogSourceId: String? = null,
+  val catalogType: String? = null,
   val releaseYear: String? = null,
   val contentRating: String? = null,
   val duration: String? = null,

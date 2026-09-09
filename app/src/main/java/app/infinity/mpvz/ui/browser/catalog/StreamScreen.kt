@@ -193,6 +193,8 @@ private fun openResolverChooser(context: android.content.Context, item: MediaIte
     putExtra("catalog_imdb_id", item.imdbId)
     putExtra("catalog_id", item.id)
     putExtra("catalog_provider", item.provider.name)
+    putExtra("catalog_source_id", item.catalogSourceId)
+    putExtra("catalog_type_name", item.catalogType)
     putExtra("catalog_type", item.type.name)
     putExtra("catalog_release_year", item.releaseYear)
     putExtra("catalog_rating", item.contentRating)
