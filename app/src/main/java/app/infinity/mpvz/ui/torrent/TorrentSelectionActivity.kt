@@ -31,6 +31,9 @@ import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.koin.android.ext.android.inject
 
 class TorrentSelectionActivity : AppCompatActivity() {
@@ -77,13 +80,23 @@ class TorrentSelectionActivity : AppCompatActivity() {
               resolver.resolve(resolverItem, null, null)
             } else {
               val broadResults = runCatching { resolver.resolve(resolverItem, null, null) }.getOrDefault(emptyList())
-              broadResults + resolverItem.seasons.flatMap { season ->
+              val knownSeasonResults = resolverItem.seasons.flatMap { season ->
                 season.episodes.flatMap { episode ->
-                  resolver.resolve(resolverItem, season.number, episode.number).map {
+                  runCatching { resolver.resolve(resolverItem, season.number, episode.number) }.getOrDefault(emptyList()).map {
                     it.copy(season = season.number, episode = episode.number)
                   }
                 }
               }
+              val discoveredSeasonResults = coroutineScope {
+                (1..20).map { seasonNumber ->
+                  async {
+                    runCatching { resolver.resolve(resolverItem, seasonNumber, null) }
+                      .getOrDefault(emptyList())
+                      .map { stream -> stream.copy(season = stream.season ?: seasonNumber) }
+                  }
+                }.awaitAll().flatten()
+              }
+              broadResults + knownSeasonResults + discoveredSeasonResults
             }.distinctBy(StreamOption::url)
             val resolverSeasons = allStreams.mapNotNull { stream ->
               val season = stream.season ?: return@mapNotNull null
