@@ -61,11 +61,12 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun setQuery(query: String) {
-    _state.update { it.copy(query = query, error = null) }
+    val normalized = query.trim()
+    _state.update { it.copy(query = normalized, items = if (normalized.isBlank()) it.items else emptyList(), error = null) }
     searchJob?.cancel()
     searchJob = viewModelScope.launch {
       delay(350)
-      if (query.isBlank()) loadTrending() else runSearch(query)
+      if (normalized.isBlank()) loadTrending() else runSearch(normalized)
     }
   }
 
@@ -210,7 +211,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     _state.update { it.copy(isLoading = true) }
     runCatching { loadFromProviders(query) }
       .onSuccess { items -> if (_state.value.query == query) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
-      .onFailure { error -> _state.update { it.copy(isLoading = false, error = error.message) } }
+      .onFailure { error -> if (_state.value.query == query) _state.update { it.copy(items = emptyList(), isLoading = false, error = error.message) } }
   }
 
   private suspend fun loadFromProviders(query: String?): List<MediaItem> {
