@@ -250,12 +250,11 @@ class CinemetaCatalogRepository {
   }
 
   private suspend fun request(value: String?): List<MediaItem> = withContext(Dispatchers.IO) {
-    coroutineScope {
-      listOf("movie", "series").map { type -> async {
+    listOf("movie", "series").flatMap { type ->
       val suffix = value?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
       val request = Request.Builder().url("$CINEMETA_BASE_URL/$type/top$suffix.json").get().build()
       client.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) return@async emptyList()
+        if (!response.isSuccessful) return@flatMap emptyList()
         val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
         metas.mapNotNull { entry ->
           val meta = entry.jsonObject
@@ -287,7 +286,6 @@ class CinemetaCatalogRepository {
           )
         }
       }
-      }.awaitAll().flatten()
     }
   }
 }
