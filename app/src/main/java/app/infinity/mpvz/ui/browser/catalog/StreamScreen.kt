@@ -187,7 +187,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             }
           }
         }
-        if (!isSearching && state.query.isBlank() && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
+        if (!isSearching && state.query.isBlank() && browseRail == null && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
         val sourceNames = catalogSources.associate { it.id to it.name }
         val rails = state.items.groupBy { item ->
           item.catalogName ?: when (item.catalogSourceId) {
@@ -219,7 +219,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             }
           }
         }
-        if (state.query.isNotBlank()) {
+        if (isSearching && state.query.isNotBlank()) {
           val searchItems = state.items.filter { item ->
             when (searchFilter) {
               "Movies" -> item.type == MediaType.MOVIE

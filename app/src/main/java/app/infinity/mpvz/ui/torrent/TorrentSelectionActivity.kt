@@ -56,6 +56,16 @@ class TorrentSelectionActivity : AppCompatActivity() {
     super.onCreate(savedInstanceState)
 
     val source = extractTorrentSource(intent)
+    if (source.isDirectPlayableUrl()) {
+      startActivity(Intent(this, PlayerActivity::class.java).apply {
+        action = Intent.ACTION_VIEW
+        data = Uri.parse(source)
+        putExtra(MediaUtils.EXTRA_MEDIA_TITLE, intent.getStringExtra(MediaUtils.EXTRA_MEDIA_TITLE).orEmpty())
+        putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, source)
+      })
+      finishWithoutAnimation()
+      return
+    }
     val resolverItem = if (source.isNullOrBlank()) resolverMediaItem(intent) else null
     if (source.isNullOrBlank() && resolverItem == null) {
       finishWithoutAnimation()
@@ -235,4 +245,11 @@ class TorrentSelectionActivity : AppCompatActivity() {
     }
     return null
   }
+}
+
+private fun String?.isDirectPlayableUrl(): Boolean {
+  val value = this?.trim().orEmpty()
+  if (!value.startsWith("http://") && !value.startsWith("https://")) return false
+  val path = value.substringBefore('?').substringBefore('#').lowercase()
+  return !path.endsWith(".torrent")
 }
