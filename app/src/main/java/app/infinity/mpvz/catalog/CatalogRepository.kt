@@ -329,12 +329,18 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             addonEpisodeIds(endpoint.baseUrl, item, season, episode).ifEmpty { listOf(null) }
           } else listOf(null)
           types.flatMap { type ->
-            identifiers.map { identifier ->
-              val episodeRequest = item.provider != CatalogProvider.KITSU && identifier != null
-              runCatching { resolveFromEndpoint(endpoint.baseUrl, item, if (episodeRequest) null else season, if (episodeRequest) null else episode, type, identifier) }
-                .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
-                .getOrDefault(emptyList())
-            }.flatten()
+            // Addon episode IDs are independent requests. Running them concurrently makes the
+            // episode picker responsive without dropping any real seasons or episodes.
+            coroutineScope {
+              identifiers.map { identifier ->
+                async {
+                  val episodeRequest = item.provider != CatalogProvider.KITSU && identifier != null
+                  runCatching { resolveFromEndpoint(endpoint.baseUrl, item, if (episodeRequest) null else season, if (episodeRequest) null else episode, type, identifier) }
+                    .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
+                    .getOrDefault(emptyList())
+                }
+              }.awaitAll().flatten()
+            }
           }
         }
       }.awaitAll().flatten()
