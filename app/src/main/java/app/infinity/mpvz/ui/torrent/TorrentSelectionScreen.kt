@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -199,9 +200,14 @@ private fun TorrentReadyScreen(
               .padding(horizontal = 20.dp, vertical = 4.dp),
         ) {
           if (artwork.seasons.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              FilterChip(selected = selectedSeason == null, onClick = { selectedSeason = null }, label = { Text("All") })
-              artwork.seasons.forEach { season ->
+            LazyRow(
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp),
+            ) {
+              item {
+                FilterChip(selected = selectedSeason == null, onClick = { selectedSeason = null }, label = { Text("All") })
+              }
+              items(artwork.seasons, key = { it.number }) { season ->
                 FilterChip(selected = selectedSeason == season.number, onClick = { selectedSeason = season.number }, label = { Text("Season ${season.number}") })
               }
             }

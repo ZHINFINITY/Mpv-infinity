@@ -87,7 +87,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
               resolverItem.seasons
             }
             val completeItem = resolverItem.copy(seasons = completeSeasons)
-            val allStreams = if (completeItem.type == MediaType.MOVIE || completeItem.seasons.isEmpty()) {
+            val resolvedStreams = if (completeItem.type == MediaType.MOVIE) {
               resolver.resolve(completeItem, null, null)
             } else {
               val broadResults = runCatching { resolver.resolve(completeItem, null, null) }.getOrDefault(emptyList())
@@ -109,6 +109,12 @@ class TorrentSelectionActivity : AppCompatActivity() {
               }
               broadResults + knownSeasonResults + discoveredSeasonResults
             }.distinctBy(StreamOption::url)
+            val allStreams = resolvedStreams.map { stream ->
+              if (stream.season != null && stream.episode != null) stream else {
+                val match = Regex("(?i)(?:^|[^a-z0-9])s(\\d{1,2})[ ._-]*e(\\d{1,3})(?:[^a-z0-9]|$)").find(stream.title)
+                stream.copy(season = stream.season ?: match?.groupValues?.getOrNull(1)?.toIntOrNull(), episode = stream.episode ?: match?.groupValues?.getOrNull(2)?.toIntOrNull())
+              }
+            }
             val resolverSeasons = allStreams.mapNotNull { stream ->
               val season = stream.season ?: return@mapNotNull null
               season to (stream.episode ?: 0)
