@@ -11,6 +11,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -28,12 +29,18 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.net.URLEncoder
+import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 private const val PREFS = "catalog_secure_settings"
 private const val DIAG_TAG = "MpvCatalogDiag"
@@ -135,7 +142,10 @@ class StremioCatalogRepository {
     runCatching {
       val manifest = getJson(source.manifestUrl).jsonObject
       val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
-      catalogs.flatMap { catalogElement ->
+          // Home only needs one representative rail from each addon. Loading every
+          // catalog here fetched hundreds of metadata entries before the screen settled.
+          val catalogsToLoad = if (query.isNullOrBlank()) catalogs.take(1) else catalogs
+          catalogsToLoad.flatMap { catalogElement ->
         runCatching {
           val catalog = catalogElement.jsonObject
           val type = catalog["type"]?.jsonPrimitive?.contentOrNull ?: return@runCatching emptyList()
@@ -191,11 +201,24 @@ class StremioCatalogRepository {
   private suspend fun getJson(url: String): JsonElement {
     var attempt = 0
     while (true) {
-      delay(150)
-      val result = client.newCall(Request.Builder().url(url).header("User-Agent", "MpvInfinity/1.0").get().build()).execute().use { response ->
-        if (response.code == 429 && attempt < 3) null
-        else if (!response.isSuccessful) error("Stremio catalog request failed (${response.code})")
-        else json.parseToJsonElement(response.body.string())
+      val call = client.newCall(Request.Builder().url(url).header("User-Agent", "MpvInfinity/1.0").get().build())
+      val result = suspendCancellableCoroutine<JsonElement?> { continuation ->
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+          override fun onFailure(call: Call, error: IOException) {
+            if (continuation.isActive) continuation.resumeWithException(error)
+          }
+          override fun onResponse(call: Call, response: Response) {
+            response.use {
+              runCatching {
+                if (it.code == 429 && attempt < 3) null
+                else if (!it.isSuccessful) error("Stremio catalog request failed (${it.code})")
+                else json.parseToJsonElement(it.body.string())
+              }.onSuccess { value -> if (continuation.isActive) continuation.resume(value) }
+                .onFailure { error -> if (continuation.isActive) continuation.resumeWithException(error) }
+            }
+          }
+        })
       }
       if (result != null) return result
       val waitMs = 500L shl attempt
@@ -302,10 +325,13 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
           }
           val identifiers = if (item.provider == CatalogProvider.KITSU) {
             listOfNotNull(item.providerId, item.imdbId, item.id.toString()).distinct()
+          } else if (item.type == MediaType.TV) {
+            addonEpisodeIds(endpoint.baseUrl, item, season, episode).ifEmpty { listOf(null) }
           } else listOf(null)
           types.flatMap { type ->
             identifiers.map { identifier ->
-              runCatching { resolveFromEndpoint(endpoint.baseUrl, item, season, episode, type, identifier) }
+              val episodeRequest = item.provider != CatalogProvider.KITSU && identifier != null
+              runCatching { resolveFromEndpoint(endpoint.baseUrl, item, if (episodeRequest) null else season, if (episodeRequest) null else episode, type, identifier) }
                 .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
                 .getOrDefault(emptyList())
             }.flatten()
@@ -317,6 +343,23 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
         .also { Log.i(DIAG_TAG, "resolve complete title=\"${item.title}\" streams=${it.size} playable=${it.count { stream -> stream.isPlayable }}") }
     }
     }
+  }
+
+  private fun addonEpisodeIds(baseUrl: String, item: MediaItem, season: Int?, episode: Int?): List<String> {
+    val id = item.providerId?.takeIf { it.isNotBlank() } ?: return emptyList()
+    val type = item.catalogType ?: "series"
+    val url = "${baseUrl.trimEnd('/').removeSuffix("/manifest.json")}/meta/$type/$id.json"
+    return runCatching {
+      client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
+        if (!response.isSuccessful) return@use emptyList()
+        json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty().mapNotNull { video ->
+          val value = video.jsonObject
+          val s = value["season"]?.jsonPrimitive?.intOrNull
+          val e = value["episode"]?.jsonPrimitive?.intOrNull
+          if ((season == null || s == season) && (episode == null || e == episode)) value["id"]?.jsonPrimitive?.contentOrNull else null
+        }
+      }
+    }.getOrDefault(emptyList())
   }
 
   private suspend fun resolveFromEndpoint(
