@@ -23,6 +23,7 @@ import app.infinity.mpvz.catalog.CinemetaCatalogRepository
 import app.infinity.mpvz.catalog.Episode
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
+import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.catalog.Season
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
@@ -171,6 +172,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
       backdropUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL),
       imdbId = intent.getStringExtra("catalog_imdb_id"),
       providerId = intent.getStringExtra("catalog_provider_id"),
+      provider = intent.getStringExtra("catalog_provider")?.let { raw -> runCatching { CatalogProvider.valueOf(raw) }.getOrNull() } ?: CatalogProvider.CINEMETA,
       releaseYear = intent.getStringExtra("catalog_release_year"),
       contentRating = intent.getStringExtra("catalog_rating"),
       duration = intent.getStringExtra("catalog_duration"),
