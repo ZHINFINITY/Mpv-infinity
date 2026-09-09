@@ -50,7 +50,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       val repository = StremioCatalogRepository()
       val named = _catalogSources.value.map { source ->
-        if (source.id.startsWith("custom-")) source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
+        if (!source.id.startsWith("cinemeta-") && source.id != "kitsu-anime") source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
       }
       if (named != _catalogSources.value) {
         settings.saveCatalogSources(named)
@@ -145,6 +145,18 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     settings.saveResolvers(value)
     _resolvers.value = settings.resolvers()
   }
+  fun addResolverEndpoint(value: String) {
+    val endpoint = value.trim()
+    if (endpoint.isBlank()) return
+    val updatedResolvers = (settings.resolvers() + ResolverEndpoint(endpoint)).distinctBy { it.baseUrl.trimEnd('/') }
+    saveResolvers(updatedResolvers)
+    val manifestUrl = endpoint.let { url ->
+      if (url.endsWith("manifest.json", ignoreCase = true)) url else url.trimEnd('/') + "/manifest.json"
+    }
+    val sourceId = "resolver-${manifestUrl.hashCode()}"
+    val source = CatalogSource(sourceId, manifestUrl.substringAfter("://").substringBefore('/').ifBlank { "Resolver catalog" }, manifestUrl)
+    saveCatalogSources((settings.catalogSources().filterNot { it.manifestUrl.equals(manifestUrl, ignoreCase = true) } + source).distinctBy { it.manifestUrl.lowercase() })
+  }
   fun currentSettings(): ResolverSettings = ResolverSettings(settings.resolvers(), settings.resolverToken, settings.resolverPath)
   fun currentCatalogSources(): List<CatalogSource> = settings.catalogSources()
   fun saveCatalogSources(sources: List<CatalogSource>) {
@@ -153,7 +165,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       val repository = StremioCatalogRepository()
       val named = sources.map { source ->
-        if (source.id.startsWith("custom-")) source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
+        if (!source.id.startsWith("cinemeta-") && source.id != "kitsu-anime") source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
       }
       if (named != _catalogSources.value) {
         settings.saveCatalogSources(named)
@@ -201,7 +213,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         } else emptyList()
       }
       val customJob = async {
-      enabledSources.filter { it.id.startsWith("custom-") }.map { source ->
+      enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }.map { source ->
         async { runCatching { StremioCatalogRepository().load(source, query) }.getOrDefault(emptyList()) }
         }.awaitAll().flatten()
       }
