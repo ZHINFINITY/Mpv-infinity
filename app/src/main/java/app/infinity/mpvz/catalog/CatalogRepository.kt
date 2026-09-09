@@ -471,7 +471,10 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             .url(candidate)
             .header("User-Agent", "Mozilla/5.0 (Android) mpv-infinity/1.0")
             .header("Referer", "https://hentaistream-addon.keypop3750.workers.dev")
-            .header("Range", "bytes=0-1")
+            // MPV's first demuxer request is typically a 1 MiB range. A 2-byte probe can
+            // report the full file while the subsequent MPV range still receives the cached
+            // 233 KB HentaiSea placeholder.
+            .header("Range", "bytes=0-1048575")
             .get()
             .build(),
         ).execute().use { response ->
