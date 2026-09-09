@@ -9,6 +9,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -140,7 +141,8 @@ class StremioCatalogRepository {
           val id = catalog["id"]?.jsonPrimitive?.contentOrNull ?: return@runCatching emptyList()
           val extras = catalog["extra"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.lowercase() }
           val supportsSearch = "search" in extras
-          val suffix = if (!query.isNullOrBlank() && supportsSearch) "/search=${URLEncoder.encode(query, "UTF-8")}" else ""
+          if (!query.isNullOrBlank() && !supportsSearch) return@runCatching emptyList()
+          val suffix = if (!query.isNullOrBlank()) "/search=${encodePathSegment(query)}" else ""
           val base = source.manifestUrl.trimEnd('/').removeSuffix("manifest.json")
           Log.i(DIAG_TAG, "catalog request source=${source.id} type=$type id=$id supportsSearch=$supportsSearch url=${base}catalog/$type/$id$suffix.json")
           val payload = getJson("${base}catalog/$type/$id$suffix.json").jsonObject
@@ -176,9 +178,23 @@ class StremioCatalogRepository {
       .getOrDefault(emptyList())
   }
 
-  private fun getJson(url: String): JsonElement = client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
-    if (!response.isSuccessful) error("Stremio catalog request failed (${response.code})")
-    json.parseToJsonElement(response.body.string())
+  private fun encodePathSegment(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+  private suspend fun getJson(url: String): JsonElement {
+    var attempt = 0
+    while (true) {
+      delay(150)
+      val result = client.newCall(Request.Builder().url(url).header("User-Agent", "MpvInfinity/1.0").get().build()).execute().use { response ->
+        if (response.code == 429 && attempt < 3) null
+        else if (!response.isSuccessful) error("Stremio catalog request failed (${response.code})")
+        else json.parseToJsonElement(response.body.string())
+      }
+      if (result != null) return result
+      val waitMs = 500L shl attempt
+      Log.w(DIAG_TAG, "catalog rate limited url=$url retry=${attempt + 1} waitMs=$waitMs")
+      delay(waitMs)
+      attempt++
+    }
   }
 }
 
