@@ -58,6 +58,10 @@ private object NativeMedia3Cache {
 private class HentaiStreamLoggingDataSource(
   private val upstream: DataSource,
 ) : DataSource {
+  private companion object {
+    const val RANGE_CHUNK_BYTES = 1L * 1024L * 1024L
+  }
+
   override fun addTransferListener(transferListener: TransferListener) = upstream.addTransferListener(transferListener)
 
   override fun open(dataSpec: DataSpec): Long {
@@ -65,13 +69,18 @@ private class HentaiStreamLoggingDataSource(
       dataSpec.uri.path?.contains("/video-proxy", ignoreCase = true) == true
     val requestSpec = if (isHentai) {
       val start = dataSpec.position
-      val end = if (dataSpec.length == C.LENGTH_UNSET.toLong()) "end" else (start + dataSpec.length - 1).toString()
+      // The proxy rejects open-ended ranges after the initial response with HTTP 416. Media3
+      // requests those ranges for normal continuation and seek operations, so make every unset
+      // request an explicit bounded chunk. The next read will request the following chunk.
+      val requestedLength =
+        if (dataSpec.length == C.LENGTH_UNSET.toLong()) RANGE_CHUNK_BYTES else dataSpec.length
+      val end = (start + requestedLength - 1).coerceAtLeast(start)
       val separator = if (dataSpec.uri.query.isNullOrBlank()) "?" else "&"
       val cacheKey = "${start}_${end}_${System.nanoTime()}"
       val requestUri = Uri.parse("${dataSpec.uri}$separator" + "mpvinfinity_range=$cacheKey")
       val headers = dataSpec.httpRequestHeaders.toMutableMap().apply {
-        if (dataSpec.position == 0L && dataSpec.length == C.LENGTH_UNSET.toLong()) {
-          put("Range", "bytes=0-1048575")
+        if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
+          put("Range", "bytes=$start-$end")
         }
       }
       dataSpec.buildUpon().setUri(requestUri).setHttpRequestHeaders(headers).build()
