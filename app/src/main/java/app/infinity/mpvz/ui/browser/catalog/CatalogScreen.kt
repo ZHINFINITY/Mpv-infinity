@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.AnimatedContent
@@ -259,7 +260,7 @@ private fun CatalogSettingsDialog(
     title = { Text("Catalog providers", style = MaterialTheme.typography.headlineSmall) },
     text = {
       Column(
-        modifier = Modifier.verticalScroll(rememberScrollState()),
+        modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         Text("Choose the metadata catalogs used on the Stream home")
