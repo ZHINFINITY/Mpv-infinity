@@ -359,25 +359,30 @@ private fun openResolverChooser(context: android.content.Context, item: MediaIte
 @Composable
 private fun StreamEmptySearchState(query: String) {
   Box(
-    modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp).padding(horizontal = 24.dp),
+    modifier = Modifier.fillMaxWidth().height(360.dp).padding(horizontal = 24.dp),
     contentAlignment = androidx.compose.ui.Alignment.Center,
   ) {
-    Column(
-      horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+    androidx.compose.animation.AnimatedVisibility(
+      visible = true,
+      enter = fadeIn(tween(260)) + slideInVertically(tween(360)) { fullHeight -> fullHeight / 4 },
     ) {
-      Icon(
-        Icons.RoundedFilled.Movie,
-        contentDescription = "No search results",
-        modifier = Modifier.size(64.dp),
-        tint = MaterialTheme.colorScheme.primary,
-      )
-      Text(
-        "No results found for \"$query\"",
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-      )
+      Column(
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Icon(
+          Icons.RoundedFilled.Movie,
+          contentDescription = "No search results",
+          modifier = Modifier.size(64.dp),
+          tint = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+          "No results found for \"$query\"",
+          style = MaterialTheme.typography.titleMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+      }
     }
   }
 }
