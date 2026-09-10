@@ -214,12 +214,16 @@ class JellyfinRepository(
     item: JellyfinItem,
     maxWidth: Int = 400,
   ): String {
-    val targetItemId = if (item.primaryImageTag.isNullOrBlank() && !item.albumId.isNullOrBlank() && !item.albumPrimaryImageTag.isNullOrBlank()) {
-      item.albumId
-    } else {
-      item.id
+    val useSeriesArtwork =
+      item.type == "Episode" &&
+        !item.seriesId.isNullOrBlank() &&
+        !item.seriesPrimaryImageTag.isNullOrBlank()
+    val targetItemId = when {
+      useSeriesArtwork -> item.seriesId.orEmpty()
+      item.primaryImageTag.isNullOrBlank() && !item.albumId.isNullOrBlank() && !item.albumPrimaryImageTag.isNullOrBlank() -> item.albumId
+      else -> item.id
     }
-    val targetTag = item.primaryImageTag ?: item.albumPrimaryImageTag
+    val targetTag = if (useSeriesArtwork) item.seriesPrimaryImageTag else item.primaryImageTag ?: item.albumPrimaryImageTag
     return client.getImageUrl(
       serverUrl = server.serverUrl,
       itemId = targetItemId,

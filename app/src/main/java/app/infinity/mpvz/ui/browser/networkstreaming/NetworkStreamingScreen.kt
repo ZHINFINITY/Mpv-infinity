@@ -693,6 +693,12 @@ object NetworkStreamingScreen : Screen {
           showYtdlDownloadQualityDialog = false
           pendingYtdlDownloadUrl = null
         },
+        onPlay = {
+          val url = pendingYtdlDownloadUrl ?: return@YtdlDownloadQualityDialog
+          showYtdlDownloadQualityDialog = false
+          pendingYtdlDownloadUrl = null
+          playLinkGatingYtdlp(url)
+        },
       )
 
       editingConnection?.let { connection ->
@@ -727,6 +733,7 @@ private fun YtdlDownloadQualityDialog(
   isOpen: Boolean,
   onDismiss: () -> Unit,
   onDownload: (Int) -> Unit,
+  onPlay: () -> Unit,
 ) {
   if (!isOpen) return
   val qualityOptions = listOf(-1, 2160, 1440, 1080, 720, 480, 360)
@@ -801,14 +808,21 @@ private fun YtdlDownloadQualityDialog(
         }
       }
 
-      FilledTonalButton(
-        onClick = { onDownload(selectedQuality) },
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().height(48.dp),
-      ) {
-        Icon(Icons.RoundedFilled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(stringResource(R.string.ytdlp_download_quality_download))
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        androidx.compose.material3.OutlinedButton(
+          onClick = onPlay,
+          shape = RoundedCornerShape(16.dp),
+          modifier = Modifier.weight(1f).height(48.dp),
+        ) { Text(stringResource(R.string.ui_play_now)) }
+        FilledTonalButton(
+          onClick = { onDownload(selectedQuality) },
+          shape = RoundedCornerShape(16.dp),
+          modifier = Modifier.weight(1f).height(48.dp),
+        ) {
+          Icon(Icons.RoundedFilled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(stringResource(R.string.ytdlp_download_quality_download))
+        }
       }
       Spacer(modifier = Modifier.height(12.dp))
     }
