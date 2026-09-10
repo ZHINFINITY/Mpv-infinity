@@ -96,7 +96,9 @@ class ThumbnailRepository(
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
-  private val networkGenerationSemaphore = Semaphore(3)
+  // Network thumbnails are independent range reads. Keep a small cap so a series folder can
+  // fill promptly without opening one WebDAV decoder per visible card.
+  private val networkGenerationSemaphore = Semaphore(5)
   private val maxFolderBatchSize = 48
 
   private data class FolderState(
@@ -1078,9 +1080,8 @@ class ThumbnailRepository(
               browserPreferences.thumbnailFramePosition.get(),
             )
           val networkStrategy = when (strategy) {
-            ThumbnailStrategy.FirstFrame,
-            ThumbnailStrategy.EmbeddedOrFirstFrame,
-            ThumbnailStrategy.EmbeddedOrHybrid -> ThumbnailStrategy.Hybrid(0.33f)
+            ThumbnailStrategy.FirstFrame, ThumbnailStrategy.EmbeddedOrFirstFrame -> ThumbnailStrategy.Hybrid(0.33f)
+            is ThumbnailStrategy.EmbeddedOrHybrid -> ThumbnailStrategy.Hybrid(strategy.percentage)
             else -> strategy
           }
           youtubePosterUrl(path)?.let { posterUrl ->
@@ -1175,9 +1176,8 @@ class ThumbnailRepository(
         browserPreferences.thumbnailFramePosition.get(),
       )
     val networkStrategy = when (strategy) {
-      ThumbnailStrategy.FirstFrame,
-      ThumbnailStrategy.EmbeddedOrFirstFrame,
-      ThumbnailStrategy.EmbeddedOrHybrid -> ThumbnailStrategy.Hybrid(0.33f)
+      ThumbnailStrategy.FirstFrame, ThumbnailStrategy.EmbeddedOrFirstFrame -> ThumbnailStrategy.Hybrid(0.33f)
+      is ThumbnailStrategy.EmbeddedOrHybrid -> ThumbnailStrategy.Hybrid(strategy.percentage)
       else -> strategy
     }
 
