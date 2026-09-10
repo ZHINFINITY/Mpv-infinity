@@ -48,7 +48,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -1231,6 +1230,7 @@ fun JellyfinDetailSheet(
       }
     }
   }
+}
 
 private fun formatJellyfinSize(bytes: Long): String {
   if (bytes <= 0) return ""
