@@ -1237,13 +1237,16 @@ class ThumbnailRepository(
           fileSize = fileSize.coerceAtLeast(-1L),
           mimeType = mimeType ?: NetworkMimeTypes.forFileName(path) ?: "application/octet-stream",
         )
+      val thumbnailUrl = Uri.parse(localUrl).buildUpon()
+        .appendQueryParameter("thumbnail", "1")
+        .build()
 
       extractNetworkVideoFrame(
-        url = localUrl,
+        url = thumbnailUrl.toString(),
         strategy = strategy,
         targetWidth = targetWidth.takeIf { it > 0 },
         targetHeight = targetHeight.takeIf { it > 0 },
-      ) ?: generateFastNetworkThumbnail(localUrl, targetWidth, targetHeight)
+      ) ?: generateFastNetworkThumbnail(thumbnailUrl.toString(), targetWidth, targetHeight)
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (_: Exception) {
