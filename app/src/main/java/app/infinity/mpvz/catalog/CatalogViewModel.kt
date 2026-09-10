@@ -274,7 +274,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
     enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }.forEach { source ->
       jobs += launch {
-        val items = withTimeoutOrNull(30_000L) {
+        val items = withTimeoutOrNull(3_000L) {
           runCatching { stremioRepository.load(source, query) }
             .onFailure { if (it !is CancellationException) Log.w(TAG, "Catalog search failed source=${source.id}: ${it.message}") }
             .getOrDefault(emptyList())
@@ -313,7 +313,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         enabledSources.filter { !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }
           .map { source ->
             async {
-              val items = withTimeoutOrNull(30_000L) {
+              val items = withTimeoutOrNull(3_000L) {
                 runCatching { stremioRepository.load(source, query, page) }.onFailure { error ->
                   if (error is CancellationException) throw error
                   Log.e("MpvCatalogDiag", "custom source failed source=${source.id} message=${error.message}", error)
