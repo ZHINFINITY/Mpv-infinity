@@ -13,7 +13,7 @@
         <item name="android:colorBackgroundCacheHint">@null</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:backgroundDimEnabled">true</item>
-        <item name="android:windowDimAmount">0.45</item>
+        <item name="android:backgroundDimAmount">0.45</item>
     </style>
 
     <style name="leak_canary_LeakCanary.Base" parent="Theme.AppCompat.Light.DarkActionBar">
