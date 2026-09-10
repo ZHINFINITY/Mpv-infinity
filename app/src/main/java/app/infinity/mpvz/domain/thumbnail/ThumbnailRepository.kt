@@ -98,7 +98,9 @@ class ThumbnailRepository(
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
   // Network thumbnails are independent range reads. Keep a small cap so a series folder can
   // fill promptly without opening one WebDAV decoder per visible card.
-  private val networkGenerationSemaphore = Semaphore(5)
+  // A decoder can issue several authenticated range requests for one MKV. Keep remote work
+  // serialized so a series folder cannot burst dozens of TorBox/WebDAV requests at once.
+  private val networkGenerationSemaphore = Semaphore(1)
   private val maxFolderBatchSize = 48
 
   private data class FolderState(
@@ -323,12 +325,21 @@ class ThumbnailRepository(
         repositoryScope.launch {
           var i = state.nextIndex
           while (i < filteredVideos.size) {
-            val batchEnd = (i + localGenerationParallelism).coerceAtMost(filteredVideos.size)
+            val batchParallelism =
+              if (filteredVideos.any { isNetworkUrl(it.path) || it.uri.scheme in setOf("http", "https") }) 1
+              else localGenerationParallelism
+            val batchEnd = (i + batchParallelism).coerceAtMost(filteredVideos.size)
             coroutineScope {
               (i until batchEnd)
                 .map { index ->
                   async {
-                    getThumbnail(filteredVideos[index], widthPx, heightPx)
+                    runCatching { getThumbnail(filteredVideos[index], widthPx, heightPx) }
+                      .onFailure { error ->
+                        if (error !is CancellationException) {
+                          Log.w("ThumbnailRepository", "Remote thumbnail prefetch failed", error)
+                        }
+                      }
+                      .getOrNull()
                   }
                 }.awaitAll()
             }
