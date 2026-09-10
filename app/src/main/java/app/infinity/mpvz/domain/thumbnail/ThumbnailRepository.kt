@@ -867,6 +867,8 @@ class ThumbnailRepository(
           connection.inputStream.use { stream ->
             BitmapFactory.decodeStream(stream)
           }
+        } else {
+          null
         }
       }.getOrNull()
     }
