@@ -195,7 +195,7 @@ class NetworkStreamingProxy private constructor() :
         if (rangeHeader == null) {
           handleFullRequest(headOnly, streamInfo, requestedPath, thumbnailProbe)
         } else {
-          handleRangeRequest(headOnly, streamInfo, requestedPath, rangeHeader)
+          handleRangeRequest(headOnly, streamInfo, requestedPath, rangeHeader, thumbnailProbe)
         }
       // NanoHTTPD keeps a fixed-length socket alive even when the upstream body ends short,
       // leaving the player waiting forever for the missing bytes. Closing per response turns
@@ -216,6 +216,7 @@ class NetworkStreamingProxy private constructor() :
     streamInfo: StreamInfo,
     path: NetworkPath,
     rangeHeader: String,
+    thumbnailProbe: Boolean = false,
   ): Response {
     val fileSize = getFileSize(streamInfo, path)
     if (fileSize < 0L) {
