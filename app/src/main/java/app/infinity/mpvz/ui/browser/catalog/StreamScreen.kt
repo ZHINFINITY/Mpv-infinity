@@ -204,7 +204,14 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           },
           navigationIcon = { IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
           actions = {
-            IconButton(onClick = { isSearching = !searchActive; if (searchActive) viewModel.setQuery("") }) { Icon(if (searchActive) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, if (searchActive) "Close search" else "Search") }
+            IconButton(onClick = {
+              if (searchActive) {
+                isSearching = false
+                viewModel.setQuery("")
+              } else {
+                isSearching = true
+              }
+            }) { Icon(if (searchActive) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, if (searchActive) "Close search" else "Search") }
             IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Explore, "Catalogs and resolvers") }
             IconButton(onClick = { backstack.add(PreferencesScreen) }) { Icon(Icons.RoundedFilled.Settings, "General settings") }
           },
