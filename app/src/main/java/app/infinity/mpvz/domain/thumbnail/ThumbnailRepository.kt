@@ -1223,22 +1223,6 @@ class ThumbnailRepository(
     fileSize: Long,
     mimeType: String?,
   ): Bitmap? {
-    networkRepository.getActiveClient(connection.id)?.let { client ->
-      val prefixFile = File(context.cacheDir, "thumbnail-prefix-${path.hashCode()}-${fileSize}.mkv")
-      if (!prefixFile.exists() || prefixFile.length() < REMOTE_THUMBNAIL_PREFIX_BYTES) {
-        client.getFileStream(path, 0L, REMOTE_THUMBNAIL_PREFIX_BYTES).getOrNull()?.use { input ->
-          prefixFile.outputStream().use { output -> input.copyTo(output) }
-        }
-      }
-      if (prefixFile.length() > 0L) {
-        return extractNetworkVideoFrame(
-          url = Uri.fromFile(prefixFile).toString(),
-          strategy = ThumbnailStrategy.FirstFrame,
-          targetWidth = targetWidth.takeIf { it > 0 },
-          targetHeight = targetHeight.takeIf { it > 0 },
-        )
-      }
-    }
     val proxy = NetworkStreamingProxy.getInstance()
     val streamId = "thumb_${path.hashCode()}_${System.nanoTime()}"
 
@@ -1255,12 +1239,17 @@ class ThumbnailRepository(
         .appendQueryParameter("thumbnail", "1")
         .build()
 
-      extractNetworkVideoFrame(
+      // FastThumbnails uses the MPV demuxer and performs seekable range reads through the
+      // authenticated proxy. MediaMetadataRetriever cannot reliably decode large remote MKVs:
+      // it requests the Matroska cues and clusters as hidden random reads and often blocks for
+      // tens of seconds or returns no bitmap at all.
+      generateFastNetworkThumbnail(localUrl, targetWidth, targetHeight)
+        ?: extractNetworkVideoFrame(
         url = thumbnailUrl.toString(),
         strategy = strategy,
         targetWidth = targetWidth.takeIf { it > 0 },
         targetHeight = targetHeight.takeIf { it > 0 },
-      ) ?: generateFastNetworkThumbnail(thumbnailUrl.toString(), targetWidth, targetHeight)
+      )
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (_: Exception) {
@@ -1268,10 +1257,6 @@ class ThumbnailRepository(
     } finally {
       proxy.unregisterStream(streamId)
     }
-  }
-
-  private companion object {
-    const val REMOTE_THUMBNAIL_PREFIX_BYTES = 64L * 1024L * 1024L
   }
 
   /** The memory-cache key used by [getThumbnailForNetworkPath]. */
