@@ -174,9 +174,17 @@ class YtdlpDownloadEngine(
           activeProcess = process
           var destination: String? = null
           var lastOutputLine = ""
+          val diagnosticLines = ArrayDeque<String>()
           BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
               if (line.isNotBlank()) lastOutputLine = line.trim()
+              if (line.contains("ERROR:", ignoreCase = true) ||
+                line.contains("[Instagram]", ignoreCase = true) ||
+                line.contains("login", ignoreCase = true)
+              ) {
+                if (diagnosticLines.size >= 12) diagnosticLines.removeFirst()
+                diagnosticLines.addLast(line.trim())
+              }
               parseDestination(line)?.let { destination = it }
               val progress = parseProgressLine(line)
               if (progress != null) {
@@ -186,7 +194,7 @@ class YtdlpDownloadEngine(
             }
           }
           val exitCode = runInterruptible { process.waitFor() }
-          Triple(exitCode, destination, lastOutputLine)
+          Triple(exitCode, destination, diagnosticLines.joinToString("\n").ifBlank { lastOutputLine })
         }
       }
 
