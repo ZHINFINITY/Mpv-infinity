@@ -1386,6 +1386,7 @@ class PlayerActivity :
         }
         BackgroundPlaybackStartResult.Blocked -> {
           isUserFinishing = true
+          viewModel.setNativeEngineActive(false)
           finish()
         }
       }
@@ -1393,6 +1394,7 @@ class PlayerActivity :
     }
 
     isUserFinishing = true
+    viewModel.setNativeEngineActive(false)
     finish()
   }
 

@@ -568,14 +568,26 @@ class NativeMedia3Engine(context: Context) {
 
   private fun resolveHttpSize(uri: Uri, requestHeaders: Map<String, String>): Long =
     runCatching {
-      (java.net.URL(uri.toString()).openConnection() as java.net.HttpURLConnection).apply {
-        requestMethod = "HEAD"
-        connectTimeout = 4_000
-        readTimeout = 4_000
-        requestHeaders.forEach { (key, value) -> setRequestProperty(key, value) }
-      }.let { connection ->
+      fun open(method: String, range: String? = null) =
+        (java.net.URL(uri.toString()).openConnection() as java.net.HttpURLConnection).apply {
+          requestMethod = method
+          connectTimeout = 4_000
+          readTimeout = 4_000
+          range?.let { setRequestProperty("Range", it) }
+          requestHeaders.forEach { (key, value) -> setRequestProperty(key, value) }
+        }
+      open("HEAD").let { connection ->
         try {
-          if (connection.responseCode in 200..399) connection.contentLengthLong else -1L
+          if (connection.responseCode in 200..399 && connection.contentLengthLong > 0L) connection.contentLengthLong else -1L
+        } finally {
+          connection.disconnect()
+        }
+      }.takeIf { it > 0L } ?: open("GET", "bytes=0-0").let { connection ->
+        try {
+          val range = connection.getHeaderField("Content-Range").orEmpty()
+          Regex("/(\\d+)$").find(range)?.groupValues?.get(1)?.toLongOrNull()
+            ?: connection.contentLengthLong.takeIf { it > 0L }
+            ?: -1L
         } finally {
           connection.disconnect()
         }
