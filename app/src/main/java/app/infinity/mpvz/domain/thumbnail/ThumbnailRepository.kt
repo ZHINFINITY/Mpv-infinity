@@ -856,7 +856,7 @@ class ThumbnailRepository(
         retriever.setDataSource(url, networkVideoHeaders())
 
         val primary = extractFrameWithStrategy(retriever, strategy, targetWidth, targetHeight)
-        if (primary == null || !isMostlySolidThumbnail(primary)) {
+        if (primary == null || (!isMostlySolidThumbnail(primary) && !isMostlyDarkThumbnail(primary))) {
           primary
         } else {
           // Some movie and episode streams legitimately begin with a black/solid frame. Keep it
@@ -873,7 +873,7 @@ class ThumbnailRepository(
               )
             }
             .firstOrNull { candidate ->
-              if (isMostlySolidThumbnail(candidate)) {
+              if (isMostlySolidThumbnail(candidate) || isMostlyDarkThumbnail(candidate)) {
                 fallback?.takeUnless { it.isRecycled }?.recycle()
                 fallback = candidate
                 false
