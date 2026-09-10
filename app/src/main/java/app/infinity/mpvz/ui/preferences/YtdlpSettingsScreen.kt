@@ -60,6 +60,7 @@ object YtdlpSettingsScreen : Screen {
     val playlistMode by ytdlPreferences.playlistMode.collectAsState()
     val writeSubs by ytdlPreferences.writeSubs.collectAsState()
     val writeAutoSubs by ytdlPreferences.writeAutoSubs.collectAsState()
+    val showDownloadQualityChooser by ytdlPreferences.showDownloadQualityChooser.collectAsState()
     val installationInfo by YtdlpManager.installationInfo.collectAsState()
 
     LaunchedEffect(Unit) {
@@ -226,6 +227,21 @@ object YtdlpSettingsScreen : Screen {
                 )
               }
             }
+          }
+
+          PreferenceSectionHeader(
+            title = stringResource(R.string.ytdlp_advanced_networking),
+            modifier = Modifier.settingsSearchTarget(R.string.ytdlp_download_quality_chooser_title),
+          )
+
+          PreferenceCard {
+            SwitchPreference(
+              modifier = Modifier.settingsSearchTarget(R.string.ytdlp_download_quality_chooser_title),
+              value = showDownloadQualityChooser,
+              onValueChange = { ytdlPreferences.showDownloadQualityChooser.set(it) },
+              title = { Text(stringResource(R.string.ytdlp_download_quality_chooser_title)) },
+              summary = { Text(stringResource(R.string.ytdlp_download_quality_chooser_summary)) },
+            )
           }
         }
       }

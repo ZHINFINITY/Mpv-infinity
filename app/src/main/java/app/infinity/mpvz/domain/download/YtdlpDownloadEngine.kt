@@ -43,6 +43,7 @@ class YtdlpDownloadEngine(
     val url: String,
     val title: String,
     val directory: String,
+    val qualityHeight: Int = -1,
     val state: JobState = JobState.QUEUED,
     val progressPercent: Float = 0f,
     val detail: String = "",
@@ -64,17 +65,25 @@ class YtdlpDownloadEngine(
 
   @Volatile
   private var cancelRequested = false
+  @Volatile
   private var pauseRequested = false
 
   fun enqueue(
     url: String,
     title: String,
     directory: File,
+    qualityHeight: Int = -1,
   ): Int {
     val id = nextId.getAndIncrement()
     if (!directory.exists()) directory.mkdirs()
     _jobs.update { current ->
-      current + Job(id = id, url = url, title = title, directory = directory.absolutePath)
+      current + Job(
+        id = id,
+        url = url,
+        title = title,
+        directory = directory.absolutePath,
+        qualityHeight = qualityHeight,
+      )
     }
     YtdlpDownloadService.start(context)
     return id
@@ -152,7 +161,7 @@ class YtdlpDownloadEngine(
     }
 
     val outputTemplate = "${job.directory}/${DownloadLocations.sanitizeName(job.title)}.%(ext)s"
-    val command = buildCommand(job.url, outputTemplate)
+    val command = buildCommand(job.url, outputTemplate, job.qualityHeight)
 
     val result =
       withContext(Dispatchers.IO) {
@@ -197,7 +206,11 @@ class YtdlpDownloadEngine(
       }.onFailure { error ->
         if (error is CancellationException) throw error
         Log.e(TAG, "yt-dlp download failed", error)
-        updateJob(id) { it.copy(state = JobState.FAILED, error = error.message ?: "Unknown error") }
+        if (pauseRequested) {
+          updateJob(id) { it.copy(state = JobState.PAUSED, error = null, detail = "") }
+        } else {
+          updateJob(id) { it.copy(state = JobState.FAILED, error = error.message ?: "Unknown error") }
+        }
       }
     currentJob(id)?.let(onJobUpdate)
   }
@@ -205,6 +218,7 @@ class YtdlpDownloadEngine(
   private fun buildCommand(
     url: String,
     outputTemplate: String,
+    qualityHeight: Int,
   ): List<String> =
     buildList {
       add(YtdlpManager.getExecutablePath(context))
@@ -222,6 +236,10 @@ class YtdlpDownloadEngine(
       add("--continue")
       add("--part")
       add("--no-overwrites")
+      if (qualityHeight > 0) {
+        add("-f")
+        add("bv*[height<=?$qualityHeight]+ba/b[height<=?$qualityHeight]")
+      }
       add("-o")
       add(outputTemplate)
 
