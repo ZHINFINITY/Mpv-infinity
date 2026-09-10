@@ -238,7 +238,6 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         androidx.compose.animation.AnimatedVisibility(
           visible = state.items.isNotEmpty() && !state.isLoading,
           enter = fadeIn(tween(420)) + expandVertically(tween(520)),
-          exit = fadeIn(tween(0)),
         ) {
         LazyColumn(
           state = streamListState,
