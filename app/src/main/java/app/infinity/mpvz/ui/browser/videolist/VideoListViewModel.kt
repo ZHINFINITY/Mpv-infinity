@@ -77,16 +77,6 @@ internal fun buildVideoWithPlaybackInfo(
     } else {
       null
     }
-  // Explicit child actions must override both the folder default and any stale playback row
-  // observed while the asynchronous persistence event is being delivered.
-  val isWatched =
-    explicitlyMarkedWatched ||
-      (!explicitlyMarkedUnwatched &&
-        (folderMarkedWatched ||
-          (!folderMarkedUnwatched &&
-            (playbackState?.hasBeenWatched == true ||
-              (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))))
-      )
   // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
   // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
   // is marked watched and the file is older than the automatic NEW-label age window.
@@ -98,6 +88,17 @@ internal fun buildVideoWithPlaybackInfo(
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
   val isWithinNewLabelWindow =
     folderMarkedUnwatched || persistedUnwatched || newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
+  // The swipe action toggles from this value. An old video with no playback row has no NEW tag
+  // and is therefore watched for toggle purposes; otherwise the first swipe is inverted.
+  val isWatched =
+    explicitlyMarkedWatched ||
+      (!explicitlyMarkedUnwatched &&
+        (folderMarkedWatched ||
+          (!folderMarkedUnwatched &&
+            (!isWithinNewLabelWindow ||
+              playbackState?.hasBeenWatched == true ||
+              (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))))
+      )
 
   return VideoWithPlaybackInfo(
     video = video,
