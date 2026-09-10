@@ -542,6 +542,7 @@ object NetworkStreamingScreen : Screen {
                   }
                 },
                 onDeleteRecent = viewModel::deleteStreamEntry,
+                showRecentLinks = false,
                 onConnect = { viewModel.connect(it) },
                 onDisconnect = { viewModel.disconnect(it) },
                 onEdit = { editingConnection = it },
@@ -575,6 +576,7 @@ object NetworkStreamingScreen : Screen {
             NetworkTab.MEDIA -> {
               MediaContent(
                 mediaGroups = filteredMediaGroups,
+                recentLinks = filteredRecentLinks,
                 searchQuery = searchQuery,
                 onPlayMedia = { entry ->
                   val playableSource = normalizeTorrentSource(entry.canonicalSourceUri) ?: entry.canonicalSourceUri.trim()
@@ -598,6 +600,18 @@ object NetworkStreamingScreen : Screen {
                 },
                 onDeleteMediaFile = viewModel::deleteStreamEntry,
                 onDeleteMediaGroup = { viewModel.deleteMediaGroup(it) },
+                onPlayRecent = { entry ->
+                  viewModel.recordExistingLinkPlayed(entry.stableKey)
+                  MediaUtils.playFile(source = entry.canonicalSourceUri, context = context, launchSource = "network_media", title = entry.fileName)
+                },
+                onDeleteRecent = viewModel::deleteStreamEntry,
+                onSaveRecent = { entry ->
+                  when (linkDownloadCoordinator.enqueue(entry.canonicalSourceUri, entry.fileName)) {
+                    app.infinity.mpvz.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED ->
+                      Toast.makeText(context, R.string.downloads_location_invalid, Toast.LENGTH_SHORT).show()
+                    else -> Toast.makeText(context, R.string.downloads_started, Toast.LENGTH_SHORT).show()
+                  }
+                },
               )
             }
             NetworkTab.SYNC_PLAY -> {
@@ -926,6 +940,7 @@ private fun LocalNetworkContent(
   onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
   onSaveToMedia: (NetworkStreamEntryEntity) -> Unit,
   onDeleteRecent: (String) -> Unit,
+  showRecentLinks: Boolean = true,
   onConnect: (NetworkConnection) -> Unit,
   onDisconnect: (NetworkConnection) -> Unit,
   onEdit: (NetworkConnection) -> Unit,
@@ -950,6 +965,7 @@ private fun LocalNetworkContent(
         onPlayRecent = onPlayRecent,
         onSaveToTorrent = onSaveToMedia,
         onDeleteRecent = onDeleteRecent,
+        showRecentLinks = showRecentLinks,
       )
     }
 
@@ -1001,10 +1017,14 @@ private fun SyncPlayContent() {
 @Composable
 private fun MediaContent(
   mediaGroups: List<MediaStreamGroup>,
+  recentLinks: List<NetworkStreamEntryEntity>,
   searchQuery: String,
   onPlayMedia: (NetworkStreamEntryEntity) -> Unit,
   onDeleteMediaFile: (String) -> Unit,
   onDeleteMediaGroup: (MediaStreamGroup) -> Unit,
+  onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
+  onDeleteRecent: (String) -> Unit,
+  onSaveRecent: (NetworkStreamEntryEntity) -> Unit,
 ) {
   val context = LocalContext.current
   val viewedPreferences =
@@ -1041,7 +1061,7 @@ private fun MediaContent(
   }
 
   Box(modifier = Modifier.fillMaxSize()) {
-    if (mediaGroups.isEmpty()) {
+    if (mediaGroups.isEmpty() && recentLinks.isEmpty()) {
       LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
@@ -1060,6 +1080,16 @@ private fun MediaContent(
         contentPadding = PaddingValues(bottom = navBarHeight + 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
       ) {
+        if (recentLinks.isNotEmpty()) {
+          item(key = "saved_stream_links") {
+            SavedStreamLinksSection(
+              links = recentLinks,
+              onPlay = onPlayRecent,
+              onDownload = onSaveRecent,
+              onDelete = onDeleteRecent,
+            )
+          }
+        }
         // 1. Featured Hero Carousel Banner
         if (heroGroups.isNotEmpty() && searchQuery.isBlank()) {
           item {
@@ -1207,6 +1237,73 @@ private fun EmptyStateCard(
 }
 
 @Composable
+private fun SavedStreamLinksSection(
+  links: List<NetworkStreamEntryEntity>,
+  onPlay: (NetworkStreamEntryEntity) -> Unit,
+  onDownload: (NetworkStreamEntryEntity) -> Unit,
+  onDelete: (String) -> Unit,
+) {
+  Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Text(
+      text = "Saved Stream Links",
+      style = MaterialTheme.typography.titleLarge,
+      fontWeight = FontWeight.Bold,
+      modifier = Modifier.padding(horizontal = 16.dp),
+    )
+    androidx.compose.foundation.lazy.LazyRow(
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      contentPadding = PaddingValues(horizontal = 16.dp),
+    ) {
+      items(links, key = { "saved_${it.stableKey}" }) { entry ->
+        SavedStreamLinkCard(entry = entry, onPlay = { onPlay(entry) }, onDownload = { onDownload(entry) }, onDelete = { onDelete(entry.stableKey) })
+      }
+    }
+  }
+}
+
+@Composable
+private fun SavedStreamLinkCard(
+  entry: NetworkStreamEntryEntity,
+  onPlay: () -> Unit,
+  onDownload: () -> Unit,
+  onDelete: () -> Unit,
+) {
+  val title = remember(entry.fileName, entry.canonicalSourceUri) {
+    MediaInfoParser.parseStreamTitle(entry.canonicalSourceUri, entry.fileName)
+  }
+  val thumbnail = streamThumbnailUrl(entry.canonicalSourceUri)
+  Card(
+    modifier = Modifier.width(210.dp),
+    shape = RoundedCornerShape(16.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+  ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+      Box(
+        modifier = Modifier.fillMaxWidth().height(118.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center,
+      ) {
+        if (thumbnail != null) {
+          RemoteImage(url = thumbnail, contentDescription = title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else {
+          Icon(Icons.RoundedFilled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(34.dp))
+        }
+      }
+      Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+      Row(modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 4.dp), horizontalArrangement = Arrangement.End) {
+        IconButton(onClick = onDownload, modifier = Modifier.size(36.dp)) { Icon(Icons.RoundedFilled.Download, contentDescription = stringResource(R.string.downloads_download)) }
+        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) { Icon(Icons.RoundedFilled.Delete, contentDescription = stringResource(R.string.delete)) }
+        IconButton(onClick = onPlay, modifier = Modifier.size(36.dp)) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = stringResource(R.string.ui_play), tint = MaterialTheme.colorScheme.primary) }
+      }
+    }
+  }
+}
+
+private fun streamThumbnailUrl(url: String): String? {
+  val videoId = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?v=|shorts/|embed/))([^?&/]+)").find(url)?.groupValues?.getOrNull(1)
+  return videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
+}
+
+@Composable
 private fun StreamLinkSection(
   recentLinks: List<NetworkStreamEntryEntity>,
   isPreparing: Boolean,
@@ -1214,6 +1311,7 @@ private fun StreamLinkSection(
   onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
   onSaveToTorrent: (NetworkStreamEntryEntity) -> Unit,
   onDeleteRecent: (String) -> Unit,
+  showRecentLinks: Boolean = true,
 ) {
   val context = LocalContext.current
   val keyboardController = LocalSoftwareKeyboardController.current
@@ -1359,7 +1457,7 @@ private fun StreamLinkSection(
 
     // 2. Top 3 Recent Stream Links with Quick Autofill & Torrent Save
     val topRecent = remember(recentLinks) { recentLinks.take(3) }
-    if (topRecent.isNotEmpty()) {
+    if (showRecentLinks && topRecent.isNotEmpty()) {
       Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
