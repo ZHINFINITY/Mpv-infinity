@@ -1171,7 +1171,8 @@ fun JellyfinContent(
           viewModel.closeDetail()
         }
       },
-      onDownload = { itemToDownload -> viewModel.downloadItem(itemToDownload) },
+      onLoadMediaSources = { itemToDownload -> viewModel.availableDownloadSources(itemToDownload) },
+      onDownload = { itemToDownload, mediaSource -> viewModel.downloadItem(itemToDownload, mediaSource) },
       onDownloadSeason = { viewModel.downloadSelectedSeason() },
       onDownloadSeries = { viewModel.downloadWholeSeries() },
       downloadedItemIds = downloadedItemIds,
