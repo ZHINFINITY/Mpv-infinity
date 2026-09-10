@@ -165,6 +165,25 @@ class AppDownloadManager(
   fun cancelActive() {
     _activeSnapshot.value?.let { cancel(it.id) }
   }
+  fun pause(id: Long) {
+    pausedIds.add(id)
+    scope.launch {
+      val entity = dao.findById(id) ?: return@launch
+      if (entity.status == AppDownloadStatus.QUEUED.name) {
+        dao.update(entity.copy(status = AppDownloadStatus.PAUSED.name))
+      }
+    }
+  }
+  fun resume(id: Long) {
+    pausedIds.remove(id)
+    scope.launch {
+      val entity = dao.findById(id) ?: return@launch
+      if (entity.status == AppDownloadStatus.PAUSED.name) {
+        dao.update(entity.copy(status = AppDownloadStatus.QUEUED.name, failureReason = null))
+        DirectDownloadService.start(context)
+      }
+    }
+  }
 
   private suspend fun runDownload(
     entity: DownloadItemEntity,
@@ -172,6 +191,7 @@ class AppDownloadManager(
   ) {
     val id = entity.id
     cancelledIds.remove(id)
+    if (entity.status == AppDownloadStatus.PAUSED.name) return
     dao.update(entity.copy(status = AppDownloadStatus.RUNNING.name))
 
     val directory = File(entity.dirPath)
@@ -208,6 +228,7 @@ class AppDownloadManager(
               val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
               while (true) {
                 if (id in cancelledIds) throw CancelledDownloadException()
+                if (id in pausedIds) throw PausedDownloadException()
                 val read = input.read(buffer)
                 if (read < 0) break
                 output.write(buffer, 0, read)
@@ -266,6 +287,9 @@ class AppDownloadManager(
           error is CancelledDownloadException || id in cancelledIds -> {
             runCatching { partFile.delete() }
             dao.findById(id)?.let { dao.update(it.copy(status = AppDownloadStatus.CANCELLED.name)) }
+          }
+          error is PausedDownloadException || id in pausedIds -> {
+            dao.findById(id)?.let { dao.update(it.copy(status = AppDownloadStatus.PAUSED.name)) }
           }
           else -> {
             Log.e(TAG, "Download failed for ${entity.url}", error)
@@ -388,6 +412,7 @@ class AppDownloadManager(
     }
 
   private class CancelledDownloadException : IOException("Cancelled")
+  private class PausedDownloadException : IOException("Paused")
 
   companion object {
     private const val TAG = "AppDownloadManager"
