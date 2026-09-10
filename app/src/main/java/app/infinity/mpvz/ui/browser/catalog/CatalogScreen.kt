@@ -217,7 +217,7 @@ fun CatalogScreen() {
       if (state.isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
     }
   }
-  if (showSettings) CatalogSettingsDialog(viewModel) { showSettings = false }
+  if (showSettings) CatalogSettingsDialog(viewModel, catalogSources) { showSettings = false }
 }
 
 @Composable
@@ -245,33 +245,64 @@ private fun CatalogStatusState(message: String, onRetry: () -> Unit, onEdit: (()
   }
 }
 
-@Composable
-private fun CatalogSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> Unit) {
-  val initial = remember { viewModel.currentSettings() }
-  var endpoints by remember { mutableStateOf(initial.resolvers) }
+@Composable@Composable
+private fun CatalogSettingsDialog(
+  viewModel: CatalogViewModel,
+  currentSources: List<app.infinity.mpvz.catalog.CatalogSource>,
+  onDismiss: () -> Unit,
+) {
+  var sources by remember { mutableStateOf(currentSources) }
   var newUrl by remember { mutableStateOf("") }
   AlertDialog(
     onDismissRequest = onDismiss,
     shape = RoundedCornerShape(28.dp),
-    title = { Text("Stream resolvers", style = MaterialTheme.typography.headlineSmall) },
+    title = { Text("Catalog providers", style = MaterialTheme.typography.headlineSmall) },
     text = {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-      endpoints.forEachIndexed { index, endpoint ->
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
-          androidx.compose.material3.Switch(checked = endpoint.enabled, onCheckedChange = { enabled -> endpoints = endpoints.toMutableList().also { it[index] = endpoint.copy(enabled = enabled) } })
-          Text(endpoint.baseUrl, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-          IconButton(onClick = { endpoints = endpoints.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
+      Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Text("Choose the metadata catalogs used on the Stream home")
+        sources.forEachIndexed { index, source ->
+          Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            androidx.compose.material3.Switch(
+              checked = source.isEnabled,
+              onCheckedChange = { enabled ->
+                sources = sources.toMutableList().also { it[index] = source.copy(isEnabled = enabled) }
+              },
+            )
+            Text(source.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconButton(onClick = { sources = sources.filterIndexed { i, _ -> i != index } }) {
+              Icon(Icons.RoundedFilled.Delete, "Delete catalog provider")
+            }
+          }
         }
+        OutlinedTextField(
+          value = newUrl,
+          onValueChange = { newUrl = it },
+          placeholder = { Text("Add catalog provider (API or endpoint URL)") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(12.dp),
+        )
+        Text("Supports custom catalog endpoints and public metadata APIs", style = MaterialTheme.typography.bodySmall)
+        Button(
+          onClick = {
+            val base = newUrl.trim().removeSuffix("/manifest.json").trimEnd(/)
+            if (base.isNotBlank()) {
+              val manifestUrl = "$base/manifest.json"
+              val name = base.substringAfter("://").substringBefore(/).ifBlank { "Catalog provider" }
+              sources = (sources + app.infinity.mpvz.catalog.CatalogSource("resolver-${manifestUrl.hashCode()}", name, manifestUrl)).distinctBy { it.manifestUrl.lowercase() }
+              newUrl = ""
+            }
+          },
+          shape = RoundedCornerShape(24.dp),
+        ) { Text("Add catalog") }
       }
-      OutlinedTextField(
-        value = newUrl,
-        onValueChange = { newUrl = it },
-        placeholder = { Text("Resolver base URL") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-      )
-      Button(onClick = { if (newUrl.isNotBlank()) { endpoints = endpoints + app.infinity.mpvz.catalog.ResolverEndpoint(newUrl.trim()); newUrl = "" } }, shape = RoundedCornerShape(24.dp)) { Text("Add resolver") }
-    }
-  }, confirmButton = { Button(onClick = { viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    },
+    confirmButton = {
+      Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+  )
 }
