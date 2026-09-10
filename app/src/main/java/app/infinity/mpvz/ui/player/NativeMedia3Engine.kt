@@ -34,6 +34,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ExtractorsFactory
+import androidx.media3.extractor.metadata.matroska.Chapter
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
@@ -843,6 +844,16 @@ class NativeMedia3Engine(context: Context) {
   private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =
     (0 until metadata.length()).mapNotNull { index ->
       val entry = metadata.get(index)
+      (entry as? Chapter)?.let { chapter ->
+        if (chapter.isHidden()) return@mapNotNull null
+        val startTimeMs = chapter.getStartTimeMs()
+        if (startTimeMs == C.TIME_UNSET || startTimeMs < 0L) return@mapNotNull null
+        val title = chapter.getTitle()?.value?.trim().orEmpty()
+        return@mapNotNull NativeChapter(
+          title.ifBlank { "Chapter ${index + 1}" },
+          startTimeMs / 1000f,
+        )
+      }
       val startTimeMs = runCatching {
         entry.javaClass.methods.firstOrNull {
           it.name == "getStartTimeMs" || it.name == "getChapterTimeStart"
