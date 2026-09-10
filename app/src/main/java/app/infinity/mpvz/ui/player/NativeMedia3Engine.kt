@@ -204,6 +204,13 @@ class NativeMedia3Engine(context: Context) {
   private val loopHandler = Handler(Looper.getMainLooper())
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
+  private val settleSeekRunnable = Runnable {
+    val target = pendingSeekDisplayPositionMs ?: return@Runnable
+    if (kotlin.math.abs(activePlayer.currentPosition - target) <= 1_500L) {
+      pendingSeekDisplayPositionMs = null
+      publishPlaybackSnapshot()
+    }
+  }
   private val seekRunnable = Runnable {
     val positionMs = pendingSeekPositionMs ?: return@Runnable
     pendingSeekPositionMs = null
@@ -267,9 +274,9 @@ class NativeMedia3Engine(context: Context) {
     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
       if (reason == Player.DISCONTINUITY_REASON_SEEK) {
         val target = pendingSeekDisplayPositionMs
-        if (target == null || kotlin.math.abs(newPosition.positionMs - target) <= 1_000L) {
-          pendingSeekDisplayPositionMs = null
-          publishPlaybackSnapshot()
+        if (target != null && kotlin.math.abs(newPosition.positionMs - target) <= 1_500L) {
+          loopHandler.removeCallbacks(settleSeekRunnable)
+          loopHandler.postDelayed(settleSeekRunnable, 750L)
         }
       }
     }
@@ -620,6 +627,8 @@ class NativeMedia3Engine(context: Context) {
 
   fun seekTo(positionMs: Long) {
     pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
+    pendingSeekDisplayPositionMs = pendingSeekPositionMs
+    loopHandler.removeCallbacks(settleSeekRunnable)
     loopHandler.removeCallbacks(seekRunnable)
     loopHandler.postDelayed(seekRunnable, 300L)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
@@ -630,6 +639,8 @@ class NativeMedia3Engine(context: Context) {
   fun seekBy(offsetMs: Long) {
     val basePositionMs = pendingSeekPositionMs ?: activePlayer.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
+    pendingSeekDisplayPositionMs = pendingSeekPositionMs
+    loopHandler.removeCallbacks(settleSeekRunnable)
     loopHandler.removeCallbacks(seekRunnable)
     loopHandler.postDelayed(seekRunnable, 300L)
     // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
@@ -725,6 +736,7 @@ class NativeMedia3Engine(context: Context) {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
+    loopHandler.removeCallbacks(settleSeekRunnable)
     pendingSeekPositionMs = null
     pendingSeekDisplayPositionMs = null
     activePlayer.stop()
@@ -738,6 +750,7 @@ class NativeMedia3Engine(context: Context) {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
+    loopHandler.removeCallbacks(settleSeekRunnable)
     pendingSeekPositionMs = null
     activePlayer.removeListener(listener)
     attachedView?.player = null
