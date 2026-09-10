@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +37,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -123,6 +125,13 @@ object DownloadsScreen : Screen {
     var pendingDelete by remember { mutableStateOf<AppDownload?>(null) }
 
     val activeDownloads = downloads.filter { !it.isCompleted }
+    val activeJellyfinSeries =
+      activeDownloads
+        .filter { it.entity.source == "jellyfin" && !it.entity.jellyfinSeriesName.isNullOrBlank() }
+        .groupBy { it.entity.jellyfinSeriesName.orEmpty() }
+        .toList()
+    val activeStandaloneDownloads =
+      activeDownloads.filter { it.entity.source != "jellyfin" || it.entity.jellyfinSeriesName.isNullOrBlank() }
     val completedDownloads = downloads.filter { it.isCompleted }
     val activeYtdlp = ytdlpJobs.filter { it.state != YtdlpDownloadEngine.JobState.SUCCESS }
     val completedYtdlp = ytdlpJobs.filter { it.state == YtdlpDownloadEngine.JobState.SUCCESS }
@@ -183,7 +192,18 @@ object DownloadsScreen : Screen {
               onRemove = { ytdlpEngine.remove(job.id) },
             )
           }
-          items(activeDownloads, key = { "dl_${it.id}" }) { download ->
+          items(activeJellyfinSeries, key = { "series_${it.first}" }) { (seriesName, episodes) ->
+            JellyfinDownloadGroupCard(
+              seriesName = seriesName,
+              episodes = episodes,
+              activeSnapshot = activeSnapshot,
+              onPause = { downloadManager.pause(it.id) },
+              onResume = { downloadManager.resume(it.id) },
+              onRetry = { downloadManager.retry(it.id) },
+              onCancel = { downloadManager.remove(it, deleteFile = true) },
+            )
+          }
+          items(activeStandaloneDownloads, key = { "dl_${it.id}" }) { download ->
             ActiveDownloadRow(
               download = download,
               speedBytesPerSec = activeSnapshot?.takeIf { it.id == download.id }?.speedBytesPerSec ?: 0L,
@@ -345,13 +365,20 @@ private fun ActiveDownloadRow(
   onResume: () -> Unit,
   onRetry: () -> Unit,
   onCancel: () -> Unit,
+  showCard: Boolean = true,
 ) {
   val status = download.status
-  Card(
-    shape = RoundedCornerShape(14.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-  ) {
+  val content: @Composable () -> Unit = {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+      if (showCard && download.entity.source == "jellyfin" && !download.entity.posterUrl.isNullOrBlank()) {
+        RemoteImage(
+          url = download.entity.posterUrl.orEmpty(),
+          contentDescription = download.displayTitle,
+          modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+          contentScale = ContentScale.Crop,
+        )
+        Spacer(modifier = Modifier.size(10.dp))
+      }
       Row(verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
           Text(
@@ -364,12 +391,7 @@ private fun ActiveDownloadRow(
           Text(
             text = downloadStatusLine(download, speedBytesPerSec),
             style = MaterialTheme.typography.bodySmall,
-            color =
-              if (status == AppDownloadStatus.FAILED) {
-                MaterialTheme.colorScheme.error
-              } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-              },
+            color = if (status == AppDownloadStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
@@ -392,6 +414,60 @@ private fun ActiveDownloadRow(
         LinearProgressIndicator(
           progress = { (download.entity.progress / 100f).coerceIn(0f, 1f) },
           modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+      }
+    }
+  }
+  if (showCard) {
+    Card(
+      shape = RoundedCornerShape(14.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) { content() }
+  } else {
+    content()
+  }
+}
+
+@Composable
+private fun JellyfinDownloadGroupCard(
+  seriesName: String,
+  episodes: List<AppDownload>,
+  activeSnapshot: AppDownloadManager.ActiveSnapshot?,
+  onPause: (AppDownload) -> Unit,
+  onResume: (AppDownload) -> Unit,
+  onRetry: (AppDownload) -> Unit,
+  onCancel: (AppDownload) -> Unit,
+) {
+  val posterUrl = episodes.firstOrNull()?.entity?.posterUrl
+  Card(
+    shape = RoundedCornerShape(14.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+  ) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+      if (!posterUrl.isNullOrBlank()) {
+        RemoteImage(
+          url = posterUrl,
+          contentDescription = seriesName,
+          modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+          contentScale = ContentScale.Crop,
+        )
+      }
+      Text(
+        text = seriesName,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+      )
+      episodes.forEachIndexed { index, episode ->
+        if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        ActiveDownloadRow(
+          download = episode,
+          speedBytesPerSec = activeSnapshot?.takeIf { it.id == episode.id }?.speedBytesPerSec ?: 0L,
+          onPause = { onPause(episode) },
+          onResume = { onResume(episode) },
+          onRetry = { onRetry(episode) },
+          onCancel = { onCancel(episode) },
+          showCard = false,
         )
       }
     }
