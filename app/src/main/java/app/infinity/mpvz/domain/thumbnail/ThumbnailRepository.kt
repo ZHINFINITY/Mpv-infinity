@@ -1251,7 +1251,7 @@ class ThumbnailRepository(
           .replace(Regex("[._]+"), " ")
           .replace(Regex("(?i)\\bS\\d{1,2}(?:E\\d{1,4})?\\b"), " ")
           .replace(Regex("\\[[^]]*]"), " ")
-          .replace(Regex("\\([^)]*(?:1080|2160|4k|x264|hevc|web-dl|bluray)[^)]*\\)"), " ", ignoreCase = true)
+          .replace(Regex("(?i)\\([^)]*(?:1080|2160|4k|x264|hevc|web-dl|bluray)[^)]*\\)"), " ")
           .replace(Regex("\\s+"), " ")
           .trim()
       if (title.isBlank()) return@withContext null
