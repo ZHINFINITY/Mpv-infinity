@@ -322,6 +322,15 @@ class NativeMedia3Engine(context: Context) {
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
     activePlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+    // Media3 can leave embedded text tracks unselected when a stream has no explicit
+    // default subtitle flag. The previous MPV path selected these tracks automatically.
+    // Keep text tracks enabled and allow undetermined-language subtitles to be selected;
+    // the existing subtitle preferences and track controls still govern visibility/choice.
+    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .setSelectUndeterminedTextLanguage(true)
+      .build()
     activePlayer.addListener(listener)
   }
 
