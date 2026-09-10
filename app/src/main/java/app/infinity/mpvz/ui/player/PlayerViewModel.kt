@@ -2820,12 +2820,14 @@ class PlayerViewModel : ViewModel(),
     lastEmbeddedCue = ""
     _translationStatus.value = ""
     _embeddedTranslatedSubtitle.value = null
-    nativeSubtitleVisibilityListener?.invoke(false)
-    nativeSubtitleHiddenForTranslation = false
+    // Translation hides the original subtitle renderer in both engines. Restore both
+    // renderers before clearing the flag; checking after clearing it used to make the
+    // MPV restore branch unreachable, leaving subtitles hidden after translation was disabled.
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
-      nativeSubtitleHiddenForTranslation = false
+      nativeSubtitleVisibilityListener?.invoke(false)
     }
+    nativeSubtitleHiddenForTranslation = false
   }
 
   fun translateEmbeddedSubtitleCue(rawCue: String, native: Boolean = false) {
