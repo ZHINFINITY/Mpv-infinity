@@ -993,6 +993,12 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         nativeEngine.snapshot.collect { snapshot ->
           viewModel.setNativeTracks(snapshot)
+          // Native playback does not emit MPV's pause property. Keep the window wake flag
+          // and media-session state synchronized with the actual Native player instead of
+          // relying on the idle MPV instance behind it.
+          if (activeEngineMode == PlaybackEngineMode.NATIVE && snapshot.isReady) {
+            handlePauseStateChange(isPaused = !snapshot.isPlaying)
+          }
           if (playerPreferences.orientation.get() == PlayerOrientation.Video &&
             snapshot.videoWidth > 0 && snapshot.videoHeight > 0
           ) {
