@@ -18,12 +18,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -70,15 +68,14 @@ private fun QuickDownloadPopup(
   onDownload: (Int) -> Unit,
 ) {
   var selectedQuality by remember { mutableIntStateOf(-1) }
-  var overlayScale by remember { mutableFloatStateOf(1f) }
   val qualityOptions = listOf(-1, 2160, 1440, 1080, 720, 480, 360)
   ModalBottomSheet(
     onDismissRequest = onCancel,
     sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
   ) {
     Column(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = (18 * overlayScale).dp).padding(bottom = 12.dp),
-      verticalArrangement = Arrangement.spacedBy((10 * overlayScale).dp),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 12.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Text("Quick Download", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
       Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -90,8 +87,6 @@ private fun QuickDownloadPopup(
           Text(if (quality < 0) "Best available (highest quality)" else "Up to ${quality}p")
         }
       }
-      Text("Quick Download overlay size", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-      Slider(value = overlayScale, onValueChange = { overlayScale = it }, valueRange = 0.8f..1.25f, steps = 8)
       Spacer(modifier = Modifier.height(4.dp))
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         OutlinedButton(onClick = onCancel) { Text("Cancel") }

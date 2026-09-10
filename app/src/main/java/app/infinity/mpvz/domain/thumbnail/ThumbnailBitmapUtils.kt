@@ -89,3 +89,19 @@ internal fun isMostlySolidThumbnail(
 
   return similarCount.toFloat() / sampledColors.size >= threshold
 }
+
+internal fun isMostlyDarkThumbnail(bitmap: Bitmap): Boolean {
+  val width = bitmap.width
+  val height = bitmap.height
+  if (width <= 0 || height <= 0) return false
+  var totalLuma = 0L
+  var samples = 0
+  for (x in 1..5) {
+    for (y in 1..5) {
+      val color = bitmap.getPixel(width * x / 6, height * y / 6)
+      totalLuma += ((color shr 16 and 0xFF) * 299L + (color shr 8 and 0xFF) * 587L + (color and 0xFF) * 114L) / 1000L
+      samples++
+    }
+  }
+  return samples > 0 && totalLuma / samples < 32L
+}
