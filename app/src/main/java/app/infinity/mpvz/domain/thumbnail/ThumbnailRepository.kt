@@ -867,8 +867,6 @@ class ThumbnailRepository(
           connection.inputStream.use { stream ->
             BitmapFactory.decodeStream(stream)
           }
-        } else {
-          null
         }
       }.getOrNull()
     }
@@ -1212,8 +1210,7 @@ class ThumbnailRepository(
     // the fallback cannot create the large range-read/cache buildup seen on remuxes.
     val bitmap =
       getCinemetaPoster(path, widthPx, heightPx)
-        ?: if (fileSize in 1..MAX_NETWORK_FRAME_THUMBNAIL_FILE_SIZE) {
-          networkGenerationSemaphore.withPermit {
+        ?: networkGenerationSemaphore.withPermit {
             (
               if (connection != null) {
                 extractNetworkVideoFrameViaProxy(
@@ -1343,7 +1340,7 @@ class ThumbnailRepository(
       // authenticated proxy. MediaMetadataRetriever cannot reliably decode large remote MKVs:
       // it requests the Matroska cues and clusters as hidden random reads and often blocks for
       // tens of seconds or returns no bitmap at all.
-      generateFastNetworkThumbnail(localUrl, targetWidth, targetHeight)
+      generateFastNetworkThumbnail(thumbnailUrl.toString(), targetWidth, targetHeight)
         ?: extractNetworkVideoFrame(
         url = thumbnailUrl.toString(),
         strategy = strategy,
