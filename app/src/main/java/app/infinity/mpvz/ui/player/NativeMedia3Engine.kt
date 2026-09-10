@@ -497,15 +497,6 @@ class NativeMedia3Engine(context: Context) {
     val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true) ||
       mediaUri.scheme.equals("content", ignoreCase = true)
     sourceSizeBytes = resolveLocalSize(mediaUri)
-    if (sourceSizeBytes <= 0L && !isLocalUri && (mediaUri.scheme.equals("http", true) || mediaUri.scheme.equals("https", true))) {
-      Thread {
-        val resolved = resolveHttpSize(mediaUri, requestHeaders = emptyMap())
-        if (resolved > 0L && activePlayer.currentMediaItem?.localConfiguration?.uri == mediaUri) {
-          sourceSizeBytes = resolved
-          loopHandler.post { publishSnapshot() }
-        }
-      }.apply { name = "native-media-size"; isDaemon = true }.start()
-    }
     val isHentaiStreamUri = mediaUri.host?.contains("hentaistream-addon.", ignoreCase = true) == true &&
       mediaUri.path?.contains("/video-proxy", ignoreCase = true) == true
     Log.d(
@@ -538,6 +529,16 @@ class NativeMedia3Engine(context: Context) {
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
+    if (sourceSizeBytes <= 0L && !isLocalUri && (mediaUri.scheme.equals("http", true) || mediaUri.scheme.equals("https", true))) {
+      Thread {
+        val resolved = resolveHttpSize(mediaUri, requestHeaders)
+        if (resolved > 0L && preparationUri == mediaUri) {
+          sourceSizeBytes = resolved
+          Log.d(logTag, "resolved network media size=$resolved uri=$mediaUri")
+          loopHandler.post { publishSnapshot() }
+        }
+      }.apply { name = "native-media-size"; isDaemon = true }.start()
+    }
     metadataChapters = emptyList()
     Log.d(logTag, "prepare begin uri=$preparationUri")
     val mediaSource = when {
