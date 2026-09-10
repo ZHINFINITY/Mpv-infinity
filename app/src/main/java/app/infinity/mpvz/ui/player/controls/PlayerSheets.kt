@@ -180,7 +180,7 @@ fun PlayerSheets(
       val translationProvider by aiPreferences.embeddedSubtitleTranslationProvider.collectAsState()
       val embeddedTranslationAvailable = aiEnabled || translationProvider == "Google Translate"
       val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
-      val translationEnabled by aiPreferences.subtitleTranslationEnabled.collectAsState()
+      val translationEnabled by aiPreferences.playerSubtitleTranslationEnabled.collectAsState()
       val autoTranslateLanguages by aiPreferences.autoTranslateLanguages.collectAsState()
       val embeddedTranslationLanguage by aiPreferences.embeddedSubtitleTargetLanguage.collectAsState()
       val selectedEmbeddedLanguage =
@@ -209,7 +209,7 @@ fun PlayerSheets(
         translationEnabled = embeddedTranslationAvailable && translationEnabled,
         onToggleTranslation = {
           val enabled = !translationEnabled
-          aiPreferences.subtitleTranslationEnabled.set(enabled)
+          aiPreferences.playerSubtitleTranslationEnabled.set(enabled)
           if (!enabled) viewModel.resetEmbeddedSubtitleTranslation()
         },
         isGeneratingSubtitles = isGeneratingSubtitles,
