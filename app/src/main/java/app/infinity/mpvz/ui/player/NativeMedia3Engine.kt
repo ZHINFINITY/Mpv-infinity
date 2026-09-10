@@ -262,8 +262,16 @@ class NativeMedia3Engine(context: Context) {
       attachedView?.post { configureSubtitleView() }
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
-      if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
       Log.d(logTag, "playback state=$playbackState uri=${activePlayer.currentMediaItem?.localConfiguration?.uri}")
+    }
+    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+      if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+        val target = pendingSeekDisplayPositionMs
+        if (target == null || kotlin.math.abs(newPosition.positionMs - target) <= 1_000L) {
+          pendingSeekDisplayPositionMs = null
+          publishPlaybackSnapshot()
+        }
+      }
     }
     override fun onPlayerError(error: PlaybackException) {
       Log.e(logTag, "player error uri=${activePlayer.currentMediaItem?.localConfiguration?.uri}", error)

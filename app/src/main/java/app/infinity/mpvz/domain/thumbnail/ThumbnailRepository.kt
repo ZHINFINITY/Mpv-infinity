@@ -1077,10 +1077,11 @@ class ThumbnailRepository(
             browserPreferences.thumbnailMode.get().toThumbnailStrategy(
               browserPreferences.thumbnailFramePosition.get(),
             )
-          val networkStrategy = if (strategy == ThumbnailStrategy.FirstFrame) {
-            ThumbnailStrategy.Hybrid(0.33f)
-          } else {
-            strategy
+          val networkStrategy = when (strategy) {
+            ThumbnailStrategy.FirstFrame,
+            ThumbnailStrategy.EmbeddedOrFirstFrame,
+            ThumbnailStrategy.EmbeddedOrHybrid -> ThumbnailStrategy.Hybrid(0.33f)
+            else -> strategy
           }
           youtubePosterUrl(path)?.let { posterUrl ->
             fetchHttpImage(posterUrl)?.let { bitmap ->
@@ -1173,10 +1174,11 @@ class ThumbnailRepository(
       browserPreferences.thumbnailMode.get().toThumbnailStrategy(
         browserPreferences.thumbnailFramePosition.get(),
       )
-    val networkStrategy = if (strategy == ThumbnailStrategy.FirstFrame) {
-      ThumbnailStrategy.Hybrid(0.33f)
-    } else {
-      strategy
+    val networkStrategy = when (strategy) {
+      ThumbnailStrategy.FirstFrame,
+      ThumbnailStrategy.EmbeddedOrFirstFrame,
+      ThumbnailStrategy.EmbeddedOrHybrid -> ThumbnailStrategy.Hybrid(0.33f)
+      else -> strategy
     }
 
     val bitmap =

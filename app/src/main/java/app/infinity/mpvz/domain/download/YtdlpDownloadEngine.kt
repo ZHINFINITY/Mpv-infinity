@@ -178,9 +178,9 @@ class YtdlpDownloadEngine(
           BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
               if (line.isNotBlank()) lastOutputLine = line.trim()
-              if (line.contains("ERROR:", ignoreCase = true) ||
-                line.contains("[Instagram]", ignoreCase = true) ||
-                line.contains("login", ignoreCase = true)
+              if (!line.contains("[download]", ignoreCase = true) &&
+                !line.contains("[Merger]", ignoreCase = true) &&
+                !line.contains("Destination:", ignoreCase = true)
               ) {
                 if (diagnosticLines.size >= 12) diagnosticLines.removeFirst()
                 diagnosticLines.addLast(line.trim())
