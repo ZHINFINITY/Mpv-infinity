@@ -859,7 +859,9 @@ class ThumbnailRepository(
         if (primary == null || !isMostlySolidThumbnail(primary)) {
           primary
         } else {
-          primary.recycle()
+          // Some movie and episode streams legitimately begin with a black/solid frame. Keep it
+          // as a fallback so WebDAV cards are never blank when no later frame can be decoded.
+          var fallback: Bitmap? = primary
           listOf(0.33f, 0.66f, 0.85f)
             .asSequence()
             .mapNotNull { percentage ->
@@ -872,12 +874,16 @@ class ThumbnailRepository(
             }
             .firstOrNull { candidate ->
               if (isMostlySolidThumbnail(candidate)) {
-                candidate.recycle()
+                fallback?.takeUnless { it.isRecycled }?.recycle()
+                fallback = candidate
                 false
               } else {
+                fallback?.takeUnless { it.isRecycled }?.recycle()
+                fallback = null
                 true
               }
             }
+            ?: fallback
         }
       } finally {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) retriever.close() else retriever.release()

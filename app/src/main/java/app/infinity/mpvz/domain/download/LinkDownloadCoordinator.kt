@@ -28,9 +28,16 @@ class LinkDownloadCoordinator(
     val scheme = uri.scheme?.lowercase()
     if (scheme != "http" && scheme != "https") return Route.UNSUPPORTED
     val path = uri.path?.lowercase().orEmpty()
+    val host = uri.host?.lowercase().orEmpty()
     return when {
       // Manifests play directly in mpv but need yt-dlp to be downloaded as one file.
       path.endsWith(".m3u8") || path.endsWith(".mpd") -> Route.YTDLP
+      // Social CDN share links can look like direct media URLs but still require the extractor
+      // for authentication, format selection, and audio/video merging.
+      host == "youtube.com" || host.endsWith(".youtube.com") ||
+        host == "youtu.be" || host == "instagram.com" || host.endsWith(".instagram.com") ||
+        host == "facebook.com" || host.endsWith(".facebook.com") ||
+        host == "tiktok.com" || host.endsWith(".tiktok.com") -> Route.YTDLP
       YtdlpManager.requiresYtdlp(url) -> Route.YTDLP
       else -> Route.DIRECT
     }

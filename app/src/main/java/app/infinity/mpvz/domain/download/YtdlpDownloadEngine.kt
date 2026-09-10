@@ -255,7 +255,12 @@ class YtdlpDownloadEngine(
       if (qualityHeight > 0) {
         add("-f")
         add("bv*[height<=?$qualityHeight]+ba/b[height<=?$qualityHeight]")
+      } else {
+        add("-f")
+        add("bv*+ba/b")
       }
+      add("--merge-output-format")
+      add("mp4")
       add("-o")
       add(outputTemplate)
 
@@ -362,12 +367,12 @@ class YtdlpDownloadEngine(
     private const val TAG = "YtdlpDownloadEngine"
 
     // Example: "[download]  42.3% of ~ 123.45MiB at 2.34MiB/s ETA 01:23"
-    private val PROGRESS_REGEX = Regex("""\[download]\s+([0-9.]+)%(.*)""")
-    private val DESTINATION_REGEX = Regex("""\[download] Destination: (.+)""")
-    private val ALREADY_DOWNLOADED_REGEX = Regex("""\[download] (.+) has already been downloaded""")
+    private val PROGRESS_REGEX = Regex("""(?i)\[download]\s+([0-9.]+)%(.*)""")
+    private val DESTINATION_REGEX = Regex("""(?i)\[download] Destination: (.+)""")
+    private val ALREADY_DOWNLOADED_REGEX = Regex("""(?i)\[download] (.+) has already been downloaded""")
 
     fun parseProgressLine(line: String): Pair<Float, String>? {
-      val match = PROGRESS_REGEX.find(line.trim()) ?: return null
+      val match = PROGRESS_REGEX.find(line.replace("\r", "").trim()) ?: return null
       val percent = match.groupValues[1].toFloatOrNull() ?: return null
       return percent.coerceIn(0f, 100f) to match.groupValues[2].trim()
     }
