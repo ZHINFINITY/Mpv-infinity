@@ -95,7 +95,7 @@ class ThumbnailRepository(
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
-  private val networkGenerationSemaphore = Semaphore(1)
+  private val networkGenerationSemaphore = Semaphore(2)
   private val maxFolderBatchSize = 48
 
   private data class FolderState(
@@ -1031,12 +1031,17 @@ class ThumbnailRepository(
             browserPreferences.thumbnailMode.get().toThumbnailStrategy(
               browserPreferences.thumbnailFramePosition.get(),
             )
+          val networkStrategy = if (strategy == ThumbnailStrategy.FirstFrame) {
+            ThumbnailStrategy.Hybrid(0.33f)
+          } else {
+            strategy
+          }
           val bitmap =
             networkGenerationSemaphore.withPermit {
               (
                 extractNetworkVideoFrame(
                   url = path,
-                  strategy = strategy,
+                  strategy = networkStrategy,
                   targetWidth = widthPx.takeIf { it > 0 },
                   targetHeight = heightPx.takeIf { it > 0 },
                 ) ?: generateFastNetworkThumbnail(path, widthPx, heightPx)
@@ -1112,6 +1117,11 @@ class ThumbnailRepository(
       browserPreferences.thumbnailMode.get().toThumbnailStrategy(
         browserPreferences.thumbnailFramePosition.get(),
       )
+    val networkStrategy = if (strategy == ThumbnailStrategy.FirstFrame) {
+      ThumbnailStrategy.Hybrid(0.33f)
+    } else {
+      strategy
+    }
 
     val bitmap =
       networkGenerationSemaphore.withPermit {
@@ -1120,7 +1130,7 @@ class ThumbnailRepository(
             extractNetworkVideoFrameViaProxy(
               path = path,
               connection = connection,
-              strategy = strategy,
+              strategy = networkStrategy,
               targetWidth = widthPx,
               targetHeight = heightPx,
               fileSize = fileSize,
@@ -1301,7 +1311,7 @@ class ThumbnailRepository(
       FastThumbnails.generateAsync(
         path,
         10.0,
-        maxOf(widthPx, heightPx, MAX_THUMBNAIL_SIZE).coerceAtMost(thumbnailMaxSize()),
+        maxOf(widthPx, heightPx).coerceAtMost(thumbnailMaxSize()),
         useHwDec = false,
       )
     } catch (cancellation: CancellationException) {

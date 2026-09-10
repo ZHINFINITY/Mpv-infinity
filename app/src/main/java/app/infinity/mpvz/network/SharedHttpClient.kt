@@ -28,8 +28,8 @@ object SharedHttpClient {
       .dispatcher(Dispatcher().apply { maxRequestsPerHost = 8 })
       .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
       .connectTimeout(15, TimeUnit.SECONDS)
-      .readTimeout(30, TimeUnit.SECONDS)
-      .writeTimeout(30, TimeUnit.SECONDS)
+      .readTimeout(90, TimeUnit.SECONDS)
+      .writeTimeout(90, TimeUnit.SECONDS)
       .retryOnConnectionFailure(true)
       .build()
   }
