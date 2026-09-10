@@ -54,6 +54,7 @@ class NetworkStreamingProxy private constructor() :
     private const val TAG = "NetworkStreamingProxy"
     private const val TOKEN_BYTES = 24
     private const val PROXY_OPERATION_TIMEOUT_SECONDS = 75L
+    private const val THUMBNAIL_PROBE_BYTES = 16L * 1024L * 1024L
 
     @Volatile
     private var instance: NetworkStreamingProxy? = null
@@ -178,6 +179,7 @@ class NetworkStreamingProxy private constructor() :
     val streamInfo = streamsByToken[route.token] ?: return notFound(headOnly)
     val requestedPath = route.path ?: streamInfo.primaryPath
     val rangeHeader = session.headers["range"]
+    val thumbnailProbe = session.parms["thumbnail"]?.contains("1") == true
     Log.d(
       TAG,
       "request method=${session.method} token=${route.token} connectionId=${streamInfo.connectionId} path=${requestedPath.value} range=${rangeHeader ?: "none"}",
@@ -191,7 +193,7 @@ class NetworkStreamingProxy private constructor() :
     return try {
       val response =
         if (rangeHeader == null) {
-          handleFullRequest(headOnly, streamInfo, requestedPath)
+          handleFullRequest(headOnly, streamInfo, requestedPath, thumbnailProbe)
         } else {
           handleRangeRequest(headOnly, streamInfo, requestedPath, rangeHeader)
         }
@@ -256,6 +258,7 @@ class NetworkStreamingProxy private constructor() :
     headOnly: Boolean,
     streamInfo: StreamInfo,
     path: NetworkPath,
+    thumbnailProbe: Boolean = false,
   ): Response {
     val fileSize = getFileSize(streamInfo, path)
     val mimeType = mimeTypeFor(streamInfo, path)
@@ -270,6 +273,20 @@ class NetworkStreamingProxy private constructor() :
       return emptyResponse(Response.Status.OK, mimeType).apply { addHeader("Accept-Ranges", "bytes") }
     }
 
+    if (thumbnailProbe && fileSize > THUMBNAIL_PROBE_BYTES) {
+      val probeLength = THUMBNAIL_PROBE_BYTES
+      if (headOnly) {
+        return HeadResponse(Response.Status.PARTIAL_CONTENT, mimeType, probeLength).apply {
+          addHeader("Accept-Ranges", "bytes")
+          addHeader("Content-Range", "bytes 0-${probeLength - 1}/$fileSize")
+        }
+      }
+      val inputStream = getStream(streamInfo, path, 0L, probeLength) ?: return upstreamFailure(false)
+      return newFixedLengthResponse(Response.Status.PARTIAL_CONTENT, mimeType, inputStream, probeLength).apply {
+        addHeader("Accept-Ranges", "bytes")
+        addHeader("Content-Range", "bytes 0-${probeLength - 1}/$fileSize")
+      }
+    }
     val inputStream = getStream(streamInfo, path, 0L, fileSize.takeIf { it >= 0L }) ?: return upstreamFailure(headOnly)
     return if (fileSize >= 0L) {
       newFixedLengthResponse(Response.Status.OK, mimeType, inputStream, fileSize).apply {
