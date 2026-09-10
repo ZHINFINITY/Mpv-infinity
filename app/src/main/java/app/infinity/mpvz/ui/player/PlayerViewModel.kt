@@ -665,7 +665,7 @@ class PlayerViewModel : ViewModel(),
 
   /** Clears the old MPV translation before Native starts emitting its own subtitle cues. */
   fun prepareNativeEngineHandoffForTranslation() {
-    if (!aiPreferences.subtitleTranslationEnabled.get()) return
+    if (!aiPreferences.playerSubtitleTranslationEnabled.get()) return
     clearEmbeddedSubtitleTranslationCue(native = true)
     if (!nativeSubtitleHiddenForTranslation) {
       nativeSubtitleVisibilityListener?.invoke(true)
@@ -2807,7 +2807,7 @@ class PlayerViewModel : ViewModel(),
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
-    if (!native && aiPreferences.subtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
+    if (!native && aiPreferences.playerSubtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", false)
       nativeSubtitleHiddenForTranslation = true
     }
@@ -2831,11 +2831,11 @@ class PlayerViewModel : ViewModel(),
   fun translateEmbeddedSubtitleCue(rawCue: String, native: Boolean = false) {
     val cue = rawCue.trim()
     if (cue.isBlank()) {
-      if (aiPreferences.subtitleTranslationEnabled.get()) clearEmbeddedSubtitleTranslationCue(native)
+      if (aiPreferences.playerSubtitleTranslationEnabled.get()) clearEmbeddedSubtitleTranslationCue(native)
       else resetEmbeddedSubtitleTranslation()
       return
     }
-    if (cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
+    if (cue == lastEmbeddedCue || !aiPreferences.playerSubtitleTranslationEnabled.get()) return
     val target =
       (aiPreferences.embeddedSubtitleTargetLanguage.get().trim().takeIf { it.isNotBlank() }
         ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
