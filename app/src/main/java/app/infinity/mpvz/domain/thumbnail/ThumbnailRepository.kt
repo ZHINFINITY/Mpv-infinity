@@ -1251,7 +1251,7 @@ class ThumbnailRepository(
       val imdbId = Regex("(?i)\\{imdb-(tt\\d+)\\}").find(path)?.groupValues?.get(1)?.lowercase()
       val filename = path.substringAfterLast('/').substringAfterLast('\\')
       val pathSegments = path.split('/').filter { it.isNotBlank() }
-      val seasonIndex = pathSegments.indexOfLast { it.matches(Regex("(?i)(?:Season\\s+\\d+|S\\d{1,2})(?:\\s|\\(|$).*")) }
+      val seasonIndex = pathSegments.indexOfLast { it.matches(Regex("(?i)(?:Season[\\s._-]*\\d{1,2}|S\\d{1,2})(?:\\s|[._-]|\\(|$).*")) }
       val folderTitle =
         if (seasonIndex > 0) pathSegments[seasonIndex - 1]
         else pathSegments.dropLast(1).lastOrNull().orEmpty()
