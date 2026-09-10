@@ -1259,7 +1259,7 @@ class ThumbnailRepository(
   ): String = "$identity|network|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   private fun networkThumbnailDiskKey(identity: String): String =
-    "video-thumb-v3|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+    "video-thumb-v4|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   private fun hasRecentNetworkThumbnailFailure(identity: String): Boolean {
     val failedAt = networkThumbnailFailedAt[identity] ?: return false
