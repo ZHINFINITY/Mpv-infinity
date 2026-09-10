@@ -71,6 +71,7 @@ import kotlin.math.roundToInt
 
 private const val NETWORK_THUMBNAIL_FAILURE_RETRY_MS = 30_000L
 private const val METADATA_POSTER_FAILURE_RETRY_MS = 5 * 60_000L
+private const val MAX_NETWORK_FRAME_THUMBNAIL_FILE_SIZE = 4L * 1024L * 1024L * 1024L
 private const val CINEMETA_CATALOG_URL = "https://v3-cinemeta.strem.io/catalog"
 
 class ThumbnailRepository(
@@ -1207,10 +1208,31 @@ class ThumbnailRepository(
     // WebDAV providers are intentionally not probed for media metadata here. Resolve a
     // poster from the public, keyless Cinemeta catalog using only the filename, then keep
     // the existing authenticated frame extraction as a fallback.
-    // Do not inspect remote media bytes for WebDAV thumbnails. A single video-frame
-    // extraction can trigger 32 MB and end-of-file range reads on very large files.
-    // Cinemeta uses only the filename/IMDb ID and is the fast, provider-safe source.
-    val bitmap = getCinemetaPoster(path, widthPx, heightPx)
+    // Prefer the provider-safe poster. Keep frame extraction only for smaller files where
+    // the fallback cannot create the large range-read/cache buildup seen on remuxes.
+    val bitmap =
+      getCinemetaPoster(path, widthPx, heightPx)
+        ?: if (fileSize in 1..MAX_NETWORK_FRAME_THUMBNAIL_FILE_SIZE) {
+          networkGenerationSemaphore.withPermit {
+            (
+              if (connection != null) {
+                extractNetworkVideoFrameViaProxy(
+                  path = path,
+                  connection = connection,
+                  strategy = networkStrategy,
+                  targetWidth = widthPx,
+                  targetHeight = heightPx,
+                  fileSize = fileSize,
+                  mimeType = mimeType,
+                )
+              } else {
+                generateFastNetworkThumbnail(path, widthPx, heightPx)
+              }
+            )?.let { scaleBitmap(it, widthPx, heightPx) }
+          }
+        } else {
+          null
+        }
 
     if (bitmap == null) {
       android.util.Log.w("ThumbnailRepository", "All strategies failed for network path $path")
