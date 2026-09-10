@@ -443,6 +443,25 @@
             android:theme="@style/Theme.mpvinfinity"
             android:label="@string/ui_media_info" />
 
+        <activity
+            android:name=".ui.downloads.QuickDownloadActivity"
+            android:exported="true"
+            android:theme="@style/Theme.mpvinfinity"
+            android:label="Quick Download" />
+
+        <activity-alias
+            android:name=".ui.downloads.QuickDownloadActivityAlias"
+            android:targetActivity=".ui.downloads.QuickDownloadActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:label="Quick Download">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+
         <activity-alias
             android:name=".ui.mediainfo.MediaInfoActivityAlias"
             android:targetActivity=".ui.mediainfo.MediaInfoActivity"
