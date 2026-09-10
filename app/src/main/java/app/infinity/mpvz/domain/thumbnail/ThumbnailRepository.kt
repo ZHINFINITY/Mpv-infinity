@@ -1249,16 +1249,26 @@ class ThumbnailRepository(
   private suspend fun getCinemetaPoster(path: String, widthPx: Int, heightPx: Int): Bitmap? =
     withContext(Dispatchers.IO) {
       val imdbId = Regex("(?i)\\{imdb-(tt\\d+)\\}").find(path)?.groupValues?.get(1)?.lowercase()
+      val filename = path.substringAfterLast('/').substringAfterLast('\\')
+      val pathSegments = path.split('/').filter { it.isNotBlank() }
+      val seasonIndex = pathSegments.indexOfLast { it.matches(Regex("(?i)Season\\s+\\d+")) }
+      val folderTitle =
+        if (seasonIndex > 0) pathSegments[seasonIndex - 1]
+        else pathSegments.dropLast(1).lastOrNull().orEmpty()
+      val episodeLike =
+        seasonIndex > 0 || filename.matches(Regex("(?i).*\\s-\\s\\d{2,4}\\b.*"))
       val title =
-        path.substringAfterLast('/').substringAfterLast('\\')
+        (if (episodeLike && folderTitle.isNotBlank()) folderTitle else filename)
           .substringBeforeLast('.', missingDelimiterValue = "")
           .replace(Regex("(?i)\\{imdb-tt\\d+\\}"), " ")
           .replace(Regex("[._]+"), " ")
           .replace(Regex("(?i)\\bS\\d{1,2}(?:E\\d{1,4})?\\b"), " ")
+          .replace(Regex("(?i)\\s+-\\s+\\d{2,4}\\b.*$"), " ")
           .replace(Regex("\\[[^]]*]"), " ")
           .replace(Regex("(?i)\\([^)]*(?:1080|2160|4k|x264|hevc|web-dl|bluray)[^)]*\\)"), " ")
           .replace(Regex("\\s+"), " ")
           .trim()
+      fun normalized(value: String): String = value.lowercase().replace(Regex("[^a-z0-9]+"), "")
       if (imdbId == null && title.isBlank()) return@withContext null
       val cacheKey = imdbId ?: title
       val posterUrl = metadataPosterUrls[cacheKey] ?: run {
@@ -1291,7 +1301,15 @@ class ThumbnailRepository(
               metadataPosterClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@runCatching null
                 metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["metas"]
-                  ?.jsonArray?.firstNotNullOfOrNull { it.jsonObject["poster"]?.jsonPrimitive?.contentOrNull }
+                  ?.jsonArray?.firstNotNullOfOrNull { entry ->
+                    val meta = entry.jsonObject
+                    val name = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                    if (normalized(name) == normalized(title)) {
+                      meta["poster"]?.jsonPrimitive?.contentOrNull
+                    } else {
+                      null
+                    }
+                  }
               }
             }.getOrNull()
           }
