@@ -845,6 +845,20 @@ class ThumbnailRepository(
       }.getOrNull()
     }
 
+  private fun youtubePosterUrl(url: String): String? {
+    val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return null
+    val host = uri.host?.lowercase().orEmpty()
+    val videoId = when {
+      host == "youtu.be" -> uri.pathSegments.firstOrNull()
+      host == "youtube.com" || host.endsWith(".youtube.com") ->
+        uri.getQueryParameter("v")
+          ?: uri.pathSegments.firstOrNull { it == "shorts" || it == "embed" }
+            ?.let { marker -> uri.pathSegments.getOrNull(uri.pathSegments.indexOf(marker) + 1) }
+      else -> null
+    }?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{6,}")) }
+    return videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
+  }
+
   private fun extractNetworkVideoFrame(
     url: String,
     strategy: ThumbnailStrategy,
@@ -1067,6 +1081,16 @@ class ThumbnailRepository(
             ThumbnailStrategy.Hybrid(0.33f)
           } else {
             strategy
+          }
+          youtubePosterUrl(path)?.let { posterUrl ->
+            fetchHttpImage(posterUrl)?.let { bitmap ->
+              val scaled = scaleBitmap(bitmap, widthPx, heightPx)
+              networkThumbnailFailedAt.remove(identity)
+              writeBitmapToDisk(diskKey, scaled, network = true)
+              synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
+              _thumbnailReadyKeys.tryEmit(memKey)
+              return@async scaled
+            }
           }
           val bitmap =
             networkGenerationSemaphore.withPermit {
