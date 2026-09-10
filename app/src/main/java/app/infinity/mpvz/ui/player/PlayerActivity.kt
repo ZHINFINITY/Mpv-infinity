@@ -1348,6 +1348,8 @@ class PlayerActivity :
       return
     }
 
+    clearStatisticsOverlayBeforeExit()
+
     // If mini player is enabled, back press within the app hands off playback to the mini player
     // rather than entering PiP. If mini player is disabled, auto-PiP retains priority on Back
     // unless the user restricted auto-PiP to the home gesture.
@@ -1396,6 +1398,14 @@ class PlayerActivity :
     isUserFinishing = true
     viewModel.setNativeEngineActive(false)
     finish()
+  }
+
+  private fun clearStatisticsOverlayBeforeExit() {
+    if (advancedPreferences.enabledStatisticsPage.get() in 1..5 && mpvInitialized) {
+      runCatching { PlaybackSession.command("script-binding", "stats/display-stats-toggle") }
+    }
+    advancedPreferences.enabledStatisticsPage.set(0)
+    viewModel.setNativeEngineActive(false)
   }
 
   fun selectEngineForCurrentVideo(engine: PlaybackEngineMode) {
@@ -1931,6 +1941,7 @@ class PlayerActivity :
 
   override fun onDestroy() {
     Log.d(TAG, "PlayerActivity onDestroy")
+    if (isFinishing) clearStatisticsOverlayBeforeExit()
     val ownsPlaybackSession = ownsPlaybackSession()
     val playbackWasInitialized = mpvInitialized
     val nativeWasActive =
