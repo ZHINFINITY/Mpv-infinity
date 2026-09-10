@@ -48,6 +48,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import kotlinx.coroutines.yield
 import org.koin.java.KoinJavaComponent
 import java.io.ByteArrayOutputStream
@@ -55,6 +62,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -62,6 +70,8 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 private const val NETWORK_THUMBNAIL_FAILURE_RETRY_MS = 30_000L
+private const val METADATA_POSTER_FAILURE_RETRY_MS = 5 * 60_000L
+private const val CINEMETA_CATALOG_URL = "https://v3-cinemeta.strem.io/catalog"
 
 class ThumbnailRepository(
   private val context: Context,
@@ -113,6 +123,10 @@ class ThumbnailRepository(
 
   // Throttle transient failures while still allowing remote files to recover during this process.
   private val networkThumbnailFailedAt = ConcurrentHashMap<String, Long>()
+  private val metadataPosterFailedAt = ConcurrentHashMap<String, Long>()
+  private val metadataPosterUrls = ConcurrentHashMap<String, String>()
+  private val metadataPosterClient by lazy { OkHttpClient.Builder().callTimeout(10, TimeUnit.SECONDS).build() }
+  private val metadataPosterJson = Json { ignoreUnknownKeys = true }
 
   private val _thumbnailReadyKeys =
     MutableSharedFlow<String>(
@@ -1190,24 +1204,28 @@ class ThumbnailRepository(
     // Use one first-frame decode here; normal playback remains seek-capable through the full proxy.
     val networkStrategy = ThumbnailStrategy.FirstFrame
 
+    // WebDAV providers are intentionally not probed for media metadata here. Resolve a
+    // poster from the public, keyless Cinemeta catalog using only the filename, then keep
+    // the existing authenticated frame extraction as a fallback.
     val bitmap =
-      networkGenerationSemaphore.withPermit {
-        (
-          if (connection != null) {
-            extractNetworkVideoFrameViaProxy(
-              path = path,
-              connection = connection,
-              strategy = networkStrategy,
-              targetWidth = widthPx,
-              targetHeight = heightPx,
-              fileSize = fileSize,
-              mimeType = mimeType,
-            )
-          } else {
-            generateFastNetworkThumbnail(path, widthPx, heightPx)
-          }
-        )?.let { scaleBitmap(it, widthPx, heightPx) }
-      }
+      getCinemetaPoster(path, widthPx, heightPx)
+        ?: networkGenerationSemaphore.withPermit {
+          (
+            if (connection != null) {
+              extractNetworkVideoFrameViaProxy(
+                path = path,
+                connection = connection,
+                strategy = networkStrategy,
+                targetWidth = widthPx,
+                targetHeight = heightPx,
+                fileSize = fileSize,
+                mimeType = mimeType,
+              )
+            } else {
+              generateFastNetworkThumbnail(path, widthPx, heightPx)
+            }
+          )?.let { scaleBitmap(it, widthPx, heightPx) }
+        }
 
     if (bitmap == null) {
       android.util.Log.w("ThumbnailRepository", "All strategies failed for network path $path")
@@ -1224,6 +1242,51 @@ class ThumbnailRepository(
     _thumbnailReadyKeys.tryEmit(memKey)
     return bitmap
   }
+
+  private suspend fun getCinemetaPoster(path: String, widthPx: Int, heightPx: Int): Bitmap? =
+    withContext(Dispatchers.IO) {
+      val title =
+        path.substringAfterLast('/').substringAfterLast('\\')
+          .substringBeforeLast('.', missingDelimiterValue = "")
+          .replace(Regex("[._]+"), " ")
+          .replace(Regex("(?i)\\bS\\d{1,2}(?:E\\d{1,4})?\\b"), " ")
+          .replace(Regex("\\[[^]]*]"), " ")
+          .replace(Regex("\\([^)]*(?:1080|2160|4k|x264|hevc|web-dl|bluray)[^)]*\\)"), " ", ignoreCase = true)
+          .replace(Regex("\\s+"), " ")
+          .trim()
+      if (title.isBlank()) return@withContext null
+      val posterUrl = metadataPosterUrls[title] ?: run {
+        val failedAt = metadataPosterFailedAt[title]
+        if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < METADATA_POSTER_FAILURE_RETRY_MS) {
+          return@withContext null
+        }
+        val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
+        val resolved = listOf("movie", "series").firstNotNullOfOrNull { type ->
+          runCatching {
+            val request = Request.Builder()
+              .url("$CINEMETA_CATALOG_URL/$type/top/search=$encoded.json")
+              .header("Accept", "application/json")
+              .build()
+            metadataPosterClient.newCall(request).execute().use { response ->
+              if (!response.isSuccessful) return@runCatching null
+              metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["metas"]
+                ?.jsonArray?.firstNotNullOfOrNull { it.jsonObject["poster"]?.jsonPrimitive?.contentOrNull }
+            }
+          }.getOrNull()
+        }
+        if (resolved == null) metadataPosterFailedAt[title] = SystemClock.elapsedRealtime()
+        resolved
+      } ?: return@withContext null
+      metadataPosterUrls[title] = posterUrl
+      runCatching {
+        val request = Request.Builder().url(posterUrl).header("Accept", "image/*").build()
+        metadataPosterClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) return@runCatching null
+          val bytes = response.body.bytes()
+          BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { scaleBitmap(it, widthPx, heightPx) }
+        }
+      }.getOrNull()
+    }
 
   private suspend fun extractNetworkVideoFrameViaProxy(
     path: String,
