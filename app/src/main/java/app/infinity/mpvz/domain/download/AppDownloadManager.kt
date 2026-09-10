@@ -264,6 +264,11 @@ class AppDownloadManager(
             }
           }
 
+          val completedBytes = partFile.length()
+          check(completedBytes > 0L) { "Downloaded file is empty" }
+          check(totalBytes <= 0L || completedBytes == totalBytes) {
+            "Downloaded size mismatch: $completedBytes/$totalBytes bytes"
+          }
           check(partFile.renameTo(finalFile)) { "Could not finalize file in download folder" }
           totalBytes.takeIf { it > 0 } ?: finalFile.length()
         }
@@ -316,6 +321,7 @@ class AppDownloadManager(
     directory: File,
     videoFileName: String,
     tracks: List<PlaybackSubtitleTrack>,
+    headers: Map<String, String> = emptyMap(),
   ) {
     if (tracks.isEmpty()) return
     val baseName = videoFileName.substringBeforeLast('.')
@@ -330,7 +336,9 @@ class AppDownloadManager(
               .take(24)
           val target = File(directory, "$baseName.$label.$extension")
           if (target.isFile && target.length() > 0) return@forEachIndexed
-          val request = Request.Builder().url(track.url).get().build()
+          val requestBuilder = Request.Builder().url(track.url).get()
+          headers.forEach { (name, value) -> requestBuilder.header(name, value) }
+          val request = requestBuilder.build()
           httpClient.newCall(request).awaitResponse().use { response ->
             check(response.isSuccessful) { "HTTP ${response.code}" }
             val body = response.body.bytes()
