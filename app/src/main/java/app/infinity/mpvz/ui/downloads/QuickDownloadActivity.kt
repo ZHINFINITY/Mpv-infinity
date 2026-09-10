@@ -5,10 +5,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -26,6 +28,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,18 +50,20 @@ class QuickDownloadActivity : ComponentActivity() {
     val title = sharedUrl.substringAfterLast('/').substringBefore('?').ifBlank { "Shared video" }
     val qualityEnabled = ytdlPreferences.showDownloadQualityChooser.get()
 
-    setContent {
-      MpvInfinityTheme {
-        QuickDownloadPopup(
-          url = sharedUrl,
-          title = title,
-          qualityEnabled = qualityEnabled,
-          onCancel = { finish() },
-          onDownload = { quality ->
-            coordinator.enqueue(sharedUrl, title, quality)
-            finish()
-          },
-        )
+  setContent {
+    MpvInfinityTheme {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          QuickDownloadPopup(
+            url = sharedUrl,
+            title = title,
+            qualityEnabled = qualityEnabled,
+            onCancel = { finish() },
+            onDownload = { quality ->
+              coordinator.enqueue(sharedUrl, title, quality)
+              finish()
+            },
+          )
+        }
       }
     }
   }
