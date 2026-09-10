@@ -18,6 +18,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,6 +53,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +67,7 @@ import app.infinity.mpvz.domain.download.AppDownloadManager
 import app.infinity.mpvz.domain.download.AppDownloadStatus
 import app.infinity.mpvz.domain.download.YtdlpDownloadEngine
 import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.browser.states.EmptyState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -173,7 +178,7 @@ object DownloadsScreen : Screen {
               job = job,
               onPause = { ytdlpEngine.pause(job.id) },
               onResume = { ytdlpEngine.resume(job.id) },
-              onCancel = { ytdlpEngine.cancel(job.id) },
+              onCancel = { ytdlpEngine.remove(job.id) },
               onRetry = { ytdlpEngine.retry(job.id) },
               onRemove = { ytdlpEngine.remove(job.id) },
             )
@@ -407,6 +412,28 @@ private fun YtdlpJobRow(
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
   ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+      val thumbnailUrl = ytdlThumbnailUrl(job.url)
+      Box(
+        modifier = Modifier.fillMaxWidth().height(156.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center,
+      ) {
+        if (thumbnailUrl != null) {
+          RemoteImage(
+            url = thumbnailUrl,
+            contentDescription = job.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+          )
+        } else {
+          Icon(
+            Icons.RoundedFilled.VideoLibrary,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(42.dp),
+          )
+        }
+      }
+      Spacer(modifier = Modifier.size(10.dp))
       Row(verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
           Text(
@@ -456,6 +483,16 @@ private fun YtdlpJobRow(
       }
     }
   }
+}
+
+private fun ytdlThumbnailUrl(url: String): String? {
+  val videoId =
+    Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?v=|shorts/|embed/))([^?&/]+)")
+      .find(url)
+      ?.groupValues
+      ?.getOrNull(1)
+      ?.takeIf { it.isNotBlank() }
+  return videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
 }
 
 @Composable

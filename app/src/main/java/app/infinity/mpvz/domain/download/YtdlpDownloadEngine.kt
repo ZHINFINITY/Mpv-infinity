@@ -90,6 +90,7 @@ class YtdlpDownloadEngine(
   }
 
   fun cancel(id: Int) {
+    val job = currentJob(id)
     _jobs.update { current ->
       current.map { job ->
         if (job.id == id && job.state == JobState.QUEUED) job.copy(state = JobState.CANCELLED) else job
@@ -99,6 +100,7 @@ class YtdlpDownloadEngine(
       cancelRequested = true
       activeProcess?.destroyForcibly()
     }
+    job?.let(::deleteJobFiles)
   }
   fun pause(id: Int) {
     if (activeJobId == id) {
@@ -129,6 +131,7 @@ class YtdlpDownloadEngine(
   fun remove(id: Int) {
     val job = _jobs.value.firstOrNull { it.id == id } ?: return
     if (job.isActive) cancel(id)
+    deleteJobFiles(job)
     _jobs.update { current -> current.filterNot { it.id == id } }
   }
 
@@ -190,7 +193,10 @@ class YtdlpDownloadEngine(
     result
       .onSuccess { (exitCode, destination) ->
         when {
-          cancelRequested -> updateJob(id) { it.copy(state = JobState.CANCELLED, detail = "") }
+          cancelRequested -> {
+            deleteJobFiles(job)
+            updateJob(id) { it.copy(state = JobState.CANCELLED, detail = "") }
+          }
           pauseRequested -> updateJob(id) { it.copy(state = JobState.PAUSED, detail = "") }
           exitCode == 0 -> {
             val resolved = destination ?: findNewestOutput(job)
@@ -208,6 +214,9 @@ class YtdlpDownloadEngine(
         Log.e(TAG, "yt-dlp download failed", error)
         if (pauseRequested) {
           updateJob(id) { it.copy(state = JobState.PAUSED, error = null, detail = "") }
+        } else if (cancelRequested) {
+          deleteJobFiles(job)
+          updateJob(id) { it.copy(state = JobState.CANCELLED, error = null, detail = "") }
         } else {
           updateJob(id) { it.copy(state = JobState.FAILED, error = error.message ?: "Unknown error") }
         }
@@ -305,6 +314,15 @@ class YtdlpDownloadEngine(
       ?.filter { it.isFile && it.name.startsWith(prefix) && !it.name.endsWith(".part") && !it.name.endsWith(".ytdl") }
       ?.maxByOrNull { it.lastModified() }
       ?.absolutePath
+  }
+
+  private fun deleteJobFiles(job: Job) {
+    val prefix = DownloadLocations.sanitizeName(job.title)
+    File(job.directory).listFiles()?.forEach { file ->
+      if (file.isFile && file.name.startsWith(prefix)) {
+        runCatching { file.delete() }
+      }
+    }
   }
 
   private fun currentJob(id: Int): Job? = _jobs.value.firstOrNull { it.id == id }
