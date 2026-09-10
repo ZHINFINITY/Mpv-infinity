@@ -10,6 +10,7 @@
 package app.infinity.mpvz.domain.download
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.preferences.YtdlPreferences
@@ -172,8 +173,10 @@ class YtdlpDownloadEngine(
           val process = startProcess(command)
           activeProcess = process
           var destination: String? = null
+          var lastOutputLine = ""
           BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
+              if (line.isNotBlank()) lastOutputLine = line.trim()
               parseDestination(line)?.let { destination = it }
               val progress = parseProgressLine(line)
               if (progress != null) {
@@ -183,7 +186,7 @@ class YtdlpDownloadEngine(
             }
           }
           val exitCode = runInterruptible { process.waitFor() }
-          Pair(exitCode, destination)
+          Triple(exitCode, destination, lastOutputLine)
         }
       }
 
@@ -191,7 +194,7 @@ class YtdlpDownloadEngine(
     activeJobId = -1
 
     result
-      .onSuccess { (exitCode, destination) ->
+      .onSuccess { (exitCode, destination, lastOutputLine) ->
         when {
           cancelRequested -> {
             deleteJobFiles(job)
@@ -206,7 +209,11 @@ class YtdlpDownloadEngine(
           }
           else ->
             updateJob(id) {
-              it.copy(state = JobState.FAILED, error = "yt-dlp exited with code $exitCode")
+              it.copy(
+                state = JobState.FAILED,
+                error = lastOutputLine.takeIf { output -> output.isNotBlank() }
+                  ?: "yt-dlp exited with code $exitCode",
+              )
             }
         }
       }.onFailure { error ->
@@ -256,9 +263,26 @@ class YtdlpDownloadEngine(
         add("--user-agent")
         add(userAgent)
       }
+      if (preferences.customUserAgent.get().isBlank()) {
+        add("--user-agent")
+        add("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0 Mobile Safari/537.36")
+      }
       preferences.referer.get().takeIf(String::isNotBlank)?.let { referer ->
         add("--referer")
         add(referer)
+      }
+      if (preferences.referer.get().isBlank()) {
+        Uri.parse(url).host?.lowercase()?.let { host ->
+          when {
+            host == "instagram.com" || host.endsWith(".instagram.com") -> "https://www.instagram.com/"
+            host == "facebook.com" || host.endsWith(".facebook.com") -> "https://www.facebook.com/"
+            host == "tiktok.com" || host.endsWith(".tiktok.com") -> "https://www.tiktok.com/"
+            else -> null
+          }
+        }?.let { referer ->
+          add("--referer")
+          add(referer)
+        }
       }
       preferences.proxy.get().takeIf(String::isNotBlank)?.let { proxy ->
         add("--proxy")

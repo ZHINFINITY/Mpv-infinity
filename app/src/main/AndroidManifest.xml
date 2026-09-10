@@ -446,7 +446,7 @@
         <activity
             android:name=".ui.downloads.QuickDownloadActivity"
             android:exported="true"
-            android:theme="@style/Theme.mpvinfinity"
+            android:theme="@style/Theme.mpvinfinity.QuickDownload"
             android:label="Quick Download" />
 
         <activity-alias
