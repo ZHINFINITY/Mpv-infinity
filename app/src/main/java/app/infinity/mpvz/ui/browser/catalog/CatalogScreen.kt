@@ -245,7 +245,7 @@ private fun CatalogStatusState(message: String, onRetry: () -> Unit, onEdit: (()
   }
 }
 
-@Composable@Composable
+@Composable
 private fun CatalogSettingsDialog(
   viewModel: CatalogViewModel,
   currentSources: List<app.infinity.mpvz.catalog.CatalogSource>,
@@ -288,10 +288,10 @@ private fun CatalogSettingsDialog(
         Text("Supports custom catalog endpoints and public metadata APIs", style = MaterialTheme.typography.bodySmall)
         Button(
           onClick = {
-            val base = newUrl.trim().removeSuffix("/manifest.json").trimEnd(/)
+            val base = newUrl.trim().removeSuffix("/manifest.json").trimEnd('/')
             if (base.isNotBlank()) {
               val manifestUrl = "$base/manifest.json"
-              val name = base.substringAfter("://").substringBefore(/).ifBlank { "Catalog provider" }
+              val name = base.substringAfter("://").substringBefore('/').ifBlank { "Catalog provider" }
               sources = (sources + app.infinity.mpvz.catalog.CatalogSource("resolver-${manifestUrl.hashCode()}", name, manifestUrl)).distinctBy { it.manifestUrl.lowercase() }
               newUrl = ""
             }
