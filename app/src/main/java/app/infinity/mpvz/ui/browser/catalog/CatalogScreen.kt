@@ -72,10 +72,13 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.player.components.expressive.ExpressiveElevatedCard
 import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.preferences.PreferencesScreen
+import app.infinity.mpvz.ui.utils.LocalBackStack
 
 @Composable
 fun CatalogScreen() {
   val context = LocalContext.current
+  val backStack = LocalBackStack.current
   val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
   val state by viewModel.state.collectAsState()
   val catalogSources by viewModel.catalogSources.collectAsState()
@@ -154,7 +157,7 @@ fun CatalogScreen() {
           tonalElevation = 0.dp,
         ) else Spacer(Modifier.weight(1f))
       IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) viewModel.setQuery("") }) { Icon(Icons.RoundedFilled.Search, "Search") }
-      IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Catalog settings") }
+      IconButton(onClick = { backStack.add(PreferencesScreen) }) { Icon(Icons.RoundedFilled.Settings, "General settings") }
     }
     Row(
       modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
