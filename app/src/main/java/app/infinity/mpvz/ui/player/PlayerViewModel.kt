@@ -2820,13 +2820,11 @@ class PlayerViewModel : ViewModel(),
     lastEmbeddedCue = ""
     _translationStatus.value = ""
     _embeddedTranslatedSubtitle.value = null
-    // Translation hides the original subtitle renderer in both engines. Restore both
-    // renderers before clearing the flag; checking after clearing it used to make the
-    // MPV restore branch unreachable, leaving subtitles hidden after translation was disabled.
-    if (nativeSubtitleHiddenForTranslation) {
-      PlaybackSession.setPropertyBoolean("sub-visibility", true)
-      nativeSubtitleVisibilityListener?.invoke(false)
-    }
+    // Always restore both subtitle renderers. The hidden flag can be false when the
+    // translation request is cancelled before its result arrives, but either renderer may
+    // already have been hidden by the translation handoff.
+    PlaybackSession.setPropertyBoolean("sub-visibility", true)
+    nativeSubtitleVisibilityListener?.invoke(false)
     nativeSubtitleHiddenForTranslation = false
   }
 
