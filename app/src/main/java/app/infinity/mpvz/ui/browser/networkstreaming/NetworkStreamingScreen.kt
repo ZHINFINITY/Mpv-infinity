@@ -39,6 +39,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -62,6 +63,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.Scaffold
@@ -738,19 +740,47 @@ private fun YtdlDownloadQualityDialog(
   if (!isOpen) return
   val qualityOptions = listOf(-1, 2160, 1440, 1080, 720, 480, 360)
   var selectedQuality by remember(isOpen) { mutableStateOf(-1) }
-  AlertDialog(
+  val sheetState =
+    rememberBottomSheetState(
+      initialValue = SheetValue.Hidden,
+      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
+  LaunchedEffect(isOpen) {
+    if (isOpen) sheetState.expand()
+  }
+  ModalBottomSheet(
     onDismissRequest = onDismiss,
-    shape = RoundedCornerShape(28.dp),
-    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-    title = {
-      Text(
-        text = stringResource(R.string.ytdlp_download_quality_title),
-        style = MaterialTheme.typography.headlineMedium,
-        fontWeight = FontWeight.Normal,
-      )
-    },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    sheetState = sheetState,
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    Column(
+      modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.ytdlp_download_quality_title),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          Text(
+            text = "Choose the quality for this video",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        TextButton(onClick = onDismiss) { Text("Done") }
+      }
+
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         qualityOptions.forEach { quality ->
           val selected = selectedQuality == quality
           Surface(
@@ -760,15 +790,29 @@ private fun YtdlDownloadQualityDialog(
             modifier = Modifier.fillMaxWidth(),
           ) {
             Row(
-              modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+              modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
               verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-              RadioButton(selected = selected, onClick = null)
+              Surface(
+                shape = CircleShape,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                modifier = Modifier.size(40.dp),
+              ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                  if (selected) {
+                    Icon(Icons.RoundedFilled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+                  } else {
+                    RadioButton(selected = false, onClick = null)
+                  }
+                }
+              }
               Column(modifier = Modifier.weight(1f)) {
                 Text(
                   text = if (quality < 0) "Best available" else "Up to ${quality}p",
                   style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.SemiBold,
+                  fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                  color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                   text = if (quality < 0) "Best video and audio" else "Video with audio, up to ${quality}p",
@@ -780,23 +824,20 @@ private fun YtdlDownloadQualityDialog(
           }
         }
       }
-    },
-    confirmButton = {
-      Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        androidx.compose.material3.TextButton(onClick = onPlay) {
+
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedButton(onClick = onPlay, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f).height(48.dp)) {
           Text(stringResource(R.string.ui_play_now))
         }
-        androidx.compose.material3.TextButton(onClick = { onDownload(selectedQuality) }) {
+        FilledTonalButton(onClick = { onDownload(selectedQuality) }, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f).height(48.dp)) {
+          Icon(Icons.RoundedFilled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(8.dp))
           Text(stringResource(R.string.ytdlp_download_quality_download))
         }
       }
-    },
-    dismissButton = {
-      androidx.compose.material3.TextButton(onClick = onDismiss) {
-        Text(stringResource(R.string.ytdlp_download_quality_cancel))
-      }
-    },
-  )
+      Spacer(modifier = Modifier.height(12.dp))
+    }
+  }
 }
 
 @Composable
