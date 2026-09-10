@@ -19,6 +19,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.util.Log
 import android.util.LruCache
 import app.infinity.mpvz.data.network.client.NetworkMimeTypes
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
@@ -888,6 +889,8 @@ class ThumbnailRepository(
       } finally {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) retriever.close() else retriever.release()
       }
+    }.onFailure { error ->
+      Log.e("ThumbnailRepository", "Network thumbnail decode failed url=$url", error)
     }.getOrNull()
 
   private fun extractFrameWithStrategy(
