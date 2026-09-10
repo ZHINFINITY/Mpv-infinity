@@ -166,6 +166,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       )
     }
     val synchronizedSources = (existingSources + resolverSources).distinctBy { it.manifestUrl.lowercase() }
+    settings.saveCatalogSources(synchronizedSources)
     _catalogSources.value = synchronizedSources
     settings.resolverToken = resolverToken
     settings.resolverPath = resolverPath
