@@ -1251,12 +1251,12 @@ class ThumbnailRepository(
       val imdbId = Regex("(?i)\\{imdb-(tt\\d+)\\}").find(path)?.groupValues?.get(1)?.lowercase()
       val filename = path.substringAfterLast('/').substringAfterLast('\\')
       val pathSegments = path.split('/').filter { it.isNotBlank() }
-      val seasonIndex = pathSegments.indexOfLast { it.matches(Regex("(?i)Season\\s+\\d+")) }
+      val seasonIndex = pathSegments.indexOfLast { it.matches(Regex("(?i)(?:Season\\s+\\d+|S\\d{1,2})(?:\\s|\\(|$).*")) }
       val folderTitle =
         if (seasonIndex > 0) pathSegments[seasonIndex - 1]
         else pathSegments.dropLast(1).lastOrNull().orEmpty()
       val episodeLike =
-        seasonIndex > 0 || filename.matches(Regex("(?i).*\\s-\\s\\d{2,4}\\b.*"))
+        seasonIndex > 0 || filename.matches(Regex("(?i).*(?:\\bS\\d{1,2}E\\d{1,4}\\b|\\s-\\s\\d{2,4}\\b).*"))
       val title =
         (if (episodeLike && folderTitle.isNotBlank()) folderTitle else filename)
           .substringBeforeLast('.', missingDelimiterValue = "")
