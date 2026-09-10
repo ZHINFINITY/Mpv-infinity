@@ -54,7 +54,7 @@ class NetworkStreamingProxy private constructor() :
     private const val TAG = "NetworkStreamingProxy"
     private const val TOKEN_BYTES = 24
     private const val PROXY_OPERATION_TIMEOUT_SECONDS = 75L
-    private const val THUMBNAIL_PROBE_BYTES = 16L * 1024L * 1024L
+    private const val THUMBNAIL_PROBE_BYTES = 4L * 1024L * 1024L
 
     @Volatile
     private var instance: NetworkStreamingProxy? = null
