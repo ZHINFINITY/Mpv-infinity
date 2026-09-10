@@ -641,8 +641,12 @@ class PlayerViewModel : ViewModel(),
         external = false,
       )
     }
-    nativeChapters.value = snapshot.chapters.map { chapter ->
-      Segment(chapter.title, chapter.startSeconds)
+    // Media3 does not expose Matroska Chapters for every extractor/source. Do not erase a chapter
+    // list already obtained from mpv while the native engine is still preparing its tracks.
+    if (snapshot.chapters.isNotEmpty()) {
+      nativeChapters.value = snapshot.chapters.map { chapter ->
+        Segment(chapter.title, chapter.startSeconds)
+      }
     }
   }
 

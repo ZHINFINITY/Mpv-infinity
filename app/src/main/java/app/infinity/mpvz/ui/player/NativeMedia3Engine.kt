@@ -319,6 +319,10 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onMetadata(metadata: Metadata) {
+      Log.d(
+        logTag,
+        "metadata received entries=${metadata.length()} types=${(0 until metadata.length()).joinToString(",") { metadata[it].javaClass.simpleName }}",
+      )
       // Do not erase the already-published chapter list when a transient callback has no chapters.
       metadataEntriesToChapters(metadata).takeIf { it.isNotEmpty() }?.let { metadataChapters = it }
       publishSnapshot()
@@ -840,7 +844,9 @@ class NativeMedia3Engine(context: Context) {
     (0 until metadata.length()).mapNotNull { index ->
       val entry = metadata.get(index)
       val startTimeMs = runCatching {
-        entry.javaClass.methods.firstOrNull { it.name == "getStartTimeMs" }?.invoke(entry) as? Number
+        entry.javaClass.methods.firstOrNull {
+          it.name == "getStartTimeMs" || it.name == "getChapterTimeStart"
+        }?.invoke(entry) as? Number
       }.getOrNull()
       val startUs = startTimeMs?.toLong()?.times(1000L) ?: sequenceOf("getStartTimeUs", "getChapterTimeStart")
         .mapNotNull { method ->
