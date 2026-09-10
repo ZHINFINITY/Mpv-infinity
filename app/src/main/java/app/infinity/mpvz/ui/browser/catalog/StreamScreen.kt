@@ -300,7 +300,9 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
               else -> true
             }
           }
-          if (searchItems.isEmpty() && !state.isLoading) item { Text("No results found for \"${state.query}\"", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+          if (searchItems.isEmpty() && !state.isLoading) item {
+            StreamEmptySearchState(state.query)
+          }
           searchItems.chunked(2).forEach { rowItems ->
             item {
               Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -345,6 +347,32 @@ private fun openResolverChooser(context: android.content.Context, item: MediaIte
     putExtra("is_series", item.type == MediaType.TV)
     putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
   })
+}
+
+@Composable
+private fun StreamEmptySearchState(query: String) {
+  Box(
+    modifier = Modifier.fillMaxWidth().heightIn(min = 260.dp).padding(horizontal = 24.dp),
+    contentAlignment = androidx.compose.ui.Alignment.Center,
+  ) {
+    Column(
+      horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Icon(
+        Icons.RoundedFilled.Movie,
+        contentDescription = "No search results",
+        modifier = Modifier.size(64.dp),
+        tint = MaterialTheme.colorScheme.primary,
+      )
+      Text(
+        "No results found for \"$query\"",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+      )
+    }
+  }
 }
 
 @Composable
