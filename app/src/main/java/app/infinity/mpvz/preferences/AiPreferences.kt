@@ -89,6 +89,10 @@ class AiPreferences(
   // existing installations that may have retained the earlier opt-in value.
   val subtitleTranslationEnabled =
     preferenceStore.getBoolean("ai_subtitle_translation_enabled_v2", false)
+  // Separate player-sheet opt-in. Global AI translation settings configure availability,
+  // but must never automatically enable translation during playback.
+  val playerSubtitleTranslationEnabled =
+    preferenceStore.getBoolean("ai_player_subtitle_translation_enabled", false)
 
   // Real-time subtitle generation (speech-to-text while playing)
   val realtimeSubsEnabled = preferenceStore.getBoolean("ai_realtime_subs_enabled", true)
