@@ -26,6 +26,7 @@ import app.infinity.mpvz.domain.download.DownloadMetadata
 import app.infinity.mpvz.domain.download.DownloadSources
 import app.infinity.mpvz.domain.jellyfin.JellyfinAuthMode
 import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinMediaSource
 import app.infinity.mpvz.domain.jellyfin.JellyfinSearchCategory
 import app.infinity.mpvz.domain.jellyfin.JellyfinServer
 import app.infinity.mpvz.domain.jellyfin.JellyfinSortBy
@@ -1253,10 +1254,14 @@ class JellyfinViewModel(
   /** Engine download list, exposed for per-item badges and indicators. */
   val downloads get() = downloadManager.downloads
 
-  fun downloadItem(item: JellyfinItem) {
+  suspend fun availableDownloadSources(item: JellyfinItem): List<JellyfinMediaSource> {
+    val server = _uiState.value.activeServer ?: return emptyList()
+    return jellyfinRepository.getMediaSources(server, item.id).getOrDefault(emptyList())
+  }
+  fun downloadItem(item: JellyfinItem, mediaSource: JellyfinMediaSource? = null) {
     val server = _uiState.value.activeServer ?: return
     viewModelScope.launch(Dispatchers.IO) {
-      val queued = enqueueJellyfinDownload(server, item)
+      val queued = enqueueJellyfinDownload(server, item, mediaSource)
       showDownloadToast(
         if (queued) {
           getApplication<Application>().getString(app.infinity.mpvz.R.string.downloads_started)
@@ -1315,10 +1320,11 @@ class JellyfinViewModel(
   private suspend fun enqueueJellyfinDownload(
     server: JellyfinServer,
     item: JellyfinItem,
+    mediaSource: JellyfinMediaSource? = null,
   ): Boolean {
     if (downloadManager.entryForJellyfinItem(item.id) != null) return false
 
-    val streamUrl = jellyfinRepository.getStreamUrl(server, item)
+    val streamUrl = jellyfinRepository.getStreamUrl(server, item, mediaSource?.id)
     if (streamUrl.isBlank()) return false
     val subtitleTracks =
       jellyfinRepository
