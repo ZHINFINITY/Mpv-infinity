@@ -1207,25 +1207,10 @@ class ThumbnailRepository(
     // WebDAV providers are intentionally not probed for media metadata here. Resolve a
     // poster from the public, keyless Cinemeta catalog using only the filename, then keep
     // the existing authenticated frame extraction as a fallback.
-    val bitmap =
-      getCinemetaPoster(path, widthPx, heightPx)
-        ?: networkGenerationSemaphore.withPermit {
-          (
-            if (connection != null) {
-              extractNetworkVideoFrameViaProxy(
-                path = path,
-                connection = connection,
-                strategy = networkStrategy,
-                targetWidth = widthPx,
-                targetHeight = heightPx,
-                fileSize = fileSize,
-                mimeType = mimeType,
-              )
-            } else {
-              generateFastNetworkThumbnail(path, widthPx, heightPx)
-            }
-          )?.let { scaleBitmap(it, widthPx, heightPx) }
-        }
+    // Do not inspect remote media bytes for WebDAV thumbnails. A single video-frame
+    // extraction can trigger 32 MB and end-of-file range reads on very large files.
+    // Cinemeta uses only the filename/IMDb ID and is the fast, provider-safe source.
+    val bitmap = getCinemetaPoster(path, widthPx, heightPx)
 
     if (bitmap == null) {
       android.util.Log.w("ThumbnailRepository", "All strategies failed for network path $path")
