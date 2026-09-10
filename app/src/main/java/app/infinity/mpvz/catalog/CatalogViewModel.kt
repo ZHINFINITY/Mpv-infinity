@@ -153,13 +153,19 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun consumeResolvedUrl() { _resolvedUrl.value = null }
   fun saveSettings(resolvers: List<ResolverEndpoint>, resolverToken: String, resolverPath: String) {
     saveResolvers(resolvers)
-    val enabledResolverBases = resolvers.filter { it.enabled }.map { it.baseUrl.trimEnd('/') }.toSet()
-    val synchronizedSources = settings.catalogSources().map { source ->
-      if (source.id.startsWith("resolver-")) {
-        source.copy(isEnabled = source.manifestUrl.removeSuffix("/manifest.json").trimEnd('/') in enabledResolverBases)
-      } else source
+    val existingSources = settings.catalogSources().filterNot { it.id.startsWith("resolver-") }
+    val resolverSources = resolvers.map { endpoint ->
+      val baseUrl = endpoint.baseUrl.trimEnd('/')
+      val manifestUrl = "$baseUrl/manifest.json"
+      val name = baseUrl.substringAfter("://").substringBefore('/').ifBlank { "Addon catalog" }
+      CatalogSource(
+        id = "resolver-${manifestUrl.hashCode()}",
+        name = name,
+        manifestUrl = manifestUrl,
+        isEnabled = endpoint.enabled,
+      )
     }
-    settings.saveCatalogSources(synchronizedSources)
+    val synchronizedSources = (existingSources + resolverSources).distinctBy { it.manifestUrl.lowercase() }
     _catalogSources.value = synchronizedSources
     settings.resolverToken = resolverToken
     settings.resolverPath = resolverPath
