@@ -52,9 +52,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -183,6 +185,8 @@ object NetworkStreamingScreen : Screen {
     var ytdlpInstallError by remember { mutableStateOf<String?>(null) }
     var ytdlpInstallJob by remember { mutableStateOf<Job?>(null) }
     var linkPlaybackJob by remember { mutableStateOf<Job?>(null) }
+    var pendingYtdlDownloadUrl by remember { mutableStateOf<String?>(null) }
+    var showYtdlDownloadQualityDialog by remember { mutableStateOf(false) }
 
     fun proceedToPlay(url: String) {
       if (linkPlaybackJob?.isActive == true) return
@@ -213,6 +217,20 @@ object NetworkStreamingScreen : Screen {
         showYtdlpInstallPrompt = true
       } else {
         proceedToPlay(url)
+      }
+    }
+
+    fun submitPastedLink(url: String) {
+      val playableSource = normalizeTorrentSource(url) ?: url.trim()
+      if (
+        ytdlPreferences.showDownloadQualityChooser.get() &&
+          linkDownloadCoordinator.routeFor(playableSource) ==
+            app.infinity.mpvz.domain.download.LinkDownloadCoordinator.Route.YTDLP
+      ) {
+        pendingYtdlDownloadUrl = playableSource
+        showYtdlDownloadQualityDialog = true
+      } else {
+        playLinkGatingYtdlp(playableSource)
       }
     }
 
@@ -645,9 +663,27 @@ object NetworkStreamingScreen : Screen {
             showTorrentPicker = true
             torrentPickerViewModel.open(TorrentSelectionInput(source = playableSource))
           } else {
-            viewModel.saveLinkToMedia(playableSource)
-            MediaUtils.playFile(playableSource, context, "network_stream")
+            submitPastedLink(playableSource)
           }
+        },
+      )
+
+      YtdlDownloadQualityDialog(
+        isOpen = showYtdlDownloadQualityDialog,
+        onDismiss = {
+          showYtdlDownloadQualityDialog = false
+          pendingYtdlDownloadUrl = null
+        },
+        onDownload = { qualityHeight ->
+          val url = pendingYtdlDownloadUrl ?: return@YtdlDownloadQualityDialog
+          linkDownloadCoordinator.enqueue(
+            url = url,
+            title = app.infinity.mpvz.domain.download.LinkDownloadCoordinator.fileNameFromUrl(url),
+            qualityHeight = qualityHeight,
+          )
+          android.widget.Toast.makeText(context, R.string.downloads_started, android.widget.Toast.LENGTH_SHORT).show()
+          showYtdlDownloadQualityDialog = false
+          pendingYtdlDownloadUrl = null
         },
       )
 
@@ -676,6 +712,60 @@ object NetworkStreamingScreen : Screen {
       }
     }
   }
+}
+
+@Composable
+private fun YtdlDownloadQualityDialog(
+  isOpen: Boolean,
+  onDismiss: () -> Unit,
+  onDownload: (Int) -> Unit,
+) {
+  if (!isOpen) return
+  val qualityOptions = listOf(-1, 2160, 1440, 1080, 720, 480, 360)
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.ytdlp_download_quality_title)) },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+          text = stringResource(R.string.ytdlp_download_quality_link),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        qualityOptions.forEach { quality ->
+          Surface(
+            onClick = { onDownload(quality) },
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              RadioButton(selected = false, onClick = null)
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = if (quality < 0) stringResource(R.string.ytdlp_download_quality_any) else "Up to ${quality}p",
+                  fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                  text = if (quality < 0) "Use the best format available" else "Video with audio, up to ${quality}p",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+          }
+        }
+      }
+    },
+    confirmButton = {
+      androidx.compose.material3.TextButton(onClick = onDismiss) {
+        Text(stringResource(R.string.ytdlp_download_quality_cancel))
+      }
+    },
+  )
 }
 
 @Composable

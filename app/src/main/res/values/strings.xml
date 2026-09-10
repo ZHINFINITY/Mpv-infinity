@@ -1146,6 +1146,13 @@
   <string name="ytdlp_subtitles_language">Subtitles &amp; Language</string>
   <string name="ytdlp_advanced_networking">Advanced Networking</string>
   <string name="ytdlp_playlist_behavior">Playlist Behavior</string>
+  <string name="ytdlp_download_quality_chooser_title">Show download quality chooser</string>
+  <string name="ytdlp_download_quality_chooser_summary">Ask for quality before downloading supported links pasted in the Network tab</string>
+  <string name="ytdlp_download_quality_title">Choose download quality</string>
+  <string name="ytdlp_download_quality_any">Best available</string>
+  <string name="ytdlp_download_quality_download">Download</string>
+  <string name="ytdlp_download_quality_cancel">Cancel</string>
+  <string name="ytdlp_download_quality_link">Choose a quality for this link</string>
   <string name="ui_file_size">File Size</string>
   <string name="ui_duration">Duration</string>
   <string name="ui_bitrate">Bitrate</string>

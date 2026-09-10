@@ -40,6 +40,7 @@ class LinkDownloadCoordinator(
   fun enqueue(
     url: String,
     title: String?,
+    qualityHeight: Int = -1,
   ): Route {
     val route = routeFor(url)
     val directory = downloadManager.locations.linksDir()
@@ -60,7 +61,13 @@ class LinkDownloadCoordinator(
             ),
         )
       }
-      Route.YTDLP -> ytdlpEngine.enqueue(url = url, title = displayTitle, directory = directory)
+      Route.YTDLP ->
+        ytdlpEngine.enqueue(
+          url = url,
+          title = displayTitle,
+          directory = directory,
+          qualityHeight = qualityHeight,
+        )
       Route.UNSUPPORTED -> {}
     }
     return route
