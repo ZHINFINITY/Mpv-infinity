@@ -190,7 +190,7 @@ class StremioCatalogRepository {
               ?: meta["genre"]?.jsonPrimitive?.contentOrNull?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
               ?: emptyList(),
           )
-          }.filter { query.isNullOrBlank() || supportsSearch || it.title.contains(query, ignoreCase = true) || it.overview.contains(query, ignoreCase = true) }
+          }.filter { query.isNullOrBlank() || it.title.contains(query, ignoreCase = true) }
         }.onFailure { error ->
           if (error is CancellationException) throw error
           Log.e(DIAG_TAG, "catalog failed source=${source.id} message=${error.message}", error)
