@@ -72,6 +72,7 @@ class AppDownloadManager(
     }
 
   private val cancelledIds: MutableSet<Long> = Collections.synchronizedSet(mutableSetOf<Long>())
+  private val pausedIds = ConcurrentHashMap.newKeySet<Long>()
 
   private val _activeSnapshot = MutableStateFlow<ActiveSnapshot?>(null)
 
