@@ -71,6 +71,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,6 +93,7 @@ import androidx.compose.ui.res.stringResource
 import app.infinity.mpvz.R
 import app.infinity.mpvz.data.jellyfin.JellyfinClient
 import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinMediaSource
 import app.infinity.mpvz.domain.jellyfin.JellyfinServer
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.icons.Icon
@@ -119,7 +122,8 @@ fun JellyfinDetailSheet(
   onTogglePlayed: (JellyfinItem) -> Unit,
   onItemClick: (JellyfinItem) -> Unit,
   onDeleteItem: ((JellyfinItem) -> Unit)? = null,
-  onDownload: ((JellyfinItem) -> Unit)? = null,
+  onLoadMediaSources: (suspend (JellyfinItem) -> List<JellyfinMediaSource>)? = null,
+  onDownload: ((JellyfinItem, JellyfinMediaSource?) -> Unit)? = null,
   onDownloadSeason: (() -> Unit)? = null,
   onDownloadSeries: (() -> Unit)? = null,
   downloadedItemIds: Set<String> = emptySet(),
@@ -131,6 +135,23 @@ fun JellyfinDetailSheet(
     ),
 ) {
   if (item == null) return
+  var qualityItem by remember { mutableStateOf<JellyfinItem?>(null) }
+  var qualitySources by remember { mutableStateOf<List<JellyfinMediaSource>>(emptyList()) }
+  var qualityLoading by remember { mutableStateOf(false) }
+  val qualityScope = rememberCoroutineScope()
+  fun requestDownload(target: JellyfinItem) {
+    if (onDownload == null) return
+    if (onLoadMediaSources == null) {
+      onDownload(target, null)
+    } else {
+      qualityItem = target
+      qualityLoading = true
+      qualityScope.launch {
+        qualitySources = onLoadMediaSources.invoke(target)
+        qualityLoading = false
+      }
+    }
+  }
 
   if (item.type == "MusicArtist" || item.type == "MusicAlbum" || item.type == "Album" || item.type == "Playlist" || item.type == "Artist" || item.type == "AlbumArtist") {
     val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
@@ -694,7 +715,7 @@ fun JellyfinDetailSheet(
                   when {
                     item.isSeries -> isDownloadMenuOpen = true
                     isItemDownloaded || isItemDownloading -> {}
-                    else -> onDownload(item)
+                    else -> requestDownload(item)
                   }
                 },
                 shape = RoundedCornerShape(14.dp),
@@ -996,7 +1017,7 @@ fun JellyfinDetailSheet(
                         episode.id in activeDownloadItemIds -> EpisodeDownloadState.ACTIVE
                         else -> EpisodeDownloadState.NOT_DOWNLOADED
                       },
-                    onDownload = { onDownload?.invoke(episode) },
+                    onDownload = { requestDownload(episode) },
                   )
                 }
               }
@@ -1107,8 +1128,65 @@ fun JellyfinDetailSheet(
       }
     }
   }
+  if (qualityItem != null) {
+    androidx.compose.material3.AlertDialog(
+      onDismissRequest = { if (!qualityLoading) qualityItem = null },
+      title = { Text("Choose download quality") },
+      text = {
+        if (qualityLoading) {
+          androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+          }
+        } else if (qualitySources.isEmpty()) {
+          Text("No downloadable media sources were returned by Jellyfin.")
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            qualitySources.forEach { source ->
+              Surface(
+                onClick = {
+                  qualityItem?.let { target -> onDownload?.invoke(target, source) }
+                  qualityItem = null
+                },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth(),
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  androidx.compose.material3.RadioButton(selected = false, onClick = null)
+                  Column(modifier = Modifier.weight(1f)) {
+                    Text("${source.resolutionLabel} • ${source.container?.uppercase() ?: "FILE"}", fontWeight = FontWeight.SemiBold)
+                    Text(
+                      listOfNotNull(
+                        source.videoCodec?.uppercase(),
+                        source.audioCodec?.uppercase(),
+                        source.audioChannels?.let { "$it ch" },
+                        source.videoRange?.takeIf { it.isNotBlank() },
+                        source.sizeBytes?.let { formatJellyfinSize(it) },
+                      ).joinToString(" • ").ifBlank { source.name.orEmpty() },
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {
+        androidx.compose.material3.TextButton(onClick = { qualityItem = null }, enabled = !qualityLoading) { Text("Cancel") }
+      },
+    )
+  }
 }
-
+private fun formatJellyfinSize(bytes: Long): String {
+  if (bytes <= 0) return ""
+  val gb = bytes / 1_000_000_000.0
+  return if (gb >= 1) "%.1f GB".format(gb) else "%.0f MB".format(bytes / 1_000_000.0)
+}
 /** Pulsing placeholder block used while sheet sections stream in. */
 @Composable
 private fun GhostBlock(modifier: Modifier = Modifier) {
