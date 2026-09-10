@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -234,6 +235,11 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         },
         modifier = Modifier.fillMaxSize().padding(padding),
       ) {
+        androidx.compose.animation.AnimatedVisibility(
+          visible = state.items.isNotEmpty() && !state.isLoading,
+          enter = fadeIn(tween(420)) + expandVertically(tween(520)),
+          exit = fadeIn(tween(0)),
+        ) {
         LazyColumn(
           state = streamListState,
           modifier = Modifier.fillMaxSize(),
@@ -318,6 +324,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         if (state.isLoading && state.items.isNotEmpty()) item { StreamLoadingState(searching = searchActive) }
         if (state.isLoadingMore) item { StreamLoadingState(searching = false, compact = true) }
         if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
+        }
         }
       }
     }
