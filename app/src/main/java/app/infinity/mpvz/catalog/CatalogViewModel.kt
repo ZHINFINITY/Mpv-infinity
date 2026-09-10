@@ -46,6 +46,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   val state: StateFlow<CatalogState> = _state.asStateFlow()
   private var searchJob: Job? = null
   private var homeLoadJob: Job? = null
+  // Keep the last successful home result so closing search does not refetch every addon rail.
+  private var cachedHomeItems: List<MediaItem> = emptyList()
   private val _resolvedUrl = MutableStateFlow<String?>(null)
   val resolvedUrl: StateFlow<String?> = _resolvedUrl.asStateFlow()
   private val _torrentLaunch = MutableSharedFlow<TorrentLaunchRequest>(extraBufferCapacity = 1)
@@ -74,12 +76,26 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     val normalized = query
     Log.i(TAG, "setQuery rawLength=${query.length} normalized=\"$normalized\"")
     // Do not render the previous search while the home catalog is being restored.
-    _state.update { it.copy(query = normalized, items = emptyList(), isLoading = true, error = null) }
     searchJob?.cancel()
     homeLoadJob?.cancel()
-    searchJob = viewModelScope.launch {
-      delay(200)
-      if (normalized.isBlank()) loadTrending() else runSearch(normalized)
+    if (normalized.isBlank() && cachedHomeItems.isNotEmpty()) {
+      // Restore the existing home rails immediately; explicit refresh still refetches them.
+      _state.update {
+        it.copy(
+          query = normalized,
+          items = cachedHomeItems,
+          isLoading = false,
+          catalogPage = 1,
+          canLoadMore = cachedHomeItems.isNotEmpty(),
+          error = null,
+        )
+      }
+    } else {
+      _state.update { it.copy(query = normalized, items = emptyList(), isLoading = true, error = null) }
+      searchJob = viewModelScope.launch {
+        delay(200)
+        if (normalized.isBlank()) loadTrending() else runSearch(normalized)
+      }
     }
   }
 
@@ -220,6 +236,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     _state.update { it.copy(isLoading = true, error = null) }
     if (_state.value.query.isBlank()) {
       val items = loadFromProviders(null)
+      cachedHomeItems = items
       _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) }
     } else {
       runSearch(_state.value.query)
@@ -231,7 +248,10 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     homeLoadJob = viewModelScope.launch {
       _state.update { it.copy(isLoading = true, error = null) }
       runCatching { loadFromProviders(null) }
-        .onSuccess { items -> if (_state.value.query.isBlank()) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) } }
+        .onSuccess { items ->
+          cachedHomeItems = items
+          if (_state.value.query.isBlank()) _state.update { it.copy(items = items, isLoading = false, catalogPage = 1, canLoadMore = items.isNotEmpty()) }
+        }
         .onFailure { error ->
           if (error is CancellationException) throw error
           _state.update { it.copy(isLoading = false, error = error.message) }
