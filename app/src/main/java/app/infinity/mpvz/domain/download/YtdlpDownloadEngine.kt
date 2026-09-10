@@ -36,7 +36,7 @@ class YtdlpDownloadEngine(
   private val context: Context,
   private val preferences: YtdlPreferences,
 ) {
-  enum class JobState { QUEUED, RUNNING, SUCCESS, FAILED, CANCELLED }
+  enum class JobState { QUEUED, RUNNING, PAUSED, SUCCESS, FAILED, CANCELLED }
 
   data class Job(
     val id: Int,
@@ -64,6 +64,7 @@ class YtdlpDownloadEngine(
 
   @Volatile
   private var cancelRequested = false
+  private var pauseRequested = false
 
   fun enqueue(
     url: String,
@@ -89,6 +90,18 @@ class YtdlpDownloadEngine(
       cancelRequested = true
       activeProcess?.destroyForcibly()
     }
+  }
+  fun pause(id: Int) {
+    if (activeJobId == id) {
+      pauseRequested = true
+      activeProcess?.destroyForcibly()
+    } else {
+      _jobs.update { current -> current.map { job -> if (job.id == id && job.state == JobState.QUEUED) job.copy(state = JobState.PAUSED) else job } }
+    }
+  }
+  fun resume(id: Int) {
+    _jobs.update { current -> current.map { job -> if (job.id == id && job.state == JobState.PAUSED) job.copy(state = JobState.QUEUED, error = null) else job } }
+    if (hasQueuedWork()) YtdlpDownloadService.start(context)
   }
 
   fun retry(id: Int) {
@@ -128,6 +141,7 @@ class YtdlpDownloadEngine(
   ) {
     val job = currentJob(id) ?: return
     cancelRequested = false
+    pauseRequested = false
     activeJobId = id
 
     val ready = YtdlpManager.ensureRuntimeInstalled(context)
@@ -168,6 +182,7 @@ class YtdlpDownloadEngine(
       .onSuccess { (exitCode, destination) ->
         when {
           cancelRequested -> updateJob(id) { it.copy(state = JobState.CANCELLED, detail = "") }
+          pauseRequested -> updateJob(id) { it.copy(state = JobState.PAUSED, detail = "") }
           exitCode == 0 -> {
             val resolved = destination ?: findNewestOutput(job)
             updateJob(id) {
@@ -204,6 +219,9 @@ class YtdlpDownloadEngine(
       add("5")
       add("--concurrent-fragments")
       add("4")
+      add("--continue")
+      add("--part")
+      add("--no-overwrites")
       add("-o")
       add(outputTemplate)
 
