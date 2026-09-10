@@ -14,6 +14,7 @@ import app.infinity.mpvz.database.dao.JellyfinServerDao
 import app.infinity.mpvz.database.entities.JellyfinServerEntity
 import app.infinity.mpvz.domain.jellyfin.JellyfinAuthResult
 import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinMediaSource
 import app.infinity.mpvz.domain.jellyfin.JellyfinServer
 import app.infinity.mpvz.domain.jellyfin.JellyfinUser
 import app.infinity.mpvz.utils.media.PlaybackSubtitleTrack
@@ -192,15 +193,20 @@ class JellyfinRepository(
       itemId = itemId,
     )
 
+  suspend fun getMediaSources(server: JellyfinServer, itemId: String): Result<List<JellyfinMediaSource>> =
+    client.getMediaSources(server.serverUrl, server.accessToken, server.userId, itemId)
+
   fun getStreamUrl(
     server: JellyfinServer,
     item: JellyfinItem,
+    mediaSourceId: String? = null,
   ): String =
     client.getStreamUrl(
       serverUrl = server.serverUrl,
       itemId = item.id,
       token = server.accessToken,
       isAudio = item.isAudio,
+      mediaSourceId = mediaSourceId,
     )
 
   fun getImageUrl(
