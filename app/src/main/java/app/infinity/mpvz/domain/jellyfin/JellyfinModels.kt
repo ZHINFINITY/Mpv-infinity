@@ -225,3 +225,27 @@ data class JellyfinUser(
   val subtitleLanguage: String? = null,
   val normalizedServerUrl: String = "",
 )
+
+/** A media file/version already available on a Jellyfin server. */
+data class JellyfinMediaSource(
+  val id: String,
+  val name: String? = null,
+  val container: String? = null,
+  val sizeBytes: Long? = null,
+  val bitrate: Long? = null,
+  val width: Int? = null,
+  val height: Int? = null,
+  val videoCodec: String? = null,
+  val audioCodec: String? = null,
+  val audioChannels: Int? = null,
+  val videoRange: String? = null,
+) {
+  val resolutionLabel: String
+    get() = when {
+      (width ?: 0) >= 3800 || (height ?: 0) >= 2100 -> "4K"
+      (width ?: 0) >= 1900 || (height ?: 0) >= 1000 -> "1080p"
+      (width ?: 0) >= 1200 || (height ?: 0) >= 700 -> "720p"
+      (height ?: 0) > 0 -> "${height}p"
+      else -> "Unknown resolution"
+    }
+}
