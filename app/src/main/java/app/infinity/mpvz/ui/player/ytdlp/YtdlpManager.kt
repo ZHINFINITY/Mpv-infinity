@@ -392,6 +392,8 @@ object YtdlpManager {
       val output = StringBuilder()
       val ytdlFile = File(getYtdlDir(context), "yt-dlp")
       val cookiesFile = AndroidCookieJar.playbackCookieFile(context).takeIf(File::isFile)
+      val sourceHost = Uri.parse(source).host?.lowercase().orEmpty()
+      val isInstagram = sourceHost == "instagram.com" || sourceHost.endsWith(".instagram.com")
       val command = buildList {
         add(getExecutablePath(context))
         add(ytdlFile.absolutePath)
@@ -402,6 +404,14 @@ object YtdlpManager {
         add("--get-url")
         add("--format")
         add("best[acodec!=none][vcodec!=none]/best")
+        if (isInstagram) {
+          // Instagram frequently rejects the default mobile/blank request headers. Use a
+          // browser-like request and the app's exported cookies when available.
+          add("--user-agent")
+          add("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36")
+          add("--referer")
+          add("https://www.instagram.com/")
+        }
         cookiesFile?.let {
           add("--cookies")
           add(it.absolutePath)
