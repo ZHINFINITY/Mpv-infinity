@@ -1373,7 +1373,15 @@ class JellyfinViewModel(
       // Belt and braces for reverse proxies that strip query-string auth.
       headers = mapOf("X-Emby-Token" to server.accessToken),
     )
-    downloadManager.enqueueSubtitleSidecars(directory = directory, videoFileName = fileName, tracks = subtitleTracks)
+    downloadManager.enqueueSubtitleSidecars(
+      directory = directory,
+      videoFileName = fileName,
+      tracks = subtitleTracks,
+      headers = mapOf(
+        "X-Emby-Token" to server.accessToken,
+        "X-MediaBrowser-Token" to server.accessToken,
+      ),
+    )
     return true
   }
 
