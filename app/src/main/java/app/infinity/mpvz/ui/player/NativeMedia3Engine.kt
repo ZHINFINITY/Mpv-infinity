@@ -303,12 +303,14 @@ class NativeMedia3Engine(context: Context) {
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "timeline changed reason=$reason windowCount=${timeline.windowCount} prepareElapsedMs=$elapsed uri=$preparationUri")
+      publishSnapshot()
     }
 
     override fun onTracksChanged(tracks: Tracks) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       val types = tracks.groups.joinToString(",") { it.type.toString() }
       Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types prepareElapsedMs=$elapsed uri=$preparationUri")
+      publishSnapshot()
     }
 
     override fun onIsLoadingChanged(isLoading: Boolean) {
