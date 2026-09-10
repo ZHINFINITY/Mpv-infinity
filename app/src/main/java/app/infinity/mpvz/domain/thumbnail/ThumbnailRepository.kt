@@ -1271,7 +1271,9 @@ class ThumbnailRepository(
       fun normalized(value: String): String = value.lowercase().replace(Regex("[^a-z0-9]+"), "")
       if (imdbId == null && title.isBlank()) return@withContext null
       val cacheKey = imdbId ?: title
-      val posterUrl = metadataPosterUrls[cacheKey] ?: run {
+      val posterUrl =
+        (if (episodeLike) getKitsuPoster(title, ::normalized) else null)
+          ?: metadataPosterUrls[cacheKey] ?: run {
         val failedAt = metadataPosterFailedAt[cacheKey]
         if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < METADATA_POSTER_FAILURE_RETRY_MS) {
           return@withContext null
@@ -1327,6 +1329,39 @@ class ThumbnailRepository(
         }
       }.getOrNull()
     }
+
+  private suspend fun getKitsuPoster(title: String, normalized: (String) -> String): String? {
+    val cacheKey = "kitsu:$title"
+    metadataPosterUrls[cacheKey]?.let { return it }
+    val failedAt = metadataPosterFailedAt[cacheKey]
+    if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < METADATA_POSTER_FAILURE_RETRY_MS) return null
+    val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
+    val resolved = runCatching {
+      val request = Request.Builder()
+        .url("https://kitsu.io/api/edge/anime?filter[text]=$encoded&page[limit]=10")
+        .header("Accept", "application/vnd.api+json")
+        .build()
+      metadataPosterClient.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) return@runCatching null
+        metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["data"]
+          ?.jsonArray?.firstNotNullOfOrNull { entry ->
+            val attributes = entry.jsonObject["attributes"]?.jsonObject ?: return@firstNotNullOfOrNull null
+            val names = listOfNotNull(
+              attributes["canonicalTitle"]?.jsonPrimitive?.contentOrNull,
+              attributes["english"]?.jsonPrimitive?.contentOrNull,
+              attributes["romaji"]?.jsonPrimitive?.contentOrNull,
+              attributes["slug"]?.jsonPrimitive?.contentOrNull,
+            )
+            if (names.any { normalized(it) == normalized(title) }) {
+              attributes["posterImage"]?.jsonObject?.get("small")?.jsonPrimitive?.contentOrNull
+            } else null
+          }
+      }
+    }.getOrNull()
+    if (resolved == null) metadataPosterFailedAt[cacheKey] = SystemClock.elapsedRealtime()
+    if (resolved != null) metadataPosterUrls[cacheKey] = resolved
+    return resolved
+  }
 
   private suspend fun extractNetworkVideoFrameViaProxy(
     path: String,
