@@ -79,6 +79,7 @@ import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.preferences.PreferencesScreen
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.media.MediaUtils
@@ -204,8 +205,8 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           navigationIcon = { IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
           actions = {
             IconButton(onClick = { isSearching = !searchActive; if (searchActive) viewModel.setQuery("") }) { Icon(if (searchActive) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, if (searchActive) "Close search" else "Search") }
-            IconButton(onClick = { showCatalogs = true }) { Icon(Icons.RoundedFilled.Explore, "Catalogs") }
-            IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Settings, "Resolvers") }
+            IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Explore, "Catalogs and resolvers") }
+            IconButton(onClick = { backstack.add(PreferencesScreen) }) { Icon(Icons.RoundedFilled.Settings, "General settings") }
           },
           colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
         )
@@ -307,7 +308,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
       }
     }
     if (showSettings) StreamResolverSettingsDialog(viewModel) { showSettings = false }
-    if (showCatalogs) CatalogProvidersDialog(viewModel) { showCatalogs = false }
+
   }
 }
 
