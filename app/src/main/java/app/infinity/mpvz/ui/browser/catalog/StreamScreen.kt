@@ -235,9 +235,12 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
         },
         modifier = Modifier.fillMaxSize().padding(padding),
       ) {
+        val streamSearchMode = searchActive && state.query.isNotBlank()
         androidx.compose.animation.AnimatedVisibility(
-          visible = state.items.isNotEmpty() && !state.isLoading,
-          enter = fadeIn(tween(420)) + expandVertically(tween(520)),
+          // Search keeps the list container mounted while provider results change. This prevents
+          // the empty-state item from being re-entered for every typed word.
+          visible = streamSearchMode || (state.items.isNotEmpty() && !state.isLoading),
+          enter = if (streamSearchMode) androidx.compose.animation.EnterTransition.None else fadeIn(tween(420)) + expandVertically(tween(520)),
         ) {
         LazyColumn(
           state = streamListState,
