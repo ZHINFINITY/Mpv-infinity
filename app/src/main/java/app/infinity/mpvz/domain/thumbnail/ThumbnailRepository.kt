@@ -1245,39 +1245,58 @@ class ThumbnailRepository(
 
   private suspend fun getCinemetaPoster(path: String, widthPx: Int, heightPx: Int): Bitmap? =
     withContext(Dispatchers.IO) {
+      val imdbId = Regex("(?i)\\{imdb-(tt\\d+)\\}").find(path)?.groupValues?.get(1)?.lowercase()
       val title =
         path.substringAfterLast('/').substringAfterLast('\\')
           .substringBeforeLast('.', missingDelimiterValue = "")
+          .replace(Regex("(?i)\\{imdb-tt\\d+\\}"), " ")
           .replace(Regex("[._]+"), " ")
           .replace(Regex("(?i)\\bS\\d{1,2}(?:E\\d{1,4})?\\b"), " ")
           .replace(Regex("\\[[^]]*]"), " ")
           .replace(Regex("(?i)\\([^)]*(?:1080|2160|4k|x264|hevc|web-dl|bluray)[^)]*\\)"), " ")
           .replace(Regex("\\s+"), " ")
           .trim()
-      if (title.isBlank()) return@withContext null
-      val posterUrl = metadataPosterUrls[title] ?: run {
-        val failedAt = metadataPosterFailedAt[title]
+      if (imdbId == null && title.isBlank()) return@withContext null
+      val cacheKey = imdbId ?: title
+      val posterUrl = metadataPosterUrls[cacheKey] ?: run {
+        val failedAt = metadataPosterFailedAt[cacheKey]
         if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < METADATA_POSTER_FAILURE_RETRY_MS) {
           return@withContext null
         }
-        val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
-        val resolved = listOf("movie", "series").firstNotNullOfOrNull { type ->
-          runCatching {
-            val request = Request.Builder()
-              .url("$CINEMETA_CATALOG_URL/$type/top/search=$encoded.json")
-              .header("Accept", "application/json")
-              .build()
-            metadataPosterClient.newCall(request).execute().use { response ->
-              if (!response.isSuccessful) return@runCatching null
-              metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["metas"]
-                ?.jsonArray?.firstNotNullOfOrNull { it.jsonObject["poster"]?.jsonPrimitive?.contentOrNull }
-            }
-          }.getOrNull()
+        val resolved = if (imdbId != null) {
+          listOf("movie", "series").firstNotNullOfOrNull { type ->
+            runCatching {
+              val request = Request.Builder()
+                .url("https://v3-cinemeta.strem.io/meta/$type/$imdbId.json")
+                .header("Accept", "application/json")
+                .build()
+              metadataPosterClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching null
+                metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["meta"]
+                  ?.jsonObject?.get("poster")?.jsonPrimitive?.contentOrNull
+              }
+            }.getOrNull()
+          }
+        } else {
+          val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
+          listOf("movie", "series").firstNotNullOfOrNull { type ->
+            runCatching {
+              val request = Request.Builder()
+                .url("$CINEMETA_CATALOG_URL/$type/top/search=$encoded.json")
+                .header("Accept", "application/json")
+                .build()
+              metadataPosterClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching null
+                metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["metas"]
+                  ?.jsonArray?.firstNotNullOfOrNull { it.jsonObject["poster"]?.jsonPrimitive?.contentOrNull }
+              }
+            }.getOrNull()
+          }
         }
-        if (resolved == null) metadataPosterFailedAt[title] = SystemClock.elapsedRealtime()
+        if (resolved == null) metadataPosterFailedAt[cacheKey] = SystemClock.elapsedRealtime()
         resolved
       } ?: return@withContext null
-      metadataPosterUrls[title] = posterUrl
+      metadataPosterUrls[cacheKey] = posterUrl
       runCatching {
         val request = Request.Builder().url(posterUrl).header("Accept", "image/*").build()
         metadataPosterClient.newCall(request).execute().use { response ->
