@@ -144,9 +144,9 @@ class StremioCatalogRepository {
   suspend fun load(source: CatalogSource, query: String?, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
     Log.i(DIAG_TAG, "catalog start source=${source.id} query=${query ?: "<home>"} manifest=${source.manifestUrl}")
     runCatching {
-      val manifest = manifestCache[source.manifestUrl] ?: getJson(source.manifestUrl).jsonObject.also {
-        manifestCache[source.manifestUrl] = it
-      }
+      // Always refresh the manifest: addon providers can publish new catalogs/rails without
+      // changing the manifest URL, so a permanent in-memory cache hides those rails.
+      val manifest = getJson(source.manifestUrl).jsonObject
       val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
           // Each advertised catalog is a distinct rail. Add-ons that expose only streams still
           // contribute no catalog items and therefore do not affect the resolver path.
