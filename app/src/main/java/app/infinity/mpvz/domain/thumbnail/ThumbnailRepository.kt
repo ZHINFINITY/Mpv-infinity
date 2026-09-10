@@ -95,7 +95,7 @@ class ThumbnailRepository(
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
-  private val networkGenerationSemaphore = Semaphore(2)
+  private val networkGenerationSemaphore = Semaphore(3)
   private val maxFolderBatchSize = 48
 
   private data class FolderState(
@@ -855,7 +855,30 @@ class ThumbnailRepository(
       try {
         retriever.setDataSource(url, networkVideoHeaders())
 
-        extractFrameWithStrategy(retriever, strategy, targetWidth, targetHeight)
+        val primary = extractFrameWithStrategy(retriever, strategy, targetWidth, targetHeight)
+        if (primary == null || !isMostlySolidThumbnail(primary)) {
+          primary
+        } else {
+          primary.recycle()
+          listOf(0.33f, 0.66f, 0.85f)
+            .asSequence()
+            .mapNotNull { percentage ->
+              getFrameAt(
+                retriever,
+                frameTimeMicros(retriever, percentage),
+                targetWidth,
+                targetHeight,
+              )
+            }
+            .firstOrNull { candidate ->
+              if (isMostlySolidThumbnail(candidate)) {
+                candidate.recycle()
+                false
+              } else {
+                true
+              }
+            }
+        }
       } finally {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) retriever.close() else retriever.release()
       }
