@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -370,18 +374,28 @@ private fun StreamLoadingState(searching: Boolean, compact: Boolean = false) {
 private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSeeMore: (() -> Unit)?, onClick: (MediaItem) -> Unit) {
   if (items.isEmpty()) return
   item {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-      Column(Modifier.weight(1f)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("Popular and recently added", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    AnimatedVisibility(
+      visible = true,
+      enter = fadeIn(tween(420)) + slideInVertically(tween(420)) { it / 8 },
+    ) {
+      Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+          Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+          Text("Popular and recently added", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        onSeeMore?.let { TextButton(onClick = it) { Text("See all") } }
       }
-      onSeeMore?.let { TextButton(onClick = it) { Text("See all") } }
     }
   }
   item {
-    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-      items(items.take(18), key = { "stream-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
-        androidx.compose.foundation.layout.Box(Modifier.width(144.dp)) { CatalogGridItem(item, false) { onClick(item) } }
+    AnimatedVisibility(
+      visible = true,
+      enter = fadeIn(tween(520)) + slideInVertically(tween(520)) { it / 10 },
+    ) {
+      LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items(items.take(18), key = { "stream-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
+          androidx.compose.foundation.layout.Box(Modifier.width(144.dp)) { CatalogGridItem(item, false) { onClick(item) } }
+        }
       }
     }
   }
