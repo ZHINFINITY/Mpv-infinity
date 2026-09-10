@@ -1078,7 +1078,7 @@ private fun MediaContent(
     } else {
       LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = navBarHeight + 24.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = navBarHeight + 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
       ) {
         if (recentLinks.isNotEmpty()) {
@@ -1244,7 +1244,7 @@ private fun SavedStreamLinksSection(
   onDownload: (NetworkStreamEntryEntity) -> Unit,
   onDelete: (String) -> Unit,
 ) {
-  Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+  Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
     Text(
       text = "Saved Stream Links",
       style = MaterialTheme.typography.titleLarge,
