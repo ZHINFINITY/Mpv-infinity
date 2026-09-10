@@ -116,6 +116,7 @@ private class HentaiStreamLoggingDataSource(
   val videoMimeType: String? = null,
   val videoCodec: String? = null,
   val videoBitrate: Int = 0,
+  val videoBitrateEstimated: Boolean = false,
   val audioCodec: String? = null,
   val audioBitrate: Int = 0,
   val audioChannels: Int = 0,
@@ -143,6 +144,8 @@ data class NativeChapter(
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(context: Context) {
   private val logTag = "Mpv∞-Media3"
+  private val appContext = context.applicationContext
+  @Volatile private var sourceSizeBytes: Long = 0L
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
     .setAllowCrossProtocolRedirects(true)
     .setConnectTimeoutMs(15_000)
@@ -493,6 +496,16 @@ class NativeMedia3Engine(context: Context) {
       }
     val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true) ||
       mediaUri.scheme.equals("content", ignoreCase = true)
+    sourceSizeBytes = resolveLocalSize(mediaUri)
+    if (sourceSizeBytes <= 0L && !isLocalUri && (mediaUri.scheme.equals("http", true) || mediaUri.scheme.equals("https", true))) {
+      Thread {
+        val resolved = resolveHttpSize(mediaUri, requestHeaders = emptyMap())
+        if (resolved > 0L && activePlayer.currentMediaItem?.localConfiguration?.uri == mediaUri) {
+          sourceSizeBytes = resolved
+          loopHandler.post { publishSnapshot() }
+        }
+      }.apply { name = "native-media-size"; isDaemon = true }.start()
+    }
     val isHentaiStreamUri = mediaUri.host?.contains("hentaistream-addon.", ignoreCase = true) == true &&
       mediaUri.path?.contains("/video-proxy", ignoreCase = true) == true
     Log.d(
@@ -542,6 +555,32 @@ class NativeMedia3Engine(context: Context) {
     publishSnapshot()
     startTimelineUpdates()
   }
+
+  private fun resolveLocalSize(uri: Uri): Long {
+    if (uri.scheme.equals("file", true)) return File(uri.path.orEmpty()).length()
+    if (uri.scheme.equals("content", true)) {
+      return runCatching {
+        appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+      }.getOrNull()?.takeIf { it > 0L } ?: 0L
+    }
+    return 0L
+  }
+
+  private fun resolveHttpSize(uri: Uri, requestHeaders: Map<String, String>): Long =
+    runCatching {
+      (java.net.URL(uri.toString()).openConnection() as java.net.HttpURLConnection).apply {
+        requestMethod = "HEAD"
+        connectTimeout = 4_000
+        readTimeout = 4_000
+        requestHeaders.forEach { (key, value) -> setRequestProperty(key, value) }
+      }.let { connection ->
+        try {
+          if (connection.responseCode in 200..399) connection.contentLengthLong else -1L
+        } finally {
+          connection.disconnect()
+        }
+      }
+    }.getOrDefault(-1L).coerceAtLeast(0L)
 
   private fun nativeContainerMimeType(uri: Uri): String? =
     when (uri.getQueryParameter("format")?.lowercase() ?: uri.path?.substringAfterLast('.', "")?.lowercase()) {
@@ -716,17 +755,26 @@ class NativeMedia3Engine(context: Context) {
       ?.getTrackFormat(0)
     val audio = groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
       ?.getTrackFormat(0)
+    val durationMs = activePlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+    val declaredVideoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0
+    val estimatedVideoBitrate =
+      if (declaredVideoBitrate == 0 && sourceSizeBytes > 0L && durationMs > 0L) {
+        ((sourceSizeBytes * 8_000L) / durationMs).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+      } else {
+        0
+      }
     _snapshot.value = NativePlaybackSnapshot(
       isPlaying = activePlayer.isPlaying,
       isReady = activePlayer.playbackState == Player.STATE_READY,
       isBuffering = activePlayer.playbackState == Player.STATE_BUFFERING,
       positionMs = (pendingSeekDisplayPositionMs ?: activePlayer.currentPosition).coerceAtLeast(0L),
-      durationMs = activePlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
+      durationMs = durationMs,
       videoWidth = video?.width ?: 0,
       videoHeight = video?.height ?: 0,
       videoMimeType = video?.sampleMimeType,
       videoCodec = video?.codecs,
-      videoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0,
+      videoBitrate = declaredVideoBitrate.takeIf { it > 0 } ?: estimatedVideoBitrate,
+      videoBitrateEstimated = declaredVideoBitrate == 0 && estimatedVideoBitrate > 0,
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
       audioBitrate = audio?.bitrate?.takeIf { it > 0 } ?: 0,
       audioChannels = audio?.channelCount ?: 0,
