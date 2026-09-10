@@ -1227,9 +1227,6 @@ class ThumbnailRepository(
               }
             )?.let { scaleBitmap(it, widthPx, heightPx) }
           }
-        } else {
-          null
-        }
 
     if (bitmap == null) {
       android.util.Log.w("ThumbnailRepository", "All strategies failed for network path $path")
