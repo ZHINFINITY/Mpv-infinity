@@ -1175,11 +1175,9 @@ class ThumbnailRepository(
       browserPreferences.thumbnailMode.get().toThumbnailStrategy(
         browserPreferences.thumbnailFramePosition.get(),
       )
-    val networkStrategy = when (strategy) {
-      ThumbnailStrategy.FirstFrame, ThumbnailStrategy.EmbeddedOrFirstFrame -> ThumbnailStrategy.Hybrid(0.33f)
-      is ThumbnailStrategy.EmbeddedOrHybrid -> ThumbnailStrategy.Hybrid(strategy.percentage)
-      else -> strategy
-    }
+    // A remote WebDAV MKV cannot satisfy a second random seek from the bounded thumbnail probe.
+    // Use one first-frame decode here; normal playback remains seek-capable through the full proxy.
+    val networkStrategy = ThumbnailStrategy.FirstFrame
 
     val bitmap =
       networkGenerationSemaphore.withPermit {
