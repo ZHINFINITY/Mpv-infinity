@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +47,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -68,6 +72,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1129,40 +1135,86 @@ fun JellyfinDetailSheet(
     }
   }
   if (qualityItem != null) {
-    androidx.compose.material3.AlertDialog(
+    val qualitySheetState = rememberBottomSheetState(
+      initialValue = SheetValue.Hidden,
+      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
+    LaunchedEffect(qualityItem) {
+      if (qualityItem != null) qualitySheetState.expand()
+    }
+    ModalBottomSheet(
       onDismissRequest = { if (!qualityLoading) qualityItem = null },
-      title = { Text("Choose download quality") },
-      text = {
-        if (qualityLoading) {
-          androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+      sheetState = qualitySheetState,
+      shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+      containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+      dragHandle = { BottomSheetDefaults.DragHandle() },
+    ) {
+      Column(
+        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = "Choose download quality",
+              style = MaterialTheme.typography.headlineSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+              text = qualityItem?.name.orEmpty(),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          TextButton(onClick = { if (!qualityLoading) qualityItem = null }) { Text("Done") }
+        }
+
+        when {
+          qualityLoading -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
           }
-        } else if (qualitySources.isEmpty()) {
-          Text("No downloadable media sources were returned by Jellyfin.")
-        } else {
-          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          qualitySources.isEmpty() -> Text("No downloadable media sources were returned by Jellyfin.")
+          else -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             qualitySources.forEach { source ->
               Surface(
                 onClick = {
                   qualityItem?.let { target -> onDownload?.invoke(target, source) }
                   qualityItem = null
                 },
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.fillMaxWidth(),
               ) {
                 Row(
-                  modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                  modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                   verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                  androidx.compose.material3.RadioButton(selected = false, onClick = null)
+                  Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    modifier = Modifier.size(40.dp),
+                  ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                      androidx.compose.material3.RadioButton(selected = false, onClick = null)
+                    }
+                  }
                   Column(modifier = Modifier.weight(1f)) {
-                    Text("${source.resolutionLabel} • ${source.container?.uppercase() ?: "FILE"}", fontWeight = FontWeight.SemiBold)
                     Text(
-                      listOfNotNull(
-                        source.videoCodec?.uppercase(),
-                        source.audioCodec?.uppercase(),
-                        source.audioChannels?.let { "$it ch" },
+                      text = "${source.resolutionLabel} • ${source.container?.uppercase() ?: "FILE"}",
+                      style = MaterialTheme.typography.titleMedium,
+                      fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                      text = listOfNotNull(
+                        source.videoCodec?.takeIf { it.isNotBlank() },
                         source.videoRange?.takeIf { it.isNotBlank() },
                         source.sizeBytes?.let { formatJellyfinSize(it) },
                       ).joinToString(" • ").ifBlank { source.name.orEmpty() },
@@ -1175,13 +1227,11 @@ fun JellyfinDetailSheet(
             }
           }
         }
-      },
-      confirmButton = {
-        androidx.compose.material3.TextButton(onClick = { qualityItem = null }, enabled = !qualityLoading) { Text("Cancel") }
-      },
-    )
+        Spacer(modifier = Modifier.height(12.dp))
+      }
+    }
   }
-}
+
 private fun formatJellyfinSize(bytes: Long): String {
   if (bytes <= 0) return ""
   val gb = bytes / 1_000_000_000.0
