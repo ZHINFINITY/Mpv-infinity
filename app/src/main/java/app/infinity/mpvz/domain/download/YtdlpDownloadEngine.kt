@@ -260,11 +260,17 @@ class YtdlpDownloadEngine(
       add("--continue")
       add("--part")
       add("--no-overwrites")
-      if (qualityHeight > 0) {
-        add("-f")
+      val sourceHost = Uri.parse(url).host?.lowercase().orEmpty()
+      val isInstagram = sourceHost == "instagram.com" || sourceHost.endsWith(".instagram.com")
+      add("-f")
+      if (isInstagram) {
+        // Instagram commonly exposes a single progressive MP4 or separate MP4/M4A streams.
+        // Prefer those before the generic best-video+best-audio selection so downloads do not
+        // fail when a mergeable audio-only format is unavailable.
+        add(if (qualityHeight > 0) "bv*[ext=mp4][height<=?$qualityHeight]+ba[ext=m4a]/b[ext=mp4]/b" else "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b")
+      } else if (qualityHeight > 0) {
         add("bv*[height<=?$qualityHeight]+ba/b[height<=?$qualityHeight]")
       } else {
-        add("-f")
         add("bv*+ba/b")
       }
       add("--merge-output-format")
