@@ -171,6 +171,8 @@ object DownloadsScreen : Screen {
           items(activeYtdlp, key = { "ytdlp_${it.id}" }) { job ->
             YtdlpJobRow(
               job = job,
+              onPause = { ytdlpEngine.pause(job.id) },
+              onResume = { ytdlpEngine.resume(job.id) },
               onCancel = { ytdlpEngine.cancel(job.id) },
               onRetry = { ytdlpEngine.retry(job.id) },
               onRemove = { ytdlpEngine.remove(job.id) },
@@ -180,6 +182,8 @@ object DownloadsScreen : Screen {
             ActiveDownloadRow(
               download = download,
               speedBytesPerSec = activeSnapshot?.takeIf { it.id == download.id }?.speedBytesPerSec ?: 0L,
+              onPause = { downloadManager.pause(download.id) },
+              onResume = { downloadManager.resume(download.id) },
               onRetry = { downloadManager.retry(download.id) },
               onCancel = { downloadManager.remove(download, deleteFile = true) },
             )
@@ -332,6 +336,8 @@ private fun DownloadLocationCard(
 private fun ActiveDownloadRow(
   download: AppDownload,
   speedBytesPerSec: Long,
+  onPause: () -> Unit,
+  onResume: () -> Unit,
   onRetry: () -> Unit,
   onCancel: () -> Unit,
 ) {
@@ -363,6 +369,11 @@ private fun ActiveDownloadRow(
             overflow = TextOverflow.Ellipsis,
           )
         }
+        if (status == AppDownloadStatus.PAUSED) {
+          IconButton(onClick = onResume) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Resume") }
+        } else if (status == AppDownloadStatus.RUNNING || status == AppDownloadStatus.QUEUED) {
+          IconButton(onClick = onPause) { Icon(Icons.RoundedFilled.Pause, contentDescription = "Pause") }
+        }
         if (status == AppDownloadStatus.FAILED || status == AppDownloadStatus.CANCELLED) {
           IconButton(onClick = onRetry) {
             Icon(Icons.RoundedFilled.Refresh, contentDescription = stringResource(R.string.downloads_retry))
@@ -372,7 +383,7 @@ private fun ActiveDownloadRow(
           Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_cancel))
         }
       }
-      if (status == AppDownloadStatus.RUNNING || status == AppDownloadStatus.QUEUED) {
+      if (status == AppDownloadStatus.RUNNING || status == AppDownloadStatus.QUEUED || status == AppDownloadStatus.PAUSED) {
         LinearProgressIndicator(
           progress = { (download.entity.progress / 100f).coerceIn(0f, 1f) },
           modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -385,6 +396,8 @@ private fun ActiveDownloadRow(
 @Composable
 private fun YtdlpJobRow(
   job: YtdlpDownloadEngine.Job,
+  onPause: () -> Unit,
+  onResume: () -> Unit,
   onCancel: () -> Unit,
   onRetry: () -> Unit,
   onRemove: () -> Unit,
@@ -425,14 +438,17 @@ private fun YtdlpJobRow(
               Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_remove_entry))
             }
           }
+          YtdlpDownloadEngine.JobState.PAUSED -> {
+            IconButton(onClick = onResume) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Resume") }
+            IconButton(onClick = onCancel) { Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_cancel)) }
+          }
           else -> {
-            IconButton(onClick = onCancel) {
-              Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_cancel))
-            }
+            IconButton(onClick = onPause) { Icon(Icons.RoundedFilled.Pause, contentDescription = "Pause") }
+            IconButton(onClick = onCancel) { Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_cancel)) }
           }
         }
       }
-      if (job.state == YtdlpDownloadEngine.JobState.RUNNING) {
+      if (job.state == YtdlpDownloadEngine.JobState.RUNNING || job.state == YtdlpDownloadEngine.JobState.PAUSED) {
         LinearProgressIndicator(
           progress = { (job.progressPercent / 100f).coerceIn(0f, 1f) },
           modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -503,6 +519,7 @@ private fun downloadStatusLine(
     AppDownloadStatus.FAILED ->
       stringResource(R.string.downloads_failed) +
         entity.failureReason?.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+    AppDownloadStatus.PAUSED -> "Paused"
     AppDownloadStatus.CANCELLED -> stringResource(R.string.downloads_cancelled)
     AppDownloadStatus.SUCCESS -> stringResource(R.string.downloads_downloaded)
     AppDownloadStatus.RUNNING ->
@@ -525,6 +542,7 @@ private fun ytdlpStatusLine(job: YtdlpDownloadEngine.Job): String =
       "${"%.1f".format(Locale.US, job.progressPercent)}% ${job.detail}".trim()
     YtdlpDownloadEngine.JobState.FAILED ->
       stringResource(R.string.downloads_failed) + job.error?.let { ": $it" }.orEmpty()
+    YtdlpDownloadEngine.JobState.PAUSED -> "Paused"
     YtdlpDownloadEngine.JobState.CANCELLED -> stringResource(R.string.downloads_cancelled)
     YtdlpDownloadEngine.JobState.SUCCESS -> stringResource(R.string.downloads_downloaded)
   }
