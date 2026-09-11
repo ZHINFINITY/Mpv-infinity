@@ -3777,7 +3777,7 @@ class PlayerActivity :
     else audioPreferences.backgroundPlayback.get()
 
   private fun isCurrentPlaybackAudio(): Boolean =
-    if (viewModel.isAudioOnly.value) {
+    if (viewModel.isAudioOnly.value || isCurrentMediaKnownAudio()) {
       true
     } else when (currentDeclaredMediaKind()) {
       DeclaredPlaybackMediaKind.AUDIO -> true

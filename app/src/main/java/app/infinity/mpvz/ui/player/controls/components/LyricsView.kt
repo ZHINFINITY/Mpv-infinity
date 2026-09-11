@@ -14,7 +14,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import kotlin.math.max
 import app.infinity.mpvz.preferences.preference.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -115,25 +115,17 @@ fun LyricsView(
   // Position polls arrive every 50-500ms; per-letter animation needs a per-frame clock.
   val smoothPositionMs = rememberSmoothedPositionMs(currentPosMs, paused == false, playbackSpeed ?: 1f)
 
-  // Autoscroll: scroll current active line to the top
+  // Autoscroll: keep the active line centered so large landscape text is fully readable.
   LaunchedEffect(state.activeLineIndex, isLyricsFullscreen, lyricsViewportPx) {
     val target = state.activeLineIndex
-    if (target < 0) return@LaunchedEffect
+    if (target < 0 || lyricsViewportPx <= 0) return@LaunchedEffect
     runCatching {
-      if (target == 0) {
-        listState.animateScrollToItem(0)
-      } else {
-        val topOffset = with(density) { 16.dp.roundToPx() }
-        val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
-        if (item != null) {
-          listState.animateScrollBy(
-            (item.offset - topOffset).toFloat(),
-            animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
-          )
-        } else {
-          listState.animateScrollToItem(target, scrollOffset = 0)
-        }
-      }
+      val desiredOffset = with(density) { 16.dp.roundToPx() }
+      val centerOffset = max(
+        desiredOffset,
+        (lyricsViewportPx / 2) - with(density) { 44.dp.roundToPx() },
+      )
+      listState.animateScrollToItem(target, scrollOffset = centerOffset)
     }
   }
 
