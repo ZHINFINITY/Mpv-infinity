@@ -2376,12 +2376,18 @@ class PlayerActivity :
         screenStateReceiverRegistered = false
       }
 
-      if (isUserFinishing || handledPipDismissal) {
+      // finishAndRemoveTask() marks the Activity as user-finishing after it has already
+      // completed the background handoff. Do not immediately tear that service down here.
+      val preserveBackgroundSession =
+        !handledPipDismissal &&
+          (isBackgroundPlaybackSessionActive || isBackgroundPlaybackEnabled())
+      if ((isUserFinishing || handledPipDismissal) && !preserveBackgroundSession) {
         endBackgroundPlayback(handoffToActivity = false)
         MediaPlaybackService.stopForTerminalDismissal()
         viewModel.pause()
         return@runCatching
       }
+      if (preserveBackgroundSession) return@runCatching
       if (pendingPipExitResolution) return@runCatching
       if (ensureNotificationAccessForPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Blocked) {
         endBackgroundPlayback(handoffToActivity = false)
