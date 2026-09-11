@@ -343,6 +343,10 @@ class PlayerActivity :
     nativeEngine.seekTo(positionMs)
   }
 
+  fun nativeSeekToChapter(positionMs: Long) {
+    nativeEngine.seekToChapter(positionMs)
+  }
+
   override fun nativePlaybackPositionSeconds(): Double =
     nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L) / 1000.0
 
@@ -793,18 +797,7 @@ class PlayerActivity :
           engineSelectionRequests,
         ).collect { engine ->
           val currentQueueItem = PlaybackSession.queue.value.currentItem
-          val effectiveEngine =
-            when (engine) {
-              PlaybackEngineMode.AUTO ->
-                if ((currentQueueItem?.isHdrOrDolbyVision() == true || currentQueueItem?.networkSource != null) &&
-                  currentQueueItem.requiresTorrentResolution().not()
-                ) {
-                  PlaybackEngineMode.NATIVE
-                } else {
-                  PlaybackEngineMode.MPV
-                }
-              else -> engine
-            }
+          val effectiveEngine = resolveEngineForItem(currentQueueItem, engine)
           // AUTO is a preference, not a renderer. Resolve it before comparing with the active
           // renderer; otherwise selecting AUTO while MPV is already active unnecessarily enters
           // the handoff path and can stop an active torrent proxy.
@@ -1417,6 +1410,21 @@ class PlayerActivity :
     if (mediaId.isNotBlank()) manualEngineOverride = mediaId to engine
     engineSelectionRequests.tryEmit(engine)
   }
+
+  /** Resolves the configured or per-item engine once, including network-browser sources. */
+  private fun resolveEngineForItem(item: PlaybackItem?, configured: PlaybackEngineMode): PlaybackEngineMode =
+    when (configured) {
+      PlaybackEngineMode.AUTO ->
+        if (item != null &&
+          (item.isHdrOrDolbyVision() || item.networkSource != null || isHentaiStreamDirect(item.playableUri)) &&
+          !item.requiresTorrentResolution()
+        ) {
+          PlaybackEngineMode.NATIVE
+        } else {
+          PlaybackEngineMode.MPV
+        }
+      else -> configured
+    }
 
   fun currentEngineSelectionForControls(): PlaybackEngineMode {
     val mediaId = PlaybackSession.queue.value.currentItem?.stableId ?: activeSaveMediaIdentifier
@@ -6211,14 +6219,7 @@ class PlayerActivity :
         ?.takeIf { it.first == item.stableId }
         ?.second
         ?: decoderPreferences.playbackEngine.get()
-    val selectedEngine =
-      when (configuredEngine) {
-        PlaybackEngineMode.AUTO ->
-          if (item.isHdrOrDolbyVision() || isHentaiStreamDirect(item.playableUri) || item.networkSource != null) {
-            PlaybackEngineMode.NATIVE
-          } else PlaybackEngineMode.MPV
-        else -> configuredEngine
-      }
+    val selectedEngine = resolveEngineForItem(item, configuredEngine)
     val nativeResolvedUri =
       if (selectedEngine == PlaybackEngineMode.NATIVE && requiresYtdlp) {
         YtdlpManager.resolveDirectMediaUrl(this, item.playableUri) { message -> Log.d(TAG, message) }
