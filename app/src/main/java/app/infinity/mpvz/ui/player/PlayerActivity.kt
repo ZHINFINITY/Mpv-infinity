@@ -2467,12 +2467,15 @@ class PlayerActivity :
       }
       return
     }
-    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && hasWindowFocus()) {
-      completePipExpansion()
-      return
+    lifecycleScope.launch {
+      delay(500L)
+      if (!pendingPipExitResolution) return@launch
+      if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && hasWindowFocus()) {
+        completePipExpansion()
+      } else {
+        handlePipDismissed()
+      }
     }
-    // PiP=false can arrive while the Activity is still stopped during fullscreen expansion.
-    // Keep the exit pending until foreground focus confirms expansion or onDestroy confirms close.
   }
 
   private fun completePipExpansion() {
@@ -3774,7 +3777,9 @@ class PlayerActivity :
     else audioPreferences.backgroundPlayback.get()
 
   private fun isCurrentPlaybackAudio(): Boolean =
-    when (currentDeclaredMediaKind()) {
+    if (viewModel.isAudioOnly.value) {
+      true
+    } else when (currentDeclaredMediaKind()) {
       DeclaredPlaybackMediaKind.AUDIO -> true
       DeclaredPlaybackMediaKind.VIDEO -> false
       DeclaredPlaybackMediaKind.UNKNOWN -> viewModel.isAudioOnly.value
@@ -5799,8 +5804,11 @@ class PlayerActivity :
     pendingPipExitResolution = false
     handledPipDismissal = false
     terminalPipDismissalRequested = false
-    if (!isBackgroundPlaybackEnabled() && (serviceBound || mediaPlaybackService != null || MediaPlaybackService.isRunning())) {
-      endBackgroundPlayback()
+    // A new media intent replaces the current item. Do not leave an older MPV-backed video
+    // service owning the decoder/audio session while the new music player is being attached.
+    if (serviceBound || mediaPlaybackService != null || MediaPlaybackService.isRunning()) {
+      endBackgroundPlayback(handoffToActivity = false)
+      MediaPlaybackService.stopForTerminalDismissal()
     }
 
     // Recompute from the new intent — this activity is singleTask, so opening a different file

@@ -1291,7 +1291,7 @@ fun AudioPlayerControls(
         viewModel = viewModel,
         modifier = panelModifier.padding(12.dp),
         showTitleHeader = false,
-        isLyricsFullscreen = false,
+        isLyricsFullscreen = !isPortrait,
         onTap = resetInactivityTimer,
       )
     }
