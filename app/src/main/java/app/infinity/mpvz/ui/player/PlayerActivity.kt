@@ -1974,9 +1974,12 @@ class PlayerActivity :
       runCatching { MediaPlaybackService.stopForTerminalDismissal() }
     }
     val keepBackgroundPlaybackAlive =
-      ownsPlaybackSession && !pipDismissalCommitted && PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
+      ownsPlaybackSession && !pipDismissalCommitted && (
+        isBackgroundPlaybackSessionActive ||
+          (!isUserFinishing && !isFinishing && isBackgroundPlaybackEnabled())
+      ) && PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
         backgroundPlaybackEnabled = (playbackWasInitialized || nativeWasActive) && isBackgroundPlaybackEnabled(),
-        backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
+        backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive || isBackgroundPlaybackEnabled(),
       )
 
 
