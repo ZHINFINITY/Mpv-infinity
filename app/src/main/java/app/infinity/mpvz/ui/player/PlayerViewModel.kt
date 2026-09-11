@@ -3360,12 +3360,18 @@ class PlayerViewModel : ViewModel(),
     auto: Boolean,
   ) {
     val seekTarget = SkipMarkerResolver.seekTarget(segment, currentDurationSeconds())
-    PlaybackSession.setPropertyDouble("time-pos", seekTarget)
-    syncplayManager.updatePlayerState(
-      seekTarget,
-      PlaybackSession.getPropertyBoolean("pause") ?: false,
-      doSeek = true,
-    )
+    if (host.isNativeEngineActive()) {
+      // Skip markers were previously always written to MPV's time-pos. When Native Media3 was
+      // active that changed an inactive renderer, so the chip appeared but playback did not move.
+      host.nativeSeekTo((seekTarget * 1000.0).toLong().coerceAtLeast(0L))
+    } else {
+      PlaybackSession.setPropertyDouble("time-pos", seekTarget)
+      syncplayManager.updatePlayerState(
+        seekTarget,
+        PlaybackSession.getPropertyBoolean("pause") ?: false,
+        doSeek = true,
+      )
+    }
     showToast(if (auto) "${segment.label} (auto)" else segment.label)
   }
 
