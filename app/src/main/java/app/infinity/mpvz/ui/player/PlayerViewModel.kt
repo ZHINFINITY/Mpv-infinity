@@ -3280,6 +3280,10 @@ class PlayerViewModel : ViewModel(),
 
   fun setMediaTitle(mediaTitle: String) {
     if (currentMediaTitle != mediaTitle) {
+      // A translated cue and the hidden-renderer flag belong to the previous media item.
+      // Clear both before the next file starts so its first subtitle can trigger a fresh
+      // translation request and the original renderer is not left hidden by stale state.
+      resetEmbeddedSubtitleTranslation()
       currentMediaTitle = mediaTitle
       lastAutoSelectedMediaTitle = null
       introLookupJob?.cancel()
