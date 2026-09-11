@@ -230,6 +230,12 @@ fun PlayerControls(
   val subtitleBold by subtitlesPreferences.bold.collectAsState()
   val subtitleItalic by subtitlesPreferences.italic.collectAsState()
   val subtitleJustification by subtitlesPreferences.justification.collectAsState()
+  val mpvSubtitlePosition by PlaybackSession.propInt["sub-pos"].collectAsState()
+  val mpvSubtitleFontSize by PlaybackSession.propInt["sub-font-size"].collectAsState()
+  val mpvSubtitleMarginX by PlaybackSession.propInt["sub-margin-x"].collectAsState()
+  val mpvSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
+  val mpvOsdWidth by PlaybackSession.propInt["osd-width"].collectAsState()
+  val mpvOsdHeight by PlaybackSession.propInt["osd-height"].collectAsState()
   val subtitleFontContext = androidx.compose.ui.platform.LocalContext.current
   val translatedSubtitleFontFamily by produceState<androidx.compose.ui.text.font.FontFamily>(
     initialValue = androidx.compose.ui.text.font.FontFamily.SansSerif,
@@ -914,21 +920,21 @@ fun PlayerControls(
             modifier = Modifier.constrainAs(translatedSubtitle) {
               linkTo(parent.start, parent.end)
               val configuredOffset = with(density) {
-                val heightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
-                (((100 - subtitlePosition).coerceIn(0, 100) / 100f) * heightPx).toDp()
+                val heightPx = (mpvOsdHeight ?: controlsLayoutHeightPx.takeIf { it > 0 } ?: 720).toFloat()
+                (((100 - (mpvSubtitlePosition ?: subtitlePosition)).coerceIn(0, 100) / 100f) * heightPx).toDp()
               }
               bottom.linkTo(parent.bottom, configuredOffset)
             },
           ) {
             embeddedTranslatedSubtitle?.takeIf { it.isNotBlank() }?.let { translated ->
               val translatedFontSize = with(density) {
-                val osdHeightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
-                val fontSizePx = subtitleFontSize * (osdHeightPx / 720f) * subtitleScale
+                val osdHeightPx = (mpvOsdHeight ?: controlsLayoutHeightPx.takeIf { it > 0 } ?: 720).toFloat()
+                val fontSizePx = (mpvSubtitleFontSize ?: subtitleFontSize) * (osdHeightPx / 720f) * (mpvSubtitleScale ?: subtitleScale)
                 (fontSizePx / density.density).coerceIn(8f, 120f).sp
               }
               TranslatedSubtitleText(
                 text = translated,
-                modifier = Modifier.fillMaxWidth(0.86f).padding(horizontal = 12.dp),
+                modifier = Modifier.fillMaxWidth(((1f - 2f * (mpvSubtitleMarginX ?: 25).toFloat() / (mpvOsdWidth ?: 1280).toFloat()).coerceIn(0.45f, 1f)).coerceAtMost(0.92f)).padding(horizontal = 0.dp),
                 fontSize = translatedFontSize,
                 textColor = Color(subtitleTextColor),
                 backgroundColor = Color(subtitleBackgroundColor),
