@@ -870,7 +870,11 @@ class PlayerActivity :
                 sourceUri = currentItem?.originalUri?.toUri(),
               )
               engineHandoffJob = lifecycleScope.launch {
-                val rendered = withTimeoutOrNull(15_000L) {
+                // Large WebDAV Matroska files can require several range reads before Media3 has
+                // parsed the timeline. Do not return to MPV while a valid network source is still
+                // preparing; local/direct sources retain the shorter failure timeout.
+                val renderTimeoutMs = if (currentItem?.networkSource != null) 60_000L else 15_000L
+                val rendered = withTimeoutOrNull(renderTimeoutMs) {
                   nativeEngine.hasRenderedFirstFrame.first { it }
                   true
                 } == true

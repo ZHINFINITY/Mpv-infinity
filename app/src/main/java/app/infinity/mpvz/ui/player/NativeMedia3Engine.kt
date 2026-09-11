@@ -634,6 +634,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun seekTo(positionMs: Long) {
+    activePlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
     pendingSeekDisplayPositionMs = pendingSeekPositionMs
     loopHandler.removeCallbacks(settleSeekRunnable)
@@ -651,12 +652,16 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = targetMs
     loopHandler.removeCallbacks(settleSeekRunnable)
     loopHandler.removeCallbacks(seekRunnable)
+    // Chapter boundaries must not resolve to the preceding sync frame, which makes the chapter
+    // indicator briefly report the previous chapter while Media3 catches up.
+    activePlayer.setSeekParameters(SeekParameters.EXACT)
     activePlayer.seekTo(targetMs)
     publishPlaybackSnapshot()
     startTimelineUpdates()
   }
 
   fun seekBy(offsetMs: Long) {
+    activePlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     val basePositionMs = pendingSeekPositionMs ?: activePlayer.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
     pendingSeekDisplayPositionMs = pendingSeekPositionMs
