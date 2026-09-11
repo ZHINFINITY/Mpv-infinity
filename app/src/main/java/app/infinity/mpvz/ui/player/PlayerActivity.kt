@@ -2001,7 +2001,11 @@ class PlayerActivity :
         reportJellyfinStop()
       }
 
-      if ((isUserFinishing || isFinishing) && !keepBackgroundPlaybackAlive) {
+      // An enabled background-playback preference is an explicit request to preserve the
+      // service across Activity teardown (including swipe/minimize and task recreation). Do not
+      // let a conservative lifecycle-policy result stop the service during that handoff.
+      val backgroundPlaybackRequested = isBackgroundPlaybackEnabled()
+      if ((isUserFinishing || isFinishing) && !keepBackgroundPlaybackAlive && !backgroundPlaybackRequested) {
         if (serviceBound) {
           runCatching { unbindService(serviceConnection) }
           serviceBound = false
