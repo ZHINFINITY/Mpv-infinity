@@ -850,9 +850,20 @@ class PlayerActivity :
               val currentItem =
                 queuedItem?.takeUnless { it.requiresTorrentResolution() }
                   ?: queuedItem?.copy(playableUri = currentUri)
+              val currentPlayableUri = Uri.parse(currentUri)
+              val isLocalPlaybackProxy =
+                currentPlayableUri.host?.equals("127.0.0.1", ignoreCase = true) == true ||
+                  currentPlayableUri.host?.equals("localhost", ignoreCase = true) == true
+              // WebDAV playback is already registered through the app-owned localhost proxy.
+              // Re-resolving it here releases the active stream and creates a second proxy during
+              // the handoff, which can leave Media3 buffering and trigger the MPV fallback.
               val nativeUri =
-                currentItem?.let { PlaybackSession.resolvePlayableUriForNative(it) }?.toUri()
-                  ?: Uri.parse(currentUri)
+                if (isLocalPlaybackProxy) {
+                  currentPlayableUri
+                } else {
+                  currentItem?.let { PlaybackSession.resolvePlayableUriForNative(it) }?.toUri()
+                    ?: currentPlayableUri
+                }
               // Select Native immediately. The first-frame job only confirms readiness; it must
               // not leave controls and engine state on MPV while Media3 is opening the source.
               viewModel.prepareNativeEngineHandoffForTranslation()
