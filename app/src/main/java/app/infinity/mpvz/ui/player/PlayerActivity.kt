@@ -1984,7 +1984,9 @@ class PlayerActivity :
       cancelPlaybackLoadRecovery()
       if (::castPlaybackController.isInitialized) castPlaybackController.release()
       cancelSystemBarsAutoHide()
-      if (playbackWasInitialized && ownsPlaybackSession) saveVideoPlaybackState(fileName, immediate = true)
+      if ((playbackWasInitialized || nativeWasActive) && ownsPlaybackSession) {
+        saveVideoPlaybackState(fileName, immediate = true)
+      }
       if (!keepBackgroundPlaybackAlive && nativeWasActive) {
         nativeEngine.setPlaying(false)
         nativeEngine.stop()
