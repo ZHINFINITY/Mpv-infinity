@@ -207,6 +207,7 @@ fun PlayerControls(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val aiPreferences = koinInject<AiPreferences>()
   val aiEnabled by aiPreferences.enabled.collectAsState()
+  val automaticSubtitleFontFallback by aiPreferences.automaticSubtitleFontFallback.collectAsState()
   val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
   val forceDarkButtonBackground by appearancePreferences.forceDarkPlayerButtonsBackground.collectAsState()
@@ -239,8 +240,12 @@ fun PlayerControls(
   val subtitleFontContext = androidx.compose.ui.platform.LocalContext.current
   val translatedSubtitleFontFamily by produceState<androidx.compose.ui.text.font.FontFamily>(
     initialValue = androidx.compose.ui.text.font.FontFamily.SansSerif,
-    key1 = "${subtitleFont}:$subtitleBold:$subtitleItalic",
+    key1 = "${subtitleFont}:$subtitleBold:\$subtitleItalic:\$automaticSubtitleFontFallback",
   ) {
+    if (!automaticSubtitleFontFallback) {
+      value = androidx.compose.ui.text.font.FontFamily.SansSerif
+      return@produceState
+    }
     val family = subtitleFont.trim().ifBlank { app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY }
     val typefaceStyle = when {
       subtitleBold && subtitleItalic -> android.graphics.Typeface.BOLD_ITALIC
