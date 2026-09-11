@@ -230,9 +230,22 @@ fun PlayerControls(
   val subtitleBold by subtitlesPreferences.bold.collectAsState()
   val subtitleItalic by subtitlesPreferences.italic.collectAsState()
   val subtitleJustification by subtitlesPreferences.justification.collectAsState()
-  val translatedSubtitleFontFamily = remember(subtitleFont) {
+  val subtitleFontContext = androidx.compose.ui.platform.LocalContext.current
+  val translatedSubtitleFontFamily by produceState<androidx.compose.ui.text.font.FontFamily>(
+    initialValue = androidx.compose.ui.text.font.FontFamily.SansSerif,
+    key1 = subtitleFont,
+  ) {
     val family = subtitleFont.trim().ifBlank { app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY }
-    androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.create(family, android.graphics.Typeface.NORMAL))
+    if (family == app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY) {
+      value = androidx.compose.ui.text.font.FontFamily.SansSerif
+    } else {
+      val custom = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        app.infinity.mpvz.utils.media.loadCustomFontEntries(subtitleFontContext)
+          .firstOrNull { it.familyName.equals(family, ignoreCase = true) }
+      }
+      value = custom?.let { androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.createFromFile(it.file)) }
+        ?: androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.create(family, android.graphics.Typeface.NORMAL))
+    }
   }
   val decoderPreferences = koinInject<DecoderPreferences>()
   val playbackEngine by decoderPreferences.playbackEngine.collectAsState()
