@@ -1111,7 +1111,7 @@ fun AudioPlayerControls(
       )
 
     @OptIn(ExperimentalFoundationApi::class)
-    val centerVisualizerView = @Composable { visualizerModifier: Modifier, forceArtwork: Boolean = false ->
+    val centerVisualizerView: @Composable (Modifier, Boolean) -> Unit = { visualizerModifier, forceArtwork ->
       BoxWithConstraints(
         modifier =
           visualizerModifier
@@ -1912,8 +1912,13 @@ fun AudioPlayerControls(
           }
         }
 
-        val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
-        centerVisualizerView(visualizerModifier)
+        if (showInPlaceLyrics && !isLyricsFullscreen) {
+          centerVisualizerView(Modifier.weight(0.82f).fillMaxWidth(), true)
+          lyricsPanel(Modifier.weight(1.18f).fillMaxWidth())
+        } else {
+          val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
+          centerVisualizerView(visualizerModifier, false)
+        }
         if (isLyricsFullscreen) {
           seekbarView()
         }
@@ -1957,6 +1962,7 @@ fun AudioPlayerControls(
               .weight(1f)
               .fillMaxWidth()
               .padding(vertical = 12.dp, horizontal = 24.dp),
+            false,
           )
           Spacer(modifier = Modifier.height(6.dp))
           trackMetadataView()
@@ -2001,7 +2007,7 @@ fun AudioPlayerControls(
               .weight(1f)
               .fillMaxWidth()
               .padding(vertical = 12.dp, horizontal = 24.dp),
-            forceArtwork = showInPlaceLyrics,
+            showInPlaceLyrics,
           )
           if (!isLyricsFullscreen) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -2035,7 +2041,7 @@ fun AudioPlayerControls(
           horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
           Box(modifier = Modifier.weight(0.42f), contentAlignment = Alignment.Center) {
-            centerVisualizerView(Modifier.fillMaxWidth().padding(horizontal = 12.dp))
+            centerVisualizerView(Modifier.fillMaxWidth().padding(horizontal = 12.dp), false)
           }
           Column(
             modifier = Modifier.weight(0.58f),
