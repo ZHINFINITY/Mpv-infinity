@@ -534,6 +534,17 @@ class NativeMedia3Engine(context: Context) {
       }
     val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true) ||
       mediaUri.scheme.equals("content", ignoreCase = true)
+    // Engine-selection observers can deliver the same request more than once while the
+    // Activity is settling. Re-preparing the same URI resets Media3's extractor and clears
+    // embedded subtitle track/cue state before it can render. Treat an active identical source
+    // as idempotent and only update the requested play state.
+    val activeUri = activePlayer.currentMediaItem?.localConfiguration?.uri
+    if (activeUri == mediaUri && activePlayer.playbackState != Player.STATE_IDLE) {
+      activePlayer.playWhenReady = autoplay
+      if (autoplay && !activePlayer.isPlaying) activePlayer.play()
+      Log.d(logTag, "play ignored duplicate active uri=$mediaUri state=${activePlayer.playbackState}")
+      return
+    }
     sourceSizeBytes = resolveLocalSize(mediaUri)
     val isHentaiStreamUri = mediaUri.host?.contains("hentaistream-addon.", ignoreCase = true) == true &&
       mediaUri.path?.contains("/video-proxy", ignoreCase = true) == true
