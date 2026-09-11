@@ -715,6 +715,23 @@ class PlayerActivity :
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
     nativeEngine.attach(binding.media3Player)
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        nativeEngine.subtitleCueText
+          .distinctUntilChanged()
+          .collectLatest { cue ->
+            if (!isNativeEngineActive()) return@collectLatest
+            if (cue.isBlank()) {
+              viewModel.clearEmbeddedSubtitleTranslationCue(native = true)
+            } else {
+              // Use the same AI/Google translation pipeline as MPV's sub-text observer.
+              // The Compose overlay already consumes the shared subtitle preferences for
+              // font, size, color, outline, position, and scale.
+              viewModel.translateEmbeddedSubtitleCue(cue, native = true)
+            }
+          }
+      }
+    }
     nativeEngine.setSubtitleStyle(
       textColor = subtitlesPreferences.textColor.get(),
       backgroundColor = subtitlesPreferences.backgroundColor.get(),
