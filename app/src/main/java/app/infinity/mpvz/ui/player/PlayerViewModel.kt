@@ -667,13 +667,15 @@ class PlayerViewModel : ViewModel(),
     nativeSubtitleVisibilityListener?.invoke(!nativeSubtitleHiddenForTranslation)
   }
 
-  /** Clears the old MPV translation before Native starts emitting its own subtitle cues. */
+  /** Clears the old MPV translation while keeping Native subtitles visible until a translated
+   * cue is actually available. Hiding Native here would leave SubtitleView invisible when the
+   * first native cue arrives after an MPV -> Native handoff. */
   fun prepareNativeEngineHandoffForTranslation() {
     if (!aiPreferences.playerSubtitleTranslationEnabled.get()) return
     clearEmbeddedSubtitleTranslationCue(native = true)
-    if (!nativeSubtitleHiddenForTranslation) {
-      nativeSubtitleVisibilityListener?.invoke(true)
-      nativeSubtitleHiddenForTranslation = true
+    if (nativeSubtitleHiddenForTranslation) {
+      nativeSubtitleVisibilityListener?.invoke(false)
+      nativeSubtitleHiddenForTranslation = false
     }
   }
 
