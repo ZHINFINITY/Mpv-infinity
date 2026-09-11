@@ -1257,22 +1257,31 @@ class ThumbnailRepository(
         else pathSegments.dropLast(1).lastOrNull().orEmpty()
       val episodeLike =
         seasonIndex > 0 || filename.matches(Regex("(?i).*(?:\\bS\\d{1,2}E\\d{1,4}\\b|\\s-\\s\\d{2,4}\\b).*"))
-      val title =
-        (if (episodeLike && folderTitle.isNotBlank()) folderTitle else filename)
-          .substringBeforeLast('.', missingDelimiterValue = "")
+      fun cleanAnimeTitle(raw: String): String =
+        raw.substringBeforeLast('.', missingDelimiterValue = "")
           .replace(Regex("(?i)\\{imdb-tt\\d+\\}"), " ")
-          .replace(Regex("[._]+"), " ")
-          .replace(Regex("(?i)\\bS\\d{1,2}(?:E\\d{1,4})?\\b"), " ")
-          .replace(Regex("(?i)\\s+-\\s+\\d{2,4}\\b.*$"), " ")
           .replace(Regex("\\[[^]]*]"), " ")
-          .replace(Regex("(?i)\\([^)]*(?:1080|2160|4k|x264|hevc|web-dl|bluray)[^)]*\\)"), " ")
+          .replace(Regex("(?i)\\([^)]*(?:1080|2160|4k|x26[45]|hevc|av1|web[- .]?dl|bluray|bd|dual[- .]?audio|opus|flac|vodes|purple)[^)]*\\)"), " ")
+          .replace(Regex("(?i)\\bS\\d{1,2}(?:E\\d{1,4})?\\b"), " ")
+          .replace(Regex("(?i)\\b(?:season|cour|part|split[- .]?cour)\\s*[0-9ivx]+\\b"), " ")
+          .replace(Regex("(?i)\\b(?:episode|ep|ova|movie)\\s*[0-9]+\\b"), " ")
+          .replace(Regex("(?i)\\s+-\\s+(?:\\d{2,4}|episode|ep)\\b.*$"), " ")
+          .replace(Regex("(?i)\\b(?:1080p|2160p|720p|480p|4k|8bit|10bit|x26[45]|hevc|av1|web[- .]?dl|bluray|bdrip|remux|dual[- .]?audio|multi[- .]?audio|aac|opus|flac)\\b"), " ")
+          .replace(Regex("[._]+"), " ")
           .replace(Regex("\\s+"), " ")
-          .trim()
+          .trim(' ', '-', '_')
+      val rawTitle = if (episodeLike && folderTitle.isNotBlank()) folderTitle else filename
+      val title = cleanAnimeTitle(rawTitle)
+      val folderCandidate = cleanAnimeTitle(folderTitle)
+      val filenameCandidate = cleanAnimeTitle(filename)
+      val animeCandidates = listOf(title, folderCandidate, filenameCandidate)
+        .filter { it.length >= 3 }
+        .distinct()
       fun normalized(value: String): String = value.lowercase().replace(Regex("[^a-z0-9]+"), "")
       if (imdbId == null && title.isBlank()) return@withContext null
       val cacheKey = imdbId ?: title
       val posterUrl =
-        (if (episodeLike) getKitsuPoster(title, ::normalized) else null)
+        (if (episodeLike) getKitsuPoster(animeCandidates, ::normalized) else null)
           ?: metadataPosterUrls[cacheKey] ?: run {
         val failedAt = metadataPosterFailedAt[cacheKey]
         if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < METADATA_POSTER_FAILURE_RETRY_MS) {
@@ -1330,46 +1339,52 @@ class ThumbnailRepository(
       }.getOrNull()
     }
 
-  private suspend fun getKitsuPoster(title: String, normalized: (String) -> String): String? {
-    val cacheKey = "kitsu:$title"
+  private suspend fun getKitsuPoster(titles: List<String>, normalized: (String) -> String): String? {
+    val candidates = titles.filter { it.isNotBlank() }.distinct()
+    if (candidates.isEmpty()) return null
+    val cacheKey = "kitsu:" + candidates.joinToString("|")
     metadataPosterUrls[cacheKey]?.let { return it }
     val failedAt = metadataPosterFailedAt[cacheKey]
     if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < METADATA_POSTER_FAILURE_RETRY_MS) return null
-    val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
     val resolved = runCatching {
-      val request = Request.Builder()
-        .url("https://kitsu.io/api/edge/anime?filter[text]=$encoded&page[limit]=10")
-        .header("Accept", "application/vnd.api+json")
-        .build()
-      metadataPosterClient.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) return@runCatching null
-        metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["data"]
-          ?.jsonArray?.firstNotNullOfOrNull { entry ->
-            val attributes = entry.jsonObject["attributes"]?.jsonObject ?: return@firstNotNullOfOrNull null
-            val names = listOfNotNull(
-              attributes["canonicalTitle"]?.jsonPrimitive?.contentOrNull,
-              attributes["english"]?.jsonPrimitive?.contentOrNull,
-              attributes["romaji"]?.jsonPrimitive?.contentOrNull,
-              attributes["slug"]?.jsonPrimitive?.contentOrNull,
-            )
-            val wanted = normalized(title)
-            // Release folders usually contain a season suffix while Kitsu titles often use
-            // names such as "3rd Season". Exact equality therefore misses otherwise valid
-            // anime results (for example, JUJUTSU KAISEN S03).
-            val matches = names.any { candidate ->
-              val value = normalized(candidate)
-              value == wanted ||
-                value.startsWith(wanted) ||
-                wanted.startsWith(value) ||
-                (wanted.length >= 6 && value.contains(wanted))
+      candidates.asSequence().mapNotNull { title ->
+        val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
+        val request = Request.Builder()
+          .url("https://kitsu.io/api/edge/anime?filter[text]=$encoded&page[limit]=20")
+          .header("Accept", "application/vnd.api+json")
+          .build()
+        metadataPosterClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) return@use null
+          metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["data"]
+            ?.jsonArray?.mapNotNull { entry ->
+              val attributes = entry.jsonObject["attributes"]?.jsonObject ?: return@mapNotNull null
+              val names = listOfNotNull(
+                attributes["canonicalTitle"]?.jsonPrimitive?.contentOrNull,
+                attributes["english"]?.jsonPrimitive?.contentOrNull,
+                attributes["romaji"]?.jsonPrimitive?.contentOrNull,
+                attributes["slug"]?.jsonPrimitive?.contentOrNull,
+              )
+              val wantedTokens = normalized(title).chunked(3).toSet()
+              val score = names.maxOfOrNull { candidate ->
+                val value = normalized(candidate)
+                when {
+                  value == normalized(title) -> 1000
+                  value.startsWith(normalized(title)) || normalized(title).startsWith(value) -> 800
+                  wantedTokens.count { token -> value.contains(token) } >= 2 -> 500
+                  else -> 0
+                }
+              } ?: 0
+              if (score == 0) null else score to attributes
             }
-            if (matches) {
+            ?.maxByOrNull { it.first }
+            ?.second
+            ?.let { attributes ->
               val poster = attributes["posterImage"]?.jsonObject
               listOf("original", "large", "medium", "small")
                 .firstNotNullOfOrNull { key -> poster?.get(key)?.jsonPrimitive?.contentOrNull }
-            } else null
-          }
-      }
+            }
+        }
+      }.firstOrNull { it.isNotBlank() }
     }.getOrNull()
     if (resolved == null) metadataPosterFailedAt[cacheKey] = SystemClock.elapsedRealtime()
     if (resolved != null) metadataPosterUrls[cacheKey] = resolved
