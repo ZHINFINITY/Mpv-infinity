@@ -925,6 +925,8 @@
   <string name="pref_translation_section">Subtitle Translation</string>
   <string name="pref_enable_translation_title">Enable Translation</string>
   <string name="pref_enable_translation_summary">Translate external subtitles using AI</string>
+    <string name="pref_automatic_subtitle_font_fallback_title">Automatic subtitle font fallback</string>
+    <string name="pref_automatic_subtitle_font_fallback_summary">Use a compatible fallback font when translated characters are missing from the embedded subtitle font.</string>
   <string name="pref_custom_prompt_section">Custom Prompt</string>
   <string name="pref_override_instructions_title">Override Default Instructions</string>
   <string name="pref_override_instructions_enabled_summary">Custom prompt will be used instead of built-in instructions</string>
