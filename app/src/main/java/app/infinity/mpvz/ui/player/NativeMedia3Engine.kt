@@ -286,19 +286,12 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onCues(cueGroup: CueGroup) {
+      // Keep Media3's SubtitleView in control of cue rendering, exactly as in v1.0.7.
+      // Publish a text copy for the optional translation feature without replacing or clearing
+      // the cues that Media3 has just delivered to the attached SubtitleView.
       _subtitleCueText.value = cueGroup.cues
         .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotBlank) }
         .joinToString("\n")
-      // Keep delivering cues to the ViewModel for translation, but do not allow Media3's
-      // SubtitleView to draw the original cue underneath the translated Compose overlay. Media3
-      // can repopulate SubtitleView after visibility/alpha changes, so clear it after dispatch.
-      if (!subtitleOverlayVisible) {
-        attachedView?.subtitleView?.post {
-          if (!subtitleOverlayVisible) {
-            attachedView?.subtitleView?.setCues(emptyList())
-          }
-        }
-      }
     }
 
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -311,7 +304,8 @@ class NativeMedia3Engine(context: Context) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       val types = tracks.groups.joinToString(",") { it.type.toString() }
       Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types prepareElapsedMs=$elapsed uri=$preparationUri")
-      ensureEmbeddedSubtitleSelected(tracks)
+      // Do not mutate track selection while Media3 is publishing its track groups. v1.0.7
+      // leaves selection to Media3 defaults or the explicit subtitle-sheet selection action.
       publishSnapshot()
     }
 
