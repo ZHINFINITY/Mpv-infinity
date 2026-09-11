@@ -2263,6 +2263,14 @@ class PlayerActivity :
 
       // Don't restore UI during normal finish to prevent flickering
       // System will handle UI restoration automatically
+      // finish() is also the Mini Player/minimize path. It runs before onStop(), so perform
+      // the background handoff here before Activity teardown can stop playback.
+      if (!handledPipDismissal && !isBackgroundPlaybackSessionActive && isBackgroundPlaybackEnabled() && isReady) {
+        if (startBackgroundPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Started) {
+          isBackgroundPlaybackSessionActive = true
+          disableVideoForBackground()
+        }
+      }
       isReady = false
 
       if (!handledPipDismissal) {
@@ -2270,8 +2278,8 @@ class PlayerActivity :
         // handoff is preserved because silenceAudioOnClose() checks actual session ownership.
         silenceAudioOnClose()
 
-        // Clean up service when finishing
-        if (!isBackgroundPlaybackSessionActive) {
+        // Only stop the service for a real terminal close or a failed background handoff.
+        if (!isBackgroundPlaybackSessionActive && !isBackgroundPlaybackEnabled()) {
           endBackgroundPlayback()
         }
       }
@@ -2308,6 +2316,13 @@ class PlayerActivity :
 
       // Don't restore UI during normal finish to prevent flickering
       // System will handle UI restoration automatically
+      // finishAndRemoveTask can also be used by the minimize path, so hand off before teardown.
+      if (!handledPipDismissal && !isBackgroundPlaybackSessionActive && isBackgroundPlaybackEnabled() && isReady) {
+        if (startBackgroundPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Started) {
+          isBackgroundPlaybackSessionActive = true
+          disableVideoForBackground()
+        }
+      }
       isReady = false
       isUserFinishing = true
 
@@ -2316,8 +2331,8 @@ class PlayerActivity :
         // handoff is preserved because silenceAudioOnClose() checks actual session ownership.
         silenceAudioOnClose()
 
-        // Clean up service when finishing
-        if (!isBackgroundPlaybackSessionActive) {
+        // Only stop the service for a real terminal close or a failed background handoff.
+        if (!isBackgroundPlaybackSessionActive && !isBackgroundPlaybackEnabled()) {
           endBackgroundPlayback()
         }
       }
