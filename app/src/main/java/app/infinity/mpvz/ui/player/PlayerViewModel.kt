@@ -1058,7 +1058,12 @@ class PlayerViewModel : ViewModel(),
     val defaultTargetLang = audioPreferences.lyricsTargetLanguage.get().ifBlank { "en" }
 
     if (sourceType == app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE && current.onlineLyrics == null) {
-      lyricsUiState.value = current.copy(isLoading = true)
+      lyricsUiState.value = current.copy(
+        isLoading = true,
+        selectedSource = app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE,
+        lyrics = null,
+        originalLyrics = null,
+      )
       lyricsLoadJob?.cancel()
       lyricsTranslateJob?.cancel()
       lyricsLoadJob = viewModelScope.launch(Dispatchers.IO) {
@@ -1073,12 +1078,6 @@ class PlayerViewModel : ViewModel(),
         val duration = PlaybackSession.getPropertyInt("duration") ?: 0
 
         val online = lyricsRepository.fetchOnlineLyrics(title, artist, duration)
-
-        val stillCurrentPath = PlaybackSession.getPropertyString("path")
-          ?: PlaybackSession.getPropertyString("stream-open-filename")
-        // MPV can expose either path property during an audio load. Treat equivalent
-        // normalized values as the same track so a valid online result is not discarded.
-        if (!sameLyricsMediaPath(stillCurrentPath, path)) return@launch
 
         val updatedSources = (current.availableSources + app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE).distinct()
         val activeLyrics = online ?: current.embeddedLyrics
@@ -1107,28 +1106,6 @@ class PlayerViewModel : ViewModel(),
       return
     }
 
-    val cachedLyrics =
-      when (sourceType) {
-        app.infinity.mpvz.domain.lyrics.LyricsSourceType.EMBEDDED,
-        app.infinity.mpvz.domain.lyrics.LyricsSourceType.LOCAL,
-        -> current.embeddedLyrics
-        app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE -> current.onlineLyrics
-      }
-    if (cachedLyrics != null) {
-      val activeIndex = app.infinity.mpvz.utils.media.LyricsUtils.getActiveLineIndex(
-        syncedLines = cachedLyrics.synced,
-        positionMs = (precisePosition.value * 1000).toLong(),
-        offsetMs = current.syncOffsetMs,
-      )
-      lyricsUiState.value = current.copy(
-        lyrics = cachedLyrics,
-        originalLyrics = cachedLyrics,
-        isTranslationActive = false,
-        selectedSource = sourceType,
-        activeLineIndex = activeIndex,
-      )
-      return
-    }
     val updatedResult = lyricsRepository.switchSource(path, sourceType)
     if (updatedResult != null) {
       val activeLyrics = updatedResult.activeLyrics
@@ -1151,14 +1128,6 @@ class PlayerViewModel : ViewModel(),
         translateLyrics(defaultTargetLang)
       }
     }
-  }
-
-  private fun sameLyricsMediaPath(current: String?, requested: String): Boolean {
-    if (current.isNullOrBlank()) return false
-    if (current == requested) return true
-    return runCatching {
-      java.io.File(current).canonicalPath == java.io.File(requested).canonicalPath
-    }.getOrDefault(current.trim() == requested.trim())
   }
 
   fun adjustLyricsSyncOffset(deltaMs: Int) {

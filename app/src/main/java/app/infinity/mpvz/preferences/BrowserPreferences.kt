@@ -42,7 +42,7 @@ class BrowserPreferences(
   val videoSortOrder = preferenceStore.getEnum("video_sort_order", SortOrder.Ascending)
 
   // Music view mode and sorting preferences
-  val musicViewMode = preferenceStore.getEnum("music_view_mode", MusicViewMode.GRID)
+  val musicViewMode = preferenceStore.getEnum("music_view_mode", MusicViewMode.LIST)
   val musicSortField = preferenceStore.getEnum("music_sort_field", MusicSortField.TITLE)
   val musicSortOrder = preferenceStore.getEnum("music_sort_order", MusicSortOrder.ASCENDING)
 

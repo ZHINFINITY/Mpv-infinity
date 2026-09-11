@@ -1373,11 +1373,11 @@ private fun SongsTabContent(
     if (viewMode == MusicViewMode.GRID) {
       LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Adaptive(minSize = 180.dp),
+        columns = GridCells.Adaptive(minSize = 145.dp),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
       ) {
         items(songs, key = { it.id }) { song ->
           SongGridCard(
@@ -1436,7 +1436,7 @@ private fun SongGridCard(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(10.dp)
+        .padding(8.dp)
     ) {
       Box(
         modifier = Modifier
@@ -1484,7 +1484,7 @@ private fun SongGridCard(
         }
       }
 
-      Spacer(modifier = Modifier.height(10.dp))
+      Spacer(modifier = Modifier.height(6.dp))
 
       Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1492,7 +1492,7 @@ private fun SongGridCard(
       ) {
         Text(
           text = song.title,
-          style = MaterialTheme.typography.titleMedium.copy(
+          style = MaterialTheme.typography.bodyLarge.copy(
             fontWeight = if (isPlaying) FontWeight.ExtraBold else FontWeight.Bold
           ),
           maxLines = 1,
