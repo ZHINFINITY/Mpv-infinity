@@ -2823,15 +2823,22 @@ class PlayerViewModel : ViewModel(),
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
 
-    // A blank cue is emitted when the user changes subtitle tracks and when a subtitle
-    // track has no active line. It must never hide the newly selected original subtitle:
-    // translation hides the original only after a non-empty translated result is ready.
-    if (native) {
-      if (nativeSubtitleHiddenForTranslation) nativeSubtitleVisibilityListener?.invoke(false)
+    // A blank cue is emitted while changing tracks and while seeking. When translation
+    // is enabled, keep text subtitles hidden during that gap; the next non-empty cue
+    // below starts a fresh request. Restoring visibility here causes the original cue
+    // to flash/show while the translated overlay is empty.
+    if (aiPreferences.playerSubtitleTranslationEnabled.get()) {
+      if (native) {
+        nativeSubtitleVisibilityListener?.invoke(true)
+      } else {
+        PlaybackSession.setPropertyBoolean("sub-visibility", false)
+      }
+      nativeSubtitleHiddenForTranslation = true
     } else {
-      PlaybackSession.setPropertyBoolean("sub-visibility", true)
+      if (native) nativeSubtitleVisibilityListener?.invoke(false)
+      else PlaybackSession.setPropertyBoolean("sub-visibility", true)
+      nativeSubtitleHiddenForTranslation = false
     }
-    nativeSubtitleHiddenForTranslation = false
   }
 
   fun resetEmbeddedSubtitleTranslation() {
@@ -2863,6 +2870,15 @@ class PlayerViewModel : ViewModel(),
         ?: java.util.Locale.getDefault().language.ifBlank { "en" }
     lastEmbeddedCue = cue
     _embeddedTranslatedSubtitle.value = null
+    // Suppress the original text cue immediately. This prevents the embedded subtitle
+    // from appearing while the translation request is in flight; image-based subtitles
+    // never enter this method and therefore retain their existing rendering behavior.
+    if (native) {
+      nativeSubtitleVisibilityListener?.invoke(true)
+    } else {
+      PlaybackSession.setPropertyBoolean("sub-visibility", false)
+    }
+    nativeSubtitleHiddenForTranslation = true
     val requestId = ++embeddedTranslationRequestId
     embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
@@ -2911,12 +2927,13 @@ class PlayerViewModel : ViewModel(),
       }.onFailure {
         if (requestId == embeddedTranslationRequestId) {
           withContext(Dispatchers.Main.immediate) {
-            if (native && nativeSubtitleHiddenForTranslation) {
-              nativeSubtitleVisibilityListener?.invoke(false)
-              nativeSubtitleHiddenForTranslation = false
-            }
             _embeddedTranslatedSubtitle.value = null
             _translationStatus.value = ""
+            if (!aiPreferences.playerSubtitleTranslationEnabled.get()) {
+              if (native) nativeSubtitleVisibilityListener?.invoke(false)
+              else PlaybackSession.setPropertyBoolean("sub-visibility", true)
+              nativeSubtitleHiddenForTranslation = false
+            }
           }
         }
       }
