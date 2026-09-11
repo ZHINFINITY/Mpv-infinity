@@ -286,12 +286,16 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onCues(cueGroup: CueGroup) {
-      // Keep Media3's SubtitleView in control of cue rendering, exactly as in v1.0.7.
-      // Publish a text copy for the optional translation feature without replacing or clearing
-      // the cues that Media3 has just delivered to the attached SubtitleView.
       _subtitleCueText.value = cueGroup.cues
         .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotBlank) }
         .joinToString("\n")
+      // Keep delivering cues to the ViewModel for translation, but do not allow Media3's
+      // SubtitleView to draw the original cue underneath the translated Compose overlay.
+      if (!subtitleOverlayVisible) {
+        attachedView?.subtitleView?.post {
+          if (!subtitleOverlayVisible) attachedView?.subtitleView?.setCues(emptyList())
+        }
+      }
     }
 
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -304,10 +308,7 @@ class NativeMedia3Engine(context: Context) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       val types = tracks.groups.joinToString(",") { it.type.toString() }
       Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types prepareElapsedMs=$elapsed uri=$preparationUri")
-      // v1.0.7 selected the embedded text track through Media3's default parameters. Some
-      // current files expose text groups without a selected track, so restore that behavior once
-      // the groups are published; explicit subtitle-sheet choices still take precedence.
-      ensureDefaultEmbeddedSubtitleSelected(tracks)
+      ensureEmbeddedSubtitleSelected(tracks)
       publishSnapshot()
     }
 
@@ -893,32 +894,6 @@ class NativeMedia3Engine(context: Context) {
       selected = true,
     )
     Log.d(logTag, "Auto-selected embedded subtitle group=${tracks.groups.indexOf(candidate)} track=$index")
-  }
-
-  private fun ensureDefaultEmbeddedSubtitleSelected(tracks: Tracks) {
-    if (tracks.groups.any { group ->
-        group.type == C.TRACK_TYPE_TEXT &&
-          (0 until group.length).any { index -> group.isTrackSelected(index) }
-      }) return
-    val group = tracks.groups.firstOrNull { candidate ->
-      candidate.type == C.TRACK_TYPE_TEXT &&
-        (0 until candidate.length).any { index -> candidate.isTrackSupported(index) }
-    } ?: return
-    val index = (0 until group.length).firstOrNull { group.isTrackSupported(it) } ?: return
-    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
-      .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, index))
-      .build()
-    lastSelectedSubtitleTrack = NativeTrack(
-      groupIndex = tracks.groups.indexOf(group),
-      trackIndex = index,
-      type = C.TRACK_TYPE_TEXT,
-      label = group.getTrackFormat(index).label ?: group.getTrackFormat(index).language ?: "Subtitle ${index + 1}",
-      language = group.getTrackFormat(index).language,
-      selected = true,
-    )
-    Log.d(logTag, "Default embedded subtitle selected group=${tracks.groups.indexOf(group)} track=$index")
   }
 
   private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =
