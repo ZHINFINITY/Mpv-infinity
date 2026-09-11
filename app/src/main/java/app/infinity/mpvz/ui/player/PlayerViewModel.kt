@@ -2818,7 +2818,6 @@ class PlayerViewModel : ViewModel(),
 
   fun clearEmbeddedSubtitleTranslationCue(native: Boolean = false) {
     embeddedTranslationRequestId += 1L
-    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
@@ -2843,7 +2842,6 @@ class PlayerViewModel : ViewModel(),
 
   fun resetEmbeddedSubtitleTranslation() {
     embeddedTranslationRequestId += 1L
-    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _translationStatus.value = ""
@@ -2880,7 +2878,6 @@ class PlayerViewModel : ViewModel(),
     }
     nativeSubtitleHiddenForTranslation = true
     val requestId = ++embeddedTranslationRequestId
-    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
       _translationStatus.value = "Translating embedded subtitle…"
       val provider = aiPreferences.embeddedSubtitleTranslationProvider.get().trim()
@@ -6756,7 +6753,6 @@ class PlayerViewModel : ViewModel(),
     // ViewModel normally cancels this scope after onCleared; cancel it first so dispatcher workers
     // cannot start another callback while the player resources below are being released.
     viewModelScope.cancel()
-    embeddedCueTranslationJob?.cancel()
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
       nativeSubtitleHiddenForTranslation = false
