@@ -399,7 +399,6 @@ private fun AudioVisualizerViewport(
   BoxWithConstraints(
     modifier =
       modifier
-        .background(Color(palette.background))
         .clipToBounds()
         .combinedClickable(
           interactionSource = remember { MutableInteractionSource() },

@@ -155,11 +155,10 @@ private fun <T> VisualizerOverlay(
     modifier = modifier,
     update = { view ->
       view.updatePalette(palette)
-      view.setBackgroundColor(palette.background)
+      view.setBackgroundColor(Color.TRANSPARENT)
       view.holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
-      // Keep the translucent GL layer below interactive Compose sheets and controls.
-      view.setZOrderOnTop(false)
-      view.setZOrderMediaOverlay(true)
+      // Keep the transparent GL layer above the ambient background so its alpha clear is visible.
+      view.setZOrderOnTop(true)
       if (isSheetOpen) {
         // A sheet fully covers the expensive GLSurfaceView. Keep the last frame but stop the
         // continuous render loop (particle/galaxy renderers otherwise burn GPU underneath it).
