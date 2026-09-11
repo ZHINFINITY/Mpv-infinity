@@ -499,6 +499,7 @@ class PlayerActivity :
   private var isVideoAmbientPresentationActive = false
   private var handledPipDismissal = false
   private var pendingPipExitResolution = false
+  private var terminalPipDismissalRequested = false
   private var pendingBackgroundTransition = false
   private var pendingBackNavigationBackgroundTransition = false
   private var noisyReceiverRegistered = false
@@ -2425,6 +2426,7 @@ class PlayerActivity :
     Log.d(TAG, "PiP dismissed; stopping terminal playback exactly once")
     pendingPipExitResolution = false
     handledPipDismissal = true
+    terminalPipDismissalRequested = true
     isUserFinishing = true
     isBackgroundPlaybackSessionActive = false
     pendingBackgroundTransition = false
@@ -5766,6 +5768,7 @@ class PlayerActivity :
     wasInPipMode = false
     pendingPipExitResolution = false
     handledPipDismissal = false
+    terminalPipDismissalRequested = false
     if (!isBackgroundPlaybackEnabled() && (serviceBound || mediaPlaybackService != null || MediaPlaybackService.isRunning())) {
       endBackgroundPlayback()
     }
@@ -7184,6 +7187,10 @@ class PlayerActivity :
   private fun startBackgroundPlaybackInternal(bindToActivity: Boolean): Boolean {
     if (fileName.isBlank() || (!isReady && !nativeEngine.snapshot.value.isReady)) {
       Log.w(TAG, "Cannot start background playback: video not ready")
+      return false
+    }
+    if (terminalPipDismissalRequested) {
+      Log.d(TAG, "Skipping MPV background playback after terminal PiP dismissal")
       return false
     }
 
