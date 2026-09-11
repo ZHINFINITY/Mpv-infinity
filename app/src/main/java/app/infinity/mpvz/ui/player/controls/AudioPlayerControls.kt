@@ -1130,7 +1130,7 @@ fun AudioPlayerControls(
         val containerWidthPx = constraints.maxWidth.toFloat()
         val currentOffset = animatableOffsetX.value
 
-        if (showInPlaceLyrics) {
+        if (showInPlaceLyrics && !forceArtwork) {
           app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
@@ -2006,19 +2006,20 @@ fun AudioPlayerControls(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
           ) {
-            if (!isStandbyActive) headerBar()
             if (showInPlaceLyrics) {
               lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
             } else {
+              if (!isStandbyActive) headerBar()
+              if (!isStandbyActive) losslessBadge()
+              if (!isStandbyActive) trackMetadataView()
               Spacer(modifier = Modifier.weight(1f))
             }
+            seekbarView()
+            if (!showInPlaceLyrics && !isStandbyActive) {
+              playbackControlsRow()
+              bottomActionRow()
+            }
           }
-        }
-        // Player padding keeps the seekbar inset from both screen edges.
-        seekbarView()
-        if (!isStandbyActive) {
-          playbackControlsRow()
-          bottomActionRow()
         }
       }
     }
