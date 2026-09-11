@@ -1966,9 +1966,14 @@ class PlayerActivity :
     }
     val pipDismissalCommitted = handledPipDismissal
     pendingPipExitResolution = false
+    if (pipDismissalCommitted && !isBackgroundPlaybackEnabled()) {
+      isBackgroundPlaybackSessionActive = false
+      pendingBackgroundTransition = false
+      runCatching { MediaPlaybackService.stopForTerminalDismissal() }
+    }
     val keepBackgroundPlaybackAlive =
       ownsPlaybackSession && !pipDismissalCommitted && PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
-        backgroundPlaybackEnabled = playbackWasInitialized && isBackgroundPlaybackEnabled(),
+        backgroundPlaybackEnabled = (playbackWasInitialized || nativeWasActive) && isBackgroundPlaybackEnabled(),
         backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
       )
 
@@ -5909,6 +5914,11 @@ class PlayerActivity :
     preserveTorrentSession: Boolean = false,
   ) {
     if (!ownsPlaybackSession()) return
+    // A Native handoff mutes MPV while Media3 starts. A later reopen may select MPV directly;
+    // clear that transient handoff mute before loading the new item.
+    if (PlaybackSession.isInitialized) {
+      PlaybackSession.setPropertyBoolean("mute", false)
+    }
     mediaLoadJob?.cancel()
     cancelPlaybackLoadRecovery()
     playWhenFileLoaded = true
@@ -7178,6 +7188,13 @@ class PlayerActivity :
       nativeEngine.stop()
       binding.media3Player.alpha = 0f
       binding.player.visibility = View.VISIBLE
+      if (!mpvInitialized) {
+        val setupError = setupMPV()
+        if (setupError != null) {
+          Log.e(TAG, "Unable to initialize MPV for Native background handoff: $setupError")
+          return false
+        }
+      }
       if (mpvInitialized) {
         loadPlaylistItem(playlistIndex.coerceAtLeast(0))
         lifecycleScope.launch {

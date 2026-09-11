@@ -49,6 +49,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.WindowInsets
 import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.domain.network.NetworkProtocol
 
@@ -95,6 +96,7 @@ fun AddConnectionSheet(
 
   ModalBottomSheet(
     onDismissRequest = handleDismiss,
+    contentWindowInsets = { WindowInsets.ime },
     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     dragHandle = { BottomSheetDefaults.DragHandle() },
