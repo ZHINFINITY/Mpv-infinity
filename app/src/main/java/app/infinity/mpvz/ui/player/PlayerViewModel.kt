@@ -2821,7 +2821,6 @@ class PlayerViewModel : ViewModel(),
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
-    if (!native) PlaybackSession.setPropertyString("secondary-sub-text", "")
 
     // A blank cue is emitted while changing tracks and while seeking. When translation
     // is enabled, keep text subtitles hidden during that gap; the next non-empty cue
@@ -2847,7 +2846,6 @@ class PlayerViewModel : ViewModel(),
     lastEmbeddedCue = ""
     _translationStatus.value = ""
     _embeddedTranslatedSubtitle.value = null
-    PlaybackSession.setPropertyString("secondary-sub-text", "")
     // Always restore both subtitle renderers. The hidden flag can be false when the
     // translation request is cancelled before its result arrives, but either renderer may
     // already have been hidden by the translation handoff.
@@ -2907,14 +2905,10 @@ class PlayerViewModel : ViewModel(),
                 nativeSubtitleHiddenForTranslation = true
               }
               _embeddedTranslatedSubtitle.value = cleanedTranslation
-              if (!native) {
-                PlaybackSession.setPropertyString("secondary-sub-text", cleanedTranslation)
-                _embeddedTranslatedSubtitle.value = null
-              }
             } else {
               // Keep the native subtitle visible when it is already in the requested language.
               // This preserves the original font, outline, position, and line layout exactly.
-              if (!native) PlaybackSession.setPropertyString("secondary-sub-text", "")
+              _embeddedTranslatedSubtitle.value = null
               if (native && nativeSubtitleHiddenForTranslation) {
                 nativeSubtitleVisibilityListener?.invoke(false)
                 nativeSubtitleHiddenForTranslation = false
@@ -2931,7 +2925,6 @@ class PlayerViewModel : ViewModel(),
         if (requestId == embeddedTranslationRequestId) {
           withContext(Dispatchers.Main.immediate) {
             _embeddedTranslatedSubtitle.value = null
-            if (!native) PlaybackSession.setPropertyString("secondary-sub-text", "")
             _translationStatus.value = ""
             if (!aiPreferences.playerSubtitleTranslationEnabled.get()) {
               if (native) nativeSubtitleVisibilityListener?.invoke(false)
