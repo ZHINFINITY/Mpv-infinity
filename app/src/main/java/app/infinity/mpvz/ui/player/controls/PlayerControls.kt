@@ -961,7 +961,7 @@ fun PlayerControls(
               }
               TranslatedSubtitleText(
                 text = translated,
-                modifier = Modifier.fillMaxWidth(((1f - 2f * (mpvSubtitleMarginX ?: 25).toFloat() / (mpvOsdWidth ?: 1280).toFloat()).coerceIn(0.45f, 1f)).coerceAtMost(0.92f)).padding(horizontal = 0.dp),
+                modifier = Modifier.fillMaxWidth(((1f - 2f * (mpvSubtitleMarginX ?: 25).toFloat() / (mpvOsdWidth ?: 1280).toFloat()).coerceIn(0.45f, 1f)).coerceAtMost(0.86f)).padding(horizontal = 0.dp),
                 fontSize = translatedFontSize,
                 textColor = Color(subtitleTextColor),
                 backgroundColor = Color(subtitleBackgroundColor),
