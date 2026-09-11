@@ -1352,8 +1352,21 @@ class ThumbnailRepository(
               attributes["romaji"]?.jsonPrimitive?.contentOrNull,
               attributes["slug"]?.jsonPrimitive?.contentOrNull,
             )
-            if (names.any { normalized(it) == normalized(title) }) {
-              attributes["posterImage"]?.jsonObject?.get("small")?.jsonPrimitive?.contentOrNull
+            val wanted = normalized(title)
+            // Release folders usually contain a season suffix while Kitsu titles often use
+            // names such as "3rd Season". Exact equality therefore misses otherwise valid
+            // anime results (for example, JUJUTSU KAISEN S03).
+            val matches = names.any { candidate ->
+              val value = normalized(candidate)
+              value == wanted ||
+                value.startsWith(wanted) ||
+                wanted.startsWith(value) ||
+                (wanted.length >= 6 && value.contains(wanted))
+            }
+            if (matches) {
+              val poster = attributes["posterImage"]?.jsonObject
+              listOf("original", "large", "medium", "small")
+                .firstNotNullOfOrNull { key -> poster?.get(key)?.jsonPrimitive?.contentOrNull }
             } else null
           }
       }
