@@ -9,6 +9,7 @@
 
 package app.infinity.mpvz.ui.browser.dialogs
 
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
@@ -99,7 +100,7 @@ fun AddConnectionSheet(
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     Column(
-      modifier = modifier.fillMaxWidth().navigationBarsPadding(),
+      modifier = modifier.fillMaxWidth().imePadding().navigationBarsPadding(),
     ) {
       Column(
         modifier =
