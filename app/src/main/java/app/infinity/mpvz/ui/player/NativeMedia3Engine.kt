@@ -33,6 +33,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.Extractor
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.metadata.Chapter
@@ -179,8 +180,10 @@ class NativeMedia3Engine(context: Context) {
     val defaults = DefaultExtractorsFactory()
       .setSubtitleParserFactory(DefaultSubtitleParserFactory())
       .createExtractors()
-    arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory())) +
-      defaults.filterNot { it is MatroskaExtractor }.toTypedArray()
+    val merged: List<Extractor> =
+      listOf(MatroskaExtractor(DefaultSubtitleParserFactory())) +
+        defaults.filterNot { it is MatroskaExtractor }.toList()
+    merged.toTypedArray()
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
