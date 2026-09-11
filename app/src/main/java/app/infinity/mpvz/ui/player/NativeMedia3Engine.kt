@@ -311,6 +311,7 @@ class NativeMedia3Engine(context: Context) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       val types = tracks.groups.joinToString(",") { it.type.toString() }
       Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types prepareElapsedMs=$elapsed uri=$preparationUri")
+      ensureEmbeddedSubtitleSelected(tracks)
       publishSnapshot()
     }
 
@@ -856,6 +857,33 @@ class NativeMedia3Engine(context: Context) {
       durationMs = activePlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
       speed = activePlayer.playbackParameters.speed,
     )
+  }
+
+  /**
+   * Some Matroska/MP4 files expose embedded subtitles without a default text-track flag.
+   * Media3 then reports the tracks but renders none. Match MPV's default behavior by selecting
+   * the first supported embedded text track when the user has not selected one yet.
+   */
+  private fun ensureEmbeddedSubtitleSelected(tracks: Tracks) {
+    if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && (0 until it.length).any { i -> it.isTrackSelected(i) } }) return
+    val candidate = tracks.groups.firstOrNull { group ->
+      group.type == C.TRACK_TYPE_TEXT && (0 until group.length).any { i -> group.isTrackSupported(i) }
+    } ?: return
+    val index = (0 until candidate.length).firstOrNull { candidate.isTrackSupported(it) } ?: return
+    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .setOverrideForType(TrackSelectionOverride(candidate.mediaTrackGroup, index))
+      .build()
+    lastSelectedSubtitleTrack = NativeTrack(
+      groupIndex = tracks.groups.indexOf(candidate),
+      trackIndex = index,
+      type = C.TRACK_TYPE_TEXT,
+      label = candidate.getTrackFormat(index).label ?: candidate.getTrackFormat(index).language ?: "Subtitle ${index + 1}",
+      language = candidate.getTrackFormat(index).language,
+      selected = true,
+    )
+    Log.d(logTag, "Auto-selected embedded subtitle group=${tracks.groups.indexOf(candidate)} track=$index")
   }
 
   private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =
