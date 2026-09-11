@@ -484,10 +484,11 @@ class NativeMedia3Engine(context: Context) {
   private fun configureSubtitleView() {
     val view = attachedView ?: return
     view.subtitleView?.apply {
-      // Preserve ASS/SSA/Matroska cue styling when the container provides it. The previous
-      // forced-disable flags flattened every embedded subtitle to the plain fallback font.
+      // This is the known-working Media3 configuration: keep embedded ASS/SSA/Matroska
+      // font/style attributes, while retaining the app subtitle-size preference as the
+      // controlled fallback used by the previous native implementation.
       setApplyEmbeddedStyles(true)
-      setApplyEmbeddedFontSizes(true)
+      setApplyEmbeddedFontSizes(false)
       setStyle(subtitleStyle)
       visibility = android.view.View.VISIBLE
       alpha = if (subtitleOverlayVisible) 1f else 0f
