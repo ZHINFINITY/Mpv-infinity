@@ -1287,19 +1287,13 @@ fun AudioPlayerControls(
     }
 
     val lyricsPanel = @Composable { panelModifier: Modifier ->
-      Surface(
-        modifier = panelModifier.clip(RoundedCornerShape(24.dp)),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(24.dp),
-      ) {
-        app.infinity.mpvz.ui.player.controls.components.LyricsView(
-          viewModel = viewModel,
-          modifier = Modifier.fillMaxSize().padding(12.dp),
-          showTitleHeader = false,
-          isLyricsFullscreen = false,
-          onTap = resetInactivityTimer,
-        )
-      }
+      app.infinity.mpvz.ui.player.controls.components.LyricsView(
+        viewModel = viewModel,
+        modifier = panelModifier.padding(12.dp),
+        showTitleHeader = false,
+        isLyricsFullscreen = false,
+        onTap = resetInactivityTimer,
+      )
     }
 
     val trackMetadataView = @Composable {
