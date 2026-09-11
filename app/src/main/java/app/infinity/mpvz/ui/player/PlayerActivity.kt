@@ -7221,6 +7221,9 @@ class PlayerActivity :
 
     pendingBackgroundPlaybackStart = false
     return if (startBackgroundPlaybackInternal(bindToActivity = true)) {
+      // Set this before returning to callers: finish()/onDestroy() can run immediately after
+      // the handoff and must not interpret the still-running service as an ordinary close.
+      isBackgroundPlaybackSessionActive = true
       BackgroundPlaybackStartResult.Started
     } else {
       BackgroundPlaybackStartResult.Blocked
