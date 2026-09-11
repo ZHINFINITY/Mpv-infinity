@@ -510,6 +510,7 @@ class PlayerActivity :
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
   private var savePlaybackStateJob: Job? = null // Track ongoing save job
+  private var nativePositionSaveJob: Job? = null
   private var wasPlayingBeforePause = false // Track if video was playing before pause
   private var resumeAfterUnlockJob: Job? = null
   private var jellyfinSessionReporter: JellyfinSessionReporter? = null
@@ -1987,6 +1988,7 @@ class PlayerActivity :
       if ((playbackWasInitialized || nativeWasActive) && ownsPlaybackSession) {
         saveVideoPlaybackState(fileName, immediate = true, forceNativeSnapshot = nativeWasActive)
       }
+      nativePositionSaveJob?.cancel()
       if (!keepBackgroundPlaybackAlive && nativeWasActive) {
         nativeEngine.setPlaying(false)
         nativeEngine.stop()
@@ -5279,6 +5281,11 @@ class PlayerActivity :
             watchedThreshold = browserPreferences.watchedThreshold.get(),
           )
         playbackStateRepository.upsert(playbackState)
+        if (forceNativeSnapshot && snapshot.mediaIdentifier != snapshot.mediaTitle) {
+          // Native queue items can be rebuilt with a different stable URI key after Activity
+          // recreation. Keep a filename alias so the next Native load can still resolve resume.
+          playbackStateRepository.upsert(playbackState.copy(mediaTitle = snapshot.mediaTitle))
+        }
         PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
       }.onFailure { e ->
         Log.e(TAG, "Error saving playback state", e)
@@ -5305,6 +5312,17 @@ class PlayerActivity :
           reporter.reportPlaybackProgress(currentPosMs, isPaused)
         }
       }
+  }
+
+  private fun startNativePositionPersistence() {
+    nativePositionSaveJob?.cancel()
+    nativePositionSaveJob = lifecycleScope.launch {
+      while (isActive) {
+        delay(2_000L)
+        if (!isNativeEngineActive() || fileName.isBlank() || !ownsPlaybackSession()) continue
+        saveVideoPlaybackState(fileName, forceNativeSnapshot = true)
+      }
+    }
   }
 
   private fun reportJellyfinStop() {
@@ -6232,6 +6250,7 @@ class PlayerActivity :
       } else if (restoreSavedPosition && !item.isDefinitelyAudioOnly()) {
         (resolvePlaybackState(item.stableId, legacyMediaIdentifier)
           ?: resolvePlaybackState(mediaIdentifier, legacyMediaIdentifier)
+          ?: playbackStateRepository.getVideoDataByTitle(fileName)
           ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(item.playableUri))
           ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(item.playableUri)))
           ?.lastPosition
@@ -6295,6 +6314,7 @@ class PlayerActivity :
           mimeType = nativeItem.mimeType,
           sourceUri = nativeItem.originalUri.toUri(),
         )
+        startNativePositionPersistence()
         viewModel.onVideoLoadCompleted()
       }
       return
@@ -7201,7 +7221,7 @@ class PlayerActivity :
       Log.w(TAG, "Cannot start background playback: video not ready")
       return false
     }
-    if (terminalPipDismissalRequested) {
+    if (terminalPipDismissalRequested || isUserFinishing || isFinishing || isDestroyed) {
       Log.d(TAG, "Skipping MPV background playback after terminal PiP dismissal")
       return false
     }

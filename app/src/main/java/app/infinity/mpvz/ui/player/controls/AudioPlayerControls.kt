@@ -1972,7 +1972,9 @@ fun AudioPlayerControls(
       // is reserved for the seekbar and controls. This prevents the metadata from pushing the
       // lower action row below the available height on short landscape displays.
         Row(
-          modifier = Modifier.fillMaxSize(),
+          modifier = Modifier.fillMaxSize().graphicsLayer {
+            alpha = if (isLyricsFullscreen) 0f else 1f
+          },
           horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
           verticalAlignment = Alignment.CenterVertically,
       ) {
@@ -1993,9 +1995,7 @@ fun AudioPlayerControls(
           }
         }
         Column(
-          modifier = Modifier.weight(1f).fillMaxHeight().graphicsLayer {
-            alpha = if (isLyricsFullscreen) 0f else 1f
-          },
+          modifier = Modifier.weight(1f).fillMaxHeight(),
           verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
           horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -2012,20 +2012,29 @@ fun AudioPlayerControls(
         modifier = Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 20.dp),
         contentAlignment = Alignment.Center,
       ) {
-        Column(
+        Row(
           modifier = Modifier.fillMaxWidth(),
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.spacedBy(16.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-          if (showInPlaceLyrics) {
-            app.infinity.mpvz.ui.player.controls.components.LyricsView(
-              viewModel = viewModel,
-              modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
-              isLyricsFullscreen = true,
-              onTap = resetInactivityTimer,
-            )
+          Box(modifier = Modifier.weight(0.42f), contentAlignment = Alignment.Center) {
+            centerVisualizerView(Modifier.fillMaxWidth().padding(horizontal = 12.dp))
           }
-          seekbarView()
+          Column(
+            modifier = Modifier.weight(0.58f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+          ) {
+            if (showInPlaceLyrics) {
+              app.infinity.mpvz.ui.player.controls.components.LyricsView(
+                viewModel = viewModel,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                isLyricsFullscreen = true,
+                onTap = resetInactivityTimer,
+              )
+            }
+            seekbarView()
+          }
         }
       }
     }
