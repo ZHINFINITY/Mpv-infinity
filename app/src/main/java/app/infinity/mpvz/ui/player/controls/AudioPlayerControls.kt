@@ -901,8 +901,8 @@ fun AudioPlayerControls(
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
 
-  LaunchedEffect(audioStandbyMode, isPlaying, lastUserInteractionTime) {
-    if (audioStandbyMode && isPlaying) {
+  LaunchedEffect(audioStandbyMode, isPlaying, isPortrait, lastUserInteractionTime) {
+    if (audioStandbyMode && isPlaying && !isPortrait) {
       kotlinx.coroutines.delay(5000L)
       isLyricsFullscreen = true
     } else {
@@ -2016,13 +2016,14 @@ fun AudioPlayerControls(
         }
         Column(
           modifier = Modifier.weight(1f).fillMaxHeight(),
-          verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
           horizontalAlignment = Alignment.CenterHorizontally,
         ) {
           headerBar()
           losslessBadge()
           if (showInPlaceLyrics) {
-            lyricsPanel(Modifier.weight(1f).fillMaxWidth())
+            // Reserve the flexible viewport for lyrics; fixed controls remain below it.
+            lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
           }
           seekbarView()
           playbackControlsRow()
