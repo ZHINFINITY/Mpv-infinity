@@ -251,7 +251,7 @@ fun PlayerControls(
       }
       value = custom?.let {
         val importedTypeface = android.graphics.Typeface.createFromFile(it.file)
-        androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.create(importedTypeface, typefaceStyle))
+        androidx.compose.ui.text.font.FontFamily(importedTypeface)
       }
         ?: androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.create(family, typefaceStyle))
     }
