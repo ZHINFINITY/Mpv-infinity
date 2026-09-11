@@ -719,7 +719,7 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         nativeEngine.subtitleCueText
           .collect { cue ->
-            if (!isNativeEngineActive()) return@collectLatest
+            if (!isNativeEngineActive()) return@collect
             if (cue.isBlank()) {
               viewModel.clearEmbeddedSubtitleTranslationCue(native = true)
             } else {
