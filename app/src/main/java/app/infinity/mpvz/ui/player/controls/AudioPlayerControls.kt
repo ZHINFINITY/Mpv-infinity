@@ -742,6 +742,7 @@ fun AudioPlayerControls(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
   val audioWavySeekbar by audioPreferences.audioWavySeekbar.collectAsState()
+  val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
@@ -900,8 +901,8 @@ fun AudioPlayerControls(
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
 
-  LaunchedEffect(showInPlaceLyrics, isPlaying, isTabletLandscape, lastUserInteractionTime) {
-    if (showInPlaceLyrics && isPlaying) {
+  LaunchedEffect(audioStandbyMode, isPlaying, isTabletLandscape, lastUserInteractionTime) {
+    if (audioStandbyMode && isPlaying) {
       kotlinx.coroutines.delay(5000L)
       isLyricsFullscreen = true
     } else {
@@ -1990,7 +1991,9 @@ fun AudioPlayerControls(
           trackMetadataView()
         }
         Column(
-          modifier = Modifier.weight(1.2f).fillMaxHeight(),
+          modifier = Modifier.weight(1.2f).fillMaxHeight().graphicsLayer {
+            alpha = if (isLyricsFullscreen) 0f else 1f
+          },
           verticalArrangement = Arrangement.SpaceEvenly,
           horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -2000,6 +2003,14 @@ fun AudioPlayerControls(
           playbackControlsRow()
           bottomActionRow()
         }
+      }
+    }
+    if (isLyricsFullscreen && !isPortrait) {
+      Box(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp),
+        contentAlignment = Alignment.BottomCenter,
+      ) {
+        seekbarView()
       }
     }
 

@@ -2422,6 +2422,9 @@ class PlayerActivity :
     pendingBackgroundTransition = false
     startedBackgroundForPip = false
     silenceAudioOnClose()
+    // onStop can race PiP exit and start the MPV-backed notification service before this callback.
+    // Explicitly tear that service down so closing PiP never leaves video playing in the background.
+    endBackgroundPlayback(handoffToActivity = false)
     MediaPlaybackService.stopForTerminalDismissal()
     return true
   }
