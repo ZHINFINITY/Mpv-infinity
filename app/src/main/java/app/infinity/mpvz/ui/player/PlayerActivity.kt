@@ -718,8 +718,7 @@ class PlayerActivity :
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         nativeEngine.subtitleCueText
-          .distinctUntilChanged()
-          .collectLatest { cue ->
+          .collect { cue ->
             if (!isNativeEngineActive()) return@collectLatest
             if (cue.isBlank()) {
               viewModel.clearEmbeddedSubtitleTranslationCue(native = true)
