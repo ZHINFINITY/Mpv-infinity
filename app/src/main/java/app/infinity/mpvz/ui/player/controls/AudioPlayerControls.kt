@@ -1133,7 +1133,7 @@ fun AudioPlayerControls(
         val containerWidthPx = constraints.maxWidth.toFloat()
         val currentOffset = animatableOffsetX.value
 
-        if (showInPlaceLyrics) {
+        if (showInPlaceLyrics && !isLyricsFullscreen) {
           app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
