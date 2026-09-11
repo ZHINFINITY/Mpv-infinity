@@ -993,10 +993,7 @@ class PlayerActivity :
         nativeEngine.disableSubtitles()
       } else {
         nativeEngine.snapshot.value.subtitleTracks.getOrNull(-id - 1)?.let { track ->
-          // Choosing a row is an explicit selection, not a toggle. The selected flag can be
-          // stale while Media3 publishes successive Tracks updates; treating it as authoritative
-          // can disable the dialogue track the user just chose.
-          nativeEngine.selectTrack(track)
+          if (track.selected) nativeEngine.disableSubtitles() else nativeEngine.selectTrack(track)
         }
       }
     }
