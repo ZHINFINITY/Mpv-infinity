@@ -904,9 +904,10 @@ fun PlayerControls(
             exit = fadeOut(),
             modifier = Modifier.constrainAs(translatedSubtitle) {
               linkTo(parent.start, parent.end)
-              val configuredOffset =
-                (((100 - subtitlePosition) * (if (isPortrait) 1.55f else 2.1f))
-                  .coerceIn(-250f, 250f)).dp
+              val configuredOffset = with(density) {
+                val heightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
+                (((100 - subtitlePosition).coerceIn(0, 100) / 100f) * heightPx).toDp()
+              }
               bottom.linkTo(parent.bottom, configuredOffset)
             },
           ) {
@@ -918,7 +919,7 @@ fun PlayerControls(
               }
               TranslatedSubtitleText(
                 text = translated,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                modifier = Modifier.fillMaxWidth(0.86f).padding(horizontal = 12.dp),
                 fontSize = translatedFontSize,
                 textColor = Color(subtitleTextColor),
                 backgroundColor = Color(subtitleBackgroundColor),
