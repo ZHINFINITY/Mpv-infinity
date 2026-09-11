@@ -1111,7 +1111,7 @@ fun AudioPlayerControls(
       )
 
     @OptIn(ExperimentalFoundationApi::class)
-    val centerVisualizerView = @Composable { visualizerModifier: Modifier ->
+    val centerVisualizerView = @Composable { visualizerModifier: Modifier, forceArtwork: Boolean = false ->
       BoxWithConstraints(
         modifier =
           visualizerModifier
@@ -1142,7 +1142,7 @@ fun AudioPlayerControls(
           )
         } else {
           AnimatedContent(
-            targetState = showVisualizer,
+            targetState = showVisualizer && !forceArtwork,
             transitionSpec = {
               if (targetState) {
                 (fadeIn(animationSpec = tween(350, easing = FastOutSlowInEasing)) +
@@ -1287,6 +1287,22 @@ fun AudioPlayerControls(
         }
       }
     }
+    }
+
+    val lyricsPanel = @Composable { panelModifier: Modifier ->
+      Surface(
+        modifier = panelModifier.clip(RoundedCornerShape(24.dp)),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(24.dp),
+      ) {
+        app.infinity.mpvz.ui.player.controls.components.LyricsView(
+          viewModel = viewModel,
+          modifier = Modifier.fillMaxSize().padding(12.dp),
+          showTitleHeader = false,
+          isLyricsFullscreen = false,
+          onTap = resetInactivityTimer,
+        )
+      }
     }
 
     val trackMetadataView = @Composable {
@@ -1952,19 +1968,16 @@ fun AudioPlayerControls(
           bottomActionRow()
         }
 
-        Surface(
-          modifier = Modifier
-            .weight(1.1f)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(24.dp)),
-          color = MaterialTheme.colorScheme.surfaceContainerLow,
-          shape = RoundedCornerShape(24.dp),
-        ) {
-          DualPaneSidePanel(
-            viewModel = viewModel,
-            playlist = filteredPlaylist,
-            initialLyricsActive = wasLyricsActiveBeforeLandscape,
-          )
+        if (showInPlaceLyrics || wasLyricsActiveBeforeLandscape) {
+          lyricsPanel(Modifier.weight(1.1f).fillMaxHeight())
+        } else {
+          Surface(
+            modifier = Modifier.weight(1.1f).fillMaxHeight().clip(RoundedCornerShape(24.dp)),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(24.dp),
+          ) {
+            DualPaneSidePanel(viewModel = viewModel, playlist = filteredPlaylist)
+          }
         }
       }
     } else {
@@ -1988,6 +2001,7 @@ fun AudioPlayerControls(
               .weight(1f)
               .fillMaxWidth()
               .padding(vertical = 12.dp, horizontal = 24.dp),
+            forceArtwork = showInPlaceLyrics,
           )
           if (!isLyricsFullscreen) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -2001,6 +2015,9 @@ fun AudioPlayerControls(
         ) {
           headerBar()
           losslessBadge()
+          if (showInPlaceLyrics) {
+            lyricsPanel(Modifier.weight(1f).fillMaxWidth())
+          }
           seekbarView()
           playbackControlsRow()
           bottomActionRow()
