@@ -7274,6 +7274,8 @@ class PlayerActivity :
     // Prevent starting service multiple times
     if (bindToActivity && serviceBound && mediaPlaybackService?.isForegroundReady() == true) {
       setActivityMediaSessionActive(false)
+      // Mark the session before returning so an immediate Activity teardown cannot stop playback.
+      isBackgroundPlaybackSessionActive = true
       Log.d(TAG, "Service already bound, skipping start")
       return true
     }
@@ -7309,6 +7311,9 @@ class PlayerActivity :
       } else {
         Log.d(TAG, "Service start initiated")
       }
+      // The service is now owned by this playback session. Set this before the asynchronous bind
+      // callback can trigger Activity destruction, which must preserve the service for background audio.
+      isBackgroundPlaybackSessionActive = true
       if (serviceBound) awaitServiceMediaSessionOwnership()
       return true
     } catch (e: Exception) {
