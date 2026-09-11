@@ -133,8 +133,17 @@ internal fun PlaybackItem.isHdrOrDolbyVision(): Boolean {
   return HDR_MARKERS.any { marker -> metadata.contains(marker, ignoreCase = true) }
 }
 
+/** AUTO keeps ordinary video on MPV and selects Native only for identifiable 4K HDR media. */
+internal fun PlaybackItem.isAutoNativeCandidate(): Boolean {
+  if (!isHdrOrDolbyVision()) return false
+  val metadata = sequenceOf(title, mimeType, originalUri, playableUri).filterNotNull().joinToString(" ")
+  return UHD_MARKERS.any { marker -> metadata.contains(marker, ignoreCase = true) }
+}
+
 private val HDR_MARKERS =
   setOf("dolby vision", "dolby-vision", "dolbyvision", "dovi", "hdr10+", "hdr10", "hdr", "hlg")
+
+private val UHD_MARKERS = setOf("4k", "2160p", "2160", "uhd")
 
 internal enum class PlaybackVideoSelection {
   DISABLED,

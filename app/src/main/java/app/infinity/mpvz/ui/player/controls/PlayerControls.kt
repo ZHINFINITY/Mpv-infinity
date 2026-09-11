@@ -2068,7 +2068,7 @@ fun PlayerControls(
       onSeekToChapter = {
         val selectedChapter = chapters.getOrNull(it)
         if (nativeEngineActive && selectedChapter != null) {
-          activity?.nativeSeekTo((selectedChapter.start * 1000.0).toLong())
+          activity?.nativeSeekToChapter((selectedChapter.start * 1000.0).toLong())
           activity?.nativeUnpause()
         } else {
           PlaybackSession.setPropertyInt("chapter", it)

@@ -1415,10 +1415,7 @@ class PlayerActivity :
   private fun resolveEngineForItem(item: PlaybackItem?, configured: PlaybackEngineMode): PlaybackEngineMode =
     when (configured) {
       PlaybackEngineMode.AUTO ->
-        if (item != null &&
-          (item.isHdrOrDolbyVision() || item.networkSource != null || isHentaiStreamDirect(item.playableUri)) &&
-          !item.requiresTorrentResolution()
-        ) {
+        if (item != null && item.isAutoNativeCandidate() && !item.requiresTorrentResolution()) {
           PlaybackEngineMode.NATIVE
         } else {
           PlaybackEngineMode.MPV
@@ -1431,8 +1428,7 @@ class PlayerActivity :
     return manualEngineOverride
       ?.takeIf { it.first == mediaId }
       ?.second
-      ?: if (activeEngineMode == PlaybackEngineMode.NATIVE) PlaybackEngineMode.NATIVE
-      else decoderPreferences.playbackEngine.get()
+      ?: decoderPreferences.playbackEngine.get()
   }
 
   private fun setupPlayerControls() {
