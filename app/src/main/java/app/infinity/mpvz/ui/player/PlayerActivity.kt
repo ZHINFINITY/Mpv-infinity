@@ -1985,7 +1985,7 @@ class PlayerActivity :
       if (::castPlaybackController.isInitialized) castPlaybackController.release()
       cancelSystemBarsAutoHide()
       if ((playbackWasInitialized || nativeWasActive) && ownsPlaybackSession) {
-        saveVideoPlaybackState(fileName, immediate = true)
+        saveVideoPlaybackState(fileName, immediate = true, forceNativeSnapshot = nativeWasActive)
       }
       if (!keepBackgroundPlaybackAlive && nativeWasActive) {
         nativeEngine.setPlaying(false)
@@ -2236,7 +2236,7 @@ class PlayerActivity :
         restoreSystemUI()
       }
 
-      saveVideoPlaybackState(fileName, immediate = true)
+      saveVideoPlaybackState(fileName, immediate = true, forceNativeSnapshot = isNativeEngineActive())
     }.onFailure { e ->
       Log.e(TAG, "Error during onPause", e)
     }
@@ -2359,6 +2359,12 @@ class PlayerActivity :
         return@runCatching
       }
       if (pendingPipExitResolution) return@runCatching
+      if (ensureNotificationAccessForPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Blocked) {
+        endBackgroundPlayback(handoffToActivity = false)
+        MediaPlaybackService.stopForTerminalDismissal()
+        viewModel.pause()
+        return@runCatching
+      }
 
       if (
         PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnStop(
@@ -5249,8 +5255,9 @@ class PlayerActivity :
   private fun saveVideoPlaybackState(
     mediaTitle: String,
     immediate: Boolean = false,
+    forceNativeSnapshot: Boolean = false,
   ) {
-    val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return
+    val snapshot = capturePlaybackStateSnapshot(mediaTitle, forceNativeSnapshot) ?: return
 
     // Cancel any previous pending save operation
     savePlaybackStateJob?.cancel()
@@ -5310,7 +5317,10 @@ class PlayerActivity :
     }
   }
 
-  private fun capturePlaybackStateSnapshot(mediaTitle: String): PlaybackStateSnapshot? {
+  private fun capturePlaybackStateSnapshot(
+    mediaTitle: String,
+    forceNativeSnapshot: Boolean = false,
+  ): PlaybackStateSnapshot? {
     // Use the save-specific identifier so a save fired mid-transition (when mediaIdentifier
     // already points at the incoming item but MPV still reports the outgoing item's position)
     // is written under the correct video's record.
@@ -5318,7 +5328,7 @@ class PlayerActivity :
     if (saveIdentifier.isBlank()) return null
 
     val nativeSnapshot = nativeEngine.snapshot.value
-    val nativeEngineActive = isNativeEngineActive()
+    val nativeEngineActive = forceNativeSnapshot || isNativeEngineActive()
     val liveNativePositionMs = nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L)
     val liveNativeDurationMs = nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
     return PlaybackStateSnapshot(
