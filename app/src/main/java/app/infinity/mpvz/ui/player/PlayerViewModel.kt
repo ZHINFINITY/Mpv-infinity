@@ -2822,10 +2822,16 @@ class PlayerViewModel : ViewModel(),
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
-    if (!native && aiPreferences.playerSubtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
-      PlaybackSession.setPropertyBoolean("sub-visibility", false)
-      nativeSubtitleHiddenForTranslation = true
+
+    // A blank cue is emitted when the user changes subtitle tracks and when a subtitle
+    // track has no active line. It must never hide the newly selected original subtitle:
+    // translation hides the original only after a non-empty translated result is ready.
+    if (native) {
+      if (nativeSubtitleHiddenForTranslation) nativeSubtitleVisibilityListener?.invoke(false)
+    } else {
+      PlaybackSession.setPropertyBoolean("sub-visibility", true)
     }
+    nativeSubtitleHiddenForTranslation = false
   }
 
   fun resetEmbeddedSubtitleTranslation() {
