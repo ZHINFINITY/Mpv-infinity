@@ -316,7 +316,7 @@ fun PlayerControls(
   }
   var resetControlsTimestamp by remember { mutableStateOf(0L) }
   val seekText = seekState.text
-  val currentChapter by PlaybackSession.propInt["chapter"].collectAsState()
+  val mpvCurrentChapter by PlaybackSession.propInt["chapter"].collectAsState()
   val configuredDecoder by PlaybackSession.propString["hwdec"].collectAsState()
   val activeDecoder by PlaybackSession.propString["hwdec-current"].collectAsState()
   val decoder = remember(activeDecoder, configuredDecoder) {
@@ -374,6 +374,13 @@ fun PlayerControls(
   } else {
     mpvChapters
   }
+  val currentChapter =
+    if (nativeEngineActive) {
+      val nativePositionSeconds = nativeSnapshot.positionMs / 1000f
+      chapters.indexOfLast { it.start <= nativePositionSeconds }.takeIf { it >= 0 }
+    } else {
+      mpvCurrentChapter
+    }
   val paused = if (nativeEngineActive) !nativeSnapshot.isPlaying else (mpvPaused ?: false)
   val playbackSpeed = if (nativeEngineActive) nativeSnapshot.speed else mpvPlaybackSpeed
   val isSpeedNonOne = remember(playbackSpeed) {
