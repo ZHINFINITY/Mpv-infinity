@@ -399,6 +399,7 @@ private fun AudioVisualizerViewport(
   BoxWithConstraints(
     modifier =
       modifier
+        .background(palette.background)
         .clipToBounds()
         .combinedClickable(
           interactionSource = remember { MutableInteractionSource() },
@@ -902,9 +903,10 @@ fun AudioPlayerControls(
   val isTabletPortrait = isPortrait && isTablet
 
   LaunchedEffect(audioStandbyMode, isPlaying, isPortrait, lastUserInteractionTime) {
-    if (audioStandbyMode && isPlaying && !isPortrait) {
+    if (audioStandbyMode && isPlaying) {
       kotlinx.coroutines.delay(5000L)
-      isLyricsFullscreen = true
+      showInPlaceLyrics = true
+      isLyricsFullscreen = false
     } else {
       isLyricsFullscreen = false
     }
@@ -1913,8 +1915,7 @@ fun AudioPlayerControls(
         }
 
         if (showInPlaceLyrics && !isLyricsFullscreen) {
-          centerVisualizerView(Modifier.weight(0.82f).fillMaxWidth(), true)
-          lyricsPanel(Modifier.weight(1.18f).fillMaxWidth())
+          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
           val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
           centerVisualizerView(visualizerModifier, false)
@@ -1940,7 +1941,7 @@ fun AudioPlayerControls(
           }
         }
       }
-    } else if (isTabletLandscape) {
+    } else if (false && isTabletLandscape) {
       Row(
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -1987,51 +1988,44 @@ fun AudioPlayerControls(
         }
       }
     } else {
-      // Landscape keeps the artwork and its metadata together on the left, while the right pane
-      // is reserved for the seekbar and controls. This prevents the metadata from pushing the
-      // lower action row below the available height on short landscape displays.
-        Row(
-          modifier = Modifier.fillMaxSize().graphicsLayer {
-            alpha = if (isLyricsFullscreen) 0f else 1f
-          },
-          horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
-          verticalAlignment = Alignment.CenterVertically,
+      Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        Column(
-          modifier = Modifier.weight(1f).fillMaxHeight(),
-          verticalArrangement = Arrangement.Center,
-          horizontalAlignment = Alignment.CenterHorizontally,
+        Row(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(20.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          centerVisualizerView(
-            Modifier
-              .weight(1f)
-              .fillMaxWidth()
-              .padding(vertical = 12.dp, horizontal = 24.dp),
-            showInPlaceLyrics,
-          )
-          if (!isLyricsFullscreen) {
-            Spacer(modifier = Modifier.height(12.dp))
-            trackMetadataView()
+          Box(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            contentAlignment = Alignment.Center,
+          ) {
+            centerVisualizerView(
+              Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+              true,
+            )
+          }
+          Column(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            headerBar()
+            if (showInPlaceLyrics) {
+              lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
+            } else {
+              Spacer(modifier = Modifier.weight(1f))
+            }
           }
         }
-        Column(
-          modifier = Modifier.weight(1f).fillMaxHeight(),
-          verticalArrangement = Arrangement.spacedBy(8.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-          headerBar()
-          losslessBadge()
-          if (showInPlaceLyrics) {
-            // Reserve the flexible viewport for lyrics; fixed controls remain below it.
-            lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
-          }
-          seekbarView()
-          playbackControlsRow()
-          bottomActionRow()
-        }
+        // Player padding keeps the seekbar inset from both screen edges.
+        seekbarView()
+        playbackControlsRow()
+        bottomActionRow()
       }
     }
-    if (isLyricsFullscreen && !isPortrait) {
+    if (false && isLyricsFullscreen && !isPortrait) {
       Box(
         modifier = Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 20.dp),
         contentAlignment = Alignment.Center,
