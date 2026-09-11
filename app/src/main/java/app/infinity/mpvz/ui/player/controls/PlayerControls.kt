@@ -19,6 +19,7 @@ import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import android.os.Debug
+import android.util.Log
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -291,6 +292,31 @@ fun PlayerControls(
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
   val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
+
+  // Read-only diagnostic captured by the all-log collector; subtitle text itself is not logged.
+  LaunchedEffect(
+    embeddedTranslatedSubtitle,
+    mpvSubtitlePosition,
+    mpvSubtitleFontSize,
+    mpvSubtitleScale,
+    mpvSubtitleMarginX,
+    mpvOsdWidth,
+    mpvOsdHeight,
+    automaticSubtitleFontFallback,
+  ) {
+    val translated = embeddedTranslatedSubtitle
+    Log.i(
+      "MpvSubtitleTranslation",
+      "renderer=compose visible=${!translated.isNullOrBlank()} " +
+        "textLength=${translated?.length ?: 0} " +
+        "pos=${mpvSubtitlePosition ?: "unavailable"} " +
+        "fontSize=${mpvSubtitleFontSize ?: "unavailable"} " +
+        "scale=${mpvSubtitleScale ?: "unavailable"} " +
+        "marginX=${mpvSubtitleMarginX ?: "unavailable"} " +
+        "osd=${mpvOsdWidth ?: "unavailable"}x${mpvOsdHeight ?: "unavailable"} " +
+        "font=${subtitleFont.ifBlank { "default" }} fallback=$automaticSubtitleFontFallback",
+    )
+  }
 
   val isTorrentConnecting = torrentState is TorrentStreamingState.Connecting
   val isTorrentStreaming = torrentState is TorrentStreamingState.Streaming
