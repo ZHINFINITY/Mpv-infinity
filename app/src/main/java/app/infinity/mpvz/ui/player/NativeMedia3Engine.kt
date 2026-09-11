@@ -638,7 +638,7 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = pendingSeekPositionMs
     loopHandler.removeCallbacks(settleSeekRunnable)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 300L)
+    loopHandler.postDelayed(seekRunnable, 80L)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
@@ -650,7 +650,7 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = pendingSeekPositionMs
     loopHandler.removeCallbacks(settleSeekRunnable)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 300L)
+    loopHandler.postDelayed(seekRunnable, 80L)
     // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
     publishPlaybackSnapshot()
     startTimelineUpdates()
