@@ -32,8 +32,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ExtractorsFactory
-import androidx.media3.extractor.mp4.Mp4Extractor
 import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
@@ -173,12 +173,14 @@ class NativeMedia3Engine(context: Context) {
   private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
   private val extractorsFactory: ExtractorsFactory = ExtractorsFactory {
     // Keep the original native MKV path: MatroskaExtractor with an explicit subtitle parser
-    // correctly emits embedded ASS/SSA/WebVTT cues for anime releases. The generic extractor
-    // factory introduced later exposed the text tracks but produced no cues for these files.
-    arrayOf(
-      MatroskaExtractor(DefaultSubtitleParserFactory()),
-      Mp4Extractor(),
-    )
+    // correctly emits embedded ASS/SSA/WebVTT cues for anime releases. Retain every other
+    // extractor supplied by Media3 so Native remains a general-purpose video engine (MP4, TS,
+    // WebM, Ogg, FLV, WAV, and the other standard formats are not dropped).
+    val defaults = DefaultExtractorsFactory()
+      .setSubtitleParserFactory(DefaultSubtitleParserFactory())
+      .createExtractors()
+    arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory())) +
+      defaults.filterNot { it is MatroskaExtractor }.toTypedArray()
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
