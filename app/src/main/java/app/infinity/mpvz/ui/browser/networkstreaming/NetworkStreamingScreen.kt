@@ -51,7 +51,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -459,24 +459,25 @@ object NetworkStreamingScreen : Screen {
       floatingActionButton = {
         when (pagerState.currentPage) {
           NetworkTab.LOCAL_NETWORK.ordinal -> {
-            ExtendedFloatingActionButton(
+            FloatingActionButton(
               onClick = { showAddSheet = true },
-              icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
-              text = {
-                Text(
-                  stringResource(R.string.ui_add_connection),
-                )
-              },
               modifier = Modifier.padding(bottom = navigationBarHeight),
-            )
+              shape = CircleShape,
+            ) {
+              Icon(
+                Icons.RoundedFilled.Add,
+                contentDescription = stringResource(R.string.ui_add_connection),
+              )
+            }
           }
           NetworkTab.MEDIA.ordinal -> {
-            ExtendedFloatingActionButton(
+            FloatingActionButton(
               onClick = { showAddMediaDialog = true },
-              icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
-              text = { Text("Add Media") },
               modifier = Modifier.padding(bottom = navigationBarHeight),
-            )
+              shape = CircleShape,
+            ) {
+              Icon(Icons.RoundedFilled.Add, contentDescription = "Add media")
+            }
           }
         }
       },
@@ -868,66 +869,56 @@ private fun AddMediaDialog(
   val clipboard = androidx.compose.ui.platform.LocalClipboard.current
   val coroutineScope = rememberCoroutineScope()
 
-  androidx.compose.material3.AlertDialog(
+  ModalBottomSheet(
     onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.ui_saved_media)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          text = "Paste a torrent magnet link, direct video stream (HLS, MP4, MKV), or YouTube URL to save and play.",
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-          value = inputUrl,
-          onValueChange = { inputUrl = it },
-          label = { Text("Stream or Magnet URL") },
-          placeholder = { Text("magnet:?xt=... or https://...") },
-          modifier = Modifier.fillMaxWidth(),
-          singleLine = true,
-          trailingIcon = {
-            if (inputUrl.isBlank()) {
-              IconButton(
-                onClick = {
-                  coroutineScope.launch {
-                    val clipData = clipboard.getClipEntry()?.clipData
-                    if (clipData != null && clipData.itemCount > 0) {
-                      val clip = clipData.getItemAt(0).coerceToText(context)?.toString()?.trim()
-                      if (!clip.isNullOrBlank()) inputUrl = clip
-                    }
-                  }
-                },
-              ) {
-                Icon(Icons.RoundedFilled.ContentPaste, contentDescription = "Paste")
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    Column(
+      modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      Text(stringResource(R.string.ui_saved_media), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+      Text(
+        text = "Paste a torrent magnet link, direct video stream (HLS, MP4, MKV), or YouTube URL to save and play.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      OutlinedTextField(
+        value = inputUrl,
+        onValueChange = { inputUrl = it },
+        label = { Text("Stream or Magnet URL") },
+        placeholder = { Text("magnet:?xt=... or https://...") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        trailingIcon = {
+          if (inputUrl.isBlank()) {
+            IconButton(onClick = {
+              coroutineScope.launch {
+                val clipData = clipboard.getClipEntry()?.clipData
+                if (clipData != null && clipData.itemCount > 0) {
+                  val clip = clipData.getItemAt(0).coerceToText(context)?.toString()?.trim()
+                  if (!clip.isNullOrBlank()) inputUrl = clip
+                }
               }
-            } else {
-              IconButton(onClick = { inputUrl = "" }) {
-                Icon(Icons.RoundedFilled.Close, contentDescription = "Clear")
-              }
-            }
-          },
-        )
-      }
-    },
-    confirmButton = {
-      Button(
-        onClick = {
-          if (inputUrl.isNotBlank()) {
-            onSubmit(inputUrl.trim())
-            onDismiss()
+            }) { Icon(Icons.RoundedFilled.ContentPaste, contentDescription = "Paste") }
+          } else {
+            IconButton(onClick = { inputUrl = "" }) { Icon(Icons.RoundedFilled.Close, contentDescription = "Clear") }
           }
         },
-        enabled = inputUrl.isNotBlank(),
-      ) {
-        Text(stringResource(R.string.ui_play_now))
+      )
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = onDismiss) { Text(stringResource(R.string.generic_cancel)) }
+        Spacer(Modifier.width(8.dp))
+        Button(
+          onClick = { if (inputUrl.isNotBlank()) { onSubmit(inputUrl.trim()); onDismiss() } },
+          enabled = inputUrl.isNotBlank(),
+        ) { Text(stringResource(R.string.ui_play_now)) }
       }
-    },
-    dismissButton = {
-      androidx.compose.material3.TextButton(onClick = onDismiss) {
-        Text(stringResource(R.string.generic_cancel))
-      }
-    },
-  )
+      Spacer(Modifier.navigationBarsPadding())
+    }
+  }
 }
 
 @Composable
