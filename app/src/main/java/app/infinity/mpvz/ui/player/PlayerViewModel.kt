@@ -2914,8 +2914,8 @@ class PlayerViewModel : ViewModel(),
             } else {
               // Keep the native subtitle visible when it is already in the requested language.
               // This preserves the original font, outline, position, and line layout exactly.
-              $1              if (!native) PlaybackSession.setPropertyString("secondary-sub-text", "")
-$2 {
+              if (!native) PlaybackSession.setPropertyString("secondary-sub-text", "")
+              if (native && nativeSubtitleHiddenForTranslation) {
                 nativeSubtitleVisibilityListener?.invoke(false)
                 nativeSubtitleHiddenForTranslation = false
               }
