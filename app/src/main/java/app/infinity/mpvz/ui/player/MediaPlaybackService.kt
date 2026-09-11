@@ -267,6 +267,7 @@ class MediaPlaybackService :
   @Volatile private var mpvAccessReleased = false
   @Volatile private var isCurrentFavorite = false
   private var usesAudioBackgroundPlayback = false
+  @Volatile private var serviceMediaKindInitialized = false
   private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
   // Mutated from the framework's audio-focus callback thread as well as serviceScope and the
@@ -373,6 +374,7 @@ class MediaPlaybackService :
       ) { videoEnabled, audioEnabled ->
         if (usesAudioBackgroundPlayback) audioEnabled else videoEnabled
       }.drop(1).collect { enabled ->
+        if (!serviceMediaKindInitialized) return@collect
         if (!enabled) {
           Log.d(TAG, "Background playback disabled; stopping service")
           stopDetachedPlaybackIfNeeded()
@@ -484,6 +486,7 @@ class MediaPlaybackService :
         usesAudioBackgroundPlayback = isAudio
         notificationIsAudio = isAudio
       }
+      serviceMediaKindInitialized = true
 
       if (!title.isNullOrBlank()) {
         mediaTitle = FileTypeUtils.stripExtension(title)
