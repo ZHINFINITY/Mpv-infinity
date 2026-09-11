@@ -900,22 +900,8 @@ fun AudioPlayerControls(
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
 
-  LaunchedEffect(isTabletLandscape) {
-    if (isTabletLandscape) {
-      if (showInPlaceLyrics) {
-        wasLyricsActiveBeforeLandscape = true
-        showInPlaceLyrics = false
-      }
-    } else {
-      if (wasLyricsActiveBeforeLandscape) {
-        showInPlaceLyrics = true
-        wasLyricsActiveBeforeLandscape = false
-      }
-    }
-  }
-
   LaunchedEffect(showInPlaceLyrics, isPlaying, isTabletLandscape, lastUserInteractionTime) {
-    if (showInPlaceLyrics && !isTabletLandscape && isPlaying) {
+    if (showInPlaceLyrics && isPlaying) {
       kotlinx.coroutines.delay(5000L)
       isLyricsFullscreen = true
     } else {
@@ -1146,7 +1132,7 @@ fun AudioPlayerControls(
         val containerWidthPx = constraints.maxWidth.toFloat()
         val currentOffset = animatableOffsetX.value
 
-        if (showInPlaceLyrics && !isTabletLandscape) {
+        if (showInPlaceLyrics) {
           app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
@@ -1911,6 +1897,9 @@ fun AudioPlayerControls(
 
         val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
         centerVisualizerView(visualizerModifier)
+        if (isLyricsFullscreen) {
+          seekbarView()
+        }
 
         androidx.compose.animation.AnimatedVisibility(
           visible = !isLyricsFullscreen,

@@ -78,6 +78,7 @@
             android:enableOnBackInvokedCallback="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"
             android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.mpvinfinity">
             <intent-filter>
