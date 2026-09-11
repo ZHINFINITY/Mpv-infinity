@@ -185,6 +185,7 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
         SettingsSearchListAnchor(titleRes = R.string.pref_ai_search_title, itemIndex = 9),
         SettingsSearchListAnchor(titleRes = R.string.search_stt_title, itemIndex = 11),
         SettingsSearchListAnchor(titleRes = R.string.pref_translation_section, itemIndex = 13),
+        SettingsSearchListAnchor(titleRes = R.string.pref_automatic_subtitle_font_fallback_title, itemIndex = 13),
         SettingsSearchListAnchor(titleRes = R.string.search_custom_ai_prompts_title, itemIndex = 15),
       ),
     AdvancedPreferencesScreen to
