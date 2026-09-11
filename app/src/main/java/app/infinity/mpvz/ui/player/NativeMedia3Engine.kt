@@ -33,11 +33,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.extractor.Extractor
 import androidx.media3.extractor.ExtractorsFactory
-import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.metadata.Chapter
-import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -172,19 +169,10 @@ class NativeMedia3Engine(context: Context) {
   // Local files must not be routed through the network cache. Apart from adding an unnecessary
   // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
   private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
-  private val extractorsFactory: ExtractorsFactory = ExtractorsFactory {
-    // Keep the original native MKV path: MatroskaExtractor with an explicit subtitle parser
-    // correctly emits embedded ASS/SSA/WebVTT cues for anime releases. Retain every other
-    // extractor supplied by Media3 so Native remains a general-purpose video engine (MP4, TS,
-    // WebM, Ogg, FLV, WAV, and the other standard formats are not dropped).
-    val defaults = DefaultExtractorsFactory()
-      .setSubtitleParserFactory(DefaultSubtitleParserFactory())
-      .createExtractors()
-    val merged: List<Extractor> =
-      listOf(MatroskaExtractor(DefaultSubtitleParserFactory())) +
-        defaults.filterNot { it is MatroskaExtractor }.toList()
-    merged.toTypedArray()
-  }
+  // Match v1.0.7: let Media3 construct its standard extractor set and subtitle parser.
+  // Keep the custom data sources below for local/WebDAV transport; only the subtitle/extractor
+  // pipeline is restored to the known-working default implementation.
+  private val extractorsFactory: ExtractorsFactory = DefaultExtractorsFactory()
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
     ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
