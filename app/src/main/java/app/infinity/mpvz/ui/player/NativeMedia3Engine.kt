@@ -32,8 +32,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ExtractorsFactory
+import androidx.media3.extractor.mp4.Mp4Extractor
+import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
@@ -170,9 +171,15 @@ class NativeMedia3Engine(context: Context) {
   // Local files must not be routed through the network cache. Apart from adding an unnecessary
   // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
   private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
-  private val extractorsFactory: ExtractorsFactory =
-    DefaultExtractorsFactory()
-      .setSubtitleParserFactory(DefaultSubtitleParserFactory())
+  private val extractorsFactory: ExtractorsFactory = ExtractorsFactory {
+    // Keep the original native MKV path: MatroskaExtractor with an explicit subtitle parser
+    // correctly emits embedded ASS/SSA/WebVTT cues for anime releases. The generic extractor
+    // factory introduced later exposed the text tracks but produced no cues for these files.
+    arrayOf(
+      MatroskaExtractor(DefaultSubtitleParserFactory()),
+      Mp4Extractor(),
+    )
+  }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val directLocalMediaSourceFactory =
     ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
