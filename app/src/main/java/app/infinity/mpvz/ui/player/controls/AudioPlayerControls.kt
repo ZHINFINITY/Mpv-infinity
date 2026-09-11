@@ -2009,10 +2009,24 @@ fun AudioPlayerControls(
     }
     if (isLyricsFullscreen && !isPortrait) {
       Box(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp),
-        contentAlignment = Alignment.BottomCenter,
+        modifier = Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 20.dp),
+        contentAlignment = Alignment.Center,
       ) {
-        seekbarView()
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+          if (showInPlaceLyrics) {
+            app.infinity.mpvz.ui.player.controls.components.LyricsView(
+              viewModel = viewModel,
+              modifier = Modifier.weight(1f, fill = false).fillMaxWidth(),
+              isLyricsFullscreen = true,
+              onTap = resetInactivityTimer,
+            )
+          }
+          seekbarView()
+        }
       }
     }
 
