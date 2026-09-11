@@ -355,12 +355,13 @@ object AudioPreferencesScreen : Screen {
               PreferenceDivider()
               val audioStandbyMode by preferences.audioStandbyMode.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_standby_mode_title),
                 value = audioStandbyMode,
                 onValueChange = { preferences.audioStandbyMode.set(it) },
-                title = { Text("Music player standby mode") },
+                title = { Text(stringResource(R.string.pref_audio_standby_mode_title)) },
                 summary = {
                   Text(
-                    "After inactivity, show album art, lyrics when enabled, and the seekbar.",
+                    stringResource(R.string.pref_audio_standby_mode_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

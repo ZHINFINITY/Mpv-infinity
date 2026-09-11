@@ -2349,6 +2349,14 @@ class PlayerActivity :
         screenStateReceiverRegistered = false
       }
 
+      if (isUserFinishing || handledPipDismissal) {
+        endBackgroundPlayback(handoffToActivity = false)
+        MediaPlaybackService.stopForTerminalDismissal()
+        viewModel.pause()
+        return@runCatching
+      }
+      if (pendingPipExitResolution) return@runCatching
+
       if (
         PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnStop(
           backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),

@@ -901,7 +901,7 @@ fun AudioPlayerControls(
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
 
-  LaunchedEffect(audioStandbyMode, isPlaying, isTabletLandscape, lastUserInteractionTime) {
+  LaunchedEffect(audioStandbyMode, isPlaying, lastUserInteractionTime) {
     if (audioStandbyMode && isPlaying) {
       kotlinx.coroutines.delay(5000L)
       isLyricsFullscreen = true
@@ -1971,10 +1971,10 @@ fun AudioPlayerControls(
       // Landscape keeps the artwork and its metadata together on the left, while the right pane
       // is reserved for the seekbar and controls. This prevents the metadata from pushing the
       // lower action row below the available height on short landscape displays.
-      Row(
-        modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        Row(
+          modifier = Modifier.fillMaxSize(),
+          horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+          verticalAlignment = Alignment.CenterVertically,
       ) {
         Column(
           modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -1987,14 +1987,16 @@ fun AudioPlayerControls(
               .fillMaxWidth()
               .padding(vertical = 12.dp, horizontal = 24.dp),
           )
-          Spacer(modifier = Modifier.height(12.dp))
-          trackMetadataView()
+          if (!isLyricsFullscreen) {
+            Spacer(modifier = Modifier.height(12.dp))
+            trackMetadataView()
+          }
         }
         Column(
-          modifier = Modifier.weight(1.2f).fillMaxHeight().graphicsLayer {
+          modifier = Modifier.weight(1f).fillMaxHeight().graphicsLayer {
             alpha = if (isLyricsFullscreen) 0f else 1f
           },
-          verticalArrangement = Arrangement.SpaceEvenly,
+          verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
           horizontalAlignment = Alignment.CenterHorizontally,
         ) {
           headerBar()
