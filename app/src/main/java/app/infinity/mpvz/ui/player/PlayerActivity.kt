@@ -796,7 +796,7 @@ class PlayerActivity :
           val effectiveEngine =
             when (engine) {
               PlaybackEngineMode.AUTO ->
-                if (currentQueueItem?.isHdrOrDolbyVision() == true &&
+                if ((currentQueueItem?.isHdrOrDolbyVision() == true || currentQueueItem?.networkSource != null) &&
                   currentQueueItem.requiresTorrentResolution().not()
                 ) {
                   PlaybackEngineMode.NATIVE
@@ -6214,7 +6214,7 @@ class PlayerActivity :
     val selectedEngine =
       when (configuredEngine) {
         PlaybackEngineMode.AUTO ->
-          if (item.isHdrOrDolbyVision() || isHentaiStreamDirect(item.playableUri)) {
+          if (item.isHdrOrDolbyVision() || isHentaiStreamDirect(item.playableUri) || item.networkSource != null) {
             PlaybackEngineMode.NATIVE
           } else PlaybackEngineMode.MPV
         else -> configuredEngine
