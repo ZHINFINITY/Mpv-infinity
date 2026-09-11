@@ -1788,8 +1788,16 @@ class PlayerViewModel : ViewModel(),
           continue
         }
         runCatching {
-          val time = PlaybackSession.getPropertyDouble("time-pos")
-          if (time != null) {
+          // Poll only the active renderer. Reading MPV time-pos while Native Media3 is active
+          // produced redundant bridge traffic, stale positions, and unnecessary work on every
+          // playback tick; it also prevented auto-skip from following Native playback.
+          val time =
+            if (host.isNativeEngineActive()) {
+              host.nativePlaybackPositionSeconds()
+            } else {
+              PlaybackSession.getPropertyDouble("time-pos") ?: Double.NaN
+            }
+          if (time.isFinite()) {
             val posFloat = time.toFloat()
             if (_precisePosition.value != posFloat) {
               _precisePosition.value = posFloat
