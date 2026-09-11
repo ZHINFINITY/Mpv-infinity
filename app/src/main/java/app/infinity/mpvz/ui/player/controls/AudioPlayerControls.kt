@@ -2028,7 +2028,7 @@ fun AudioPlayerControls(
             if (showInPlaceLyrics) {
               app.infinity.mpvz.ui.player.controls.components.LyricsView(
                 viewModel = viewModel,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                modifier = Modifier.fillMaxWidth().height(220.dp),
                 isLyricsFullscreen = true,
                 onTap = resetInactivityTimer,
               )
