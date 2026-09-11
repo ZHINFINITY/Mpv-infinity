@@ -579,17 +579,15 @@ fun AudioPlayerControls(
 
   var showInPlaceLyrics by rememberSaveable { mutableStateOf(false) }
   var wasLyricsActiveBeforeLandscape by rememberSaveable { mutableStateOf(false) }
-  var isLyricsFullscreen by remember { mutableStateOf(false) }
+  var isStandbyActive by remember { mutableStateOf(false) }
   var lastUserInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
   val resetInactivityTimer = {
     lastUserInteractionTime = System.currentTimeMillis()
-    if (isLyricsFullscreen) {
-      isLyricsFullscreen = false
-    }
+    isStandbyActive = false
   }
 
-  BackHandler(enabled = isLyricsFullscreen) {
+  BackHandler(enabled = isStandbyActive) {
     resetInactivityTimer()
   }
 
@@ -903,12 +901,10 @@ fun AudioPlayerControls(
   val isTabletPortrait = isPortrait && isTablet
 
   LaunchedEffect(audioStandbyMode, isPlaying, isPortrait, lastUserInteractionTime) {
+    isStandbyActive = false
     if (audioStandbyMode && isPlaying) {
       kotlinx.coroutines.delay(5000L)
-      showInPlaceLyrics = true
-      isLyricsFullscreen = false
-    } else {
-      isLyricsFullscreen = false
+      isStandbyActive = true
     }
   }
 
@@ -1135,11 +1131,11 @@ fun AudioPlayerControls(
         val containerWidthPx = constraints.maxWidth.toFloat()
         val currentOffset = animatableOffsetX.value
 
-        if (showInPlaceLyrics && !isLyricsFullscreen) {
+        if (showInPlaceLyrics) {
           app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
-            isLyricsFullscreen = isLyricsFullscreen,
+            isLyricsFullscreen = isStandbyActive,
             onTap = resetInactivityTimer,
           )
         } else {
@@ -1903,7 +1899,7 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         androidx.compose.animation.AnimatedVisibility(
-          visible = !isLyricsFullscreen,
+          visible = !isStandbyActive,
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
@@ -1914,18 +1910,18 @@ fun AudioPlayerControls(
           }
         }
 
-        if (showInPlaceLyrics && !isLyricsFullscreen) {
+        if (showInPlaceLyrics && !isStandbyActive) {
           centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
           val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
           centerVisualizerView(visualizerModifier, false)
         }
-        if (isLyricsFullscreen) {
+        if (isStandbyActive) {
           seekbarView()
         }
 
         androidx.compose.animation.AnimatedVisibility(
-          visible = !isLyricsFullscreen,
+          visible = !isStandbyActive,
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
@@ -2011,7 +2007,7 @@ fun AudioPlayerControls(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
           ) {
-            headerBar()
+            if (!isStandbyActive) headerBar()
             if (showInPlaceLyrics) {
               lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
             } else {
@@ -2021,42 +2017,12 @@ fun AudioPlayerControls(
         }
         // Player padding keeps the seekbar inset from both screen edges.
         seekbarView()
-        playbackControlsRow()
-        bottomActionRow()
-      }
-    }
-    if (false && isLyricsFullscreen && !isPortrait) {
-      Box(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 20.dp),
-        contentAlignment = Alignment.Center,
-      ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-          Box(modifier = Modifier.weight(0.42f), contentAlignment = Alignment.Center) {
-            centerVisualizerView(Modifier.fillMaxWidth().padding(horizontal = 12.dp), false)
-          }
-          Column(
-            modifier = Modifier.weight(0.58f),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-          ) {
-            if (showInPlaceLyrics) {
-              app.infinity.mpvz.ui.player.controls.components.LyricsView(
-                viewModel = viewModel,
-                modifier = Modifier.fillMaxWidth().height(220.dp),
-                isLyricsFullscreen = true,
-                onTap = resetInactivityTimer,
-              )
-            }
-            seekbarView()
-          }
+        if (!isStandbyActive) {
+          playbackControlsRow()
+          bottomActionRow()
         }
       }
     }
-
     if (addToPlaylistDialogOpen && !mediaPath.isNullOrBlank()) {
       val displayTitle = remember(lastValidTitle, displayArtist) {
         cleanSongTitle(lastValidTitle, displayArtist)

@@ -155,7 +155,7 @@ private fun <T> VisualizerOverlay(
     modifier = modifier,
     update = { view ->
       view.updatePalette(palette)
-      view.setBackgroundColor(Color.TRANSPARENT)
+      view.setBackgroundColor(palette.background)
       view.holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
       // Keep the translucent GL layer below interactive Compose sheets and controls.
       view.setZOrderOnTop(false)
