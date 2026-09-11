@@ -99,7 +99,7 @@ fun AddConnectionSheet(
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     Column(
-      modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding(),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Text(
@@ -321,7 +321,7 @@ fun AddConnectionSheet(
         }
       }
       Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
       ) {
