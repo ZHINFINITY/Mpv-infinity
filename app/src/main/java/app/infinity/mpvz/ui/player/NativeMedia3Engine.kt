@@ -644,6 +644,18 @@ class NativeMedia3Engine(context: Context) {
     startTimelineUpdates()
   }
 
+  /** Seeks immediately for chapter navigation; drag/tap scrubbing keeps the coalescing path. */
+  fun seekToChapter(positionMs: Long) {
+    val targetMs = positionMs.coerceAtLeast(0L)
+    pendingSeekPositionMs = null
+    pendingSeekDisplayPositionMs = targetMs
+    loopHandler.removeCallbacks(settleSeekRunnable)
+    loopHandler.removeCallbacks(seekRunnable)
+    activePlayer.seekTo(targetMs)
+    publishPlaybackSnapshot()
+    startTimelineUpdates()
+  }
+
   fun seekBy(offsetMs: Long) {
     val basePositionMs = pendingSeekPositionMs ?: activePlayer.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)

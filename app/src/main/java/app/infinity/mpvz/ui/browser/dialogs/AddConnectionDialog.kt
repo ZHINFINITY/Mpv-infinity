@@ -99,9 +99,16 @@ fun AddConnectionSheet(
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     Column(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).navigationBarsPadding(),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+      modifier = modifier.fillMaxWidth().navigationBarsPadding(),
     ) {
+      Column(
+        modifier =
+          Modifier
+            .widthIn(max = 640.dp)
+            .align(Alignment.CenterHorizontally)
+            .padding(horizontal = 24.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
       Text(
         text =
           androidx.compose.ui.res
@@ -320,31 +327,32 @@ fun AddConnectionSheet(
           )
         }
       }
-      Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        TextButton(onClick = handleDismiss) {
-        Text(
-          text =
-            androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.generic_cancel),
-          fontWeight = FontWeight.Medium,
-        )
-      }
-        Spacer(modifier = Modifier.width(8.dp))
-        Button(
-        onClick = handleSave,
-        enabled = host.isNotBlank() && (isAnonymous || username.isNotBlank()),
-      ) {
-        Text(
-          text =
-            androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_save),
-          fontWeight = FontWeight.SemiBold,
-        )
-      }
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+          horizontalArrangement = Arrangement.End,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          TextButton(onClick = handleDismiss) {
+            Text(
+              text =
+                androidx.compose.ui.res
+                  .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+              fontWeight = FontWeight.Medium,
+            )
+          }
+          Spacer(modifier = Modifier.width(8.dp))
+          Button(
+            onClick = handleSave,
+            enabled = host.isNotBlank() && (isAnonymous || username.isNotBlank()),
+          ) {
+            Text(
+              text =
+                androidx.compose.ui.res
+                  .stringResource(app.infinity.mpvz.R.string.ui_save),
+              fontWeight = FontWeight.SemiBold,
+            )
+          }
+        }
       }
     }
   }
