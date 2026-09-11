@@ -208,6 +208,7 @@ fun PlayerControls(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val aiPreferences = koinInject<AiPreferences>()
   val aiEnabled by aiPreferences.enabled.collectAsState()
+  val automaticSubtitleFontFallback by aiPreferences.automaticSubtitleFontFallback.collectAsState()
   val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
   val forceDarkButtonBackground by appearancePreferences.forceDarkPlayerButtonsBackground.collectAsState()
