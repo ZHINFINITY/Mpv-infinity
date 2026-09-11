@@ -664,7 +664,9 @@ class PlayerViewModel : ViewModel(),
 
   /** Re-applies the translation visibility state after switching playback engines. */
   fun syncNativeSubtitleVisibility() {
-    nativeSubtitleVisibilityListener?.invoke(!nativeSubtitleHiddenForTranslation)
+    // The listener parameter is `hidden`, not `visible`. Passing the inverse here hid Native's
+    // SubtitleView on every MPV -> Native handoff when translation was not active.
+    nativeSubtitleVisibilityListener?.invoke(nativeSubtitleHiddenForTranslation)
   }
 
   /** Clears the old MPV translation before Native starts emitting its own subtitle cues. */
