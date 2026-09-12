@@ -421,6 +421,8 @@ private fun WebsiteCookieLoginDialog(
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.databaseEnabled = true
+              settings.setSupportMultipleWindows(false)
+              settings.javaScriptCanOpenWindowsAutomatically = true
               // Instagram often serves a blank login response to the Android WebView UA.
               // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
               settings.userAgentString =
@@ -430,10 +432,24 @@ private fun WebsiteCookieLoginDialog(
               settings.allowContentAccess = true
               settings.allowFileAccess = false
               settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-              webChromeClient = WebChromeClient()
+              webChromeClient = object : WebChromeClient() {
+                override fun onCreateWindow(
+                  view: WebView?,
+                  isDialog: Boolean,
+                  isUserGesture: Boolean,
+                  resultMsg: android.os.Message?,
+                ): Boolean {
+                  val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                  transport.webView = view
+                  resultMsg.sendToTarget()
+                  return true
+                }
+              }
               CookieManager.getInstance().setAcceptCookie(true)
               CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
               webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean = false
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean = false
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                   loadError = null
                 }
