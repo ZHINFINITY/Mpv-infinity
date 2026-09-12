@@ -9,6 +9,8 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -36,8 +38,11 @@ import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import app.infinity.mpvz.ui.utils.popSafely
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import java.io.File
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
@@ -61,7 +66,28 @@ object YtdlpSettingsScreen : Screen {
     val writeSubs by ytdlPreferences.writeSubs.collectAsState()
     val writeAutoSubs by ytdlPreferences.writeAutoSubs.collectAsState()
     val showDownloadQualityChooser by ytdlPreferences.showDownloadQualityChooser.collectAsState()
+    val cookiesFile by ytdlPreferences.cookiesFile.collectAsState()
     val installationInfo by YtdlpManager.installationInfo.collectAsState()
+    val cookieFilePicker = rememberLauncherForActivityResult(
+      ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+      uri ?: return@rememberLauncherForActivityResult
+      scope.launch {
+        val copied = withContext(Dispatchers.IO) {
+          runCatching {
+            val destination = File(context.filesDir, "ytdlp/instagram-cookies.txt")
+            destination.parentFile?.mkdirs()
+            context.contentResolver.openInputStream(uri)?.use { input ->
+              destination.outputStream().use { output -> input.copyTo(output) }
+            } ?: error("Unable to open selected cookie file")
+            destination
+          }.getOrNull()
+        }
+        copied?.takeIf { it.isFile && it.length() > 0L }?.let {
+          ytdlPreferences.cookiesFile.set(it.absolutePath)
+        }
+      }
+    }
 
     LaunchedEffect(Unit) {
       YtdlpManager.refreshInstallationInfo(context)
@@ -233,6 +259,38 @@ object YtdlpSettingsScreen : Screen {
             title = stringResource(R.string.ytdlp_advanced_networking),
             modifier = Modifier.settingsSearchTarget(R.string.ytdlp_download_quality_chooser_title),
           )
+
+          PreferenceCard {
+            Column(
+              modifier = Modifier.fillMaxWidth().padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Text(
+                text = stringResource(R.string.ytdlp_instagram_cookies_title),
+                style = MaterialTheme.typography.titleMedium,
+              )
+              Text(
+                text = stringResource(R.string.ytdlp_instagram_cookies_summary),
+                color = MaterialTheme.colorScheme.outline,
+                style = MaterialTheme.typography.bodyMedium,
+              )
+              Text(
+                text = cookiesFile.ifBlank { stringResource(R.string.ytdlp_instagram_cookies_not_configured) },
+                color = MaterialTheme.colorScheme.outline,
+                style = MaterialTheme.typography.bodySmall,
+              )
+              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { cookieFilePicker.launch(arrayOf("text/plain", "application/json", "*/*")) }) {
+                  Text(stringResource(R.string.ytdlp_instagram_cookies_choose))
+                }
+                if (cookiesFile.isNotBlank()) {
+                  OutlinedButton(onClick = { ytdlPreferences.cookiesFile.set("") }) {
+                    Text(stringResource(R.string.ytdlp_instagram_cookies_clear))
+                  }
+                }
+              }
+            }
+          }
 
           PreferenceCard {
             SwitchPreference(
