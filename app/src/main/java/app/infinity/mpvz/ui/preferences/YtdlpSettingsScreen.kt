@@ -137,8 +137,8 @@ object YtdlpSettingsScreen : Screen {
               runCatching { writeWebsiteCookiesFile(context, websiteUrl, cookieHeader) }.getOrNull()
             }
             if (destination != null) {
+              // Keep the browser open so another website can be authenticated in the same session.
               ytdlPreferences.cookiesFile.set(destination.absolutePath)
-              showCookieLogin = false
             }
           }
         },
@@ -346,6 +346,7 @@ private fun WebsiteCookieLoginDialog(
 ) {
   val context = LocalContext.current
   var websiteUrl by rememberSaveable { mutableStateOf("https://www.instagram.com/") }
+  var savedSites by rememberSaveable { mutableStateOf(emptyList<String>()) }
   var webView by remember { mutableStateOf<WebView?>(null) }
   var loadError by remember { mutableStateOf<String?>(null) }
 
@@ -385,7 +386,11 @@ private fun WebsiteCookieLoginDialog(
             onClick = {
               val url = normalizedUrl()
               val cookies = CookieManager.getInstance().getCookie(url)
-              if (!cookies.isNullOrBlank()) onUseSession(url, cookies)
+              if (!cookies.isNullOrBlank()) {
+                val host = java.net.URI(url).host?.removePrefix("www.") ?: url
+                savedSites = (savedSites + host).distinct()
+                onUseSession(url, cookies)
+              }
             },
           ) {
             Text(stringResource(R.string.ytdlp_cookie_login_use))
@@ -405,6 +410,23 @@ private fun WebsiteCookieLoginDialog(
           )
           Button(onClick = ::openWebsite) {
             Text(stringResource(R.string.ytdlp_cookie_login_open))
+          }
+        }
+        if (savedSites.isNotEmpty()) {
+          Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            savedSites.forEach { host ->
+              FilterChip(
+                selected = websiteUrl.contains(host, ignoreCase = true),
+                onClick = {
+                  websiteUrl = "https://$host/"
+                  webView?.loadUrl(websiteUrl)
+                },
+                label = { Text(host) },
+              )
+            }
           }
         }
         loadError?.let { error ->
@@ -481,14 +503,25 @@ private fun writeWebsiteCookiesFile(
   val secure = websiteUrl.startsWith("https://")
   val destination = File(context.filesDir, "ytdlp/cookies.txt")
   destination.parentFile?.mkdirs()
-  val rows = cookieHeader.split(';').mapNotNull { item ->
+  val newRows = cookieHeader.split(';').mapNotNull { item ->
     val separator = item.indexOf('=')
     if (separator <= 0) return@mapNotNull null
     val name = item.substring(0, separator).trim()
     val value = item.substring(separator + 1).trim()
     if (name.isBlank()) null else "$domain\tTRUE\t/\t${secure.toString().uppercase()}\t0\t$name\t$value"
   }
-  require(rows.isNotEmpty()) { "Website did not provide cookies" }
-  destination.writeText("# Netscape HTTP Cookie File\n" + rows.joinToString("\n") + "\n")
+  require(newRows.isNotEmpty()) { "Website did not provide cookies" }
+  val merged = linkedMapOf<String, String>()
+  if (destination.isFile) {
+    destination.readLines().filter { it.isNotBlank() && !it.startsWith("#") }.forEach { row ->
+      val fields = row.split('\t')
+      if (fields.size >= 7) merged["${fields[0]}\t${fields[2]}\t${fields[5]}"] = row
+    }
+  }
+  newRows.forEach { row ->
+    val fields = row.split('\t')
+    merged["${fields[0]}\t${fields[2]}\t${fields[5]}"] = row
+  }
+  destination.writeText("# Netscape HTTP Cookie File\n" + merged.values.joinToString("\n") + "\n")
   return destination
 }
