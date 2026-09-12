@@ -30,6 +30,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -358,6 +359,7 @@ private fun WebsiteCookieLoginDialog(
   var savedSites by rememberSaveable { mutableStateOf(emptyList<String>()) }
   var webView by remember { mutableStateOf<WebView?>(null) }
   var loadError by remember { mutableStateOf<String?>(null) }
+  var isLoading by remember { mutableStateOf(true) }
 
   fun normalizedUrl(): String {
     val value = websiteUrl.trim()
@@ -392,15 +394,20 @@ private fun WebsiteCookieLoginDialog(
     properties = DialogProperties(usePlatformDefaultWidth = false),
   ) {
     Surface(
-      modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+      modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
       color = MaterialTheme.colorScheme.surface,
     ) {
       Column(modifier = Modifier.fillMaxSize()) {
         Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-          Text(stringResource(R.string.ytdlp_cookie_login_title), style = MaterialTheme.typography.titleMedium)
+          Text(
+            stringResource(R.string.ytdlp_cookie_login_title),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+          )
           TextButton(
             onClick = {
               val url = normalizedUrl()
@@ -416,7 +423,7 @@ private fun WebsiteCookieLoginDialog(
           }
         }
         Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
           verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
@@ -426,6 +433,7 @@ private fun WebsiteCookieLoginDialog(
             modifier = Modifier.weight(1f),
             label = { Text(stringResource(R.string.ytdlp_cookie_login_url)) },
             singleLine = true,
+            shape = RoundedCornerShape(14.dp),
           )
           Button(onClick = ::openWebsite) {
             Text(stringResource(R.string.ytdlp_cookie_login_open))
@@ -455,15 +463,27 @@ private fun WebsiteCookieLoginDialog(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
           )
         }
-        AndroidView(
-          modifier = Modifier.fillMaxWidth().weight(1f).imePadding(),
-          factory = {
-            WebView(context).apply {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f)
+            .padding(horizontal = 12.dp, vertical = 12.dp)
+            .imePadding()
+            .clip(RoundedCornerShape(18.dp)),
+        ) {
+          AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = {
+              WebView(context).apply {
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                clipToPadding = false
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.databaseEnabled = true
               settings.setSupportMultipleWindows(false)
               settings.javaScriptCanOpenWindowsAutomatically = true
+              settings.useWideViewPort = true
+              settings.loadWithOverviewMode = true
               // Instagram often serves a blank login response to the Android WebView UA.
               // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
               settings.userAgentString =
@@ -492,20 +512,47 @@ private fun WebsiteCookieLoginDialog(
                 override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean = false
                 override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean = false
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                  isLoading = true
                   loadError = null
+                }
+                override fun onPageFinished(view: WebView?, url: String?) {
+                  isLoading = false
+                  view?.scrollTo(0, 0)
                 }
                 override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                   if (request?.isForMainFrame != false) {
+                    isLoading = false
                     loadError = error?.description?.toString() ?: "Unable to load login page"
                   }
                 }
               }
               webView = this
               loadUrl(normalizedUrl())
+              }
+            },
+            update = { view -> webView = view },
+          )
+          if (isLoading) {
+            Surface(
+              modifier = Modifier.align(androidx.compose.ui.Alignment.Center),
+              shape = RoundedCornerShape(18.dp),
+              tonalElevation = 4.dp,
+              color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            ) {
+              Column(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+              ) {
+                CircularProgressIndicator()
+                Text(
+                  text = stringResource(R.string.ytdlp_cookie_login_loading),
+                  style = MaterialTheme.typography.labelLarge,
+                )
+              }
             }
-          },
-          update = { view -> webView = view },
-        )
+          }
+        }
       }
     }
   }
