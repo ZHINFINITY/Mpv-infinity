@@ -81,6 +81,7 @@ object YtdlpSettingsScreen : Screen {
     val writeAutoSubs by ytdlPreferences.writeAutoSubs.collectAsState()
     val showDownloadQualityChooser by ytdlPreferences.showDownloadQualityChooser.collectAsState()
     val cookiesFile by ytdlPreferences.cookiesFile.collectAsState()
+    val customUserAgent by ytdlPreferences.customUserAgent.collectAsState()
     val installationInfo by YtdlpManager.installationInfo.collectAsState()
     val cookieFilePicker = rememberLauncherForActivityResult(
       ActivityResultContracts.OpenDocument(),
@@ -135,6 +136,7 @@ object YtdlpSettingsScreen : Screen {
     if (showCookieLogin) {
       WebsiteCookieLoginDialog(
         onDismiss = { showCookieLogin = false },
+        customUserAgent = customUserAgent,
         onUseSession = { websiteUrl, cookieHeader ->
           scope.launch {
             val destination = withContext(Dispatchers.IO) {
@@ -318,14 +320,25 @@ object YtdlpSettingsScreen : Screen {
                   Text(stringResource(R.string.ytdlp_cookies_choose))
                 }
               }
-              if (cookiesFile.isNotBlank()) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+              ) {
+                OutlinedTextField(
+                  value = customUserAgent,
+                  onValueChange = { ytdlPreferences.customUserAgent.set(it) },
+                  modifier = Modifier.weight(1f),
+                  label = { Text(stringResource(R.string.ytdlp_custom_user_agent_title)) },
+                  singleLine = true,
+                )
                 OutlinedButton(
                   onClick = {
                     File(context.filesDir, "ytdlp/cookies.txt").delete()
                     File(context.filesDir, "ytdlp/instagram-cookies.txt").delete()
                     ytdlPreferences.cookiesFile.set("")
                   },
-                  modifier = Modifier.fillMaxWidth(),
+                  enabled = cookiesFile.isNotBlank(),
                 ) {
                   Text(stringResource(R.string.ytdlp_cookies_clear))
                 }
@@ -353,6 +366,7 @@ object YtdlpSettingsScreen : Screen {
 @Composable
 private fun WebsiteCookieLoginDialog(
   onDismiss: () -> Unit,
+  customUserAgent: String,
   onUseSession: (String, String) -> Unit,
 ) {
   val context = LocalContext.current
@@ -360,6 +374,18 @@ private fun WebsiteCookieLoginDialog(
   var savedSites by rememberSaveable { mutableStateOf(emptyList<String>()) }
   var webView by remember { mutableStateOf<WebView?>(null) }
   var loadError by remember { mutableStateOf<String?>(null) }
+  val desktopWebViewUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  val mobileWebViewUserAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36"
+
+  fun userAgentFor(url: String): String {
+    if (customUserAgent.isNotBlank()) return customUserAgent.trim()
+    val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
+    return if (host == "youtube.com" || host.endsWith(".youtube.com") || host == "google.com" || host.endsWith(".google.com")) {
+      mobileWebViewUserAgent
+    } else {
+      desktopWebViewUserAgent
+    }
+  }
 
   fun normalizedUrl(): String {
     val value = websiteUrl.trim()
@@ -376,7 +402,10 @@ private fun WebsiteCookieLoginDialog(
   fun openWebsite() {
     val url = normalizedUrl()
     websiteUrl = url
-    webView?.loadUrl(url)
+    webView?.let { view ->
+      view.settings.userAgentString = userAgentFor(url)
+      view.loadUrl(url)
+    }
   }
 
   Dialog(
@@ -440,7 +469,10 @@ private fun WebsiteCookieLoginDialog(
                 selected = websiteUrl.contains(host, ignoreCase = true),
                 onClick = {
                   websiteUrl = "https://$host/"
-                  webView?.loadUrl(websiteUrl)
+                  webView?.let { view ->
+                    view.settings.userAgentString = userAgentFor(websiteUrl)
+                    view.loadUrl(websiteUrl)
+                  }
                 },
                 label = { Text(host) },
               )
@@ -473,9 +505,7 @@ private fun WebsiteCookieLoginDialog(
               settings.javaScriptCanOpenWindowsAutomatically = true
               // Instagram often serves a blank login response to the Android WebView UA.
               // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
-              settings.userAgentString =
-                "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
-                  "(KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36"
+              settings.userAgentString = userAgentFor(normalizedUrl())
               settings.loadsImagesAutomatically = true
               settings.allowContentAccess = true
               settings.allowFileAccess = false

@@ -1163,6 +1163,7 @@
   <string name="ytdlp_instagram_cookies_not_configured">No cookie file selected</string>
   <string name="ytdlp_cookies_choose">Cookies</string>
   <string name="ytdlp_cookies_clear">Clear</string>
+  <string name="ytdlp_custom_user_agent_title">Custom user agent</string>
   <string name="ytdlp_advanced_networking">Advanced Networking</string>
   <string name="ytdlp_playlist_behavior">Playlist Behavior</string>
   <string name="ytdlp_download_quality_chooser_title">Show download quality chooser</string>
