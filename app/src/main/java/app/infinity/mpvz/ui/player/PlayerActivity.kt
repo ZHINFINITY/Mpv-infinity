@@ -5415,6 +5415,8 @@ class PlayerActivity :
         },
       playbackSpeed = PlaybackSession.getPropertyDouble("speed") ?: DEFAULT_PLAYBACK_SPEED,
       videoZoom = PlaybackSession.getPropertyDouble("video-zoom")?.toFloat() ?: viewModel.videoZoom.value,
+      videoAspect = viewModel.videoAspect.value.name,
+      customAspectRatio = viewModel.currentAspectRatio.value.toFloat(),
       sid = player.sid,
       secondarySid = player.secondarySid,
       subDelayMs = ((PlaybackSession.getPropertyDouble("sub-delay") ?: 0.0) * MILLISECONDS_TO_SECONDS).toInt(),
