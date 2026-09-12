@@ -594,7 +594,16 @@ private fun WebsiteCookieLoginDialog(
                 override fun onPageFinished(view: WebView?, url: String?) {
                   view?.post {
                     view.requestFocus()
-                    Log.d(COOKIE_WEBVIEW_TAG, "page_finished url=$url focus=${view.hasFocus()}")
+                    val cookieManager = CookieManager.getInstance()
+                    cookieManager.flush()
+                    val cookieNames = cookieManager.getCookie(url.orEmpty()).orEmpty()
+                      .split(';')
+                      .mapNotNull { it.substringBefore('=').trim().takeIf(String::isNotBlank) }
+                    Log.d(
+                      COOKIE_WEBVIEW_TAG,
+                      "page_finished url=$url focus=${view.hasFocus()} " +
+                        "cookieNames=$cookieNames",
+                    )
                   }
                 }
                 override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
