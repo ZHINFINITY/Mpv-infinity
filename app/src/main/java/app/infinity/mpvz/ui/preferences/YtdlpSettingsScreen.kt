@@ -392,7 +392,7 @@ private fun WebsiteCookieLoginDialog(
     properties = DialogProperties(usePlatformDefaultWidth = false),
   ) {
     Surface(
-      modifier = Modifier.fillMaxSize(),
+      modifier = Modifier.fillMaxSize().safeDrawingPadding(),
       color = MaterialTheme.colorScheme.surface,
     ) {
       Column(modifier = Modifier.fillMaxSize()) {
@@ -456,7 +456,7 @@ private fun WebsiteCookieLoginDialog(
           )
         }
         AndroidView(
-          modifier = Modifier.fillMaxWidth().weight(1f),
+          modifier = Modifier.fillMaxWidth().weight(1f).imePadding(),
           factory = {
             WebView(context).apply {
               settings.javaScriptEnabled = true

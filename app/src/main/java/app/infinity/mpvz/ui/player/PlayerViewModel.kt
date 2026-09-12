@@ -3316,9 +3316,6 @@ class PlayerViewModel : ViewModel(),
       scanLocalSubtitles(mediaTitle)
       syncplayManager.updateFileInfo(currentSyncplayFileInfo())
 
-      if (!playerPreferences.rememberVideoAspectPerVideo.get()) {
-        restoreSavedVideoAspect(showUpdate = false)
-      }
       skippedSegments.clear()
       chapterDerivedSegments = emptyList()
       introDbSegments = emptyList()
