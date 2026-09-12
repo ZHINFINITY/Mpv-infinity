@@ -346,6 +346,18 @@ private fun WebsiteCookieLoginDialog(
   val context = LocalContext.current
   var websiteUrl by rememberSaveable { mutableStateOf("https://www.instagram.com/") }
   var webView by remember { mutableStateOf<WebView?>(null) }
+
+  fun normalizedUrl(): String {
+    val value = websiteUrl.trim()
+    return if (value.startsWith("http://") || value.startsWith("https://")) value else "https://$value"
+  }
+
+  fun openWebsite() {
+    val url = normalizedUrl()
+    websiteUrl = url
+    webView?.loadUrl(url)
+  }
+
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -354,7 +366,7 @@ private fun WebsiteCookieLoginDialog(
       modifier = Modifier.fillMaxSize(),
       color = MaterialTheme.colorScheme.surface,
     ) {
-      Column {
+      Column(modifier = Modifier.fillMaxSize()) {
         Row(
           modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -362,33 +374,45 @@ private fun WebsiteCookieLoginDialog(
           Text(stringResource(R.string.ytdlp_cookie_login_title), style = MaterialTheme.typography.titleMedium)
           TextButton(
             onClick = {
-              val normalized = websiteUrl.trim().let { if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it" }
-              val cookies = CookieManager.getInstance().getCookie(normalized)
-              if (!cookies.isNullOrBlank()) onUseSession(normalized, cookies)
+              val url = normalizedUrl()
+              val cookies = CookieManager.getInstance().getCookie(url)
+              if (!cookies.isNullOrBlank()) onUseSession(url, cookies)
             },
           ) {
             Text(stringResource(R.string.ytdlp_cookie_login_use))
           }
         }
-        TextField(
-          value = websiteUrl,
-          onValueChange = { websiteUrl = it },
+        Row(
           modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-          label = { Text(stringResource(R.string.ytdlp_cookie_login_url)) },
-          singleLine = true,
-        )
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+          TextField(
+            value = websiteUrl,
+            onValueChange = { websiteUrl = it },
+            modifier = Modifier.weight(1f),
+            label = { Text(stringResource(R.string.ytdlp_cookie_login_url)) },
+            singleLine = true,
+          )
+          Button(onClick = ::openWebsite) {
+            Text(stringResource(R.string.ytdlp_cookie_login_open))
+          }
+        }
         AndroidView(
-          modifier = Modifier.fillMaxSize(),
+          modifier = Modifier.fillMaxWidth().weight(1f),
           factory = {
             WebView(context).apply {
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.databaseEnabled = true
+              settings.userAgentString =
+                "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 " +
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
               CookieManager.getInstance().setAcceptCookie(true)
               CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
               webViewClient = WebViewClient()
               webView = this
-              loadUrl(websiteUrl)
+              loadUrl(normalizedUrl())
             }
           },
           update = { view -> webView = view },
