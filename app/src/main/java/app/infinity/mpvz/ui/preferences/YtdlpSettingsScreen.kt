@@ -314,10 +314,17 @@ object YtdlpSettingsScreen : Screen {
                 OutlinedButton(onClick = { cookieFilePicker.launch(arrayOf("text/plain", "application/json", "*/*")) }) {
                   Text(stringResource(R.string.ytdlp_cookies_choose))
                 }
-                if (cookiesFile.isNotBlank()) {
-                  OutlinedButton(onClick = { File(context.filesDir, "ytdlp/cookies.txt").delete(); File(context.filesDir, "ytdlp/instagram-cookies.txt").delete(); ytdlPreferences.cookiesFile.set("") }) {
-                    Text(stringResource(R.string.ytdlp_cookies_clear))
-                  }
+              }
+              if (cookiesFile.isNotBlank()) {
+                OutlinedButton(
+                  onClick = {
+                    File(context.filesDir, "ytdlp/cookies.txt").delete()
+                    File(context.filesDir, "ytdlp/instagram-cookies.txt").delete()
+                    ytdlPreferences.cookiesFile.set("")
+                  },
+                  modifier = Modifier.fillMaxWidth(),
+                ) {
+                  Text(stringResource(R.string.ytdlp_cookies_clear))
                 }
               }
             }
