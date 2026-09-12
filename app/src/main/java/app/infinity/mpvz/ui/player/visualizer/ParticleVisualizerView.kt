@@ -31,8 +31,7 @@ internal class ParticleVisualizerView(
     setEGLContextClientVersion(3)
     setEGLConfigChooser(8, 8, 8, 8, 16, 0)
     holder.setFormat(PixelFormat.TRANSLUCENT)
-    setZOrderOnTop(false)
-    setZOrderMediaOverlay(true)
+    setZOrderOnTop(true)
     preserveEGLContextOnPause = true
     setRenderer(renderer)
     renderMode = RENDERMODE_CONTINUOUSLY

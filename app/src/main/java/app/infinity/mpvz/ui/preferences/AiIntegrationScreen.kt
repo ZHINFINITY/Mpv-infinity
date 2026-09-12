@@ -164,8 +164,12 @@ object AiIntegrationScreen : Screen {
     val subtitleFormatWithAi by preferences.subtitleFormatWithAi.collectAsState()
     val subtitleTranslationEnabled by preferences.subtitleTranslationEnabled.collectAsState()
     val subtitleTranslationFirstTime by preferences.subtitleTranslationFirstTime.collectAsState()
+    val automaticSubtitleFontFallback by preferences.automaticSubtitleFontFallback.collectAsState()
     val subtitleGenerationOutputFormat by preferences.subtitleGenerationOutputFormat.collectAsState()
     val autoTranslateLanguages by preferences.autoTranslateLanguages.collectAsState()
+    val embeddedTranslationProvider by preferences.embeddedSubtitleTranslationProvider.collectAsState()
+    val embeddedTranslationEndpoint by preferences.embeddedSubtitleTranslationEndpoint.collectAsState()
+    val embeddedTranslationApiKey by preferences.embeddedSubtitleTranslationApiKey.collectAsState()
     val realtimeSubsEnabled by preferences.realtimeSubsEnabled.collectAsState()
 
     var models by remember { mutableStateOf<List<AiModelInfo>>(emptyList()) }
@@ -991,12 +995,75 @@ val apiKeyInfo =
                     },
                   )
 
+                  SwitchPreference(
+                    modifier = Modifier.settingsSearchTarget(R.string.pref_automatic_subtitle_font_fallback_title),
+                    value = automaticSubtitleFontFallback,
+                    onValueChange = { preferences.automaticSubtitleFontFallback.set(it) },
+                    title = { Text(stringResource(R.string.pref_automatic_subtitle_font_fallback_title)) },
+                    summary = { Text(stringResource(R.string.pref_automatic_subtitle_font_fallback_summary), color = MaterialTheme.colorScheme.outline) },
+                  )
+
                   PreferenceDivider()
 
                   AutoTranslateLanguageConfig(
                     languages = autoTranslateLanguages,
                     onLanguagesChange = { preferences.autoTranslateLanguages.set(it) },
                   )
+                  PreferenceDivider()
+                  ListPreference(
+                    value = embeddedTranslationProvider,
+                    onValueChange = { preferences.embeddedSubtitleTranslationProvider.set(it) },
+                    values = listOf("Google Translate", "OpenAI-compatible", "DeepL", "Gemini"),
+                    valueToText = { androidx.compose.ui.text.AnnotatedString(it) },
+                    title = { Text("Embedded subtitle translation provider") },
+                    summary = {
+                      Text(
+                        if (embeddedTranslationProvider == "Google Translate") {
+                          "Free Google Translate endpoint; no API key required"
+                        } else {
+                          "Uses the endpoint and API key below"
+                        },
+                        color = MaterialTheme.colorScheme.outline,
+                      )
+                    },
+                  )
+                  PreferenceDivider()
+                  TextFieldPreference(
+                    value = embeddedTranslationEndpoint,
+                    onValueChange = { preferences.embeddedSubtitleTranslationEndpoint.set(it.trim()) },
+                    textToValue = { it.trim() },
+                    title = { Text("Subtitle translation endpoint") },
+                    summary = { Text("Google free endpoint or a compatible translation API URL", color = MaterialTheme.colorScheme.outline) },
+                    textField = { value, onValueChange, _ ->
+                      TextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("https://translate.googleapis.com/translate_a/single") },
+                        singleLine = true,
+                      )
+                    },
+                  )
+                  if (embeddedTranslationProvider != "Google Translate") {
+                    PreferenceDivider()
+                    TextFieldPreference(
+                      value = embeddedTranslationApiKey,
+                      onValueChange = { preferences.embeddedSubtitleTranslationApiKey.set(it.trim()) },
+                      textToValue = { it.trim() },
+                      title = { Text("Subtitle translation API key") },
+                      summary = { Text("Optional key for the selected translation API", color = MaterialTheme.colorScheme.outline) },
+                      textField = { value, onValueChange, _ ->
+                        TextField(
+                          value = value,
+                          onValueChange = onValueChange,
+                          modifier = Modifier.fillMaxWidth(),
+                          placeholder = { Text("API key") },
+                          singleLine = true,
+                          visualTransformation = PasswordVisualTransformation(),
+                        )
+                      },
+                    )
+                  }
                 }
               }
 

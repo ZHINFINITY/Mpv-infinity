@@ -449,8 +449,8 @@ fun JellyfinHeroBanner(
         pageCount = items.size,
         modifier =
           Modifier
-            .align(Alignment.BottomEnd)
-            .padding(end = 20.dp, bottom = 16.dp),
+            .align(Alignment.TopEnd)
+            .padding(end = 20.dp, top = 16.dp),
       )
     }
   }

@@ -19,6 +19,7 @@ import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import android.os.Debug
+import android.util.Log
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -33,6 +34,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -94,6 +96,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeJoin
@@ -127,6 +130,7 @@ import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.PortraitPlaybackControlsPosition
+import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.allPlayerButtons
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.preferences.preference.deleteAndGet
@@ -140,6 +144,7 @@ import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
+import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoOpenAnimationOverlay
 import app.infinity.mpvz.ui.player.buildControlsEnterH
@@ -155,6 +160,7 @@ import app.infinity.mpvz.ui.player.controls.components.SeekPlayerUpdate
 import app.infinity.mpvz.ui.player.controls.components.SeekbarWithTimers
 import app.infinity.mpvz.ui.player.controls.components.SlideToUnlock
 import app.infinity.mpvz.ui.player.controls.components.TextPlayerUpdate
+import app.infinity.mpvz.ui.player.controls.components.TranslatedSubtitleText
 import app.infinity.mpvz.ui.player.controls.components.VolumeSlider
 import app.infinity.mpvz.ui.player.controls.components.playerButtonBorderColor
 import app.infinity.mpvz.ui.player.controls.components.playerButtonContainerColor
@@ -194,6 +200,7 @@ fun <T> playerControlsEnterAnimationSpec(durationMillis: Int = 100): FiniteAnima
 fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
+  onSelectEngine: ((PlaybackEngineMode) -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
   val spacing = MaterialTheme.spacing
@@ -201,13 +208,62 @@ fun PlayerControls(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val aiPreferences = koinInject<AiPreferences>()
   val aiEnabled by aiPreferences.enabled.collectAsState()
+  val automaticSubtitleFontFallback by aiPreferences.automaticSubtitleFontFallback.collectAsState()
   val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
   val forceDarkButtonBackground by appearancePreferences.forceDarkPlayerButtonsBackground.collectAsState()
+  val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
+  val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
   val portraitPlaybackControlsPosition by
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
   val audioPreferences = koinInject<AudioPreferences>()
+  val subtitlesPreferences = koinInject<SubtitlesPreferences>()
+  val subtitlePosition by subtitlesPreferences.subPos.collectAsState()
+  val subtitleFont by subtitlesPreferences.font.collectAsState()
+  val subtitleFontSize by subtitlesPreferences.fontSize.collectAsState()
+  val subtitleScale by subtitlesPreferences.subScale.collectAsState()
+  val subtitleTextColor by subtitlesPreferences.textColor.collectAsState()
+  val subtitleBackgroundColor by subtitlesPreferences.backgroundColor.collectAsState()
+  val subtitleBorderColor by subtitlesPreferences.borderColor.collectAsState()
+  val subtitleBorderSize by subtitlesPreferences.borderSize.collectAsState()
+  val subtitleShadowOffset by subtitlesPreferences.shadowOffset.collectAsState()
+  val subtitleBold by subtitlesPreferences.bold.collectAsState()
+  val subtitleItalic by subtitlesPreferences.italic.collectAsState()
+  val subtitleJustification by subtitlesPreferences.justification.collectAsState()
+  val mpvSubtitlePosition by PlaybackSession.propInt["sub-pos"].collectAsState()
+  val mpvSubtitleFontSize by PlaybackSession.propInt["sub-font-size"].collectAsState()
+  val mpvSubtitleMarginX by PlaybackSession.propInt["sub-margin-x"].collectAsState()
+  val mpvSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
+  val mpvOsdWidth by PlaybackSession.propInt["osd-width"].collectAsState()
+  val mpvOsdHeight by PlaybackSession.propInt["osd-height"].collectAsState()
+  val subtitleFontContext = androidx.compose.ui.platform.LocalContext.current
+  val translatedSubtitleFontFamily by produceState<androidx.compose.ui.text.font.FontFamily>(
+    initialValue = androidx.compose.ui.text.font.FontFamily.SansSerif,
+    key1 = "${subtitleFont}:$subtitleBold:$subtitleItalic",
+  ) {
+    val family = subtitleFont.trim().ifBlank { app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY }
+    val typefaceStyle = when {
+      subtitleBold && subtitleItalic -> android.graphics.Typeface.BOLD_ITALIC
+      subtitleBold -> android.graphics.Typeface.BOLD
+      subtitleItalic -> android.graphics.Typeface.ITALIC
+      else -> android.graphics.Typeface.NORMAL
+    }
+    if (family == app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY) {
+      value = androidx.compose.ui.text.font.FontFamily.SansSerif
+    } else {
+      val custom = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        app.infinity.mpvz.utils.media.loadCustomFontEntries(subtitleFontContext)
+          .firstOrNull { it.familyName.equals(family, ignoreCase = true) }
+      }
+      value = custom?.let {
+        val importedTypeface = android.graphics.Typeface.createFromFile(it.file)
+        androidx.compose.ui.text.font.FontFamily(importedTypeface)
+      }
+        ?: androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.create(family, typefaceStyle))
+    }
+  }
   val decoderPreferences = koinInject<DecoderPreferences>()
   val playbackEngine by decoderPreferences.playbackEngine.collectAsState()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
@@ -224,7 +280,7 @@ fun PlayerControls(
   val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
-  val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
+  val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val seekbarDuration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
   val seekState by viewModel.seekState.collectAsState()
   val brightness by viewModel.currentBrightness.collectAsState()
@@ -236,6 +292,32 @@ fun PlayerControls(
   val torrentState by viewModel.torrentState.collectAsState()
   val videoOpenAnimState by viewModel.videoOpenAnimationState.collectAsState()
   val showLoadingCircle by playerPreferences.showLoadingCircle.collectAsState()
+  val embeddedTranslatedSubtitle by viewModel.embeddedTranslatedSubtitle.collectAsState()
+
+  // Read-only diagnostic captured by the all-log collector; subtitle text itself is not logged.
+  LaunchedEffect(
+    embeddedTranslatedSubtitle,
+    mpvSubtitlePosition,
+    mpvSubtitleFontSize,
+    mpvSubtitleScale,
+    mpvSubtitleMarginX,
+    mpvOsdWidth,
+    mpvOsdHeight,
+    automaticSubtitleFontFallback,
+  ) {
+    val translated = embeddedTranslatedSubtitle
+    Log.i(
+      "MpvSubtitleTranslation",
+      "renderer=compose visible=${!translated.isNullOrBlank()} " +
+        "textLength=${translated?.length ?: 0} " +
+        "pos=${mpvSubtitlePosition ?: "unavailable"} " +
+        "fontSize=${mpvSubtitleFontSize ?: "unavailable"} " +
+        "scale=${mpvSubtitleScale ?: "unavailable"} " +
+        "marginX=${mpvSubtitleMarginX ?: "unavailable"} " +
+        "osd=${mpvOsdWidth ?: "unavailable"}x${mpvOsdHeight ?: "unavailable"} " +
+        "font=${subtitleFont.ifBlank { "default" }} fallback=$automaticSubtitleFontFallback",
+    )
+  }
 
   val isTorrentConnecting = torrentState is TorrentStreamingState.Connecting
   val isTorrentStreaming = torrentState is TorrentStreamingState.Streaming
@@ -261,11 +343,17 @@ fun PlayerControls(
       Modifier
     }
   var isSeeking by remember { mutableStateOf(false) }
+  var nativeSeekPreviewPosition by remember { mutableStateOf<Float?>(null) }
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsState()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
+  val activity = LocalActivity.current as? PlayerActivity
+  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsStateWithLifecycle()
+    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
+  val nativeEngineActive = activity?.isNativeEngineActive() == true
+  val isNativeBuffering = nativeEngineActive && nativeSnapshot.isBuffering
   val showBufferingIndicator =
-    bufferingState.visible &&
-      (controlsShown || playbackSessionState.phase == PlaybackPhase.LOADING) &&
+    (bufferingState.visible || isNativeBuffering) &&
+      (controlsShown || isNativeBuffering || playbackSessionState.phase == PlaybackPhase.LOADING) &&
       !isPlayerSeeking
   var stableDemuxerCacheTime by remember { mutableFloatStateOf(0f) }
   val currentDemuxerCacheTime =
@@ -283,17 +371,13 @@ fun PlayerControls(
   }
   var resetControlsTimestamp by remember { mutableStateOf(0L) }
   val seekText = seekState.text
-  val currentChapter by PlaybackSession.propInt["chapter"].collectAsState()
+  val mpvCurrentChapter by PlaybackSession.propInt["chapter"].collectAsState()
   val configuredDecoder by PlaybackSession.propString["hwdec"].collectAsState()
   val activeDecoder by PlaybackSession.propString["hwdec-current"].collectAsState()
   val decoder = remember(activeDecoder, configuredDecoder) {
     getDecoderFromValue(activeDecoder?.takeIf { it.isNotBlank() } ?: configuredDecoder ?: "auto")
   }
-  val isSpeedNonOne = remember(playbackSpeed) {
-    abs((playbackSpeed ?: 1f) - 1f) > 0.001f
-  }
   val playerTimeToDisappear by playerPreferences.playerTimeToDisappear.collectAsState()
-  val chapters by viewModel.chapters.collectAsState(persistentListOf())
   val skipSegments by viewModel.skipSegments.collectAsState(persistentListOf())
   val currentSkippableSegment by viewModel.currentSkippableSegment.collectAsState()
   val showSkipChipAuto by viewModel.showSkipChipAuto.collectAsState()
@@ -339,10 +423,24 @@ fun PlayerControls(
   }
 
   val isAudioOnly by viewModel.isAudioOnly.collectAsState()
-  val activity = LocalActivity.current as? PlayerActivity
-  val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
-    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
-  val paused = if (playbackEngine == PlaybackEngineMode.NATIVE) !nativeSnapshot.isPlaying else mpvPaused
+  val mpvChapters by viewModel.chapters.collectAsState(persistentListOf())
+  val chapters = if (nativeEngineActive && nativeSnapshot.chapters.isNotEmpty()) {
+    nativeSnapshot.chapters.map { dev.vivvvek.seeker.Segment(it.title, it.startSeconds) }.toImmutableList()
+  } else {
+    mpvChapters
+  }
+  val currentChapter =
+    if (nativeEngineActive) {
+      val nativePositionSeconds = nativeSnapshot.positionMs / 1000f
+      chapters.indexOfLast { it.start <= nativePositionSeconds }.takeIf { it >= 0 }
+    } else {
+      mpvCurrentChapter
+    }
+  val paused = if (nativeEngineActive) !nativeSnapshot.isPlaying else (mpvPaused ?: false)
+  val playbackSpeed = if (nativeEngineActive) nativeSnapshot.speed else mpvPlaybackSpeed
+  val isSpeedNonOne = remember(playbackSpeed) {
+    abs((playbackSpeed ?: 1f) - 1f) > 0.001f
+  }
   val currentPlaybackItem = playbackQueue.currentItem
   val useAudioPlayer =
     when (currentPlaybackItem?.declaredMediaKind()) {
@@ -350,6 +448,12 @@ fun PlayerControls(
       DeclaredPlaybackMediaKind.AUDIO -> true
       else -> isAudioOnly || activity?.isCurrentMediaKnownAudio() == true
     }
+  LaunchedEffect(useAudioPlayer) {
+    if (useAudioPlayer && statisticsPage in 1..5) {
+      advancedPreferences.enabledStatisticsPage.set(0)
+      PlaybackSession.command("script-binding", "stats/display-stats-toggle")
+    }
+  }
   if (useAudioPlayer) {
     val rawMediaTitle by PlaybackSession.propString["media-title"].collectAsState()
     val queuedTitle =
@@ -392,13 +496,20 @@ fun PlayerControls(
         chapter = chapters.getOrNull(currentChapter ?: 0),
         chapters = chapters.toImmutableList(),
         onSeekToChapter = {
-          PlaybackSession.setPropertyInt("chapter", it)
-          viewModel.unpause()
+          val selectedChapter = chapters.getOrNull(it)
+          if (nativeEngineActive && selectedChapter != null) {
+            activity?.nativeSeekToChapter((selectedChapter.start * 1000.0).toLong())
+            activity?.nativeUnpause()
+          } else {
+            PlaybackSession.setPropertyInt("chapter", it)
+            viewModel.unpause()
+          }
         },
         decoder = decoder,
         onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-        selectedEngine = playbackEngine,
-        onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
+        selectedEngine = activity?.currentEngineSelectionForControls()
+          ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+        onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
         speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
         onSpeedChange = {
         val speed = it.toFixed(2)
@@ -419,7 +530,7 @@ fun PlayerControls(
         onStartSleepTimer = viewModel::startTimer,
         onOpenPanel = onOpenPanel,
         onShowSheet = onOpenSheet,
-        activeEngine = playbackEngine,
+        activeEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
         nativeSnapshot = nativeSnapshot,
         onDismissRequest = { onOpenSheet(Sheets.None) },
       )
@@ -586,7 +697,9 @@ fun PlayerControls(
             .zIndex(0f),
       )
     }
-    if (statisticsPage in 1..6) {
+    // Statistics are a video overlay only. Keep them out of the audio/visualizer composition even
+    // when the previous video left the persisted statistics page enabled.
+    if (!useAudioPlayer && statisticsPage in 1..6) {
       val statsModifier =
         Modifier
           .align(Alignment.TopStart)
@@ -596,8 +709,8 @@ fun PlayerControls(
             ),
           ).padding(top = 16.dp, start = 14.dp)
       if (activity?.isNativeEngineActive() == true) {
-        NativeStatsPageOverlay(snapshot = nativeSnapshot, page = statisticsPage, modifier = statsModifier)
-      } else {
+        NativeStatsPageOverlay(page = statisticsPage, snapshot = nativeSnapshot, modifier = statsModifier)
+      } else if (statisticsPage == 6) {
         CustomStatsPageSixOverlay(viewModel = viewModel, modifier = statsModifier)
       }
     }
@@ -636,6 +749,7 @@ fun PlayerControls(
           val (bottomRightControls, bottomLeftControls) = createRefs()
           val playerPauseButton = createRef()
           val bufferingIndicator = createRef()
+          val translatedSubtitle = createRef()
           val skipSegmentChip = createRef()
           val seekbar = createRef()
           val (playerUpdates) = createRefs()
@@ -827,6 +941,46 @@ fun PlayerControls(
           }
 
           AnimatedVisibility(
+            visible = embeddedTranslatedSubtitle != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.constrainAs(translatedSubtitle) {
+              linkTo(parent.start, parent.end)
+              val configuredOffset = with(density) {
+                val heightPx = (mpvOsdHeight ?: controlsLayoutHeightPx.takeIf { it > 0 } ?: 720).toFloat()
+                (((100 - (mpvSubtitlePosition ?: subtitlePosition)).coerceIn(0, 100) / 100f) * heightPx).toDp()
+              }
+              bottom.linkTo(parent.bottom, configuredOffset)
+            },
+          ) {
+            embeddedTranslatedSubtitle?.takeIf { it.isNotBlank() }?.let { translated ->
+              val translatedFontSize = with(density) {
+                val osdHeightPx = (mpvOsdHeight ?: controlsLayoutHeightPx.takeIf { it > 0 } ?: 720).toFloat()
+                val fontSizePx = (mpvSubtitleFontSize ?: subtitleFontSize) * (osdHeightPx / 720f) * (mpvSubtitleScale ?: subtitleScale)
+                (fontSizePx / density.density).coerceIn(8f, 120f).sp
+              }
+              TranslatedSubtitleText(
+                text = translated,
+                modifier = Modifier.fillMaxWidth(((1f - 2f * (mpvSubtitleMarginX ?: 25).toFloat() / (mpvOsdWidth ?: 1280).toFloat()).coerceIn(0.45f, 1f)).coerceAtMost(0.86f)).padding(horizontal = 0.dp),
+                fontSize = translatedFontSize,
+                textColor = Color(subtitleTextColor),
+                backgroundColor = Color(subtitleBackgroundColor),
+                outlineColor = Color(subtitleBorderColor),
+                outlineWidth = subtitleBorderSize.toFloat(),
+                shadowOffset = subtitleShadowOffset.toFloat(),
+                bold = subtitleBold,
+                italic = subtitleItalic,
+                fontFamily = translatedSubtitleFontFamily,
+                textAlign = when (subtitleJustification.name.lowercase()) {
+                  "left" -> androidx.compose.ui.text.style.TextAlign.Start
+                  "right" -> androidx.compose.ui.text.style.TextAlign.End
+                  else -> androidx.compose.ui.text.style.TextAlign.Center
+                },
+              )
+            }
+          }
+
+          AnimatedVisibility(
             shouldShowPlayerUpdate,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { -it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { -it },
@@ -846,7 +1000,7 @@ fun PlayerControls(
             when (currentPlayerUpdate) {
               is PlayerUpdates.MultipleSpeed ->
                 MultipleSpeedPlayerUpdate(
-                  currentSpeed = holdForMultipleSpeed.coerceIn(0.5f, 4f),
+                  currentSpeed = holdForMultipleSpeed.coerceIn(0.5f, 8f),
                 )
               is PlayerUpdates.DynamicSpeedControl -> {
                 val speedUpdate = currentPlayerUpdate as PlayerUpdates.DynamicSpeedControl
@@ -1623,7 +1777,15 @@ fun PlayerControls(
             val remaining  by PlaybackSession.propFloat["playtime-remaining"].collectAsState()
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
-            val displayedSeekbarPosition = precisePosition
+            val displayedSeekbarPosition =
+              if (nativeEngineActive) {
+                nativeSeekPreviewPosition ?: (nativeSnapshot.positionMs / 1000f)
+              } else {
+                precisePosition
+              }
+            val displayedSeekbarDuration =
+              if (nativeEngineActive) nativeSnapshot.durationMs / 1000f
+              else if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
             // Memoize the immutable copies so they are not reallocated on every position
             // tick (this scope recomposes ~20x/sec while scrubbing).
             val seekbarChapters =
@@ -1632,19 +1794,59 @@ fun PlayerControls(
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
 
+            Box(
+              contentAlignment = Alignment.Center,
+              modifier = if (showSeekbarOuterContainer || liquidGlassSurfaces) {
+                Modifier
+                  .padding(horizontal = if (isPortrait) 8.dp else 6.dp)
+                  .fillMaxWidth()
+                  .then(if (isPortrait) Modifier.height(92.dp) else Modifier)
+                  .clip(RoundedCornerShape(26.dp))
+                  .background(
+                    when {
+                      liquidGlassSurfaces -> {
+                        val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                        if (darkSurface) Color.Black.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.28f)
+                      }
+                      playerControlsTheme.name == "Glass" -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                      playerControlsTheme.name == "Glossy" -> {
+                        val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                        if (darkSurface) Color.Black.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.20f)
+                      }
+                      else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+                    },
+                  )
+                  .border(
+                    BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
+                    RoundedCornerShape(26.dp),
+                  )
+                  .padding(horizontal = 6.dp)
+              } else {
+                Modifier.fillMaxWidth()
+              },
+            ) {
             SeekbarWithTimers(
               position = displayedSeekbarPosition,
-              committedPosition = precisePosition,
-              duration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f,
-              remaining = remaining ?: 0f,
+              committedPosition = displayedSeekbarPosition,
+              duration = displayedSeekbarDuration,
+              remaining = if (nativeEngineActive) {
+                (displayedSeekbarDuration - displayedSeekbarPosition).coerceAtLeast(0f)
+              } else remaining ?: 0f,
               onValueChange = {
                 isSeeking = true
                 resetControlsTimestamp = System.currentTimeMillis()
-                viewModel.seekPreviewTo(it)
+                if (nativeEngineActive) {
+                  // Do not flush the Dolby Vision decoder for every pointer event. The Seeker
+                  // already renders this local position; commit one real Media3 seek on release.
+                  nativeSeekPreviewPosition = it
+                } else {
+                  viewModel.seekPreviewTo(it)
+                }
               },
               onValueChangeFinished = { targetPosition ->
                 isSeeking = false
                 resetControlsTimestamp = System.currentTimeMillis()
+                nativeSeekPreviewPosition = null
                 viewModel.seekTo(targetPosition.toInt(), fast = false)
                 viewModel.showControls()
               },
@@ -1656,7 +1858,7 @@ fun PlayerControls(
               positionTimerOnClick = {},
               chapters = seekbarChapters,
               skipSegments = skipSegmentsImmutable,
-              paused = paused ?: false,
+              paused = paused,
               seekbarStyle = seekbarStyle,
               useWavySeekbar = useWavySeekbar,
               timerTextColor = Color.White,
@@ -1665,6 +1867,7 @@ fun PlayerControls(
               bufferDuration = stableDemuxerCacheTime.takeIf { showBufferedRange && it > 0f },
               isPortrait = isPortrait,
             )
+            }
           }
 
           AnimatedVisibility(
@@ -1919,13 +2122,22 @@ fun PlayerControls(
       chapter = chapters.getOrNull(currentChapter ?: 0),
       chapters = chapters.toImmutableList(),
       onSeekToChapter = {
-        PlaybackSession.setPropertyInt("chapter", it)
-        viewModel.unpause()
+        val selectedChapter = chapters.getOrNull(it)
+        if (nativeEngineActive && selectedChapter != null) {
+          activity?.nativeSeekToChapter((selectedChapter.start * 1000.0).toLong())
+          activity?.nativeUnpause()
+        } else {
+          PlaybackSession.setPropertyInt("chapter", it)
+          viewModel.unpause()
+        }
       },
       decoder = decoder,
       onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-      selectedEngine = playbackEngine,
-      onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
+      selectedEngine = activity?.currentEngineSelectionForControls()
+        ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+      onSelectEngine = { engine ->
+        activity?.selectEngineForCurrentVideo(engine) ?: decoderPreferences.playbackEngine.set(engine)
+      },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
       onSpeedChange = {
         val speed = it.toFixed(2)
@@ -1946,7 +2158,7 @@ fun PlayerControls(
       onStartSleepTimer = viewModel::startTimer,
       onOpenPanel = onOpenPanel,
       onShowSheet = onOpenSheet,
-      activeEngine = playbackEngine,
+      activeEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       nativeSnapshot = nativeSnapshot,
       onDismissRequest = { onOpenSheet(Sheets.None) },
     )
@@ -2051,8 +2263,8 @@ private fun readProcessMemorySnapshot(): ProcessMemorySnapshot {
 
 @Composable
 private fun NativeStatsPageOverlay(
-  snapshot: NativePlaybackSnapshot,
   page: Int,
+  snapshot: NativePlaybackSnapshot,
   modifier: Modifier = Modifier,
 ) {
   val quality = if (snapshot.videoWidth > 0 && snapshot.videoHeight > 0) {
@@ -2060,20 +2272,53 @@ private fun NativeStatsPageOverlay(
   } else {
     "--"
   }
-  val bitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
+  val videoBitrate = if (snapshot.videoBitrate > 0) {
+    "${if (snapshot.videoBitrateEstimated) "~" else ""}${snapshot.videoBitrate / 1000} kbps"
+  } else "--"
+  val audioBitrate = if (snapshot.audioBitrate > 0) "${snapshot.audioBitrate / 1000} kbps" else "--"
   Surface(
     modifier = modifier,
-    color = Color.Black.copy(alpha = 0.78f),
+    color = Color.Transparent,
     shape = MaterialTheme.shapes.medium,
   ) {
     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-      Text("Native statistics · Page $page", style = MaterialTheme.typography.titleSmall, color = Color.White)
+      Text("Native statistics — Page ${page.coerceIn(1, 6)}", style = MaterialTheme.typography.titleSmall, color = Color.White)
       Text("Engine: Native", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Video: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Output bitrate: $bitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Audio: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-      Text("Subtitles: ${snapshot.subtitleTracks.size} embedded track(s)", style = MaterialTheme.typography.bodySmall, color = Color.White)
+      when (page) {
+        1 -> {
+          Text("Video output: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video bitrate: $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Duration: ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        2 -> {
+          Text("Audio codec: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Channels: ${snapshot.audioChannels}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Sample rate: ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        3 -> {
+          Text("Tracks: ${snapshot.audioTracks.size} audio · ${snapshot.subtitleTracks.size} subtitles", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Selected audio: ${snapshot.audioTracks.count { it.selected }}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Selected subtitles: ${snapshot.subtitleTracks.count { it.selected }}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        4 -> {
+          Text("Position: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Speed: ${"%.2f".format(snapshot.speed)}×", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("State: ${if (snapshot.isBuffering) "Buffering" else if (snapshot.isPlaying) "Playing" else "Paused"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        5 -> {
+          Text("Video: $quality · ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio: ${snapshot.audioCodec ?: "--"} · $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Chapters: ${snapshot.chapters.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+        else -> {
+          Text("Ready: ${snapshot.isReady}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video bitrate: $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Playback: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+        }
+      }
     }
   }
 }

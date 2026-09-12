@@ -50,11 +50,11 @@ import app.infinity.mpvz.domain.network.NetworkConnection
     JellyfinServerEntity::class,
     DownloadItemEntity::class,
   ],
-  version = 18,
+  version = 19,
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)
-abstract class MpvRxDatabase : RoomDatabase() {
+abstract class MpvInfinityDatabase : RoomDatabase() {
   abstract fun videoDataDao(): PlaybackStateDao
 
   abstract fun recentlyPlayedDao(): RecentlyPlayedDao

@@ -35,6 +35,13 @@ class AdvancedPreferences(
 
   val enableHlsProxy = preferenceStore.getBoolean("enable_hls_proxy", true)
 
+  val enableSmartCollections = preferenceStore.getBoolean("enable_smart_collections", false)
+  val enableWatchStatistics = preferenceStore.getBoolean("enable_watch_statistics", false)
+  val enablePlaybackDiagnostics = preferenceStore.getBoolean("enable_playback_diagnostics", false)
+  val enableLibraryHealthReport = preferenceStore.getBoolean("enable_library_health_report", false)
+  val enableMediaQualityFilters = preferenceStore.getBoolean("enable_media_quality_filters", false)
+  val enableLibraryActivityLog = preferenceStore.getBoolean("enable_library_activity_log", false)
+
   /** Notification style for the playback service (Media vs Progress-centric on Android 16+). */
   val notificationStyle = preferenceStore.getEnum("notification_style", NotificationStyle.Media)
 }

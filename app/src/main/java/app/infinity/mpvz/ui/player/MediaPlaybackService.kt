@@ -218,7 +218,7 @@ class MediaPlaybackService :
     }
   }
 
-  private val binder = MediaPlaybackBinder()
+  private val binder = MediaPlaybackBinder(this)
   private lateinit var mediaSession: MediaSessionCompat
   private val playerPreferences: PlayerPreferences by inject()
   private val advancedPreferences: AdvancedPreferences by inject()
@@ -267,6 +267,7 @@ class MediaPlaybackService :
   @Volatile private var mpvAccessReleased = false
   @Volatile private var isCurrentFavorite = false
   private var usesAudioBackgroundPlayback = false
+  @Volatile private var serviceMediaKindInitialized = false
   private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
   // Mutated from the framework's audio-focus callback thread as well as serviceScope and the
@@ -332,8 +333,10 @@ class MediaPlaybackService :
       }
     }
 
-  inner class MediaPlaybackBinder : Binder() {
-    fun getService() = this@MediaPlaybackService
+  class MediaPlaybackBinder(service: MediaPlaybackService) : Binder() {
+    private val serviceReference = WeakReference(service)
+
+    fun getService(): MediaPlaybackService? = serviceReference.get()
   }
 
   fun isForegroundReady(): Boolean = foregroundReady
@@ -371,6 +374,7 @@ class MediaPlaybackService :
       ) { videoEnabled, audioEnabled ->
         if (usesAudioBackgroundPlayback) audioEnabled else videoEnabled
       }.drop(1).collect { enabled ->
+        if (!serviceMediaKindInitialized) return@collect
         if (!enabled) {
           Log.d(TAG, "Background playback disabled; stopping service")
           stopDetachedPlaybackIfNeeded()
@@ -482,6 +486,7 @@ class MediaPlaybackService :
         usesAudioBackgroundPlayback = isAudio
         notificationIsAudio = isAudio
       }
+      serviceMediaKindInitialized = true
 
       if (!title.isNullOrBlank()) {
         mediaTitle = FileTypeUtils.stripExtension(title)
@@ -1836,6 +1841,8 @@ class MediaPlaybackService :
         PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
       playbackSpeed = readMpvDouble("speed", oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED),
       videoZoom = readMpvDouble("video-zoom", oldState?.videoZoom?.toDouble() ?: 0.0).toFloat(),
+      videoAspect = oldState?.videoAspect ?: "Fit",
+      customAspectRatio = oldState?.customAspectRatio ?: -1f,
       sid = readMpvTrackId("sid", oldState?.sid ?: -1),
       secondarySid = readMpvTrackId("secondary-sid", oldState?.secondarySid ?: -1),
       subDelayMs =

@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,6 +32,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -85,12 +87,15 @@ fun SubtitlesSheet(
   translationProgress: Float,
   translationStatus: String,
   translationEnabled: Boolean,
+  onToggleTranslation: () -> Unit = {},
   isGeneratingSubtitles: Boolean,
   subtitleGenerationProgress: Float,
   subtitleGenerationStatus: String,
   translatingTrackId: Int? = null,
   translatingTrackName: String = "",
   autoTranslateLanguages: String = "",
+  embeddedTranslationLanguage: String = "",
+  onEmbeddedTranslationLanguageChange: (String) -> Unit = {},
   aiEnabled: Boolean = true,
   realtimeSubsEnabled: Boolean = true,
   subtitlesOff: Boolean = false,
@@ -336,6 +341,18 @@ fun SubtitlesSheet(
           }
         },
       )
+      if (translationEnabled && configuredLanguages.isNotEmpty()) {
+        Text(
+          text =
+            "Translation language: " +
+              configuredLanguages.joinToString(", ") { codeToName[it] ?: it.uppercase() },
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.outline,
+          modifier = Modifier.padding(horizontal = MaterialTheme.spacing.medium),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
 
       if (aiEnabled && isTranslating) {
         Column(
@@ -406,6 +423,36 @@ fun SubtitlesSheet(
         }
       }
 
+      if (aiEnabled) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text("Translate embedded subtitles", modifier = Modifier.weight(1f))
+          Switch(checked = translationEnabled, onCheckedChange = { onToggleTranslation() })
+        }
+        if (tracks.any { it.external != true } && translationEnabled && configuredLanguages.isNotEmpty()) {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = MaterialTheme.spacing.medium),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+          ) {
+            Text(
+              "Translation language",
+              style = MaterialTheme.typography.labelLarge,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small)) {
+              configuredLanguages.take(2).forEach { code ->
+                FilterChip(
+                  selected = embeddedTranslationLanguage.equals(code, ignoreCase = true),
+                  onClick = { onEmbeddedTranslationLanguageChange(code) },
+                  label = { Text(codeToName[code.lowercase()] ?: code.uppercase()) },
+                )
+              }
+            }
+          }
+        }
+      }
       LazyColumn {
         items(
           items,

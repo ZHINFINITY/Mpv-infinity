@@ -65,7 +65,8 @@ fun SwipeableVideoActions(
   val actionWidth = 88.dp
   val density = LocalDensity.current
   val leftRevealPx = with(density) { actionWidth.toPx() }
-  val rightRevealPx = with(density) { actionWidth.toPx() }
+  // Two actions are rendered on the right; reveal their combined width so Rename is not clipped.
+  val rightRevealPx = with(density) { (actionWidth * 2).toPx() }
   val thresholdPx = with(density) { 56.dp.toPx() }
   val scope = rememberCoroutineScope()
   val reduceMotion = LocalMotionPolicy.current.reduceMotion

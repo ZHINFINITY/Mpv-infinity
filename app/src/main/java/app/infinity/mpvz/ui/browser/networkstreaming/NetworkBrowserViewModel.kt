@@ -232,7 +232,7 @@ class NetworkBrowserViewModel(
       currentIndex = playlistIndex,
       isExplicitQueue = true,
     )
-    val uri = Uri.parse(queueItems[playlistIndex].originalUri)
+    val uri = Uri.parse(NetworkPlaybackUri.normalize(queueItems[playlistIndex].originalUri))
 
     val intent = Intent(Intent.ACTION_VIEW, uri)
     intent.setClass(application, PlayerActivity::class.java)

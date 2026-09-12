@@ -17,7 +17,7 @@ import com.google.android.gms.cast.framework.SessionProvider
 import com.google.android.gms.cast.framework.media.CastMediaOptions
 import com.google.android.gms.cast.framework.media.NotificationOptions
 
-class MpvRxCastOptionsProvider : OptionsProvider {
+class MpvInfinityCastOptionsProvider : OptionsProvider {
   override fun getCastOptions(context: Context): CastOptions {
     val notificationOptions =
       NotificationOptions

@@ -1,0 +1,5 @@
+Source: https://hentaistream-addon.keypop3750.workers.dev/manifest.json
+Manifest resources: catalog; meta types series,hentai with idPrefixes hmm-,hse-,htv-,hs-; stream types series,hentai with same prefixes.
+Search catalog response for Kyonyuu ga Futari Inai to Bokki: id=hse-kyonyuu-ga-futari-inai-to-bokki, type=series, name=Kyonyuu ga Futari Inai to Bokki.
+Current app parser used the catalog's type=hentai for catalogType even when meta.type=series, so resolver requested /stream/hentai/{id}.json instead of /stream/series/{id}.json. This was fixed by preserving meta.type.
+Direct curl tests at 2026-09-09: /stream/series/hse-kyonyuu-ga-futari-inai-to-bokki.json and /stream/hentai/hse-kyonyuu-ga-futari-inai-to-bokki.json both returned {"streams":[]} at that time, despite user reporting Stremio plays the item; request-contract correction is still required for app parity.

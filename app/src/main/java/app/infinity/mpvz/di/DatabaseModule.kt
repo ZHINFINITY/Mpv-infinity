@@ -15,7 +15,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.infinity.mpvz.data.network.credentials.AndroidNetworkCredentialKey
 import app.infinity.mpvz.data.network.credentials.NetworkCredentialCipher
-import app.infinity.mpvz.database.MpvRxDatabase
+import app.infinity.mpvz.database.MpvInfinityDatabase
 import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
 import app.infinity.mpvz.database.repository.PlaybackStateRepositoryImpl
 import app.infinity.mpvz.database.repository.PlaylistRepository
@@ -727,6 +727,13 @@ val MIGRATION_16_17 =
     }
   }
 
+val MIGRATION_18_19 =
+  object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `videoAspect` TEXT NOT NULL DEFAULT 'Fit'")
+      db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `customAspectRatio` REAL NOT NULL DEFAULT -1.0")
+    }
+  }
 val MIGRATION_17_18 =
   object : Migration(17, 18) {
     override fun migrate(db: SupportSQLiteDatabase) {
@@ -743,10 +750,10 @@ val DatabaseModule =
       }
     }
 
-    single<MpvRxDatabase> {
+    single<MpvInfinityDatabase> {
       val context = androidContext()
       Room
-        .databaseBuilder(context, MpvRxDatabase::class.java, "Mpv∞.db")
+        .databaseBuilder(context, MpvInfinityDatabase::class.java, "Mpv∞.db")
         .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
         .addMigrations(
           MIGRATION_1_2,
@@ -766,13 +773,14 @@ val DatabaseModule =
           MIGRATION_15_16,
           MIGRATION_16_17,
           MIGRATION_17_18,
+          MIGRATION_18_19,
         ).build()
     }
 
     singleOf(::PlaybackStateRepositoryImpl).bind(PlaybackStateRepository::class)
 
     single<RecentlyPlayedRepository> {
-      RecentlyPlayedRepositoryImpl(get<MpvRxDatabase>().recentlyPlayedDao())
+      RecentlyPlayedRepositoryImpl(get<MpvInfinityDatabase>().recentlyPlayedDao())
     }
 
     single { ThumbnailRepository(androidContext()) }
@@ -780,18 +788,18 @@ val DatabaseModule =
     single {
       app.infinity.mpvz.database.repository.VideoMetadataCacheRepository(
         context = androidContext(),
-        dao = get<MpvRxDatabase>().videoMetadataDao(),
+        dao = get<MpvInfinityDatabase>().videoMetadataDao(),
       )
     }
 
     // MediaFileRepository is a singleton object - no DI needed
 
     single {
-      get<MpvRxDatabase>().networkConnectionDao()
+      get<MpvInfinityDatabase>().networkConnectionDao()
     }
 
     single {
-      get<MpvRxDatabase>().networkStreamEntryDao()
+      get<MpvInfinityDatabase>().networkStreamEntryDao()
     }
 
     single {
@@ -811,7 +819,7 @@ val DatabaseModule =
 
     single {
       PlaylistRepository(
-        playlistDao = get<MpvRxDatabase>().playlistDao(),
+        playlistDao = get<MpvInfinityDatabase>().playlistDao(),
         httpClient = get(),
         applicationContext = androidContext(),
         ytdlPreferences = get(),
@@ -819,17 +827,17 @@ val DatabaseModule =
     }
 
     single {
-      get<MpvRxDatabase>().secureMediaDao()
+      get<MpvInfinityDatabase>().secureMediaDao()
     }
 
     single {
       app.infinity.mpvz.database.repository.SecureFolderRepository(
-        dao = get<MpvRxDatabase>().secureMediaDao(),
+        dao = get<MpvInfinityDatabase>().secureMediaDao(),
       )
     }
 
     single {
-      get<MpvRxDatabase>().jellyfinServerDao()
+      get<MpvInfinityDatabase>().jellyfinServerDao()
     }
 
     single {

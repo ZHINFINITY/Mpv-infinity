@@ -177,9 +177,14 @@ fun PlayerSheets(
       val subtitleGenerationStatus by viewModel.subtitleGenerationStatus.composeCollectAsState()
       val aiPreferences = koinInject<app.infinity.mpvz.preferences.AiPreferences>()
       val aiEnabled by aiPreferences.enabled.collectAsState()
+      val translationProvider by aiPreferences.embeddedSubtitleTranslationProvider.collectAsState()
+      val embeddedTranslationAvailable = aiEnabled || translationProvider == "Google Translate"
       val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
-      val translationEnabled by aiPreferences.subtitleTranslationEnabled.collectAsState()
+      val translationEnabled by aiPreferences.playerSubtitleTranslationEnabled.collectAsState()
       val autoTranslateLanguages by aiPreferences.autoTranslateLanguages.collectAsState()
+      val embeddedTranslationLanguage by aiPreferences.embeddedSubtitleTargetLanguage.collectAsState()
+      val selectedEmbeddedLanguage =
+        embeddedTranslationLanguage.ifBlank { autoTranslateLanguages.split(",").firstOrNull { it.isNotBlank() }?.trim().orEmpty() }
 
       val subtitlesOff = subtitles.none { isSubtitleSelected(it.id) }
 
@@ -201,14 +206,21 @@ fun PlayerSheets(
         isTranslating = isTranslating,
         translationProgress = translationProgress,
         translationStatus = translationStatus,
-        translationEnabled = aiEnabled && translationEnabled,
+        translationEnabled = embeddedTranslationAvailable && translationEnabled,
+        onToggleTranslation = {
+          val enabled = !translationEnabled
+          aiPreferences.playerSubtitleTranslationEnabled.set(enabled)
+          if (!enabled) viewModel.resetEmbeddedSubtitleTranslation()
+        },
         isGeneratingSubtitles = isGeneratingSubtitles,
         subtitleGenerationProgress = subtitleGenerationProgress,
         subtitleGenerationStatus = subtitleGenerationStatus,
         translatingTrackId = translatingTrackId,
         translatingTrackName = translatingTrackName,
         autoTranslateLanguages = autoTranslateLanguages,
-        aiEnabled = aiEnabled,
+        embeddedTranslationLanguage = selectedEmbeddedLanguage,
+        onEmbeddedTranslationLanguageChange = { aiPreferences.embeddedSubtitleTargetLanguage.set(it) },
+        aiEnabled = embeddedTranslationAvailable,
         realtimeSubsEnabled = realtimeSubsEnabled,
         subtitlesOff = subtitlesOff,
         onDisableSubtitles = {
@@ -586,4 +598,3 @@ fun PlayerSheets(
     }
   }
 }
-

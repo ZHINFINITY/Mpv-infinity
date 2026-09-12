@@ -105,7 +105,7 @@ class SeerrRepository(
       }
       val request = Request.Builder()
         .url(cleanUrl)
-        .header("User-Agent", "Mpv∞ Android")
+        .header("User-Agent", "MpvInfinity Android")
         .get()
         .build()
       shortClient.newCall(request).awaitResponse().use { it.isSuccessful }
@@ -124,7 +124,12 @@ class SeerrRepository(
     queryParameters: Map<String, String?> = emptyMap(),
     baseUrlOverride: String? = null,
   ): Request {
-    val baseUrl = baseUrlOverride ?: preferences.serverUrl.get().trim().removeSuffix("/")
+    val rawBaseUrl = baseUrlOverride ?: preferences.serverUrl.get().trim().removeSuffix("/")
+    val baseUrl = if (rawBaseUrl.startsWith("http://", true) || rawBaseUrl.startsWith("https://", true)) {
+      rawBaseUrl
+    } else {
+      "https://$rawBaseUrl"
+    }
     val cleanPath = path.removePrefix("/")
     val fullUrlString = "$baseUrl/$cleanPath"
     val httpUrlBuilder = fullUrlString.toHttpUrlOrNull()?.newBuilder()
@@ -138,7 +143,7 @@ class SeerrRepository(
 
     val requestBuilder = Request.Builder()
       .url(httpUrlBuilder.build())
-      .header("User-Agent", "Mpv∞ Android")
+        .header("User-Agent", "MpvInfinity Android")
 
     val apiKey = preferences.apiKey.get().trim()
     if (apiKey.isNotBlank()) {
@@ -198,14 +203,13 @@ class SeerrRepository(
       }
     }.toString()
 
-    val req = buildRequest(
-      path = endpoint,
-      method = "POST",
-      bodyJson = payload,
-      baseUrlOverride = cleanUrl,
-    )
-
     try {
+      val req = buildRequest(
+        path = endpoint,
+        method = "POST",
+        bodyJson = payload,
+        baseUrlOverride = cleanUrl,
+      )
       httpClient.newCall(req).awaitResponse().use { resp ->
         val bodyStr = resp.body.string()
         if (resp.isSuccessful) {

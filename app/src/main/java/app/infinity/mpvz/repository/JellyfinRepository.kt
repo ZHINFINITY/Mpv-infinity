@@ -14,6 +14,7 @@ import app.infinity.mpvz.database.dao.JellyfinServerDao
 import app.infinity.mpvz.database.entities.JellyfinServerEntity
 import app.infinity.mpvz.domain.jellyfin.JellyfinAuthResult
 import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinMediaSource
 import app.infinity.mpvz.domain.jellyfin.JellyfinServer
 import app.infinity.mpvz.domain.jellyfin.JellyfinUser
 import app.infinity.mpvz.utils.media.PlaybackSubtitleTrack
@@ -192,15 +193,20 @@ class JellyfinRepository(
       itemId = itemId,
     )
 
+  suspend fun getMediaSources(server: JellyfinServer, itemId: String): Result<List<JellyfinMediaSource>> =
+    client.getMediaSources(server.serverUrl, server.accessToken, server.userId, itemId)
+
   fun getStreamUrl(
     server: JellyfinServer,
     item: JellyfinItem,
+    mediaSourceId: String? = null,
   ): String =
     client.getStreamUrl(
       serverUrl = server.serverUrl,
       itemId = item.id,
       token = server.accessToken,
       isAudio = item.isAudio,
+      mediaSourceId = mediaSourceId,
     )
 
   fun getImageUrl(
@@ -208,12 +214,16 @@ class JellyfinRepository(
     item: JellyfinItem,
     maxWidth: Int = 400,
   ): String {
-    val targetItemId = if (item.primaryImageTag.isNullOrBlank() && !item.albumId.isNullOrBlank() && !item.albumPrimaryImageTag.isNullOrBlank()) {
-      item.albumId
-    } else {
-      item.id
+    val useSeriesArtwork =
+      item.type == "Episode" &&
+        !item.seriesId.isNullOrBlank() &&
+        !item.seriesPrimaryImageTag.isNullOrBlank()
+    val targetItemId = when {
+      useSeriesArtwork -> item.seriesId.orEmpty()
+      item.primaryImageTag.isNullOrBlank() && !item.albumId.isNullOrBlank() && !item.albumPrimaryImageTag.isNullOrBlank() -> item.albumId
+      else -> item.id
     }
-    val targetTag = item.primaryImageTag ?: item.albumPrimaryImageTag
+    val targetTag = if (useSeriesArtwork) item.seriesPrimaryImageTag else item.primaryImageTag ?: item.albumPrimaryImageTag
     return client.getImageUrl(
       serverUrl = server.serverUrl,
       itemId = targetItemId,

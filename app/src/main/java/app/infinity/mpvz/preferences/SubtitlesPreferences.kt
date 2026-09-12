@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.toArgb
 import app.infinity.mpvz.preferences.preference.PreferenceStore
 import app.infinity.mpvz.preferences.preference.getEnum
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchMode
-import app.infinity.mpvz.repository.subtitlehub.MpvRxSubtitleHubSources
+import app.infinity.mpvz.repository.subtitlehub.MpvInfinitySubtitleHubSources
 import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.controls.components.panels.SubtitlesBorderStyle
@@ -60,7 +60,7 @@ class SubtitlesPreferences(
   val subdlLanguages = preferenceStore.getStringSet("subdl_languages", setOf("en"))
   val subtitleSearchLanguages = subdlLanguages
   val onlineSubtitleSearchMode = preferenceStore.getOnlineSubtitleSearchMode()
-  val subtitleHubSources = preferenceStore.getStringSet("subtitle_hub_sources", MpvRxSubtitleHubSources.DEFAULT)
+  val subtitleHubSources = preferenceStore.getStringSet("subtitle_hub_sources", MpvInfinitySubtitleHubSources.DEFAULT)
   val betaSeriesApiKey = preferenceStore.getString("betaseries_api_key", "")
   val jimakuApiKey = preferenceStore.getString("jimaku_api_key", "")
   val subDlApiKey = preferenceStore.getString("subdl_api_key", "")
@@ -90,7 +90,7 @@ private fun PreferenceStore.getOnlineSubtitleSearchMode() =
       when (stored) {
         OnlineSubtitleSearchMode.WYZIE.name -> OnlineSubtitleSearchMode.WYZIE
         OnlineSubtitleSearchMode.SUBHUB.name,
-        "MPVRX_SUBTITLE_HUB",
+        "MPV_INFINITY_SUBTITLE_HUB",
         -> OnlineSubtitleSearchMode.SUBHUB
         OnlineSubtitleSearchMode.HYBRID.name,
         "HYBRID_SEQUENTIAL",

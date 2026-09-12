@@ -1276,15 +1276,15 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_allow_access">ZUGRIFF ERLAUBEN</string>
   <string name="ui_why_do_i_see_this">Warum wird das angezeigt?</string>
   <string name="ui_why_this_permission_is_needed">Warum diese Berechtigung erforderlich ist</string>
-  <string name="ui_mpvrx_needs_access_to_your_video_files_to_provide_its_core_funct">Mpv∞ benötigt Zugriff auf Ihre Videodateien, um seine Kernfunktion als Mediaplayer bereitzustellen.</string>
+  <string name="ui_mpv_infinity_needs_access_to_your_video_files_to_provide_its_core_funct">Mpv∞ benötigt Zugriff auf Ihre Videodateien, um seine Kernfunktion als Mediaplayer bereitzustellen.</string>
   <string name="ui_the_permission_is_used_exclusively_for">Die Berechtigung wird ausschließlich verwendet für:</string>
   <string name="ui_discovering_and_displaying_your_video_files_n_playing_media_cont">• Videodateien finden und anzeigen
 • Medieninhalte wiedergeben
 • Untertiteldateien laden</string>
-  <string name="ui_mpvrx_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ benötigte schon immer Speicherzugriff, da dieser erforderlich ist, um alle Medien- und Untertiteldateien auf dem Gerät zu finden, einschließlich solcher, die vom System nicht unterstützt werden.</string>
+  <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">Mpv∞ benötigte schon immer Speicherzugriff, da dieser erforderlich ist, um alle Medien- und Untertiteldateien auf dem Gerät zu finden, einschließlich solcher, die vom System nicht unterstützt werden.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">Aufgrund einer Änderung der Sicherheitsrichtlinien benötigen Apps für Android 11 und höher nun eine zusätzliche Berechtigung, um weiterhin denselben Zugriff zu erhalten.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">Diese Berechtigung wird nur zur automatischen Erkennung von Medien- und Untertiteldateien auf Ihrem Gerät verwendet und ermöglicht uns keinerlei Zugriff auf private Datendateien anderer Apps.</string>
-  <string name="ui_mpvrx_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ ist ein Open-Source-Projekt. Sie können den Quellcode prüfen und die Verwendung der Berechtigungen in unserem GitHub-Repository nachvollziehen:</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ ist ein Open-Source-Projekt. Sie können den Quellcode prüfen und die Verwendung der Berechtigungen in unserem GitHub-Repository nachvollziehen:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">Ihre Privatsphäre hat höchste Priorität. Wir greifen nicht für andere Zwecke auf Ihre Dateien zu und übertragen oder speichern sie nicht auf unseren Servern. Sie bleiben sicher auf Ihrem Gerät.</string>
   <string name="ui_app_permissions">App-Berechtigungen</string>
   <string name="ui_permissions_setup_subtitle">Konfigurieren Sie Berechtigungen für Kernfunktionen und Medienwiedergabe.</string>
@@ -1377,14 +1377,14 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_github">GitHub</string>
   <string name="ui_device_info">Geräteinformationen</string>
   <string name="ui_buy_me_a_coffee">Spendiere mir einen Kaffee</string>
-  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">Wenn Ihnen Mpv∞ gefällt, unterstützen Sie die Entwicklung. Jeder Beitrag hilft!</string>
+  <string name="ui_if_you_enjoy_mpv_infinity_consider_supporting_its_development_every_bit">Wenn Ihnen Mpv∞ gefällt, unterstützen Sie die Entwicklung. Jeder Beitrag hilft!</string>
   <string name="ui_support_link">UPI-ID</string>
   <string name="ui_zhinfinity_github">github.com/ZHINFINITY/Mpv-infinity</string>
   <string name="ui_visit_github">Unterstützung senden</string>
   <string name="ui_auto_check_for_updates">Automatisch nach Updates suchen</string>
   <string name="ui_check_on_startup">Beim Start prüfen</string>
   <string name="ui_check_for_updates_now">Jetzt nach Updates suchen</string>
-  <string name="ui_core_open_source_dependencies_used_by_mpvrx">Von Mpv∞ verwendete zentrale Open-Source-Abhängigkeiten.</string>
+  <string name="ui_core_open_source_dependencies_used_by_mpv_infinity">Von Mpv∞ verwendete zentrale Open-Source-Abhängigkeiten.</string>
   <string name="ui_copy_upi_id">UPI-ID kopieren</string>
   <string name="ui_already_using_latest_version">Die neueste Version wird bereits verwendet</string>
   <string name="ui_support_link_copied">UPI-ID kopiert!</string>

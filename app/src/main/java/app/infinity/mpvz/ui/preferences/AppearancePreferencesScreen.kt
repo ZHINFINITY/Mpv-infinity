@@ -264,6 +264,7 @@ object AppearancePreferencesScreen : Screen {
                   PreferenceDivider()
 
                   val amoledMode by preferences.amoledMode.collectAsState()
+                  val liquidGlassSurfaces by preferences.liquidGlassSurfaces.collectAsState()
                   ThemePicker(
                     currentTheme = appTheme,
                     isDarkMode = isDarkMode,
@@ -310,6 +311,17 @@ object AppearancePreferencesScreen : Screen {
                       )
                     },
                     enabled = darkMode != DarkMode.Light,
+                  )
+
+                  PreferenceDivider()
+
+                  SwitchPreference(
+                    value = liquidGlassSurfaces,
+                    onValueChange = preferences.liquidGlassSurfaces::set,
+                    title = { Text("Liquid glass surfaces") },
+                    summary = {
+                      Text("Use translucent, softly outlined surfaces across navigation, headers, cards, and the mini-player")
+                    },
                   )
 
                   PreferenceDivider()

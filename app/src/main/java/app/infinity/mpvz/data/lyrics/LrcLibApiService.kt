@@ -56,7 +56,7 @@ class LrcLibApiService(
 
       val request = Request.Builder()
         .url(urlBuilder.build())
-        .header("User-Agent", "Mpv∞ Music Player/1.0")
+        .header("User-Agent", "Mpv-Music-Player/1.0")
         .get()
         .build()
 
@@ -98,7 +98,7 @@ class LrcLibApiService(
 
       val request = Request.Builder()
         .url(urlBuilder.build())
-        .header("User-Agent", "Mpv∞ Music Player/1.0")
+        .header("User-Agent", "Mpv-Music-Player/1.0")
         .get()
         .build()
 

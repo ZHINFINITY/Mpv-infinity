@@ -247,7 +247,7 @@ object ClipExportManager {
         ?.substringBeforeLast('.')
         ?.sanitizeFileName()
         ?.takeIf { it.isNotBlank() }
-        ?: "MPVRX"
+        ?: "MPV_INFINITY"
     val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
     return "${base}_clip_$stamp.mp4"
   }
