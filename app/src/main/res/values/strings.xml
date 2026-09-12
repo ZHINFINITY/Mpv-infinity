@@ -1148,6 +1148,9 @@
   <string name="ytdlp_audio_preference">Audio Preference</string>
   <string name="ytdlp_audio_quality">Audio Quality</string>
   <string name="ytdlp_subtitles_language">Subtitles &amp; Language</string>
+  <string name="ytdlp_instagram_cookies_login">Log in to Instagram</string>
+  <string name="ytdlp_instagram_login_title">Instagram login</string>
+  <string name="ytdlp_instagram_login_use">Use this session</string>
   <string name="ytdlp_instagram_cookies_title">Instagram login cookies</string>
   <string name="ytdlp_instagram_cookies_summary">Select a Netscape-format cookies.txt export to help yt-dlp download private or login-required Instagram videos. The file is copied into private app storage.</string>
   <string name="ytdlp_instagram_cookies_not_configured">No cookie file selected</string>
