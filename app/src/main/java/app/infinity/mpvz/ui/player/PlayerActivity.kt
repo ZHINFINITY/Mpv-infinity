@@ -5522,6 +5522,9 @@ class PlayerActivity :
       withContext(Dispatchers.Main) {
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
         applyDefaultSettings(state)
+        if (!playerPreferences.rememberVideoAspectPerVideo.get()) {
+          viewModel.restoreSavedVideoAspect(showUpdate = false)
+        }
       }
 
       state != null || positionRestoreOverride != null
