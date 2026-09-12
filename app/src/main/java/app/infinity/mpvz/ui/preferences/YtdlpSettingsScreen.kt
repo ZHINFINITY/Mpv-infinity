@@ -9,7 +9,6 @@
 
 package app.infinity.mpvz.ui.preferences
 
-import android.content.Intent
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -358,10 +357,6 @@ private fun WebsiteCookieLoginDialog(
   var savedSites by rememberSaveable { mutableStateOf(emptyList<String>()) }
   var webView by remember { mutableStateOf<WebView?>(null) }
   var loadError by remember { mutableStateOf<String?>(null) }
-  val nativeWebViewUserAgent = remember { android.webkit.WebSettings.getDefaultUserAgent(context) }
-  val desktopWebViewUserAgent =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 
   fun normalizedUrl(): String {
     val value = websiteUrl.trim()
@@ -378,21 +373,7 @@ private fun WebsiteCookieLoginDialog(
   fun openWebsite() {
     val url = normalizedUrl()
     websiteUrl = url
-    val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
-    if (host == "youtube.com" || host.endsWith(".youtube.com") ||
-      host == "google.com" || host.endsWith(".google.com")
-    ) {
-      context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
-      return
-    }
-    webView?.let { view ->
-      val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
-      view.settings.userAgentString = if (
-        host == "youtube.com" || host.endsWith(".youtube.com") ||
-        host == "google.com" || host.endsWith(".google.com")
-      ) nativeWebViewUserAgent else desktopWebViewUserAgent
-      view.loadUrl(url)
-    }
+    webView?.loadUrl(url)
   }
 
   Dialog(
@@ -449,14 +430,7 @@ private fun WebsiteCookieLoginDialog(
                 selected = websiteUrl.contains(host, ignoreCase = true),
                 onClick = {
                   websiteUrl = "https://$host/"
-                  webView?.let { view ->
-                    val siteHost = host.lowercase()
-                    view.settings.userAgentString = if (
-                      siteHost == "youtube.com" || siteHost.endsWith(".youtube.com") ||
-                      siteHost == "google.com" || siteHost.endsWith(".google.com")
-                    ) nativeWebViewUserAgent else desktopWebViewUserAgent
-                    view.loadUrl(websiteUrl)
-                  }
+                  webView?.loadUrl(websiteUrl)
                 },
                 label = { Text(host) },
               )
@@ -480,9 +454,10 @@ private fun WebsiteCookieLoginDialog(
               settings.setSupportMultipleWindows(false)
               settings.javaScriptCanOpenWindowsAutomatically = true
               // Instagram often serves a blank login response to the Android WebView UA.
-              // A modern desktop Chrome UA keeps Instagram and Google/YouTube authentication
-              // usable while cookies remain in this WebView.
-              settings.userAgentString = desktopWebViewUserAgent
+              // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
+              settings.userAgentString =
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
               settings.loadsImagesAutomatically = true
               settings.allowContentAccess = true
               settings.allowFileAccess = false
