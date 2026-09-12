@@ -194,7 +194,7 @@
   <string name="pref_player_orientation_sensor_landscape">Sensor landscape</string>
   <string name="pref_player_save_position_on_quit">Save position on quit</string>
   <string name="pref_player_remember_video_aspect_per_video_title">Remember aspect ratio per video</string>
-  <string name="pref_player_remember_video_aspect_per_video_summary">Restore each video's saved aspect ratio instead of applying one global aspect ratio to every video</string>
+  <string name="pref_player_remember_video_aspect_per_video_summary">Restore the saved aspect ratio for each video instead of applying one global aspect ratio to every video</string>
   <string name="pref_player_double_tap_seek_duration">Double tap seek duration</string>
   <string name="pref_player_custom_skip_duration_title">Custom skip duration</string>
   <string name="pref_player_custom_skip_duration_summary">Duration to skip forward on custom skip button</string>
