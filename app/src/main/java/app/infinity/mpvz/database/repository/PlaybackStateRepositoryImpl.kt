@@ -53,6 +53,11 @@ class PlaybackStateRepositoryImpl(
     }
   }
 
+  override suspend fun resetAllVideoAspectSettings() {
+    database.videoDataDao().resetAllVideoAspectSettings()
+    stateCache.replaceAll { _, state -> state.copy(videoAspect = "Fit", customAspectRatio = -1f) }
+  }
+
   override suspend fun clearAllPlaybackStates() {
     database.videoDataDao().clearAllPlaybackStates()
     stateCache.clear()
