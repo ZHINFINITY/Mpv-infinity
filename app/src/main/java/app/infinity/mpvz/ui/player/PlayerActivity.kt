@@ -5560,7 +5560,7 @@ class PlayerActivity :
     // Restore video zoom from saved state
     PlaybackSession.setPropertyDouble("video-zoom", state.videoZoom.toDouble())
     viewModel.setVideoZoom(state.videoZoom)
-    if (playerPreferences.rememberVideoAspectPerVideo) {
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) {
       viewModel.restoreVideoAspect(state.videoAspect, state.customAspectRatio)
     }
   }
