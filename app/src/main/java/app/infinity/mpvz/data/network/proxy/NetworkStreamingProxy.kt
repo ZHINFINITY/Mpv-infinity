@@ -54,6 +54,7 @@ class NetworkStreamingProxy private constructor() :
     private const val TAG = "NetworkStreamingProxy"
     private const val TOKEN_BYTES = 24
     private const val PROXY_OPERATION_TIMEOUT_SECONDS = 75L
+    private const val THUMBNAIL_PROBE_BYTES = 4L * 1024L * 1024L
 
     @Volatile
     private var instance: NetworkStreamingProxy? = null
@@ -148,12 +149,21 @@ class NetworkStreamingProxy private constructor() :
       )
 
     streamsByToken[token] = streamInfo
+    Log.d(
+      TAG,
+      "register streamId=$streamId token=$token connectionId=$connectionId path=${path.value} fileSize=$fileSize mime=${streamInfo.primaryMimeType}",
+    )
     tokenByRegistration.put(streamId, token)?.let { previousToken ->
       streamsByToken.remove(previousToken)?.let(::closeAsync)
     }
 
     val route = "/$token${path.value}"
-    return URI("http", null, "127.0.0.1", listeningPort, route, null, null).toASCIIString()
+    // NanoHTTPD applies form-style URL decoding to the request URI, where a raw '+' becomes a
+    // space. URI.toASCIIString() leaves '+' literal in a path, so escape it explicitly at the
+    // loopback boundary; all other path characters are already encoded by URI.
+    return URI("http", null, "127.0.0.1", listeningPort, route, null, null)
+      .toASCIIString()
+      .replace("+", "%2B")
   }
 
   /** Unregisters the logical ID supplied to [registerStream]. */
@@ -168,6 +178,12 @@ class NetworkStreamingProxy private constructor() :
     val route = parseRoute(session.uri) ?: return notFound(headOnly)
     val streamInfo = streamsByToken[route.token] ?: return notFound(headOnly)
     val requestedPath = route.path ?: streamInfo.primaryPath
+    val rangeHeader = session.headers["range"]
+    val thumbnailProbe = session.parms["thumbnail"]?.contains("1") == true
+    Log.d(
+      TAG,
+      "request method=${session.method} token=${route.token} connectionId=${streamInfo.connectionId} path=${requestedPath.value} range=${rangeHeader ?: "none"}",
+    )
 
     if (session.method != Method.GET && session.method != Method.HEAD) {
       return newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, MIME_PLAINTEXT, "Method not allowed")
@@ -175,12 +191,11 @@ class NetworkStreamingProxy private constructor() :
     }
 
     return try {
-      val rangeHeader = session.headers["range"]
       val response =
         if (rangeHeader == null) {
-          handleFullRequest(headOnly, streamInfo, requestedPath)
+          handleFullRequest(headOnly, streamInfo, requestedPath, thumbnailProbe)
         } else {
-          handleRangeRequest(headOnly, streamInfo, requestedPath, rangeHeader)
+          handleRangeRequest(headOnly, streamInfo, requestedPath, rangeHeader, thumbnailProbe)
         }
       // NanoHTTPD keeps a fixed-length socket alive even when the upstream body ends short,
       // leaving the player waiting forever for the missing bytes. Closing per response turns
@@ -201,9 +216,23 @@ class NetworkStreamingProxy private constructor() :
     streamInfo: StreamInfo,
     path: NetworkPath,
     rangeHeader: String,
+    thumbnailProbe: Boolean = false,
   ): Response {
     val fileSize = getFileSize(streamInfo, path)
-    if (fileSize < 0L) return upstreamFailure(headOnly)
+    if (fileSize < 0L) {
+      val start = HttpByteRange.parseStart(rangeHeader) ?: return rangeNotSatisfiable(fileSize)
+      val mimeType = mimeTypeFor(streamInfo, path)
+      val response =
+        if (headOnly) {
+          HeadResponse(Response.Status.PARTIAL_CONTENT, mimeType, 0L)
+        } else {
+          val inputStream = getStream(streamInfo, path, start, null) ?: return upstreamFailure(headOnly)
+          newChunkedResponse(Response.Status.PARTIAL_CONTENT, mimeType, inputStream)
+        }
+      response.addHeader("Accept-Ranges", "bytes")
+      response.addHeader("Content-Range", "bytes $start-/*")
+      return response
+    }
     val range = HttpByteRange.parse(rangeHeader, fileSize) ?: return rangeNotSatisfiable(fileSize)
     val mimeType = mimeTypeFor(streamInfo, path)
 
@@ -211,7 +240,7 @@ class NetworkStreamingProxy private constructor() :
       if (headOnly) {
         HeadResponse(Response.Status.PARTIAL_CONTENT, mimeType, range.length)
       } else {
-        val inputStream = getStream(streamInfo, path, range.start)
+        val inputStream = getStream(streamInfo, path, range.start, range.length)
           ?: return upstreamFailure(headOnly)
         newFixedLengthResponse(
           Response.Status.PARTIAL_CONTENT,
@@ -230,6 +259,7 @@ class NetworkStreamingProxy private constructor() :
     headOnly: Boolean,
     streamInfo: StreamInfo,
     path: NetworkPath,
+    thumbnailProbe: Boolean = false,
   ): Response {
     val fileSize = getFileSize(streamInfo, path)
     val mimeType = mimeTypeFor(streamInfo, path)
@@ -244,7 +274,21 @@ class NetworkStreamingProxy private constructor() :
       return emptyResponse(Response.Status.OK, mimeType).apply { addHeader("Accept-Ranges", "bytes") }
     }
 
-    val inputStream = getStream(streamInfo, path, 0L) ?: return upstreamFailure(headOnly)
+    if (thumbnailProbe && fileSize > THUMBNAIL_PROBE_BYTES) {
+      val probeLength = THUMBNAIL_PROBE_BYTES
+      if (headOnly) {
+        return HeadResponse(Response.Status.PARTIAL_CONTENT, mimeType, probeLength).apply {
+          addHeader("Accept-Ranges", "bytes")
+          addHeader("Content-Range", "bytes 0-${probeLength - 1}/$fileSize")
+        }
+      }
+      val inputStream = getStream(streamInfo, path, 0L, probeLength) ?: return upstreamFailure(false)
+      return newFixedLengthResponse(Response.Status.PARTIAL_CONTENT, mimeType, inputStream, probeLength).apply {
+        addHeader("Accept-Ranges", "bytes")
+        addHeader("Content-Range", "bytes 0-${probeLength - 1}/$fileSize")
+      }
+    }
+    val inputStream = getStream(streamInfo, path, 0L, fileSize.takeIf { it >= 0L }) ?: return upstreamFailure(headOnly)
     return if (fileSize >= 0L) {
       newFixedLengthResponse(Response.Status.OK, mimeType, inputStream, fileSize).apply {
         addHeader("Accept-Ranges", "bytes")
@@ -260,10 +304,19 @@ class NetworkStreamingProxy private constructor() :
   ): Long {
     streamInfo.knownSizes[path]?.let { return it }
 
-    val discovered =
+    Log.d(
+      TAG,
+      "size request connectionId=${streamInfo.connectionId} path=${path.value} cached=${streamInfo.knownSizes.containsKey(path)}",
+    )
+    val discoveredResult =
       awaitProxyIo {
         withConnectedClient(streamInfo) { client -> client.getFileSize(path.value) }
-      }.getOrNull() ?: -1L
+      }
+    val discovered = discoveredResult.getOrNull() ?: -1L
+    Log.d(
+      TAG,
+      "size result connectionId=${streamInfo.connectionId} path=${path.value} size=$discovered error=${discoveredResult.exceptionOrNull()?.message ?: "none"}",
+    )
 
     if (discovered >= 0L) {
       streamInfo.knownSizes.putIfAbsent(path, discovered)
@@ -275,10 +328,22 @@ class NetworkStreamingProxy private constructor() :
     streamInfo: StreamInfo,
     path: NetworkPath,
     offset: Long,
-  ): InputStream? =
-    awaitProxyIo {
-      withConnectedClient(streamInfo) { client -> client.getFileStream(path.value, offset) }
-    }.getOrNull()
+    length: Long?,
+  ): InputStream? {
+    Log.d(
+      TAG,
+      "stream request connectionId=${streamInfo.connectionId} path=${path.value} offset=$offset",
+    )
+    val result =
+      awaitProxyIo {
+        withConnectedClient(streamInfo) { client -> client.getFileStream(path.value, offset, length) }
+      }
+    Log.d(
+      TAG,
+      "stream result connectionId=${streamInfo.connectionId} path=${path.value} offset=$offset success=${result.isSuccess} error=${result.exceptionOrNull()?.message ?: "none"}",
+    )
+    return result.getOrNull()
+  }
 
   /**
    * NanoHTTPD's serve API is synchronous, but upstream clients are suspend-based. Do not use
@@ -402,7 +467,10 @@ class NetworkStreamingProxy private constructor() :
   private fun getKnownRegistrationMime(
     streamInfo: StreamInfo,
     path: NetworkPath,
-  ): String? = streamInfo.primaryMimeType.takeIf { path == streamInfo.primaryPath }
+  ): String? =
+    streamInfo.primaryMimeType
+      .takeIf { path == streamInfo.primaryPath }
+      ?.takeUnless { it.equals("application/octet-stream", ignoreCase = true) }
 
   private fun mimeTypeFor(
     streamInfo: StreamInfo,

@@ -60,6 +60,7 @@ import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.repository.IntroDbLookupOutcome
 import app.infinity.mpvz.repository.IntroDbLookupRequest
 import app.infinity.mpvz.repository.IntroDbRepository
+import app.infinity.mpvz.repository.ai.EmbeddedSubtitleTranslator
 import app.infinity.mpvz.repository.ai.SubtitleGenerationService
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitle
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleOrchestrator
@@ -87,6 +88,7 @@ import app.infinity.mpvz.utils.media.MediaInfoParser
 import app.infinity.mpvz.utils.media.ParsedMediaInfo
 import app.infinity.mpvz.utils.media.SubtitleHashUtils
 import app.infinity.mpvz.utils.media.fileExtension
+import dev.vivvvek.seeker.Segment
 import app.infinity.mpvz.utils.media.resolveSubtitleLookupDirectories
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.FastThumbnails
@@ -97,6 +99,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -198,6 +201,7 @@ class PlayerViewModel : ViewModel(),
   private val json: Json by inject()
   private val playbackStateDao: app.infinity.mpvz.database.dao.PlaybackStateDao by inject()
   private val aiService: app.infinity.mpvz.repository.ai.AiService by inject()
+  private val embeddedSubtitleTranslator: EmbeddedSubtitleTranslator by inject()
   private val subtitleGenerationService: SubtitleGenerationService by inject()
   private val realtimeSubtitleService: app.infinity.mpvz.repository.ai.RealtimeSubtitleService by inject()
   private val wyzieRepository: WyzieSearchRepository by inject()
@@ -290,6 +294,13 @@ class PlayerViewModel : ViewModel(),
 
   private val _translationStatus = MutableStateFlow("")
   val translationStatus: StateFlow<String> = _translationStatus.asStateFlow()
+  private val _embeddedTranslatedSubtitle = MutableStateFlow<String?>(null)
+  val embeddedTranslatedSubtitle: StateFlow<String?> = _embeddedTranslatedSubtitle.asStateFlow()
+  private var embeddedCueTranslationJob: Job? = null
+  private var embeddedTranslationRequestId = 0L
+  private var lastEmbeddedCue = ""
+  private var nativeSubtitleHiddenForTranslation = false
+  private var nativeSubtitleVisibilityListener: ((Boolean) -> Unit)? = null
 
   private val _isGeneratingSubtitles = MutableStateFlow(false)
   val isGeneratingSubtitles: StateFlow<Boolean> = _isGeneratingSubtitles.asStateFlow()
@@ -601,11 +612,16 @@ class PlayerViewModel : ViewModel(),
   // These MPV-backed state flows must be initialized before any init block collects them.
   private val nativeSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeAudioTracks = MutableStateFlow<List<TrackNode>>(emptyList())
+  private val nativeEngineActive = MutableStateFlow(false)
+  private val nativeChapters = MutableStateFlow<List<Segment>>(emptyList())
   private var nativeSubtitleToggleListener: ((Int) -> Unit)? = null
-  private var nativeAudioTrackListener: ((Int) -> Unit)? = null
+  private var nativeAudioToggleListener: ((Int) -> Unit)? = null
+  fun setNativeEngineActive(active: Boolean) {
+    nativeEngineActive.value = active
+  }
 
-  fun setNativeSubtitleTracks(tracks: List<NativeTrack>) {
-    nativeSubtitleTracks.value = tracks.mapIndexed { index, track ->
+  fun setNativeTracks(snapshot: NativePlaybackSnapshot) {
+    nativeSubtitleTracks.value = snapshot.subtitleTracks.mapIndexed { index, track ->
       TrackNode(
         id = -(index + 1),
         type = "sub",
@@ -615,23 +631,56 @@ class PlayerViewModel : ViewModel(),
         external = false,
       )
     }
+    nativeAudioTracks.value = snapshot.audioTracks.mapIndexed { index, track ->
+      TrackNode(
+        id = -1001 - index,
+        type = "audio",
+        title = track.label,
+        lang = track.language,
+        selected = track.selected,
+        external = false,
+      )
+    }
+    // Media3 does not expose Matroska Chapters for every extractor/source. Do not erase a chapter
+    // list already obtained from mpv while the native engine is still preparing its tracks.
+    if (snapshot.chapters.isNotEmpty()) {
+      nativeChapters.value = snapshot.chapters.map { chapter ->
+        Segment(chapter.title, chapter.startSeconds)
+      }
+    }
+  }
+
+  fun setNativeSubtitleTracks(tracks: List<NativeTrack>) {
+    setNativeTracks(NativePlaybackSnapshot(subtitleTracks = tracks))
   }
 
   fun setNativeSubtitleToggleListener(listener: ((Int) -> Unit)?) {
     nativeSubtitleToggleListener = listener
   }
 
-  fun setNativeAudioTracks(tracks: List<NativeTrack>) {
-    nativeAudioTracks.value = tracks.mapIndexed { index, track ->
-      TrackNode(
-        id = -(index + 1), type = "audio", title = track.label, lang = track.language,
-        selected = track.selected, external = false,
-      )
+  fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
+    nativeSubtitleVisibilityListener = listener
+  }
+
+  /** Re-applies the translation visibility state after switching playback engines. */
+  fun syncNativeSubtitleVisibility() {
+    // The listener parameter is `hidden`, not `visible`. Passing the inverse here hid Native's
+    // SubtitleView on every MPV -> Native handoff when translation was not active.
+    nativeSubtitleVisibilityListener?.invoke(nativeSubtitleHiddenForTranslation)
+  }
+
+  /** Clears the old MPV translation before Native starts emitting its own subtitle cues. */
+  fun prepareNativeEngineHandoffForTranslation() {
+    if (!aiPreferences.playerSubtitleTranslationEnabled.get()) return
+    clearEmbeddedSubtitleTranslationCue(native = true)
+    if (!nativeSubtitleHiddenForTranslation) {
+      nativeSubtitleVisibilityListener?.invoke(true)
+      nativeSubtitleHiddenForTranslation = true
     }
   }
 
-  fun setNativeAudioTrackListener(listener: ((Int) -> Unit)?) {
-    nativeAudioTrackListener = listener
+  fun setNativeAudioToggleListener(listener: ((Int) -> Unit)?) {
+    nativeAudioToggleListener = listener
   }
 
   private val allTracks: StateFlow<List<TrackNode>> =
@@ -640,15 +689,14 @@ class PlayerViewModel : ViewModel(),
       .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val subtitleTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, nativeSubtitleTracks, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, engine ->
-      if (engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isSubtitle }
+    combine(allTracks, nativeSubtitleTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, nativeActive, engine ->
+      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isSubtitle }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val audioTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, nativeAudioTracks, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, engine ->
-      if (engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isAudio }
-    }
-      .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
+    combine(allTracks, nativeAudioTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, nativeActive, engine ->
+      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isAudio }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val videoQualityTracks: StateFlow<List<TrackNode>> =
     combine(allTracks, PlaybackSession.state) { tracks, session ->
@@ -719,8 +767,8 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun selectAudioTrack(track: TrackNode) {
-    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
-      nativeAudioTrackListener?.invoke(track.id)
+    if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+      nativeAudioToggleListener?.invoke(track.id)
       return
     }
     if (getTrackSelectionId("aid") == track.id) {
@@ -851,12 +899,17 @@ class PlayerViewModel : ViewModel(),
       .map { tracks -> tracks.any { it.isAlbumArtwork } }
       .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-  val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
+  private val mpvChapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
     PlaybackSession.propNode["chapter-list"]
       .map { node ->
         runCatching { node?.toObject<List<ChapterNode>>(json) }.getOrNull()?.map { it.toSegment() }?.toImmutableList()
           ?: persistentListOf()
       }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
+
+  val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
+    combine(mpvChapters, nativeChapters, nativeEngineActive) { mpv, native, nativeActive ->
+      if (nativeActive && native.isNotEmpty()) native else mpv
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   // Audio player UI state
   val albumArtBounds = MutableStateFlow<android.graphics.Rect?>(null)
@@ -1007,7 +1060,12 @@ class PlayerViewModel : ViewModel(),
     val defaultTargetLang = audioPreferences.lyricsTargetLanguage.get().ifBlank { "en" }
 
     if (sourceType == app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE && current.onlineLyrics == null) {
-      lyricsUiState.value = current.copy(isLoading = true)
+      lyricsUiState.value = current.copy(
+        isLoading = true,
+        selectedSource = app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE,
+        lyrics = null,
+        originalLyrics = null,
+      )
       lyricsLoadJob?.cancel()
       lyricsTranslateJob?.cancel()
       lyricsLoadJob = viewModelScope.launch(Dispatchers.IO) {
@@ -1022,10 +1080,6 @@ class PlayerViewModel : ViewModel(),
         val duration = PlaybackSession.getPropertyInt("duration") ?: 0
 
         val online = lyricsRepository.fetchOnlineLyrics(title, artist, duration)
-
-        val stillCurrentPath = PlaybackSession.getPropertyString("path")
-          ?: PlaybackSession.getPropertyString("stream-open-filename")
-        if (stillCurrentPath != path) return@launch
 
         val updatedSources = (current.availableSources + app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE).distinct()
         val activeLyrics = online ?: current.embeddedLyrics
@@ -1737,8 +1791,16 @@ class PlayerViewModel : ViewModel(),
           continue
         }
         runCatching {
-          val time = PlaybackSession.getPropertyDouble("time-pos")
-          if (time != null) {
+          // Poll only the active renderer. Reading MPV time-pos while Native Media3 is active
+          // produced redundant bridge traffic, stale positions, and unnecessary work on every
+          // playback tick; it also prevented auto-skip from following Native playback.
+          val time =
+            if (host.isNativeEngineActive()) {
+              host.nativePlaybackPositionSeconds()
+            } else {
+              PlaybackSession.getPropertyDouble("time-pos") ?: Double.NaN
+            }
+          if (time.isFinite()) {
             val posFloat = time.toFloat()
             if (_precisePosition.value != posFloat) {
               _precisePosition.value = posFloat
@@ -2596,7 +2658,8 @@ class PlayerViewModel : ViewModel(),
           _remainingTime.value = time
           delay(1000)
         }
-        PlaybackSession.setPropertyBoolean("pause", true)
+        if (host.isNativeEngineActive()) host.nativePause()
+        else PlaybackSession.setPropertyBoolean("pause", true)
         showToast(appContext.getString(R.string.toast_sleep_timer_ended))
       }
   }
@@ -2697,6 +2760,16 @@ class PlayerViewModel : ViewModel(),
         val mpvPath = uri.resolveUri(appContext) ?: uri.toString()
         val mode = if (select) "select" else "auto"
 
+        if (host.isNativeEngineActive()) {
+          val attached = withContext(Dispatchers.Main) { host.nativeAddSubtitle(uri, select) }
+          if (!attached) throw Exception("Native subtitle renderer is not ready")
+          if (!_externalSubtitles.contains(uriString)) _externalSubtitles.add(uriString)
+          if (!silent) {
+            withContext(Dispatchers.Main) { showToast("$fileName added") }
+          }
+          return@withLock
+        }
+
         // Check if MPV already auto-loaded this subtitle (prevents duplication)
         val existingTrack = subtitleTracks.value.find { it.externalFilename == mpvPath }
         if (existingTrack != null) {
@@ -2742,6 +2815,134 @@ class PlayerViewModel : ViewModel(),
   }
 
   private var translationJob: Job? = null
+
+  fun clearEmbeddedSubtitleTranslationCue(native: Boolean = false) {
+    embeddedTranslationRequestId += 1L
+    embeddedCueTranslationJob = null
+    lastEmbeddedCue = ""
+    _embeddedTranslatedSubtitle.value = null
+
+    // A blank cue is emitted while changing tracks and while seeking. When translation
+    // is enabled, keep text subtitles hidden during that gap; the next non-empty cue
+    // below starts a fresh request. Restoring visibility here causes the original cue
+    // to flash/show while the translated overlay is empty.
+    if (aiPreferences.playerSubtitleTranslationEnabled.get()) {
+      if (native) {
+        nativeSubtitleVisibilityListener?.invoke(true)
+      } else {
+        PlaybackSession.setPropertyBoolean("sub-visibility", false)
+      }
+      nativeSubtitleHiddenForTranslation = true
+    } else {
+      if (native) nativeSubtitleVisibilityListener?.invoke(false)
+      else PlaybackSession.setPropertyBoolean("sub-visibility", true)
+      nativeSubtitleHiddenForTranslation = false
+    }
+  }
+
+  fun resetEmbeddedSubtitleTranslation() {
+    embeddedTranslationRequestId += 1L
+    embeddedCueTranslationJob = null
+    lastEmbeddedCue = ""
+    _translationStatus.value = ""
+    _embeddedTranslatedSubtitle.value = null
+    // Always restore both subtitle renderers. The hidden flag can be false when the
+    // translation request is cancelled before its result arrives, but either renderer may
+    // already have been hidden by the translation handoff.
+    PlaybackSession.setPropertyBoolean("sub-visibility", true)
+    nativeSubtitleVisibilityListener?.invoke(false)
+    nativeSubtitleHiddenForTranslation = false
+  }
+
+  fun translateEmbeddedSubtitleCue(rawCue: String, native: Boolean = false) {
+    val cue = rawCue.trim()
+    if (cue.isBlank()) {
+      if (aiPreferences.playerSubtitleTranslationEnabled.get()) clearEmbeddedSubtitleTranslationCue(native)
+      else resetEmbeddedSubtitleTranslation()
+      return
+    }
+    if (cue == lastEmbeddedCue || !aiPreferences.playerSubtitleTranslationEnabled.get()) return
+    val target =
+      (aiPreferences.embeddedSubtitleTargetLanguage.get().trim().takeIf { it.isNotBlank() }
+        ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
+        ?: java.util.Locale.getDefault().language.ifBlank { "en" }
+    lastEmbeddedCue = cue
+    _embeddedTranslatedSubtitle.value = null
+    // Suppress the original text cue immediately. This prevents the embedded subtitle
+    // from appearing while the translation request is in flight; image-based subtitles
+    // never enter this method and therefore retain their existing rendering behavior.
+    if (native) {
+      nativeSubtitleVisibilityListener?.invoke(true)
+    } else {
+      PlaybackSession.setPropertyBoolean("sub-visibility", false)
+    }
+    nativeSubtitleHiddenForTranslation = true
+    val requestId = ++embeddedTranslationRequestId
+    embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
+      _translationStatus.value = "Translating embedded subtitle…"
+      val provider = aiPreferences.embeddedSubtitleTranslationProvider.get().trim()
+      val result =
+        if (provider.isBlank() || provider.equals("Google Translate", ignoreCase = true)) {
+          embeddedSubtitleTranslator.translateGoogle(cue, target)
+        } else {
+          aiService.generateWithAi(
+            cue,
+            app.infinity.mpvz.repository.ai.AiTask.TRANSLATE,
+            "Translate only into $target. Return only the translated subtitle text; preserve line breaks and do not add commentary.",
+          )
+        }
+      result.onSuccess { translated ->
+        withContext(Dispatchers.Main.immediate) {
+          if (requestId == embeddedTranslationRequestId && cue == lastEmbeddedCue) {
+            val cleanedTranslation = translated.trim().takeIf { it.isNotBlank() }
+            if (cleanedTranslation != null && !translationMatchesOriginal(cue, cleanedTranslation, target)) {
+              if (native && !nativeSubtitleHiddenForTranslation) {
+                nativeSubtitleVisibilityListener?.invoke(true)
+                nativeSubtitleHiddenForTranslation = true
+              }
+              if (!native && !nativeSubtitleHiddenForTranslation) {
+                PlaybackSession.setPropertyBoolean("sub-visibility", false)
+                nativeSubtitleHiddenForTranslation = true
+              }
+              _embeddedTranslatedSubtitle.value = cleanedTranslation
+            } else {
+              // Keep the native subtitle visible when it is already in the requested language.
+              // This preserves the original font, outline, position, and line layout exactly.
+              _embeddedTranslatedSubtitle.value = null
+              if (native && nativeSubtitleHiddenForTranslation) {
+                nativeSubtitleVisibilityListener?.invoke(false)
+                nativeSubtitleHiddenForTranslation = false
+              }
+              if (!native && nativeSubtitleHiddenForTranslation) {
+                PlaybackSession.setPropertyBoolean("sub-visibility", true)
+                nativeSubtitleHiddenForTranslation = false
+              }
+            }
+          }
+          if (requestId == embeddedTranslationRequestId) _translationStatus.value = ""
+        }
+      }.onFailure {
+        if (requestId == embeddedTranslationRequestId) {
+          withContext(Dispatchers.Main.immediate) {
+            _embeddedTranslatedSubtitle.value = null
+            _translationStatus.value = ""
+            if (!aiPreferences.playerSubtitleTranslationEnabled.get()) {
+              if (native) nativeSubtitleVisibilityListener?.invoke(false)
+              else PlaybackSession.setPropertyBoolean("sub-visibility", true)
+              nativeSubtitleHiddenForTranslation = false
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private fun translationMatchesOriginal(original: String, translated: String, target: String): Boolean {
+    fun normalized(value: String) = value.trim().split(Regex("\\s+")).joinToString(" ")
+    if (normalized(original).equals(normalized(translated), ignoreCase = true)) return true
+    val language = target.trim().lowercase().substringBefore('-').substringBefore('_')
+    return language in setOf("ar", "ara") && original.any { it in '\u0600'..'\u06ff' }
+  }
 
   fun translateSubtitle(
     track: TrackNode,
@@ -3099,6 +3300,10 @@ class PlayerViewModel : ViewModel(),
 
   fun setMediaTitle(mediaTitle: String) {
     if (currentMediaTitle != mediaTitle) {
+      // A translated cue and the hidden-renderer flag belong to the previous media item.
+      // Clear both before the next file starts so its first subtitle can trigger a fresh
+      // translation request and the original renderer is not left hidden by stale state.
+      resetEmbeddedSubtitleTranslation()
       currentMediaTitle = mediaTitle
       lastAutoSelectedMediaTitle = null
       introLookupJob?.cancel()
@@ -3111,7 +3316,6 @@ class PlayerViewModel : ViewModel(),
       scanLocalSubtitles(mediaTitle)
       syncplayManager.updateFileInfo(currentSyncplayFileInfo())
 
-      restoreSavedVideoAspect(showUpdate = false)
       skippedSegments.clear()
       chapterDerivedSegments = emptyList()
       introDbSegments = emptyList()
@@ -3190,12 +3394,18 @@ class PlayerViewModel : ViewModel(),
     auto: Boolean,
   ) {
     val seekTarget = SkipMarkerResolver.seekTarget(segment, currentDurationSeconds())
-    PlaybackSession.setPropertyDouble("time-pos", seekTarget)
-    syncplayManager.updatePlayerState(
-      seekTarget,
-      PlaybackSession.getPropertyBoolean("pause") ?: false,
-      doSeek = true,
-    )
+    if (host.isNativeEngineActive()) {
+      // Skip markers were previously always written to MPV's time-pos. When Native Media3 was
+      // active that changed an inactive renderer, so the chip appeared but playback did not move.
+      host.nativeSeekTo((seekTarget * 1000.0).toLong().coerceAtLeast(0L))
+    } else {
+      PlaybackSession.setPropertyDouble("time-pos", seekTarget)
+      syncplayManager.updatePlayerState(
+        seekTarget,
+        PlaybackSession.getPropertyBoolean("pause") ?: false,
+        doSeek = true,
+      )
+    }
     showToast(if (auto) "${segment.label} (auto)" else segment.label)
   }
 
@@ -3794,6 +4004,8 @@ class PlayerViewModel : ViewModel(),
     val wyziePlan = buildWyzieSearchPlan(searchTitle, year, queryInfo, fileInfo)
     val includeWyzie = mode != OnlineSubtitleSearchMode.SUBHUB && wyziePlan.request != null
     val includeSubtitleHub = mode != OnlineSubtitleSearchMode.WYZIE
+    val detectedSeason = queryInfo.season ?: fileInfo.season
+    val detectedEpisode = queryInfo.episode ?: fileInfo.episode
 
     if (mode == OnlineSubtitleSearchMode.WYZIE && wyziePlan.request == null) {
       wyziePlan.missingSelectionMessage?.let(::showToast)
@@ -3801,7 +4013,16 @@ class PlayerViewModel : ViewModel(),
       return
     }
 
-    val wyzieRequest = wyziePlan.request ?: OnlineSubtitleSearchRequest(query = searchTitle, year = year)
+    val wyzieRequest =
+      wyziePlan.request
+        ?: OnlineSubtitleSearchRequest(
+          query = searchTitle,
+          year = year,
+          // Keep the parsed episode for SubtitleHub in HYBRID/SUBHUB mode even when Wyzie
+          // requires an explicit show selection and therefore is disabled for this search.
+          season = detectedSeason,
+          episode = detectedEpisode,
+        )
     searchSubtitles(
       query = wyzieRequest.query,
       season = wyzieRequest.season,
@@ -3939,7 +4160,10 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun toggleSubtitle(id: Int) {
-    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+    // During a native handoff the active engine can be Native before the persisted preference
+    // is updated. Route the click by the actual active engine, otherwise this would write MPV's
+    // sid/sub-visibility properties while Media3 is the visible player.
+    if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
       nativeSubtitleToggleListener?.invoke(id)
       return
     }
@@ -3964,7 +4188,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun isSubtitleSelected(id: Int): Boolean {
-    if (decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+    if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
       return subtitleTracks.value.firstOrNull { it.id == id }?.selected == true
     }
     val primarySid = getTrackSelectionId("sid")
@@ -4132,13 +4356,18 @@ class PlayerViewModel : ViewModel(),
     coalesceSeek(offset)
   }
 
+  fun nativePlaybackPositionSeconds(): Double = host.nativePlaybackPositionSeconds()
+
+  fun nativePlaybackDurationSeconds(): Double = host.nativePlaybackDurationSeconds()
+
   /**
-   * Conflated live preview used by the legacy/full-screen seek mode and the audio seekbar.
-   * Pointer events can arrive much faster than a decoder can seek, so only the newest target is
-   * applied at a bounded rate. Preview seeks are keyframe-only and never spam Syncplay peers.
+   * Conflated live preview used by the legacy/full-screen seek mode and the MPV audio seekbar.
+   * Native preview is intentionally visual-only: every Media3 seek flushes the hardware decoder,
+   * so native playback commits one seek when the user releases the seekbar instead.
    */
   fun seekPreviewTo(position: Float) {
     cancelFrameSeek()
+    if (host.isNativeEngineActive()) return
     synchronized(seekPreviewLock) {
       pendingSeekPreviewPosition = position.coerceAtLeast(0f)
       if (seekPreviewJob?.isActive == true) return
@@ -4298,18 +4527,21 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun leftSeek() {
+    val currentPosition = if (host.isNativeEngineActive()) nativePlaybackPositionSeconds().toInt() else (pos ?: 0)
     _seekState.update { s ->
-      s.copy(amount = if ((pos ?: 0) > 0) s.amount - doubleTapToSeekDuration else s.amount, isForwards = false)
+      s.copy(amount = if (currentPosition > 0) s.amount - doubleTapToSeekDuration else s.amount, isForwards = false)
     }
     seekBy(-doubleTapToSeekDuration)
   }
 
   fun rightSeek() {
+    val currentPosition = if (host.isNativeEngineActive()) nativePlaybackPositionSeconds().toInt() else (pos ?: 0)
+    val currentDuration = if (host.isNativeEngineActive()) nativePlaybackDurationSeconds().toInt() else (duration ?: 0)
     _seekState.update { s ->
       s.copy(
         amount =
-          if ((pos ?: 0) <
-            (duration ?: 0)
+          if (currentPosition <
+            currentDuration
           ) {
             s.amount + doubleTapToSeekDuration
           } else {
@@ -4434,10 +4666,13 @@ class PlayerViewModel : ViewModel(),
     changeVolumeTo(currentSystemVolume + change, showUi)
   }
 
-  fun changeVolumePercentTo(volumePercent: Int) {
+  fun changeVolumePercentTo(
+    volumePercent: Int,
+    showUi: Boolean = false,
+  ) {
     val newPercent = volumePercent.coerceIn(0, 100)
     val newVolume = percentToSystemVolume(newPercent)
-    val flags = if (isAudioOnly.value) AudioManager.FLAG_SHOW_UI else 0
+    val flags = if (showUi || isAudioOnly.value) AudioManager.FLAG_SHOW_UI else 0
     (appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager).setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, flags)
     currentVolume.value = syncCurrentSystemVolume()
     currentVolumePercent.value = newPercent
@@ -4479,9 +4714,35 @@ class PlayerViewModel : ViewModel(),
   fun changeSubtitlePositionTo(position: Int) {
     val newPosition = clampSubtitlePosition(position)
     subtitlesPreferences.subPos.set(newPosition)
+    if (host.isNativeEngineActive()) {
+      host.nativeSetSubtitlePosition(newPosition)
+      playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
+      return
+    }
     syncSubtitleLayout(newPosition)
     playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
   }
+
+  fun setSubtitleScale(scale: Float) {
+    val clamped = scale.coerceIn(0.1f, 5f)
+    if (host.isNativeEngineActive()) host.nativeSetSubtitleScale(clamped)
+    else PlaybackSession.setPropertyFloat("sub-scale", clamped)
+    playerUpdate.value = PlayerUpdates.SubtitleZoom(clamped)
+  }
+
+  fun setPlaybackSpeed(speed: Float) {
+    val clamped = speed.coerceIn(0.25f, 8f)
+    if (host.isNativeEngineActive()) host.nativeSetSpeed(clamped)
+    else PlaybackSession.setPropertyFloat("speed", clamped)
+  }
+
+  fun isNativePlaying(): Boolean = host.isNativePlaying()
+
+  fun isNativeEngineActive(): Boolean = host.isNativeEngineActive()
+
+  fun activePlaybackSpeed(): Float =
+    if (host.isNativeEngineActive()) host.nativePlaybackSpeed()
+    else PlaybackSession.getPropertyFloat("speed") ?: 1f
 
   private fun syncSubtitleLayout(primaryPosition: Int = subtitlesPreferences.subPos.get()) {
     applySubtitleLayout(primaryPosition, subtitlesPreferences.overrideAssSubs.get())
@@ -4513,7 +4774,22 @@ class PlayerViewModel : ViewModel(),
   fun changeVideoAspect(
     aspect: VideoAspect,
     showUpdate: Boolean = true,
+    persistGlobal: Boolean = true,
   ) {
+    if (host.isNativeEngineActive()) {
+      host.nativeSetVideoAspect(aspect)
+      if (persistGlobal) {
+        playerPreferences.lastVideoAspect.set(aspect)
+        playerPreferences.lastCustomAspectRatio.set(-1f)
+      }
+      _videoAspect.value = aspect
+      _currentAspectRatio.value = -1.0
+      if (showUpdate) {
+        playerUpdate.value = PlayerUpdates.AspectRatio
+        host.onVideoAspectChanged()
+      }
+      return
+    }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
     when (aspect) {
       VideoAspect.Fit -> {
@@ -4558,32 +4834,50 @@ class PlayerViewModel : ViewModel(),
     }
 
     // Update the state
-    playerPreferences.lastVideoAspect.set(aspect)
-    playerPreferences.lastCustomAspectRatio.set(-1f)
+    if (persistGlobal) {
+      playerPreferences.lastVideoAspect.set(aspect)
+      playerPreferences.lastCustomAspectRatio.set(-1f)
+    }
     _videoAspect.value = aspect
     _currentAspectRatio.value = -1.0 // Reset custom ratio when using standard modes
 
     // Notify the UI
     if (showUpdate) {
       playerUpdate.value = PlayerUpdates.AspectRatio
+      host.onVideoAspectChanged()
     }
   }
 
   fun setCustomAspectRatio(
     ratio: Double,
     showUpdate: Boolean = true,
+    persistGlobal: Boolean = true,
   ) {
+    if (host.isNativeEngineActive()) {
+      host.nativeSetVideoAspect(VideoAspect.Stretch)
+      if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
+      _currentAspectRatio.value = ratio
+      if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
+      return
+    }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
     PlaybackSession.setPropertyDouble("panscan", 0.0)
     PlaybackSession.setPropertyDouble("video-aspect-override", ratio)
-    playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
+    if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
     _currentAspectRatio.value = ratio
     if (showUpdate) {
       playerUpdate.value = PlayerUpdates.AspectRatio
+      host.onVideoAspectChanged()
     }
   }
 
   fun restoreSavedVideoAspect(showUpdate: Boolean = false) {
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) {
+      // Per-video mode must never fall back to the global aspect value. A missed lifecycle
+      // callback must not reapply the previous video's Crop/Stretch setting.
+      changeVideoAspect(VideoAspect.Fit, showUpdate, persistGlobal = false)
+      return
+    }
     val customAspectRatio = playerPreferences.lastCustomAspectRatio.get()
     if (customAspectRatio > 0f) {
       setCustomAspectRatio(customAspectRatio.toDouble(), showUpdate)
@@ -4591,6 +4885,19 @@ class PlayerViewModel : ViewModel(),
     }
 
     changeVideoAspect(playerPreferences.lastVideoAspect.get(), showUpdate)
+  }
+
+  fun restoreVideoAspect(
+    aspectName: String,
+    customAspectRatio: Float,
+    showUpdate: Boolean = false,
+  ) {
+    if (customAspectRatio > 0f) {
+      setCustomAspectRatio(customAspectRatio.toDouble(), showUpdate, persistGlobal = false)
+      return
+    }
+    val aspect = VideoAspect.entries.firstOrNull { it.name.equals(aspectName, ignoreCase = true) } ?: VideoAspect.Fit
+    changeVideoAspect(aspect, showUpdate, persistGlobal = false)
   }
 
   fun setAutoCropBlackBars(enabled: Boolean) {
@@ -4849,6 +5156,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   private fun refreshStretchAspectAfterCropChange() {
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) return
     if (playerPreferences.lastCustomAspectRatio.get() > 0f) return
     if (playerPreferences.lastVideoAspect.get() != VideoAspect.Stretch) return
     changeVideoAspect(VideoAspect.Stretch, showUpdate = false)
@@ -5057,6 +5365,11 @@ class PlayerViewModel : ViewModel(),
   // ==================== Video Zoom ====================
 
   fun setVideoZoom(zoom: Float) {
+    if (host.isNativeEngineActive()) {
+      _videoZoom.value = zoom
+      host.nativeSetZoom(zoom)
+      return
+    }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ZOOM)) {
       _videoZoom.value = 0f
       return
@@ -5076,6 +5389,12 @@ class PlayerViewModel : ViewModel(),
     x: Float,
     y: Float,
   ) {
+    if (host.isNativeEngineActive()) {
+      _videoPanX.value = x
+      _videoPanY.value = y
+      host.nativeSetPan(x, y)
+      return
+    }
     _videoPanX.value = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-x")) 0f else x
     _videoPanY.value = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-y")) 0f else y
   }
@@ -5354,7 +5673,7 @@ class PlayerViewModel : ViewModel(),
       }
 
     return queue.items.mapIndexed { index, item ->
-      val uri = Uri.parse(item.originalUri)
+      val uri = Uri.parse(NetworkPlaybackUri.normalize(item.originalUri))
       val title = item.title?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment.orEmpty()
       val resolvedUri =
         if (uri.scheme == "content") {
@@ -5693,7 +6012,7 @@ class PlayerViewModel : ViewModel(),
         if (queue.isM3u) {
           val hasNetworkStreams =
             queue.items.any { item ->
-              val uri = Uri.parse(item.originalUri)
+              val uri = Uri.parse(NetworkPlaybackUri.normalize(item.originalUri))
               val scheme = uri.scheme?.lowercase()
               scheme == "http" ||
                 scheme == "https" ||
@@ -5820,29 +6139,41 @@ class PlayerViewModel : ViewModel(),
   fun setLoopA() {
     if (_abLoopState.value.a != null) {
       _abLoopState.update { it.copy(a = null) }
-      PlaybackSession.setPropertyString("ab-loop-a", "no")
+      if (host.isNativeEngineActive()) host.nativeSetLoopA(null) else PlaybackSession.setPropertyString("ab-loop-a", "no")
       return
     }
-    val currentPos = PlaybackSession.getPropertyDouble("time-pos") ?: return
+    val currentPos = if (host.isNativeEngineActive()) {
+      host.nativePlaybackPositionSeconds()
+    } else {
+      PlaybackSession.getPropertyDouble("time-pos") ?: return
+    }
     _abLoopState.update { it.copy(a = currentPos) }
-    PlaybackSession.setPropertyDouble("ab-loop-a", currentPos)
+    if (host.isNativeEngineActive()) host.nativeSetLoopA(currentPos) else PlaybackSession.setPropertyDouble("ab-loop-a", currentPos)
   }
 
   fun setLoopB() {
     if (_abLoopState.value.b != null) {
       _abLoopState.update { it.copy(b = null) }
-      PlaybackSession.setPropertyString("ab-loop-b", "no")
+      if (host.isNativeEngineActive()) host.nativeSetLoopB(null) else PlaybackSession.setPropertyString("ab-loop-b", "no")
       return
     }
-    val currentPos = PlaybackSession.getPropertyDouble("time-pos") ?: return
+    val currentPos = if (host.isNativeEngineActive()) {
+      host.nativePlaybackPositionSeconds()
+    } else {
+      PlaybackSession.getPropertyDouble("time-pos") ?: return
+    }
     _abLoopState.update { it.copy(b = currentPos) }
-    PlaybackSession.setPropertyDouble("ab-loop-b", currentPos)
+    if (host.isNativeEngineActive()) host.nativeSetLoopB(currentPos) else PlaybackSession.setPropertyDouble("ab-loop-b", currentPos)
   }
 
   fun clearABLoop() {
     _abLoopState.update { it.copy(a = null, b = null) }
-    PlaybackSession.setPropertyString("ab-loop-a", "no")
-    PlaybackSession.setPropertyString("ab-loop-b", "no")
+    if (host.isNativeEngineActive()) {
+      host.nativeClearLoop()
+    } else {
+      PlaybackSession.setPropertyString("ab-loop-a", "no")
+      PlaybackSession.setPropertyString("ab-loop-b", "no")
+    }
   }
 
   fun formatTimestamp(seconds: Double): String {
@@ -6460,6 +6791,13 @@ class PlayerViewModel : ViewModel(),
   }
 
   override fun onCleared() {
+    // ViewModel normally cancels this scope after onCleared; cancel it first so dispatcher workers
+    // cannot start another callback while the player resources below are being released.
+    viewModelScope.cancel()
+    if (nativeSubtitleHiddenForTranslation) {
+      PlaybackSession.setPropertyBoolean("sub-visibility", true)
+      nativeSubtitleHiddenForTranslation = false
+    }
     // Deterministic cleanup of resources that previously relied on GC.
     // viewModelScope is auto-cancelled by ViewModel, but the following
     // resources are not coroutine-scoped and need explicit release.

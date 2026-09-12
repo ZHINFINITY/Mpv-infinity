@@ -35,6 +35,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
@@ -72,6 +73,7 @@ class AppDownloadManager(
     }
 
   private val cancelledIds: MutableSet<Long> = Collections.synchronizedSet(mutableSetOf<Long>())
+  private val pausedIds = ConcurrentHashMap.newKeySet<Long>()
 
   private val _activeSnapshot = MutableStateFlow<ActiveSnapshot?>(null)
 
@@ -165,6 +167,25 @@ class AppDownloadManager(
   fun cancelActive() {
     _activeSnapshot.value?.let { cancel(it.id) }
   }
+  fun pause(id: Long) {
+    pausedIds.add(id)
+    scope.launch {
+      val entity = dao.findById(id) ?: return@launch
+      if (entity.status == AppDownloadStatus.QUEUED.name) {
+        dao.update(entity.copy(status = AppDownloadStatus.PAUSED.name))
+      }
+    }
+  }
+  fun resume(id: Long) {
+    pausedIds.remove(id)
+    scope.launch {
+      val entity = dao.findById(id) ?: return@launch
+      if (entity.status == AppDownloadStatus.PAUSED.name) {
+        dao.update(entity.copy(status = AppDownloadStatus.QUEUED.name, failureReason = null))
+        DirectDownloadService.start(context)
+      }
+    }
+  }
 
   private suspend fun runDownload(
     entity: DownloadItemEntity,
@@ -172,6 +193,7 @@ class AppDownloadManager(
   ) {
     val id = entity.id
     cancelledIds.remove(id)
+    if (entity.status == AppDownloadStatus.PAUSED.name) return
     dao.update(entity.copy(status = AppDownloadStatus.RUNNING.name))
 
     val directory = File(entity.dirPath)
@@ -208,6 +230,7 @@ class AppDownloadManager(
               val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
               while (true) {
                 if (id in cancelledIds) throw CancelledDownloadException()
+                if (id in pausedIds) throw PausedDownloadException()
                 val read = input.read(buffer)
                 if (read < 0) break
                 output.write(buffer, 0, read)
@@ -243,6 +266,11 @@ class AppDownloadManager(
             }
           }
 
+          val completedBytes = partFile.length()
+          check(completedBytes > 0L) { "Downloaded file is empty" }
+          check(totalBytes <= 0L || completedBytes == totalBytes) {
+            "Downloaded size mismatch: $completedBytes/$totalBytes bytes"
+          }
           check(partFile.renameTo(finalFile)) { "Could not finalize file in download folder" }
           totalBytes.takeIf { it > 0 } ?: finalFile.length()
         }
@@ -266,6 +294,9 @@ class AppDownloadManager(
           error is CancelledDownloadException || id in cancelledIds -> {
             runCatching { partFile.delete() }
             dao.findById(id)?.let { dao.update(it.copy(status = AppDownloadStatus.CANCELLED.name)) }
+          }
+          error is PausedDownloadException || id in pausedIds -> {
+            dao.findById(id)?.let { dao.update(it.copy(status = AppDownloadStatus.PAUSED.name)) }
           }
           else -> {
             Log.e(TAG, "Download failed for ${entity.url}", error)
@@ -292,6 +323,7 @@ class AppDownloadManager(
     directory: File,
     videoFileName: String,
     tracks: List<PlaybackSubtitleTrack>,
+    headers: Map<String, String> = emptyMap(),
   ) {
     if (tracks.isEmpty()) return
     val baseName = videoFileName.substringBeforeLast('.')
@@ -306,7 +338,9 @@ class AppDownloadManager(
               .take(24)
           val target = File(directory, "$baseName.$label.$extension")
           if (target.isFile && target.length() > 0) return@forEachIndexed
-          val request = Request.Builder().url(track.url).get().build()
+          val requestBuilder = Request.Builder().url(track.url).get()
+          headers.forEach { (name, value) -> requestBuilder.header(name, value) }
+          val request = requestBuilder.build()
           httpClient.newCall(request).awaitResponse().use { response ->
             check(response.isSuccessful) { "HTTP ${response.code}" }
             val body = response.body.bytes()
@@ -388,6 +422,7 @@ class AppDownloadManager(
     }
 
   private class CancelledDownloadException : IOException("Cancelled")
+  private class PausedDownloadException : IOException("Paused")
 
   companion object {
     private const val TAG = "AppDownloadManager"

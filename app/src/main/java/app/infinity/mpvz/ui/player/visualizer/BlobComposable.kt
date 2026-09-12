@@ -10,7 +10,9 @@
 package app.infinity.mpvz.ui.player.visualizer
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.opengl.GLSurfaceView
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -153,8 +155,10 @@ private fun <T> VisualizerOverlay(
     modifier = modifier,
     update = { view ->
       view.updatePalette(palette)
-      view.setZOrderOnTop(false)
-      view.setZOrderMediaOverlay(true)
+      view.setBackgroundColor(Color.TRANSPARENT)
+      view.holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+      // Keep the transparent GL layer above the ambient background so its alpha clear is visible.
+      view.setZOrderOnTop(true)
       if (isSheetOpen) {
         // A sheet fully covers the expensive GLSurfaceView. Keep the last frame but stop the
         // continuous render loop (particle/galaxy renderers otherwise burn GPU underneath it).

@@ -10,6 +10,7 @@
 package app.infinity.mpvz.ui.player.visualizer
 
 import android.content.Context
+import android.graphics.Color
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
@@ -177,6 +178,7 @@ internal class BlobRenderer(
     config: EGLConfig?,
   ) {
     GLES30.glClearColor(0f, 0f, 0f, 0f)
+    GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT)
     GLES30.glDisable(GLES30.GL_CULL_FACE)
     GLES30.glDisable(GLES30.GL_DEPTH_TEST)
 

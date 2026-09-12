@@ -43,6 +43,7 @@ interface NetworkClient {
   suspend fun getFileStream(
     path: String,
     offset: Long = 0L,
+    length: Long? = null,
   ): Result<InputStream>
 
   /**

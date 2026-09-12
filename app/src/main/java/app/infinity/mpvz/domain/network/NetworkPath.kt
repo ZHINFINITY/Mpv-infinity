@@ -86,7 +86,9 @@ value class NetworkPath private constructor(
  * live in playlists and intents without copying passwords or short-lived loopback proxy tokens.
  */
 object NetworkPlaybackUri {
-  const val SCHEME = "Mpv∞-network"
+  /** ASCII-only scheme; URI schemes cannot contain the product's infinity symbol. */
+  const val SCHEME = "mpvinfinity-network"
+  private const val LEGACY_SCHEME = "Mpv∞-network"
 
   data class Reference(
     val connectionId: Long,
@@ -102,9 +104,20 @@ object NetworkPlaybackUri {
     return URI(SCHEME, connectionId.toString(), normalizedPath.value, null, null).toASCIIString()
   }
 
+  /**
+   * Converts links written by older builds to the valid ASCII scheme before any URI parser sees
+   * them. This keeps saved queues and recently played entries usable after the migration.
+   */
+  fun normalize(rawUri: String): String =
+    if (rawUri.startsWith("$LEGACY_SCHEME:", ignoreCase = true)) {
+      SCHEME + rawUri.substring(LEGACY_SCHEME.length)
+    } else {
+      rawUri
+    }
+
   fun parse(rawUri: String): Reference? =
     runCatching {
-      val uri = URI(rawUri)
+      val uri = URI(normalize(rawUri))
       if (!uri.scheme.equals(SCHEME, ignoreCase = true) ||
         uri.userInfo != null ||
         uri.port != -1 ||

@@ -31,6 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
@@ -143,7 +144,9 @@ class MediaLibraryViewModel(
     val updatedItem =
       buildVideoWithPlaybackInfo(
         video = video,
-        playbackState = playbackStateRepository.getVideoDataByTitle(mediaIdentifier),
+        playbackState = videoPlaybackIdentifiers(video).firstNotNullOfOrNull { identifier ->
+          playbackStateRepository.getVideoDataByTitle(identifier)
+        },
         currentTimeMillis = System.currentTimeMillis(),
         newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
         watchedThreshold = browserPreferences.watchedThreshold.get(),
@@ -157,6 +160,18 @@ class MediaLibraryViewModel(
   }
 
   fun setWatched(video: Video, watched: Boolean) {
+    _videosWithPlaybackInfo.update { videos ->
+      videos.map { item ->
+        if (item.video.path == video.path) {
+          item.copy(
+            timeRemaining = if (watched) 0L else (video.duration / 1000L).coerceAtLeast(0L),
+            progressPercentage = null,
+            isOldAndUnplayed = !watched && (appearancePreferences.unplayedOldVideoDays.get() == 0 || System.currentTimeMillis() - video.dateModified * 1000L <= appearancePreferences.unplayedOldVideoDays.get().toLong() * 24L * 60L * 60L * 1000L),
+            isWatched = watched,
+          )
+        } else item
+      }
+    }
     viewModelScope.launch(Dispatchers.IO) {
       val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
       val identifiers = videoPlaybackIdentifiers(video)

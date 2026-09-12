@@ -43,7 +43,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -95,7 +94,7 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-private val holdSpeedPresets = listOf(0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f)
+private val holdSpeedPresets = listOf(0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 5f, 6f, 7f, 8f)
 private const val SPEED_HOLD_INTENT_THRESHOLD_MS = 250L
 
 private enum class GestureOwner {
@@ -201,6 +200,7 @@ fun GestureHandler(
   val brightnessGesture by playerPreferences.brightnessGesture.collectAsState()
   val volumeGesture by playerPreferences.volumeGesture.collectAsState()
   val swapVolumeAndBrightness by playerPreferences.swapVolumeAndBrightness.collectAsState()
+  val showVolumeGestureOverlay by playerPreferences.showVolumeGestureOverlay.collectAsState()
   val pinchToZoomGesture by playerPreferences.pinchToZoomGesture.collectAsState()
   val panAndZoomEnabled by playerPreferences.panAndZoomEnabled.collectAsState()
   val horizontalSwipeToSeek by playerPreferences.horizontalSwipeToSeek.collectAsState()
@@ -232,6 +232,7 @@ fun GestureHandler(
     gestureClaimedForPointer = false
     speedHoldPending = false
     suppressHorizontalSeekForPointer = false
+    isSpeedLocked = false
   }
 
   fun claimGesture(owner: GestureOwner): Boolean {
@@ -523,7 +524,8 @@ fun GestureHandler(
                 !isVerticalGestureDeadZone &&
                 hasActiveSubtitle &&
                 startPosition.x in (size.width / 3f)..(size.width * 2f / 3f)
-            speedHoldPending = paused == false && multipleSpeedGesture > 0f && !isCenterSubtitleTouch
+            val activeEnginePlaying = if (viewModel.isNativeEngineActive()) viewModel.isNativePlaying() else paused == false
+            speedHoldPending = activeEnginePlaying && multipleSpeedGesture > 0f && !isCenterSubtitleTouch
 
             // Reset long press tracking at the start of each gesture
             longPressTriggeredDuringTouch = false
@@ -552,7 +554,7 @@ fun GestureHandler(
             // Track long press separately
             var longPressTriggered = false
             var isSubtitleHoldActive = false
-            val longPressDelay = 500L
+            val longPressDelay = 300L
             var longPressJob =
               coroutineScope.launch {
                 delay(longPressDelay)
@@ -577,7 +579,7 @@ fun GestureHandler(
                         )
                       }
                     } else if (
-                      paused == false &&
+                      (paused == false || viewModel.isNativePlaying()) &&
                       multipleSpeedGesture > 0f &&
                       claimGesture(GestureOwner.SPEED)
                     ) {
@@ -586,17 +588,22 @@ fun GestureHandler(
                       isLongPressing = true
                       longPressTriggeredDuringTouch = true
                       haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                      originalSpeed = playbackSpeed ?: 1f
-                      // Ramp speed up incrementally to avoid audio filter stutter
+                      originalSpeed = viewModel.activePlaybackSpeed()
+                      // Native Media3 applies speed synchronously; update it and the feedback
+                      // overlay immediately instead of waiting behind a ramp.
                       val startSpeed = originalSpeed
-                      val targetSpeed = nearestHoldSpeedPreset(multipleSpeedGesture)
-                      val steps = 5
-                      val stepDelay = 16L // ~one frame per step
-                      for (i in 1..steps) {
-                        val t = i.toFloat() / steps
-                        val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
-                        PlaybackSession.setPropertyFloat("speed", intermediateSpeed)
-                        if (i < steps) delay(stepDelay)
+                      val targetSpeed = 2f
+                      if (viewModel.isNativeEngineActive()) {
+                        viewModel.setPlaybackSpeed(targetSpeed)
+                      } else {
+                        val steps = 5
+                        val stepDelay = 16L // ~one frame per step
+                        for (i in 1..steps) {
+                          val t = i.toFloat() / steps
+                          val intermediateSpeed = startSpeed + (targetSpeed - startSpeed) * t
+                          viewModel.setPlaybackSpeed(intermediateSpeed)
+                          if (i < steps) delay(stepDelay)
+                        }
                       }
 
                       isDynamicSpeedControlActive = true
@@ -708,7 +715,7 @@ fun GestureHandler(
                       when (gestureType) {
                         "speed_control" -> {
                           dynamicSpeedStartX = currentPosition.x
-                          dynamicSpeedStartValue = PlaybackSession.getPropertyFloat("speed") ?: multipleSpeedGesture
+                          dynamicSpeedStartValue = viewModel.activePlaybackSpeed()
                         }
                         "vertical" -> {
                           if ((brightnessGesture || volumeGesture) && !isLongPressing) {
@@ -743,7 +750,9 @@ fun GestureHandler(
                         change.consume()
                       }
                       "speed_control" -> {
-                        if (isLongPressing && isDynamicSpeedControlActive && paused == false) {
+                        if (isLongPressing && isDynamicSpeedControlActive &&
+                          (if (viewModel.isNativeEngineActive()) viewModel.isNativePlaying() else paused == false)
+                        ) {
                           change.consume()
 
                           val speedPresets = holdSpeedPresets
@@ -764,7 +773,7 @@ fun GestureHandler(
                             isSpeedLocked = false
                             isDynamicSpeedControlActive = false
                             originalSpeed = 1f
-                            PlaybackSession.setPropertyFloat("speed", originalSpeed)
+                              viewModel.setPlaybackSpeed(originalSpeed)
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             viewModel.playerUpdate.update {
                               PlayerUpdates.ShowText(context.getString(R.string.player_speed_gesture_restored))
@@ -772,12 +781,12 @@ fun GestureHandler(
                             return@forEach
                           }
 
-                          if (!hasSwipedEnough && abs(deltaX) >= swipeDetectionThreshold) {
+                          if (!isSpeedLocked && !hasSwipedEnough && abs(deltaX) >= swipeDetectionThreshold) {
                             hasSwipedEnough = true
                             viewModel.playerUpdate.update { PlayerUpdates.DynamicSpeedControl(lastAppliedSpeed) }
                           }
 
-                          if (hasSwipedEnough) {
+                          if (hasSwipedEnough && !isSpeedLocked) {
                             val presetsRange = speedPresets.size - 1
                             val indexDelta = (deltaX / screenWidth) * presetsRange * 3.5f
 
@@ -796,7 +805,7 @@ fun GestureHandler(
                             if (abs(lastAppliedSpeed - newSpeed) > 0.01f) {
                               haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                               lastAppliedSpeed = newSpeed
-                              PlaybackSession.setPropertyFloat("speed", newSpeed)
+                            viewModel.setPlaybackSpeed(newSpeed)
                               viewModel.playerUpdate.update { PlayerUpdates.DynamicSpeedControl(newSpeed) }
                             }
                           }
@@ -870,7 +879,10 @@ fun GestureHandler(
                                 ).coerceIn(0, 100)
 
                               if (newVolumePercent != lastVolumePercentValue) {
-                                viewModel.changeVolumePercentTo(newVolumePercent)
+                                viewModel.changeVolumePercentTo(
+                                  newVolumePercent,
+                                  showUi = !showVolumeGestureOverlay,
+                                )
                                 lastVolumePercentValue = newVolumePercent
                               }
                             }
@@ -958,7 +970,7 @@ fun GestureHandler(
               hasSwipedEnough = false
               if (!isSpeedLocked) {
                 // Ramp speed back down incrementally to avoid audio filter stutter
-                val currentSpeed = PlaybackSession.getPropertyFloat("speed") ?: multipleSpeedGesture
+                val currentSpeed = viewModel.activePlaybackSpeed()
                 val targetSpeed = originalSpeed
                 val steps = 5
                 val stepDelay = 16L
@@ -966,7 +978,7 @@ fun GestureHandler(
                   for (i in 1..steps) {
                     val t = i.toFloat() / steps
                     val intermediateSpeed = currentSpeed + (targetSpeed - currentSpeed) * t
-                    PlaybackSession.setPropertyFloat("speed", intermediateSpeed)
+                    viewModel.setPlaybackSpeed(intermediateSpeed)
                     if (i < steps) delay(stepDelay)
                   }
                 }
@@ -1066,8 +1078,15 @@ fun GestureHandler(
                   currentPanX = viewModel.videoPanX.value
                   currentPanY = viewModel.videoPanY.value
 
-                  val hasActiveSub = getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
-                  val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
+                  val hasActiveSub =
+                    if (viewModel.isNativeEngineActive()) {
+                      subtitleTracks.any { it.isSelected }
+                    } else {
+                      getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
+                    }
+                  val subPos =
+                    if (viewModel.isNativeEngineActive()) subtitlesPreferences.subPos.get()
+                    else PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
                   val subtitleScreenY = getSubtitleScreenY(subPos, sw, sh)
                   val isCenterPinchX = midX in (sw * 0.2f)..(sw * 0.8f)
                   val (lowerBound, upperBound) = getSubtitleHitboxBounds(sw, sh)
@@ -1075,7 +1094,9 @@ fun GestureHandler(
 
                   if (pinchToZoomSubtitles && hasActiveSub && isSubtitlePinch) {
                     isSubZoomMode = true
-                    initialSubScale = PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
+                    initialSubScale =
+                      if (viewModel.isNativeEngineActive()) subtitlesPreferences.subScale.get()
+                      else PlaybackSession.getPropertyFloat("sub-scale") ?: subtitlesPreferences.subScale.get()
                     initialDist = dist
                     lastCalculatedSubScale = initialSubScale
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
@@ -1093,7 +1114,7 @@ fun GestureHandler(
                     if (gestureStarted && initialDist > 0f) {
                       val currentSubScale = (initialSubScale * (dist / initialDist)).coerceIn(0.1f, 5.0f)
                       lastCalculatedSubScale = currentSubScale
-                      PlaybackSession.setPropertyFloat("sub-scale", currentSubScale)
+                      viewModel.setSubtitleScale(currentSubScale)
                       viewModel.playerUpdate.update { PlayerUpdates.SubtitleZoom(currentSubScale) }
                     }
                   } else if (pinchToZoomGesture || panAndZoomEnabled) {
@@ -1254,7 +1275,11 @@ fun GestureHandler(
                       if (claimGesture(GestureOwner.HORIZONTAL_SEEK)) {
                         gestureType = "horizontal_seek"
                         hasStartedSeeking = true
-                        initialVideoPosition = position?.toFloat() ?: 0f
+                        initialVideoPosition = if (viewModel.isNativeEngineActive()) {
+                          viewModel.nativePlaybackPositionSeconds().toFloat()
+                        } else {
+                          position?.toFloat() ?: 0f
+                        }
                         pendingSeekPosition = initialVideoPosition
 
                         // Show seekbar and start seeking mode (same as seekbar scrubbing)
@@ -1267,7 +1292,11 @@ fun GestureHandler(
                       // Calculate seek amount based on horizontal movement
                       val seekAmount = deltaX * seekSensitivity
                       val targetPosition = (initialVideoPosition + seekAmount).coerceAtLeast(0f)
-                      val maxDuration = duration?.toFloat() ?: 0f
+                      val maxDuration = if (viewModel.isNativeEngineActive()) {
+                        viewModel.nativePlaybackDurationSeconds().toFloat()
+                      } else {
+                        duration?.toFloat() ?: 0f
+                      }
                       val clampedPosition = targetPosition.coerceAtMost(maxDuration)
                       pendingSeekPosition = clampedPosition
                       viewModel.seekPreviewTo(clampedPosition)
@@ -1471,12 +1500,12 @@ fun CombiningChevronsAnimation(
   trigger: Int,
   modifier: Modifier = Modifier,
 ) {
-  // List of active animations (unique IDs)
-  val animations = remember { mutableStateListOf<Long>() }
+  // Keep one feedback animation visible. Repeated taps restart it rather than accumulating
+  // in-flight chevrons, which is especially noticeable during native 4K/HDR playback.
+  var animationKey by remember { mutableStateOf(0L) }
 
-  // Fire a new animation whenever trigger changes
   LaunchedEffect(trigger) {
-    animations.add(System.nanoTime())
+    animationKey++
   }
 
   Row(
@@ -1496,12 +1525,10 @@ fun CombiningChevronsAnimation(
         modifier = Modifier.size(48.dp),
       )
 
-      // Render active moving chevrons
-      animations.forEach { animId ->
-        key(animId) {
-          MovingChevron(
-            onFinished = { animations.remove(animId) },
-          )
+      // Changing the key cancels the previous animation and starts only the latest one.
+      key(animationKey) {
+        if (animationKey != 0L) {
+          MovingChevron()
         }
       }
     }
@@ -1509,7 +1536,7 @@ fun CombiningChevronsAnimation(
 }
 
 @Composable
-fun MovingChevron(onFinished: () -> Unit) {
+fun MovingChevron() {
   val progress = remember { Animatable(0f) }
 
   LaunchedEffect(Unit) {
@@ -1519,9 +1546,8 @@ fun MovingChevron(onFinished: () -> Unit) {
         spring(
           dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
           stiffness = AppMotion.Spatial.Standard.stiffness,
-        ),
+      ),
     )
-    onFinished()
   }
 
   val startOffsetDp = -15.dp

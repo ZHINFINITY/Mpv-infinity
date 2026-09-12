@@ -35,15 +35,15 @@ import org.jsoup.nodes.Element
 import java.net.URL
 import java.net.URLEncoder
 
-class MpvRxSubtitleHubRepository(
+class MpvInfinitySubtitleHubRepository(
   private val client: OkHttpClient,
   private val json: Json,
   private val preferences: SubtitlesPreferences,
   private val fileStore: OnlineSubtitleFileStore,
 ) : OnlineSubtitleProvider {
-  override val provider: SubtitleProvider = SubtitleProvider.MPVRX_SUBTITLE_HUB
+  override val provider: SubtitleProvider = SubtitleProvider.MPV_INFINITY_SUBTITLE_HUB
 
-  private val apiSources = MpvRxSubtitleHubApiSources(client, json, preferences)
+  private val apiSources = MpvInfinitySubtitleHubApiSources(client, json, preferences)
   private val providerSemaphore = Semaphore(MAX_CONCURRENT_PROVIDER_REQUESTS)
 
   override suspend fun search(request: OnlineSubtitleSearchRequest): Result<List<OnlineSubtitle>> =
@@ -58,7 +58,7 @@ class MpvRxSubtitleHubRepository(
         val selectedSources =
           SubtitleHubSearchMatcher.sourcesFor(
             request = request,
-            selectedSources = MpvRxSubtitleHubSources.resolveSelected(preferences.subtitleHubSources.get()),
+            selectedSources = MpvInfinitySubtitleHubSources.resolveSelected(preferences.subtitleHubSources.get()),
           )
         if (selectedSources.size == 1) {
           apiSources.requireApiKey(selectedSources.single())
@@ -71,7 +71,7 @@ class MpvRxSubtitleHubRepository(
                 val providerResults =
                   try {
                     providerSemaphore.withPermit {
-                      if (source in MpvRxSubtitleHubSources.AUTHENTICATED_SOURCES) {
+                      if (source in MpvInfinitySubtitleHubSources.AUTHENTICATED_SOURCES) {
                         apiSources.search(source, request, selectedLanguages())
                       } else {
                         when (source) {
@@ -858,7 +858,10 @@ class MpvRxSubtitleHubRepository(
     const val TAG = "Mpv∞SubtitleHub"
     const val MAX_CONCURRENT_PROVIDER_REQUESTS = 4
     const val USER_AGENT =
-      "Mozilla/5.0 (Linux; Android 14; Mpv∞) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36"
+      // HTTP header values must be ISO-8859-1/ASCII compatible; the display name may contain ∞,
+      // but putting that character directly in OkHttp's User-Agent causes every provider request
+      // to fail before it reaches the network.
+      "Mozilla/5.0 (Linux; Android 14; MpvInfinity) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36"
     const val SUBTITLECAT_BASE_URL = "https://www.subtitlecat.com/"
     const val MOVIESUBTITLES_ORG_BASE_URL = "https://www.moviesubtitles.org/"
     const val MOVIESUBTITLESRT_BASE_URL = "https://moviesubtitlesrt.com/"

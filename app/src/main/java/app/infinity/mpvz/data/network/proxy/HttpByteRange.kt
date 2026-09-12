@@ -18,6 +18,18 @@ internal data class HttpByteRange(
   companion object {
     private val syntax = Regex("bytes=(\\d*)-(\\d*)", RegexOption.IGNORE_CASE)
 
+    /** Returns the first byte for a partial range when total length is unavailable. */
+    fun parseStart(header: String): Long? {
+      val match = syntax.matchEntire(header.trim()) ?: return null
+      val startText = match.groupValues[1]
+      val endText = match.groupValues[2]
+      if (startText.isEmpty() || startText.toLongOrNull() == null) return null
+      val start = startText.toLongOrNull() ?: return null
+      val requestedEnd = endText.toLongOrNull()
+      if (requestedEnd != null && requestedEnd < start) return null
+      return start
+    }
+
     /** Returns null for malformed, multiple, overflowing, or unsatisfiable ranges. */
     fun parse(
       header: String,

@@ -11,6 +11,7 @@ package app.infinity.mpvz.ui.preferences
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -36,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,6 +53,7 @@ import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.IntroSegmentProvider
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -69,6 +72,7 @@ import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import me.zhanghai.compose.preference.SliderPreference
 import me.zhanghai.compose.preference.TextFieldPreference
 import org.koin.compose.koinInject
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Serializable
@@ -80,6 +84,8 @@ object PlayerPreferencesScreen : Screen {
     val context = LocalContext.current
     val resources = LocalResources.current
     val preferences = koinInject<PlayerPreferences>()
+    val playbackStateRepository = koinInject<PlaybackStateRepository>()
+    val scope = rememberCoroutineScope()
     val configOwnedOptions = currentMpvConfigOverrideOptions()
     val audioPreferences = koinInject<AudioPreferences>()
     val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -90,6 +96,20 @@ object PlayerPreferencesScreen : Screen {
     var showTemplateDialog by remember { mutableStateOf(false) }
     var templateDraft by remember { mutableStateOf("") }
     var showVideoMiniPlayerDependencyDialog by remember { mutableStateOf(false) }
+    val screenshotFolderUri by preferences.screenshotFolderUri.collectAsState()
+    val screenshotFolderPicker = rememberLauncherForActivityResult(
+      ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+      if (uri != null) {
+        runCatching {
+          context.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+          )
+        }
+        preferences.screenshotFolderUri.set(uri.toString())
+      }
+    }
     Scaffold(
       topBar = {
         TopAppBar(
@@ -154,6 +174,33 @@ object PlayerPreferencesScreen : Screen {
                 value = savePositionOnQuit,
                 onValueChange = preferences.savePositionOnQuit::set,
                 title = { Text(stringResource(R.string.pref_player_save_position_on_quit)) },
+              )
+
+              PreferenceDivider()
+
+              val rememberVideoAspectPerVideo by preferences.rememberVideoAspectPerVideo.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_remember_video_aspect_per_video_title),
+                value = rememberVideoAspectPerVideo,
+                onValueChange = { enabled ->
+                  if (enabled) {
+                    // Older builds persisted the global aspect into every video record. Clear
+                    // only those aspect fields so stale Crop/Stretch values cannot reappear after
+                    // the new per-video setting is enabled; positions and subtitle state remain.
+                    scope.launch {
+                      playbackStateRepository.resetAllVideoAspectSettings()
+                      preferences.videoAspectStateMigrationVersion.set(2)
+                    }
+                  }
+                  preferences.rememberVideoAspectPerVideo.set(enabled)
+                },
+                title = { Text(stringResource(R.string.pref_player_remember_video_aspect_per_video_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_player_remember_video_aspect_per_video_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
               )
 
               PreferenceDivider()
@@ -877,6 +924,25 @@ object PlayerPreferencesScreen : Screen {
                   )
                 },
               )
+
+              PreferenceDivider()
+
+              Preference(
+                title = { Text("Screenshot save folder") },
+                summary = {
+                  Text(
+                    screenshotFolderUri.ifBlank { "Pictures/mpvSnaps (default)" },
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+                onClick = { screenshotFolderPicker.launch(null) },
+              )
+
+              if (screenshotFolderUri.isNotBlank()) {
+                TextButton(onClick = { preferences.screenshotFolderUri.set("") }) {
+                  Text("Use default Pictures folder")
+                }
+              }
 
               PreferenceDivider()
 

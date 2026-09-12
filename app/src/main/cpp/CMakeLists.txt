@@ -5,13 +5,13 @@ project("mpv_infinity_native" C CXX)
 # Release-only native optimization shared by Mpv-infinity-owned JNI/helper targets.
 # Keep this scoped to our small native targets; the prebuilt mpvlib AARs are
 # optimized separately when their mpv/FFmpeg toolchain is built.
-set(MPVRX_NATIVE_RELEASE_COMPILE_OPTIONS
+set(MPV_INFINITY_NATIVE_RELEASE_COMPILE_OPTIONS
     "$<$<CONFIG:Release>:-ffunction-sections>"
     "$<$<CONFIG:Release>:-fdata-sections>"
     "$<$<CONFIG:Release>:-fvisibility=hidden>"
 )
 
-set(MPVRX_NATIVE_RELEASE_LINK_OPTIONS
+set(MPV_INFINITY_NATIVE_RELEASE_LINK_OPTIONS
     "$<$<CONFIG:Release>:-Wl,-O1>"
     "$<$<CONFIG:Release>:-Wl,--gc-sections>"
     "$<$<CONFIG:Release>:-Wl,--icf=safe>"
@@ -19,8 +19,8 @@ set(MPVRX_NATIVE_RELEASE_LINK_OPTIONS
 )
 
 function(mpvinfinity_optimize_native_target target)
-    target_compile_options(${target} PRIVATE ${MPVRX_NATIVE_RELEASE_COMPILE_OPTIONS})
-    target_link_options(${target} PRIVATE ${MPVRX_NATIVE_RELEASE_LINK_OPTIONS})
+    target_compile_options(${target} PRIVATE ${MPV_INFINITY_NATIVE_RELEASE_COMPILE_OPTIONS})
+    target_link_options(${target} PRIVATE ${MPV_INFINITY_NATIVE_RELEASE_LINK_OPTIONS})
 endfunction()
 
 # YTDLP execution wrapper for SDK 29+ bypass

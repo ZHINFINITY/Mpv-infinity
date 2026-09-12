@@ -29,6 +29,7 @@ internal class CastMediaServer private constructor(
   private val token: String,
 ) : NanoHTTPD("0.0.0.0", 0) {
   override fun serve(session: IHTTPSession): Response {
+    Log.i(TAG, "Cast HTTP request method=" + session.method + " uri=" + session.uri + " range=" + session.headers["range"] + " length=" + contentLength)
     if (session.uri != "/$token") return textResponse(Response.Status.NOT_FOUND, "Not found")
     if (session.method == Method.OPTIONS) {
       return newFixedLengthResponse(Response.Status.NO_CONTENT, mimeType, "").apply {
@@ -169,6 +170,7 @@ internal class CastMediaServer private constructor(
     ): String? {
       stop()
       val host = runCatching { findLanAddress(context) }.getOrNull() ?: return null
+      Log.i(TAG, "Cast server exposing source=" + source + " mime=" + mimeType)
       val token = UUID.randomUUID().toString().replace("-", "")
       val server =
         CastMediaServer(
@@ -181,6 +183,7 @@ internal class CastMediaServer private constructor(
       return runCatching {
         server.start(SOCKET_READ_TIMEOUT, false)
         active = server
+        Log.i(TAG, "Cast server started port=" + server.listeningPort + " length=" + server.contentLength)
         "http://$host:${server.listeningPort}/$token"
       }.onFailure { error ->
         Log.e(TAG, "Unable to start Cast media server", error)

@@ -19,6 +19,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.util.Log
 import android.util.LruCache
 import app.infinity.mpvz.data.network.client.NetworkMimeTypes
 import app.infinity.mpvz.data.network.proxy.NetworkStreamingProxy
@@ -47,6 +48,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import kotlinx.coroutines.yield
 import org.koin.java.KoinJavaComponent
 import java.io.ByteArrayOutputStream
@@ -54,6 +62,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -61,6 +70,9 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 private const val NETWORK_THUMBNAIL_FAILURE_RETRY_MS = 30_000L
+private const val METADATA_POSTER_FAILURE_RETRY_MS = 5 * 60_000L
+private const val MAX_NETWORK_FRAME_THUMBNAIL_FILE_SIZE = 4L * 1024L * 1024L * 1024L
+private const val CINEMETA_CATALOG_URL = "https://v3-cinemeta.strem.io/catalog"
 
 class ThumbnailRepository(
   private val context: Context,
@@ -95,6 +107,10 @@ class ThumbnailRepository(
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
+  // Network thumbnails are independent range reads. Keep a small cap so a series folder can
+  // fill promptly without opening one WebDAV decoder per visible card.
+  // A decoder can issue several authenticated range requests for one MKV. Keep remote work
+  // serialized so a series folder cannot burst dozens of TorBox/WebDAV requests at once.
   private val networkGenerationSemaphore = Semaphore(1)
   private val maxFolderBatchSize = 48
 
@@ -108,6 +124,10 @@ class ThumbnailRepository(
 
   // Throttle transient failures while still allowing remote files to recover during this process.
   private val networkThumbnailFailedAt = ConcurrentHashMap<String, Long>()
+  private val metadataPosterFailedAt = ConcurrentHashMap<String, Long>()
+  private val metadataPosterUrls = ConcurrentHashMap<String, String>()
+  private val metadataPosterClient by lazy { OkHttpClient.Builder().callTimeout(10, TimeUnit.SECONDS).build() }
+  private val metadataPosterJson = Json { ignoreUnknownKeys = true }
 
   private val _thumbnailReadyKeys =
     MutableSharedFlow<String>(
@@ -320,12 +340,21 @@ class ThumbnailRepository(
         repositoryScope.launch {
           var i = state.nextIndex
           while (i < filteredVideos.size) {
-            val batchEnd = (i + localGenerationParallelism).coerceAtMost(filteredVideos.size)
+            val batchParallelism =
+              if (filteredVideos.any { isNetworkUrl(it.path) || it.uri.scheme in setOf("http", "https") }) 1
+              else localGenerationParallelism
+            val batchEnd = (i + batchParallelism).coerceAtMost(filteredVideos.size)
             coroutineScope {
               (i until batchEnd)
                 .map { index ->
                   async {
-                    getThumbnail(filteredVideos[index], widthPx, heightPx)
+                    runCatching { getThumbnail(filteredVideos[index], widthPx, heightPx) }
+                      .onFailure { error ->
+                        if (error !is CancellationException) {
+                          Log.w("ThumbnailRepository", "Remote thumbnail prefetch failed", error)
+                        }
+                      }
+                      .getOrNull()
                   }
                 }.awaitAll()
             }
@@ -844,6 +873,20 @@ class ThumbnailRepository(
       }.getOrNull()
     }
 
+  private fun youtubePosterUrl(url: String): String? {
+    val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return null
+    val host = uri.host?.lowercase().orEmpty()
+    val videoId = when {
+      host == "youtu.be" -> uri.pathSegments.firstOrNull()
+      host == "youtube.com" || host.endsWith(".youtube.com") ->
+        uri.getQueryParameter("v")
+          ?: uri.pathSegments.firstOrNull { it == "shorts" || it == "embed" }
+            ?.let { marker -> uri.pathSegments.getOrNull(uri.pathSegments.indexOf(marker) + 1) }
+      else -> null
+    }?.takeIf { it.matches(Regex("[A-Za-z0-9_-]{6,}")) }
+    return videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
+  }
+
   private fun extractNetworkVideoFrame(
     url: String,
     strategy: ThumbnailStrategy,
@@ -855,10 +898,41 @@ class ThumbnailRepository(
       try {
         retriever.setDataSource(url, networkVideoHeaders())
 
-        extractFrameWithStrategy(retriever, strategy, targetWidth, targetHeight)
+        val primary = extractFrameWithStrategy(retriever, strategy, targetWidth, targetHeight)
+        if (primary == null || (!isMostlySolidThumbnail(primary) && !isMostlyDarkThumbnail(primary))) {
+          primary
+        } else {
+          // Some movie and episode streams legitimately begin with a black/solid frame. Keep it
+          // as a fallback so WebDAV cards are never blank when no later frame can be decoded.
+          var fallback: Bitmap? = primary
+          listOf(0.33f, 0.66f, 0.85f)
+            .asSequence()
+            .mapNotNull { percentage ->
+              getFrameAt(
+                retriever,
+                frameTimeMicros(retriever, percentage),
+                targetWidth,
+                targetHeight,
+              )
+            }
+            .firstOrNull { candidate ->
+              if (isMostlySolidThumbnail(candidate) || isMostlyDarkThumbnail(candidate)) {
+                fallback?.takeUnless { it.isRecycled }?.recycle()
+                fallback = candidate
+                false
+              } else {
+                fallback?.takeUnless { it.isRecycled }?.recycle()
+                fallback = null
+                true
+              }
+            }
+            ?: fallback
+        }
       } finally {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) retriever.close() else retriever.release()
       }
+    }.onFailure { error ->
+      Log.e("ThumbnailRepository", "Network thumbnail decode failed url=$url", error)
     }.getOrNull()
 
   private fun extractFrameWithStrategy(
@@ -1031,12 +1105,27 @@ class ThumbnailRepository(
             browserPreferences.thumbnailMode.get().toThumbnailStrategy(
               browserPreferences.thumbnailFramePosition.get(),
             )
+          val networkStrategy = when (strategy) {
+            ThumbnailStrategy.FirstFrame, ThumbnailStrategy.EmbeddedOrFirstFrame -> ThumbnailStrategy.Hybrid(0.33f)
+            is ThumbnailStrategy.EmbeddedOrHybrid -> ThumbnailStrategy.Hybrid(strategy.percentage)
+            else -> strategy
+          }
+          youtubePosterUrl(path)?.let { posterUrl ->
+            fetchHttpImage(posterUrl)?.let { bitmap ->
+              val scaled = scaleBitmap(bitmap, widthPx, heightPx)
+              networkThumbnailFailedAt.remove(identity)
+              writeBitmapToDisk(diskKey, scaled, network = true)
+              synchronized(memoryCache) { memoryCache.put(memKey, scaled) }
+              _thumbnailReadyKeys.tryEmit(memKey)
+              return@async scaled
+            }
+          }
           val bitmap =
             networkGenerationSemaphore.withPermit {
               (
                 extractNetworkVideoFrame(
                   url = path,
-                  strategy = strategy,
+                  strategy = networkStrategy,
                   targetWidth = widthPx.takeIf { it > 0 },
                   targetHeight = heightPx.takeIf { it > 0 },
                 ) ?: generateFastNetworkThumbnail(path, widthPx, heightPx)
@@ -1112,25 +1201,34 @@ class ThumbnailRepository(
       browserPreferences.thumbnailMode.get().toThumbnailStrategy(
         browserPreferences.thumbnailFramePosition.get(),
       )
+    // A remote WebDAV MKV cannot satisfy a second random seek from the bounded thumbnail probe.
+    // Use one first-frame decode here; normal playback remains seek-capable through the full proxy.
+    val networkStrategy = ThumbnailStrategy.FirstFrame
 
+    // WebDAV providers are intentionally not probed for media metadata here. Resolve a
+    // poster from the public, keyless Cinemeta catalog using only the filename, then keep
+    // the existing authenticated frame extraction as a fallback.
+    // Prefer the provider-safe poster. Keep frame extraction only for smaller files where
+    // the fallback cannot create the large range-read/cache buildup seen on remuxes.
     val bitmap =
-      networkGenerationSemaphore.withPermit {
-        (
-          if (connection != null) {
-            extractNetworkVideoFrameViaProxy(
-              path = path,
-              connection = connection,
-              strategy = strategy,
-              targetWidth = widthPx,
-              targetHeight = heightPx,
-              fileSize = fileSize,
-              mimeType = mimeType,
-            )
-          } else {
-            generateFastNetworkThumbnail(path, widthPx, heightPx)
+      getCinemetaPoster(path, widthPx, heightPx)
+        ?: networkGenerationSemaphore.withPermit {
+            (
+              if (connection != null) {
+                extractNetworkVideoFrameViaProxy(
+                  path = path,
+                  connection = connection,
+                  strategy = networkStrategy,
+                  targetWidth = widthPx,
+                  targetHeight = heightPx,
+                  fileSize = fileSize,
+                  mimeType = mimeType,
+                )
+              } else {
+                generateFastNetworkThumbnail(path, widthPx, heightPx)
+              }
+            )?.let { scaleBitmap(it, widthPx, heightPx) }
           }
-        )?.let { scaleBitmap(it, widthPx, heightPx) }
-      }
 
     if (bitmap == null) {
       android.util.Log.w("ThumbnailRepository", "All strategies failed for network path $path")
@@ -1146,6 +1244,151 @@ class ThumbnailRepository(
     synchronized(memoryCache) { memoryCache.put(memKey, bitmap) }
     _thumbnailReadyKeys.tryEmit(memKey)
     return bitmap
+  }
+
+  private suspend fun getCinemetaPoster(path: String, widthPx: Int, heightPx: Int): Bitmap? =
+    withContext(Dispatchers.IO) {
+      val imdbId = Regex("(?i)\\{imdb-(tt\\d+)\\}").find(path)?.groupValues?.get(1)?.lowercase()
+      val filename = path.substringAfterLast('/').substringAfterLast('\\')
+      val pathSegments = path.split('/').filter { it.isNotBlank() }
+      val seasonIndex = pathSegments.indexOfLast { it.matches(Regex("(?i)(?:Season[\\s._-]*\\d{1,2}|S\\d{1,2})(?:\\s|[._-]|\\(|$).*")) }
+      val folderTitle =
+        if (seasonIndex > 0) pathSegments[seasonIndex - 1]
+        else pathSegments.dropLast(1).lastOrNull().orEmpty()
+      val episodeLike =
+        seasonIndex > 0 || filename.matches(Regex("(?i).*(?:\\bS\\d{1,2}E\\d{1,4}\\b|\\s-\\s\\d{2,4}\\b).*"))
+      fun cleanAnimeTitle(raw: String): String =
+        raw.substringBeforeLast('.', missingDelimiterValue = "")
+          .replace(Regex("(?i)\\{imdb-tt\\d+\\}"), " ")
+          .replace(Regex("\\[[^]]*]"), " ")
+          .replace(Regex("(?i)\\([^)]*(?:1080|2160|4k|x26[45]|hevc|av1|web[- .]?dl|bluray|bd|dual[- .]?audio|opus|flac|vodes|purple)[^)]*\\)"), " ")
+          .replace(Regex("(?i)\\bS\\d{1,2}(?:E\\d{1,4})?\\b"), " ")
+          .replace(Regex("(?i)\\b(?:season|cour|part|split[- .]?cour)\\s*[0-9ivx]+\\b"), " ")
+          .replace(Regex("(?i)\\b(?:episode|ep|ova|movie)\\s*[0-9]+\\b"), " ")
+          .replace(Regex("(?i)\\s+-\\s+(?:\\d{2,4}|episode|ep)\\b.*$"), " ")
+          .replace(Regex("(?i)\\b(?:1080p|2160p|720p|480p|4k|8bit|10bit|x26[45]|hevc|av1|web[- .]?dl|bluray|bdrip|remux|dual[- .]?audio|multi[- .]?audio|aac|opus|flac)\\b"), " ")
+          .replace(Regex("[._]+"), " ")
+          .replace(Regex("\\s+"), " ")
+          .trim(' ', '-', '_')
+      val rawTitle = if (episodeLike && folderTitle.isNotBlank()) folderTitle else filename
+      val title = cleanAnimeTitle(rawTitle)
+      val folderCandidate = cleanAnimeTitle(folderTitle)
+      val filenameCandidate = cleanAnimeTitle(filename)
+      val animeCandidates = listOf(title, folderCandidate, filenameCandidate)
+        .filter { it.length >= 3 }
+        .distinct()
+      fun normalized(value: String): String = value.lowercase().replace(Regex("[^a-z0-9]+"), "")
+      if (imdbId == null && title.isBlank()) return@withContext null
+      val cacheKey = imdbId ?: title
+      val posterUrl =
+        (if (episodeLike) getKitsuPoster(animeCandidates, ::normalized) else null)
+          ?: metadataPosterUrls[cacheKey] ?: run {
+        val failedAt = metadataPosterFailedAt[cacheKey]
+        if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < METADATA_POSTER_FAILURE_RETRY_MS) {
+          return@withContext null
+        }
+        val resolved = if (imdbId != null) {
+          listOf("movie", "series").firstNotNullOfOrNull { type ->
+            runCatching {
+              val request = Request.Builder()
+                .url("https://v3-cinemeta.strem.io/meta/$type/$imdbId.json")
+                .header("Accept", "application/json")
+                .build()
+              metadataPosterClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching null
+                metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["meta"]
+                  ?.jsonObject?.get("poster")?.jsonPrimitive?.contentOrNull
+              }
+            }.getOrNull()
+          }
+        } else {
+          val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
+          listOf("movie", "series").firstNotNullOfOrNull { type ->
+            runCatching {
+              val request = Request.Builder()
+                .url("$CINEMETA_CATALOG_URL/$type/top/search=$encoded.json")
+                .header("Accept", "application/json")
+                .build()
+              metadataPosterClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching null
+                metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["metas"]
+                  ?.jsonArray?.firstNotNullOfOrNull { entry ->
+                    val meta = entry.jsonObject
+                    val name = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                    if (normalized(name) == normalized(title)) {
+                      meta["poster"]?.jsonPrimitive?.contentOrNull
+                    } else {
+                      null
+                    }
+                  }
+              }
+            }.getOrNull()
+          }
+        }
+        if (resolved == null) metadataPosterFailedAt[cacheKey] = SystemClock.elapsedRealtime()
+        resolved
+      } ?: return@withContext null
+      metadataPosterUrls[cacheKey] = posterUrl
+      runCatching {
+        val request = Request.Builder().url(posterUrl).header("Accept", "image/*").build()
+        metadataPosterClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) return@runCatching null
+          val bytes = response.body.bytes()
+          BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { scaleBitmap(it, widthPx, heightPx) }
+        }
+      }.getOrNull()
+    }
+
+  private suspend fun getKitsuPoster(titles: List<String>, normalized: (String) -> String): String? {
+    val candidates = titles.filter { it.isNotBlank() }.distinct()
+    if (candidates.isEmpty()) return null
+    val cacheKey = "kitsu:" + candidates.joinToString("|")
+    metadataPosterUrls[cacheKey]?.let { return it }
+    val failedAt = metadataPosterFailedAt[cacheKey]
+    if (failedAt != null && SystemClock.elapsedRealtime() - failedAt < METADATA_POSTER_FAILURE_RETRY_MS) return null
+    val resolved = runCatching {
+      candidates.asSequence().mapNotNull { title ->
+        val encoded = java.net.URLEncoder.encode(title, Charsets.UTF_8.name())
+        val request = Request.Builder()
+          .url("https://kitsu.io/api/edge/anime?filter[text]=$encoded&page[limit]=20")
+          .header("Accept", "application/vnd.api+json")
+          .build()
+        metadataPosterClient.newCall(request).execute().use { response ->
+          if (!response.isSuccessful) return@use null
+          metadataPosterJson.parseToJsonElement(response.body.string()).jsonObject["data"]
+            ?.jsonArray?.mapNotNull { entry ->
+              val attributes = entry.jsonObject["attributes"]?.jsonObject ?: return@mapNotNull null
+              val names = listOfNotNull(
+                attributes["canonicalTitle"]?.jsonPrimitive?.contentOrNull,
+                attributes["english"]?.jsonPrimitive?.contentOrNull,
+                attributes["romaji"]?.jsonPrimitive?.contentOrNull,
+                attributes["slug"]?.jsonPrimitive?.contentOrNull,
+              )
+              val wantedTokens = normalized(title).chunked(3).toSet()
+              val score = names.maxOfOrNull { candidate ->
+                val value = normalized(candidate)
+                when {
+                  value == normalized(title) -> 1000
+                  value.startsWith(normalized(title)) || normalized(title).startsWith(value) -> 800
+                  wantedTokens.count { token -> value.contains(token) } >= 2 -> 500
+                  else -> 0
+                }
+              } ?: 0
+              if (score == 0) null else score to attributes
+            }
+            ?.maxByOrNull { it.first }
+            ?.second
+            ?.let { attributes ->
+              val poster = attributes["posterImage"]?.jsonObject
+              listOf("original", "large", "medium", "small")
+                .firstNotNullOfOrNull { key -> poster?.get(key)?.jsonPrimitive?.contentOrNull }
+            }
+        }
+      }.firstOrNull { it.isNotBlank() }
+    }.getOrNull()
+    if (resolved == null) metadataPosterFailedAt[cacheKey] = SystemClock.elapsedRealtime()
+    if (resolved != null) metadataPosterUrls[cacheKey] = resolved
+    return resolved
   }
 
   private suspend fun extractNetworkVideoFrameViaProxy(
@@ -1169,13 +1412,21 @@ class ThumbnailRepository(
           fileSize = fileSize.coerceAtLeast(-1L),
           mimeType = mimeType ?: NetworkMimeTypes.forFileName(path) ?: "application/octet-stream",
         )
+      val thumbnailUrl = Uri.parse(localUrl).buildUpon()
+        .appendQueryParameter("thumbnail", "1")
+        .build()
 
-      extractNetworkVideoFrame(
-        url = localUrl,
+      // FastThumbnails uses the MPV demuxer and performs seekable range reads through the
+      // authenticated proxy. MediaMetadataRetriever cannot reliably decode large remote MKVs:
+      // it requests the Matroska cues and clusters as hidden random reads and often blocks for
+      // tens of seconds or returns no bitmap at all.
+      generateFastNetworkThumbnail(thumbnailUrl.toString(), targetWidth, targetHeight)
+        ?: extractNetworkVideoFrame(
+        url = thumbnailUrl.toString(),
         strategy = strategy,
         targetWidth = targetWidth.takeIf { it > 0 },
         targetHeight = targetHeight.takeIf { it > 0 },
-      ) ?: generateFastNetworkThumbnail(localUrl, targetWidth, targetHeight)
+      )
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (_: Exception) {
@@ -1220,7 +1471,7 @@ class ThumbnailRepository(
   ): String = "$identity|network|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   private fun networkThumbnailDiskKey(identity: String): String =
-    "video-thumb-v3|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+    "video-thumb-v4|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   private fun hasRecentNetworkThumbnailFailure(identity: String): Boolean {
     val failedAt = networkThumbnailFailedAt[identity] ?: return false
@@ -1301,7 +1552,7 @@ class ThumbnailRepository(
       FastThumbnails.generateAsync(
         path,
         10.0,
-        maxOf(widthPx, heightPx, MAX_THUMBNAIL_SIZE).coerceAtMost(thumbnailMaxSize()),
+        maxOf(widthPx, heightPx).coerceAtMost(thumbnailMaxSize()),
         useHwDec = false,
       )
     } catch (cancellation: CancellationException) {

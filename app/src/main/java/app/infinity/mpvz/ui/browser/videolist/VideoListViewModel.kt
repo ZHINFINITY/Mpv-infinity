@@ -64,6 +64,10 @@ internal fun buildVideoWithPlaybackInfo(
   currentTimeMillis: Long,
   newLabelDays: Int,
   watchedThreshold: Int,
+  folderMarkedUnwatched: Boolean = false,
+  folderMarkedWatched: Boolean = false,
+  explicitlyMarkedUnwatched: Boolean = false,
+  explicitlyMarkedWatched: Boolean = false,
 ): VideoWithPlaybackInfo {
   val durationSeconds = video.duration / 1000L
   val progressValue =
@@ -73,12 +77,28 @@ internal fun buildVideoWithPlaybackInfo(
     } else {
       null
     }
-  val isWatched =
-    playbackState?.hasBeenWatched == true ||
-      (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f)
+  // A manual swipe-to-unwatched writes a reset playback state (position 0, full time remaining,
+  // hasBeenWatched=false). Keep that explicit child override visible even when its parent folder
+  // is marked watched and the file is older than the automatic NEW-label age window.
+  val persistedUnwatched = explicitlyMarkedUnwatched || (playbackState != null &&
+      !playbackState.hasBeenWatched &&
+      playbackState.lastPosition <= 0 &&
+      playbackState.timeRemaining >= durationSeconds - 1)
   val newLabelWindowMillis = newLabelDays.toLong() * 24L * 60L * 60L * 1000L
   val videoAgeMillis = currentTimeMillis - video.dateModified * 1000L
-  val isWithinNewLabelWindow = newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
+  val isWithinNewLabelWindow =
+    folderMarkedUnwatched || persistedUnwatched || newLabelDays == 0 || videoAgeMillis <= newLabelWindowMillis
+  // The swipe action toggles from this value. An old video with no playback row has no NEW tag
+  // and is therefore watched for toggle purposes; otherwise the first swipe is inverted.
+  val isWatched =
+    explicitlyMarkedWatched ||
+      (!explicitlyMarkedUnwatched &&
+        (folderMarkedWatched ||
+          (!folderMarkedUnwatched &&
+            (!isWithinNewLabelWindow ||
+              playbackState?.hasBeenWatched == true ||
+              (watchedThreshold > 0 && progressValue != null && progressValue >= watchedThreshold / 100f))))
+      )
 
   return VideoWithPlaybackInfo(
     video = video,
@@ -98,6 +118,39 @@ class VideoListViewModel(
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val appearancePreferences: app.infinity.mpvz.preferences.AppearancePreferences by inject()
   private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
+
+  private val folderMarkedUnwatched: Boolean
+    get() =
+      getApplication<Application>()
+        .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+        .getStringSet("values", emptySet<String>())
+        ?.any { value ->
+          val split = value.split("\u001f", limit = 2)
+          split.size == 2 && split[0] == bucketId && split[1] == "0"
+        } == true
+
+
+  private val folderMarkedWatched: Boolean
+    get() =
+      getApplication<Application>()
+        .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+        .getStringSet("values", emptySet<String>())
+        ?.any { value ->
+          val split = value.split("\u001f", limit = 2)
+          split.size == 2 && split[0] == bucketId && split[1] == "1"
+        } == true
+
+  private fun explicitlyMarkedUnwatched(video: Video): Boolean =
+    getApplication<Application>()
+      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+      .getStringSet("values", emptySet())
+      ?.any { it == "${video.path}\u001f0" } == true
+
+  private fun explicitlyMarkedWatched(video: Video): Boolean =
+    getApplication<Application>()
+      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+      .getStringSet("values", emptySet())
+      ?.any { it == "${video.path}\u001f1" } == true
   private val recentlyPlayedRepository: app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
   // Using MediaFileRepository singleton directly
 
@@ -312,6 +365,10 @@ class VideoListViewModel(
           currentTimeMillis = now,
           newLabelDays = newLabelDays,
           watchedThreshold = watchedThreshold,
+          folderMarkedUnwatched = folderMarkedUnwatched,
+          folderMarkedWatched = folderMarkedWatched,
+          explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
+          explicitlyMarkedWatched = explicitlyMarkedWatched(video),
         )
       }
     _videosWithPlaybackInfo.value = videosWithInfo
@@ -335,10 +392,14 @@ class VideoListViewModel(
     val updatedItem =
       buildVideoWithPlaybackInfo(
         video = video,
-        playbackState = playbackStateRepository.getVideoDataByTitle(mediaIdentifier),
+        playbackState = findPlaybackState(video),
         currentTimeMillis = System.currentTimeMillis(),
         newLabelDays = appearancePreferences.unplayedOldVideoDays.get(),
         watchedThreshold = browserPreferences.watchedThreshold.get(),
+        folderMarkedUnwatched = folderMarkedUnwatched,
+        folderMarkedWatched = folderMarkedWatched,
+        explicitlyMarkedUnwatched = explicitlyMarkedUnwatched(video),
+        explicitlyMarkedWatched = explicitlyMarkedWatched(video),
       )
     if (currentItems[index] == updatedItem) return
 
@@ -352,13 +413,21 @@ class VideoListViewModel(
     video: Video,
     watched: Boolean,
   ) {
+    val overrides = getApplication<Application>()
+      .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+    val values = overrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
+    values.removeIf { it.startsWith("${video.path}\u001f") }
+    values.add("${video.path}\u001f${if (watched) 1 else 0}")
+    overrides.edit().putStringSet("values", values).apply()
     _videosWithPlaybackInfo.update { videos ->
       videos.map { item ->
         if (item.video.path == video.path) {
           item.copy(
             timeRemaining = if (watched) 0L else (video.duration / 1000L).coerceAtLeast(0L),
             progressPercentage = null,
-            isOldAndUnplayed = item.isOldAndUnplayed && !watched,
+            // Explicitly marking an item unwatched is a user action and restores NEW even when
+            // the file is older than the automatic age window.
+            isOldAndUnplayed = !watched,
             isWatched = watched,
           )
         } else {
@@ -381,6 +450,9 @@ class VideoListViewModel(
           ),
         )
         PlaybackStateEvents.notifyChanged(canonicalIdentifier)
+        // Folder badges aggregate child playback state. Invalidate that aggregate immediately
+        // so a child swipe updates the parent folder without requiring navigation or a second swipe.
+        MediaLibraryEvents.notifyChanged()
       }.onFailure { error ->
         Log.e(tag, "Failed to update watched state for ${video.displayName}", error)
         loadPlaybackInfo(_videos.value)

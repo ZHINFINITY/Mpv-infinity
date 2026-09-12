@@ -102,12 +102,22 @@ class YtdlpDownloadService : Service() {
         Intent(this, YtdlpDownloadService::class.java).setAction(ACTION_CANCEL_ACTIVE),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
       )
+    val contentIntent =
+      PendingIntent.getActivity(
+        this,
+        4,
+        Intent(this, app.infinity.mpvz.MainActivity::class.java)
+          .putExtra(app.infinity.mpvz.MainActivity.EXTRA_OPEN_DOWNLOADS, true)
+          .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
 
     return NotificationCompat
       .Builder(this, CHANNEL_ID)
       .setSmallIcon(android.R.drawable.stat_sys_download)
       .setContentTitle(title)
       .setContentText(text)
+      .setContentIntent(contentIntent)
       .setOnlyAlertOnce(true)
       .setOngoing(true)
       .setProgress(100, progress, !running || progress <= 0)

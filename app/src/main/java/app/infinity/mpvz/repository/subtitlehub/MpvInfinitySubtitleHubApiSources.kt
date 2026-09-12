@@ -33,7 +33,7 @@ import java.io.IOException
 
 internal const val AUTHENTICATED_SOURCE_METADATA_KEY = "subtitleHubAuthenticatedSource"
 
-internal class MpvRxSubtitleHubApiSources(
+internal class MpvInfinitySubtitleHubApiSources(
   private val client: OkHttpClient,
   private val json: Json,
   private val preferences: SubtitlesPreferences,
@@ -51,17 +51,17 @@ internal class MpvRxSubtitleHubApiSources(
     selectedLanguages: Set<String>?,
   ): List<OnlineSubtitle> =
     when (source) {
-      MpvRxSubtitleHubSources.BETASERIES_KEY -> searchBetaSeries(request, selectedLanguages)
-      MpvRxSubtitleHubSources.JIMAKU_KEY -> searchJimaku(request, selectedLanguages)
-      MpvRxSubtitleHubSources.SUBDL_KEY -> searchSubDl(request, selectedLanguages)
-      MpvRxSubtitleHubSources.SUBSOURCE_KEY -> searchSubSource(request, selectedLanguages)
-      MpvRxSubtitleHubSources.SUBS_RO_KEY -> searchSubsRo(request, selectedLanguages)
-      MpvRxSubtitleHubSources.SUBX_KEY -> searchSubX(request, selectedLanguages)
+      MpvInfinitySubtitleHubSources.BETASERIES_KEY -> searchBetaSeries(request, selectedLanguages)
+      MpvInfinitySubtitleHubSources.JIMAKU_KEY -> searchJimaku(request, selectedLanguages)
+      MpvInfinitySubtitleHubSources.SUBDL_KEY -> searchSubDl(request, selectedLanguages)
+      MpvInfinitySubtitleHubSources.SUBSOURCE_KEY -> searchSubSource(request, selectedLanguages)
+      MpvInfinitySubtitleHubSources.SUBS_RO_KEY -> searchSubsRo(request, selectedLanguages)
+      MpvInfinitySubtitleHubSources.SUBX_KEY -> searchSubX(request, selectedLanguages)
       else -> emptyList()
     }
 
   fun requireApiKey(source: String) {
-    if (source in MpvRxSubtitleHubSources.AUTHENTICATED_SOURCES) {
+    if (source in MpvInfinitySubtitleHubSources.AUTHENTICATED_SOURCES) {
       apiKey(source)
     }
   }
@@ -71,19 +71,19 @@ internal class MpvRxSubtitleHubApiSources(
     builder: Request.Builder,
   ) {
     when (val source = subtitle.metadata[AUTHENTICATED_SOURCE_METADATA_KEY]) {
-      MpvRxSubtitleHubSources.JIMAKU_KEY -> {
+      MpvInfinitySubtitleHubSources.JIMAKU_KEY -> {
         requireProviderHost(subtitle.url, "Jimaku", "jimaku.cc")
         builder.header("Authorization", apiKey(source))
       }
-      MpvRxSubtitleHubSources.SUBSOURCE_KEY -> {
+      MpvInfinitySubtitleHubSources.SUBSOURCE_KEY -> {
         requireProviderHost(subtitle.url, "SubSource", "api.subsource.net")
         builder.header("X-API-Key", apiKey(source))
       }
-      MpvRxSubtitleHubSources.SUBS_RO_KEY -> {
+      MpvInfinitySubtitleHubSources.SUBS_RO_KEY -> {
         requireProviderHost(subtitle.url, "Subs.ro", "subs.ro")
         builder.header("X-Subs-Api-Key", apiKey(source))
       }
-      MpvRxSubtitleHubSources.SUBX_KEY -> {
+      MpvInfinitySubtitleHubSources.SUBX_KEY -> {
         requireProviderHost(subtitle.url, "SubX", "subx-api.duckdns.org")
         builder.header("Authorization", "Bearer ${apiKey(source)}")
       }
@@ -92,8 +92,8 @@ internal class MpvRxSubtitleHubApiSources(
 
   fun clientForDownload(subtitle: OnlineSubtitle): OkHttpClient =
     when (subtitle.metadata[AUTHENTICATED_SOURCE_METADATA_KEY]) {
-      MpvRxSubtitleHubSources.SUBSOURCE_KEY,
-      MpvRxSubtitleHubSources.SUBS_RO_KEY,
+      MpvInfinitySubtitleHubSources.SUBSOURCE_KEY,
+      MpvInfinitySubtitleHubSources.SUBS_RO_KEY,
       -> noRedirectClient
       else -> client
     }
@@ -108,7 +108,7 @@ internal class MpvRxSubtitleHubApiSources(
       listOf("en", "fr").filter { languageMatches(it, selectedLanguages) }
     if (languages.isEmpty()) return emptyList()
 
-    val apiKey = apiKey(MpvRxSubtitleHubSources.BETASERIES_KEY)
+    val apiKey = apiKey(MpvInfinitySubtitleHubSources.BETASERIES_KEY)
     val showSearchUrl =
       apiUrl(BETASERIES_API_BASE_URL, "shows/search") {
         addQueryParameter("key", apiKey)
@@ -168,8 +168,8 @@ internal class MpvRxSubtitleHubApiSources(
       val release = row.string("file").orEmpty()
       val fileName = downloadUrl.toHttpUrlOrNull()?.pathSegments?.lastOrNull()?.takeIf(String::isNotBlank)
       OnlineSubtitle(
-        provider = SubtitleProvider.MPVRX_SUBTITLE_HUB,
-        id = "${MpvRxSubtitleHubSources.BETASERIES_KEY}:$subtitleId:$languageCode",
+        provider = SubtitleProvider.MPV_INFINITY_SUBTITLE_HUB,
+        id = "${MpvInfinitySubtitleHubSources.BETASERIES_KEY}:$subtitleId:$languageCode",
         url = downloadUrl,
         fileName = fileName,
         release = release.takeIf(String::isNotBlank),
@@ -179,7 +179,7 @@ internal class MpvRxSubtitleHubApiSources(
         language = languageCode,
         source = "BetaSeries",
         format = displayFormat(fileName ?: downloadUrl),
-        metadata = authenticatedMetadata(MpvRxSubtitleHubSources.BETASERIES_KEY),
+        metadata = authenticatedMetadata(MpvInfinitySubtitleHubSources.BETASERIES_KEY),
       )
     }.distinctBy { it.url.lowercase() }
   }
@@ -189,7 +189,7 @@ internal class MpvRxSubtitleHubApiSources(
     selectedLanguages: Set<String>?,
   ): List<OnlineSubtitle> {
     if (!languageMatches("ja", selectedLanguages)) return emptyList()
-    val apiKey = apiKey(MpvRxSubtitleHubSources.JIMAKU_KEY)
+    val apiKey = apiKey(MpvInfinitySubtitleHubSources.JIMAKU_KEY)
     val searchParams =
       if (request.tmdbId != null) {
         mapOf("tmdb_id" to "${if (request.isEpisode) "tv" else "movie"}:${request.tmdbId}")
@@ -237,8 +237,8 @@ internal class MpvRxSubtitleHubApiSources(
           ?.let { absoluteUrl(JIMAKU_API_BASE_URL, it) }
           ?: return@mapNotNull null
       OnlineSubtitle(
-        provider = SubtitleProvider.MPVRX_SUBTITLE_HUB,
-        id = "${MpvRxSubtitleHubSources.JIMAKU_KEY}:$entryId:${downloadUrl.hashCode()}",
+        provider = SubtitleProvider.MPV_INFINITY_SUBTITLE_HUB,
+        id = "${MpvInfinitySubtitleHubSources.JIMAKU_KEY}:$entryId:${downloadUrl.hashCode()}",
         url = downloadUrl,
         fileName = fileName,
         release = fileName,
@@ -250,7 +250,7 @@ internal class MpvRxSubtitleHubApiSources(
         format = displayFormat(fileName),
         metadata =
           authenticatedMetadata(
-            MpvRxSubtitleHubSources.JIMAKU_KEY,
+            MpvInfinitySubtitleHubSources.JIMAKU_KEY,
             buildMap {
               request.season?.let { put("season", it.toString()) }
               request.episode?.let { put("episode", it.toString()) }
@@ -264,7 +264,7 @@ internal class MpvRxSubtitleHubApiSources(
     request: OnlineSubtitleSearchRequest,
     selectedLanguages: Set<String>?,
   ): List<OnlineSubtitle> {
-    val apiKey = apiKey(MpvRxSubtitleHubSources.SUBDL_KEY)
+    val apiKey = apiKey(MpvInfinitySubtitleHubSources.SUBDL_KEY)
     val subDlLanguages = selectedLanguages?.mapNotNull(::toSubDlLanguage)?.distinct().orEmpty()
     if (selectedLanguages != null && subDlLanguages.isEmpty()) return emptyList()
     val url =
@@ -337,8 +337,8 @@ internal class MpvRxSubtitleHubApiSources(
     val itemEpisode = child?.int("episode") ?: item.int("episode")
     if (request.episode != null && itemEpisode != null && itemEpisode != request.episode) return null
     return OnlineSubtitle(
-      provider = SubtitleProvider.MPVRX_SUBTITLE_HUB,
-      id = "${MpvRxSubtitleHubSources.SUBDL_KEY}:$subtitleId",
+      provider = SubtitleProvider.MPV_INFINITY_SUBTITLE_HUB,
+      id = "${MpvInfinitySubtitleHubSources.SUBDL_KEY}:$subtitleId",
       url = downloadUrl,
       fileName = fileName,
       release = release,
@@ -351,7 +351,7 @@ internal class MpvRxSubtitleHubApiSources(
       isHearingImpaired = child?.bool("hi") ?: item.bool("hi") ?: false,
       metadata =
         authenticatedMetadata(
-          MpvRxSubtitleHubSources.SUBDL_KEY,
+          MpvInfinitySubtitleHubSources.SUBDL_KEY,
           buildMap {
             request.season?.let { put("season", it.toString()) }
             itemEpisode?.let { put("episode", it.toString()) }
@@ -368,7 +368,7 @@ internal class MpvRxSubtitleHubApiSources(
     request: OnlineSubtitleSearchRequest,
     selectedLanguages: Set<String>?,
   ): List<OnlineSubtitle> {
-    val apiKey = apiKey(MpvRxSubtitleHubSources.SUBSOURCE_KEY)
+    val apiKey = apiKey(MpvInfinitySubtitleHubSources.SUBSOURCE_KEY)
     val movieUrl =
       apiUrl(SUBSOURCE_API_BASE_URL, "api/v1/movies/search") {
         addQueryParameter("searchType", "text")
@@ -424,8 +424,8 @@ internal class MpvRxSubtitleHubApiSources(
           val releases = subtitle.array("releaseInfo")?.mapNotNull { it.stringValue() }.orEmpty()
           val release = releases.joinToString(" • ")
           OnlineSubtitle(
-            provider = SubtitleProvider.MPVRX_SUBTITLE_HUB,
-            id = "${MpvRxSubtitleHubSources.SUBSOURCE_KEY}:$subtitleId",
+            provider = SubtitleProvider.MPV_INFINITY_SUBTITLE_HUB,
+            id = "${MpvInfinitySubtitleHubSources.SUBSOURCE_KEY}:$subtitleId",
             url = absoluteUrl(SUBSOURCE_API_BASE_URL, "api/v1/subtitles/$subtitleId/download"),
             release = release.takeIf(String::isNotBlank),
             media = movie.title,
@@ -438,7 +438,7 @@ internal class MpvRxSubtitleHubApiSources(
             isHearingImpaired = subtitle.bool("hearingImpaired") == true,
             metadata =
               authenticatedMetadata(
-                MpvRxSubtitleHubSources.SUBSOURCE_KEY,
+                MpvInfinitySubtitleHubSources.SUBSOURCE_KEY,
                 buildMap {
                   request.season?.let { put("season", it.toString()) }
                   request.episode?.let { put("episode", it.toString()) }
@@ -454,7 +454,7 @@ internal class MpvRxSubtitleHubApiSources(
     selectedLanguages: Set<String>?,
   ): List<OnlineSubtitle> {
     val imdbId = request.imdbId?.trim()?.takeIf(String::isNotBlank) ?: return emptyList()
-    val apiKey = apiKey(MpvRxSubtitleHubSources.SUBS_RO_KEY)
+    val apiKey = apiKey(MpvInfinitySubtitleHubSources.SUBS_RO_KEY)
     val languageCodes =
       mapOf("ro" to "ro", "en" to "en").filterKeys { languageMatches(it, selectedLanguages) }
     return languageCodes.flatMap { (apiLanguage, languageCode) ->
@@ -474,8 +474,8 @@ internal class MpvRxSubtitleHubApiSources(
               ?: "subtitle/$subtitleId/download"
           val release = item.string("description")?.takeIf(String::isNotBlank) ?: title
           OnlineSubtitle(
-            provider = SubtitleProvider.MPVRX_SUBTITLE_HUB,
-            id = "${MpvRxSubtitleHubSources.SUBS_RO_KEY}:$subtitleId:$languageCode",
+            provider = SubtitleProvider.MPV_INFINITY_SUBTITLE_HUB,
+            id = "${MpvInfinitySubtitleHubSources.SUBS_RO_KEY}:$subtitleId:$languageCode",
             url = absoluteUrl(SUBS_RO_API_BASE_URL, downloadUrl),
             release = release,
             media = request.query,
@@ -486,7 +486,7 @@ internal class MpvRxSubtitleHubApiSources(
             format = displayFormat(downloadUrl, "zip"),
             metadata =
               authenticatedMetadata(
-                MpvRxSubtitleHubSources.SUBS_RO_KEY,
+                MpvInfinitySubtitleHubSources.SUBS_RO_KEY,
                 buildMap {
                   request.season?.let { put("season", it.toString()) }
                   request.episode?.let { put("episode", it.toString()) }
@@ -502,7 +502,7 @@ internal class MpvRxSubtitleHubApiSources(
     selectedLanguages: Set<String>?,
   ): List<OnlineSubtitle> {
     if (!languageMatches("es", selectedLanguages)) return emptyList()
-    val apiKey = apiKey(MpvRxSubtitleHubSources.SUBX_KEY)
+    val apiKey = apiKey(MpvInfinitySubtitleHubSources.SUBX_KEY)
     val queries =
       if (request.isEpisode && request.season != null && request.episode != null) {
         listOf(
@@ -544,8 +544,8 @@ internal class MpvRxSubtitleHubApiSources(
           val title = item.string("title").orEmpty()
           val release = listOf(title, description).filter(String::isNotBlank).joinToString(" | ")
           OnlineSubtitle(
-            provider = SubtitleProvider.MPVRX_SUBTITLE_HUB,
-            id = "${MpvRxSubtitleHubSources.SUBX_KEY}:$subtitleId:$variant",
+            provider = SubtitleProvider.MPV_INFINITY_SUBTITLE_HUB,
+            id = "${MpvInfinitySubtitleHubSources.SUBX_KEY}:$subtitleId:$variant",
             url = absoluteUrl(SUBX_API_BASE_URL, downloadUrl),
             fileName = "subx.$subtitleId.es.zip",
             release = release.takeIf(String::isNotBlank),
@@ -558,7 +558,7 @@ internal class MpvRxSubtitleHubApiSources(
             downloadCount = item.int("downloads"),
             metadata =
               authenticatedMetadata(
-                MpvRxSubtitleHubSources.SUBX_KEY,
+                MpvInfinitySubtitleHubSources.SUBX_KEY,
                 buildMap {
                   itemSeason?.let { put("season", it.toString()) }
                   request.episode?.let { put("episode", it.toString()) }
@@ -619,16 +619,16 @@ internal class MpvRxSubtitleHubApiSources(
   private fun apiKey(source: String): String {
     val key =
       when (source) {
-        MpvRxSubtitleHubSources.BETASERIES_KEY -> preferences.betaSeriesApiKey.get()
-        MpvRxSubtitleHubSources.JIMAKU_KEY -> preferences.jimakuApiKey.get()
-        MpvRxSubtitleHubSources.SUBDL_KEY -> preferences.subDlApiKey.get()
-        MpvRxSubtitleHubSources.SUBSOURCE_KEY -> preferences.subSourceApiKey.get()
-        MpvRxSubtitleHubSources.SUBS_RO_KEY -> preferences.subsRoApiKey.get()
-        MpvRxSubtitleHubSources.SUBX_KEY -> preferences.subXApiKey.get()
+        MpvInfinitySubtitleHubSources.BETASERIES_KEY -> preferences.betaSeriesApiKey.get()
+        MpvInfinitySubtitleHubSources.JIMAKU_KEY -> preferences.jimakuApiKey.get()
+        MpvInfinitySubtitleHubSources.SUBDL_KEY -> preferences.subDlApiKey.get()
+        MpvInfinitySubtitleHubSources.SUBSOURCE_KEY -> preferences.subSourceApiKey.get()
+        MpvInfinitySubtitleHubSources.SUBS_RO_KEY -> preferences.subsRoApiKey.get()
+        MpvInfinitySubtitleHubSources.SUBX_KEY -> preferences.subXApiKey.get()
         else -> ""
       }.trim()
     return key.takeIf(String::isNotBlank)
-      ?: throw IllegalStateException("${MpvRxSubtitleHubSources.ALL[source] ?: source} API key is required")
+      ?: throw IllegalStateException("${MpvInfinitySubtitleHubSources.ALL[source] ?: source} API key is required")
   }
 
   private fun requireProviderHost(

@@ -14,7 +14,11 @@ object SharedUrlExtractor {
   private val simpleTrailingPunctuation =
     charArrayOf('.', ',', ';', ':', '!', '?', '…', '。', '，', '；', '：', '！', '？', '、')
 
-  fun normalizeInput(text: String): String = firstWebUrl(text) ?: text.trim()
+  fun normalizeInput(text: String): String =
+    (firstWebUrl(text) ?: text.trim()).replace(
+      Regex("(?i)(https?://(?:www\\.)?instagram\\.com)/share/(reel|p|tv)/"),
+      "$1/$2/",
+    )
 
   fun firstWebUrl(text: String): String? =
     webUrlPattern

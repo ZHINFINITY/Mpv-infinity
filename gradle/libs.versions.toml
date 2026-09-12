@@ -11,7 +11,7 @@ koin = "4.2.2"
 lazycolumnscrollbar = "2.2.0"
 nanohttpd = "2.3.1"
 room = "2.8.4"
-navigation3 = "1.1.7"
+navigation3 = "1.1.1"
 kotlinx-serialization = "1.11.0"
 kotlinx-collections-immutable = "0.5.2"
 profileinstaller = "1.4.1"
@@ -19,6 +19,9 @@ profileinstaller = "1.4.1"
 truetype-parser = "2.1.4"
 accompanist = "0.37.3"
 okhttp = "5.5.0"
+retrofit = "3.0.0"
+coil = "3.3.0"
+securityCrypto = "1.1.0-alpha06"
 jsoup = "1.23.2"
 sardineAndroid = "0.9"
 reorderable = "3.1.0"
@@ -27,6 +30,7 @@ androidxCore = "1.19.0"
 androidxPreference = "1.2.1"
 androidxConstraintLayout = "2.2.2"
 media3 = "1.11.0"
+jellyfinMedia3Ffmpeg = "1.9.0+1"
 soraEditor = "0.24.6"
 androidxMaterial3 = "1.5.0-alpha27"
 androidxAppcompat = "1.8.0"
@@ -91,6 +95,7 @@ androidx-media3-exoplayer-dash = { module = "androidx.media3:media3-exoplayer-da
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 androidx-media3-effect = { module = "androidx.media3:media3-effect", version.ref = "media3" }
 androidx-media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "media3" }
+jellyfin-media3-ffmpeg-decoder = { module = "org.jellyfin.media3:media3-ffmpeg-decoder", version.ref = "jellyfinMedia3Ffmpeg" }
 sora-editor-bom = { module = "io.github.rosemoe:editor-bom", version.ref = "soraEditor" }
 sora-editor = { module = "io.github.rosemoe:editor" }
 sora-language-textmate = { module = "io.github.rosemoe:language-textmate" }
@@ -117,6 +122,11 @@ accompanist-permissions = { module = "com.google.accompanist:accompanist-permiss
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+retrofit-kotlinx-serialization = { module = "com.squareup.retrofit2:converter-kotlinx-serialization", version.ref = "retrofit" }
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 google-cast-framework = { module = "com.google.android.gms:play-services-cast-framework", version.ref = "googleCast" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }

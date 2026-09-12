@@ -57,7 +57,7 @@ fun RemoteImage(
 
   LaunchedEffect(url) {
     if (bitmap == null) {
-      bitmap = RemoteImageLoader.load(context, client, url)
+      bitmap = RemoteImageLoader.load(context.applicationContext, client, url)
     }
   }
 
@@ -102,6 +102,7 @@ internal object RemoteImageLoader {
     url: String,
   ): Bitmap? {
     if (url.isBlank()) return null
+    val applicationContext = context.applicationContext
     getFromMemory(url)?.let { return it }
     val failedAtMs = failedAt[url]
     if (failedAtMs != null) {
@@ -111,7 +112,7 @@ internal object RemoteImageLoader {
 
     val candidate =
       loaderScope.async(start = CoroutineStart.LAZY) {
-        loadUncoalesced(context, client, url).also { result ->
+        loadUncoalesced(applicationContext, client, url).also { result ->
           if (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) {
             if (result == null) failedAt[url] = SystemClock.elapsedRealtime() else failedAt.remove(url)
           }
@@ -170,7 +171,7 @@ internal object RemoteImageLoader {
         Request
           .Builder()
           .url(httpUrl)
-          .header("User-Agent", "Mozilla/5.0 (Android) Mpv∞")
+          .header("User-Agent", "Mozilla/5.0 (Android) MpvInfinity")
           .apply { if (host.isNotBlank()) header("Referer", "https://$host") }
           .build()
       }.getOrNull() ?: return null

@@ -55,7 +55,7 @@ object YtdlpManager {
   private const val YTDL_DIR = "ytdl"
   private const val PLAYBACK_RUNTIME_VERSION = "1"
   private const val PLAYBACK_RUNTIME_VERSION_FILE = "playback-runtime-version"
-  private const val INSTALLATION_INFO_PREFIX = "MPVRX_YTDLP_INFO="
+  private const val INSTALLATION_INFO_PREFIX = "MPV_INFINITY_YTDLP_INFO="
   private const val MAX_IMPORTED_PLAYLIST_ENTRIES = 5_000
   private const val MAX_PLAYLIST_OUTPUT_CHARS = 32L * 1024 * 1024
   private const val PLAYLIST_EXTRACTION_TIMEOUT_MS = 180_000L
@@ -116,6 +116,22 @@ object YtdlpManager {
     if (!uri.scheme.equals("http", ignoreCase = true) && !uri.scheme.equals("https", ignoreCase = true)) {
       return false
     }
+    if (uri.host?.lowercase() in setOf("127.0.0.1", "localhost", "0.0.0.0")) return false
+
+    // HentaiStream's /video-proxy endpoint is already a direct MP4 stream. Sending it through
+    // yt-dlp causes an extra URL rewrite and makes mpv reopen the CDN with a different range
+    // request, which can select the addon's 5-second placeholder instead of the episode.
+    if (uri.host?.endsWith("hentaistream-addon.keypop3750.workers.dev") == true &&
+      uri.path.equals("/video-proxy", ignoreCase = true)
+    ) return false
+
+    // Jellyfin's authenticated stream endpoint is an HTTP URL without a file extension. It is
+    // already a direct media stream and must not be sent through yt-dlp, otherwise Native playback
+    // is rejected and the load falls back to MPV.
+    val isJellyfinStream =
+      uri.pathSegments.any { it.equals("Videos", ignoreCase = true) } &&
+        uri.queryParameterNames.any { it.equals("api_key", ignoreCase = true) || it.equals("apikey", ignoreCase = true) }
+    if (isJellyfinStream) return false
 
     return !HttpUtils.isDirectMediaUrl(uri)
   }
@@ -215,11 +231,11 @@ object YtdlpManager {
               add("--playlist-end")
               add(MAX_IMPORTED_PLAYLIST_ENTRIES.toString())
 
-              (userAgentOverride?.takeIf(String::isNotBlank)
-                ?: preferences.customUserAgent.get().takeIf(String::isNotBlank))?.let { userAgent ->
-                add("--user-agent")
-                add(userAgent)
-              }
+              val userAgent = userAgentOverride?.trim().takeIf { !it.isNullOrBlank() }
+                ?: preferences.customUserAgent.get().trim().takeIf(String::isNotBlank)
+                ?: YtdlpOptionsBuilder.DEFAULT_USER_AGENT
+              add("--user-agent")
+              add(userAgent)
               preferences.referer.get().takeIf(String::isNotBlank)?.let { referer ->
                 add("--referer")
                 add(referer)
@@ -364,6 +380,51 @@ object YtdlpManager {
       }
     }
   }
+
+  /** Resolves a web page to one combined audio/video URL that Media3 can play directly. */
+  suspend fun resolveDirectMediaUrl(
+    context: Context,
+    source: String,
+    onLog: (String) -> Unit = {},
+  ): String? =
+    withContext(Dispatchers.IO) {
+      if (!requiresYtdlp(source) || !isPlaybackRuntimeReady(context)) return@withContext source
+      val output = StringBuilder()
+      val ytdlFile = File(getYtdlDir(context), "yt-dlp")
+      val cookiesFile = AndroidCookieJar.playbackCookieFile(context).takeIf(File::isFile)
+      val sourceHost = Uri.parse(source).host?.lowercase().orEmpty()
+      val isInstagram = sourceHost == "instagram.com" || sourceHost.endsWith(".instagram.com")
+      val command = buildList {
+        add(getExecutablePath(context))
+        add(ytdlFile.absolutePath)
+        add("--ignore-config")
+        add("--no-playlist")
+        add("--no-warnings")
+        add("--no-progress")
+        add("--get-url")
+        add("--format")
+        add("best[acodec!=none][vcodec!=none]/best")
+        if (isInstagram) {
+          // Instagram frequently rejects the default mobile/blank request headers.
+          add("--user-agent")
+          add(YtdlpOptionsBuilder.DEFAULT_USER_AGENT)
+          add("--referer")
+          add("https://www.instagram.com/")
+        }
+        cookiesFile?.let {
+          add("--cookies")
+          add(it.absolutePath)
+        }
+        add("--")
+        add(source)
+      }
+      val completed = executePythonProcess(command, context) { line -> output.appendLine(line) }
+      if (!completed) return@withContext null
+      output.lineSequence()
+        .map(String::trim)
+        .firstOrNull { it.startsWith("http://") || it.startsWith("https://") }
+        ?.also { onLog("Resolved direct native media URL") }
+    }
 
   /** Ensures the yt-dlp runtime is installed regardless of URL shape (used by the downloader). */
   suspend fun ensureRuntimeInstalled(

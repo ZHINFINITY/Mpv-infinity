@@ -9,6 +9,7 @@
 
 package app.infinity.mpvz.ui.browser.networkstreaming
 
+import android.widget.Toast
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.activity.compose.BackHandler
@@ -36,29 +37,41 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -86,6 +99,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.NetworkStreamEntryEntity
@@ -105,6 +119,7 @@ import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
 import app.infinity.mpvz.utils.media.MediaInfoParser
 import app.infinity.mpvz.ui.browser.cards.NetworkConnectionCard
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.browser.catalog.StreamScreen
 import app.infinity.mpvz.ui.browser.dialogs.AddConnectionSheet
 import app.infinity.mpvz.ui.browser.dialogs.EditConnectionSheet
 import app.infinity.mpvz.ui.components.InlineSearchBar
@@ -182,6 +197,8 @@ object NetworkStreamingScreen : Screen {
     var ytdlpInstallError by remember { mutableStateOf<String?>(null) }
     var ytdlpInstallJob by remember { mutableStateOf<Job?>(null) }
     var linkPlaybackJob by remember { mutableStateOf<Job?>(null) }
+    var pendingYtdlDownloadUrl by remember { mutableStateOf<String?>(null) }
+    var showYtdlDownloadQualityDialog by remember { mutableStateOf(false) }
 
     fun proceedToPlay(url: String) {
       if (linkPlaybackJob?.isActive == true) return
@@ -212,6 +229,20 @@ object NetworkStreamingScreen : Screen {
         showYtdlpInstallPrompt = true
       } else {
         proceedToPlay(url)
+      }
+    }
+
+    fun submitPastedLink(url: String) {
+      val playableSource = normalizeTorrentSource(url) ?: url.trim()
+      if (
+        ytdlPreferences.showDownloadQualityChooser.get() &&
+          linkDownloadCoordinator.routeFor(playableSource) ==
+            app.infinity.mpvz.domain.download.LinkDownloadCoordinator.Route.YTDLP
+      ) {
+        pendingYtdlDownloadUrl = playableSource
+        showYtdlDownloadQualityDialog = true
+      } else {
+        playLinkGatingYtdlp(playableSource)
       }
     }
 
@@ -372,6 +403,14 @@ object NetworkStreamingScreen : Screen {
                 onInvertSelection = null,
                 onDeselectAll = null,
                 additionalActions = {
+                  androidx.compose.material3.FilledTonalButton(
+                    onClick = { backstack.add(StreamScreen) },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
+                  ) {
+                    Icon(Icons.RoundedFilled.PlayCircle, contentDescription = "Stream")
+                    Spacer(Modifier.size(4.dp))
+                    Text("Stream")
+                  }
                   IconButton(
                     onClick = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
                     modifier = Modifier.padding(horizontal = 2.dp),
@@ -420,24 +459,25 @@ object NetworkStreamingScreen : Screen {
       floatingActionButton = {
         when (pagerState.currentPage) {
           NetworkTab.LOCAL_NETWORK.ordinal -> {
-            ExtendedFloatingActionButton(
+            FloatingActionButton(
               onClick = { showAddSheet = true },
-              icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
-              text = {
-                Text(
-                  stringResource(R.string.ui_add_connection),
-                )
-              },
               modifier = Modifier.padding(bottom = navigationBarHeight),
-            )
+              shape = CircleShape,
+            ) {
+              Icon(
+                Icons.RoundedFilled.Add,
+                contentDescription = stringResource(R.string.ui_add_connection),
+              )
+            }
           }
           NetworkTab.MEDIA.ordinal -> {
-            ExtendedFloatingActionButton(
+            FloatingActionButton(
               onClick = { showAddMediaDialog = true },
-              icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
-              text = { Text("Add Media") },
               modifier = Modifier.padding(bottom = navigationBarHeight),
-            )
+              shape = CircleShape,
+            ) {
+              Icon(Icons.RoundedFilled.Add, contentDescription = "Add media")
+            }
           }
         }
       },
@@ -473,7 +513,7 @@ object NetworkStreamingScreen : Screen {
                     showTorrentPicker = true
                     torrentPickerViewModel.open(TorrentSelectionInput(source = playableSource))
                   } else {
-                    playLinkGatingYtdlp(playableSource)
+                    submitPastedLink(playableSource)
                   }
                 },
                 onPlayRecent = { entry ->
@@ -504,6 +544,7 @@ object NetworkStreamingScreen : Screen {
                   }
                 },
                 onDeleteRecent = viewModel::deleteStreamEntry,
+                showRecentLinks = false,
                 onConnect = { viewModel.connect(it) },
                 onDisconnect = { viewModel.disconnect(it) },
                 onEdit = { editingConnection = it },
@@ -537,6 +578,7 @@ object NetworkStreamingScreen : Screen {
             NetworkTab.MEDIA -> {
               MediaContent(
                 mediaGroups = filteredMediaGroups,
+                recentLinks = filteredRecentLinks,
                 searchQuery = searchQuery,
                 onPlayMedia = { entry ->
                   val playableSource = normalizeTorrentSource(entry.canonicalSourceUri) ?: entry.canonicalSourceUri.trim()
@@ -560,6 +602,18 @@ object NetworkStreamingScreen : Screen {
                 },
                 onDeleteMediaFile = viewModel::deleteStreamEntry,
                 onDeleteMediaGroup = { viewModel.deleteMediaGroup(it) },
+                onPlayRecent = { entry ->
+                  viewModel.recordExistingLinkPlayed(entry.stableKey)
+                  MediaUtils.playFile(source = entry.canonicalSourceUri, context = context, launchSource = "network_media", title = entry.fileName)
+                },
+                onDeleteRecent = viewModel::deleteStreamEntry,
+                onSaveRecent = { entry ->
+                  when (linkDownloadCoordinator.enqueue(entry.canonicalSourceUri, entry.fileName)) {
+                    app.infinity.mpvz.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED ->
+                      Toast.makeText(context, R.string.downloads_location_invalid, Toast.LENGTH_SHORT).show()
+                    else -> Toast.makeText(context, R.string.downloads_started, Toast.LENGTH_SHORT).show()
+                  }
+                },
               )
             }
             NetworkTab.SYNC_PLAY -> {
@@ -636,9 +690,33 @@ object NetworkStreamingScreen : Screen {
             showTorrentPicker = true
             torrentPickerViewModel.open(TorrentSelectionInput(source = playableSource))
           } else {
-            viewModel.saveLinkToMedia(playableSource)
-            MediaUtils.playFile(playableSource, context, "network_stream")
+            submitPastedLink(playableSource)
           }
+        },
+      )
+
+      YtdlDownloadQualityDialog(
+        isOpen = showYtdlDownloadQualityDialog,
+        onDismiss = {
+          showYtdlDownloadQualityDialog = false
+          pendingYtdlDownloadUrl = null
+        },
+        onDownload = { qualityHeight ->
+          val url = pendingYtdlDownloadUrl ?: return@YtdlDownloadQualityDialog
+          linkDownloadCoordinator.enqueue(
+            url = url,
+            title = app.infinity.mpvz.domain.download.LinkDownloadCoordinator.fileNameFromUrl(url),
+            qualityHeight = qualityHeight,
+          )
+          android.widget.Toast.makeText(context, R.string.downloads_started, android.widget.Toast.LENGTH_SHORT).show()
+          showYtdlDownloadQualityDialog = false
+          pendingYtdlDownloadUrl = null
+        },
+        onPlay = {
+          val url = pendingYtdlDownloadUrl ?: return@YtdlDownloadQualityDialog
+          showYtdlDownloadQualityDialog = false
+          pendingYtdlDownloadUrl = null
+          playLinkGatingYtdlp(url)
         },
       )
 
@@ -670,6 +748,116 @@ object NetworkStreamingScreen : Screen {
 }
 
 @Composable
+private fun YtdlDownloadQualityDialog(
+  isOpen: Boolean,
+  onDismiss: () -> Unit,
+  onDownload: (Int) -> Unit,
+  onPlay: () -> Unit,
+) {
+  if (!isOpen) return
+  val qualityOptions = listOf(-1, 2160, 1440, 1080, 720, 480, 360)
+  var selectedQuality by remember(isOpen) { mutableStateOf(-1) }
+  val sheetState =
+    rememberBottomSheetState(
+      initialValue = SheetValue.Hidden,
+      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
+  LaunchedEffect(isOpen) {
+    if (isOpen) sheetState.expand()
+  }
+  ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    sheetState = sheetState,
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    Column(
+      modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.ytdlp_download_quality_title),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+          )
+          Text(
+            text = "Choose the quality for this video",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        TextButton(onClick = onDismiss) { Text("Done") }
+      }
+
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        qualityOptions.forEach { quality ->
+          val selected = selectedQuality == quality
+          Surface(
+            onClick = { selectedQuality = quality },
+            shape = RoundedCornerShape(16.dp),
+            color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+              Surface(
+                shape = CircleShape,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+                modifier = Modifier.size(40.dp),
+              ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                  if (selected) {
+                    Icon(Icons.RoundedFilled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+                  } else {
+                    RadioButton(selected = false, onClick = null)
+                  }
+                }
+              }
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                  text = if (quality < 0) "Best available" else "Up to ${quality}p",
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                  color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                  text = if (quality < 0) "Best video and audio" else "Video with audio, up to ${quality}p",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+          }
+        }
+      }
+
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedButton(onClick = onPlay, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f).height(48.dp)) {
+          Text(stringResource(R.string.ui_play_now))
+        }
+        FilledTonalButton(onClick = { onDownload(selectedQuality) }, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f).height(48.dp)) {
+          Icon(Icons.RoundedFilled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(stringResource(R.string.ytdlp_download_quality_download))
+        }
+      }
+      Spacer(modifier = Modifier.height(12.dp))
+    }
+  }
+}
+
+@Composable
 private fun AddMediaDialog(
   isOpen: Boolean,
   onDismiss: () -> Unit,
@@ -681,66 +869,56 @@ private fun AddMediaDialog(
   val clipboard = androidx.compose.ui.platform.LocalClipboard.current
   val coroutineScope = rememberCoroutineScope()
 
-  androidx.compose.material3.AlertDialog(
+  ModalBottomSheet(
     onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.ui_saved_media)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          text = "Paste a torrent magnet link, direct video stream (HLS, MP4, MKV), or YouTube URL to save and play.",
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-          value = inputUrl,
-          onValueChange = { inputUrl = it },
-          label = { Text("Stream or Magnet URL") },
-          placeholder = { Text("magnet:?xt=... or https://...") },
-          modifier = Modifier.fillMaxWidth(),
-          singleLine = true,
-          trailingIcon = {
-            if (inputUrl.isBlank()) {
-              IconButton(
-                onClick = {
-                  coroutineScope.launch {
-                    val clipData = clipboard.getClipEntry()?.clipData
-                    if (clipData != null && clipData.itemCount > 0) {
-                      val clip = clipData.getItemAt(0).coerceToText(context)?.toString()?.trim()
-                      if (!clip.isNullOrBlank()) inputUrl = clip
-                    }
-                  }
-                },
-              ) {
-                Icon(Icons.RoundedFilled.ContentPaste, contentDescription = "Paste")
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    Column(
+      modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
+      verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      Text(stringResource(R.string.ui_saved_media), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+      Text(
+        text = "Paste a torrent magnet link, direct video stream (HLS, MP4, MKV), or YouTube URL to save and play.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      OutlinedTextField(
+        value = inputUrl,
+        onValueChange = { inputUrl = it },
+        label = { Text("Stream or Magnet URL") },
+        placeholder = { Text("magnet:?xt=... or https://...") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        trailingIcon = {
+          if (inputUrl.isBlank()) {
+            IconButton(onClick = {
+              coroutineScope.launch {
+                val clipData = clipboard.getClipEntry()?.clipData
+                if (clipData != null && clipData.itemCount > 0) {
+                  val clip = clipData.getItemAt(0).coerceToText(context)?.toString()?.trim()
+                  if (!clip.isNullOrBlank()) inputUrl = clip
+                }
               }
-            } else {
-              IconButton(onClick = { inputUrl = "" }) {
-                Icon(Icons.RoundedFilled.Close, contentDescription = "Clear")
-              }
-            }
-          },
-        )
-      }
-    },
-    confirmButton = {
-      Button(
-        onClick = {
-          if (inputUrl.isNotBlank()) {
-            onSubmit(inputUrl.trim())
-            onDismiss()
+            }) { Icon(Icons.RoundedFilled.ContentPaste, contentDescription = "Paste") }
+          } else {
+            IconButton(onClick = { inputUrl = "" }) { Icon(Icons.RoundedFilled.Close, contentDescription = "Clear") }
           }
         },
-        enabled = inputUrl.isNotBlank(),
-      ) {
-        Text(stringResource(R.string.ui_play_now))
+      )
+      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = onDismiss) { Text(stringResource(R.string.generic_cancel)) }
+        Spacer(Modifier.width(8.dp))
+        Button(
+          onClick = { if (inputUrl.isNotBlank()) { onSubmit(inputUrl.trim()); onDismiss() } },
+          enabled = inputUrl.isNotBlank(),
+        ) { Text(stringResource(R.string.ui_play_now)) }
       }
-    },
-    dismissButton = {
-      androidx.compose.material3.TextButton(onClick = onDismiss) {
-        Text(stringResource(R.string.generic_cancel))
-      }
-    },
-  )
+      Spacer(Modifier.navigationBarsPadding())
+    }
+  }
 }
 
 @Composable
@@ -754,6 +932,7 @@ private fun LocalNetworkContent(
   onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
   onSaveToMedia: (NetworkStreamEntryEntity) -> Unit,
   onDeleteRecent: (String) -> Unit,
+  showRecentLinks: Boolean = true,
   onConnect: (NetworkConnection) -> Unit,
   onDisconnect: (NetworkConnection) -> Unit,
   onEdit: (NetworkConnection) -> Unit,
@@ -778,6 +957,7 @@ private fun LocalNetworkContent(
         onPlayRecent = onPlayRecent,
         onSaveToTorrent = onSaveToMedia,
         onDeleteRecent = onDeleteRecent,
+        showRecentLinks = showRecentLinks,
       )
     }
 
@@ -829,10 +1009,14 @@ private fun SyncPlayContent() {
 @Composable
 private fun MediaContent(
   mediaGroups: List<MediaStreamGroup>,
+  recentLinks: List<NetworkStreamEntryEntity>,
   searchQuery: String,
   onPlayMedia: (NetworkStreamEntryEntity) -> Unit,
   onDeleteMediaFile: (String) -> Unit,
   onDeleteMediaGroup: (MediaStreamGroup) -> Unit,
+  onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
+  onDeleteRecent: (String) -> Unit,
+  onSaveRecent: (NetworkStreamEntryEntity) -> Unit,
 ) {
   val context = LocalContext.current
   val viewedPreferences =
@@ -869,7 +1053,7 @@ private fun MediaContent(
   }
 
   Box(modifier = Modifier.fillMaxSize()) {
-    if (mediaGroups.isEmpty()) {
+    if (mediaGroups.isEmpty() && recentLinks.isEmpty()) {
       LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
@@ -885,9 +1069,19 @@ private fun MediaContent(
     } else {
       LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = navBarHeight + 24.dp),
+        contentPadding = PaddingValues(top = 16.dp, bottom = navBarHeight + 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
       ) {
+        if (recentLinks.isNotEmpty()) {
+          item(key = "saved_stream_links") {
+            SavedStreamLinksSection(
+              links = recentLinks,
+              onPlay = onPlayRecent,
+              onDownload = onSaveRecent,
+              onDelete = onDeleteRecent,
+            )
+          }
+        }
         // 1. Featured Hero Carousel Banner
         if (heroGroups.isNotEmpty() && searchQuery.isBlank()) {
           item {
@@ -1035,6 +1229,73 @@ private fun EmptyStateCard(
 }
 
 @Composable
+private fun SavedStreamLinksSection(
+  links: List<NetworkStreamEntryEntity>,
+  onPlay: (NetworkStreamEntryEntity) -> Unit,
+  onDownload: (NetworkStreamEntryEntity) -> Unit,
+  onDelete: (String) -> Unit,
+) {
+  Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Text(
+      text = "Saved Stream Links",
+      style = MaterialTheme.typography.titleLarge,
+      fontWeight = FontWeight.Bold,
+      modifier = Modifier.padding(horizontal = 16.dp),
+    )
+    androidx.compose.foundation.lazy.LazyRow(
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      contentPadding = PaddingValues(horizontal = 16.dp),
+    ) {
+      items(links, key = { "saved_${it.stableKey}" }) { entry ->
+        SavedStreamLinkCard(entry = entry, onPlay = { onPlay(entry) }, onDownload = { onDownload(entry) }, onDelete = { onDelete(entry.stableKey) })
+      }
+    }
+  }
+}
+
+@Composable
+private fun SavedStreamLinkCard(
+  entry: NetworkStreamEntryEntity,
+  onPlay: () -> Unit,
+  onDownload: () -> Unit,
+  onDelete: () -> Unit,
+) {
+  val title = remember(entry.fileName, entry.canonicalSourceUri) {
+    MediaInfoParser.parseStreamTitle(entry.canonicalSourceUri, entry.fileName)
+  }
+  val thumbnail = streamThumbnailUrl(entry.canonicalSourceUri)
+  Card(
+    modifier = Modifier.width(210.dp),
+    shape = RoundedCornerShape(16.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+  ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+      Box(
+        modifier = Modifier.fillMaxWidth().height(118.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center,
+      ) {
+        if (thumbnail != null) {
+          RemoteImage(url = thumbnail, contentDescription = title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else {
+          Icon(Icons.RoundedFilled.Link, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(34.dp))
+        }
+      }
+      Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+      Row(modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 4.dp), horizontalArrangement = Arrangement.End) {
+        IconButton(onClick = onDownload, modifier = Modifier.size(36.dp)) { Icon(Icons.RoundedFilled.Download, contentDescription = stringResource(R.string.downloads_download)) }
+        IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) { Icon(Icons.RoundedFilled.Delete, contentDescription = stringResource(R.string.delete)) }
+        IconButton(onClick = onPlay, modifier = Modifier.size(36.dp)) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = stringResource(R.string.ui_play), tint = MaterialTheme.colorScheme.primary) }
+      }
+    }
+  }
+}
+
+private fun streamThumbnailUrl(url: String): String? {
+  val videoId = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?v=|shorts/|embed/))([^?&/]+)").find(url)?.groupValues?.getOrNull(1)
+  return videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
+}
+
+@Composable
 private fun StreamLinkSection(
   recentLinks: List<NetworkStreamEntryEntity>,
   isPreparing: Boolean,
@@ -1042,6 +1303,7 @@ private fun StreamLinkSection(
   onPlayRecent: (NetworkStreamEntryEntity) -> Unit,
   onSaveToTorrent: (NetworkStreamEntryEntity) -> Unit,
   onDeleteRecent: (String) -> Unit,
+  showRecentLinks: Boolean = true,
 ) {
   val context = LocalContext.current
   val keyboardController = LocalSoftwareKeyboardController.current
@@ -1187,7 +1449,7 @@ private fun StreamLinkSection(
 
     // 2. Top 3 Recent Stream Links with Quick Autofill & Torrent Save
     val topRecent = remember(recentLinks) { recentLinks.take(3) }
-    if (topRecent.isNotEmpty()) {
+    if (showRecentLinks && topRecent.isNotEmpty()) {
       Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),

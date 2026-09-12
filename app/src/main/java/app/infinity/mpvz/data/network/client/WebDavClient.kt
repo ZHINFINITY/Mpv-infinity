@@ -10,6 +10,7 @@
 package app.infinity.mpvz.data.network.client
 
 import android.net.Uri
+import android.util.Log
 import app.infinity.mpvz.domain.network.NetworkConnection
 import app.infinity.mpvz.domain.network.NetworkFile
 import app.infinity.mpvz.domain.network.NetworkPath
@@ -33,7 +34,10 @@ class WebDavClient(
   private val connection: NetworkConnection,
 ) : NetworkClient {
   companion object {
+    private const val TAG = "WebDavClient"
     private const val SKIP_BUFFER_BYTES = 64 * 1024
+    // Larger sequential ranges reduce request-latency stalls for high-bitrate 4K/HDR media.
+    private const val RANGE_CHUNK_BYTES = 32L * 1024 * 1024
     private val rangeHttpClient by lazy {
       SharedHttpClient.derive {
         // A call timeout covers the entire response body and would terminate healthy long streams.
@@ -53,6 +57,38 @@ class WebDavClient(
   )
 
   private var sardine: Sardine? = null
+
+  /**
+   * TorBox supports either account-email/account-password or torbox/API-key authentication.
+   * Keep the configured credentials as the primary choice, but retry a 401 with the documented
+   * API-key form when the saved username is an email and the saved password is an API key.
+   */
+  private fun torboxFallbackAuthorization(): String? {
+    if (connection.isAnonymous || connection.password.isBlank()) return null
+    if (!connection.host.equals("webdav.torbox.app", ignoreCase = true)) return null
+    if (connection.username.equals("torbox", ignoreCase = true)) return null
+    return Credentials.basic("torbox", connection.password)
+  }
+
+  private fun executeWithAuthentication(request: Request): Response {
+    val initialAuthorization = request.header("Authorization")
+    Log.d(
+      TAG,
+      "request method=${request.method} url=${request.url} range=${request.header("Range") ?: "none"} auth=${if (initialAuthorization == null) "none" else "configured"}",
+    )
+    val response = rangeHttpClient.newCall(request).execute()
+    val fallbackAuthorization = torboxFallbackAuthorization()
+    if (response.code != 401 || fallbackAuthorization == null) {
+      Log.d(TAG, "response method=${request.method} url=${request.url} code=${response.code} contentLength=${response.header("Content-Length") ?: "none"} contentRange=${response.header("Content-Range") ?: "none"} authRetry=false")
+      return response
+    }
+    Log.d(TAG, "response method=${request.method} url=${request.url} code=401 authRetry=true")
+    response.close()
+    val retryRequest = request.newBuilder().header("Authorization", fallbackAuthorization).build()
+    return rangeHttpClient.newCall(retryRequest).execute().also { retryResponse ->
+      Log.d(TAG, "response method=${retryRequest.method} url=${retryRequest.url} code=${retryResponse.code} contentLength=${retryResponse.header("Content-Length") ?: "none"} contentRange=${retryResponse.header("Content-Range") ?: "none"} authRetry=true")
+    }
+  }
 
   /**
    * Builds WebDAV request URLs from decoded path segments. HttpUrl owns the wire encoding so
@@ -112,20 +148,24 @@ class WebDavClient(
             segments.take(requestedSegments.size) == requestedSegments
         }?.last()
 
-    // Reverse proxies sometimes rewrite the collection prefix in response hrefs. Sardine's name
-    // remains the decoded final path component, so use it only when exact URI resolution cannot
-    // identify the child. Exclude a rewritten collection-self response by its trailing directory.
-    val fallbackName = resource.name?.trimEnd('/')?.takeIf(String::isNotBlank)
+    // Reverse proxies sometimes rewrite the collection prefix in response hrefs. Prefer the href's
+    // decoded final path component for fallback identity. URI.path decodes percent escapes while
+    // preserving literal reserved filename characters such as '+', '#', '?', '%', '&', and Unicode;
+    // resource.name is display metadata and must never be used to reconstruct a request path.
+    val hrefName = href.path
+      ?.trimEnd('/')
+      ?.substringAfterLast('/')
+      ?.takeIf(String::isNotBlank)
     if (
       exactChildName == null &&
       resource.isDirectory &&
-      fallbackName == requestedSegments.lastOrNull() &&
+      hrefName == requestedSegments.lastOrNull() &&
       resolvedSegments.lastOrNull() == requestedSegments.lastOrNull()
     ) {
       return null
     }
 
-    val childName = exactChildName ?: fallbackName ?: return null
+    val childName = exactChildName ?: hrefName ?: return null
     return runCatching {
       val filePath = directory.child(childName)
       val displayName = resource.name?.takeIf(String::isNotBlank) ?: childName
@@ -142,30 +182,48 @@ class WebDavClient(
 
   override suspend fun connect(): Result<Unit> =
     withContext(Dispatchers.IO) {
-      try {
-        val candidate = OkHttpSardine()
-        if (!connection.isAnonymous) {
-          candidate.setCredentials(connection.username, connection.password)
-        }
+      var lastError: Exception? = null
+      val credentialAttempts =
+        buildList {
+          if (connection.isAnonymous) {
+            add(null)
+          } else {
+            add(connection.username to connection.password)
+            if (connection.host.equals("webdav.torbox.app", ignoreCase = true) &&
+              !connection.username.equals("torbox", ignoreCase = true) &&
+              connection.password.isNotBlank()
+            ) {
+              add("torbox" to connection.password)
+            }
+          }
+        }.distinct()
 
-        // Reachability/credential probe only. Reverse proxies commonly reject or empty out a
-        // depth-0 PROPFIND at the share root while every file below it stays fully streamable,
-        // so only credential rejections are conclusive failures here.
+      for (credentials in credentialAttempts) {
         try {
-          candidate.list(buildUrl("", trailingSlash = true), 0)
-        } catch (probeError: SardineException) {
-          if (probeError.statusCode == 401 || probeError.statusCode == 403) throw probeError
-        }
+          val candidate = OkHttpSardine()
+          credentials?.let { (username, password) -> candidate.setCredentials(username, password) }
 
-        sardine = candidate
-        Result.success(Unit)
-      } catch (cancellation: CancellationException) {
-        sardine = null
-        throw cancellation
-      } catch (error: Exception) {
-        sardine = null
-        Result.failure(error)
+          // Reachability/credential probe only. Reverse proxies commonly reject or empty out a
+          // depth-0 PROPFIND at the share root while every file below it stays fully streamable,
+          // so only credential rejections are conclusive failures here.
+          try {
+            candidate.list(buildUrl("", trailingSlash = true), 0)
+          } catch (probeError: SardineException) {
+            if (probeError.statusCode == 401 || probeError.statusCode == 403) throw probeError
+          }
+
+          sardine = candidate
+          return@withContext Result.success(Unit)
+        } catch (cancellation: CancellationException) {
+          sardine = null
+          throw cancellation
+        } catch (error: Exception) {
+          lastError = error
+        }
       }
+
+      sardine = null
+      Result.failure(lastError ?: IOException("Unable to connect to WebDAV"))
     }
 
   override suspend fun disconnect() {
@@ -201,20 +259,22 @@ class WebDavClient(
   override suspend fun getFileSize(path: String): Result<Long> =
     withContext(Dispatchers.IO) {
       try {
-        val client = sardine ?: return@withContext Result.failure(IOException("Not connected"))
+        if (sardine == null) return@withContext Result.failure(IOException("Not connected"))
         val filePath = NetworkPath.from(path)
-        val resource = runCatching { client.list(buildUrl(filePath.value), 0) }.getOrNull()?.firstOrNull()
-        if (resource?.isDirectory == true) {
-          Result.failure(IOException("File not found or is a directory"))
+        Log.d(TAG, "size path=${filePath.value} url=${buildUrl(filePath.value)}")
+        // Prefer the authenticated DAV metadata response for TorBox and other hybrid servers.
+        // Their HEAD/range endpoint can return 404 for a valid file after switching folders, while
+        // PROPFIND still returns the file content length. Keep the HTTP probe as a fallback for
+        // servers that omit getcontentlength from PROPFIND responses.
+        val resourceSize =
+          runCatching {
+            sardine?.list(buildUrl(filePath.value), 0)?.firstOrNull()?.contentLength
+          }.getOrNull()?.takeIf { it >= 0L }
+        val size = resourceSize ?: probeSizeOverHttp(filePath)
+        if (size == null || size < 0L) {
+          Result.failure(IOException("WebDAV server did not provide a file size"))
         } else {
-          // Hybrid HTTP/DAV servers can reject PROPFIND on files or omit getcontentlength
-          // while still serving GET/HEAD, so fall back to an HTTP size probe.
-          val size = resource?.contentLength?.takeIf { it >= 0L } ?: probeSizeOverHttp(filePath)
-          if (size == null || size < 0L) {
-            Result.failure(IOException("WebDAV server did not provide a file size"))
-          } else {
-            Result.success(size)
-          }
+          Result.success(size)
         }
       } catch (cancellation: CancellationException) {
         throw cancellation
@@ -233,7 +293,7 @@ class WebDavClient(
     if (!connection.isAnonymous) {
       headBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
     }
-    rangeHttpClient.newCall(headBuilder.build()).execute().use { response ->
+    executeWithAuthentication(headBuilder.build()).use { response ->
       if (response.isSuccessful) {
         response.header("Content-Length")?.toLongOrNull()?.takeIf { it >= 0L }?.let { return it }
       }
@@ -250,7 +310,7 @@ class WebDavClient(
     if (!connection.isAnonymous) {
       rangeBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
     }
-    rangeHttpClient.newCall(rangeBuilder.build()).execute().use { response ->
+    executeWithAuthentication(rangeBuilder.build()).use { response ->
       val match = contentRangePattern.matchEntire(response.header("Content-Range").orEmpty())
       return match?.groupValues?.get(3)?.takeUnless { it == "*" }?.toLongOrNull()
     }
@@ -259,12 +319,14 @@ class WebDavClient(
   override suspend fun getFileStream(
     path: String,
     offset: Long,
+    length: Long?,
   ): Result<InputStream> =
     withContext(Dispatchers.IO) {
       require(offset >= 0L) { "Stream offset must not be negative" }
+      require(length == null || length > 0L) { "Stream length must be positive when provided" }
       try {
-        if (offset > 0L) {
-          return@withContext getRangedFileStream(NetworkPath.from(path), offset)
+        if (offset > 0L || length != null) {
+          return@withContext getRangedFileStream(NetworkPath.from(path), offset, length)
         }
 
         // A per-call OkHttpSardine leaks its own OkHttpClient and applies a 10s read timeout
@@ -278,7 +340,9 @@ class WebDavClient(
         if (!connection.isAnonymous) {
           requestBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
         }
-        val response = rangeHttpClient.newCall(requestBuilder.build()).execute()
+        val request = requestBuilder.build()
+        Log.d(TAG, "stream path=${NetworkPath.from(path).value} offset=$offset url=${request.url} range=none")
+        val response = executeWithAuthentication(request)
         if (!response.isSuccessful) {
           response.close()
           throw IOException("WebDAV request failed with HTTP ${response.code}")
@@ -294,10 +358,11 @@ class WebDavClient(
   private fun getRangedFileStream(
     path: NetworkPath,
     offset: Long,
+    requestedLength: Long?,
   ): Result<InputStream> {
     val initial =
       try {
-        openRangedResponse(path, offset)
+        openRangedResponse(path, offset, requestedLength)
       } catch (error: Exception) {
         return Result.failure(error)
       }
@@ -307,8 +372,12 @@ class WebDavClient(
         private var current = initial
         private var stream = current.response.body.byteStream()
         private var position = current.start
-        private var bytesRemaining = current.endInclusive - current.start + 1L
+        private var bytesRemaining = minOf(
+          current.endInclusive - current.start + 1L,
+          requestedLength ?: Long.MAX_VALUE,
+        )
         private var totalLength = current.totalLength
+        private var delivered = 0L
         private var closed = false
 
         override fun read(): Int {
@@ -329,17 +398,21 @@ class WebDavClient(
           while (true) {
             if (bytesRemaining == 0L) {
               val completeLength = totalLength ?: return -1
-              if (position >= completeLength) return -1
+              if (position >= completeLength || requestedLength?.let { delivered >= it } == true) return -1
 
               current.response.close()
-              val next = openRangedResponse(path, position)
+              val remaining = requestedLength?.let { (it - delivered).coerceAtLeast(1L) }
+              val next = openRangedResponse(path, position, remaining)
               if (next.totalLength != null && next.totalLength != completeLength) {
                 next.response.close()
                 throw IOException("WebDAV resource length changed during streaming")
               }
               current = next
               stream = next.response.body.byteStream()
-              bytesRemaining = next.endInclusive - next.start + 1L
+              bytesRemaining = minOf(
+                next.endInclusive - next.start + 1L,
+                remaining ?: Long.MAX_VALUE,
+              )
               totalLength = next.totalLength ?: completeLength
             }
 
@@ -348,6 +421,7 @@ class WebDavClient(
             if (count > 0) {
               position += count
               bytesRemaining -= count
+              delivered += count
               return count
             }
             if (count == 0) continue
@@ -374,20 +448,26 @@ class WebDavClient(
   private fun openRangedResponse(
     path: NetworkPath,
     offset: Long,
+    requestedLength: Long? = null,
   ): RangedResponse {
     val requestBuilder =
       Request
         .Builder()
         .url(buildUrl(path.value))
         .get()
-        .header("Range", "bytes=$offset-")
+        .header(
+          "Range",
+          "bytes=$offset-${offset + minOf(requestedLength ?: RANGE_CHUNK_BYTES, RANGE_CHUNK_BYTES) - 1L}",
+        )
         .header("Accept-Encoding", "identity")
 
     if (!connection.isAnonymous) {
       requestBuilder.header("Authorization", Credentials.basic(connection.username, connection.password))
     }
 
-    val response = rangeHttpClient.newCall(requestBuilder.build()).execute()
+    val request = requestBuilder.build()
+    Log.d(TAG, "stream path=${path.value} offset=$offset url=${request.url} range=${request.header("Range") ?: "none"}")
+    val response = executeWithAuthentication(request)
     val rangeMatch = contentRangePattern.matchEntire(response.header("Content-Range").orEmpty())
     val returnedStart = rangeMatch?.groupValues?.get(1)?.toLongOrNull()
     val returnedEnd = rangeMatch?.groupValues?.get(2)?.toLongOrNull()

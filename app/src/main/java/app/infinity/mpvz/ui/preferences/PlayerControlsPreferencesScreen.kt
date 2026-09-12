@@ -267,6 +267,8 @@ object PlayerControlsPreferencesScreen : Screen {
           item {
             val hidePlayerButtonsBackground by appearancePrefs.hidePlayerButtonsBackground.collectAsState()
             val forceDarkPlayerButtonsBackground by appearancePrefs.forceDarkPlayerButtonsBackground.collectAsState()
+            val playerControlsTheme by appearancePrefs.playerControlsTheme.collectAsState()
+            val showSeekbarOuterContainer by appearancePrefs.showSeekbarOuterContainer.collectAsState()
             val portraitPlaybackControlsPosition by
               appearancePrefs.portraitPlaybackControlsPosition.collectAsState()
             val playerTimeToDisappear by playerPrefs.playerTimeToDisappear.collectAsState()
@@ -278,6 +280,26 @@ object PlayerControlsPreferencesScreen : Screen {
             var customTimeValue by remember { mutableStateOf("") }
 
             PreferenceCard {
+              ListPreference(
+                value = playerControlsTheme,
+                onValueChange = { appearancePrefs.playerControlsTheme.set(it) },
+                values = app.infinity.mpvz.preferences.PlayerControlsTheme.entries,
+                valueToText = { AnnotatedString(it.displayName) },
+                title = { Text("Player controls theme") },
+                summary = { Text(playerControlsTheme.displayName) },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                value = showSeekbarOuterContainer,
+                onValueChange = { appearancePrefs.showSeekbarOuterContainer.set(it) },
+                title = { Text("Show seekbar outer container") },
+                summary = { Text("Show a compact transparent/glass layer around the seekbar") },
+              )
+
+              PreferenceDivider()
+
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_portrait_playback_buttons),
                 value = portraitPlaybackControlsPosition,

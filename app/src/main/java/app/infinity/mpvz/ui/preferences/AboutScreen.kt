@@ -50,9 +50,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -68,6 +70,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.net.toUri
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
@@ -75,6 +79,7 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.presentation.crash.CrashActivity.Companion.collectDeviceInfo
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.update.UpdateViewModel
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
@@ -98,9 +103,12 @@ object AboutScreen : Screen {
         ?: BuildConfig.VERSION_NAME
     val buildType = BuildConfig.BUILD_TYPE
     val githubRepoUrl = stringResource(R.string.github_repo_url)
-    val koFiUrl = "https://ko-fi.com/ZHINFINITY"
-    val paypalUrl = "https://paypal.me/InfinityxEternity"
-    val upiId = "zhjjk001-1@oksbi"
+    val updateViewModel: UpdateViewModel? =
+      if (BuildConfig.ENABLE_UPDATE_FEATURE) {
+        (context as? ComponentActivity)?.let { viewModel(it) }
+      } else {
+        null
+      }
     val settingsScrollState = rememberScrollState()
     val settingsHighlight =
       rememberSettingsSearchHighlight(AboutScreen, settingsScrollState, MaterialTheme.colorScheme.primary)
@@ -132,8 +140,8 @@ object AboutScreen : Screen {
       },
     ) { paddingValues ->
       val cs = MaterialTheme.colorScheme
-      val colorPrimary = cs.primaryContainer
-      val colorTertiary = cs.tertiaryContainer
+      val colorPrimary = cs.surfaceVariant
+      val colorTertiary = cs.surfaceVariant
       val transition = rememberInfiniteTransition()
       val fraction by transition.animateFloat(
         initialValue = 0f,
@@ -184,12 +192,13 @@ object AboutScreen : Screen {
               Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier.size(64.dp)) {
                   AndroidView(
-                    modifier = Modifier.matchParentSize(),
-                    factory = { ctx ->
-                      ImageView(ctx).apply {
-                        setImageResource(R.mipmap.ic_launcher)
-                      }
-                    },
+                      modifier = Modifier.matchParentSize(),
+                      factory = { ctx ->
+                        ImageView(ctx).apply {
+                        setImageResource(R.drawable.ic_launcher_user_logo)
+                        scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        }
+                      },
                   )
                 }
 
@@ -358,8 +367,7 @@ object AboutScreen : Screen {
               Spacer(Modifier.width(10.dp))
               Text(
                 text =
-                  androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_buy_me_a_coffee),
+                      "Support ZHINFINITY",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = cs.onSurface,
@@ -368,9 +376,7 @@ object AboutScreen : Screen {
             Spacer(Modifier.height(10.dp))
             Text(
               text =
-                androidx.compose.ui.res.stringResource(
-                  app.infinity.mpvz.R.string.ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit,
-                ),
+                "Support the work of ZHINFINITY on Mpv∞.",
               style = MaterialTheme.typography.bodyMedium,
               color = cs.onSurfaceVariant,
             )
@@ -388,7 +394,7 @@ object AboutScreen : Screen {
                       SafeClipboard.copyPlainText(
                         context = context,
                         label = "Mpv∞_support_link",
-                        text = "$koFiUrl\n$paypalUrl\n$upiId",
+                        text = "zhjjk001-1@oksbi",
                         showToast = false,
                       )
                       Toast
@@ -409,12 +415,9 @@ object AboutScreen : Screen {
                     style = MaterialTheme.typography.labelSmall,
                     color = cs.outline,
                   )
-                  Spacer(Modifier.height(2.dp))
+                  Spacer(Modifier.height(12.dp))
                   Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.pref_about_donate_kofi_url,
-                      ),
+                      text = "zhjjk001-1@oksbi",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     color = cs.onSurface,
@@ -423,9 +426,7 @@ object AboutScreen : Screen {
                 Icon(
                   imageVector = Icons.RoundedFilled.ContentCopy,
                   contentDescription =
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_copy_upi_id,
-                    ),
+                    "Copy UPI ID",
                   modifier = Modifier.size(20.dp),
                   tint = cs.primary,
                 )
@@ -438,7 +439,7 @@ object AboutScreen : Screen {
                   val supportIntent =
                     Intent(
                       Intent.ACTION_VIEW,
-                      koFiUrl.toUri(),
+                      "https://ko-fi.com/ZHINFINITY".toUri(),
                     )
                   context.startActivity(supportIntent)
                 } catch (_: Exception) {
@@ -463,30 +464,69 @@ object AboutScreen : Screen {
               Spacer(Modifier.width(8.dp))
               Text(
                 androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.pref_about_donate_kofi),
+                  .stringResource(app.infinity.mpvz.R.string.ui_visit_github),
                 fontWeight = FontWeight.SemiBold,
               )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              Button(
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, "https://ko-fi.com/zhinfinity".toUri())) },
+                modifier = Modifier.weight(1f).height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = cs.surfaceVariant, contentColor = cs.onSurfaceVariant),
+              ) { Text("Ko-fi") }
+              Button(
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, "https://paypal.me/InfinityxEternity".toUri())) },
+                modifier = Modifier.weight(1f).height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = cs.surfaceVariant, contentColor = cs.onSurfaceVariant),
+              ) { Text("PayPal") }
             }
           }
         }
 
         Spacer(Modifier.height(8.dp))
-        PreferenceSectionHeader(title = stringResource(R.string.pref_section_updates))
-        PreferenceCard {
-          Button(
-            onClick = {
-              context.startActivity(
-                Intent(Intent.ACTION_VIEW, "https://github.com/ZHINFINITY/Mpv-infinity/releases".toUri()),
-              )
-            },
-            modifier = Modifier.fillMaxWidth().padding(16.dp).height(50.dp),
-            shape = RoundedCornerShape(12.dp),
-          ) {
-            Icon(Icons.RoundedFilled.Update, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.ui_check_for_updates_now), fontWeight = FontWeight.SemiBold)
+
+        PreferenceSectionHeader(title = "Updates")
+        if (updateViewModel != null) {
+          val autoUpdate by updateViewModel.isAutoUpdateEnabled.collectAsState()
+          val updateState by updateViewModel.updateState.collectAsState()
+          PreferenceCard {
+            Column(modifier = Modifier.padding(16.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Column(modifier = Modifier.weight(1f)) {
+                  Text("Auto Check for Updates", style = MaterialTheme.typography.titleMedium, color = cs.onSurface)
+                  Text("Check on startup", style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+                }
+                Switch(checked = autoUpdate, onCheckedChange = updateViewModel::toggleAutoUpdate)
+              }
+              PreferenceDivider()
+              Button(
+                onClick = { updateViewModel.checkForUpdate(manual = true) },
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = cs.surfaceVariant, contentColor = cs.onSurfaceVariant),
+              ) { Text("Check for Updates Now") }
+              if (updateState is UpdateViewModel.UpdateState.NoUpdate) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                  text = stringResource(R.string.ui_already_using_latest_version),
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = cs.primary,
+                )
+              }
+            }
           }
         }
+
+        Spacer(Modifier.height(8.dp))
 
         // System Stats Section
         PreferenceSectionHeader(title = stringResource(R.string.pref_section_system))
@@ -648,7 +688,7 @@ object LibrariesScreen : Screen {
           Text(
             text =
               androidx.compose.ui.res.stringResource(
-                app.infinity.mpvz.R.string.ui_core_open_source_dependencies_used_by_mpvrx,
+                app.infinity.mpvz.R.string.ui_core_open_source_dependencies_used_by_mpv_infinity,
               ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

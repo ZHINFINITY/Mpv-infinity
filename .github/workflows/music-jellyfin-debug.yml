@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - music-jellyfin-debug
+      - manus/source-base-media3-port
   workflow_dispatch:
 
 permissions:
@@ -41,7 +42,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build only Standard arm64-v8a Debug
-        run: ./gradlew :app:assembleStandardDebug -Parm64Only=true --no-daemon --max-workers=2 --stacktrace
+        run: ./gradlew :app:assembleStandardDebug -PtargetAbi=arm64-v8a --no-daemon --max-workers=2 --stacktrace
 
       - name: Verify only the requested APK is present
         shell: bash

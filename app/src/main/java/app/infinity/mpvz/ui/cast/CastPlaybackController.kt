@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
+import com.google.android.gms.cast.MediaTrack
 import com.google.android.gms.cast.MediaSeekOptions
 import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.framework.CastContext
@@ -28,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +44,10 @@ data class CastMediaSnapshot(
   val durationMs: Long,
   val positionMs: Long,
   val isPlaying: Boolean,
+  val subtitleTracks: List<CastSubtitleTrack> = emptyList(),
+  val activeSubtitleTrackId: Long? = null,
+  val audioTracks: List<CastAudioTrack> = emptyList(),
+  val activeAudioTrackId: Long? = null,
 )
 
 class CastPlaybackController(
@@ -62,12 +68,14 @@ class CastPlaybackController(
   private var castContext: CastContext? = null
   private var castSession: CastSession? = null
   private var remoteMediaClient: RemoteMediaClient? = null
+  private var registeredRemoteMediaClient: RemoteMediaClient? = null
   private var released = false
   private var localWasPlaying = false
   private var lastRemotePositionMs = 0L
   private var remoteWasPlaying = false
   private var capturedRemoteEndState = false
   private var transferredByThisController = false
+  private var mediaReadinessRetries = 0
   private var positionPollingJob: Job? = null
   private var volumeDebounceJob: Job? = null
 
@@ -78,6 +86,7 @@ class CastPlaybackController(
         sessionId: String,
       ) {
         onSessionReady(session)
+        mediaReadinessRetries = 0
         loadCurrentMedia(session)
       }
 
@@ -86,17 +95,9 @@ class CastPlaybackController(
         wasSuspended: Boolean,
       ) {
         onSessionReady(session)
-        val remote = session.remoteMediaClient
-        if (remote?.mediaInfo != null) {
-          transferredByThisController = true
-          localWasPlaying = currentMedia()?.isPlaying == true
-          pauseLocal()
-          startPositionPolling()
-        } else {
-          loadCurrentMedia(session)
-        }
+        mediaReadinessRetries = 0
+        loadCurrentMedia(session)
       }
-
       override fun onSessionEnding(session: CastSession) {
         session.remoteMediaClient?.let { remote ->
           lastRemotePositionMs = remote.approximateStreamPosition
@@ -155,14 +156,21 @@ class CastPlaybackController(
   private val remoteMediaClientCallback =
     object : RemoteMediaClient.Callback() {
       override fun onStatusUpdated() {
+        Log.i(TAG, "Cast status callback")
         updatePositionFromRemote()
       }
     }
 
   private fun onSessionReady(session: CastSession) {
+    Log.i(TAG, "Cast session ready device=" + session.castDevice?.friendlyName)
     castSession = session
-    remoteMediaClient = session.remoteMediaClient
-    remoteMediaClient?.registerCallback(remoteMediaClientCallback)
+    val nextRemote = session.remoteMediaClient
+    if (registeredRemoteMediaClient !== nextRemote) {
+      registeredRemoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
+      nextRemote?.registerCallback(remoteMediaClientCallback)
+      registeredRemoteMediaClient = nextRemote
+    }
+    remoteMediaClient = nextRemote
     _castState.update {
       it.copy(
         isConnected = true,
@@ -174,6 +182,7 @@ class CastPlaybackController(
   }
 
   fun start() {
+    Log.i(TAG, "Cast controller start")
     released = false
     try {
       CastContext
@@ -195,12 +204,16 @@ class CastPlaybackController(
 
   fun release() {
     released = true
+    if (instance === this) instance = null
+    scope.cancel()
     stopPositionPolling()
     volumeDebounceJob?.cancel()
     val context = castContext
-    castContext = null
+    registeredRemoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
+    registeredRemoteMediaClient = null
     remoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
     remoteMediaClient = null
+    castContext = null
     castSession = null
     context?.sessionManager?.removeSessionManagerListener(sessionListener, CastSession::class.java)
     if (context?.sessionManager?.currentCastSession?.isConnected != true) {
@@ -249,6 +262,21 @@ class CastPlaybackController(
     _castState.update { it.copy(playbackSpeed = speed) }
   }
 
+  private fun applyActiveTracks(subtitleId: Long?, audioId: Long?) {
+    val session = castSession ?: return
+    Log.i(TAG, "Cast reloading media with track IDs subtitle=" + subtitleId + " audio=" + audioId)
+    mediaReadinessRetries = 0
+    loadCurrentMedia(session, subtitleId, audioId)
+  }
+
+  fun setSubtitleTrack(trackId: Long?) {
+    applyActiveTracks(trackId, _castState.value.activeAudioTrackId)
+  }
+
+  fun setAudioTrack(trackId: Long?) {
+    applyActiveTracks(_castState.value.activeSubtitleTrackId, trackId)
+  }
+
   fun disconnect() {
     scope.launch {
       try {
@@ -264,11 +292,22 @@ class CastPlaybackController(
     activity.startActivity(Intent(activity, CastRemoteControllerActivity::class.java))
   }
 
-  private fun loadCurrentMedia(session: CastSession) {
+  private fun loadCurrentMedia(session: CastSession, requestedSubtitleId: Long? = null, requestedAudioId: Long? = null) {
     val snapshot = currentMedia()
     if (snapshot == null) {
-      notifyUser("Media is not ready to cast")
-      castContext?.sessionManager?.endCurrentSession(true)
+      Log.w(TAG, "Cast media snapshot unavailable retry=" + mediaReadinessRetries)
+      if (mediaReadinessRetries < MAX_MEDIA_READINESS_RETRIES) {
+        mediaReadinessRetries++
+        scope.launch {
+          // Native Media3 may publish its current MediaItem only after the extractor has opened
+          // the source. Do not abort a valid Cast session during that preparation window.
+          delay(MEDIA_READINESS_RETRY_DELAY_MS)
+          if (!released && castSession === session) loadCurrentMedia(session)
+        }
+      } else {
+        notifyUser("Media is not ready to cast")
+        castContext?.sessionManager?.endCurrentSession(true)
+      }
       return
     }
 
@@ -280,6 +319,7 @@ class CastPlaybackController(
     }
 
     val contentType = snapshot.mimeType ?: inferMimeType(snapshot.source)
+    Log.i(TAG, "Cast snapshot subtitleCount=" + snapshot.subtitleTracks.size + " audioCount=" + snapshot.audioTracks.size + " activeSubtitle=" + snapshot.activeSubtitleTrackId + " activeAudio=" + snapshot.activeAudioTrackId)
     val metadataType =
       if (contentType.startsWith("audio/")) {
         MediaMetadata.MEDIA_TYPE_MUSIC_TRACK
@@ -297,6 +337,17 @@ class CastPlaybackController(
           if (snapshot.durationMs > 0L) MediaInfo.STREAM_TYPE_BUFFERED else MediaInfo.STREAM_TYPE_LIVE,
         ).setContentType(contentType)
         .setMetadata(metadata)
+        .setMediaTracks(snapshot.subtitleTracks.map { track ->
+          MediaTrack.Builder(track.id, MediaTrack.TYPE_TEXT)
+            .setName(track.name)
+            .apply { track.language?.let(::setLanguage) }
+            .build()
+        } + snapshot.audioTracks.map { track ->
+          MediaTrack.Builder(track.id, MediaTrack.TYPE_AUDIO)
+            .setName(track.name)
+            .apply { track.language?.let(::setLanguage) }
+            .build()
+        })
         .setStreamDuration(snapshot.durationMs.coerceAtLeast(0L))
         .build()
     val request =
@@ -305,6 +356,13 @@ class CastPlaybackController(
         .setMediaInfo(mediaInfo)
         .setAutoplay(snapshot.isPlaying)
         .setCurrentTime(snapshot.positionMs.coerceAtLeast(0L))
+        .apply {
+          if (requestedSubtitleId != null || requestedAudioId != null) {
+            val selectedTrackIds = listOfNotNull(requestedSubtitleId, requestedAudioId).toLongArray()
+            Log.i(TAG, "Cast load active track IDs=" + selectedTrackIds.contentToString())
+            setActiveTrackIds(selectedTrackIds)
+          }
+        }
         .build()
     val remote =
       session.remoteMediaClient ?: run {
@@ -314,7 +372,9 @@ class CastPlaybackController(
 
     remote.load(request).setResultCallback { result ->
       activity.runOnUiThread {
+      Log.i(TAG, "Cast track command result success=" + result.status.isSuccess + " code=" + result.status.statusCode + " message=" + result.status.statusMessage)
         if (result.status.isSuccess) {
+          mediaReadinessRetries = 0
           localWasPlaying = snapshot.isPlaying
           lastRemotePositionMs = snapshot.positionMs
           remoteWasPlaying = snapshot.isPlaying
@@ -325,6 +385,10 @@ class CastPlaybackController(
               title = snapshot.title,
               duration = snapshot.durationMs.coerceAtLeast(0L),
               currentPosition = snapshot.positionMs.coerceAtLeast(0L),
+              subtitleTracks = snapshot.subtitleTracks,
+              activeSubtitleTrackId = requestedSubtitleId ?: snapshot.activeSubtitleTrackId,
+              audioTracks = snapshot.audioTracks,
+              activeAudioTrackId = requestedAudioId ?: snapshot.activeAudioTrackId,
             )
           }
           pauseLocal()
@@ -417,6 +481,8 @@ class CastPlaybackController(
 
   companion object {
     const val TAG = "CastPlaybackController"
+    private const val MEDIA_READINESS_RETRY_DELAY_MS = 750L
+    private const val MAX_MEDIA_READINESS_RETRIES = 12
 
     @Volatile
     var instance: CastPlaybackController? = null

@@ -286,6 +286,14 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
+          titleRes = R.string.pref_player_remember_video_aspect_per_video_title,
+          keywords = listOf("aspect", "aspect ratio", "video", "per video", "remember", "stretch", "crop", "fit"),
+          category = "Player",
+          screen = PlayerPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
           titleRes = R.string.pref_player_close_after_eof,
           keywords = listOf("close", "end", "playback", "quit", "finish"),
           category = "Player",
@@ -904,6 +912,33 @@ object SearchablePreferences {
         SearchablePreference(
           titleRes = R.string.pref_audio_orientation_title,
           keywords = listOf("audio", "music", "orientation", "portrait", "landscape", "auto", "rotate"),
+          category = "Audio",
+          screen = AudioPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_audio_standby_mode_title,
+          summaryRes = R.string.pref_audio_standby_mode_summary,
+          keywords = listOf("audio", "music", "standby", "idle", "screen", "lyrics", "album", "art"),
+          category = "Audio",
+          screen = AudioPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_audio_ambient_mode_title,
+          summaryRes = R.string.pref_audio_ambient_mode_summary,
+          keywords = listOf("audio", "music", "ambient", "colors", "album", "art", "gradient"),
+          category = "Audio",
+          screen = AudioPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_audio_wavy_seekbar_title,
+          summaryRes = R.string.pref_audio_wavy_seekbar_summary,
+          keywords = listOf("audio", "music", "wavy", "seekbar", "visualizer", "wave"),
           category = "Audio",
           screen = AudioPreferencesScreen,
         ),
@@ -1551,6 +1586,7 @@ object SearchablePreferences {
         SearchEntrySpec(R.string.pref_stt_provider_title, listOf("speech", "text", "provider", "groq", "openai"), R.string.pref_section_ai_title),
         SearchEntrySpec(R.string.pref_audio_language_title, listOf("speech", "audio", "language", "detect"), R.string.pref_section_ai_title),
         SearchEntrySpec(R.string.pref_enable_translation_title, listOf("subtitle", "translation", "enable", "language"), R.string.pref_section_ai_title),
+        SearchEntrySpec(R.string.pref_automatic_subtitle_font_fallback_title, listOf("subtitle", "translation", "font", "fallback", "missing glyph", "language"), R.string.pref_translation_section),
         SearchEntrySpec(R.string.ui_auto_translate_target_languages, listOf("subtitle", "translation", "target", "languages"), R.string.pref_section_ai_title),
         SearchEntrySpec(R.string.pref_override_instructions_title, listOf("ai", "prompt", "override", "instructions", "custom"), R.string.pref_section_ai_title),
       )
