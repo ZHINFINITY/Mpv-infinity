@@ -1163,7 +1163,7 @@
   <string name="ytdlp_instagram_cookies_not_configured">No cookie file selected</string>
   <string name="ytdlp_cookies_choose">Cookies</string>
   <string name="ytdlp_cookies_clear">Clear</string>
-  <string name="ytdlp_custom_user_agent_title">Custom user agent</string>
+  <string name="ytdlp_custom_user_agent_title">User Agent</string>
   <string name="ytdlp_custom_user_agent_summary">Override the automatic browser identity used by the website login WebView. Leave it empty to use the recommended per-site defaults.</string>
   <string name="ytdlp_custom_user_agent_reset">Reset</string>
   <string name="ytdlp_custom_user_agent_save">Save</string>
