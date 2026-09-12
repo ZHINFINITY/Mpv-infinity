@@ -29,6 +29,7 @@ concurrency:
 
 env:
   SELECTED_FLAVOR: ${{ inputs.build_flavor || 'standard' }}
+  ARM64_ONLY: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/fix/native-local-direct-source-4ef92fe' }}
 
 jobs:
   build:
@@ -64,8 +65,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          gradle_abi_args=()
+          if [[ "$ARM64_ONLY" == "true" ]]; then gradle_abi_args=(-PtargetAbi=arm64-v8a); fi
           if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
-            ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
+            ./gradlew assembleStandardRelease "${gradle_abi_args[@]}" --stacktrace --no-daemon --max-workers=2
           fi
           if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "fongmi" ]]; then
             ./gradlew assembleFongmiRelease --stacktrace --no-daemon --max-workers=2
@@ -119,7 +122,7 @@ jobs:
           if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
             release_dir="app/build/outputs/apk/standard/release"
             test -d "$release_dir"
-            architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
+            if [[ "$ARM64_ONLY" == "true" ]]; then architectures=(arm64-v8a); else architectures=(universal arm64-v8a armeabi-v7a x86 x86_64); fi
             for abi in "${architectures[@]}"; do
               sign_apk \
                 "$release_dir/app-standard-${abi}-release-unsigned.apk" \
@@ -154,7 +157,7 @@ jobs:
           set -euo pipefail
           if [[ "$SELECTED_FLAVOR" == "all" || "$SELECTED_FLAVOR" == "dual" || "$SELECTED_FLAVOR" == "standard" ]]; then
             release_dir="app/build/outputs/apk/standard/release"
-            architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
+            if [[ "$ARM64_ONLY" == "true" ]]; then architectures=(arm64-v8a); else architectures=(universal arm64-v8a armeabi-v7a x86 x86_64); fi
             for abi in "${architectures[@]}"; do
               if ! compgen -G "$release_dir/app-standard-${abi}-release*.apk" >/dev/null; then
                 echo "No standard release APK found for $abi"
@@ -202,7 +205,7 @@ jobs:
           compression-level: 0
 
       - name: Upload armeabi-v7a APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard') }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-armeabi-v7a-release-${{ env.SHORT_SHA }}
@@ -212,7 +215,7 @@ jobs:
           compression-level: 0
 
       - name: Upload universal APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard') }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-universal-release-${{ env.SHORT_SHA }}
@@ -222,7 +225,7 @@ jobs:
           compression-level: 0
 
       - name: Upload x86 APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard') }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-x86-release-${{ env.SHORT_SHA }}
@@ -232,7 +235,7 @@ jobs:
           compression-level: 0
 
       - name: Upload x86_64 APK
-        if: ${{ env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard' }}
+        if: ${{ env.ARM64_ONLY != 'true' && (env.SELECTED_FLAVOR == 'all' || env.SELECTED_FLAVOR == 'dual' || env.SELECTED_FLAVOR == 'standard') }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-x86_64-release-${{ env.SHORT_SHA }}
