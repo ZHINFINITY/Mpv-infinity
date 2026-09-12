@@ -270,9 +270,9 @@ class YtdlpDownloadEngine(
         // fail when a mergeable audio-only format is unavailable.
         add(
           if (qualityHeight > 0) {
-            "bestvideo*[vcodec!=none][ext=mp4][height<=?$qualityHeight]+bestaudio*/best[ext=mp4][vcodec!=none][height<=?$qualityHeight]/best[ext=mp4][vcodec!=none]/best[vcodec!=none]"
+            "best[ext=mp4][vcodec!=none][acodec!=none][height<=?$qualityHeight]/bestvideo*[vcodec!=none][ext=mp4][height<=?$qualityHeight]+bestaudio*[acodec!=none]/best[vcodec!=none][acodec!=none]"
           } else {
-            "bestvideo*[vcodec!=none][ext=mp4]+bestaudio*/best[ext=mp4][vcodec!=none]/best[vcodec!=none]"
+            "best[ext=mp4][vcodec!=none][acodec!=none]/bestvideo*[vcodec!=none][ext=mp4]+bestaudio*[acodec!=none]/best[vcodec!=none][acodec!=none]"
           },
         )
       } else if (qualityHeight > 0) {
