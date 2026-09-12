@@ -364,7 +364,11 @@ private fun WebsiteCookieLoginDialog(
   fun normalizedUrl(): String {
     val value = websiteUrl.trim()
     val normalized = if (value.startsWith("http://") || value.startsWith("https://")) value else "https://$value"
-    return if (normalized.contains("instagram.com", ignoreCase = true) &&
+    return if (normalized.contains("x.com", ignoreCase = true) &&
+      normalized.trimEnd('/').equals("https://www.x.com", ignoreCase = true)
+    ) {
+      "https://x.com/i/flow/login"
+    } else if (normalized.contains("instagram.com", ignoreCase = true) &&
       normalized.trimEnd('/').equals("https://www.instagram.com", ignoreCase = true)
     ) {
       "https://www.instagram.com/accounts/login/"
@@ -397,6 +401,26 @@ private fun WebsiteCookieLoginDialog(
     view.evaluateJavascript(
       """
       (function() {
+        function repair() {
+          if (window.mpvXRepairing) return;
+          window.mpvXRepairing = true;
+          document.querySelectorAll('input, textarea, [contenteditable="true"]').forEach(function(el) {
+            el.style.setProperty('min-height', '48px', 'important');
+            el.style.setProperty('height', '48px', 'important');
+            el.style.setProperty('line-height', '32px', 'important');
+            el.style.setProperty('padding', '8px 12px', 'important');
+            el.style.setProperty('box-sizing', 'border-box', 'important');
+            el.style.setProperty('opacity', '1', 'important');
+            el.style.setProperty('visibility', 'visible', 'important');
+            var parent = el.parentElement;
+            for (var i = 0; parent && i < 3; i++, parent = parent.parentElement) {
+              if (parent.getBoundingClientRect().height < 48) {
+                parent.style.setProperty('min-height', '64px', 'important');
+              }
+            }
+          });
+          window.mpvXRepairing = false;
+        }
         var style = document.getElementById('mpv-x-login-fix');
         if (!style) {
           style = document.createElement('style');
@@ -416,6 +440,12 @@ private fun WebsiteCookieLoginDialog(
             }
           `;
           (document.head || document.documentElement).appendChild(style);
+        }
+        repair();
+        if (!window.mpvXLoginObserver) {
+          window.mpvXLoginObserver = new MutationObserver(repair);
+          window.mpvXLoginObserver.observe(document.documentElement, {childList: true, subtree: true});
+          window.setInterval(repair, 500);
         }
       })();
       """.trimIndent(),
