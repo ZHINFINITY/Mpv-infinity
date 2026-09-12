@@ -14,6 +14,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.util.Log
+import android.database.sqlite.SQLiteDatabase
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -645,13 +646,52 @@ private fun writeWebsiteCookiesFile(
   val secure = websiteUrl.startsWith("https://")
   val destination = File(context.filesDir, "ytdlp/cookies.txt")
   destination.parentFile?.mkdirs()
-  val newRows = cookieHeader.split(';').mapNotNull { item ->
+  CookieManager.getInstance().flush()
+  val databaseRows = runCatching {
+    val database = context.dataDir.resolve("app_webview/Default/Cookies")
+    if (!database.isFile) return@runCatching emptyList<String>()
+    SQLiteDatabase.openDatabase(database.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+      db.query(
+        "cookies",
+        arrayOf("host_key", "path", "name", "value", "expires_utc", "is_secure"),
+        null,
+        null,
+        null,
+        null,
+        null,
+      ).use { cursor ->
+        buildList {
+          val hostIndex = cursor.getColumnIndexOrThrow("host_key")
+          val pathIndex = cursor.getColumnIndexOrThrow("path")
+          val nameIndex = cursor.getColumnIndexOrThrow("name")
+          val valueIndex = cursor.getColumnIndexOrThrow("value")
+          val expiryIndex = cursor.getColumnIndexOrThrow("expires_utc")
+          val secureIndex = cursor.getColumnIndexOrThrow("is_secure")
+          while (cursor.moveToNext()) {
+            val rowHost = cursor.getString(hostIndex).let { if (it.startsWith('.')) it else ".${it}" }
+            val rowPath = cursor.getString(pathIndex).ifBlank { "/" }
+            val rowName = cursor.getString(nameIndex)
+            val rowValue = cursor.getString(valueIndex)
+            if (rowName.isNotBlank() && rowValue != null) {
+              val expiry = (cursor.getLong(expiryIndex) / 1_000_000L - 11_644_473_600L).coerceAtLeast(0L)
+              add("$rowHost\tTRUE\t$rowPath\t${(cursor.getLong(secureIndex) == 1L).toString().uppercase()}\t$expiry\t$rowName\t$rowValue")
+            }
+          }
+        }
+      }
+    }
+  }.getOrElse { error ->
+    Log.w(COOKIE_WEBVIEW_TAG, "database_export_failed type=${error.javaClass.simpleName}")
+    emptyList()
+  }
+  val fallbackRows = cookieHeader.split(';').mapNotNull { item ->
     val separator = item.indexOf('=')
     if (separator <= 0) return@mapNotNull null
     val name = item.substring(0, separator).trim()
     val value = item.substring(separator + 1).trim()
     if (name.isBlank()) null else "$domain\tTRUE\t/\t${secure.toString().uppercase()}\t0\t$name\t$value"
   }
+  val newRows = if (databaseRows.isNotEmpty()) databaseRows else fallbackRows
   require(newRows.isNotEmpty()) { "Website did not provide cookies" }
   val merged = linkedMapOf<String, String>()
   if (destination.isFile) {
@@ -665,5 +705,6 @@ private fun writeWebsiteCookiesFile(
     merged["${fields[0]}\t${fields[2]}\t${fields[5]}"] = row
   }
   destination.writeText("# Netscape HTTP Cookie File\n" + merged.values.joinToString("\n") + "\n")
+  Log.i(COOKIE_WEBVIEW_TAG, "cookie_file_written path=${destination.name} rows=${merged.size} source=${if (databaseRows.isNotEmpty()) "database" else "url_header"}")
   return destination
 }
