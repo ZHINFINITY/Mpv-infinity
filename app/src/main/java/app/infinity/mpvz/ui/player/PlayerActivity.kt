@@ -4984,7 +4984,9 @@ class PlayerActivity :
 
     applySubtitlePreferences()
     applyVideoFilterPreferences()
-    viewModel.restoreSavedVideoAspect(showUpdate = false)
+    if (!playerPreferences.rememberVideoAspectPerVideo.get()) {
+      viewModel.restoreSavedVideoAspect(showUpdate = false)
+    }
     binding.root.post(::updateVideoAmbientPlayerBounds)
 
     if (shouldForceCurrentMediaTitle()) {
@@ -5486,6 +5488,9 @@ class PlayerActivity :
 
       if (positionRestoreOverride == null && !initialPositionApplied) restorePlaybackPosition(state)
       applyPlaybackState(state, restoreAudioTrack = positionRestoreOverride == null)
+      if (state == null && playerPreferences.rememberVideoAspectPerVideo.get()) {
+        viewModel.changeVideoAspect(VideoAspect.Fit, showUpdate = false, persistGlobal = false)
+      }
 
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
 
