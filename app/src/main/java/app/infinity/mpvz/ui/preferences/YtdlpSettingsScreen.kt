@@ -9,6 +9,7 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import android.content.Intent
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -373,6 +374,16 @@ private fun WebsiteCookieLoginDialog(
   fun openWebsite() {
     val url = normalizedUrl()
     websiteUrl = url
+    val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
+    // Google blocks account authentication inside embedded WebViews with the
+    // "This browser or app may not be secure" page. Use the user's trusted browser
+    // for Google/YouTube sign-in; cookies can then be exported and imported below.
+    if (host == "youtube.com" || host.endsWith(".youtube.com") ||
+      host == "google.com" || host.endsWith(".google.com")
+    ) {
+      context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+      return
+    }
     webView?.loadUrl(url)
   }
 
