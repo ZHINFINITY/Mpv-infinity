@@ -4764,11 +4764,14 @@ class PlayerViewModel : ViewModel(),
   fun changeVideoAspect(
     aspect: VideoAspect,
     showUpdate: Boolean = true,
+    persistGlobal: Boolean = true,
   ) {
     if (host.isNativeEngineActive()) {
       host.nativeSetVideoAspect(aspect)
-      playerPreferences.lastVideoAspect.set(aspect)
-      playerPreferences.lastCustomAspectRatio.set(-1f)
+      if (persistGlobal) {
+        playerPreferences.lastVideoAspect.set(aspect)
+        playerPreferences.lastCustomAspectRatio.set(-1f)
+      }
       _videoAspect.value = aspect
       _currentAspectRatio.value = -1.0
       if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
@@ -4818,8 +4821,10 @@ class PlayerViewModel : ViewModel(),
     }
 
     // Update the state
-    playerPreferences.lastVideoAspect.set(aspect)
-    playerPreferences.lastCustomAspectRatio.set(-1f)
+    if (persistGlobal) {
+      playerPreferences.lastVideoAspect.set(aspect)
+      playerPreferences.lastCustomAspectRatio.set(-1f)
+    }
     _videoAspect.value = aspect
     _currentAspectRatio.value = -1.0 // Reset custom ratio when using standard modes
 
@@ -4832,10 +4837,11 @@ class PlayerViewModel : ViewModel(),
   fun setCustomAspectRatio(
     ratio: Double,
     showUpdate: Boolean = true,
+    persistGlobal: Boolean = true,
   ) {
     if (host.isNativeEngineActive()) {
       host.nativeSetVideoAspect(VideoAspect.Stretch)
-      playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
+      if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
       _currentAspectRatio.value = ratio
       if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
       return
@@ -4843,7 +4849,7 @@ class PlayerViewModel : ViewModel(),
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
     PlaybackSession.setPropertyDouble("panscan", 0.0)
     PlaybackSession.setPropertyDouble("video-aspect-override", ratio)
-    playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
+    if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
     _currentAspectRatio.value = ratio
     if (showUpdate) {
       playerUpdate.value = PlayerUpdates.AspectRatio
@@ -4858,6 +4864,19 @@ class PlayerViewModel : ViewModel(),
     }
 
     changeVideoAspect(playerPreferences.lastVideoAspect.get(), showUpdate)
+  }
+
+  fun restoreVideoAspect(
+    aspectName: String,
+    customAspectRatio: Float,
+    showUpdate: Boolean = false,
+  ) {
+    if (customAspectRatio > 0f) {
+      setCustomAspectRatio(customAspectRatio.toDouble(), showUpdate, persistGlobal = false)
+      return
+    }
+    val aspect = VideoAspect.entries.firstOrNull { it.name.equals(aspectName, ignoreCase = true) } ?: VideoAspect.Fit
+    changeVideoAspect(aspect, showUpdate, persistGlobal = false)
   }
 
   fun setAutoCropBlackBars(enabled: Boolean) {
