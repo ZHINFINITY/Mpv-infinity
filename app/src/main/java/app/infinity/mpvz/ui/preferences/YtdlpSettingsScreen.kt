@@ -12,6 +12,7 @@ package app.infinity.mpvz.ui.preferences
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -346,10 +347,18 @@ private fun WebsiteCookieLoginDialog(
   val context = LocalContext.current
   var websiteUrl by rememberSaveable { mutableStateOf("https://www.instagram.com/") }
   var webView by remember { mutableStateOf<WebView?>(null) }
+  var loadError by remember { mutableStateOf<String?>(null) }
 
   fun normalizedUrl(): String {
     val value = websiteUrl.trim()
-    return if (value.startsWith("http://") || value.startsWith("https://")) value else "https://$value"
+    val normalized = if (value.startsWith("http://") || value.startsWith("https://")) value else "https://$value"
+    return if (normalized.contains("instagram.com", ignoreCase = true) &&
+      normalized.trimEnd('/').equals("https://www.instagram.com", ignoreCase = true)
+    ) {
+      "https://www.instagram.com/accounts/login/"
+    } else {
+      normalized
+    }
   }
 
   fun openWebsite() {
@@ -398,6 +407,13 @@ private fun WebsiteCookieLoginDialog(
             Text(stringResource(R.string.ytdlp_cookie_login_open))
           }
         }
+        loadError?.let { error ->
+          Text(
+            text = error,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+          )
+        }
         AndroidView(
           modifier = Modifier.fillMaxWidth().weight(1f),
           factory = {
@@ -405,12 +421,28 @@ private fun WebsiteCookieLoginDialog(
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.databaseEnabled = true
+              // Instagram often serves a blank login response to the Android WebView UA.
+              // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
               settings.userAgentString =
-                "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 " +
-                  "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+              settings.loadsImagesAutomatically = true
+              settings.allowContentAccess = true
+              settings.allowFileAccess = false
+              settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+              webChromeClient = WebChromeClient()
               CookieManager.getInstance().setAcceptCookie(true)
               CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-              webViewClient = WebViewClient()
+              webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                  loadError = null
+                }
+                override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                  if (request?.isForMainFrame != false) {
+                    loadError = error?.description?.toString() ?: "Unable to load login page"
+                  }
+                }
+              }
               webView = this
               loadUrl(normalizedUrl())
             }
