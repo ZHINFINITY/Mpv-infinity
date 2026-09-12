@@ -12,8 +12,8 @@ package app.infinity.mpvz.ui.preferences
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -22,12 +22,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -145,8 +146,7 @@ object YtdlpSettingsScreen : Screen {
       )
     }
 
-    if (!showCookieLogin) {
-      Scaffold(
+    Scaffold(
       topBar = {
         TopAppBar(
           title = {
@@ -357,16 +357,11 @@ private fun WebsiteCookieLoginDialog(
   var savedSites by rememberSaveable { mutableStateOf(emptyList<String>()) }
   var webView by remember { mutableStateOf<WebView?>(null) }
   var loadError by remember { mutableStateOf<String?>(null) }
-  var isLoading by remember { mutableStateOf(true) }
 
   fun normalizedUrl(): String {
     val value = websiteUrl.trim()
     val normalized = if (value.startsWith("http://") || value.startsWith("https://")) value else "https://$value"
-    return if (normalized.trimEnd('/').equals("https://x.com", ignoreCase = true) ||
-      normalized.trimEnd('/').equals("https://www.x.com", ignoreCase = true)
-    ) {
-      "https://x.com/i/flow/login"
-    } else if (normalized.contains("instagram.com", ignoreCase = true) &&
+    return if (normalized.contains("instagram.com", ignoreCase = true) &&
       normalized.trimEnd('/').equals("https://www.instagram.com", ignoreCase = true)
     ) {
       "https://www.instagram.com/accounts/login/"
@@ -381,22 +376,20 @@ private fun WebsiteCookieLoginDialog(
     webView?.loadUrl(url)
   }
 
-  BackHandler(onBack = onDismiss)
-  Surface(
-    modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
-    color = MaterialTheme.colorScheme.surface,
+  Dialog(
+    onDismissRequest = onDismiss,
+    properties = DialogProperties(usePlatformDefaultWidth = false),
   ) {
+    Surface(
+      modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+      color = MaterialTheme.colorScheme.surface,
+    ) {
       Column(modifier = Modifier.fillMaxSize()) {
         Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-          Text(
-            stringResource(R.string.ytdlp_cookie_login_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-          )
+          Text(stringResource(R.string.ytdlp_cookie_login_title), style = MaterialTheme.typography.titleMedium)
           TextButton(
             onClick = {
               val url = normalizedUrl()
@@ -412,7 +405,7 @@ private fun WebsiteCookieLoginDialog(
           }
         }
         Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
           horizontalArrangement = Arrangement.spacedBy(8.dp),
           verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
@@ -422,7 +415,6 @@ private fun WebsiteCookieLoginDialog(
             modifier = Modifier.weight(1f),
             label = { Text(stringResource(R.string.ytdlp_cookie_login_url)) },
             singleLine = true,
-            shape = RoundedCornerShape(14.dp),
           )
           Button(onClick = ::openWebsite) {
             Text(stringResource(R.string.ytdlp_cookie_login_open))
@@ -452,67 +444,57 @@ private fun WebsiteCookieLoginDialog(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
           )
         }
-        Box(
-          modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f)
-            .padding(horizontal = 12.dp, vertical = 12.dp)
-            .clip(RoundedCornerShape(18.dp)),
-        ) {
-          AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = {
-              WebView(context).apply {
+        AndroidView(
+          modifier = Modifier.fillMaxWidth().weight(1f).imePadding(),
+          factory = {
+            WebView(context).apply {
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
+              settings.databaseEnabled = true
+              settings.setSupportMultipleWindows(false)
               settings.javaScriptCanOpenWindowsAutomatically = true
+              // Instagram often serves a blank login response to the Android WebView UA.
+              // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
+              settings.userAgentString =
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
               settings.loadsImagesAutomatically = true
+              settings.allowContentAccess = true
+              settings.allowFileAccess = false
+              settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+              webChromeClient = object : WebChromeClient() {
+                override fun onCreateWindow(
+                  view: WebView?,
+                  isDialog: Boolean,
+                  isUserGesture: Boolean,
+                  resultMsg: android.os.Message?,
+                ): Boolean {
+                  val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                  transport.webView = view
+                  resultMsg.sendToTarget()
+                  return true
+                }
+              }
               CookieManager.getInstance().setAcceptCookie(true)
               CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
               webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean = false
                 override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean = false
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                  isLoading = true
                   loadError = null
-                }
-                override fun onPageFinished(view: WebView?, url: String?) {
-                  isLoading = false
                 }
                 override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                   if (request?.isForMainFrame != false) {
-                    isLoading = false
                     loadError = error?.description?.toString() ?: "Unable to load login page"
                   }
                 }
               }
               webView = this
               loadUrl(normalizedUrl())
-              }
-            },
-            update = { view -> webView = view },
-          )
-          if (isLoading) {
-            Surface(
-              modifier = Modifier.align(androidx.compose.ui.Alignment.Center),
-              shape = RoundedCornerShape(18.dp),
-              tonalElevation = 4.dp,
-              color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            ) {
-              Column(
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-              ) {
-                CircularProgressIndicator()
-                Text(
-                  text = stringResource(R.string.ytdlp_cookie_login_loading),
-                  style = MaterialTheme.typography.labelLarge,
-                )
-              }
             }
-          }
-        }
+          },
+          update = { view -> webView = view },
+        )
       }
     }
   }
