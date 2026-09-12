@@ -378,6 +378,14 @@ class PlayerActivity :
     nativeEngine.setVideoAspect(aspect)
   }
 
+  override fun onVideoAspectChanged() {
+    if (playerPreferences.rememberVideoAspectPerVideo.get() && fileName.isNotBlank()) {
+      // Aspect changes are user edits to the current video's record. Persist immediately so a
+      // media transition cannot lose the change before the normal lifecycle save runs.
+      saveVideoPlaybackState(fileName, immediate = true)
+    }
+  }
+
   // ==================== State Management ====================
 
   /**

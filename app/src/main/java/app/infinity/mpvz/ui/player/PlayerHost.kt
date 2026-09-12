@@ -100,6 +100,9 @@ interface PlayerHost {
 
   fun nativeSetVideoAspect(aspect: VideoAspect) {}
 
+  /** Called after a user-facing aspect change, allowing the host to persist the current item's state. */
+  fun onVideoAspectChanged() {}
+
   fun nativeSetZoom(zoom: Float) {}
 
   fun nativeSetPan(x: Float, y: Float) {}
