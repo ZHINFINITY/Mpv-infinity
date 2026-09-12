@@ -72,6 +72,7 @@ object YtdlpSettingsScreen : Screen {
       rememberSettingsSearchHighlight(YtdlpSettingsScreen, scrollState, MaterialTheme.colorScheme.primary)
     var isRunning by remember { mutableStateOf(false) }
     var showCookieLogin by remember { mutableStateOf(false) }
+    var showCustomUserAgentSheet by remember { mutableStateOf(false) }
 
     val ytdlPreferences = koinInject<YtdlPreferences>()
     val configOwnedOptions = currentMpvConfigOverrideOptions()
@@ -149,6 +150,59 @@ object YtdlpSettingsScreen : Screen {
           }
         },
       )
+    }
+
+    if (showCustomUserAgentSheet) {
+      var draftUserAgent by remember(showCustomUserAgentSheet) { mutableStateOf(customUserAgent) }
+      ModalBottomSheet(
+        onDismissRequest = { showCustomUserAgentSheet = false },
+      ) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Text(
+            text = stringResource(R.string.ytdlp_custom_user_agent_title),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+          )
+          Text(
+            text = stringResource(R.string.ytdlp_custom_user_agent_summary),
+            color = MaterialTheme.colorScheme.outline,
+            style = MaterialTheme.typography.bodyMedium,
+          )
+          OutlinedTextField(
+            value = draftUserAgent,
+            onValueChange = { draftUserAgent = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.ytdlp_custom_user_agent_title)) },
+            singleLine = true,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            OutlinedButton(
+              onClick = {
+                draftUserAgent = ""
+                ytdlPreferences.customUserAgent.set("")
+              },
+              modifier = Modifier.weight(1f),
+            ) {
+              Text(stringResource(R.string.ytdlp_custom_user_agent_reset))
+            }
+            Button(
+              onClick = {
+                ytdlPreferences.customUserAgent.set(draftUserAgent.trim())
+                showCustomUserAgentSheet = false
+              },
+              modifier = Modifier.weight(1f),
+            ) {
+              Text(stringResource(R.string.ytdlp_custom_user_agent_save))
+            }
+          }
+        }
+      }
     }
 
     Scaffold(
@@ -320,18 +374,10 @@ object YtdlpSettingsScreen : Screen {
                   Text(stringResource(R.string.ytdlp_cookies_choose))
                 }
               }
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-              ) {
-                OutlinedTextField(
-                  value = customUserAgent,
-                  onValueChange = { ytdlPreferences.customUserAgent.set(it) },
-                  modifier = Modifier.weight(1f),
-                  label = { Text(stringResource(R.string.ytdlp_custom_user_agent_title)) },
-                  singleLine = true,
-                )
+              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { showCustomUserAgentSheet = true }) {
+                  Text(stringResource(R.string.ytdlp_custom_user_agent_title))
+                }
                 OutlinedButton(
                   onClick = {
                     File(context.filesDir, "ytdlp/cookies.txt").delete()
