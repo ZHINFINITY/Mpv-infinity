@@ -5330,22 +5330,35 @@ class PlayerActivity :
         }
 
         val oldState = playbackStateRepository.getVideoDataByTitle(snapshot.mediaIdentifier)
-        Log.d(TAG, "Saving playback state for: ${snapshot.mediaTitle} (identifier: ${snapshot.mediaIdentifier})")
+        // During playlist advancement MPV can emit a save for the outgoing title after the
+        // active identifier has already moved to the incoming item. Never copy the outgoing
+        // video's Crop/Stretch/zoom into that incoming record; preserve its own saved values.
+        val persistedSnapshot =
+          if (playerPreferences.rememberVideoAspectPerVideo.get() && snapshot.mediaTitle != fileName) {
+            snapshot.copy(
+              videoZoom = oldState?.videoZoom ?: 0f,
+              videoAspect = oldState?.videoAspect ?: VideoAspect.Fit.name,
+              customAspectRatio = oldState?.customAspectRatio ?: -1f,
+            )
+          } else {
+            snapshot
+          }
+        Log.d(TAG, "Saving playback state for: ${persistedSnapshot.mediaTitle} (identifier: ${persistedSnapshot.mediaIdentifier})")
 
         val playbackState =
           PlaybackStatePersistence.buildEntity(
             oldState = oldState,
-            snapshot = snapshot,
+            snapshot = persistedSnapshot,
             savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
             watchedThreshold = browserPreferences.watchedThreshold.get(),
           )
         playbackStateRepository.upsert(playbackState)
-        if (forceNativeSnapshot && snapshot.mediaIdentifier != snapshot.mediaTitle) {
+        if (forceNativeSnapshot && persistedSnapshot.mediaIdentifier != persistedSnapshot.mediaTitle) {
           // Native queue items can be rebuilt with a different stable URI key after Activity
           // recreation. Keep a filename alias so the next Native load can still resolve resume.
           playbackStateRepository.upsert(playbackState.copy(mediaTitle = snapshot.mediaTitle))
         }
-        PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
+        PlaybackStateEvents.notifyChanged(persistedSnapshot.mediaIdentifier)
       }.onFailure { e ->
         Log.e(TAG, "Error saving playback state", e)
       }
