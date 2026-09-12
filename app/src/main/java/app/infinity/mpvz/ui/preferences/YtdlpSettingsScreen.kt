@@ -13,6 +13,7 @@ import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
+import android.util.Log
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -55,6 +56,8 @@ import kotlinx.serialization.Serializable
 import java.io.File
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
+
+private const val COOKIE_WEBVIEW_TAG = "CookieWebView"
 
 @Serializable
 object YtdlpSettingsScreen : Screen {
@@ -393,7 +396,14 @@ private fun WebsiteCookieLoginDialog(
           TextButton(
             onClick = {
               val url = normalizedUrl()
-              val cookies = CookieManager.getInstance().getCookie(url)
+              val cookieManager = CookieManager.getInstance()
+              cookieManager.flush()
+              val cookies = cookieManager.getCookie(url)
+              Log.i(
+                COOKIE_WEBVIEW_TAG,
+                "export requested url=$url hasCookies=${!cookies.isNullOrBlank()} " +
+                  "cookieNames=${cookies.orEmpty().split(';').mapNotNull { it.substringBefore('=').trim().takeIf(String::isNotBlank) }}",
+              )
               if (!cookies.isNullOrBlank()) {
                 val host = java.net.URI(url).host?.removePrefix("www.") ?: url
                 savedSites = (savedSites + host).distinct()
@@ -463,6 +473,14 @@ private fun WebsiteCookieLoginDialog(
               settings.allowFileAccess = false
               settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
               webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
+                  Log.d(
+                    COOKIE_WEBVIEW_TAG,
+                    "console level=${message?.messageLevel()} source=${message?.sourceId()} " +
+                      "line=${message?.lineNumber()} message=${message?.message()}",
+                  )
+                  return true
+                }
                 override fun onCreateWindow(
                   view: WebView?,
                   isDialog: Boolean,
@@ -481,15 +499,41 @@ private fun WebsiteCookieLoginDialog(
                 override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean = false
                 override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean = false
                 override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                  Log.i(
+                    COOKIE_WEBVIEW_TAG,
+                    "page_started url=$url ua=${view?.settings?.userAgentString} " +
+                      "size=${view?.width}x${view?.height}",
+                  )
                   loadError = null
                 }
                 override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                  Log.e(
+                    COOKIE_WEBVIEW_TAG,
+                    "page_error url=${request?.url} mainFrame=${request?.isForMainFrame} " +
+                      "code=${error?.errorCode} description=${error?.description}",
+                  )
                   if (request?.isForMainFrame != false) {
                     loadError = error?.description?.toString() ?: "Unable to load login page"
                   }
                 }
+                override fun onReceivedHttpError(
+                  view: WebView?,
+                  request: android.webkit.WebResourceRequest?,
+                  errorResponse: android.webkit.WebResourceResponse?,
+                ) {
+                  Log.w(
+                    COOKIE_WEBVIEW_TAG,
+                    "http_error url=${request?.url} mainFrame=${request?.isForMainFrame} " +
+                      "status=${errorResponse?.statusCode} reason=${errorResponse?.reasonPhrase}",
+                  )
+                }
               }
               webView = this
+              Log.i(
+                COOKIE_WEBVIEW_TAG,
+                "created ua=${settings.userAgentString} js=${settings.javaScriptEnabled} " +
+                  "domStorage=${settings.domStorageEnabled} thirdPartyCookies=true",
+              )
               loadUrl(normalizedUrl())
             }
           },

@@ -282,6 +282,17 @@ class CrashActivity : AppCompatActivity() {
       logcat.appendLine()
       logcat.appendLine("===== Catalog / resolver diagnostics =====")
       logcat.appendLine(if (catalogLines.isBlank()) "No catalog diagnostics captured." else catalogLines)
+      val cookieWebViewLines =
+        logcat
+          .lineSequence()
+          .filter { line -> line.contains("CookieWebView", ignoreCase = true) }
+          .joinToString("\n")
+      logcat.appendLine()
+      logcat.appendLine("===== Cookie WebView diagnostics =====")
+      logcat.appendLine(
+        if (cookieWebViewLines.isBlank()) "No CookieWebView diagnostics captured."
+        else cookieWebViewLines,
+      )
       logcat.appendLine()
       logcat.appendLine("===== gfxinfo frame statistics =====")
       logcat.appendLine(
