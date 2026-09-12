@@ -228,7 +228,7 @@ object YtdlpOptionsBuilder {
       settings.audioQuality.maxBitrateKbps
         ?.let { "[abr<=?$it]" }
         .orEmpty()
-    val singleGroup = "b*" + settings.formatFilters() + audioBitrateFilter
+    val singleGroup = "bv*[vcodec!=none]" + settings.formatFilters() + audioBitrateFilter
     val primary =
       if (videoGroup.isBlank()) {
         singleGroup
@@ -236,7 +236,7 @@ object YtdlpOptionsBuilder {
         "($videoGroup)+$audioSel/$singleGroup"
       }
     // Never fall back to an audio-only selector for a video download.
-    return "$primary/bv*+$audioSel/best"
+    return "$primary/bv*[vcodec!=none]+$audioSel/bv*[vcodec!=none]"
   }
 
   fun parseRawOptions(raw: String): List<RawYtdlpOption> =
