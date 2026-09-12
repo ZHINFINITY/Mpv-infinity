@@ -403,7 +403,7 @@ These notes are written in plain English and focus on what changed for real use.
 - **Tablet Responsiveness**: Improved Secure Folder UI for tablet and foldable devices.
 
 ### 🏷️ Branding, Licensing & Cleanup
-- **App Rename**: The app is now branded **Mpv∞** (renamed from "MpvRx") across UI, docs, and metadata.
+- **App Rename**: The app is now branded **Mpv∞** (renamed from "MpvInfinity") across UI, docs, and metadata.
 - **New License**: Relicensed to **CC BY-NC 4.0** with license headers applied across the codebase.
 - **Acknowledgements**: Added credit for MpvRex and Pixel Player (UI and thumbnail pipeline inspiration) and AFinity.
 - **Code Quality**: Added ktlint formatting enforcement and fixed AAPT resource and Kotlin compiler warnings.
@@ -730,7 +730,7 @@ These notes are written in plain English and focus on what changed for real use.
 > # 🚀 **CURL IS NOW SUPPORTED!** 
 > ### ⚠️ **EXPERIMENTAL** — This is brand new and may or may not work properly on your device. ⚠️
 > Lua and JavaScript scripts can now make HTTP requests through the new native libcurl bridge via JNI.
-> Use it, break it, and report issues so we can make it stable!, see `MPVRX_CUSTOM_COMMANDS.d` for tutorial on how to use in Lua and JS.
+> Use it, break it, and report issues so we can make it stable!, see `MPV_INFINITY_CUSTOM_COMMANDS.d` for tutorial on how to use in Lua and JS.
 >
 > **What this means:** You can now write scripts that fetch data from the internet — APIs, subtitles, metadata, you name it — all through libcurl compiled directly into the app.
 
@@ -741,14 +741,14 @@ These notes are written in plain English and focus on what changed for real use.
 - Added Hybrid Skip Markers. The player can now check IntroDB, TIDB, and AniSkip together and use whichever result is found first.
 - Anime4K settings are now easier to use with a collapsible section in Decoder Preferences and also Added Optimization by Sunny Vishnu .
 - Added a setting to show or hide Media Info from Android's share/open-with screen.
-- Added documentation for custom Lua/JS player commands in `MPVRX_CUSTOM_COMMANDS.md`.
+- Added documentation for custom Lua/JS player commands in `MPV_INFINITY_CUSTOM_COMMANDS.md`.
 
 ## 1.3.8
 
 - **Integrated yt-dlp by [**SunnyVishnu3**](https://github.com/SunnyVishnu3)** — Added full yt-dlp integration for video watching audio/video from YouTube and other supported sites directly within the app (_Dont expect from me to add Download Functionality_). **Note: You need to download yt-dlp first (Settings > Advanced > yt-dlp Manager) before playing YouTube links — don't be clueless.**
 - Fixed Issue of USer defined Colors Filters were not getting Saved and not getting applied through Mpv conf by [**SunnyVishnu3**](https://github.com/SunnyVishnu3)
 - Fixed Gemini AI Error Generating / Translating Subs.
-- Fixed Crashing issue of MpvRx , in a nutshell Ambient mode and Custom lua were not initialized in Sync causing to crash player sometimes
+- Fixed Crashing issue of MpvInfinity , in a nutshell Ambient mode and Custom lua were not initialized in Sync causing to crash player sometimes
 - That's all for Today Adiosss!!
 
 ## 1.3.7
@@ -796,7 +796,7 @@ These notes are written in plain English and focus on what changed for real use.
 - Cleaned old thumbnail cache paths when clearing thumbnail cache.
 - Fixed the About and crash info screen showing `UNKNOWN` in the bundled mpv version.
 - Updated Gradle, Kotlin, Compose, Koin, Navigation 3, AndroidX, and related dependency versions through the version catalog.
-- Added SUbHub MpvRx specific Subtitle Fetching nd Downloading featured developed by me
+- Added SUbHub MpvInfinity specific Subtitle Fetching nd Downloading featured developed by me
 - Added Video COmpresser Overlay in Tree Mode also
 - Cleaned up codebase and Improved Playback bottlenecks
 - Added Window Offset to prevent Camera notch overlap issues
@@ -844,7 +844,7 @@ These notes are written in plain English and focus on what changed for real use.
 ### Stats Page 6  Fixes
 
 - **GPU estimate bar fixed**: was using cumulative drop + delay totals that drifted to 100% after long sessions and added a fixed FPS-proportional baseline (120fps with zero drops showed 70% GPU load). Now uses per-second delta counts relative to the current frame rate  0 drops = 0%, all frames dropped = 100%.
-- **CPU label corrected**: relabelled from "CPU Usage" to "App CPU (this process)" to accurately reflect that `getElapsedCpuTime()` measures only MpvRx's own process, not the whole device.
+- **CPU label corrected**: relabelled from "CPU Usage" to "App CPU (this process)" to accurately reflect that `getElapsedCpuTime()` measures only MpvInfinity's own process, not the whole device.
 - **Frame drop text now shows per-second deltas** alongside the all-time totals, so you can tell current rendering pressure at a glance.
 - **Pause-aware poll backoff**: the stats loop backs off from 1 s to 2 s intervals when playback is paused, cutting pointless JNI calls when metrics are static.
 
@@ -882,7 +882,7 @@ These notes are written in plain English and focus on what changed for real use.
 
 ## 1.3.0
 
-- The project now carries the `MpvRx` name across the app, docs, and release files.
+- The project now carries the `MpvInfinity` name across the app, docs, and release files.
 - Tree View `NEW` labels now work properly and update as you watch.
 - Single-child folders now flatten automatically so you reach files faster.
 - Subtitle matching is smarter and better at finding subtitles that line up.

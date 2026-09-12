@@ -17,7 +17,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import app.infinity.mpvz.database.MpvRxDatabase
+import app.infinity.mpvz.database.MpvInfinityDatabase
 import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
@@ -53,7 +53,7 @@ class RecentlyPlayedViewModel(
     viewModelScope.launch {
       val db =
         org.koin.java.KoinJavaComponent
-          .get<MpvRxDatabase>(MpvRxDatabase::class.java)
+          .get<MpvInfinityDatabase>(MpvInfinityDatabase::class.java)
 
       // Combine both flows - entities and playlists
       kotlinx.coroutines.flow

@@ -54,7 +54,7 @@ import app.infinity.mpvz.domain.network.NetworkConnection
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)
-abstract class MpvRxDatabase : RoomDatabase() {
+abstract class MpvInfinityDatabase : RoomDatabase() {
   abstract fun videoDataDao(): PlaybackStateDao
 
   abstract fun recentlyPlayedDao(): RecentlyPlayedDao

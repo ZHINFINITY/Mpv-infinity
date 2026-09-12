@@ -66,7 +66,7 @@
 
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
-            android:value="app.infinity.mpvz.ui.cast.MpvRxCastOptionsProvider" />
+            android:value="app.infinity.mpvz.ui.cast.MpvInfinityCastOptionsProvider" />
 
         <receiver
             android:name="androidx.mediarouter.media.MediaTransferReceiver"
