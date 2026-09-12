@@ -9,7 +9,6 @@
 
 package app.infinity.mpvz.ui.preferences
 
-import android.content.Intent
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -377,101 +376,10 @@ private fun WebsiteCookieLoginDialog(
     }
   }
 
-  fun isInstagramUrl(url: String): Boolean =
-    runCatching { java.net.URI(url).host?.lowercase()?.removePrefix("www.") == "instagram.com" }
-      .getOrDefault(false)
-
-  fun isXUrl(url: String): Boolean =
-    runCatching {
-      java.net.URI(url).host?.lowercase()?.removePrefix("www.") in setOf("x.com", "twitter.com")
-    }.getOrDefault(false)
-
-  fun userAgentFor(url: String): String = if (isInstagramUrl(url)) {
-    // Instagram can return a blank authentication page for the stock Android WebView UA.
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-  } else {
-    // X/Twitter collapses its desktop login controls when embedded with a desktop UA.
-    "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
-  }
-
-  fun repairXLoginControls(view: WebView?, url: String?) {
-    if (view == null || !isXUrl(url.orEmpty())) return
-    view.evaluateJavascript(
-      """
-      (function() {
-        function repair() {
-          if (window.mpvXRepairing) return;
-          window.mpvXRepairing = true;
-          document.querySelectorAll('input, textarea, [contenteditable="true"]').forEach(function(el) {
-            el.style.setProperty('min-height', '48px', 'important');
-            el.style.setProperty('height', '48px', 'important');
-            el.style.setProperty('line-height', '32px', 'important');
-            el.style.setProperty('padding', '8px 12px', 'important');
-            el.style.setProperty('box-sizing', 'border-box', 'important');
-            el.style.setProperty('opacity', '1', 'important');
-            el.style.setProperty('visibility', 'visible', 'important');
-            var parent = el.parentElement;
-            for (var i = 0; parent && i < 3; i++, parent = parent.parentElement) {
-              if (parent.getBoundingClientRect().height < 48) {
-                parent.style.setProperty('min-height', '64px', 'important');
-              }
-            }
-          });
-          window.mpvXRepairing = false;
-        }
-        var style = document.getElementById('mpv-x-login-fix');
-        if (!style) {
-          style = document.createElement('style');
-          style.id = 'mpv-x-login-fix';
-          style.textContent = `
-            input, textarea, [contenteditable="true"] {
-              min-height: 48px !important;
-              height: 48px !important;
-              line-height: 48px !important;
-              box-sizing: border-box !important;
-              opacity: 1 !important;
-              visibility: visible !important;
-            }
-            input:focus, textarea:focus, [contenteditable="true"]:focus {
-              min-height: 48px !important;
-              height: 48px !important;
-            }
-          `;
-          (document.head || document.documentElement).appendChild(style);
-        }
-        repair();
-        if (!window.mpvXLoginObserver) {
-          window.mpvXLoginObserver = new MutationObserver(repair);
-          window.mpvXLoginObserver.observe(document.documentElement, {childList: true, subtree: true});
-          window.setInterval(repair, 500);
-        }
-      })();
-      """.trimIndent(),
-      null,
-    )
-  }
-
   fun openWebsite() {
     val url = normalizedUrl()
     websiteUrl = url
-    val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
-    // Google blocks account authentication inside embedded WebViews with the
-    // "This browser or app may not be secure" page. Use the user's trusted browser
-    // for Google/YouTube sign-in; cookies can then be exported and imported below.
-    if (host == "youtube.com" || host.endsWith(".youtube.com") ||
-      host == "google.com" || host.endsWith(".google.com")
-    ) {
-      context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
-      return
-    }
-    webView?.let { view ->
-      view.settings.userAgentString = userAgentFor(url)
-      view.settings.useWideViewPort = isInstagramUrl(url)
-      view.settings.loadWithOverviewMode = isInstagramUrl(url)
-      view.loadUrl(url)
-    }
+    webView?.loadUrl(url)
   }
 
   Dialog(
@@ -534,12 +442,7 @@ private fun WebsiteCookieLoginDialog(
                 selected = websiteUrl.contains(host, ignoreCase = true),
                 onClick = {
                   websiteUrl = "https://$host/"
-                  webView?.let { view ->
-                    view.settings.userAgentString = userAgentFor(websiteUrl)
-                    view.settings.useWideViewPort = isInstagramUrl(websiteUrl)
-                    view.settings.loadWithOverviewMode = isInstagramUrl(websiteUrl)
-                    view.loadUrl(websiteUrl)
-                  }
+                  webView?.loadUrl(websiteUrl)
                 },
                 label = { Text(host) },
               )
@@ -572,14 +475,6 @@ private fun WebsiteCookieLoginDialog(
               settings.databaseEnabled = true
               settings.setSupportMultipleWindows(false)
               settings.javaScriptCanOpenWindowsAutomatically = true
-              settings.setSupportZoom(false)
-              settings.builtInZoomControls = false
-              settings.displayZoomControls = false
-              settings.textZoom = 100
-              val initialUrl = normalizedUrl()
-              settings.useWideViewPort = isInstagramUrl(initialUrl)
-              settings.loadWithOverviewMode = isInstagramUrl(initialUrl)
-              settings.userAgentString = userAgentFor(initialUrl)
               settings.loadsImagesAutomatically = true
               settings.allowContentAccess = true
               settings.allowFileAccess = false
@@ -608,11 +503,6 @@ private fun WebsiteCookieLoginDialog(
                 }
                 override fun onPageFinished(view: WebView?, url: String?) {
                   isLoading = false
-                  repairXLoginControls(view, url)
-                  view?.postDelayed({
-                    view.scrollTo(0, 0)
-                    view.requestLayout()
-                  }, 150)
                 }
                 override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                   if (request?.isForMainFrame != false) {
