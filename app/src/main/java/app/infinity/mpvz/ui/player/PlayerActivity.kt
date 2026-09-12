@@ -4993,9 +4993,6 @@ class PlayerActivity :
 
     applySubtitlePreferences()
     applyVideoFilterPreferences()
-    if (!playerPreferences.rememberVideoAspectPerVideo.get()) {
-      viewModel.restoreSavedVideoAspect(showUpdate = false)
-    }
     binding.root.post(::updateVideoAmbientPlayerBounds)
 
     if (shouldForceCurrentMediaTitle()) {
