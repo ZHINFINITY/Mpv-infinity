@@ -467,6 +467,8 @@ private fun WebsiteCookieLoginDialog(
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.databaseEnabled = true
+              settings.useWideViewPort = true
+              settings.loadWithOverviewMode = true
               settings.setSupportMultipleWindows(false)
               settings.javaScriptCanOpenWindowsAutomatically = true
               // Instagram often serves a blank login response to the Android WebView UA.
