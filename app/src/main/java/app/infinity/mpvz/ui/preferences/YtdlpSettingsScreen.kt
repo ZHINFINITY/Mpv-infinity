@@ -65,7 +65,7 @@ object YtdlpSettingsScreen : Screen {
     val settingsHighlight =
       rememberSettingsSearchHighlight(YtdlpSettingsScreen, scrollState, MaterialTheme.colorScheme.primary)
     var isRunning by remember { mutableStateOf(false) }
-    var showInstagramLogin by remember { mutableStateOf(false) }
+    var showCookieLogin by remember { mutableStateOf(false) }
 
     val ytdlPreferences = koinInject<YtdlPreferences>()
     val configOwnedOptions = currentMpvConfigOverrideOptions()
@@ -126,17 +126,17 @@ object YtdlpSettingsScreen : Screen {
         stringResource(R.string.ui_switch_to_nightly)
       }
 
-    if (showInstagramLogin) {
-      InstagramLoginDialog(
-        onDismiss = { showInstagramLogin = false },
-        onUseSession = { cookieHeader ->
+    if (showCookieLogin) {
+      WebsiteCookieLoginDialog(
+        onDismiss = { showCookieLogin = false },
+        onUseSession = { websiteUrl, cookieHeader ->
           scope.launch {
             val destination = withContext(Dispatchers.IO) {
-              runCatching { writeInstagramCookiesFile(context, cookieHeader) }.getOrNull()
+              runCatching { writeWebsiteCookiesFile(context, websiteUrl, cookieHeader) }.getOrNull()
             }
             if (destination != null) {
               ytdlPreferences.cookiesFile.set(destination.absolutePath)
-              showInstagramLogin = false
+              showCookieLogin = false
             }
           }
         },
@@ -305,14 +305,14 @@ object YtdlpSettingsScreen : Screen {
                 style = MaterialTheme.typography.bodySmall,
               )
               Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { showInstagramLogin = true }) {
-                  Text(stringResource(R.string.ytdlp_instagram_cookies_login))
+                Button(onClick = { showCookieLogin = true }) {
+                  Text(stringResource(R.string.ytdlp_cookies_login))
                 }
                 OutlinedButton(onClick = { cookieFilePicker.launch(arrayOf("text/plain", "application/json", "*/*")) }) {
                   Text(stringResource(R.string.ytdlp_instagram_cookies_choose))
                 }
                 if (cookiesFile.isNotBlank()) {
-                  OutlinedButton(onClick = { File(context.filesDir, "ytdlp/instagram-cookies.txt").delete(); ytdlPreferences.cookiesFile.set("") }) {
+                  OutlinedButton(onClick = { File(context.filesDir, "ytdlp/cookies.txt").delete(); File(context.filesDir, "ytdlp/instagram-cookies.txt").delete(); ytdlPreferences.cookiesFile.set("") }) {
                     Text(stringResource(R.string.ytdlp_instagram_cookies_clear))
                   }
                 }
@@ -338,11 +338,12 @@ object YtdlpSettingsScreen : Screen {
 
 
 @Composable
-private fun InstagramLoginDialog(
+private fun WebsiteCookieLoginDialog(
   onDismiss: () -> Unit,
-  onUseSession: (String) -> Unit,
+  onUseSession: (String, String) -> Unit,
 ) {
   val context = LocalContext.current
+  var websiteUrl by rememberSaveable { mutableStateOf("https://www.instagram.com/") }
   var webView by remember { mutableStateOf<WebView?>(null) }
   Dialog(
     onDismissRequest = onDismiss,
@@ -357,16 +358,24 @@ private fun InstagramLoginDialog(
           modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-          Text(stringResource(R.string.ytdlp_instagram_login_title), style = MaterialTheme.typography.titleMedium)
+          Text(stringResource(R.string.ytdlp_cookie_login_title), style = MaterialTheme.typography.titleMedium)
           TextButton(
             onClick = {
-              val cookies = CookieManager.getInstance().getCookie("https://www.instagram.com/")
-              if (!cookies.isNullOrBlank()) onUseSession(cookies)
+              val normalized = websiteUrl.trim().let { if (it.startsWith("http://") || it.startsWith("https://")) it else "https://$it" }
+              val cookies = CookieManager.getInstance().getCookie(normalized)
+              if (!cookies.isNullOrBlank()) onUseSession(normalized, cookies)
             },
           ) {
-            Text(stringResource(R.string.ytdlp_instagram_login_use))
+            Text(stringResource(R.string.ytdlp_cookie_login_use))
           }
         }
+        TextField(
+          value = websiteUrl,
+          onValueChange = { websiteUrl = it },
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+          label = { Text(stringResource(R.string.ytdlp_cookie_login_url)) },
+          singleLine = true,
+        )
         AndroidView(
           modifier = Modifier.fillMaxSize(),
           factory = {
@@ -378,27 +387,35 @@ private fun InstagramLoginDialog(
               CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
               webViewClient = WebViewClient()
               webView = this
-              loadUrl("https://www.instagram.com/accounts/login/")
+              loadUrl(websiteUrl)
             }
           },
-          update = { webView = it },
+          update = { view -> webView = view },
         )
       }
     }
   }
 }
 
-private fun writeInstagramCookiesFile(context: android.content.Context, cookieHeader: String): File {
-  val destination = File(context.filesDir, "ytdlp/instagram-cookies.txt")
+private fun writeWebsiteCookiesFile(
+  context: android.content.Context,
+  websiteUrl: String,
+  cookieHeader: String,
+): File {
+  val host = java.net.URI(websiteUrl).host?.removePrefix("www.")?.takeIf { it.isNotBlank() }
+    ?: error("Website URL has no host")
+  val domain = ".${host}"
+  val secure = websiteUrl.startsWith("https://")
+  val destination = File(context.filesDir, "ytdlp/cookies.txt")
   destination.parentFile?.mkdirs()
   val rows = cookieHeader.split(';').mapNotNull { item ->
     val separator = item.indexOf('=')
     if (separator <= 0) return@mapNotNull null
     val name = item.substring(0, separator).trim()
     val value = item.substring(separator + 1).trim()
-    if (name.isBlank()) null else ".instagram.com\tTRUE\t/\tTRUE\t0\t$name\t$value"
+    if (name.isBlank()) null else "$domain\tTRUE\t/\t${secure.toString().uppercase()}\t0\t$name\t$value"
   }
-  require(rows.isNotEmpty()) { "Instagram did not provide login cookies" }
+  require(rows.isNotEmpty()) { "Website did not provide cookies" }
   destination.writeText("# Netscape HTTP Cookie File\n" + rows.joinToString("\n") + "\n")
   return destination
 }
