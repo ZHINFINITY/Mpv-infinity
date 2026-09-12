@@ -173,6 +173,22 @@ object PlayerPreferencesScreen : Screen {
 
               PreferenceDivider()
 
+              val rememberVideoAspectPerVideo by preferences.rememberVideoAspectPerVideo.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_player_remember_video_aspect_per_video_title),
+                value = rememberVideoAspectPerVideo,
+                onValueChange = preferences.rememberVideoAspectPerVideo::set,
+                title = { Text(stringResource(R.string.pref_player_remember_video_aspect_per_video_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_player_remember_video_aspect_per_video_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
               val closeAfterEndOfVideo by preferences.closeAfterReachingEndOfVideo.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_close_after_eof),

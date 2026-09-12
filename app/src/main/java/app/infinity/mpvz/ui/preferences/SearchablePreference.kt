@@ -286,6 +286,14 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
+          titleRes = R.string.pref_player_remember_video_aspect_per_video_title,
+          keywords = listOf("aspect", "aspect ratio", "video", "per video", "remember", "stretch", "crop", "fit"),
+          category = "Player",
+          screen = PlayerPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
           titleRes = R.string.pref_player_close_after_eof,
           keywords = listOf("close", "end", "playback", "quit", "finish"),
           category = "Player",
