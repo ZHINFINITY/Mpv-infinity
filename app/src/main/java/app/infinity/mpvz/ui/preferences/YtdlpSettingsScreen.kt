@@ -284,7 +284,7 @@ object YtdlpSettingsScreen : Screen {
                   Text(stringResource(R.string.ytdlp_instagram_cookies_choose))
                 }
                 if (cookiesFile.isNotBlank()) {
-                  OutlinedButton(onClick = { ytdlPreferences.cookiesFile.set("") }) {
+                  OutlinedButton(onClick = { File(context.filesDir, "ytdlp/instagram-cookies.txt").delete(); ytdlPreferences.cookiesFile.set("") }) {
                     Text(stringResource(R.string.ytdlp_instagram_cookies_clear))
                   }
                 }
