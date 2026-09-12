@@ -15,6 +15,7 @@ import android.util.Log
 import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.preferences.YtdlPreferences
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpOptionsBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
