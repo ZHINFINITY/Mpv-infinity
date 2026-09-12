@@ -711,11 +711,11 @@ class PlayerActivity :
       return
     }
     if (playerPreferences.rememberVideoAspectPerVideo.get() &&
-      !playerPreferences.videoAspectStateMigrated.get()
+      playerPreferences.videoAspectStateMigrationVersion.get() < 2
     ) {
       lifecycleScope.launch(Dispatchers.IO) {
         playbackStateRepository.resetAllVideoAspectSettings()
-        playerPreferences.videoAspectStateMigrated.set(true)
+        playerPreferences.videoAspectStateMigrationVersion.set(2)
       }
     }
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
