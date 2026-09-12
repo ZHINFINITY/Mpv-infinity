@@ -5151,6 +5151,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   private fun refreshStretchAspectAfterCropChange() {
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) return
     if (playerPreferences.lastCustomAspectRatio.get() > 0f) return
     if (playerPreferences.lastVideoAspect.get() != VideoAspect.Stretch) return
     changeVideoAspect(VideoAspect.Stretch, showUpdate = false)
