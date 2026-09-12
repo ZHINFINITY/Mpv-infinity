@@ -448,13 +448,13 @@ Mpv∞ is maintained by **ZHINFINITY** and follows the same open-source lineage 
 - [Anime4K](https://github.com/bloc97/Anime4K)
 - [**SunnyVishnu3**](https://github.com/SunnyVishnu3) for the `yt-dlp` native integration and SDK 29+ bypass logic.
 
-For the detailed notice and redistribution guidance, see [`UPSTREAM_NOTICES.md`](UPSTREAM_NOTICES.md). Individual source files and bundled assets may contain their own copyright and license notices; those notices remain part of the distributed source tree.
+Individual source files and bundled assets may contain their own copyright and license notices; those notices remain part of the distributed source tree.
 
 ---
 
 ## License
 
-Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE) for the license and attribution information. Mpv∞-specific code, branding, and modifications are maintained by **ZHINFINITY**
+Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE) for the license and attribution information. Mpv∞-specific code, branding, and modifications are maintained by **ZHINFINITY**, while upstream copyrights remain with their respective holders.
 
 ---
 
