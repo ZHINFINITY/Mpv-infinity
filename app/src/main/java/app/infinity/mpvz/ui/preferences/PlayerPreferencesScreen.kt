@@ -189,7 +189,7 @@ object PlayerPreferencesScreen : Screen {
                     // the new per-video setting is enabled; positions and subtitle state remain.
                     scope.launch {
                       playbackStateRepository.resetAllVideoAspectSettings()
-                      preferences.videoAspectStateMigrated.set(true)
+                      preferences.videoAspectStateMigrationVersion.set(2)
                     }
                   }
                   preferences.rememberVideoAspectPerVideo.set(enabled)
