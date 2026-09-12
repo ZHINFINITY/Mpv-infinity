@@ -688,7 +688,7 @@ object LibrariesScreen : Screen {
           Text(
             text =
               androidx.compose.ui.res.stringResource(
-                app.infinity.mpvz.R.string.ui_core_open_source_dependencies_used_by_mpvrx,
+                app.infinity.mpvz.R.string.ui_core_open_source_dependencies_used_by_mpv_infinity,
               ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

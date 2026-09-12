@@ -75,7 +75,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private const val DEBUG_LOG_POLL_INTERVAL_MS = 1_500L
-private const val DEBUG_LOG_TAG = "MpvRxDebugLogs"
+private const val DEBUG_LOG_TAG = "MpvInfinityDebugLogs"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

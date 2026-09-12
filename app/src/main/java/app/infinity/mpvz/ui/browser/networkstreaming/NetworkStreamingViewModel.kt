@@ -481,7 +481,7 @@ class NetworkStreamingViewModel(
     private const val MAX_DESCRIPTION_LENGTH = 2000
     private const val MIN_SEARCH_LENGTH = 3
     private const val ENRICHMENT_RETRY_MS = 60_000L
-    private const val ENRICHMENT_TAG = "MpvRxTorrentArtwork"
+    private const val ENRICHMENT_TAG = "MpvInfinityTorrentArtwork"
 
     private fun groupTorrentFiles(entries: List<NetworkStreamEntryEntity>): List<TorrentStreamGroup> =
       entries

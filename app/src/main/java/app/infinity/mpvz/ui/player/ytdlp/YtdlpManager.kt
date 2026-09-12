@@ -55,7 +55,7 @@ object YtdlpManager {
   private const val YTDL_DIR = "ytdl"
   private const val PLAYBACK_RUNTIME_VERSION = "1"
   private const val PLAYBACK_RUNTIME_VERSION_FILE = "playback-runtime-version"
-  private const val INSTALLATION_INFO_PREFIX = "MPVRX_YTDLP_INFO="
+  private const val INSTALLATION_INFO_PREFIX = "MPV_INFINITY_YTDLP_INFO="
   private const val MAX_IMPORTED_PLAYLIST_ENTRIES = 5_000
   private const val MAX_PLAYLIST_OUTPUT_CHARS = 32L * 1024 * 1024
   private const val PLAYLIST_EXTRACTION_TIMEOUT_MS = 180_000L

@@ -17,7 +17,7 @@ internal object SubtitleHubSearchMatcher {
       "moviesubtitles_org",
       "moviesubtitlesrt_com",
     )
-  private val episodeOnlySources = setOf(MpvRxSubtitleHubSources.BETASERIES_KEY)
+  private val episodeOnlySources = setOf(MpvInfinitySubtitleHubSources.BETASERIES_KEY)
 
   private val supportedSubtitleFormats = setOf("srt", "ass", "ssa", "vtt", "sub")
   private val supportedArchiveFormats = setOf("zip", "rar")

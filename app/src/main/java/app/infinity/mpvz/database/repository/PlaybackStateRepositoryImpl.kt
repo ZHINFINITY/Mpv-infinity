@@ -9,7 +9,7 @@
 
 package app.infinity.mpvz.database.repository
 
-import app.infinity.mpvz.database.MpvRxDatabase
+import app.infinity.mpvz.database.MpvInfinityDatabase
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import kotlinx.coroutines.sync.Mutex
@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 class PlaybackStateRepositoryImpl(
-  private val database: MpvRxDatabase,
+  private val database: MpvInfinityDatabase,
 ) : PlaybackStateRepository {
   // Library screens can ask for the complete playback-state set several times while navigating or
   // refreshing. Keep one process-local snapshot after the first unavoidable Room load and maintain

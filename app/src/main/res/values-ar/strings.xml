@@ -1276,15 +1276,15 @@
   <string name="ui_allow_access">السماح بالوصول</string>
   <string name="ui_why_do_i_see_this">لماذا أرى هذا؟</string>
   <string name="ui_why_this_permission_is_needed">لماذا يلزم هذا الإذن</string>
-  <string name="ui_mpvrx_needs_access_to_your_video_files_to_provide_its_core_funct">يحتاج Mpv∞ إلى الوصول إلى ملفات الفيديو لتوفير وظائفه الأساسية كمشغّل وسائط.</string>
+  <string name="ui_mpv_infinity_needs_access_to_your_video_files_to_provide_its_core_funct">يحتاج Mpv∞ إلى الوصول إلى ملفات الفيديو لتوفير وظائفه الأساسية كمشغّل وسائط.</string>
   <string name="ui_the_permission_is_used_exclusively_for">يُستخدم الإذن حصريًا من أجل:</string>
   <string name="ui_discovering_and_displaying_your_video_files_n_playing_media_cont">• اكتشاف ملفات الفيديو وعرضها
 • تشغيل محتوى الوسائط
 • تحميل ملفات الترجمة</string>
-  <string name="ui_mpvrx_has_always_required_storage_access_permission_as_it_s_esse">لطالما احتاج Mpv∞ إلى إذن الوصول إلى وحدة التخزين لأنه ضروري للعثور على جميع ملفات الوسائط والترجمة على جهازك، بما فيها الملفات التي لا يدعمها النظام.</string>
+  <string name="ui_mpv_infinity_has_always_required_storage_access_permission_as_it_s_esse">لطالما احتاج Mpv∞ إلى إذن الوصول إلى وحدة التخزين لأنه ضروري للعثور على جميع ملفات الوسائط والترجمة على جهازك، بما فيها الملفات التي لا يدعمها النظام.</string>
   <string name="ui_however_due_to_a_change_in_security_policy_apps_built_for_androi">لكن بسبب تغيير في سياسة الأمان، تتطلب التطبيقات المصممة لنظام Android 11 والإصدارات الأحدث إذنًا إضافيًا لمواصلة الوصول نفسه.</string>
   <string name="ui_please_know_that_this_permission_is_only_used_for_the_auto_disco">يُرجى العلم أن هذا الإذن لا يُستخدم إلا للاكتشاف التلقائي لملفات الوسائط والترجمة على جهازك، ولا يتيح لنا بأي شكل الوصول إلى ملفات البيانات الخاصة التي تخزّنها التطبيقات الأخرى.</string>
-  <string name="ui_mpvrx_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ مشروع مفتوح المصدر. يمكنك مراجعة الشفرة المصدرية والتحقق من كيفية استخدام الأذونات بزيارة مستودع GitHub الخاص بنا على:</string>
+  <string name="ui_mpv_infinity_is_an_open_source_project_you_can_review_the_source_code_a">Mpv∞ مشروع مفتوح المصدر. يمكنك مراجعة الشفرة المصدرية والتحقق من كيفية استخدام الأذونات بزيارة مستودع GitHub الخاص بنا على:</string>
   <string name="ui_be_rest_assured_your_privacy_is_our_utmost_priority_and_we_neith">اطمئن، خصوصيتك هي أولويتنا القصوى. لا نصل إلى ملفاتك لأغراض أخرى ولا ننقلها أو نخزّنها على خوادمنا؛ بل تبقى آمنة على جهازك.</string>
   <string name="ui_app_permissions">أذونات التطبيق</string>
   <string name="ui_permissions_setup_subtitle">قم بتكوين الأذونات لتمكين الميزات الأساسية وتشغيل الوسائط.</string>
@@ -1377,14 +1377,14 @@
   <string name="ui_github">GitHub</string>
   <string name="ui_device_info">معلومات الجهاز</string>
   <string name="ui_buy_me_a_coffee">ادعمني بقهوة</string>
-  <string name="ui_if_you_enjoy_mpvrx_consider_supporting_its_development_every_bit">إذا أعجبك Mpv∞، فكّر في دعم تطويره. كل مساهمة تساعد!</string>
+  <string name="ui_if_you_enjoy_mpv_infinity_consider_supporting_its_development_every_bit">إذا أعجبك Mpv∞، فكّر في دعم تطويره. كل مساهمة تساعد!</string>
   <string name="ui_support_link">معرّف UPI</string>
   <string name="ui_zhinfinity_github">github.com/ZHINFINITY/Mpv-infinity</string>
   <string name="ui_visit_github">أرسل دعمك</string>
   <string name="ui_auto_check_for_updates">البحث التلقائي عن التحديثات</string>
   <string name="ui_check_on_startup">التحقق عند بدء التشغيل</string>
   <string name="ui_check_for_updates_now">البحث عن تحديثات الآن</string>
-  <string name="ui_core_open_source_dependencies_used_by_mpvrx">التبعيات الأساسية مفتوحة المصدر التي يستخدمها Mpv∞.</string>
+  <string name="ui_core_open_source_dependencies_used_by_mpv_infinity">التبعيات الأساسية مفتوحة المصدر التي يستخدمها Mpv∞.</string>
   <string name="ui_copy_upi_id">نسخ معرّف UPI</string>
   <string name="ui_already_using_latest_version">أنت تستخدم أحدث إصدار بالفعل</string>
   <string name="ui_support_link_copied">تم نسخ معرّف UPI!</string>

@@ -67,7 +67,7 @@ import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchMode
-import app.infinity.mpvz.repository.subtitlehub.MpvRxSubtitleHubSources
+import app.infinity.mpvz.repository.subtitlehub.MpvInfinitySubtitleHubSources
 import app.infinity.mpvz.repository.wyzie.WyzieEncodings
 import app.infinity.mpvz.repository.wyzie.WyzieFormats
 import app.infinity.mpvz.repository.wyzie.WyzieLanguages
@@ -205,53 +205,53 @@ object SubtitlesPreferencesScreen : Screen {
         val apiKeyRequiredLabel = stringResource(R.string.pref_subtitles_source_api_key_required)
         val subtitleHubSourceValues =
           remember(allKeylessSourcesLabel) {
-            MpvRxSubtitleHubSources.ALL.toMutableMap().apply {
+            MpvInfinitySubtitleHubSources.ALL.toMutableMap().apply {
               this["all"] = allKeylessSourcesLabel
             }
           }
         val subtitleHubSourceDescriptions =
           remember(apiKeyRequiredLabel) {
-            MpvRxSubtitleHubSources.AUTHENTICATED_SOURCES.associateWith { apiKeyRequiredLabel }
+            MpvInfinitySubtitleHubSources.AUTHENTICATED_SOURCES.associateWith { apiKeyRequiredLabel }
           }
         val subtitleApiKeyPreferences =
           listOf(
             SubtitleApiKeyPreferenceSpec(
-              sourceKey = MpvRxSubtitleHubSources.BETASERIES_KEY,
+              sourceKey = MpvInfinitySubtitleHubSources.BETASERIES_KEY,
               providerName = "BetaSeries",
               titleRes = R.string.pref_betaseries_api_key_title,
               value = betaSeriesApiKey,
               onValueChange = preferences.betaSeriesApiKey::set,
             ),
             SubtitleApiKeyPreferenceSpec(
-              sourceKey = MpvRxSubtitleHubSources.JIMAKU_KEY,
+              sourceKey = MpvInfinitySubtitleHubSources.JIMAKU_KEY,
               providerName = "Jimaku",
               titleRes = R.string.pref_jimaku_api_key_title,
               value = jimakuApiKey,
               onValueChange = preferences.jimakuApiKey::set,
             ),
             SubtitleApiKeyPreferenceSpec(
-              sourceKey = MpvRxSubtitleHubSources.SUBDL_KEY,
+              sourceKey = MpvInfinitySubtitleHubSources.SUBDL_KEY,
               providerName = "SubDL",
               titleRes = R.string.pref_subdl_api_key_title,
               value = subDlApiKey,
               onValueChange = preferences.subDlApiKey::set,
             ),
             SubtitleApiKeyPreferenceSpec(
-              sourceKey = MpvRxSubtitleHubSources.SUBSOURCE_KEY,
+              sourceKey = MpvInfinitySubtitleHubSources.SUBSOURCE_KEY,
               providerName = "SubSource",
               titleRes = R.string.pref_subsource_api_key_title,
               value = subSourceApiKey,
               onValueChange = preferences.subSourceApiKey::set,
             ),
             SubtitleApiKeyPreferenceSpec(
-              sourceKey = MpvRxSubtitleHubSources.SUBS_RO_KEY,
+              sourceKey = MpvInfinitySubtitleHubSources.SUBS_RO_KEY,
               providerName = "Subs.ro",
               titleRes = R.string.pref_subs_ro_api_key_title,
               value = subsRoApiKey,
               onValueChange = preferences.subsRoApiKey::set,
             ),
             SubtitleApiKeyPreferenceSpec(
-              sourceKey = MpvRxSubtitleHubSources.SUBX_KEY,
+              sourceKey = MpvInfinitySubtitleHubSources.SUBX_KEY,
               providerName = "SubX",
               titleRes = R.string.pref_subx_api_key_title,
               value = subXApiKey,
@@ -592,7 +592,7 @@ object SubtitlesPreferencesScreen : Screen {
                 selectedValues = subtitleHubSources,
                 onValuesChange = { preferences.subtitleHubSources.set(it) },
                 hasAllOption = true,
-                additiveWithAll = MpvRxSubtitleHubSources.AUTHENTICATED_SOURCES,
+                additiveWithAll = MpvInfinitySubtitleHubSources.AUTHENTICATED_SOURCES,
               )
 
               selectedSubtitleApiKeyPreferences.forEach { apiKeyPreference ->

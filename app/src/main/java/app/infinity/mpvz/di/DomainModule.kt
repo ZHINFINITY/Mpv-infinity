@@ -32,7 +32,7 @@ import app.infinity.mpvz.repository.ai.SubtitleGenerationService
 import app.infinity.mpvz.repository.ai.TogetherClient
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleFileStore
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleOrchestrator
-import app.infinity.mpvz.repository.subtitlehub.MpvRxSubtitleHubRepository
+import app.infinity.mpvz.repository.subtitlehub.MpvInfinitySubtitleHubRepository
 import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
 import app.infinity.mpvz.ui.player.PlaybackSessionShaderRuntime
 import kotlinx.serialization.json.Json
@@ -56,8 +56,8 @@ val domainModule =
     single { HdrToysManager(androidContext(), get()) }
     single { OnlineSubtitleFileStore(androidContext(), get()) }
     single { WyzieSearchRepository(androidContext(), get(), get(), get(), get()) }
-    single { MpvRxSubtitleHubRepository(get(), get(), get(), get()) }
-    single { OnlineSubtitleOrchestrator(get<WyzieSearchRepository>(), get<MpvRxSubtitleHubRepository>()) }
+    single { MpvInfinitySubtitleHubRepository(get(), get(), get(), get()) }
+    single { OnlineSubtitleOrchestrator(get<WyzieSearchRepository>(), get<MpvInfinitySubtitleHubRepository>()) }
     single { IntroDbRepository(get(), get()) }
     single { OpenCodeClient(get(), get()) }
     single { GroqClient(get(), get()) }
