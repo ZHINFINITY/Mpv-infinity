@@ -458,6 +458,12 @@ private fun WebsiteCookieLoginDialog(
           modifier = Modifier.fillMaxWidth().weight(1f).imePadding(),
           factory = {
             WebView(context).apply {
+              isFocusable = true
+              isFocusableInTouchMode = true
+              setOnTouchListener { view, _ ->
+                if (!view.hasFocus()) view.requestFocus()
+                false
+              }
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.databaseEnabled = true
@@ -505,6 +511,12 @@ private fun WebsiteCookieLoginDialog(
                       "size=${view?.width}x${view?.height}",
                   )
                   loadError = null
+                }
+                override fun onPageFinished(view: WebView?, url: String?) {
+                  view?.post {
+                    view.requestFocus()
+                    Log.d(COOKIE_WEBVIEW_TAG, "page_finished url=$url focus=${view.hasFocus()}")
+                  }
                 }
                 override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                   Log.e(
