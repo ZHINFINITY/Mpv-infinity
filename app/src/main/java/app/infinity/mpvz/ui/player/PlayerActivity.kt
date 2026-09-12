@@ -524,6 +524,7 @@ class PlayerActivity :
   private var videoParamRefreshJob: Job? = null
   private var intentSubtitleJob: Job? = null
   private var mediaLoadJob: Job? = null
+  private var videoAspectMigrationJob: Job? = null
   private var playbackLoadRetryJob: Job? = null
   private var playbackLoadWatchdogJob: Job? = null
   @Volatile private var pendingMediaLoadRecovery: PendingMediaLoadRecovery? = null
@@ -706,17 +707,17 @@ class PlayerActivity :
     }
     playbackOwnerToken = PlaybackActivityOwner.claim()
     pendingSavedPlaylistSelection = savedInstanceState?.toSavedPlaylistSelection()
+    if (playerPreferences.rememberVideoAspectPerVideo.get() &&
+      playerPreferences.videoAspectStateMigrationVersion.get() < 3
+    ) {
+      videoAspectMigrationJob = lifecycleScope.launch(Dispatchers.IO) {
+        playbackStateRepository.resetAllVideoAspectSettings()
+        playerPreferences.videoAspectStateMigrationVersion.set(3)
+      }
+    }
     if (!beginMediaRequest()) {
       finish()
       return
-    }
-    if (playerPreferences.rememberVideoAspectPerVideo.get() &&
-      playerPreferences.videoAspectStateMigrationVersion.get() < 2
-    ) {
-      lifecycleScope.launch(Dispatchers.IO) {
-        playbackStateRepository.resetAllVideoAspectSettings()
-        playerPreferences.videoAspectStateMigrationVersion.set(2)
-      }
     }
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
@@ -5503,6 +5504,10 @@ class PlayerActivity :
     }
 
     return runCatching {
+      // Do not resolve/apply a stale record while the one-time migration is still clearing
+      // aspect values left by older builds.
+      videoAspectMigrationJob?.join()
+      if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
       val state = resolvePlaybackState(identifier, legacyIdentifier)
 
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
