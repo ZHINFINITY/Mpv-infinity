@@ -12,7 +12,6 @@ package app.infinity.mpvz.ui.preferences
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.webkit.WebChromeClient
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -363,7 +362,7 @@ private fun WebsiteCookieLoginDialog(
   fun normalizedUrl(): String {
     val value = websiteUrl.trim()
     val normalized = if (value.startsWith("http://") || value.startsWith("https://")) value else "https://$value"
-    return if (normalized.contains("x.com", ignoreCase = true) &&
+    return if (normalized.trimEnd('/').equals("https://x.com", ignoreCase = true) ||
       normalized.trimEnd('/').equals("https://www.x.com", ignoreCase = true)
     ) {
       "https://x.com/i/flow/login"
@@ -468,30 +467,10 @@ private fun WebsiteCookieLoginDialog(
             modifier = Modifier.fillMaxSize(),
             factory = {
               WebView(context).apply {
-                setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                clipToPadding = false
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
-              settings.databaseEnabled = true
-              settings.setSupportMultipleWindows(false)
               settings.javaScriptCanOpenWindowsAutomatically = true
               settings.loadsImagesAutomatically = true
-              settings.allowContentAccess = true
-              settings.allowFileAccess = false
-              settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-              webChromeClient = object : WebChromeClient() {
-                override fun onCreateWindow(
-                  view: WebView?,
-                  isDialog: Boolean,
-                  isUserGesture: Boolean,
-                  resultMsg: android.os.Message?,
-                ): Boolean {
-                  val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
-                  transport.webView = view
-                  resultMsg.sendToTarget()
-                  return true
-                }
-              }
               CookieManager.getInstance().setAcceptCookie(true)
               CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
               webViewClient = object : WebViewClient() {
