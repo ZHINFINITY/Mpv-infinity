@@ -4,58 +4,60 @@ These notes are written in plain English and focus on what changed for real use.
 
 ## 2.0.0 - Native Streaming, Authenticated Downloads & Playback Expansion
 
-Mpv∞ 2.0.0 is a major release containing the complete feature, improvement, and
-reliability work added after v1.0.9.
+Mpv∞ 2.0.0 is a major release containing the complete feature, improvement, and reliability work added after v1.0.9.
 
 ### 🎬 Native Stream catalog and browsing
 
 - Added a dedicated Stream screen with catalog rails, posters, media details, hero carousel, seasons, episodes, source selection, and direct playback.
 - Added progressive catalog loading, caching, refresh, loading/error/empty states, provider browsing, name-based search, stale-search cancellation, and preserved search state.
-- Added per-video aspect-ratio handling and improved geometry persistence so one video's crop, pan, zoom, stretch, or aspect choice does not unexpectedly affect another video.
-- Added animated catalog rails, improved Jellyfin-style details sheets, source filters, ranked sources, and native playback handoff.
+- Added per-video aspect-ratio handling and persistent crop, pan, zoom, stretch, and geometry controls so one video's display settings do not unexpectedly affect another video.
+- Added automatic black-bar crop detection with variable-aspect safety, ambient-background compatibility, and translated crop states.
+- Added animated catalog rails, improved details sheets, source filters, ranked sources, poster handling, and native playback handoff.
 
-### 🧩 Stremio, addon and resolver integration
+### 🧩 Addon catalogs and stream resolvers
 
-- Added persistent custom Stremio catalog manifests, multiple addon catalogs, arbitrary catalog types, provider names, catalog IDs, addon rails, and provider switches.
-- Added configurable BYOA stream resolver support, Stremio stream URL resolution, resilient resolver parsing, stream-link normalization, and direct-stream support.
-- Added addon search paths, rate-limit handling, catalog metadata caching, progressive refresh, concurrent episode resolution, and resolver diagnostics in the in-app log catcher.
+- Added persistent custom catalog manifests, multiple addon catalogs, arbitrary catalog types, provider names, catalog IDs, addon rails, and provider switches.
+- Added configurable external stream-resolver support, stream URL resolution, resilient parsing, link normalization, direct-stream support, resolver caching, and provider-aware search.
+- Added addon search paths, rate-limit handling, progressive refresh, stale-request cancellation, concurrent episode resolution, and resolver diagnostics in the in-app log catcher.
 
-### 🧲 Torrentio, torrent and anime discovery
+### 🧲 Torrent and series source discovery
 
-- Added Torrentio stream response parsing, magnet metadata, multi-source torrent catalogs, episode source selection, ranked torrent sources, and native torrent-picker integration.
-- Added resolver season aggregation, missing-season discovery, long-series support, anime identifier fallbacks, Kitsu anime routing, and parallel season/episode resolver requests.
-- Preserved the original torrent selection experience while injecting resolver sources, loading states, posters, and source metadata.
+- Added multi-source torrent catalogs, magnet metadata, episode source selection, ranked sources, native picker integration, loading states, posters, and source metadata.
+- Added season aggregation, missing-season discovery, long-series support, anime identifier fallbacks, alternate catalog routing, and parallel season/episode resolver requests.
+- Preserved the original source-selection experience while injecting additional resolver results into the native picker.
 
-### 🌐 HentaiStream and direct network playback
+### 🔗 Direct media and network playback
 
-- Added direct MP4 playback paths for supported HentaiStream/HentaiSea sources and bypassed unnecessary yt-dlp extraction where possible.
-- Improved browser-like playback, range requests, cache-key isolation, stale-cache rejection, ad-proxy handling, snapshot filtering, episode discovery, and short-response recovery.
-- Added HentaiStream HTTP/range diagnostics and preserved Torrentio magnet streams.
+- Added direct media playback paths for compatible stream sources and bypassed unnecessary extraction when a source can be played directly.
+- Improved browser-like playback, range requests, cache-key isolation, stale-cache rejection, proxy handling, snapshot filtering, episode discovery, and short-response recovery.
+- Added HTTP/range diagnostics, direct-stream validation, and better playback recovery for remote sources.
 
 ### 🔐 Website WebView login and cookie sessions
 
-- Added in-app WebView login for Instagram, X/Twitter, YouTube, and other supported websites.
+- Added in-app WebView login for supported websites including video, social, and media services.
 - Added JavaScript, DOM storage, database storage, third-party cookies, viewport support, loading feedback, page-error handling, focus handling, and in-WebView redirects.
 - Added persistent cookie-session export, multi-site cookie-file merging, complete WebView cookie-database export across domains and paths, Netscape cookie-file generation, cookie flushing, and non-sensitive cookie diagnostics.
 - Added a Jellyfin-style **User Agent** bottom sheet with editable, persistent custom User Agent support.
 - Added CookieWebView lifecycle, page, console, HTTP, focus, cookie-name, and export diagnostics to the in-app log catcher without logging cookie values.
 
-### 📥 yt-dlp and Quick Download
+### 📥 yt-dlp, Quick Download and media metadata
 
 - Added Quick Download from supported websites through yt-dlp, including authenticated downloads using the configured cookie file.
 - Added consistent User Agent behavior across every yt-dlp path: a saved custom User Agent always takes precedence; otherwise the shared default is used.
 - Added supported-website referer handling, extractor options, JavaScript runtime support, retries, continuation, progress reporting, and improved shared-link handling.
-- Added Instagram shared-link downloads and fixed video-only selection by requiring both audio and video, either as a combined stream or as separate streams merged into MP4.
-- Added pause, resume, continuation, paused status, direct-download integrity improvements, subtitle authentication, and source-aware Jellyfin downloads.
+- Improved downloaded media handling with better source metadata, thumbnails, artwork retrieval, filename handling, and artwork-aware output where supported by the source and container.
+- Added separate-stream audio/video selection and merge handling, preventing video-only output when audio is available.
+- Added pause, resume, continuation, paused status, direct-download integrity improvements, subtitle authentication, and source-aware media downloads.
 
 ### ▶️ Native Media3, MPV and player improvements
 
 - Expanded the Native Media3 playback engine and improved automatic Native/MPV engine selection.
 - Added stronger network playback, chapter synchronization, Native chapter seeking, skip-intro/outro seeking, source handoff, direct-playback eligibility checks, and playback-state persistence.
-- Improved MPV and Native resume, audio handoff, background playback, audio standby, Picture-in-Picture transitions, player teardown, orientation handling, and end-of-file behavior.
+- Improved MPV and Native resume, audio handoff, background playback, music-player standby mode, Picture-in-Picture transitions, player teardown, orientation handling, and end-of-file behavior.
 - Improved GPU/rendering configuration handling, decoder fallback, HDR compatibility, MediaCodec surface recovery, buffering, and playback diagnostics.
+- Added more reliable per-video display geometry, aspect-ratio, zoom, crop, pan, stretch, and ambient rendering behavior.
 
-### 💬 Subtitles and AI translation
+### 💬 Subtitles and translation
 
 - Added and improved AI subtitle translation, translated subtitle overlays, native secondary subtitles, cue translation, translation request race handling, and translation-state reset.
 - Added automatic subtitle font fallback, configured subtitle typography, imported subtitle-font preservation, native subtitle auto-selection, embedded-subtitle restoration, and player-only translation opt-in.
@@ -64,8 +66,8 @@ reliability work added after v1.0.9.
 ### 🎵 Music, lyrics and visualizers
 
 - Improved online lyrics loading, portrait and landscape lyrics layouts, artwork visibility, audio standby, background audio, music controls, and audio-service startup.
-- Improved visualizer compositing, palettes, alpha handling, and orientation behavior.
-- Preserved configured audio seeking and improved music-player lifecycle and resume behavior.
+- Improved music-player standby mode, resume behavior, visualizer compositing, palettes, alpha handling, and orientation behavior.
+- Preserved configured audio seeking and improved music-player lifecycle handling.
 
 ### 🌐 Jellyfin, WebDAV and network media
 
@@ -76,23 +78,23 @@ reliability work added after v1.0.9.
 ### 📂 Library, search and navigation
 
 - Added watched-state propagation, child-folder badges, last-folder highlighting, nine-column grids, retained folder/search state, progressive search, cached rails, and improved recently played synchronization.
-- Improved settings navigation, searchable preferences, Jellyfin-style bottom sheets, popup theming, insets, orientation layouts, animations, and empty/loading states.
+- Improved settings navigation, searchable preferences, bottom sheets, popup theming, system insets, orientation layouts, animations, and empty/loading states.
+- Added improved connection management, media-source browsing, playlist handling, and supported-link routing.
 
 ### 🛠️ Diagnostics, build and reliability
 
-- Added catalog, resolver, HentaiStream, WebView, yt-dlp, playback, Media3, codec, and crash diagnostics with in-app log-catcher integration.
+- Added catalog, resolver, direct-media, WebView, yt-dlp, playback, Media3, codec, and crash diagnostics with in-app log-catcher integration.
 - Added ARM64 catalog/debug build workflows, complete release-variant packaging, runtime asset preparation, resolver lifecycle hardening, Compose compatibility fixes, and activity/context leak prevention.
-- Fixed stale searches, resolver failures, stream loading, direct playback handoff, WebView clipping and loading behavior, cookie export, User Agent mismatches, Instagram HTTP 400 failures, Instagram video-only downloads, download pause/resume, PiP races, subtitle restoration, network reconnects, and multiple playback lifecycle issues.
+- Improved background playback, Picture-in-Picture cleanup, download continuation, network reconnects, subtitle restoration, stream loading, stale-search handling, and playback lifecycle reliability.
 
 ### ✅ Successful end-state fixes
 
-- WebView pages now use a full-page layout with loading feedback instead of a decorative clipped WebView box.
-- Login fields receive focus and keyboard input correctly.
-- WebView cookies are flushed and exported in complete Netscape format.
-- yt-dlp consistently uses the saved custom User Agent or the shared default User Agent.
-- Instagram shared links can download with both video and audio when the account/session is valid.
-- YouTube, Instagram, X/Twitter, and other supported website sessions remain inside the app WebView flow.
-- Quick Download and normal yt-dlp downloads share the same cookie, User Agent, referer, retry, and format-selection behavior.
+- Fixed WebView page loading, full-page layout, loading feedback, login-field visibility, keyboard focus, and in-WebView navigation.
+- Fixed complete WebView cookie export and cookie flushing after page completion.
+- Fixed yt-dlp User Agent mismatches by consistently honoring the saved custom User Agent or the shared default User Agent.
+- Fixed supported shared-link extraction and prevented video-only downloads when audio is available by requiring a combined stream or merging separate audio and video streams.
+- Fixed Quick Download and standard downloads to share cookie, User Agent, referer, retry, format-selection, metadata, and artwork-aware handling.
+- Fixed catalog loading, resolver errors, direct playback handoff, download pause/resume, PiP transitions, subtitle restoration, network reconnects, and multiple playback lifecycle issues.
 - The Android app/About version for this release is **v2.0.0**.
 
 ## 1.0.9 - Playback Stability, Navigation & Library Improvements
