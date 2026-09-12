@@ -474,8 +474,8 @@ private fun WebsiteCookieLoginDialog(
               // Instagram often serves a blank login response to the Android WebView UA.
               // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
               settings.userAgentString =
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                  "(KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36"
               settings.loadsImagesAutomatically = true
               settings.allowContentAccess = true
               settings.allowFileAccess = false
