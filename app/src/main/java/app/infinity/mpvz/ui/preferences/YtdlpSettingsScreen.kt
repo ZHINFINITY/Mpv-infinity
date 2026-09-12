@@ -9,12 +9,19 @@
 
 package app.infinity.mpvz.ui.preferences
 
+import android.webkit.CookieManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -58,6 +65,7 @@ object YtdlpSettingsScreen : Screen {
     val settingsHighlight =
       rememberSettingsSearchHighlight(YtdlpSettingsScreen, scrollState, MaterialTheme.colorScheme.primary)
     var isRunning by remember { mutableStateOf(false) }
+    var showInstagramLogin by remember { mutableStateOf(false) }
 
     val ytdlPreferences = koinInject<YtdlPreferences>()
     val configOwnedOptions = currentMpvConfigOverrideOptions()
@@ -117,6 +125,23 @@ object YtdlpSettingsScreen : Screen {
       } else {
         stringResource(R.string.ui_switch_to_nightly)
       }
+
+    if (showInstagramLogin) {
+      InstagramLoginDialog(
+        onDismiss = { showInstagramLogin = false },
+        onUseSession = { cookieHeader ->
+          scope.launch {
+            val destination = withContext(Dispatchers.IO) {
+              runCatching { writeInstagramCookiesFile(context, cookieHeader) }.getOrNull()
+            }
+            if (destination != null) {
+              ytdlPreferences.cookiesFile.set(destination.absolutePath)
+              showInstagramLogin = false
+            }
+          }
+        },
+      )
+    }
 
     Scaffold(
       topBar = {
@@ -280,7 +305,10 @@ object YtdlpSettingsScreen : Screen {
                 style = MaterialTheme.typography.bodySmall,
               )
               Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { cookieFilePicker.launch(arrayOf("text/plain", "application/json", "*/*")) }) {
+                Button(onClick = { showInstagramLogin = true }) {
+                  Text(stringResource(R.string.ytdlp_instagram_cookies_login))
+                }
+                OutlinedButton(onClick = { cookieFilePicker.launch(arrayOf("text/plain", "application/json", "*/*")) }) {
                   Text(stringResource(R.string.ytdlp_instagram_cookies_choose))
                 }
                 if (cookiesFile.isNotBlank()) {
@@ -306,4 +334,71 @@ object YtdlpSettingsScreen : Screen {
     }
   }
 
+}
+
+
+@Composable
+private fun InstagramLoginDialog(
+  onDismiss: () -> Unit,
+  onUseSession: (String) -> Unit,
+) {
+  val context = LocalContext.current
+  var webView by remember { mutableStateOf<WebView?>(null) }
+  Dialog(
+    onDismissRequest = onDismiss,
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Surface(
+      modifier = Modifier.fillMaxSize(),
+      color = MaterialTheme.colorScheme.surface,
+    ) {
+      Column {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Text(stringResource(R.string.ytdlp_instagram_login_title), style = MaterialTheme.typography.titleMedium)
+          TextButton(
+            onClick = {
+              val cookies = CookieManager.getInstance().getCookie("https://www.instagram.com/")
+              if (!cookies.isNullOrBlank()) onUseSession(cookies)
+            },
+          ) {
+            Text(stringResource(R.string.ytdlp_instagram_login_use))
+          }
+        }
+        AndroidView(
+          modifier = Modifier.fillMaxSize(),
+          factory = {
+            WebView(context).apply {
+              settings.javaScriptEnabled = true
+              settings.domStorageEnabled = true
+              settings.databaseEnabled = true
+              CookieManager.getInstance().setAcceptCookie(true)
+              CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+              webViewClient = WebViewClient()
+              webView = this
+              loadUrl("https://www.instagram.com/accounts/login/")
+            }
+          },
+          update = { webView = it },
+        )
+      }
+    }
+  }
+}
+
+private fun writeInstagramCookiesFile(context: android.content.Context, cookieHeader: String): File {
+  val destination = File(context.filesDir, "ytdlp/instagram-cookies.txt")
+  destination.parentFile?.mkdirs()
+  val rows = cookieHeader.split(';').mapNotNull { item ->
+    val separator = item.indexOf('=')
+    if (separator <= 0) return@mapNotNull null
+    val name = item.substring(0, separator).trim()
+    val value = item.substring(separator + 1).trim()
+    if (name.isBlank()) null else ".instagram.com\tTRUE\t/\tTRUE\t0\t$name\t$value"
+  }
+  require(rows.isNotEmpty()) { "Instagram did not provide login cookies" }
+  destination.writeText("# Netscape HTTP Cookie File\n" + rows.joinToString("\n") + "\n")
+  return destination
 }
