@@ -235,7 +235,8 @@ object YtdlpOptionsBuilder {
       } else {
         "($videoGroup)+$audioSel/$singleGroup"
       }
-    return "$primary/bv*+$audioSel/b$audioBitrateFilter"
+    // Never fall back to an audio-only selector for a video download.
+    return "$primary/bv*+$audioSel/best"
   }
 
   fun parseRawOptions(raw: String): List<RawYtdlpOption> =
