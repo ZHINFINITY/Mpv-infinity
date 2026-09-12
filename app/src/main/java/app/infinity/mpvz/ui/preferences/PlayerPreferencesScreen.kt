@@ -37,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -52,6 +53,7 @@ import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.IntroSegmentProvider
 import app.infinity.mpvz.preferences.PlayerPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -70,6 +72,7 @@ import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import me.zhanghai.compose.preference.SliderPreference
 import me.zhanghai.compose.preference.TextFieldPreference
 import org.koin.compose.koinInject
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Serializable
@@ -81,6 +84,8 @@ object PlayerPreferencesScreen : Screen {
     val context = LocalContext.current
     val resources = LocalResources.current
     val preferences = koinInject<PlayerPreferences>()
+    val playbackStateRepository = koinInject<PlaybackStateRepository>()
+    val scope = rememberCoroutineScope()
     val configOwnedOptions = currentMpvConfigOverrideOptions()
     val audioPreferences = koinInject<AudioPreferences>()
     val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -177,7 +182,18 @@ object PlayerPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_remember_video_aspect_per_video_title),
                 value = rememberVideoAspectPerVideo,
-                onValueChange = preferences.rememberVideoAspectPerVideo::set,
+                onValueChange = { enabled ->
+                  if (enabled) {
+                    // Older builds persisted the global aspect into every video record. Clear
+                    // only those aspect fields so stale Crop/Stretch values cannot reappear after
+                    // the new per-video setting is enabled; positions and subtitle state remain.
+                    scope.launch {
+                      playbackStateRepository.resetAllVideoAspectSettings()
+                      preferences.videoAspectStateMigrated.set(true)
+                    }
+                  }
+                  preferences.rememberVideoAspectPerVideo.set(enabled)
+                },
                 title = { Text(stringResource(R.string.pref_player_remember_video_aspect_per_video_title)) },
                 summary = {
                   Text(

@@ -18,6 +18,8 @@ interface PlaybackStateRepository {
 
   suspend fun getAllPlaybackStates(): List<PlaybackStateEntity>
 
+  suspend fun resetAllVideoAspectSettings()
+
   suspend fun clearAllPlaybackStates()
 
   suspend fun deleteByTitle(mediaTitle: String)

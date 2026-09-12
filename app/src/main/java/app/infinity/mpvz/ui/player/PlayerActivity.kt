@@ -710,6 +710,14 @@ class PlayerActivity :
       finish()
       return
     }
+    if (playerPreferences.rememberVideoAspectPerVideo.get() &&
+      !playerPreferences.videoAspectStateMigrated.get()
+    ) {
+      lifecycleScope.launch(Dispatchers.IO) {
+        playbackStateRepository.resetAllVideoAspectSettings()
+        playerPreferences.videoAspectStateMigrated.set(true)
+      }
+    }
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
     applyInitialVideoOrientation(intent)
