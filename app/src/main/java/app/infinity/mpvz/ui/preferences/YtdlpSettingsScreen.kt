@@ -25,6 +25,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -309,11 +310,11 @@ object YtdlpSettingsScreen : Screen {
                   Text(stringResource(R.string.ytdlp_cookies_login))
                 }
                 OutlinedButton(onClick = { cookieFilePicker.launch(arrayOf("text/plain", "application/json", "*/*")) }) {
-                  Text(stringResource(R.string.ytdlp_instagram_cookies_choose))
+                  Text(stringResource(R.string.ytdlp_cookies_choose))
                 }
                 if (cookiesFile.isNotBlank()) {
                   OutlinedButton(onClick = { File(context.filesDir, "ytdlp/cookies.txt").delete(); File(context.filesDir, "ytdlp/instagram-cookies.txt").delete(); ytdlPreferences.cookiesFile.set("") }) {
-                    Text(stringResource(R.string.ytdlp_instagram_cookies_clear))
+                    Text(stringResource(R.string.ytdlp_cookies_clear))
                   }
                 }
               }
