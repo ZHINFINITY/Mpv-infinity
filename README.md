@@ -20,8 +20,9 @@
 
 **Mpv∞ (Mpv-infinity) is an ad-free, open-source Android media player for high-quality video and audio playback, combining MPV/libmpv with AndroidX Media3/ExoPlayer engines, dual subtitles, HDR, Dolby Vision, HDR10+, chapters, and customizable playback controls.**
 
-### Jellyfin Client and Seerr Support
-Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media servers, browsing libraries, searching movies and TV shows, and playing available media directly in Mpv∞. It also includes native **Seerr support** for Seerr and Overseerr-compatible media request servers, including discovery, search, availability status, season requests, and direct playback of available Jellyfin content. Relevant search terms include **Jellyfin Android client**, **Jellyfin media player**, **Seerr client**, **Overseerr client**, **Android MPV player**, and **Jellyfin video playback**.
+## Jellyfin Client and Seerr Support
+
+Mpv∞ includes a native **Jellyfin Client** for connecting to Jellyfin media servers, browsing libraries, searching movies and TV shows, and playing available media directly in Mpv∞. It also includes native **Seerr support** for Seerr and Overseerr-compatible media request servers, including discovery, search, availability status, season requests, and direct playback of available Jellyfin content.
 
 <p align="center">
   <a href="https://t.me/Infinityzlabs"><b>Join InfinityZ Lab on Telegram for app feedback and feature requests</b></a>
@@ -327,8 +328,6 @@ Actual power use depends on the device, codec, resolution, refresh rate, rendere
   <a href="https://github.com/ZHINFINITY/Mpv-infinity/releases">
     <img src="https://img.shields.io/badge/Download-Stable_Release-blue?style=for-the-badge&logo=github" alt="Stable Release">
   </a>
-  <br>
-  <a href="obtainium://add/https://github.com/ZHINFINITY/Mpv-infinity">Add Mpv∞ to Obtainium for direct updates</a>
   <!-- <a href="https://ZHINFINITY.github.io/Mpv-/">
     <img src="https://img.shields.io/badge/Download-Preview_Build-orange?style=for-the-badge&logo=github" alt="Preview Build">
   </a> -->
@@ -384,7 +383,11 @@ If you find Mpv∞ useful, you can support its continued development through Ko-
   <br>
   <br>
 
+</div>
+
 ### UPI
+
+<div align="center">
 
 `zhjjk001-1@oksbi`
 
@@ -445,13 +448,13 @@ Mpv∞ is maintained by **ZHINFINITY** and follows the same open-source lineage 
 - [Anime4K](https://github.com/bloc97/Anime4K)
 - [**SunnyVishnu3**](https://github.com/SunnyVishnu3) for the `yt-dlp` native integration and SDK 29+ bypass logic.
 
-For the detailed notice and redistribution guidance, see [`UPSTREAM_NOTICES.md`](UPSTREAM_NOTICES.md). Individual source files and bundled assets may contain their own copyright and license notices; those notices remain part of the distributed source tree.
+Individual source files and bundled assets may contain their own copyright and license notices; those notices remain part of the distributed source tree.
 
 ---
 
 ## License
 
-Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE) and [`UPSTREAM_NOTICES.md`](UPSTREAM_NOTICES.md) for the license and attribution information. Mpv∞-specific code, branding, and modifications are maintained by **ZHINFINITY**, while upstream copyrights remain with their respective holders.
+Distributed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**. See [`LICENSE`](LICENSE) for the license and attribution information. Mpv∞-specific code, branding, and modifications are maintained by **ZHINFINITY**, while upstream copyrights remain with their respective holders.
 
 ---
 
