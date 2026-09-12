@@ -373,6 +373,20 @@ private fun WebsiteCookieLoginDialog(
     }
   }
 
+  fun isInstagramUrl(url: String): Boolean =
+    runCatching { java.net.URI(url).host?.lowercase()?.removePrefix("www.") == "instagram.com" }
+      .getOrDefault(false)
+
+  fun userAgentFor(url: String): String = if (isInstagramUrl(url)) {
+    // Instagram can return a blank authentication page for the stock Android WebView UA.
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  } else {
+    // X/Twitter collapses its desktop login controls when embedded with a desktop UA.
+    "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+  }
+
   fun openWebsite() {
     val url = normalizedUrl()
     websiteUrl = url
@@ -386,7 +400,12 @@ private fun WebsiteCookieLoginDialog(
       context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
       return
     }
-    webView?.loadUrl(url)
+    webView?.let { view ->
+      view.settings.userAgentString = userAgentFor(url)
+      view.settings.useWideViewPort = isInstagramUrl(url)
+      view.settings.loadWithOverviewMode = isInstagramUrl(url)
+      view.loadUrl(url)
+    }
   }
 
   Dialog(
@@ -449,7 +468,12 @@ private fun WebsiteCookieLoginDialog(
                 selected = websiteUrl.contains(host, ignoreCase = true),
                 onClick = {
                   websiteUrl = "https://$host/"
-                  webView?.loadUrl(websiteUrl)
+                  webView?.let { view ->
+                    view.settings.userAgentString = userAgentFor(websiteUrl)
+                    view.settings.useWideViewPort = isInstagramUrl(websiteUrl)
+                    view.settings.loadWithOverviewMode = isInstagramUrl(websiteUrl)
+                    view.loadUrl(websiteUrl)
+                  }
                 },
                 label = { Text(host) },
               )
@@ -482,13 +506,10 @@ private fun WebsiteCookieLoginDialog(
               settings.databaseEnabled = true
               settings.setSupportMultipleWindows(false)
               settings.javaScriptCanOpenWindowsAutomatically = true
-              settings.useWideViewPort = true
-              settings.loadWithOverviewMode = true
-              // Instagram often serves a blank login response to the Android WebView UA.
-              // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
-              settings.userAgentString =
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+              val initialUrl = normalizedUrl()
+              settings.useWideViewPort = isInstagramUrl(initialUrl)
+              settings.loadWithOverviewMode = isInstagramUrl(initialUrl)
+              settings.userAgentString = userAgentFor(initialUrl)
               settings.loadsImagesAutomatically = true
               settings.allowContentAccess = true
               settings.allowFileAccess = false
