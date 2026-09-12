@@ -1158,7 +1158,7 @@
   <string name="ytdlp_instagram_cookies_title">Website login cookies</string>
   <string name="ytdlp_instagram_cookies_summary">Log in to any website inside the app to help yt-dlp download private or login-required videos. The file is copied into private app storage.</string>
   <string name="ytdlp_instagram_cookies_not_configured">No cookie file selected</string>
-  <string name="ytdlp_cookies_choose">Choose cookies.txt</string>
+  <string name="ytdlp_cookies_choose">Cookies</string>
   <string name="ytdlp_cookies_clear">Clear</string>
   <string name="ytdlp_advanced_networking">Advanced Networking</string>
   <string name="ytdlp_playlist_behavior">Playlist Behavior</string>
