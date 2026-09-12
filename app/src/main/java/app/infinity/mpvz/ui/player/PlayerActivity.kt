@@ -5335,7 +5335,9 @@ class PlayerActivity :
         // active identifier has already moved to the incoming item. Never copy the outgoing
         // video's Crop/Stretch/zoom into that incoming record; preserve its own saved values.
         val persistedSnapshot =
-          if (playerPreferences.rememberVideoAspectPerVideo.get() && snapshot.mediaTitle != fileName) {
+          if (playerPreferences.rememberVideoAspectPerVideo.get() &&
+            snapshot.mediaTitle != viewModel.currentMediaTitle
+          ) {
             snapshot.copy(
               videoZoom = oldState?.videoZoom ?: 0f,
               videoAspect = oldState?.videoAspect ?: VideoAspect.Fit.name,
