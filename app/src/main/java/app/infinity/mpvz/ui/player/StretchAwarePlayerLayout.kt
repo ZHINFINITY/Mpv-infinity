@@ -39,6 +39,7 @@ class StretchAwarePlayerLayout @JvmOverloads constructor(
     // Run after the new orientation's surface/layout size has settled.
     post {
       if (!PlaybackSession.isInitialized) return@post
+      if (playerPreferences.rememberVideoAspectPerVideo.get()) return@post
       if (playerPreferences.lastCustomAspectRatio.get() > 0f) return@post
       if (playerPreferences.lastVideoAspect.get() != VideoAspect.Stretch) return@post
 
