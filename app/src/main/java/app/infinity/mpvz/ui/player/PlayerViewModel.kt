@@ -4874,6 +4874,12 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun restoreSavedVideoAspect(showUpdate: Boolean = false) {
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) {
+      // Per-video mode must never fall back to the global aspect value. A missed lifecycle
+      // callback must not reapply the previous video's Crop/Stretch setting.
+      changeVideoAspect(VideoAspect.Fit, showUpdate, persistGlobal = false)
+      return
+    }
     val customAspectRatio = playerPreferences.lastCustomAspectRatio.get()
     if (customAspectRatio > 0f) {
       setCustomAspectRatio(customAspectRatio.toDouble(), showUpdate)
