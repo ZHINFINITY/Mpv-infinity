@@ -4784,7 +4784,10 @@ class PlayerViewModel : ViewModel(),
       }
       _videoAspect.value = aspect
       _currentAspectRatio.value = -1.0
-      if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
+      if (showUpdate) {
+        playerUpdate.value = PlayerUpdates.AspectRatio
+        host.onVideoAspectChanged()
+      }
       return
     }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
@@ -4841,6 +4844,7 @@ class PlayerViewModel : ViewModel(),
     // Notify the UI
     if (showUpdate) {
       playerUpdate.value = PlayerUpdates.AspectRatio
+      host.onVideoAspectChanged()
     }
   }
 
@@ -4863,6 +4867,7 @@ class PlayerViewModel : ViewModel(),
     _currentAspectRatio.value = ratio
     if (showUpdate) {
       playerUpdate.value = PlayerUpdates.AspectRatio
+      host.onVideoAspectChanged()
     }
   }
 
