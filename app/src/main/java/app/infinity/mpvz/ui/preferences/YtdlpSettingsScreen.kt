@@ -13,6 +13,7 @@ import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -21,8 +22,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -381,14 +380,11 @@ private fun WebsiteCookieLoginDialog(
     webView?.loadUrl(url)
   }
 
-  Dialog(
-    onDismissRequest = onDismiss,
-    properties = DialogProperties(usePlatformDefaultWidth = false),
+  BackHandler(onBack = onDismiss)
+  Surface(
+    modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
+    color = MaterialTheme.colorScheme.surface,
   ) {
-    Surface(
-      modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing),
-      color = MaterialTheme.colorScheme.surface,
-    ) {
       Column(modifier = Modifier.fillMaxSize()) {
         Row(
           modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp),
@@ -460,7 +456,6 @@ private fun WebsiteCookieLoginDialog(
             .fillMaxWidth()
             .weight(1f)
             .padding(horizontal = 12.dp, vertical = 12.dp)
-            .imePadding()
             .clip(RoundedCornerShape(18.dp)),
         ) {
           AndroidView(
@@ -518,7 +513,6 @@ private fun WebsiteCookieLoginDialog(
           }
         }
       }
-    }
   }
 }
 
