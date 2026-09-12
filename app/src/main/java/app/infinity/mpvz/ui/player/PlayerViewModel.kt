@@ -4011,6 +4011,8 @@ class PlayerViewModel : ViewModel(),
     val wyziePlan = buildWyzieSearchPlan(searchTitle, year, queryInfo, fileInfo)
     val includeWyzie = mode != OnlineSubtitleSearchMode.SUBHUB && wyziePlan.request != null
     val includeSubtitleHub = mode != OnlineSubtitleSearchMode.WYZIE
+    val detectedSeason = queryInfo.season ?: fileInfo.season
+    val detectedEpisode = queryInfo.episode ?: fileInfo.episode
 
     if (mode == OnlineSubtitleSearchMode.WYZIE && wyziePlan.request == null) {
       wyziePlan.missingSelectionMessage?.let(::showToast)
@@ -4018,7 +4020,16 @@ class PlayerViewModel : ViewModel(),
       return
     }
 
-    val wyzieRequest = wyziePlan.request ?: OnlineSubtitleSearchRequest(query = searchTitle, year = year)
+    val wyzieRequest =
+      wyziePlan.request
+        ?: OnlineSubtitleSearchRequest(
+          query = searchTitle,
+          year = year,
+          // Keep the parsed episode for SubtitleHub in HYBRID/SUBHUB mode even when Wyzie
+          // requires an explicit show selection and therefore is disabled for this search.
+          season = detectedSeason,
+          episode = detectedEpisode,
+        )
     searchSubtitles(
       query = wyzieRequest.query,
       season = wyzieRequest.season,
