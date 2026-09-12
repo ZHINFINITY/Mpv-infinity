@@ -27,7 +27,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -452,17 +451,11 @@ private fun WebsiteCookieLoginDialog(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
           )
         }
-        Box(
-          modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f)
-            .padding(horizontal = 12.dp, vertical = 12.dp)
-            .clip(RoundedCornerShape(18.dp)),
-        ) {
+        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
           AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = {
-              WebView(context).apply {
+            WebView(context).apply {
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.javaScriptCanOpenWindowsAutomatically = true
@@ -488,29 +481,14 @@ private fun WebsiteCookieLoginDialog(
               }
               webView = this
               loadUrl(normalizedUrl())
-              }
+            }
             },
             update = { view -> webView = view },
           )
           if (isLoading) {
-            Surface(
+            CircularProgressIndicator(
               modifier = Modifier.align(androidx.compose.ui.Alignment.Center),
-              shape = RoundedCornerShape(18.dp),
-              tonalElevation = 4.dp,
-              color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            ) {
-              Column(
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
-                horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-              ) {
-                CircularProgressIndicator()
-                Text(
-                  text = stringResource(R.string.ytdlp_cookie_login_loading),
-                  style = MaterialTheme.typography.labelLarge,
-                )
-              }
-            }
+            )
           }
         }
       }
