@@ -284,13 +284,13 @@ class YtdlpDownloadEngine(
       add("-o")
       add(outputTemplate)
 
-      preferences.customUserAgent.get().takeIf(String::isNotBlank)?.let { userAgent ->
+      val configuredUserAgent = preferences.customUserAgent.get().trim()
+      if (configuredUserAgent.isNotBlank()) {
         add("--user-agent")
-        add(userAgent)
-      }
-      if (preferences.customUserAgent.get().isBlank()) {
+        add(configuredUserAgent)
+      } else {
         add("--user-agent")
-        add("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0 Mobile Safari/537.36")
+        add(YtdlpOptionsBuilder.DEFAULT_USER_AGENT)
       }
       preferences.referer.get().takeIf(String::isNotBlank)?.let { referer ->
         add("--referer")
