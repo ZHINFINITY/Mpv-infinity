@@ -377,6 +377,11 @@ private fun WebsiteCookieLoginDialog(
     runCatching { java.net.URI(url).host?.lowercase()?.removePrefix("www.") == "instagram.com" }
       .getOrDefault(false)
 
+  fun isXUrl(url: String): Boolean =
+    runCatching {
+      java.net.URI(url).host?.lowercase()?.removePrefix("www.") in setOf("x.com", "twitter.com")
+    }.getOrDefault(false)
+
   fun userAgentFor(url: String): String = if (isInstagramUrl(url)) {
     // Instagram can return a blank authentication page for the stock Android WebView UA.
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
@@ -384,7 +389,38 @@ private fun WebsiteCookieLoginDialog(
   } else {
     // X/Twitter collapses its desktop login controls when embedded with a desktop UA.
     "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 " +
-      "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+      "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
+  }
+
+  fun repairXLoginControls(view: WebView?, url: String?) {
+    if (view == null || !isXUrl(url.orEmpty())) return
+    view.evaluateJavascript(
+      """
+      (function() {
+        var style = document.getElementById('mpv-x-login-fix');
+        if (!style) {
+          style = document.createElement('style');
+          style.id = 'mpv-x-login-fix';
+          style.textContent = `
+            input, textarea, [contenteditable="true"] {
+              min-height: 48px !important;
+              height: 48px !important;
+              line-height: 48px !important;
+              box-sizing: border-box !important;
+              opacity: 1 !important;
+              visibility: visible !important;
+            }
+            input:focus, textarea:focus, [contenteditable="true"]:focus {
+              min-height: 48px !important;
+              height: 48px !important;
+            }
+          `;
+          (document.head || document.documentElement).appendChild(style);
+        }
+      })();
+      """.trimIndent(),
+      null,
+    )
   }
 
   fun openWebsite() {
@@ -506,6 +542,10 @@ private fun WebsiteCookieLoginDialog(
               settings.databaseEnabled = true
               settings.setSupportMultipleWindows(false)
               settings.javaScriptCanOpenWindowsAutomatically = true
+              settings.setSupportZoom(false)
+              settings.builtInZoomControls = false
+              settings.displayZoomControls = false
+              settings.textZoom = 100
               val initialUrl = normalizedUrl()
               settings.useWideViewPort = isInstagramUrl(initialUrl)
               settings.loadWithOverviewMode = isInstagramUrl(initialUrl)
@@ -538,7 +578,11 @@ private fun WebsiteCookieLoginDialog(
                 }
                 override fun onPageFinished(view: WebView?, url: String?) {
                   isLoading = false
-                  view?.scrollTo(0, 0)
+                  repairXLoginControls(view, url)
+                  view?.postDelayed({
+                    view.scrollTo(0, 0)
+                    view.requestLayout()
+                  }, 150)
                 }
                 override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                   if (request?.isForMainFrame != false) {
