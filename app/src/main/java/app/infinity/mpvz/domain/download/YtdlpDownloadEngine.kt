@@ -267,7 +267,13 @@ class YtdlpDownloadEngine(
         // Instagram commonly exposes a single progressive MP4 or separate MP4/M4A streams.
         // Prefer those before the generic best-video+best-audio selection so downloads do not
         // fail when a mergeable audio-only format is unavailable.
-        add(if (qualityHeight > 0) "bv*[ext=mp4][height<=?$qualityHeight]+ba[ext=m4a]/b[ext=mp4]/b" else "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b")
+        add(
+          if (qualityHeight > 0) {
+            "bv*[ext=mp4][height<=?$qualityHeight]+ba[ext=m4a]/best[ext=mp4][height<=?$qualityHeight][vcodec!=none]/best[ext=mp4][vcodec!=none]"
+          } else {
+            "bv*[ext=mp4]+ba[ext=m4a]/best[ext=mp4][vcodec!=none]/best[ext=mp4][vcodec!=none]"
+          },
+        )
       } else if (qualityHeight > 0) {
         add("bv*[height<=?$qualityHeight]+ba/b[height<=?$qualityHeight]")
       } else {
