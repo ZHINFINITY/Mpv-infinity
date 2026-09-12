@@ -3316,11 +3316,7 @@ class PlayerViewModel : ViewModel(),
       scanLocalSubtitles(mediaTitle)
       syncplayManager.updateFileInfo(currentSyncplayFileInfo())
 
-      if (playerPreferences.rememberVideoAspectPerVideo.get()) {
-        // Start each new media item from the default aspect until its own saved state is applied.
-        // Do not persist this reset: the global aspect preference must remain unchanged.
-        changeVideoAspect(VideoAspect.Fit, showUpdate = false, persistGlobal = false)
-      } else {
+      if (!playerPreferences.rememberVideoAspectPerVideo.get()) {
         restoreSavedVideoAspect(showUpdate = false)
       }
       skippedSegments.clear()

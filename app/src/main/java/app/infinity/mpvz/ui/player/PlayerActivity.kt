@@ -6328,6 +6328,11 @@ class PlayerActivity :
     // callback change visibility or playback state after this load has started.
     engineHandoffJob?.cancel()
     engineHandoffJob = null
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) {
+      // Clear the outgoing video's renderer state at the transition boundary. The playback-state
+      // loader will apply this item's saved aspect afterward, or keep Fit when none exists.
+      viewModel.changeVideoAspect(VideoAspect.Fit, showUpdate = false, persistGlobal = false)
+    }
     val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
     // Give mpv the resume point as a load-local option so the demuxer starts there instead of
     // decoding at zero and visibly seeking only after FILE_LOADED.
