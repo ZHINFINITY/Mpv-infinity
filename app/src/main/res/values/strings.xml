@@ -1150,12 +1150,12 @@
   <string name="ytdlp_audio_preference">Audio Preference</string>
   <string name="ytdlp_audio_quality">Audio Quality</string>
   <string name="ytdlp_subtitles_language">Subtitles &amp; Language</string>
-  <string name="ytdlp_cookie_login_title">Website login</string>
+  <string name="ytdlp_cookie_login_title">Login</string>
   <string name="ytdlp_cookie_login_url">Website URL</string>
   <string name="ytdlp_cookie_login_use">Use this session</string>
   <string name="ytdlp_cookie_login_open">Open</string>
   <string name="ytdlp_cookie_login_loading">Loading page…</string>
-  <string name="ytdlp_cookies_login">Log in to website</string>
+  <string name="ytdlp_cookies_login">Login</string>
   <string name="ytdlp_instagram_login_title">Instagram login</string>
   <string name="ytdlp_instagram_login_use">Use this session</string>
   <string name="ytdlp_instagram_cookies_title">Website login cookies</string>

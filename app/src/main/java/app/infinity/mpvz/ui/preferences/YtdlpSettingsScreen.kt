@@ -145,7 +145,8 @@ object YtdlpSettingsScreen : Screen {
       )
     }
 
-    Scaffold(
+    if (!showCookieLogin) {
+      Scaffold(
       topBar = {
         TopAppBar(
           title = {
@@ -513,6 +514,7 @@ private fun WebsiteCookieLoginDialog(
           }
         }
       }
+    }
   }
 }
 
