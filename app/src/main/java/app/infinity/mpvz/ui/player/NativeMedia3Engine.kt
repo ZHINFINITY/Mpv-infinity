@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.View
 import java.io.File
 import app.infinity.mpvz.R
 import androidx.media3.common.C
@@ -36,6 +37,8 @@ import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import androidx.media3.subtitle.libass.LibassSubtitleRenderer
+import androidx.media3.subtitle.libass.LibassSubtitleView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -90,6 +93,7 @@ data class NativeChapter(
 
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(context: Context) {
+  private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
     .setAllowCrossProtocolRedirects(true)
@@ -139,7 +143,8 @@ class NativeMedia3Engine(context: Context) {
     )
     .build()
   private var attachedView: PlayerView? = null
-  private var subtitleOverlay: androidx.media3.ui.SubtitleView? = null
+  private var subtitleOverlay: LibassSubtitleView? = null
+  private var libassRenderer: LibassSubtitleRenderer? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
@@ -162,6 +167,7 @@ class NativeMedia3Engine(context: Context) {
     override fun run() {
       if (player.currentMediaItem == null || (!player.isPlaying && !player.playWhenReady)) return
       publishPlaybackSnapshot()
+      subtitleOverlay?.setPositionUs(player.currentPosition.coerceAtLeast(0L) * 1000L)
       // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
       // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
       loopHandler.postDelayed(this, 250L)
@@ -201,7 +207,10 @@ class NativeMedia3Engine(context: Context) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "first frame rendered uri=$uri prepareElapsedMs=$elapsed")
       _hasRenderedFirstFrame.value = true
-      attachedView?.post { configureSubtitleView() }
+      attachedView?.post {
+        ensureLibassRenderer()
+        configureSubtitleView()
+      }
     }
     override fun onPlaybackStateChanged(playbackState: Int) {
       if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
@@ -214,8 +223,7 @@ class NativeMedia3Engine(context: Context) {
     override fun onCues(cueGroup: CueGroup) {
       // Media3 keeps timing and format decoding; the app-owned surface renders every active cue.
       // Clear PlayerView's built-in surface to avoid drawing the same cue twice.
-      attachedView?.subtitleView?.setCues(emptyList())
-      subtitleOverlay?.setCues(cueGroup.cues)
+      attachedView?.subtitleView?.setCues(cueGroup.cues)
     }
 
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -325,6 +333,21 @@ class NativeMedia3Engine(context: Context) {
       "ass", "ssa" -> "text/x-ssa"
       else -> "text/plain"
     }
+    if (mimeType == "text/x-ssa") {
+      val bytes = runCatching {
+        appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+      }.getOrNull()
+      val renderer = ensureLibassRenderer()
+      if (bytes == null || renderer == null) {
+        Log.e(logTag, "libass track load failed uri=$uri bytes=${bytes?.size ?: 0}")
+        return false
+      }
+      val id = "external:$uri"
+      val added = renderer.addTrack(id, bytes)
+      Log.i(logTag, "libass track id=$id added=$added bytes=${bytes.size} count=${renderer.trackCount}")
+      subtitleOverlay?.visibility = if (added) View.VISIBLE else View.GONE
+      return added
+    }
     val configuration = MediaItem.SubtitleConfiguration.Builder(uri)
       .setMimeType(mimeType)
       .setSelectionFlags(if (select) C.SELECTION_FLAG_DEFAULT else 0)
@@ -370,6 +393,21 @@ class NativeMedia3Engine(context: Context) {
   }
 
 
+  private fun ensureLibassRenderer(): LibassSubtitleRenderer? {
+    libassRenderer?.let { return it }
+    val view = subtitleOverlay ?: return null
+    val width = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width
+    val height = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height
+    if (width <= 0 || height <= 0) return null
+    return runCatching {
+      LibassSubtitleRenderer(width, height, null).also {
+        libassRenderer = it
+        view.setRenderer(it)
+        Log.i(logTag, "libass initialized size=${width}x${height} tracks=0")
+      }
+    }.onFailure { Log.e(logTag, "libass initialization failed", it) }.getOrNull()
+  }
+
   private fun configureSubtitleView() {
     val view = attachedView ?: return
     view.subtitleView?.apply {
@@ -387,17 +425,13 @@ class NativeMedia3Engine(context: Context) {
       setBottomPaddingFraction(0f)
     }
     subtitleOverlay?.apply {
-      setApplyEmbeddedStyles(false)
-      setApplyEmbeddedFontSizes(false)
-      setStyle(subtitleStyle)
-      setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
+      visibility = View.VISIBLE
       pivotX = width / 2f
       pivotY = height.toFloat()
       scaleX = subtitleScale
       scaleY = subtitleScale
       translationY = ((subtitlePosition - 100) / 100f * height * 0.5f)
         .coerceIn(-height * 0.5f, height * 0.5f)
-      setBottomPaddingFraction(0f)
     }
   }
 
@@ -568,7 +602,9 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekPositionMs = null
     player.removeListener(listener)
     attachedView?.player = null
-    subtitleOverlay?.setCues(emptyList())
+    libassRenderer?.close()
+    libassRenderer = null
+    subtitleOverlay?.setRenderer(null)
     subtitleOverlay = null
     attachedView = null
     player.release()
