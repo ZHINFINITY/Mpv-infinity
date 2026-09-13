@@ -3,7 +3,7 @@ package app.infinity.mpvz.ui.player
 import android.content.Context
 import android.graphics.Typeface
 import android.util.AttributeSet
-import androidx.media3.common.Cue
+import androidx.media3.common.text.Cue
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
 
