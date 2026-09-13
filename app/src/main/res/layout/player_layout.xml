@@ -37,7 +37,7 @@
         app:surface_type="surface_view"
         app:use_controller="false" />
 
-    <app.infinity.mpvz.ui.player.MpvMedia3SubtitleView
+    <androidx.media3.ui.SubtitleView
         android:id="@+id/media3_subtitle_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

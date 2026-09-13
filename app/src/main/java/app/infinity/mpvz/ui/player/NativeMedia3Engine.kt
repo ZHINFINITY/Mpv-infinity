@@ -9,7 +9,7 @@ import android.util.Log
 import java.io.File
 import app.infinity.mpvz.R
 import androidx.media3.common.C
-import androidx.media3.common.CueGroup
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
@@ -139,7 +139,7 @@ class NativeMedia3Engine(context: Context) {
     )
     .build()
   private var attachedView: PlayerView? = null
-  private var subtitleOverlay: MpvMedia3SubtitleView? = null
+  private var subtitleOverlay: androidx.media3.ui.SubtitleView? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
@@ -215,7 +215,7 @@ class NativeMedia3Engine(context: Context) {
       // Media3 keeps timing and format decoding; the app-owned surface renders every active cue.
       // Clear PlayerView's built-in surface to avoid drawing the same cue twice.
       attachedView?.subtitleView?.setCues(emptyList())
-      subtitleOverlay?.setMpvCues(cueGroup.cues)
+      subtitleOverlay?.setCues(cueGroup.cues)
     }
 
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -387,13 +387,17 @@ class NativeMedia3Engine(context: Context) {
       setBottomPaddingFraction(0f)
     }
     subtitleOverlay?.apply {
-      applyMpvStyle(
-        subtitleStyle,
-        (subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f),
-        subtitleScale,
-        ((subtitlePosition - 100) / 100f * height * 0.5f)
-          .coerceIn(-height * 0.5f, height * 0.5f),
-      )
+      setApplyEmbeddedStyles(false)
+      setApplyEmbeddedFontSizes(false)
+      setStyle(subtitleStyle)
+      setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
+      pivotX = width / 2f
+      pivotY = height.toFloat()
+      scaleX = subtitleScale
+      scaleY = subtitleScale
+      translationY = ((subtitlePosition - 100) / 100f * height * 0.5f)
+        .coerceIn(-height * 0.5f, height * 0.5f)
+      setBottomPaddingFraction(0f)
     }
   }
 
@@ -564,7 +568,7 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekPositionMs = null
     player.removeListener(listener)
     attachedView?.player = null
-    subtitleOverlay?.clearMpvCues()
+    subtitleOverlay?.setCues(emptyList())
     subtitleOverlay = null
     attachedView = null
     player.release()
