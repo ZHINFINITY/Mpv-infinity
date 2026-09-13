@@ -7,7 +7,9 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import java.io.File
+import app.infinity.mpvz.R
 import androidx.media3.common.C
+import androidx.media3.common.CueGroup
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
@@ -137,6 +139,7 @@ class NativeMedia3Engine(context: Context) {
     )
     .build()
   private var attachedView: PlayerView? = null
+  private var subtitleOverlay: MpvMedia3SubtitleView? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
@@ -208,6 +211,13 @@ class NativeMedia3Engine(context: Context) {
       Log.e(logTag, "player error uri=${player.currentMediaItem?.localConfiguration?.uri}", error)
     }
 
+    override fun onCues(cueGroup: CueGroup) {
+      // Media3 keeps timing and format decoding; the app-owned surface renders every active cue.
+      // Clear PlayerView's built-in surface to avoid drawing the same cue twice.
+      attachedView?.subtitleView?.setCues(emptyList())
+      subtitleOverlay?.setMpvCues(cueGroup.cues)
+    }
+
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "timeline changed reason=$reason windowCount=${timeline.windowCount} prepareElapsedMs=$elapsed uri=$preparationUri")
@@ -255,6 +265,7 @@ class NativeMedia3Engine(context: Context) {
   fun attach(view: PlayerView) {
     attachedView?.player = null
     attachedView = view
+    subtitleOverlay = view.rootView.findViewById(R.id.media3_subtitle_overlay)
     view.useController = false
     // Do not let a stale portrait measurement stretch native HDR video after rotation.
     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -374,6 +385,15 @@ class NativeMedia3Engine(context: Context) {
       translationY = ((subtitlePosition - 100) / 100f * height * 0.5f)
         .coerceIn(-height * 0.5f, height * 0.5f)
       setBottomPaddingFraction(0f)
+    }
+    subtitleOverlay?.apply {
+      applyMpvStyle(
+        subtitleStyle,
+        (subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f),
+        subtitleScale,
+        ((subtitlePosition - 100) / 100f * height * 0.5f)
+          .coerceIn(-height * 0.5f, height * 0.5f),
+      )
     }
   }
 
@@ -544,6 +564,8 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekPositionMs = null
     player.removeListener(listener)
     attachedView?.player = null
+    subtitleOverlay?.clearMpvCues()
+    subtitleOverlay = null
     attachedView = null
     player.release()
   }
