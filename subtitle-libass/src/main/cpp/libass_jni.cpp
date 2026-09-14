@@ -179,11 +179,13 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeRenderRgba(JNIEnv* env, 
   if (env->GetArrayLength(output) < expected) return JNI_FALSE;
   std::lock_guard lock(state->mutex);
   std::vector<uint8_t> rgba(expected, 0);
+  int imageCount = 0;
 #if MEDIA3_LIBASS_HAS_NATIVE
   for (const auto& track : state->tracks) {
     if (track.enabled && track.ass) {
       int changed = 0;
       ASS_Image* image = ass_render_frame(state->renderer, track.ass, static_cast<long long>(positionUs / 1000), &changed);
+      for (ASS_Image* current = image; current != nullptr; current = current->next) ++imageCount;
       blendImage(image, state->width, state->height, rgba.data());
     }
   }
@@ -192,7 +194,9 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeRenderRgba(JNIEnv* env, 
 #endif
   env->SetByteArrayRegion(output, 0, expected, reinterpret_cast<const jbyte*>(rgba.data()));
 #if MEDIA3_LIBASS_HAS_NATIVE
-  return state->tracks.empty() ? JNI_FALSE : JNI_TRUE;
+  __android_log_print(ANDROID_LOG_DEBUG, kTag, "render positionUs=%lld tracks=%zu images=%d",
+      static_cast<long long>(positionUs), state->tracks.size(), imageCount);
+  return imageCount > 0 ? JNI_TRUE : JNI_FALSE;
 #else
   return JNI_FALSE;
 #endif
