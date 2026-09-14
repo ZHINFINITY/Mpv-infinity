@@ -5,6 +5,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 #if MEDIA3_LIBASS_HAS_NATIVE
@@ -60,6 +61,42 @@ void blendImage(const ASS_Image* image, int width, int height, uint8_t* out) {
       }
     }
   }
+}
+
+std::string normalizeEvent(std::string_view input) {
+  std::string text(input);
+  while (!text.empty() && (text.back() == '\0' || text.back() == '\r'
+      || text.back() == '\n' || text.back() == ' ' || text.back() == '\t')) {
+    text.pop_back();
+  }
+  while (!text.empty() && (text.front() == '\r' || text.front() == '\n'
+      || text.front() == ' ' || text.front() == '\t')) {
+    text.erase(text.begin());
+  }
+  // Strip a UTF-8 BOM if the extractor retained it at the beginning of the sample.
+  if (text.size() >= 3 && static_cast<unsigned char>(text[0]) == 0xef
+      && static_cast<unsigned char>(text[1]) == 0xbb
+      && static_cast<unsigned char>(text[2]) == 0xbf) {
+    text.erase(0, 3);
+  }
+  if (text.empty()) return {};
+  auto hasPrefix = [&text](const char* prefix) {
+    const size_t length = std::strlen(prefix);
+    if (text.size() < length) return false;
+    for (size_t i = 0; i < length; ++i) {
+      char actual = text[i];
+      char expected = prefix[i];
+      if (actual >= 'A' && actual <= 'Z') actual = static_cast<char>(actual + ('a' - 'A'));
+      if (actual != expected) return false;
+    }
+    return true;
+  };
+  if (hasPrefix("Dialogue:") || hasPrefix("Comment:")) return text + '\n';
+  const size_t firstComma = text.find(',');
+  if (firstComma == std::string::npos || firstComma == 0
+      || text.find(',', firstComma + 1) == std::string::npos) return {};
+  // Matroska SSA packets are ReadOrder,Layer,Start,End,... . Drop ReadOrder only.
+  return std::string("Dialogue: ") + text.substr(firstComma + 1) + '\n';
 }
 #endif
 }
@@ -138,9 +175,18 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
   jsize size = env->GetArrayLength(data);
   jbyte* bytes = env->GetByteArrayElements(data, nullptr);
   if (!bytes) return JNI_FALSE;
-  ass_process_chunk(it->ass, reinterpret_cast<char*>(bytes), size,
-      static_cast<long long>(timestampUs / 1000), static_cast<long long>(durationUs / 1000));
+  std::string event = normalizeEvent(std::string_view(reinterpret_cast<char*>(bytes), size));
   env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
+  if (event.empty()) {
+    __android_log_print(ANDROID_LOG_WARN, kTag,
+        "ignored malformed ASS event track=%d bytes=%d", id, size);
+    return JNI_FALSE;
+  }
+  ass_process_chunk(it->ass, event.data(), event.size(),
+      static_cast<long long>(timestampUs / 1000), static_cast<long long>(durationUs / 1000));
+  __android_log_print(ANDROID_LOG_DEBUG, kTag,
+      "event track=%d bytes=%zu timeUs=%lld durationUs=%lld", id, event.size(),
+      static_cast<long long>(timestampUs), static_cast<long long>(durationUs));
   return JNI_TRUE;
 #else
   (void)env;
