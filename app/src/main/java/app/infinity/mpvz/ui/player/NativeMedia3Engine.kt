@@ -221,11 +221,23 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onCues(cueGroup: CueGroup) {
-      // Media3 keeps timing and format decoding; the app-owned surface renders every active cue.
-      // Clear PlayerView's built-in surface to avoid drawing the same cue twice.
-      attachedView?.subtitleView?.setCues(cueGroup.cues)
+      // Media3 decodes the selected text streams into active cues. Feed those cues into one
+      // continuously replaced ASS document so libass, rather than PlayerView, performs the draw.
+      attachedView?.subtitleView?.setCues(emptyList())
+      val renderer = ensureLibassRenderer()
+      if (renderer == null) {
+        Log.e(logTag, "libass cue bridge unavailable cues=${cueGroup.cues.size}")
+        return
+      }
+      if (cueGroup.cues.isEmpty()) {
+        renderer.removeTrack(MEDIA3_CUE_TRACK_ID)
+        Log.d(logTag, "libass cues cleared tracks=${renderer.trackCount}")
+        return
+      }
+      val ass = cuesToAss(cueGroup.cues)
+      val added = renderer.addTrack(MEDIA3_CUE_TRACK_ID, ass.toByteArray(Charsets.UTF_8))
+      Log.i(logTag, "libass cues received=${cueGroup.cues.size} bytes=${ass.length} added=$added tracks=${renderer.trackCount}")
     }
-
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "timeline changed reason=$reason windowCount=${timeline.windowCount} prepareElapsedMs=$elapsed uri=$preparationUri")
@@ -234,6 +246,15 @@ class NativeMedia3Engine(context: Context) {
     override fun onTracksChanged(tracks: Tracks) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       val types = tracks.groups.joinToString(",") { it.type.toString() }
+      val textGroup = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.length > 0 }
+      if (textGroup != null) {
+        val all = (0 until textGroup.length).toList()
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+          .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+          .setOverrideForType(TrackSelectionOverride(textGroup.mediaTrackGroup, all))
+          .build()
+        Log.i(logTag, "libass multi-subtitle selection enabled count=${all.size}")
+      }
       Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types prepareElapsedMs=$elapsed uri=$preparationUri")
     }
 
@@ -260,6 +281,10 @@ class NativeMedia3Engine(context: Context) {
         publishSnapshot()
       }
     }
+  }
+
+  private companion object {
+    const val MEDIA3_CUE_TRACK_ID = "media3:active-cues"
   }
 
   init {
@@ -406,6 +431,34 @@ class NativeMedia3Engine(context: Context) {
         Log.i(logTag, "libass initialized size=${width}x${height} tracks=0")
       }
     }.onFailure { Log.e(logTag, "libass initialization failed", it) }.getOrNull()
+  }
+
+  private fun cuesToAss(cues: List<androidx.media3.common.text.Cue>): String {
+    val header = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,54,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,1,3,1,2,45,45,45,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    val body = cues.mapIndexedNotNull { _, cue ->
+      val text = cue.text?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapIndexedNotNull null
+      val escaped = text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", "\\N")
+      val alignment = when {
+        cue.line != androidx.media3.common.text.Cue.DIMEN_UNSET && cue.line < 0.34f -> 8
+        cue.line != androidx.media3.common.text.Cue.DIMEN_UNSET && cue.line > 0.66f -> 2
+        else -> 5
+      }
+      "Dialogue: 0,0:00:00.00,0:10:00.00,Default,,0,0,0,,{\\an$alignment}$escaped"
+    }.joinToString("\n")
+    return header + body
   }
 
   private fun configureSubtitleView() {
@@ -564,11 +617,13 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
+    val allTrackIndices = (0 until group.length).toList()
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, allTrackIndices))
       .build()
+    Log.i(logTag, "subtitle selection enabled all=${allTrackIndices.size} group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }
 
