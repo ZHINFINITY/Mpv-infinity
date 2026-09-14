@@ -134,7 +134,7 @@ class NativeMedia3Engine(context: Context) {
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(
-      DefaultRenderersFactory(context.applicationContext)
+      LibassRenderersFactory(context.applicationContext) { ensureLibassRenderer() }
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
