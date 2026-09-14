@@ -165,6 +165,9 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
     @Override public void sampleData(ParsableByteArray data, int length) {
       byte[] bytes = new byte[length]; data.readBytes(bytes, 0, length); append(bytes, length);
     }
+    @Override public void sampleData(ParsableByteArray data, int length, int sampleDataPart) {
+      sampleData(data, length);
+    }
     @Override public void sampleMetadata(long timeUs, int flags, int size, int offset, @Nullable TrackOutput.CryptoData cryptoData) {
       if (current == null || (flags & C.BUFFER_FLAG_KEY_FRAME) == 0 && size <= 0) return;
       int start = Math.max(0, pending.length - size - offset);
