@@ -237,6 +237,12 @@ class NativeMedia3Engine(context: Context) {
       val selectedText = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
         .sumOf { group -> (0 until group.length).count { group.isTrackSelected(it) } }
       Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types selectedText=$selectedText prepareElapsedMs=$elapsed uri=$preparationUri")
+      tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.forEach { group ->
+        (0 until group.length).forEach { index ->
+          val format = group.getTrackFormat(index)
+          Log.d(logTag, "text track group=${group.mediaTrackGroup.id} index=$index selected=${group.isTrackSelected(index)} mime=${format.sampleMimeType} codecs=${format.codecs} label=${format.label} language=${format.language}")
+        }
+      }
     }
 
     override fun onIsLoadingChanged(isLoading: Boolean) {
@@ -413,7 +419,13 @@ class NativeMedia3Engine(context: Context) {
 
   private fun configureSubtitleView() {
     val view = attachedView ?: return
+    val selectedAss = player.currentTracks.groups.any { group ->
+      group.type == C.TRACK_TYPE_TEXT && (0 until group.length).any { index ->
+        group.isTrackSelected(index) && isAssFormat(group.getTrackFormat(index))
+      }
+    }
     view.subtitleView?.apply {
+      visibility = if (selectedAss) View.INVISIBLE else View.VISIBLE
       // Player subtitle preferences must win over embedded ASS/Matroska style metadata.
       setApplyEmbeddedStyles(false)
       setApplyEmbeddedFontSizes(false)
@@ -436,6 +448,12 @@ class NativeMedia3Engine(context: Context) {
       translationY = ((subtitlePosition - 100) / 100f * height * 0.5f)
         .coerceIn(-height * 0.5f, height * 0.5f)
     }
+  }
+
+  private fun isAssFormat(format: androidx.media3.common.Format): Boolean {
+    val mime = format.sampleMimeType?.lowercase() ?: return false
+    val codecs = format.codecs?.lowercase() ?: ""
+    return mime.contains("ssa") || mime.contains("ass") || codecs.contains("ssa") || codecs.contains("ass")
   }
 
   fun play(
@@ -554,11 +572,15 @@ class NativeMedia3Engine(context: Context) {
     } else {
       TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex)
     }
-    player.trackSelectionParameters = player.trackSelectionParameters
+    val builder = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
-      .setOverrideForType(override)
-      .build()
+    if (track.type == C.TRACK_TYPE_TEXT) {
+      builder.addOverride(override)
+    } else {
+      builder.setOverrideForType(override)
+    }
+    player.trackSelectionParameters = builder.build()
     publishSnapshot()
   }
 
