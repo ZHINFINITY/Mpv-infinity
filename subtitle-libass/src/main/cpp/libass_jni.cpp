@@ -98,6 +98,43 @@ std::string normalizeEvent(std::string_view input) {
   // Matroska SSA packets are ReadOrder,Layer,Start,End,... . Drop ReadOrder only.
   return std::string("Dialogue: ") + text.substr(firstComma + 1) + '\n';
 }
+
+long long parseAssTimeMs(std::string_view value) {
+  const size_t first = value.find(':');
+  const size_t second = first == std::string_view::npos ? std::string_view::npos : value.find(':', first + 1);
+  if (first == std::string_view::npos || second == std::string_view::npos) return -1;
+  const size_t dot = value.find('.', second + 1);
+  try {
+    const long long hours = std::stoll(std::string(value.substr(0, first)));
+    const long long minutes = std::stoll(std::string(value.substr(first + 1, second - first - 1)));
+    const long long seconds = std::stoll(std::string(value.substr(second + 1, dot == std::string_view::npos ? value.size() : dot - second - 1)));
+    long long centiseconds = 0;
+    if (dot != std::string_view::npos) {
+      std::string fraction(value.substr(dot + 1));
+      if (fraction.size() > 2) fraction.resize(2);
+      while (fraction.size() < 2) fraction.push_back('0');
+      centiseconds = std::stoll(fraction);
+    }
+    return ((hours * 3600 + minutes * 60 + seconds) * 1000) + centiseconds * 10;
+  } catch (...) {
+    return -1;
+  }
+}
+
+long long deriveEventDurationMs(std::string_view event) {
+  const size_t prefix = event.find(':');
+  if (prefix == std::string_view::npos) return 0;
+  const size_t firstComma = event.find(',', prefix + 1);
+  const size_t secondComma = firstComma == std::string_view::npos
+      ? std::string_view::npos : event.find(',', firstComma + 1);
+  const size_t thirdComma = secondComma == std::string_view::npos
+      ? std::string_view::npos : event.find(',', secondComma + 1);
+  if (firstComma == std::string_view::npos || secondComma == std::string_view::npos
+      || thirdComma == std::string_view::npos) return 0;
+  const long long start = parseAssTimeMs(event.substr(firstComma + 1, secondComma - firstComma - 1));
+  const long long end = parseAssTimeMs(event.substr(secondComma + 1, thirdComma - secondComma - 1));
+  return end > start ? end - start : 0;
+}
 #endif
 }
 
@@ -182,11 +219,13 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
         "ignored malformed ASS event track=%d bytes=%d", id, size);
     return JNI_FALSE;
   }
+  long long eventDurationMs = static_cast<long long>(durationUs / 1000);
+  if (eventDurationMs <= 0) eventDurationMs = deriveEventDurationMs(event);
   ass_process_chunk(it->ass, event.data(), event.size(),
-      static_cast<long long>(timestampUs / 1000), static_cast<long long>(durationUs / 1000));
+      static_cast<long long>(timestampUs / 1000), eventDurationMs);
   __android_log_print(ANDROID_LOG_DEBUG, kTag,
       "event track=%d bytes=%zu timeUs=%lld durationUs=%lld", id, event.size(),
-      static_cast<long long>(timestampUs), static_cast<long long>(durationUs));
+      static_cast<long long>(timestampUs), eventDurationMs * 1000);
   return JNI_TRUE;
 #else
   (void)env;
