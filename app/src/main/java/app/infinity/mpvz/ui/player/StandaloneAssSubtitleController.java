@@ -4,6 +4,7 @@ import android.net.Uri;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
+import androidx.media3.common.DataReader;
 import androidx.media3.common.Format;
 import androidx.media3.common.util.ParsableByteArray;
 import androidx.media3.datasource.DataSource;
@@ -155,7 +156,7 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
       synchronized (tracks) { tracks.add(current); }
     }
 
-    @Override public int sampleData(ExtractorInput input, int length, boolean allowEndOfInput) throws IOException {
+    @Override public int sampleData(DataReader input, int length, boolean allowEndOfInput, int sampleDataPart) throws IOException {
       byte[] bytes = new byte[length];
       int read = input.read(bytes, 0, length);
       if (read == C.RESULT_END_OF_INPUT) return allowEndOfInput ? C.RESULT_END_OF_INPUT : 0;
