@@ -108,8 +108,16 @@ class NativeMedia3Engine(context: Context) {
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
   private val extractorsFactory = ExtractorsFactory {
-    // Use one normal seek-capable extractor for the complete lifetime of the media item.
-    arrayOf(MatroskaExtractor(DefaultSubtitleParserFactory()))
+    // Keep ASS/SSA samples in their original codec-private/event form. The default Matroska
+    // subtitle transcoder emits application/x-media3-cues packets, which are decoded Cue data,
+    // not ASS Dialogue events and therefore cannot be passed to libass without losing drawings,
+    // styles, layers, and positions.
+    arrayOf(
+      MatroskaExtractor(
+        DefaultSubtitleParserFactory(),
+        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
+      ),
+    )
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
