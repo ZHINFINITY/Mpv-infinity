@@ -689,7 +689,11 @@ class NativeMedia3Engine(context: Context) {
             type = group.type,
             label = format.label ?: format.language ?: "$fallback ${trackIndex + 1}",
             language = format.language,
-            selected = group.isTrackSelected(trackIndex),
+            selected = if (type == C.TRACK_TYPE_TEXT) {
+              standaloneAssController?.isLabelEnabled(format.label ?: format.language ?: "$fallback ${trackIndex + 1}") == true
+            } else {
+              group.isTrackSelected(trackIndex)
+            },
           )
         }
       }.flatten()

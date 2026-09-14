@@ -114,6 +114,10 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
     }
   }
 
+  public boolean isLabelEnabled(String label) {
+    synchronized (enabledLabels) { return enabledLabels.contains(label); }
+  }
+
   @Override public void close() {
     closed = true;
     executor.shutdownNow();
