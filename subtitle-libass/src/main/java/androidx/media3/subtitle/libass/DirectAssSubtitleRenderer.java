@@ -31,7 +31,12 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
   public DirectAssSubtitleRenderer(TrackSink sink) { super(C.TRACK_TYPE_TEXT); this.sink = sink; }
   @Override public String getName() { return "DirectAssSubtitleRenderer"; }
   @Override public int supportsFormat(Format format) {
-    return MimeTypes.TEXT_SSA.equals(format.sampleMimeType) ? RendererCapabilities.create(C.FORMAT_HANDLED) : RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
+    String mime = format.sampleMimeType;
+    boolean ass = MimeTypes.TEXT_SSA.equals(mime)
+        || "application/ssa".equals(mime)
+        || "text/x-ass".equals(mime)
+        || "application/x-ass".equals(mime);
+    return ass ? RendererCapabilities.create(C.FORMAT_HANDLED) : RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
   }
   @Override public int supportsMixedMimeTypeAdaptation() { return RendererCapabilities.ADAPTIVE_NOT_SUPPORTED; }
   @Override protected void onStreamChanged(Format[] formats, long startPositionUs, long offsetUs, MediaSource.MediaPeriodId mediaPeriodId) {
@@ -41,7 +46,7 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
     inputEnded = false;
     events.clear();
     sink.replaceTrack(trackId, document);
-    android.util.Log.i("Media3Libass", "direct ASS stream id=" + trackId + " headerBytes=" + (document == null ? 0 : document.length));
+    android.util.Log.i("Media3Libass", "direct ASS stream id=" + trackId + " mime=" + format.sampleMimeType + " headerBytes=" + (document == null ? 0 : document.length));
   }
   @Override protected void onPositionReset(long positionUs, boolean joining) {
     inputBuffer.clear();

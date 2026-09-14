@@ -21,7 +21,7 @@ class LibassRenderersFactory(
     extensionRendererMode: Int,
     out: ArrayList<Renderer>,
   ) {
-    out.add(DirectAssSubtitleRenderer(object : DirectAssSubtitleRenderer.TrackSink {
+    val directAssRenderer = DirectAssSubtitleRenderer(object : DirectAssSubtitleRenderer.TrackSink {
       override fun replaceTrack(id: String, assDocument: ByteArray) {
         rendererProvider()?.addTrack(id, assDocument)
       }
@@ -31,7 +31,8 @@ class LibassRenderersFactory(
       override fun removeTrack(id: String) {
         rendererProvider()?.removeTrack(id)
       }
-    }))
+    })
     super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+    out.add(0, directAssRenderer)
   }
 }
