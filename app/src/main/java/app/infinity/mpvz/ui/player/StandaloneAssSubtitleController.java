@@ -81,11 +81,17 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
         synchronized (enabledLabels) { enabled = enabledLabels.contains(track.label); }
         renderer.setTrackEnabled(track.id, enabled);
         for (Sample sample : track.samples) {
+          if (closed) return;
           byte[] event = normalizeEvent(sample.data);
           long[] times = parseTimes(event);
           long timeUs = times == null ? sample.timeUs : times[0];
           long durationUs = times == null ? sample.durationUs : Math.max(1L, times[1] - times[0]);
-          renderer.appendEvent(track.id, event, timeUs, durationUs);
+          try {
+            renderer.appendEvent(track.id, event, timeUs, durationUs);
+          } catch (IllegalStateException closedRenderer) {
+            if (closed) return;
+            throw closedRenderer;
+          }
         }
         Log.i(TAG, "loaded raw track id=" + track.id + " label=" + track.label
             + " samples=" + track.samples.size());
@@ -100,21 +106,27 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
   }
 
   public void enableLabel(String label) {
-    if (label == null || label.isEmpty()) return;
+    if (closed || label == null || label.isEmpty()) return;
     synchronized (enabledLabels) {
       if (!enabledLabels.contains(label)) enabledLabels.add(label);
     }
     synchronized (tracks) {
       for (RawTrack track : tracks) {
-        if (track.ass && track.label.equals(label)) renderer.setTrackEnabled(track.id, true);
+        if (closed) return;
+        if (track.ass && track.label.equals(label)) {
+          try { renderer.setTrackEnabled(track.id, true); } catch (IllegalStateException ignored) { return; }
+        }
       }
     }
   }
 
   public void disableAll() {
+    if (closed) return;
     synchronized (enabledLabels) { enabledLabels.clear(); }
     synchronized (tracks) {
-      for (RawTrack track : tracks) if (track.ass) renderer.setTrackEnabled(track.id, false);
+      for (RawTrack track : tracks) if (track.ass) {
+        try { renderer.setTrackEnabled(track.id, false); } catch (IllegalStateException ignored) { return; }
+      }
     }
   }
 
@@ -125,6 +137,13 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
   @Override public void close() {
     closed = true;
     executor.shutdownNow();
+    try {
+      if (!executor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+        Log.w(TAG, "subtitle extraction did not stop before renderer teardown");
+      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   private final class Output implements ExtractorOutput {
