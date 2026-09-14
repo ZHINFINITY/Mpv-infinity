@@ -37,8 +37,8 @@ import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
-import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import androidx.media3.subtitle.libass.LibassSubtitleView
+import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -142,7 +142,7 @@ class NativeMedia3Engine(context: Context) {
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(
-      LibassRenderersFactory(context.applicationContext) { ensureLibassRenderer() }
+      DefaultRenderersFactory(context.applicationContext)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
@@ -153,6 +153,7 @@ class NativeMedia3Engine(context: Context) {
   private var attachedView: PlayerView? = null
   private var subtitleOverlay: LibassSubtitleView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
+  private var standaloneAssController: StandaloneAssSubtitleController? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
@@ -432,13 +433,10 @@ class NativeMedia3Engine(context: Context) {
 
   private fun configureSubtitleView() {
     val view = attachedView ?: return
-    val selectedAss = player.currentTracks.groups.any { group ->
-      group.type == C.TRACK_TYPE_TEXT && (0 until group.length).any { index ->
-        group.isTrackSelected(index) && isAssFormat(group.getTrackFormat(index))
-      }
-    }
     view.subtitleView?.apply {
-      visibility = if (selectedAss) View.INVISIBLE else View.VISIBLE
+      // Media3 text output is disabled for this engine. All embedded ASS/SSA tracks are read by
+      // StandaloneAssSubtitleController and composited by the libass overlay instead.
+      visibility = View.INVISIBLE
       // Player subtitle preferences must win over embedded ASS/Matroska style metadata.
       setApplyEmbeddedStyles(false)
       setApplyEmbeddedFontSizes(false)
@@ -497,6 +495,14 @@ class NativeMedia3Engine(context: Context) {
             ?.let(::setMimeType)
         }
         .build()
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .build()
+    standaloneAssController?.close()
+    standaloneAssController = ensureLibassRenderer()?.let {
+      StandaloneAssSubtitleController(dataSourceFactory, it).also { controller -> controller.load(mediaUri) }
+    }
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
@@ -579,6 +585,12 @@ class NativeMedia3Engine(context: Context) {
   fun selectTrack(track: NativeTrack) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
+    if (track.type == C.TRACK_TYPE_TEXT) {
+      val format = group.getTrackFormat(track.trackIndex)
+      standaloneAssController?.enableLabel(format.label ?: format.language ?: "")
+      publishSnapshot()
+      return
+    }
     val override = if (track.type == C.TRACK_TYPE_TEXT) {
       val existing = player.trackSelectionParameters.overrides[group.mediaTrackGroup]?.trackIndices.orEmpty()
       TrackSelectionOverride(group.mediaTrackGroup, (existing + track.trackIndex).distinct())
@@ -608,26 +620,14 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
-    val currentParameters = player.trackSelectionParameters
-    val existing = currentParameters.overrides[group.mediaTrackGroup]?.trackIndices.orEmpty()
-    val mergedOverride = TrackSelectionOverride(
-      group.mediaTrackGroup,
-      (existing + trackIndex).distinct(),
-    )
-    player.trackSelectionParameters = currentParameters
-      .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .addOverride(mergedOverride)
-      .build()
+    val format = group.getTrackFormat(trackIndex)
+    standaloneAssController?.enableLabel(format.label ?: format.language ?: "")
     Log.i(logTag, "subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }
 
   fun disableSubtitles() {
-    player.trackSelectionParameters = player.trackSelectionParameters
-      .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-      .build()
+    standaloneAssController?.disableAll()
     publishSnapshot()
   }
 
@@ -642,6 +642,11 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = null
     player.stop()
     player.clearMediaItems()
+    standaloneAssController?.close()
+    standaloneAssController = null
+    libassRenderer?.let { renderer ->
+      renderer.getTrackIds().keys.toList().forEach { renderer.removeTrack(it) }
+    }
     _hasRenderedFirstFrame.value = false
     publishSnapshot()
   }
@@ -655,6 +660,8 @@ class NativeMedia3Engine(context: Context) {
     attachedView?.player = null
     libassRenderer?.close()
     libassRenderer = null
+    standaloneAssController?.close()
+    standaloneAssController = null
     subtitleOverlay?.setRenderer(null)
     subtitleOverlay = null
     attachedView = null
