@@ -30,6 +30,7 @@ android {
 
 dependencies {
     api("androidx.media3:media3-common:1.6.1")
+    api("androidx.media3:media3-exoplayer:1.6.1")
     implementation("androidx.annotation:annotation:1.9.1")
     testImplementation("junit:junit:4.13.2")
 }
