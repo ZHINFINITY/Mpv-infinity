@@ -39,6 +39,9 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;35.0.0 cmake;3.22.1 ndk;27.3.13750724'
 
+      - name: Install libass native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
