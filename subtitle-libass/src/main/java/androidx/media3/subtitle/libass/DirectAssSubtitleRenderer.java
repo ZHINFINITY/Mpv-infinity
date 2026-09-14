@@ -77,6 +77,8 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
       ByteBuffer data = inputBuffer.data;
       if (data != null && data.remaining() > 0) {
         byte[] sample = new byte[data.remaining()]; data.get(sample);
+        sample = normalizeEvent(sample);
+        if (sample.length == 0) { inputBuffer.clear(); continue; }
         long timestampUs = inputBuffer.timeUs;
         long durationUs = 0L;
         long[] assTimesUs = parseDialogueTimesUs(sample);
@@ -110,6 +112,26 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
     byte[] result = new byte[total]; int offset = 0;
     for (byte[] part : data) { System.arraycopy(part, 0, result, offset, part.length); offset += part.length; }
     return result;
+  }
+  /** Matroska stores SSA samples as ReadOrder,Layer,Start,End,... without Dialogue:. */
+  private static byte[] normalizeEvent(byte[] sample) {
+    String text = new String(sample, StandardCharsets.UTF_8)
+        .replace("\u0000", "").replace("\uFEFF", "").trim();
+    StringBuilder normalized = new StringBuilder(text.length() + 12);
+    for (String line : text.split("\\r?\\n")) {
+      String value = line.trim();
+      if (value.isEmpty()) continue;
+      if (value.regionMatches(true, 0, "Dialogue:", 0, 9)
+          || value.regionMatches(true, 0, "Comment:", 0, 8)) {
+        normalized.append(value);
+      } else {
+        int comma = value.indexOf(',');
+        if (comma <= 0 || value.indexOf(',', comma + 1) < 0) continue;
+        normalized.append("Dialogue: ").append(value.substring(comma + 1));
+      }
+      normalized.append('\n');
+    }
+    return normalized.toString().getBytes(StandardCharsets.UTF_8);
   }
   @Nullable private static long[] parseDialogueTimesUs(byte[] sample) {
     String text = new String(sample, StandardCharsets.UTF_8);
