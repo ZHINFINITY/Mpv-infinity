@@ -128,6 +128,26 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAddTrack(JNIEnv* env, jc
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env, jclass, jlong handle, jint id, jbyteArray data) {
+  auto* state = fromHandle(handle);
+  if (!state || !data) return JNI_FALSE;
+  std::lock_guard lock(state->mutex);
+  auto it = std::find_if(state->tracks.begin(), state->tracks.end(), [id](const Track& t) { return t.id == id; });
+  if (it == state->tracks.end()) return JNI_FALSE;
+#if MEDIA3_LIBASS_HAS_NATIVE
+  jsize size = env->GetArrayLength(data);
+  jbyte* bytes = env->GetByteArrayElements(data, nullptr);
+  if (!bytes) return JNI_FALSE;
+  ass_process_chunk(it->ass, reinterpret_cast<char*>(bytes), size, 0, 0);
+  env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
+  return JNI_TRUE;
+#else
+  (void)env;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_androidx_media3_subtitle_libass_LibassNative_nativeRemoveTrack(JNIEnv*, jclass, jlong handle, jint id) {
   auto* state = fromHandle(handle);
   if (!state) return JNI_FALSE;

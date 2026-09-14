@@ -60,6 +60,16 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     return true;
   }
 
+  public synchronized boolean appendEvent(String id, byte[] eventData) {
+    checkOpen();
+    if (id == null || id.isEmpty() || eventData == null || eventData.length == 0) return false;
+    Integer nativeId = tracks.get(id);
+    boolean appended = nativeId != null
+        && LibassNative.nativeAppendEvent(nativeHandle, nativeId, eventData);
+    if (!appended) Log.e(TAG, "event_append_failed id=" + id + " bytes=" + eventData.length);
+    return appended;
+  }
+
   public synchronized boolean removeTrack(String id) {
     checkOpen();
     Integer nativeId = tracks.remove(id);

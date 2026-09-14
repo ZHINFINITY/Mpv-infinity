@@ -610,13 +610,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
-    val allTrackIndices = (0 until group.length).toList()
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, allTrackIndices))
+      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
       .build()
-    Log.i(logTag, "subtitle selection enabled all=${allTrackIndices.size} group=${group.mediaTrackGroup.id} requested=$trackIndex")
+    Log.i(logTag, "subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }
 
