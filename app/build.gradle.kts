@@ -287,7 +287,6 @@ dependencies {
   implementation(libs.androidx.media3.transformer)
   implementation(libs.jellyfin.media3.ffmpeg.decoder)
   implementation(project(":subtitle-libass"))
-  implementation(project(":subtitle-libass"))
   implementation(platform(libs.sora.editor.bom))
   implementation(libs.sora.editor)
   implementation(libs.sora.language.textmate)

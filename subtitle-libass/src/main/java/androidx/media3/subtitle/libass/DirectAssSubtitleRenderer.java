@@ -38,7 +38,7 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
     inputEnded = false;
     android.util.Log.i("Media3Libass", "direct ASS stream id=" + trackId + " headerBytes=" + (document == null ? 0 : document.length));
   }
-  @Override protected void onPositionReset(long positionUs, boolean joining, boolean sampleStreamIsResetToKeyFrame) { inputBuffer.clear(); inputEnded = false; }
+  @Override protected void onPositionReset(long positionUs, boolean joining) { inputBuffer.clear(); inputEnded = false; }
   @Override public void render(long positionUs, long elapsedRealtimeUs) throws ExoPlaybackException {
     if (inputEnded || trackId == null) return;
     for (int i = 0; i < 32; i++) {
