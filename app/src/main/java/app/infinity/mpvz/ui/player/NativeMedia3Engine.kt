@@ -413,8 +413,13 @@ class NativeMedia3Engine(context: Context) {
   private fun ensureLibassRenderer(): LibassSubtitleRenderer? {
     libassRenderer?.let { return it }
     val view = subtitleOverlay ?: return null
-    val width = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width
-    val height = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height
+    val sourceWidth = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width
+    val sourceHeight = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height
+    // libass output is scaled by the overlay view. Avoid allocating and copying a 2772x1280
+    // RGBA frame on every clock tick; this is subtitles, not the video render surface.
+    val scale = minOf(1f, 1280f / sourceWidth, 720f / sourceHeight)
+    val width = (sourceWidth * scale).toInt().coerceAtLeast(1)
+    val height = (sourceHeight * scale).toInt().coerceAtLeast(1)
     if (width <= 0 || height <= 0) return null
     return runCatching {
       LibassSubtitleRenderer(width, height, null).also {
@@ -603,10 +608,16 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
-    player.trackSelectionParameters = player.trackSelectionParameters
+    val currentParameters = player.trackSelectionParameters
+    val existing = currentParameters.overrides[group.mediaTrackGroup]?.trackIndices.orEmpty()
+    val mergedOverride = TrackSelectionOverride(
+      group.mediaTrackGroup,
+      (existing + trackIndex).distinct(),
+    )
+    player.trackSelectionParameters = currentParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+      .addOverride(mergedOverride)
       .build()
     Log.i(logTag, "subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()

@@ -77,8 +77,17 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
       ByteBuffer data = inputBuffer.data;
       if (data != null && data.remaining() > 0) {
         byte[] sample = new byte[data.remaining()]; data.get(sample);
-        events.add(new AssEvent(sample, inputBuffer.timeUs, 0L));
-        sink.appendEvent(trackId, sample, inputBuffer.timeUs, 0L);
+        long timestampUs = inputBuffer.timeUs;
+        long durationUs = inputBuffer.durationUs;
+        if (durationUs <= 0L) {
+          long[] assTimesUs = parseDialogueTimesUs(sample);
+          if (assTimesUs != null) {
+            if (timestampUs <= 0L) timestampUs = assTimesUs[0];
+            durationUs = Math.max(1L, assTimesUs[1] - assTimesUs[0]);
+          }
+        }
+        events.add(new AssEvent(sample, timestampUs, durationUs));
+        sink.appendEvent(trackId, sample, timestampUs, durationUs);
       }
       inputBuffer.clear();
     }
@@ -104,6 +113,34 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
     for (byte[] part : data) { System.arraycopy(part, 0, result, offset, part.length); offset += part.length; }
     return result;
   }
+  @Nullable private static long[] parseDialogueTimesUs(byte[] sample) {
+    String text = new String(sample, StandardCharsets.UTF_8);
+    for (String line : text.split("\\r?\\n")) {
+      if (!line.regionMatches(true, 0, "Dialogue:", 0, 9)) continue;
+      String[] fields = line.substring(9).trim().split(",", 11);
+      if (fields.length < 3) return null;
+      long startUs = parseAssTimeUs(fields[1].trim());
+      long endUs = parseAssTimeUs(fields[2].trim());
+      if (startUs >= 0 && endUs > startUs) return new long[] {startUs, endUs};
+    }
+    return null;
+  }
+
+  private static long parseAssTimeUs(String value) {
+    String[] parts = value.split(":");
+    if (parts.length != 3) return -1L;
+    try {
+      int hours = Integer.parseInt(parts[0]);
+      String[] seconds = parts[2].split("\\.", 2);
+      int wholeSeconds = Integer.parseInt(seconds[0]);
+      int centiseconds = seconds.length == 2 ? Integer.parseInt((seconds[1] + "00").substring(0, 2)) : 0;
+      return ((hours * 3600L + Integer.parseInt(parts[1]) * 60L + wholeSeconds) * 1_000_000L)
+          + centiseconds * 10_000L;
+    } catch (NumberFormatException ignored) {
+      return -1L;
+    }
+  }
+
   private static byte[] appendEvent(@Nullable byte[] base, byte[] sample) {
     if (base == null) base = defaultHeader();
     boolean newline = base.length == 0 || base[base.length - 1] != '\n';
