@@ -221,22 +221,10 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onCues(cueGroup: CueGroup) {
-      // Media3 decodes the selected text streams into active cues. Feed those cues into one
-      // continuously replaced ASS document so libass, rather than PlayerView, performs the draw.
-      attachedView?.subtitleView?.setCues(emptyList())
-      val renderer = ensureLibassRenderer()
-      if (renderer == null) {
-        Log.e(logTag, "libass cue bridge unavailable cues=${cueGroup.cues.size}")
-        return
-      }
-      if (cueGroup.cues.isEmpty()) {
-        renderer.removeTrack(MEDIA3_CUE_TRACK_ID)
-        Log.d(logTag, "libass cues cleared tracks=${renderer.trackCount}")
-        return
-      }
-      val ass = cuesToAss(cueGroup.cues)
-      val added = renderer.addTrack(MEDIA3_CUE_TRACK_ID, ass.toByteArray(Charsets.UTF_8))
-      Log.i(logTag, "libass cues received=${cueGroup.cues.size} bytes=${ass.length} added=$added tracks=${renderer.trackCount}")
+      // Do not convert Media3 Cue objects back into ASS. That loses the original ASS document,
+      // styles, drawing commands, layers, and positions, and duplicates the direct libass path.
+      // Native Media3 text renderers receive these cues through PlayerView; raw ASS is handled by
+      // DirectAssSubtitleRenderer and never reaches this callback.
     }
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
@@ -276,9 +264,6 @@ class NativeMedia3Engine(context: Context) {
     }
   }
 
-  private companion object {
-    const val MEDIA3_CUE_TRACK_ID = "media3:active-cues"
-  }
 
   init {
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
@@ -426,34 +411,6 @@ class NativeMedia3Engine(context: Context) {
     }.onFailure { Log.e(logTag, "libass initialization failed", it) }.getOrNull()
   }
 
-  private fun cuesToAss(cues: List<androidx.media3.common.text.Cue>): String {
-    val header = """[Script Info]
-ScriptType: v4.00+
-PlayResX: 1920
-PlayResY: 1080
-WrapStyle: 2
-ScaledBorderAndShadow: yes
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,54,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,1,3,1,2,45,45,45,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-    val body = cues.mapIndexedNotNull { _, cue ->
-      val text = cue.text?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapIndexedNotNull null
-      val escaped = text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", "\\N")
-      val alignment = when {
-        cue.line != androidx.media3.common.text.Cue.DIMEN_UNSET && cue.line < 0.34f -> 8
-        cue.line != androidx.media3.common.text.Cue.DIMEN_UNSET && cue.line > 0.66f -> 2
-        else -> 5
-      }
-      "Dialogue: 0,0:00:00.00,0:10:00.00,Default,,0,0,0,,{\\an$alignment}$escaped"
-    }.joinToString("\n")
-    return header + body
-  }
-
   private fun configureSubtitleView() {
     val view = attachedView ?: return
     view.subtitleView?.apply {
@@ -591,10 +548,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   fun selectTrack(track: NativeTrack) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
+    val override = if (track.type == C.TRACK_TYPE_TEXT) {
+      val existing = player.trackSelectionParameters.overrides[group.mediaTrackGroup]?.trackIndices.orEmpty()
+      TrackSelectionOverride(group.mediaTrackGroup, (existing + track.trackIndex).distinct())
+    } else {
+      TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex)
+    }
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+      .setOverrideForType(override)
       .build()
     publishSnapshot()
   }
