@@ -124,16 +124,20 @@ long long parseAssTimeMs(std::string_view value) {
 long long deriveEventDurationMs(std::string_view event) {
   const size_t prefix = event.find(':');
   if (prefix == std::string_view::npos) return 0;
-  const size_t firstComma = event.find(',', prefix + 1);
-  const size_t secondComma = firstComma == std::string_view::npos
-      ? std::string_view::npos : event.find(',', firstComma + 1);
-  const size_t thirdComma = secondComma == std::string_view::npos
-      ? std::string_view::npos : event.find(',', secondComma + 1);
-  if (firstComma == std::string_view::npos || secondComma == std::string_view::npos
-      || thirdComma == std::string_view::npos) return 0;
-  const long long start = parseAssTimeMs(event.substr(firstComma + 1, secondComma - firstComma - 1));
-  const long long end = parseAssTimeMs(event.substr(secondComma + 1, thirdComma - secondComma - 1));
-  return end > start ? end - start : 0;
+  long long start = -1;
+  size_t fieldStart = prefix + 1;
+  while (fieldStart < event.size()) {
+    const size_t comma = event.find(',', fieldStart);
+    const size_t fieldEnd = comma == std::string_view::npos ? event.size() : comma;
+    const long long parsed = parseAssTimeMs(event.substr(fieldStart, fieldEnd - fieldStart));
+    if (parsed >= 0) {
+      if (start < 0) start = parsed;
+      else if (parsed > start) return parsed - start;
+    }
+    if (comma == std::string_view::npos) break;
+    fieldStart = comma + 1;
+  }
+  return 0;
 }
 #endif
 }

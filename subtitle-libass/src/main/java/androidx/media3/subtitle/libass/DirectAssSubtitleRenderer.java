@@ -136,12 +136,16 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
   @Nullable private static long[] parseDialogueTimesUs(byte[] sample) {
     String text = new String(sample, StandardCharsets.UTF_8);
     for (String line : text.split("\\r?\\n")) {
-      if (!line.regionMatches(true, 0, "Dialogue:", 0, 9)) continue;
-      String[] fields = line.substring(9).trim().split(",", 11);
-      if (fields.length < 3) return null;
-      long startUs = parseAssTimeUs(fields[1].trim());
-      long endUs = parseAssTimeUs(fields[2].trim());
-      if (startUs >= 0 && endUs > startUs) return new long[] {startUs, endUs};
+      if (!line.regionMatches(true, 0, "Dialogue:", 0, 9)
+          && !line.regionMatches(true, 0, "Comment:", 0, 8)) continue;
+      String[] fields = line.substring(line.indexOf(':') + 1).trim().split(",", 11);
+      long startUs = -1L;
+      for (String field : fields) {
+        long parsed = parseAssTimeUs(field.trim());
+        if (parsed < 0) continue;
+        if (startUs < 0) startUs = parsed;
+        else if (parsed > startUs) return new long[] {startUs, parsed};
+      }
     }
     return null;
   }

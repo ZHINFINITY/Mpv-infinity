@@ -207,11 +207,16 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
   @Nullable private static long[] parseTimes(byte[] sample) {
     String text = new String(sample, java.nio.charset.StandardCharsets.UTF_8);
     for (String line : text.split("\\r?\\n")) {
-      if (!line.regionMatches(true, 0, "Dialogue:", 0, 9)) continue;
-      String[] f = line.substring(9).trim().split(",", 11);
-      if (f.length < 3) return null;
-      long s = parseTime(f[1].trim()), e = parseTime(f[2].trim());
-      if (s >= 0 && e > s) return new long[] {s, e};
+      if (!line.regionMatches(true, 0, "Dialogue:", 0, 9)
+          && !line.regionMatches(true, 0, "Comment:", 0, 8)) continue;
+      String[] fields = line.substring(line.indexOf(':') + 1).trim().split(",", 11);
+      long start = -1L;
+      for (String field : fields) {
+        long parsed = parseTime(field.trim());
+        if (parsed < 0) continue;
+        if (start < 0) start = parsed;
+        else if (parsed > start) return new long[] {start, parsed};
+      }
     }
     return null;
   }
