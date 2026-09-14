@@ -122,10 +122,12 @@ long long parseAssTimeMs(std::string_view value) {
 }
 
 long long deriveEventDurationMs(std::string_view event) {
-  const size_t prefix = event.find(':');
-  if (prefix == std::string_view::npos) return 0;
   long long start = -1;
-  size_t fieldStart = prefix + 1;
+  // Do not rely on a particular SSA field count. Matroska packets in the wild
+  // occur both with and without ReadOrder/Layer fields, and some contain extra
+  // commas before the timing pair. Scan comma-delimited fields for two valid
+  // ASS clock values instead.
+  size_t fieldStart = 0;
   while (fieldStart < event.size()) {
     const size_t comma = event.find(',', fieldStart);
     const size_t fieldEnd = comma == std::string_view::npos ? event.size() : comma;
@@ -225,6 +227,10 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
   }
   long long eventDurationMs = static_cast<long long>(durationUs / 1000);
   if (eventDurationMs <= 0) eventDurationMs = deriveEventDurationMs(event);
+  // A zero-length chunk is immediately expired by libass. Preserve a packet
+  // even when its container timing was unavailable; the next render pass will
+  // still use the ASS event's original style, position, and text.
+  if (eventDurationMs <= 0) eventDurationMs = 4000;
   ass_process_chunk(it->ass, event.data(), event.size(),
       static_cast<long long>(timestampUs / 1000), eventDurationMs);
   __android_log_print(ANDROID_LOG_DEBUG, kTag,
