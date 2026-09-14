@@ -7,6 +7,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import android.view.SurfaceView
 import java.io.File
 import app.infinity.mpvz.R
 import androidx.media3.common.C
@@ -292,6 +293,9 @@ class NativeMedia3Engine(context: Context) {
     attachedView?.player = null
     attachedView = view
     subtitleOverlay = view.rootView.findViewById(R.id.media3_subtitle_overlay)
+    // SurfaceView is composed in a separate layer and can cover normal sibling Views. Mark it as
+    // a media layer so the standalone libass bitmap remains visible above the video surface.
+    (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
     view.useController = false
     // Do not let a stale portrait measurement stretch native HDR video after rotation.
     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -452,6 +456,8 @@ class NativeMedia3Engine(context: Context) {
     }
     subtitleOverlay?.apply {
       visibility = View.VISIBLE
+      bringToFront()
+      elevation = 1f
       pivotX = width / 2f
       pivotY = height.toFloat()
       scaleX = subtitleScale
