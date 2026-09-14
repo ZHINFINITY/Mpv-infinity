@@ -25,9 +25,13 @@ class LibassRenderersFactory(
       override fun replaceTrack(id: String, assDocument: ByteArray) {
         rendererProvider()?.addTrack(id, assDocument)
       }
+      override fun appendEvent(id: String, event: ByteArray) {
+        rendererProvider()?.appendEvent(id, event)
+      }
       override fun removeTrack(id: String) {
         rendererProvider()?.removeTrack(id)
       }
     }))
+    super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
   }
 }

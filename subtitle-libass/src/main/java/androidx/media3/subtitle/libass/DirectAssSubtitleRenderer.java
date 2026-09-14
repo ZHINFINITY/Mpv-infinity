@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
 /** Reads raw ASS/SSA samples before Media3 decodes them into Cue objects. */
 @UnstableApi
 public final class DirectAssSubtitleRenderer extends BaseRenderer {
-  public interface TrackSink { void replaceTrack(String id, byte[] assDocument); void removeTrack(String id); }
+  public interface TrackSink { void replaceTrack(String id, byte[] assDocument); void appendEvent(String id, byte[] event); void removeTrack(String id); }
   private final TrackSink sink;
   private final DecoderInputBuffer inputBuffer = new DecoderInputBuffer(DecoderInputBuffer.BUFFER_REPLACEMENT_MODE_NORMAL);
   private final FormatHolder formatHolder = new FormatHolder();
@@ -36,6 +36,7 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
     trackId = format.id != null ? format.id : "embedded-ass:" + System.identityHashCode(format);
     document = joinInitializationData(format.initializationData);
     inputEnded = false;
+    sink.replaceTrack(trackId, document);
     android.util.Log.i("Media3Libass", "direct ASS stream id=" + trackId + " headerBytes=" + (document == null ? 0 : document.length));
   }
   @Override protected void onPositionReset(long positionUs, boolean joining) { inputBuffer.clear(); inputEnded = false; }
@@ -51,9 +52,7 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
       ByteBuffer data = inputBuffer.data;
       if (data != null && data.remaining() > 0) {
         byte[] sample = new byte[data.remaining()]; data.get(sample);
-        document = appendEvent(document, sample);
-        sink.replaceTrack(trackId, document);
-        android.util.Log.i("Media3Libass", "direct ASS sample id=" + trackId + " sampleBytes=" + sample.length + " documentBytes=" + document.length);
+        sink.appendEvent(trackId, sample);
       }
       inputBuffer.clear();
     }
