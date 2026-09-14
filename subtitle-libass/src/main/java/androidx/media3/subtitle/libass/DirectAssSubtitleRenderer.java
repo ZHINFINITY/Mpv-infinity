@@ -32,11 +32,16 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
   @Override public String getName() { return "DirectAssSubtitleRenderer"; }
   @Override public int supportsFormat(Format format) {
     String mime = format.sampleMimeType;
+    String codecs = format.codecs == null ? "" : format.codecs.toLowerCase(java.util.Locale.ROOT);
     boolean ass = MimeTypes.TEXT_SSA.equals(mime)
         || "application/ssa".equals(mime)
         || "text/x-ass".equals(mime)
-        || "application/x-ass".equals(mime);
-    return ass ? RendererCapabilities.create(C.FORMAT_HANDLED) : RendererCapabilities.create(C.FORMAT_UNSUPPORTED_SUBTYPE);
+        || "application/x-ass".equals(mime)
+        || (mime != null && (mime.contains("ssa") || mime.contains("ass")))
+        || codecs.contains("ssa") || codecs.contains("ass");
+    int capability = ass ? C.FORMAT_HANDLED : C.FORMAT_UNSUPPORTED_SUBTYPE;
+    android.util.Log.d("Media3Libass", "supports format mime=" + mime + " codecs=" + format.codecs + " handled=" + ass);
+    return RendererCapabilities.create(capability);
   }
   @Override public int supportsMixedMimeTypeAdaptation() { return RendererCapabilities.ADAPTIVE_NOT_SUPPORTED; }
   @Override protected void onStreamChanged(Format[] formats, long startPositionUs, long offsetUs, MediaSource.MediaPeriodId mediaPeriodId) {
