@@ -664,10 +664,10 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekPositionMs = null
     player.removeListener(listener)
     attachedView?.player = null
-    libassRenderer?.close()
-    libassRenderer = null
     standaloneAssController?.close()
     standaloneAssController = null
+    libassRenderer?.close()
+    libassRenderer = null
     subtitleOverlay?.setRenderer(null)
     subtitleOverlay = null
     attachedView = null
