@@ -78,13 +78,11 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
       if (data != null && data.remaining() > 0) {
         byte[] sample = new byte[data.remaining()]; data.get(sample);
         long timestampUs = inputBuffer.timeUs;
-        long durationUs = inputBuffer.durationUs;
-        if (durationUs <= 0L) {
-          long[] assTimesUs = parseDialogueTimesUs(sample);
-          if (assTimesUs != null) {
-            if (timestampUs <= 0L) timestampUs = assTimesUs[0];
-            durationUs = Math.max(1L, assTimesUs[1] - assTimesUs[0]);
-          }
+        long durationUs = 0L;
+        long[] assTimesUs = parseDialogueTimesUs(sample);
+        if (assTimesUs != null) {
+          if (timestampUs <= 0L) timestampUs = assTimesUs[0];
+          durationUs = Math.max(1L, assTimesUs[1] - assTimesUs[0]);
         }
         events.add(new AssEvent(sample, timestampUs, durationUs));
         sink.appendEvent(trackId, sample, timestampUs, durationUs);
