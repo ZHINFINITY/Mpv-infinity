@@ -81,7 +81,11 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
         synchronized (enabledLabels) { enabled = enabledLabels.contains(track.label); }
         renderer.setTrackEnabled(track.id, enabled);
         for (Sample sample : track.samples) {
-          renderer.appendEvent(track.id, sample.data, sample.timeUs, sample.durationUs);
+          byte[] event = normalizeEvent(sample.data);
+          long[] times = parseTimes(event);
+          long timeUs = times == null ? sample.timeUs : times[0];
+          long durationUs = times == null ? sample.durationUs : Math.max(1L, times[1] - times[0]);
+          renderer.appendEvent(track.id, event, timeUs, durationUs);
         }
         Log.i(TAG, "loaded raw track id=" + track.id + " label=" + track.label
             + " samples=" + track.samples.size());
@@ -217,5 +221,26 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
       int cs = s.length == 2 ? Integer.parseInt((s[1] + "00").substring(0, 2)) : 0;
       return ((Integer.parseInt(p[0]) * 3600L + Integer.parseInt(p[1]) * 60L + Integer.parseInt(s[0])) * 1000000L) + cs * 10000L;
     } catch (RuntimeException e) { return -1L; }
+  }
+
+  /** Matroska stores SSA blocks as ReadOrder,Layer,Start,End,... without the ASS prefix. */
+  private static byte[] normalizeEvent(byte[] sample) {
+    String text = new String(sample, java.nio.charset.StandardCharsets.UTF_8)
+        .replace("\u0000", "").trim();
+    StringBuilder normalized = new StringBuilder(text.length() + 12);
+    for (String line : text.split("\\r?\\n")) {
+      String value = line.trim();
+      if (value.isEmpty()) continue;
+      if (value.regionMatches(true, 0, "Dialogue:", 0, 9)
+          || value.regionMatches(true, 0, "Comment:", 0, 8)) {
+        normalized.append(value);
+      } else {
+        int comma = value.indexOf(',');
+        normalized.append("Dialogue: ")
+            .append(comma > 0 ? value.substring(comma + 1) : value);
+      }
+      normalized.append('\n');
+    }
+    return normalized.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
   }
 }
