@@ -13,14 +13,17 @@ import androidx.media3.exoplayer.RendererCapabilities;
 import androidx.media3.exoplayer.source.MediaSource;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Reads raw ASS/SSA samples before Media3 decodes them into Cue objects. */
 @UnstableApi
 public final class DirectAssSubtitleRenderer extends BaseRenderer {
-  public interface TrackSink { void replaceTrack(String id, byte[] assDocument); void appendEvent(String id, byte[] event); void removeTrack(String id); }
+  public interface TrackSink { void replaceTrack(String id, byte[] assDocument); void appendEvent(String id, byte[] event, long timestampUs, long durationUs); void removeTrack(String id); }
   private final TrackSink sink;
   private final DecoderInputBuffer inputBuffer = new DecoderInputBuffer(DecoderInputBuffer.BUFFER_REPLACEMENT_MODE_NORMAL);
   private final FormatHolder formatHolder = new FormatHolder();
+  private final List<AssEvent> events = new ArrayList<>();
   @Nullable private String trackId;
   @Nullable private byte[] document;
   private boolean inputEnded;
@@ -36,10 +39,22 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
     trackId = format.id != null ? format.id : "embedded-ass:" + System.identityHashCode(format);
     document = joinInitializationData(format.initializationData);
     inputEnded = false;
+    events.clear();
     sink.replaceTrack(trackId, document);
     android.util.Log.i("Media3Libass", "direct ASS stream id=" + trackId + " headerBytes=" + (document == null ? 0 : document.length));
   }
-  @Override protected void onPositionReset(long positionUs, boolean joining) { inputBuffer.clear(); inputEnded = false; }
+  @Override protected void onPositionReset(long positionUs, boolean joining) {
+    inputBuffer.clear();
+    inputEnded = false;
+    if (trackId != null && document != null) {
+      sink.replaceTrack(trackId, document);
+      for (AssEvent event : events) {
+        if (event.timestampUs <= positionUs) {
+          sink.appendEvent(trackId, event.data, event.timestampUs, event.durationUs);
+        }
+      }
+    }
+  }
   @Override public void render(long positionUs, long elapsedRealtimeUs) throws ExoPlaybackException {
     if (inputEnded || trackId == null) return;
     for (int i = 0; i < 32; i++) {
@@ -52,14 +67,26 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
       ByteBuffer data = inputBuffer.data;
       if (data != null && data.remaining() > 0) {
         byte[] sample = new byte[data.remaining()]; data.get(sample);
-        sink.appendEvent(trackId, sample);
+        events.add(new AssEvent(sample, inputBuffer.timeUs, 0L));
+        sink.appendEvent(trackId, sample, inputBuffer.timeUs, 0L);
       }
       inputBuffer.clear();
     }
   }
   @Override public boolean isReady() { return true; }
   @Override public boolean isEnded() { return inputEnded; }
-  @Override protected void onDisabled() { if (trackId != null) sink.removeTrack(trackId); trackId = null; document = null; inputBuffer.clear(); }
+  @Override protected void onDisabled() { if (trackId != null) sink.removeTrack(trackId); trackId = null; document = null; events.clear(); inputBuffer.clear(); }
+
+  private static final class AssEvent {
+    final byte[] data;
+    final long timestampUs;
+    final long durationUs;
+    AssEvent(byte[] data, long timestampUs, long durationUs) {
+      this.data = data;
+      this.timestampUs = timestampUs;
+      this.durationUs = durationUs;
+    }
+  }
   private static byte[] joinInitializationData(@Nullable java.util.List<byte[]> data) {
     if (data == null || data.isEmpty()) return defaultHeader();
     int total = 0; for (byte[] part : data) total += part.length;
