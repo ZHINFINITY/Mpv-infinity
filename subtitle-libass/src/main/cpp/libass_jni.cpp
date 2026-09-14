@@ -236,6 +236,9 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
   __android_log_print(ANDROID_LOG_DEBUG, kTag,
       "event track=%d bytes=%zu timeUs=%lld durationUs=%lld", id, event.size(),
       static_cast<long long>(timestampUs), eventDurationMs * 1000);
+  const size_t previewLength = std::min<size_t>(event.size(), 220);
+  __android_log_print(ANDROID_LOG_INFO, kTag, "event_payload track=%d %.*s",
+      id, static_cast<int>(previewLength), event.data());
   return JNI_TRUE;
 #else
   (void)env;
