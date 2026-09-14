@@ -10,6 +10,7 @@ import android.view.View;
 import androidx.annotation.Nullable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Transparent overlay view for a dynamic collection of libass subtitle tracks. */
@@ -20,6 +21,8 @@ public final class LibassSubtitleView extends View {
   private long lastPositionUs = -1L;
   private final ExecutorService renderExecutor = Executors.newSingleThreadExecutor();
   private final AtomicLong renderGeneration = new AtomicLong();
+  private final AtomicBoolean renderScheduled = new AtomicBoolean();
+  private volatile long pendingPositionUs = -1L;
 
   public LibassSubtitleView(Context context) { super(context); init(); }
   public LibassSubtitleView(Context context, @Nullable AttributeSet attrs) { super(context, attrs); init(); }
@@ -44,10 +47,22 @@ public final class LibassSubtitleView extends View {
   public void setPositionUs(long positionUs) {
     LibassSubtitleRenderer current = renderer;
     if (current == null || positionUs < 0) return;
-    long generation = renderGeneration.incrementAndGet();
+    pendingPositionUs = positionUs;
+    if (!renderScheduled.compareAndSet(false, true)) return;
+    long generation = renderGeneration.get();
     renderExecutor.execute(() -> {
-      byte[] rgba = current.render(positionUs);
-      if (generation != renderGeneration.get() || current != renderer) return;
+      try {
+        while (generation == renderGeneration.get() && current == renderer) {
+          long framePositionUs = pendingPositionUs;
+          pendingPositionUs = -1L;
+          if (framePositionUs < 0) break;
+          byte[] rgba;
+          try {
+            rgba = current.render(framePositionUs);
+          } catch (IllegalStateException closed) {
+            break;
+          }
+          if (generation != renderGeneration.get() || current != renderer) break;
       int width = current.getWidth();
       int height = current.getHeight();
       int[] argb = rgba == null ? null : new int[width * height];
@@ -58,9 +73,9 @@ public final class LibassSubtitleView extends View {
           argb[i] = (a << 24) | (r << 16) | (g << 8) | b;
         }
       }
-      post(() -> {
+          post(() -> {
         if (generation != renderGeneration.get() || current != renderer) return;
-        lastPositionUs = positionUs;
+        lastPositionUs = framePositionUs;
         if (argb == null) { bitmap = null; invalidate(); return; }
         if (bitmap == null || bitmap.getWidth() != width || bitmap.getHeight() != height) {
           bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
@@ -68,6 +83,14 @@ public final class LibassSubtitleView extends View {
         bitmap.setPixels(argb, 0, width, 0, 0, width, height);
         invalidate();
       });
+          if (pendingPositionUs < 0) break;
+        }
+      } finally {
+        renderScheduled.set(false);
+        if (pendingPositionUs >= 0 && generation == renderGeneration.get() && current == renderer) {
+          setPositionUs(pendingPositionUs);
+        }
+      }
     });
   }
 
@@ -82,6 +105,7 @@ public final class LibassSubtitleView extends View {
 
   @Override protected void onDetachedFromWindow() {
     renderGeneration.incrementAndGet();
+    pendingPositionUs = -1L;
     renderExecutor.shutdownNow();
     super.onDetachedFromWindow();
   }
