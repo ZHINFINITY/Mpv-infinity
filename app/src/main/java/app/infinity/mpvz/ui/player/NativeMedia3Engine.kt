@@ -246,16 +246,9 @@ class NativeMedia3Engine(context: Context) {
     override fun onTracksChanged(tracks: Tracks) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       val types = tracks.groups.joinToString(",") { it.type.toString() }
-      val textGroup = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT && it.length > 0 }
-      if (textGroup != null) {
-        val all = (0 until textGroup.length).toList()
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-          .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-          .setOverrideForType(TrackSelectionOverride(textGroup.mediaTrackGroup, all))
-          .build()
-        Log.i(logTag, "libass multi-subtitle selection enabled count=${all.size}")
-      }
-      Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types prepareElapsedMs=$elapsed uri=$preparationUri")
+      val selectedText = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        .sumOf { group -> (0 until group.length).count { group.isTrackSelected(it) } }
+      Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types selectedText=$selectedText prepareElapsedMs=$elapsed uri=$preparationUri")
     }
 
     override fun onIsLoadingChanged(isLoading: Boolean) {
