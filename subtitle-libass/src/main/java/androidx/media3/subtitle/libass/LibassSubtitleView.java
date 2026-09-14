@@ -58,7 +58,7 @@ public final class LibassSubtitleView extends View {
   @Override protected void onDraw(Canvas canvas) {
     super.onDraw(canvas);
     if (bitmap == null || bitmap.isRecycled()) return;
-    canvas.drawBitmap(bitmap, null, getWidth() == bitmap.getWidth() && getHeight() == bitmap.getHeight()
-        ? null : new android.graphics.Rect(0, 0, getWidth(), getHeight()), null);
+    if (getWidth() <= 0 || getHeight() <= 0) return;
+    canvas.drawBitmap(bitmap, null, new android.graphics.Rect(0, 0, getWidth(), getHeight()), null);
   }
 }
