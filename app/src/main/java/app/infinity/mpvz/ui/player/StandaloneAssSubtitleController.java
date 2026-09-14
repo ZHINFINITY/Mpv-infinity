@@ -86,6 +86,17 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
           long[] times = parseTimes(event);
           long timeUs = times == null ? sample.timeUs : times[0];
           long durationUs = times == null ? sample.durationUs : Math.max(1L, times[1] - times[0]);
+          Log.i(TAG, "packet track=" + track.id
+              + " rawBytes=" + sample.data.length
+              + " normalizedBytes=" + event.length
+              + " sampleTimeUs=" + sample.timeUs
+              + " sampleDurationUs=" + sample.durationUs
+              + " parsedStartUs=" + (times == null ? -1L : times[0])
+              + " parsedEndUs=" + (times == null ? -1L : times[1])
+              + " submitTimeUs=" + timeUs
+              + " submitDurationUs=" + durationUs
+              + " rawPreview=" + preview(sample.data)
+              + " assPreview=" + preview(event));
           try {
             renderer.appendEvent(track.id, event, timeUs, durationUs);
           } catch (IllegalStateException closedRenderer) {
@@ -266,5 +277,13 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
       normalized.append('\n');
     }
     return normalized.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  }
+
+  private static String preview(byte[] value) {
+    String text = new String(value, java.nio.charset.StandardCharsets.UTF_8)
+        .replace("\u0000", "\\0")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n");
+    return text.length() <= 240 ? text : text.substring(0, 240) + "...";
   }
 }
