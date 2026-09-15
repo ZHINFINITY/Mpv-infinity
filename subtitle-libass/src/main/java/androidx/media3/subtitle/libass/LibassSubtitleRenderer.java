@@ -147,6 +147,16 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     return rendered ? frame : null;
   }
 
+  public synchronized void setSurface(@Nullable android.view.Surface surface) {
+    checkOpen();
+    LibassNative.nativeSetSurface(nativeHandle, surface);
+  }
+
+  public synchronized boolean renderSurface(long positionUs) {
+    checkOpen();
+    return LibassNative.nativeRenderSurface(nativeHandle, positionUs);
+  }
+
   public synchronized int getWidth() { return width; }
   public synchronized int getHeight() { return height; }
   public synchronized int getTrackCount() { return tracks.size(); }

@@ -1,5 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -29,6 +31,7 @@ struct Renderer {
   std::string fontsDirectory;
   int nextId = 1;
   std::vector<Track> tracks;
+  ANativeWindow* window = nullptr;
 #if MEDIA3_LIBASS_HAS_NATIVE
   ASS_Library* library = nullptr;
   ASS_Renderer* renderer = nullptr;
@@ -432,7 +435,42 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeSetTrackEnabled(JNIEnv*,
   for (auto& track : state->tracks) if (track.id == id) { track.enabled = enabled; return JNI_TRUE; }
   return JNI_FALSE;
 }
-
+extern "C" JNIEXPORT void JNICALL
+Java_androidx_media3_subtitle_libass_LibassNative_nativeSetSurface(JNIEnv* env, jclass, jlong handle, jobject surface) {
+  auto* state = fromHandle(handle);
+  if (!state) return;
+  std::lock_guard lock(state->mutex);
+  if (state->window) { ANativeWindow_release(state->window); state->window = nullptr; }
+  if (surface) {
+    state->window = ANativeWindow_fromSurface(env, surface);
+    if (state->window) ANativeWindow_setBuffersGeometry(state->window, state->width, state->height, WINDOW_FORMAT_RGBA_8888);
+  }
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_androidx_media3_subtitle_libass_LibassNative_nativeRenderSurface(JNIEnv*, jclass, jlong handle, jlong positionUs) {
+  auto* state = fromHandle(handle);
+  if (!state) return JNI_FALSE;
+  std::lock_guard lock(state->mutex);
+  if (!state->window) return JNI_FALSE;
+  ANativeWindow_Buffer buffer{};
+  if (ANativeWindow_lock(state->window, &buffer, nullptr) != 0) return JNI_FALSE;
+  std::vector<uint8_t> rgba(static_cast<size_t>(state->width) * state->height * 4, 0);
+#if MEDIA3_LIBASS_HAS_NATIVE
+  for (const auto& track : state->tracks) if (track.enabled && track.ass) {
+    int changed = 0;
+    ASS_Image* image = ass_render_frame(state->renderer, track.ass, positionUs / 1000, &changed);
+    blendImage(image, state->width, state->height, rgba.data());
+  }
+#endif
+  const int copyHeight = std::min(state->height, buffer.height);
+  const int copyWidth = std::min(state->width, buffer.width);
+  for (int y = 0; y < copyHeight; ++y) {
+    std::memcpy(static_cast<uint8_t*>(buffer.bits) + static_cast<size_t>(y) * buffer.stride * 4,
+        rgba.data() + static_cast<size_t>(y) * state->width * 4, static_cast<size_t>(copyWidth) * 4);
+  }
+  ANativeWindow_unlockAndPost(state->window);
+  return JNI_TRUE;
+}
 extern "C" JNIEXPORT jboolean JNICALL
 Java_androidx_media3_subtitle_libass_LibassNative_nativeRenderRgba(JNIEnv* env, jclass, jlong handle, jlong positionUs, jbyteArray output) {
   auto* state = fromHandle(handle);
@@ -474,5 +512,6 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeRelease(JNIEnv*, jclass,
   if (state->renderer) ass_renderer_done(state->renderer);
   if (state->library) ass_library_done(state->library);
 #endif
+  if (state->window) ANativeWindow_release(state->window);
   delete state;
 }

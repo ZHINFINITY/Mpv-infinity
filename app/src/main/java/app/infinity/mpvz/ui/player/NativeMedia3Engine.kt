@@ -11,7 +11,6 @@ import android.view.SurfaceView
 import java.io.File
 import app.infinity.mpvz.R
 import androidx.media3.common.C
-import androidx.media3.common.Effect
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
@@ -39,7 +38,7 @@ import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
-import androidx.media3.subtitle.libass.LibassSubtitleView
+import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -184,6 +183,7 @@ class NativeMedia3Engine(context: Context) {
       // after a seek. MPV renders from its current clock in all of these states.
       if (player.currentMediaItem == null) return
       publishSnapshot()
+      subtitleOverlay?.setPositionUs(player.currentPosition.coerceAtLeast(0L) * 1000L)
       // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
       // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
       loopHandler.postDelayed(this, 250L)
@@ -446,8 +446,7 @@ class NativeMedia3Engine(context: Context) {
   private fun configureSubtitleView() {
     val view = attachedView ?: return
     view.subtitleView?.apply {
-      // Media3 text output is disabled for this engine. All embedded ASS/SSA tracks are read by
-      // StandaloneAssSubtitleController and composited by the libass overlay instead.
+      // Keep Media3's own Cue view hidden; ASS/SSA is rendered by the native surface above video.
       visibility = View.INVISIBLE
       // Player subtitle preferences must win over embedded ASS/Matroska style metadata.
       setApplyEmbeddedStyles(false)
@@ -463,7 +462,7 @@ class NativeMedia3Engine(context: Context) {
       setBottomPaddingFraction(0f)
     }
     subtitleOverlay?.apply {
-      visibility = View.INVISIBLE
+      visibility = View.VISIBLE
       bringToFront()
       elevation = 1f
       pivotX = width / 2f
@@ -515,8 +514,11 @@ class NativeMedia3Engine(context: Context) {
       .build()
     standaloneAssController?.close()
     standaloneAssController = null
-    ensureLibassRenderer()
-    player.setVideoEffects(listOf<Effect>(LibassGlEffect { libassRenderer }))
+    ensureLibassRenderer()?.let { renderer ->
+      MatroskaFontScanner.scan(mediaUri).forEach { font ->
+        renderer.addFont(font.name, font.bytes)
+      }
+    }
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
