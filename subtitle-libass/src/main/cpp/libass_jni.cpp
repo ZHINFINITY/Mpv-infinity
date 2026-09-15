@@ -332,6 +332,30 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAddTrack(JNIEnv* env, jc
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_androidx_media3_subtitle_libass_LibassNative_nativeAddFont(JNIEnv* env, jclass, jlong handle, jstring name, jbyteArray data) {
+  auto* state = fromHandle(handle);
+  if (!state || !name || !data) return JNI_FALSE;
+  std::lock_guard lock(state->mutex);
+#if MEDIA3_LIBASS_HAS_NATIVE
+  const char* fontName = env->GetStringUTFChars(name, nullptr);
+  jbyte* bytes = env->GetByteArrayElements(data, nullptr);
+  if (!fontName || !bytes) {
+    if (fontName) env->ReleaseStringUTFChars(name, fontName);
+    if (bytes) env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
+    return JNI_FALSE;
+  }
+  jsize size = env->GetArrayLength(data);
+  ass_add_font(state->library, fontName, reinterpret_cast<char*>(bytes), size);
+  env->ReleaseStringUTFChars(name, fontName);
+  env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
+  return JNI_TRUE;
+#else
+  (void)env;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env, jclass, jlong handle, jint id, jbyteArray data, jlong timestampUs, jlong durationUs) {
   auto* state = fromHandle(handle);
   if (!state || !data) return JNI_FALSE;
