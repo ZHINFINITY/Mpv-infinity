@@ -114,6 +114,12 @@ std::string normalizeEvent(std::string_view input, long long timestampUs, long l
     };
     const bool firstIsTime = parseAssTimeMs(fields[0]) >= 0;
     const bool secondIsTime = fields.size() > 1 && parseAssTimeMs(fields[1]) >= 0;
+    if (!firstIsTime && fields.size() >= 4 && isInteger(fields[0])
+        && secondIsTime && parseAssTimeMs(fields[2]) >= 0) {
+      // Already canonical ASS: Layer,Start,End,Style,... . Do not apply
+      // the Matroska ReadOrder removal below; Layer is required by libass.
+      return text + '\n';
+    }
     if (firstIsTime && secondIsTime && fields.size() >= 5
         && isInteger(fields[2]) && isInteger(fields[3])) {
       // Start,End,ReadOrder,Layer,Style,... -> Layer,Start,End,Style,...
