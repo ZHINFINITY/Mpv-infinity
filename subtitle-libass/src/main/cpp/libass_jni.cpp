@@ -312,6 +312,20 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
         "ignored malformed ASS event track=%d bytes=%d", id, size);
     return JNI_FALSE;
   }
+  // Last-line defense: libass requires Dialogue: Layer,Start,End,Style,... .
+  // Keep malformed legacy/direct packets renderable even if an older normalizer
+  // branch has already returned Dialogue: Start,End,Style,... .
+  if (event.rfind("Dialogue: ", 0) == 0) {
+    const size_t bodyStart = 10;
+    const size_t firstComma = event.find(',', bodyStart);
+    const size_t secondComma = firstComma == std::string::npos
+        ? std::string::npos : event.find(',', firstComma + 1);
+    if (firstComma != std::string::npos && secondComma != std::string::npos
+        && parseAssTimeMs(std::string_view(event).substr(bodyStart, firstComma - bodyStart)) >= 0
+        && parseAssTimeMs(std::string_view(event).substr(firstComma + 1, secondComma - firstComma - 1)) >= 0) {
+      event.insert(bodyStart, "0,");
+    }
+  }
   long long eventDurationMs = static_cast<long long>(durationUs / 1000);
   if (eventDurationMs <= 0) eventDurationMs = deriveEventDurationMs(event);
   // A zero-length chunk is immediately expired by libass. Preserve a packet
