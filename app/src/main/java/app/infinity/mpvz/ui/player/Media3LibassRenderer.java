@@ -11,6 +11,10 @@ import androidx.media3.exoplayer.RendererCapabilities;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /** Media3 renderer that forwards raw ASS/SSA data to the app's libass module. */
@@ -21,7 +25,9 @@ final class Media3LibassRenderer extends BaseRenderer {
   private final DecoderInputBuffer inputBuffer = new DecoderInputBuffer(DecoderInputBuffer.BUFFER_REPLACEMENT_MODE_NORMAL);
   @Nullable private LibassSubtitleRenderer renderer;
   @Nullable private String trackId;
+  private final Map<String, String> formatTrackIds = new LinkedHashMap<>();
   private boolean inputEnded;
+  private long streamOffsetUs;
 
   Media3LibassRenderer(
       java.util.function.Supplier<LibassSubtitleRenderer> rendererProvider,
@@ -43,14 +49,20 @@ final class Media3LibassRenderer extends BaseRenderer {
 
   @Override protected void onStreamChanged(Format[] formats, long startPositionUs, long offsetUs, MediaSource.MediaPeriodId mediaPeriodId) throws ExoPlaybackException {
     if (formats.length == 0) return;
-    Format format = formats[0];
     renderer = rendererProvider.get();
     if (renderer == null) return;
-    if (trackId != null) renderer.removeTrack(trackId);
-    trackId = "media3:" + (format.id == null ? "ass" : format.id);
-    byte[] document = join(format.initializationData);
-    if (document.length > 0) renderer.addTrack(trackId, document);
-    renderer.setTrackEnabled(trackId, true);
+    for (String id : formatTrackIds.values()) renderer.removeTrack(id);
+    formatTrackIds.clear();
+    streamOffsetUs = offsetUs;
+    for (Format format : formats) {
+      String key = format.id == null ? format.sampleMimeType + ":" + formatTrackIds.size() : format.id;
+      String id = "media3:" + key;
+      formatTrackIds.put(key, id);
+      byte[] document = join(format.initializationData);
+      if (document.length > 0) renderer.addTrack(id, document);
+      renderer.setTrackEnabled(id, true);
+    }
+    trackId = formats.length == 0 ? null : formatTrackIds.values().iterator().next();
     inputEnded = false;
   }
 
@@ -72,8 +84,15 @@ final class Media3LibassRenderer extends BaseRenderer {
       if (result == C.RESULT_FORMAT_READ) {
         Format format = formatHolder.format;
         if (format != null) {
-          byte[] document = join(format.initializationData);
-          if (document.length > 0) renderer.addTrack(trackId, document);
+          String key = format.id == null ? format.sampleMimeType : format.id;
+          trackId = formatTrackIds.get(key);
+          if (trackId == null) {
+            trackId = "media3:" + key;
+            formatTrackIds.put(key, trackId);
+            byte[] document = join(format.initializationData);
+            if (document.length > 0) renderer.addTrack(trackId, document);
+            renderer.setTrackEnabled(trackId, true);
+          }
         }
         continue;
       }
@@ -86,12 +105,23 @@ final class Media3LibassRenderer extends BaseRenderer {
       if (data == null || !data.hasRemaining()) continue;
       byte[] event = new byte[data.remaining()];
       data.get(event);
-      renderer.appendEvent(trackId, event, inputBuffer.timeUs, 0L);
+      long timestampUs = Math.max(0L, inputBuffer.timeUs - streamOffsetUs);
+      long durationUs = 4_000_000L;
+      renderer.appendEvent(trackId, normalizeEvent(event, timestampUs, durationUs), timestampUs, durationUs);
     }
   }
 
   @Override public boolean isReady() { return renderer != null && !inputEnded; }
   @Override public boolean isEnded() { return inputEnded; }
+
+  @Override protected void onDisabled() {
+    if (renderer != null) {
+      for (String id : formatTrackIds.values()) renderer.removeTrack(id);
+    }
+    formatTrackIds.clear();
+    trackId = null;
+    renderer = null;
+  }
 
   private static byte[] join(java.util.List<byte[]> parts) {
     if (parts == null || parts.isEmpty()) return new byte[0];
@@ -101,5 +131,40 @@ final class Media3LibassRenderer extends BaseRenderer {
     int offset = 0;
     for (byte[] part : parts) { System.arraycopy(part, 0, result, offset, part.length); offset += part.length; }
     return result;
+  }
+
+  private static byte[] normalizeEvent(byte[] data, long timestampUs, long durationUs) {
+    String text = new String(data, StandardCharsets.UTF_8).replace("\u0000", "").trim();
+    if (text.isEmpty()) return data;
+    for (String line : text.split("\\r?\\n")) {
+      String value = line.trim();
+      int colon = value.indexOf(':');
+      String body = colon >= 0 ? value.substring(colon + 1).trim() : value;
+      String[] fields = body.split(",", -1);
+      if (fields.length >= 3 && looksLikeTime(fields[1]) && looksLikeTime(fields[2])) {
+        return value.getBytes(StandardCharsets.UTF_8);
+      }
+    }
+    String body = text;
+    int colon = body.indexOf(':');
+    if (colon >= 0) body = body.substring(colon + 1).trim();
+    String start = assTime(timestampUs);
+    String end = assTime(timestampUs + durationUs);
+    return ("Dialogue: 0," + start + "," + end + ",Default,,0,0,0," + body)
+        .getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static boolean looksLikeTime(String value) {
+    String[] p = value.trim().split(":");
+    return p.length == 3 && p[0].matches("\\d+") && p[1].matches("\\d+")
+        && p[2].matches("\\d+(\\.\\d+)?");
+  }
+
+  private static String assTime(long us) {
+    long cs = Math.max(0L, us / 10_000L);
+    long h = cs / 360_000L; cs %= 360_000L;
+    long m = cs / 6_000L; cs %= 6_000L;
+    long s = cs / 100L; cs %= 100L;
+    return String.format(Locale.ROOT, "%d:%02d:%02d.%02d", h, m, s, cs);
   }
 }

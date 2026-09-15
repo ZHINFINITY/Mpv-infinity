@@ -602,11 +602,11 @@ class NativeMedia3Engine(context: Context) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
     if (track.type == C.TRACK_TYPE_TEXT) {
-      player.trackSelectionParameters = player.trackSelectionParameters
+      val builder = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
-        .build()
+      builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+      player.trackSelectionParameters = builder.build()
       publishSnapshot()
       return
     }
@@ -642,7 +642,7 @@ class NativeMedia3Engine(context: Context) {
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+      .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
       .build()
     Log.i(logTag, "subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
