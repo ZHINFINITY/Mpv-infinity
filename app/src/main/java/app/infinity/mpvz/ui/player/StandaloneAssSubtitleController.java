@@ -271,8 +271,19 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
         normalized.append(value);
       } else {
         int comma = value.indexOf(',');
-        normalized.append("Dialogue: ")
-            .append(comma > 0 ? value.substring(comma + 1) : value);
+        if (comma <= 0) continue;
+        String first = value.substring(0, comma).trim();
+        boolean readOrder = true;
+        try { Integer.parseInt(first); } catch (NumberFormatException ignored) { readOrder = false; }
+        if (readOrder) {
+          normalized.append("Dialogue: ").append(value.substring(comma + 1));
+        } else {
+          String[] fields = value.split(",", -1);
+          if (fields.length < 5 || parseTime(fields[0].trim()) < 0 || parseTime(fields[1].trim()) < 0) continue;
+          normalized.append("Dialogue: ").append(fields[3]).append(',')
+              .append(fields[0]).append(',').append(fields[1]).append(',').append(fields[4]);
+          for (int i = 5; i < fields.length; i++) normalized.append(',').append(fields[i]);
+        }
       }
       normalized.append('\n');
     }
