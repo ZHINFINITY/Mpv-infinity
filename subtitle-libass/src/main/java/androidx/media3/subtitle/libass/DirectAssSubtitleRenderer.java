@@ -127,7 +127,14 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
       } else {
         int comma = value.indexOf(',');
         if (comma <= 0 || value.indexOf(',', comma + 1) < 0) continue;
-        normalized.append("Dialogue: ").append(value.substring(comma + 1));
+        // Matroska commonly stores ReadOrder,Layer,Start,End,..., but some
+        // extractors omit ReadOrder and emit Start,End,.... Only discard the
+        // first field when it is an integer; dropping a clock value corrupts
+        // the ASS field order and makes libass render nothing.
+        String first = value.substring(0, comma).trim();
+        boolean readOrder = true;
+        try { Integer.parseInt(first); } catch (NumberFormatException ignored) { readOrder = false; }
+        normalized.append("Dialogue: ").append(readOrder ? value.substring(comma + 1) : value);
       }
       normalized.append('\n');
     }
