@@ -57,6 +57,8 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
   private void extract(Uri uri) throws IOException {
     DataSource source = dataSourceFactory.createDataSource();
     long length = source.open(new DataSpec(uri));
+    Log.i(TAG, "extract_start uri=" + uri + " length=" + length
+        + " flags=FLAG_EMIT_RAW_SUBTITLE_DATA parser=disabled_for_ass_capture");
     ExtractorInput input = new DefaultExtractorInput(source, 0, length);
     Extractor extractor = new MatroskaExtractor(
         new DefaultSubtitleParserFactory(), MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA);
@@ -114,9 +116,14 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
           }
         }
         Log.i(TAG, "loaded raw track id=" + track.id + " label=" + track.label
-            + " samples=" + track.samples.size());
+            + " samples=" + track.samples.size() + " documentBytes=" + track.document.length
+            + " documentPreview=" + preview(track.document));
       }
     }
+    int assCount = 0;
+    synchronized (tracks) { for (RawTrack track : tracks) if (track.ass) assCount++; }
+    Log.i(TAG, "extract_complete tracks=" + tracks.size() + " assTracks=" + assCount
+        + " attachmentMetadata=not_exposed_by_media3_matroska_output");
   }
 
   public List<String> getTrackIds() {
@@ -200,6 +207,20 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
           System.arraycopy(part, 0, current.document, offset, part.length); offset += part.length;
         }
       }
+      int initBytes = current.document == null ? 0 : current.document.length;
+      StringBuilder metadata = new StringBuilder();
+      if (value.metadata != null) {
+        for (int i = 0; i < value.metadata.length(); i++) {
+          if (i > 0) metadata.append('|');
+          metadata.append(value.metadata.get(i).getClass().getSimpleName());
+        }
+      }
+      Log.i(TAG, "track_format id=" + trackId + " containerTrackId=" + id
+          + " type=" + type + " mime=" + value.sampleMimeType + " codecs=" + value.codecs
+          + " label=" + value.label + " language=" + value.language
+          + " initParts=" + (value.initializationData == null ? 0 : value.initializationData.size())
+          + " initBytes=" + initBytes + " initPreview=" + preview(current.document)
+          + " metadata=" + metadata);
       synchronized (tracks) { tracks.add(current); }
     }
 
@@ -227,6 +248,10 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
         // commonly begin at 0:00:00:00. The extractor timestamp is the media timeline.
         long duration = times == null ? 0L : Math.max(1L, times[1] - times[0]);
         current.samples.add(new Sample(sample, timeUs, duration));
+        Log.i(TAG, "sample_capture track=" + current.id + " timeUs=" + timeUs
+            + " durationUs=" + duration + " flags=" + flags + " size=" + size
+            + " offset=" + offset + " rawBytes=" + sample.length
+            + " rawPreview=" + preview(sample));
       }
       pending = new byte[0];
     }
@@ -316,7 +341,8 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
     return normalized.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
   }
 
-  private static String preview(byte[] value) {
+  private static String preview(@Nullable byte[] value) {
+    if (value == null) return "<null>";
     String text = new String(value, java.nio.charset.StandardCharsets.UTF_8)
         .replace("\u0000", "\\0")
         .replace("\r", "\\r")
