@@ -46,6 +46,7 @@ final class Media3LibassRenderer extends BaseRenderer {
     Format format = formats[0];
     renderer = rendererProvider.get();
     if (renderer == null) return;
+    if (trackId != null) renderer.removeTrack(trackId);
     trackId = "media3:" + (format.id == null ? "ass" : format.id);
     byte[] document = join(format.initializationData);
     if (document.length > 0) renderer.addTrack(trackId, document);
@@ -59,7 +60,10 @@ final class Media3LibassRenderer extends BaseRenderer {
   }
 
   @Override public void render(long positionUs, long elapsedRealtimeUs) throws ExoPlaybackException {
-    positionConsumer.accept(positionUs);
+    // The overlay is driven by NativeMedia3Engine's player-position clock. Do not
+    // forward BaseRenderer's position here: Media3 may include a renderer stream
+    // offset, which is not the player timeline and previously produced positions
+    // around 1e12 us in the overlay.
     if (inputEnded || renderer == null || trackId == null) return;
     for (int i = 0; i < 32; i++) {
       inputBuffer.clear();
