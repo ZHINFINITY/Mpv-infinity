@@ -256,8 +256,10 @@ std::string retimeCanonicalEvent(std::string event, long long timestampUs, long 
       ? std::string::npos : event.find(',', secondComma + 1);
   if (firstComma == std::string::npos || secondComma == std::string::npos
       || thirdComma == std::string::npos
-      || parseAssTimeMs(std::string_view(event).substr(bodyStart, firstComma - bodyStart)) < 0
-      || parseAssTimeMs(std::string_view(event).substr(firstComma + 1, secondComma - firstComma - 1)) < 0) {
+      // Canonical ASS is Dialogue: Layer,Start,End,Style,... . The first
+      // field is numeric Layer, not a timestamp.
+      || parseAssTimeMs(std::string_view(event).substr(firstComma + 1, secondComma - firstComma - 1)) < 0
+      || parseAssTimeMs(std::string_view(event).substr(secondComma + 1, thirdComma - secondComma - 1)) < 0) {
     return event;
   }
   return event.substr(0, firstComma + 1) + assClockFromUs(timestampUs) + ","
