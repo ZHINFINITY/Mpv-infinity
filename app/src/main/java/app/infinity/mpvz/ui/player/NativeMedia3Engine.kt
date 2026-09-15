@@ -156,7 +156,7 @@ class NativeMedia3Engine(context: Context) {
     )
     .build()
   private var attachedView: PlayerView? = null
-  private var subtitleOverlay: LibassSubtitleView? = null
+  private var subtitleOverlay: LibassSubtitleSurfaceView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
   private var standaloneAssController: StandaloneAssSubtitleController? = null
   private var subtitleScale = 1f
