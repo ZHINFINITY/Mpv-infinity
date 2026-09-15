@@ -11,9 +11,8 @@ import java.util.ArrayList
 /**
  * Renderer factory for the native engine.
  *
- * <p>ASS/SSA is intentionally not registered as a Media3 text renderer. The native engine reads
- * the original Matroska subtitle packets through StandaloneAssSubtitleController and sends them
- * directly to libass. Media3 remains responsible for audio/video and track metadata only.
+ * <p>The ASS renderer is silent: it consumes raw samples and sends them to libass without sending
+ * Cues to Media3's TextOutput.
  */
 class LibassRenderersFactory(
   context: Context,
@@ -27,6 +26,6 @@ class LibassRenderersFactory(
     extensionRendererMode: Int,
     out: ArrayList<Renderer>,
   ) {
-    // Deliberately empty: do not decode ASS/SSA into Media3 Cues or consume the subtitle stream.
+    out.add(Media3LibassRenderer(rendererProvider, positionConsumer))
   }
 }

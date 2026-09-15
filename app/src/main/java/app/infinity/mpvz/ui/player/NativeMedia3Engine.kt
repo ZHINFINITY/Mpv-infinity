@@ -183,7 +183,6 @@ class NativeMedia3Engine(context: Context) {
       // after a seek. MPV renders from its current clock in all of these states.
       if (player.currentMediaItem == null) return
       publishSnapshot()
-      subtitleOverlay?.setPositionUs(player.currentPosition.coerceAtLeast(0L) * 1000L)
       // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
       // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
       loopHandler.postDelayed(this, 250L)
@@ -425,11 +424,10 @@ class NativeMedia3Engine(context: Context) {
     val view = subtitleOverlay ?: return null
     val sourceWidth = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width.takeIf { it > 0 } ?: 1280
     val sourceHeight = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height.takeIf { it > 0 } ?: 720
-    // libass output is scaled by the overlay view. Avoid allocating and copying a 2772x1280
-    // RGBA frame on every clock tick; this is subtitles, not the video render surface.
-    val scale = minOf(1f, 1280f / sourceWidth, 720f / sourceHeight)
-    val width = (sourceWidth * scale).toInt().coerceAtLeast(1)
-    val height = (sourceHeight * scale).toInt().coerceAtLeast(1)
+    // The GPU effect composites this bitmap directly over the decoded frame, so libass must use
+    // the video's actual storage dimensions to preserve absolute ASS positioning and aspect ratio.
+    val width = sourceWidth.coerceAtLeast(1)
+    val height = sourceHeight.coerceAtLeast(1)
     if (width <= 0 || height <= 0) return null
     libassRenderer?.let {
       if (it.getWidth() != width || it.getHeight() != height) it.setSize(width, height)
@@ -464,7 +462,7 @@ class NativeMedia3Engine(context: Context) {
       setBottomPaddingFraction(0f)
     }
     subtitleOverlay?.apply {
-      visibility = View.VISIBLE
+      visibility = View.INVISIBLE
       bringToFront()
       elevation = 1f
       pivotX = width / 2f
@@ -512,15 +510,12 @@ class NativeMedia3Engine(context: Context) {
         .build()
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
       .build()
     standaloneAssController?.close()
-    standaloneAssController = ensureLibassRenderer()?.let { renderer ->
-      StandaloneAssSubtitleController(dataSourceFactory, renderer).also { controller ->
-        controller.load(mediaUri)
-      }
-    }
+    standaloneAssController = null
+    ensureLibassRenderer()
+    player.setVideoEffects(listOf(LibassGlEffect { libassRenderer }))
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
@@ -604,7 +599,11 @@ class NativeMedia3Engine(context: Context) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
     if (track.type == C.TRACK_TYPE_TEXT) {
-      standaloneAssController?.enableLabel(track.label)
+      val builder = player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+      player.trackSelectionParameters = builder.build()
       publishSnapshot()
       return
     }
@@ -637,14 +636,21 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
-    val format = group.getTrackFormat(trackIndex)
-    standaloneAssController?.enableLabel(format.label ?: format.language ?: "Subtitle ${trackIndex + 1}")
-    Log.i(logTag, "standalone subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+      .build()
+    Log.i(logTag, "silent subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }
 
   fun disableSubtitles() {
-    standaloneAssController?.disableAll()
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .build()
     publishSnapshot()
   }
 
@@ -707,7 +713,7 @@ class NativeMedia3Engine(context: Context) {
             label = format.label ?: format.language ?: "$fallback ${trackIndex + 1}",
             language = format.language,
             selected = if (type == C.TRACK_TYPE_TEXT) {
-              standaloneAssController?.isLabelEnabled(format.label ?: format.language ?: "$fallback ${trackIndex + 1}") == true
+              group.isTrackSelected(trackIndex)
             } else {
               group.isTrackSelected(trackIndex)
             },
