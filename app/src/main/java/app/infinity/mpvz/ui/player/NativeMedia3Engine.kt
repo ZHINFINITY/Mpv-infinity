@@ -512,13 +512,15 @@ class NativeMedia3Engine(context: Context) {
         .build()
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .build()
     standaloneAssController?.close()
-    // Embedded ASS/SSA is delivered by Media3's selected text stream to
-    // Media3LibassRenderer. Do not run a second MatroskaExtractor here: it has
-    // a different timestamp origin and can duplicate or mis-time events.
-    standaloneAssController = null
+    standaloneAssController = ensureLibassRenderer()?.let { renderer ->
+      StandaloneAssSubtitleController(dataSourceFactory, renderer).also { controller ->
+        controller.load(mediaUri)
+      }
+    }
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
@@ -602,11 +604,7 @@ class NativeMedia3Engine(context: Context) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
     if (track.type == C.TRACK_TYPE_TEXT) {
-      val builder = player.trackSelectionParameters
-        .buildUpon()
-        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
-      player.trackSelectionParameters = builder.build()
+      standaloneAssController?.enableLabel(track.label)
       publishSnapshot()
       return
     }
@@ -639,21 +637,14 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
-    player.trackSelectionParameters = player.trackSelectionParameters
-      .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
-      .build()
-    Log.i(logTag, "subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
+    val format = group.getTrackFormat(trackIndex)
+    standaloneAssController?.enableLabel(format.label ?: format.language ?: "Subtitle ${trackIndex + 1}")
+    Log.i(logTag, "standalone subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }
 
   fun disableSubtitles() {
-    player.trackSelectionParameters = player.trackSelectionParameters
-      .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-      .build()
+    standaloneAssController?.disableAll()
     publishSnapshot()
   }
 
@@ -716,7 +707,7 @@ class NativeMedia3Engine(context: Context) {
             label = format.label ?: format.language ?: "$fallback ${trackIndex + 1}",
             language = format.language,
             selected = if (type == C.TRACK_TYPE_TEXT) {
-              group.isTrackSelected(trackIndex)
+              standaloneAssController?.isLabelEnabled(format.label ?: format.language ?: "$fallback ${trackIndex + 1}") == true
             } else {
               group.isTrackSelected(trackIndex)
             },

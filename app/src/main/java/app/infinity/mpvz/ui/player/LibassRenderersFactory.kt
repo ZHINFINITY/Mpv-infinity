@@ -8,7 +8,13 @@ import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import java.util.ArrayList
 
-/** Registers the raw ASS renderer before Media3's Cue renderer. */
+/**
+ * Renderer factory for the native engine.
+ *
+ * <p>ASS/SSA is intentionally not registered as a Media3 text renderer. The native engine reads
+ * the original Matroska subtitle packets through StandaloneAssSubtitleController and sends them
+ * directly to libass. Media3 remains responsible for audio/video and track metadata only.
+ */
 class LibassRenderersFactory(
   context: Context,
   private val rendererProvider: () -> LibassSubtitleRenderer?,
@@ -21,7 +27,6 @@ class LibassRenderersFactory(
     extensionRendererMode: Int,
     out: ArrayList<Renderer>,
   ) {
-    out.add(Media3LibassRenderer(rendererProvider, positionConsumer))
-    super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+    // Deliberately empty: do not decode ASS/SSA into Media3 Cues or consume the subtitle stream.
   }
 }
