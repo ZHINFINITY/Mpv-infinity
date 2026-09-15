@@ -37,7 +37,7 @@
         app:surface_type="surface_view"
         app:use_controller="false" />
 
-    <androidx.media3.subtitle.libass.LibassSubtitleView
+    <app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
         android:id="@+id/media3_subtitle_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
