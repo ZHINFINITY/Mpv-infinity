@@ -175,8 +175,10 @@ class NativeMedia3Engine(context: Context) {
   }
   private val timelineRunnable = object : Runnable {
     override fun run() {
-      if (player.currentMediaItem == null || (!player.isPlaying && !player.playWhenReady)) return
-      publishPlaybackSnapshot()
+      // Keep the subtitle clock alive while paused, buffering, and immediately
+      // after a seek. MPV renders from its current clock in all of these states.
+      if (player.currentMediaItem == null) return
+      publishSnapshot()
       subtitleOverlay?.setPositionUs(player.currentPosition.coerceAtLeast(0L) * 1000L)
       // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
       // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
@@ -416,16 +418,20 @@ class NativeMedia3Engine(context: Context) {
 
 
   private fun ensureLibassRenderer(): LibassSubtitleRenderer? {
-    libassRenderer?.let { return it }
     val view = subtitleOverlay ?: return null
     val sourceWidth = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width
     val sourceHeight = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height
+    if (sourceWidth <= 0 || sourceHeight <= 0) return null
     // libass output is scaled by the overlay view. Avoid allocating and copying a 2772x1280
     // RGBA frame on every clock tick; this is subtitles, not the video render surface.
     val scale = minOf(1f, 1280f / sourceWidth, 720f / sourceHeight)
     val width = (sourceWidth * scale).toInt().coerceAtLeast(1)
     val height = (sourceHeight * scale).toInt().coerceAtLeast(1)
     if (width <= 0 || height <= 0) return null
+    libassRenderer?.let {
+      if (it.getWidth() != width || it.getHeight() != height) it.setSize(width, height)
+      return it
+    }
     return runCatching {
       LibassSubtitleRenderer(width, height, null).also {
         libassRenderer = it
