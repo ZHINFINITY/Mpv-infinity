@@ -252,8 +252,11 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
   }
   private static long parseTime(String value) {
     try {
-      String[] p = value.split(":"); String[] s = p[2].split("\\.", 2);
-      int cs = s.length == 2 ? Integer.parseInt((s[1] + "00").substring(0, 2)) : 0;
+      String[] p = value.split(":");
+      if (p.length != 3 && p.length != 4) return -1L;
+      String[] s = p[2].split("\\.", 2);
+      int cs = p.length == 4 ? Integer.parseInt((p[3] + "00").substring(0, 2))
+          : s.length == 2 ? Integer.parseInt((s[1] + "00").substring(0, 2)) : 0;
       return ((Integer.parseInt(p[0]) * 3600L + Integer.parseInt(p[1]) * 60L + Integer.parseInt(s[0])) * 1000000L) + cs * 10000L;
     } catch (RuntimeException e) { return -1L; }
   }
@@ -268,7 +271,20 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
       if (value.isEmpty()) continue;
       if (value.regionMatches(true, 0, "Dialogue:", 0, 9)
           || value.regionMatches(true, 0, "Comment:", 0, 8)) {
-        normalized.append(value);
+        String[] fields = value.substring(value.indexOf(':') + 1).trim().split(",", -1);
+        if (fields.length >= 5 && parseTime(fields[0].trim()) >= 0
+            && parseTime(fields[1].trim()) >= 0 && isInteger(fields[2]) && isInteger(fields[3])) {
+          normalized.append("Dialogue: ").append(fields[3]).append(',')
+              .append(fields[0]).append(',').append(fields[1]).append(',').append(fields[4]);
+          for (int i = 5; i < fields.length; i++) normalized.append(',').append(fields[i]);
+        } else if (fields.length >= 4 && parseTime(fields[0].trim()) >= 0
+            && isInteger(fields[1]) && isInteger(fields[2])) {
+          normalized.append("Dialogue: 0,").append(fields[0]).append(',')
+              .append(addDuration(fields[0], 4_000_000L)).append(',').append(fields[3]);
+          for (int i = 4; i < fields.length; i++) normalized.append(',').append(fields[i]);
+        } else {
+          normalized.append(value);
+        }
       } else {
         int comma = value.indexOf(',');
         if (comma <= 0) continue;
@@ -296,5 +312,21 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
         .replace("\r", "\\r")
         .replace("\n", "\\n");
     return text.length() <= 240 ? text : text.substring(0, 240) + "...";
+  }
+
+  private static boolean isInteger(String value) {
+    if (value.isEmpty()) return false;
+    int start = value.charAt(0) == '-' ? 1 : 0;
+    if (start == value.length()) return false;
+    for (int i = start; i < value.length(); i++) if (!Character.isDigit(value.charAt(i))) return false;
+    return true;
+  }
+
+  private static String addDuration(String value, long durationUs) {
+    long cs = Math.max(0L, (parseTime(value) + durationUs) / 10_000L);
+    long h = cs / 360_000L; cs %= 360_000L;
+    long m = cs / 6_000L; cs %= 6_000L;
+    long s = cs / 100L; cs %= 100L;
+    return String.format(java.util.Locale.ROOT, "%d:%02d:%02d.%02d", h, m, s, cs);
   }
 }
