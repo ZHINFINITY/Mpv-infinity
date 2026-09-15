@@ -11,6 +11,7 @@ import android.view.SurfaceView
 import java.io.File
 import app.infinity.mpvz.R
 import androidx.media3.common.C
+import androidx.media3.common.Effect
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
@@ -515,7 +516,7 @@ class NativeMedia3Engine(context: Context) {
     standaloneAssController?.close()
     standaloneAssController = null
     ensureLibassRenderer()
-    player.setVideoEffects(listOf(LibassGlEffect { libassRenderer }))
+    player.setVideoEffects(listOf<Effect>(LibassGlEffect { libassRenderer }))
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
