@@ -124,7 +124,13 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
       if (value.regionMatches(true, 0, "Dialogue:", 0, 9)
           || value.regionMatches(true, 0, "Comment:", 0, 8)) {
         String[] fields = value.substring(value.indexOf(':') + 1).trim().split(",", -1);
-        if (fields.length >= 5 && parseAssTimeUs(fields[0].trim()) >= 0
+        if (fields.length >= 4 && isInteger(fields[0].trim())
+            && parseAssTimeUs(fields[1].trim()) >= 0 && parseAssTimeUs(fields[2].trim()) >= 0) {
+          // Already canonical ASS: Layer,Start,End,Style,... . Preserve it.
+          normalized.append("Dialogue: ").append(fields[0]).append(',')
+              .append(fields[1]).append(',').append(fields[2]).append(',').append(fields[3]);
+          for (int i = 4; i < fields.length; i++) normalized.append(',').append(fields[i]);
+        } else if (fields.length >= 5 && parseAssTimeUs(fields[0].trim()) >= 0
             && parseAssTimeUs(fields[1].trim()) >= 0
             && isInteger(fields[2]) && isInteger(fields[3])) {
           normalized.append("Dialogue: ").append(fields[3]).append(',')
@@ -148,7 +154,16 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
         String first = value.substring(0, comma).trim();
         boolean readOrder = true;
         try { Integer.parseInt(first); } catch (NumberFormatException ignored) { readOrder = false; }
-        normalized.append("Dialogue: ").append(readOrder ? value.substring(comma + 1) : value);
+        String body = readOrder ? value.substring(comma + 1) : value;
+        String[] fields = body.split(",", -1);
+        if (fields.length >= 3 && parseAssTimeUs(fields[0].trim()) >= 0
+            && parseAssTimeUs(fields[1].trim()) >= 0) {
+          normalized.append("Dialogue: 0,").append(fields[0]).append(',').append(fields[1])
+              .append(',').append(fields[2]);
+          for (int i = 3; i < fields.length; i++) normalized.append(',').append(fields[i]);
+        } else {
+          normalized.append("Dialogue: ").append(body);
+        }
       }
       normalized.append('\n');
     }
