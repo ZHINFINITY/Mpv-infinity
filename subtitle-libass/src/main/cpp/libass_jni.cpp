@@ -127,6 +127,14 @@ std::string normalizeEvent(std::string_view input, long long timestampUs, long l
       for (size_t i = 5; i < fields.size(); ++i) normalized += "," + fields[i];
       return normalized + '\n';
     }
+    if (firstIsTime && secondIsTime && fields.size() >= 4) {
+      // Some Media3 direct samples arrive as Start,End,Style,... after the
+      // Java renderer has already removed Matroska's ReadOrder/Layer fields.
+      // Restore the mandatory ASS Layer field without changing the payload.
+      std::string normalized = "Dialogue: 0," + fields[0] + "," + fields[1] + "," + fields[2];
+      for (size_t i = 3; i < fields.size(); ++i) normalized += "," + fields[i];
+      return normalized + '\n';
+    }
     if (firstIsTime && fields.size() >= 4 && isInteger(fields[1]) && isInteger(fields[2])) {
       // Start,ReadOrder,Layer,Style,... has no end in the packet. The
       // Media3 sample clock supplies the authoritative interval.
