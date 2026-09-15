@@ -5,6 +5,7 @@ import androidx.annotation.Nullable;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Libass-backed compositor for any number of simultaneously enabled ASS/SSA tracks.
@@ -64,10 +65,41 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     checkOpen();
     if (id == null || id.isEmpty() || eventData == null || eventData.length == 0) return false;
     Integer nativeId = tracks.get(id);
+    eventData = ensureCanonicalAssLayer(eventData);
     boolean appended = nativeId != null
         && LibassNative.nativeAppendEvent(nativeHandle, nativeId, eventData, timestampUs, durationUs);
     if (!appended) Log.e(TAG, "event_append_failed id=" + id + " bytes=" + eventData.length);
     return appended;
+  }
+
+  /** Ensures libass receives Dialogue: Layer,Start,End,Style,... rather than Start,End,Style,... . */
+  private static byte[] ensureCanonicalAssLayer(byte[] eventData) {
+    String text = new String(eventData, StandardCharsets.UTF_8).replace("\u0000", "").trim();
+    if (text.isEmpty()) return eventData;
+    StringBuilder result = new StringBuilder(text.length() + 3);
+    for (String line : text.split("\\r?\\n")) {
+      String value = line.trim();
+      if (value.regionMatches(true, 0, "Dialogue:", 0, 9)
+          || value.regionMatches(true, 0, "Comment:", 0, 8)) {
+        int colon = value.indexOf(':');
+        String body = value.substring(colon + 1).trim();
+        String[] fields = body.split(",", -1);
+        if (fields.length >= 3 && looksLikeAssTime(fields[0]) && looksLikeAssTime(fields[1])) {
+          value = "Dialogue: 0," + body;
+        }
+      }
+      if (value.isEmpty()) continue;
+      if (result.length() > 0) result.append('\n');
+      result.append(value);
+    }
+    return result.toString().getBytes(StandardCharsets.UTF_8);
+  }
+
+  private static boolean looksLikeAssTime(String value) {
+    String[] parts = value.trim().split(":");
+    return (parts.length == 3 || parts.length == 4)
+        && parts[0].matches("\\d+") && parts[1].matches("\\d+")
+        && parts[2].matches("\\d+(\\.\\d+)?");
   }
 
   public synchronized boolean removeTrack(String id) {
