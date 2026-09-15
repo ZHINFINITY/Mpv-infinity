@@ -1,6 +1,5 @@
 package app.infinity.mpvz.ui.player;
 
-import android.os.Looper;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
@@ -10,7 +9,6 @@ import androidx.media3.exoplayer.BaseRenderer;
 import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.RendererCapabilities;
 import androidx.media3.exoplayer.source.MediaSource;
-import androidx.media3.extractor.mkv.MatroskaExtractor;
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
@@ -33,12 +31,14 @@ final class Media3LibassRenderer extends BaseRenderer {
     this.positionConsumer = positionConsumer;
   }
 
-  @Override public int supportsFormat(Format format) {
+  @Override public String getName() { return "Media3LibassRenderer"; }
+
+  @Override public int supportsFormat(Format format) throws ExoPlaybackException {
     String mime = format.sampleMimeType == null ? "" : format.sampleMimeType.toLowerCase();
     String codecs = format.codecs == null ? "" : format.codecs.toLowerCase();
     boolean ass = mime.contains("ass") || mime.contains("ssa") || codecs.contains("ass") || codecs.contains("ssa");
-    return ass ? RendererCapabilities.create(RendererCapabilities.FORMAT_HANDLED)
-        : RendererCapabilities.create(RendererCapabilities.FORMAT_UNSUPPORTED_TYPE);
+    return ass ? RendererCapabilities.create(C.FORMAT_HANDLED)
+        : RendererCapabilities.create(C.FORMAT_UNSUPPORTED_TYPE);
   }
 
   @Override protected void onStreamChanged(Format[] formats, long startPositionUs, long offsetUs, MediaSource.MediaPeriodId mediaPeriodId) throws ExoPlaybackException {
