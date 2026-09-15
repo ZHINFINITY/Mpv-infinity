@@ -47,9 +47,9 @@ object MatroskaFontScanner {
       val dataStart = file.filePointer
       val dataEnd = (dataStart + size).coerceAtMost(end)
       when (id) {
-        0x466E -> name = readUtf8(file, size)
-        0x4660 -> mime = readUtf8(file, size).lowercase()
-        0x465C -> if (size <= Int.MAX_VALUE) { file.seek(dataStart); data = ByteArray(size.toInt()).also { file.readFully(it) } }
+        0x466EL -> name = readUtf8(file, size)
+        0x4660L -> mime = readUtf8(file, size).lowercase()
+        0x465CL -> if (size <= Int.MAX_VALUE) { file.seek(dataStart); data = ByteArray(size.toInt()).also { file.readFully(it) } }
       }
       file.seek(dataEnd)
     }
