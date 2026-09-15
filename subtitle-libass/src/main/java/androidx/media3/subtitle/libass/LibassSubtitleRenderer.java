@@ -84,7 +84,11 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
         int colon = value.indexOf(':');
         String body = value.substring(colon + 1).trim();
         String[] fields = body.split(",", -1);
-        if (fields.length >= 3 && looksLikeAssTime(fields[0]) && looksLikeAssTime(fields[1])) {
+        boolean canonical = fields.length >= 3 && isInteger(fields[0])
+            && looksLikeAssTime(fields[1]) && looksLikeAssTime(fields[2]);
+        if (canonical) {
+          value = "Dialogue: " + body;
+        } else if (fields.length >= 3 && looksLikeAssTime(fields[0]) && looksLikeAssTime(fields[1])) {
           value = "Dialogue: 0," + body;
         }
       }
@@ -100,6 +104,17 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     return (parts.length == 3 || parts.length == 4)
         && parts[0].matches("\\d+") && parts[1].matches("\\d+")
         && parts[2].matches("\\d+(\\.\\d+)?");
+  }
+
+  private static boolean isInteger(String value) {
+    String text = value.trim();
+    if (text.isEmpty()) return false;
+    int start = text.charAt(0) == '-' ? 1 : 0;
+    if (start == text.length()) return false;
+    for (int i = start; i < text.length(); i++) {
+      if (!Character.isDigit(text.charAt(i))) return false;
+    }
+    return true;
   }
 
   public synchronized boolean removeTrack(String id) {
