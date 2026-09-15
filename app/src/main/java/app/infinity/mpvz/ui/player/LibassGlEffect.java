@@ -75,5 +75,3 @@ final class LibassGlEffect implements GlEffect {
     return new OverlayEffect(Collections.singletonList(overlay)).toGlShaderProgram(context, useHdr);
   }
 }
-EOF
-cd /home/ubuntu/work/mpv-infinity && git diff --check && git status --short
