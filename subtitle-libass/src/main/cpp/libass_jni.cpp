@@ -228,6 +228,41 @@ long long deriveEventDurationMs(std::string_view event) {
   }
   return 0;
 }
+
+std::string assClockFromUs(long long us) {
+  long long centiseconds = std::max<long long>(0, us / 10000);
+  long long hours = centiseconds / 360000;
+  centiseconds %= 360000;
+  long long minutes = centiseconds / 6000;
+  centiseconds %= 6000;
+  long long seconds = centiseconds / 100;
+  centiseconds %= 100;
+  char buffer[32];
+  std::snprintf(buffer, sizeof(buffer), "%lld:%02lld:%02lld.%02lld",
+      hours, minutes, seconds, centiseconds);
+  return buffer;
+}
+
+// Matroska ASS samples commonly contain local 0:00:00 timestamps while the
+// extractor supplies the absolute media timestamp separately. Preserve the
+// full ASS payload and rewrite only its Start/End fields.
+std::string retimeCanonicalEvent(std::string event, long long timestampUs, long long durationUs) {
+  if (timestampUs < 0 || durationUs <= 0 || event.rfind("Dialogue: ", 0) != 0) return event;
+  const size_t bodyStart = 10;
+  const size_t firstComma = event.find(',', bodyStart);
+  const size_t secondComma = firstComma == std::string::npos
+      ? std::string::npos : event.find(',', firstComma + 1);
+  const size_t thirdComma = secondComma == std::string::npos
+      ? std::string::npos : event.find(',', secondComma + 1);
+  if (firstComma == std::string::npos || secondComma == std::string::npos
+      || thirdComma == std::string::npos
+      || parseAssTimeMs(std::string_view(event).substr(bodyStart, firstComma - bodyStart)) < 0
+      || parseAssTimeMs(std::string_view(event).substr(firstComma + 1, secondComma - firstComma - 1)) < 0) {
+    return event;
+  }
+  return event.substr(0, firstComma + 1) + assClockFromUs(timestampUs) + ","
+      + assClockFromUs(timestampUs + durationUs) + event.substr(thirdComma);
+}
 #endif
 }
 
@@ -332,6 +367,8 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
   // even when its container timing was unavailable; the next render pass will
   // still use the ASS event's original style, position, and text.
   if (eventDurationMs <= 0) eventDurationMs = 4000;
+  event = retimeCanonicalEvent(std::move(event), static_cast<long long>(timestampUs),
+      eventDurationMs * 1000);
   ass_process_chunk(it->ass, event.data(), event.size(),
       static_cast<long long>(timestampUs / 1000), eventDurationMs);
   __android_log_print(ANDROID_LOG_DEBUG, kTag,
