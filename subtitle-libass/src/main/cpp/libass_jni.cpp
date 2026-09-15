@@ -2,6 +2,7 @@
 #include <android/log.h>
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -36,6 +37,7 @@ struct Renderer {
 Renderer* fromHandle(jlong handle) { return reinterpret_cast<Renderer*>(handle); }
 
 #if MEDIA3_LIBASS_HAS_NATIVE
+long long parseAssTimeMs(std::string_view value);
 void blendImage(const ASS_Image* image, int width, int height, uint8_t* out) {
   for (const ASS_Image* img = image; img != nullptr; img = img->next) {
     uint32_t color = img->color;
@@ -63,7 +65,7 @@ void blendImage(const ASS_Image* image, int width, int height, uint8_t* out) {
   }
 }
 
-std::string normalizeEvent(std::string_view input) {
+std::string normalizeEvent(std::string_view input, long long timestampUs, long long durationUs) {
   std::string text(input);
   while (!text.empty() && (text.back() == '\0' || text.back() == '\r'
       || text.back() == '\n' || text.back() == ' ' || text.back() == '\t')) {
@@ -91,7 +93,53 @@ std::string normalizeEvent(std::string_view input) {
     }
     return true;
   };
-  if (hasPrefix("Dialogue:") || hasPrefix("Comment:")) return text + '\n';
+  if (hasPrefix("Dialogue:") || hasPrefix("Comment:")) {
+    const size_t colon = text.find(':');
+    std::string body = text.substr(colon + 1);
+    while (!body.empty() && (body.front() == ' ' || body.front() == '\t')) body.erase(body.begin());
+    std::vector<std::string> fields;
+    size_t start = 0;
+    while (start <= body.size()) {
+      const size_t comma = body.find(',', start);
+      fields.emplace_back(body.substr(start, comma == std::string::npos ? body.size() - start : comma - start));
+      if (comma == std::string::npos) break;
+      start = comma + 1;
+    }
+    auto isInteger = [](const std::string& value) {
+      if (value.empty()) return false;
+      size_t i = value[0] == '-' ? 1 : 0;
+      if (i == value.size()) return false;
+      for (; i < value.size(); ++i) if (value[i] < '0' || value[i] > '9') return false;
+      return true;
+    };
+    const bool firstIsTime = parseAssTimeMs(fields[0]) >= 0;
+    const bool secondIsTime = fields.size() > 1 && parseAssTimeMs(fields[1]) >= 0;
+    if (firstIsTime && secondIsTime && fields.size() >= 5
+        && isInteger(fields[2]) && isInteger(fields[3])) {
+      // Start,End,ReadOrder,Layer,Style,... -> Layer,Start,End,Style,...
+      std::string normalized = "Dialogue: " + fields[3] + "," + fields[0] + "," + fields[1] + "," + fields[4];
+      for (size_t i = 5; i < fields.size(); ++i) normalized += "," + fields[i];
+      return normalized + '\n';
+    }
+    if (firstIsTime && fields.size() >= 4 && isInteger(fields[1]) && isInteger(fields[2])) {
+      // Start,ReadOrder,Layer,Style,... has no end in the packet. The
+      // Media3 sample clock supplies the authoritative interval.
+      const long long startUs = timestampUs > 0 ? timestampUs : parseAssTimeMs(fields[0]) * 1000;
+      const long long endUs = startUs + std::max<long long>(durationUs, 4000000LL);
+      auto assClock = [](long long us) {
+        long long cs = std::max<long long>(0, us / 10000);
+        long long h = cs / 360000; cs %= 360000;
+        long long m = cs / 6000; cs %= 6000;
+        long long s = cs / 100; cs %= 100;
+        char buffer[32]; std::snprintf(buffer, sizeof(buffer), "%lld:%02lld:%02lld.%02lld", h, m, s, cs);
+        return std::string(buffer);
+      };
+      std::string normalized = "Dialogue: 0," + assClock(startUs) + "," + assClock(endUs) + "," + fields[3];
+      for (size_t i = 4; i < fields.size(); ++i) normalized += "," + fields[i];
+      return normalized + '\n';
+    }
+    return text + '\n';
+  }
   const size_t firstComma = text.find(',');
   if (firstComma == std::string::npos || firstComma == 0
       || text.find(',', firstComma + 1) == std::string::npos) return {};
@@ -104,13 +152,17 @@ long long parseAssTimeMs(std::string_view value) {
   const size_t second = first == std::string_view::npos ? std::string_view::npos : value.find(':', first + 1);
   if (first == std::string_view::npos || second == std::string_view::npos) return -1;
   const size_t dot = value.find('.', second + 1);
+  const size_t thirdColon = value.find(':', second + 1);
   try {
     const long long hours = std::stoll(std::string(value.substr(0, first)));
     const long long minutes = std::stoll(std::string(value.substr(first + 1, second - first - 1)));
-    const long long seconds = std::stoll(std::string(value.substr(second + 1, dot == std::string_view::npos ? value.size() : dot - second - 1)));
+    const long long seconds = std::stoll(std::string(value.substr(second + 1,
+        thirdColon != std::string_view::npos ? thirdColon - second - 1
+        : (dot == std::string_view::npos ? value.size() : dot) - second - 1)));
     long long centiseconds = 0;
-    if (dot != std::string_view::npos) {
-      std::string fraction(value.substr(dot + 1));
+    if (thirdColon != std::string_view::npos || dot != std::string_view::npos) {
+      const size_t fractionStart = thirdColon != std::string_view::npos ? thirdColon + 1 : dot + 1;
+      std::string fraction(value.substr(fractionStart));
       if (fraction.size() > 2) fraction.resize(2);
       while (fraction.size() < 2) fraction.push_back('0');
       centiseconds = std::stoll(fraction);
@@ -218,7 +270,7 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
   jsize size = env->GetArrayLength(data);
   jbyte* bytes = env->GetByteArrayElements(data, nullptr);
   if (!bytes) return JNI_FALSE;
-  std::string event = normalizeEvent(std::string_view(reinterpret_cast<char*>(bytes), size));
+  std::string event = normalizeEvent(std::string_view(reinterpret_cast<char*>(bytes), size), timestampUs, durationUs);
   env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
   if (event.empty()) {
     __android_log_print(ANDROID_LOG_WARN, kTag,
