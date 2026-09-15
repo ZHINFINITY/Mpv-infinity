@@ -143,7 +143,11 @@ class NativeMedia3Engine(context: Context) {
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(
-      DefaultRenderersFactory(context.applicationContext)
+      LibassRenderersFactory(
+        context.applicationContext,
+        { ensureLibassRenderer() },
+        { positionUs -> subtitleOverlay?.setPositionUs(positionUs) },
+      )
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
@@ -419,9 +423,8 @@ class NativeMedia3Engine(context: Context) {
 
   private fun ensureLibassRenderer(): LibassSubtitleRenderer? {
     val view = subtitleOverlay ?: return null
-    val sourceWidth = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width
-    val sourceHeight = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height
-    if (sourceWidth <= 0 || sourceHeight <= 0) return null
+    val sourceWidth = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width.takeIf { it > 0 } ?: 1280
+    val sourceHeight = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height.takeIf { it > 0 } ?: 720
     // libass output is scaled by the overlay view. Avoid allocating and copying a 2772x1280
     // RGBA frame on every clock tick; this is subtitles, not the video render surface.
     val scale = minOf(1f, 1280f / sourceWidth, 720f / sourceHeight)
@@ -509,12 +512,13 @@ class NativeMedia3Engine(context: Context) {
         .build()
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
       .build()
     standaloneAssController?.close()
-    standaloneAssController = ensureLibassRenderer()?.let {
-      StandaloneAssSubtitleController(dataSourceFactory, it).also { controller -> controller.load(mediaUri) }
-    }
+    // Embedded ASS/SSA is delivered by Media3's selected text stream to
+    // Media3LibassRenderer. Do not run a second MatroskaExtractor here: it has
+    // a different timestamp origin and can duplicate or mis-time events.
+    standaloneAssController = null
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
@@ -598,8 +602,11 @@ class NativeMedia3Engine(context: Context) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
     if (track.type == C.TRACK_TYPE_TEXT) {
-      val format = group.getTrackFormat(track.trackIndex)
-      standaloneAssController?.enableLabel(format.label ?: format.language ?: "")
+      player.trackSelectionParameters = player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+        .build()
       publishSnapshot()
       return
     }
@@ -632,14 +639,21 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
-    val format = group.getTrackFormat(trackIndex)
-    standaloneAssController?.enableLabel(format.label ?: format.language ?: "")
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+      .build()
     Log.i(logTag, "subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }
 
   fun disableSubtitles() {
-    standaloneAssController?.disableAll()
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .build()
     publishSnapshot()
   }
 

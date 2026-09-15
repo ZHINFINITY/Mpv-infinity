@@ -61,6 +61,13 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     return true;
   }
 
+  /** Registers an attached or application-provided font with libass. */
+  public synchronized boolean addFont(String fontName, byte[] fontData) {
+    checkOpen();
+    if (fontName == null || fontName.isEmpty() || fontData == null || fontData.length == 0) return false;
+    return LibassNative.nativeAddFont(nativeHandle, fontName, fontData);
+  }
+
   public synchronized boolean appendEvent(String id, byte[] eventData, long timestampUs, long durationUs) {
     checkOpen();
     if (id == null || id.isEmpty() || eventData == null || eventData.length == 0) return false;
