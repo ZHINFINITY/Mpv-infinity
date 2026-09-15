@@ -217,9 +217,10 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
       if (end > start) {
         byte[] sample = new byte[end - start]; System.arraycopy(pending, start, sample, 0, sample.length);
         long[] times = parseTimes(sample);
-        long sampleTime = times == null ? timeUs : times[0];
+        // ASS timestamps inside Matroska subtitle blocks are local packet times and
+        // commonly begin at 0:00:00:00. The extractor timestamp is the media timeline.
         long duration = times == null ? 0L : Math.max(1L, times[1] - times[0]);
-        current.samples.add(new Sample(sample, sampleTime, duration));
+        current.samples.add(new Sample(sample, timeUs, duration));
       }
       pending = new byte[0];
     }
