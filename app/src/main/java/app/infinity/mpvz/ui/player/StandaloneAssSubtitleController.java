@@ -84,7 +84,10 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
           if (closed) return;
           byte[] event = normalizeEvent(sample.data);
           long[] times = parseTimes(event);
-          long timeUs = times == null ? sample.timeUs : times[0];
+          // The Matroska sample timestamp is the media timeline. ASS Start/End
+          // in raw subtitle payloads are commonly local (often 0:00:00:00),
+          // so do not replace the container timestamp with parsed ASS Start.
+          long timeUs = sample.timeUs;
           long durationUs = times == null ? sample.durationUs : Math.max(1L, times[1] - times[0]);
           Log.i(TAG, "packet track=" + track.id
               + " rawBytes=" + sample.data.length

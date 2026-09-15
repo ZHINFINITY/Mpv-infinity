@@ -97,6 +97,27 @@ std::string normalizeEvent(std::string_view input, long long timestampUs, long l
     const size_t colon = text.find(':');
     std::string body = text.substr(colon + 1);
     while (!body.empty() && (body.front() == ' ' || body.front() == '\t')) body.erase(body.begin());
+    // Java-side extractors already emit canonical ASS records. Preserve the
+    // Layer field verbatim; in particular, do not mistake Layer=0/1 for
+    // Matroska ReadOrder and strip it from the packet.
+    const size_t firstComma = body.find(',');
+    const size_t secondComma = firstComma == std::string::npos
+        ? std::string::npos : body.find(',', firstComma + 1);
+    const size_t thirdComma = secondComma == std::string::npos
+        ? std::string::npos : body.find(',', secondComma + 1);
+    auto isDigits = [](const std::string& value) {
+      if (value.empty()) return false;
+      for (char c : value) if (c < '0' || c > '9') return false;
+      return true;
+    };
+    if (firstComma > 0 && secondComma != std::string::npos && thirdComma != std::string::npos) {
+      const std::string layer = body.substr(0, firstComma);
+      const std::string startTime = body.substr(firstComma + 1, secondComma - firstComma - 1);
+      const std::string endTime = body.substr(secondComma + 1, thirdComma - secondComma - 1);
+      if (isDigits(layer) && parseAssTimeMs(startTime) >= 0 && parseAssTimeMs(endTime) >= 0) {
+        return text + '\n';
+      }
+    }
     std::vector<std::string> fields;
     size_t start = 0;
     while (start <= body.size()) {
