@@ -80,6 +80,12 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
         boolean enabled;
         synchronized (enabledLabels) { enabled = enabledLabels.contains(track.label); }
         renderer.setTrackEnabled(track.id, enabled);
+        // Matroska subtitle timestamps can include an absolute segment origin,
+        // while Media3 playback positions are zero-based for the media item.
+        // Remove only that origin; preserve relative event spacing and payloads.
+        long timelineOriginUs = track.samples.isEmpty() ? 0L : track.samples.get(0).timeUs;
+        Log.i(TAG, "timeline_origin track=" + track.id + " originUs=" + timelineOriginUs
+            + " samples=" + track.samples.size());
         for (Sample sample : track.samples) {
           if (closed) return;
           byte[] event = normalizeEvent(sample.data);
@@ -87,7 +93,7 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
           // The Matroska sample timestamp is the media timeline. ASS Start/End
           // in raw subtitle payloads are commonly local (often 0:00:00:00),
           // so do not replace the container timestamp with parsed ASS Start.
-          long timeUs = sample.timeUs;
+          long timeUs = Math.max(0L, sample.timeUs - timelineOriginUs);
           long durationUs = times == null ? sample.durationUs : Math.max(1L, times[1] - times[0]);
           Log.i(TAG, "packet track=" + track.id
               + " rawBytes=" + sample.data.length
