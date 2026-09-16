@@ -288,6 +288,9 @@ class NativeMedia3Engine(context: Context) {
 
 
   init {
+    assHandler.renderCallback = { render ->
+      render?.setFontScale((subtitleFontSize / 100f).coerceIn(0.08f, 1.6f))
+    }
     assHandler.init(player)
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
@@ -429,7 +432,13 @@ class NativeMedia3Engine(context: Context) {
       android.graphics.Typeface.create(fontFamily?.takeIf { it.isNotBlank() }, typefaceStyle),
     )
     applyAssStyle()
+    applyAssFontScale()
     configureSubtitleView()
+  }
+
+  /** AssHandler exposes font scaling while retaining its proven extraction/rendering path. */
+  private fun applyAssFontScale() {
+    assHandler.render?.setFontScale((subtitleFontSize / 100f).coerceIn(0.08f, 1.6f))
   }
 
   private fun applyAssStyle() {
