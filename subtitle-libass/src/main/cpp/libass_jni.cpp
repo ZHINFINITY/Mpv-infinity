@@ -369,26 +369,14 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
   jsize size = env->GetArrayLength(data);
   jbyte* bytes = env->GetByteArrayElements(data, nullptr);
   if (!bytes) return JNI_FALSE;
-  std::string event = normalizeEvent(std::string_view(reinterpret_cast<char*>(bytes), size), timestampUs, durationUs);
+  // The Java silent renderer has already converted Media3's Matroska framing into one
+  // canonical ASS event. Preserve its text, tags, layer, style, and coordinates byte-for-byte.
+  std::string event(reinterpret_cast<char*>(bytes), size);
   env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
   if (event.empty()) {
     __android_log_print(ANDROID_LOG_WARN, kTag,
         "ignored malformed ASS event track=%d bytes=%d", id, size);
     return JNI_FALSE;
-  }
-  // Last-line defense: libass requires Dialogue: Layer,Start,End,Style,... .
-  // Keep malformed legacy/direct packets renderable even if an older normalizer
-  // branch has already returned Dialogue: Start,End,Style,... .
-  if (event.rfind("Dialogue: ", 0) == 0) {
-    const size_t bodyStart = 10;
-    const size_t firstComma = event.find(',', bodyStart);
-    const size_t secondComma = firstComma == std::string::npos
-        ? std::string::npos : event.find(',', firstComma + 1);
-    if (firstComma != std::string::npos && secondComma != std::string::npos
-        && parseAssTimeMs(std::string_view(event).substr(bodyStart, firstComma - bodyStart)) >= 0
-        && parseAssTimeMs(std::string_view(event).substr(firstComma + 1, secondComma - firstComma - 1)) >= 0) {
-      event.insert(bodyStart, "0,");
-    }
   }
   long long eventDurationMs = static_cast<long long>(durationUs / 1000);
   if (eventDurationMs <= 0) eventDurationMs = deriveEventDurationMs(event);
@@ -396,8 +384,6 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeAppendEvent(JNIEnv* env,
   // even when its container timing was unavailable; the next render pass will
   // still use the ASS event's original style, position, and text.
   if (eventDurationMs <= 0) eventDurationMs = 4000;
-  event = retimeCanonicalEvent(std::move(event), static_cast<long long>(timestampUs),
-      eventDurationMs * 1000);
   ass_process_chunk(it->ass, event.data(), event.size(),
       static_cast<long long>(timestampUs / 1000), eventDurationMs);
   __android_log_print(ANDROID_LOG_DEBUG, kTag,
