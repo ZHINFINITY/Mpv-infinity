@@ -425,8 +425,8 @@ class NativeMedia3Engine(context: Context) {
     val view = subtitleOverlay ?: return null
     val sourceWidth = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width.takeIf { it > 0 } ?: 1280
     val sourceHeight = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height.takeIf { it > 0 } ?: 720
-    // The GPU effect composites this bitmap directly over the decoded frame, so libass must use
-    // the video's actual storage dimensions to preserve absolute ASS positioning and aspect ratio.
+    // libass uses the video's storage dimensions; the in-layout TextureView is transparent and
+    // follows the same FIT container as Media3 so ASS coordinates remain in video space.
     val width = sourceWidth.coerceAtLeast(1)
     val height = sourceHeight.coerceAtLeast(1)
     if (width <= 0 || height <= 0) return null
