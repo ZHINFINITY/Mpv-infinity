@@ -3,7 +3,9 @@ package androidx.media3.subtitle.libass;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.nio.charset.StandardCharsets;
 
@@ -17,6 +19,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
   private static final String TAG = "Media3Libass";
   private final Map<String, Integer> tracks = new LinkedHashMap<>();
   private final Map<String, byte[]> trackData = new LinkedHashMap<>();
+  private final Map<String, List<SubtitleEvent>> trackEvents = new LinkedHashMap<>();
   private int width;
   private int height;
   private volatile long nativeHandle;
@@ -52,6 +55,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     }
     Integer old = tracks.remove(id);
     trackData.remove(id);
+    trackEvents.remove(id);
     if (old != null) LibassNative.nativeRemoveTrack(nativeHandle, old);
     int nativeId = LibassNative.nativeAddTrack(nativeHandle, assData);
     if (nativeId < 0) {
@@ -60,6 +64,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     }
     tracks.put(id, nativeId);
     trackData.put(id, assData.clone());
+    trackEvents.put(id, new ArrayList<>());
     Log.i(TAG, "track_added id=" + id + " nativeId=" + nativeId + " count=" + tracks.size());
     return true;
   }
@@ -71,11 +76,21 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     if (!LibassNative.nativeSetStyle(nativeHandle, fontName, fontSize, primaryColor,
         outlineColor, backgroundColor, borderSize, bold, italic)) return false;
     for (Map.Entry<String, byte[]> entry : trackData.entrySet()) {
-      Integer old = tracks.get(entry.getKey());
+      String id = entry.getKey();
+      Integer old = tracks.get(id);
       if (old != null) LibassNative.nativeRemoveTrack(nativeHandle, old);
       int replacement = LibassNative.nativeAddTrack(nativeHandle, entry.getValue());
       if (replacement < 0) return false;
-      tracks.put(entry.getKey(), replacement);
+      tracks.put(id, replacement);
+      List<SubtitleEvent> events = trackEvents.get(id);
+      if (events != null) {
+        for (SubtitleEvent event : events) {
+          if (!LibassNative.nativeAppendEvent(nativeHandle, replacement, event.data, event.timestampUs, event.durationUs)) {
+            Log.e(TAG, "event_restore_failed id=" + id);
+            return false;
+          }
+        }
+      }
     }
     return true;
   }
@@ -94,7 +109,12 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     eventData = ensureCanonicalAssLayer(eventData);
     boolean appended = nativeId != null
         && LibassNative.nativeAppendEvent(nativeHandle, nativeId, eventData, timestampUs, durationUs);
-    if (!appended) Log.e(TAG, "event_append_failed id=" + id + " bytes=" + eventData.length);
+    if (appended) {
+      List<SubtitleEvent> events = trackEvents.get(id);
+      if (events != null) events.add(new SubtitleEvent(eventData.clone(), timestampUs, durationUs));
+    } else {
+      Log.e(TAG, "event_append_failed id=" + id + " bytes=" + eventData.length);
+    }
     return appended;
   }
 
@@ -147,6 +167,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     checkOpen();
     Integer nativeId = tracks.remove(id);
     trackData.remove(id);
+    trackEvents.remove(id);
     boolean removed = nativeId != null && LibassNative.nativeRemoveTrack(nativeHandle, nativeId);
     Log.i(TAG, "track_removed id=" + id + " removed=" + removed + " count=" + tracks.size());
     return removed;
@@ -189,8 +210,21 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
       nativeHandle = 0;
       tracks.clear();
       trackData.clear();
+      trackEvents.clear();
       frame = null;
       Log.i(TAG, "released");
+    }
+  }
+
+  private static final class SubtitleEvent {
+    final byte[] data;
+    final long timestampUs;
+    final long durationUs;
+
+    SubtitleEvent(byte[] data, long timestampUs, long durationUs) {
+      this.data = data;
+      this.timestampUs = timestampUs;
+      this.durationUs = durationUs;
     }
   }
 
