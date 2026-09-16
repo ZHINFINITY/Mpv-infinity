@@ -30,6 +30,7 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
   private final List<RawTrack> tracks = new ArrayList<>();
   private final List<String> enabledLabels = new ArrayList<>();
+  private final List<Integer> enabledIndices = new ArrayList<>();
   private volatile boolean closed;
 
   public StandaloneAssSubtitleController(DataSource.Factory factory, LibassSubtitleRenderer renderer) {
@@ -83,7 +84,9 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
         RawTrack track = new RawTrack(id, label == null ? id : label, i, document);
         synchronized (tracks) { tracks.add(track); }
         renderer.addTrack(id, document);
-        synchronized (enabledLabels) { renderer.setTrackEnabled(id, enabledLabels.contains(track.label)); }
+        synchronized (enabledLabels) {
+          renderer.setTrackEnabled(id, enabledLabels.contains(track.label) || enabledIndices.contains(track.index));
+        }
         extractor.selectTrack(i);
         ByteBuffer buffer = ByteBuffer.allocateDirect(1024 * 1024);
         while (!closed) {
@@ -128,8 +131,18 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
     synchronized (enabledLabels) { if (!enabledLabels.contains(label)) enabledLabels.add(label); }
     synchronized (tracks) { for (RawTrack track : tracks) if (track.label.equals(label)) renderer.setTrackEnabled(track.id, true); }
   }
+  /** Enables the raw extractor track corresponding to a selected Media3 subtitle track. */
+  public void enableTrackIndex(int index) {
+    synchronized (enabledIndices) {
+      if (!enabledIndices.contains(index)) enabledIndices.add(index);
+    }
+    synchronized (tracks) {
+      for (RawTrack track : tracks) if (track.index == index) renderer.setTrackEnabled(track.id, true);
+    }
+  }
   public void disableAll() {
     synchronized (enabledLabels) { enabledLabels.clear(); }
+    synchronized (enabledIndices) { enabledIndices.clear(); }
     synchronized (tracks) { for (RawTrack track : tracks) renderer.setTrackEnabled(track.id, false); }
   }
   public boolean isLabelEnabled(String label) { synchronized (enabledLabels) { return enabledLabels.contains(label); } }

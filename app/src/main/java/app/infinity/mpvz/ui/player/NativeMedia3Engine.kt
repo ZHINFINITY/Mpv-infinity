@@ -607,6 +607,18 @@ class NativeMedia3Engine(context: Context) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
     if (track.type == C.TRACK_TYPE_TEXT) {
+      val format = group.getTrackFormat(track.trackIndex)
+      if (isAssFormat(format.sampleMimeType, format.codecs)) {
+        standaloneAssController?.disableAll()
+        standaloneAssController?.enableTrackIndex(track.trackIndex)
+        player.trackSelectionParameters = player.trackSelectionParameters
+          .buildUpon()
+          .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+          .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+          .build()
+        publishSnapshot()
+        return
+      }
       val builder = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -644,6 +656,18 @@ class NativeMedia3Engine(context: Context) {
 
   fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
     if (trackIndex !in 0 until group.length) return
+    val format = group.getTrackFormat(trackIndex)
+    if (isAssFormat(format.sampleMimeType, format.codecs)) {
+      standaloneAssController?.disableAll()
+      standaloneAssController?.enableTrackIndex(trackIndex)
+      player.trackSelectionParameters = player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        .build()
+      publishSnapshot()
+      return
+    }
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -654,12 +678,18 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun disableSubtitles() {
+    standaloneAssController?.disableAll()
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
       .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .build()
     publishSnapshot()
+  }
+
+  private fun isAssFormat(mime: String?, codecs: String?): Boolean {
+    val value = "${mime.orEmpty()} ${codecs.orEmpty()}".lowercase()
+    return value.contains("ass") || value.contains("ssa")
   }
 
   fun addListener(listener: Player.Listener) = player.addListener(listener)
