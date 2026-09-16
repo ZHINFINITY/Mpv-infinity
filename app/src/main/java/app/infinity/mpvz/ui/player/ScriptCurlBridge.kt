@@ -47,7 +47,7 @@ class ScriptCurlBridge(
     private const val MAX_BODY_BYTES = 8L * 1024 * 1024
     private const val MAX_CONCURRENT_REQUESTS = 4
     private const val MAX_PENDING_REQUESTS = 32
-    private const val USER_AGENT = "Mpv∞-script-curl/1.0"
+    private const val USER_AGENT = "MpvInfinity-script-curl/1.0"
 
     private val ALLOWED_METHODS = setOf("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE")
     private val METHODS_WITH_BODY = setOf("POST", "PUT", "PATCH")

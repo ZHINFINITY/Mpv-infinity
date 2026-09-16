@@ -763,7 +763,7 @@ internal class MpvRxSubtitleHubApiSources(
   )
 
   private companion object {
-    const val USER_AGENT = "Mpv∞/1.0 (Android; SubtitleHub)"
+    const val USER_AGENT = "MpvInfinity/1.0 (Android; SubtitleHub)"
     const val BETASERIES_API_BASE_URL = "https://api.betaseries.com/"
     const val JIMAKU_API_BASE_URL = "https://jimaku.cc/api/"
     const val SUBDL_API_URL = "https://api.subdl.com/api/v1/subtitles"
