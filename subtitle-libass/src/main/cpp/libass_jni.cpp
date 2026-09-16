@@ -450,7 +450,8 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_androidx_media3_subtitle_libass_LibassNative_nativeRenderSurface(JNIEnv*, jclass, jlong handle, jlong positionUs) {
   auto* state = fromHandle(handle);
   if (!state) return JNI_FALSE;
-  std::lock_guard lock(state->mutex);
+  std::unique_lock lock(state->mutex, std::try_to_lock);
+  if (!lock.owns_lock()) return JNI_FALSE;
   if (!state->window) return JNI_FALSE;
   ANativeWindow_Buffer buffer{};
   if (ANativeWindow_lock(state->window, &buffer, nullptr) != 0) return JNI_FALSE;
