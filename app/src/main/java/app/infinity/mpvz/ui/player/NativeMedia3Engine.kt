@@ -32,16 +32,13 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ExtractorsFactory
+import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
-import io.github.peerless2012.ass.media.AssHandler
-import io.github.peerless2012.ass.media.kt.withAssMkvSupport
-import io.github.peerless2012.ass.media.kt.withAssSupport
-import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
-import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -110,13 +107,15 @@ class NativeMedia3Engine(context: Context) {
       CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
-  private val assHandler = AssHandler(renderType = AssRenderType.OVERLAY_CANVAS)
-  private val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
-  private val extractorsFactory: ExtractorsFactory =
-    androidx.media3.extractor.DefaultExtractorsFactory()
-      .withAssMkvSupport(assSubtitleParserFactory, assHandler)
+  private val extractorsFactory: ExtractorsFactory = ExtractorsFactory {
+    val defaultExtractors = DefaultExtractorsFactory().createExtractors()
+    arrayOf(
+      AssMatroskaExtractor(DefaultSubtitleParserFactory()) { libassRenderer },
+      *defaultExtractors,
+    )
+  }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
-    .setSubtitleParserFactory(assSubtitleParserFactory)
+    .setSubtitleParserFactory(DefaultSubtitleParserFactory())
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
@@ -145,7 +144,13 @@ class NativeMedia3Engine(context: Context) {
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
         // devices reject the first candidate even though a compatible Media3 decoder is available.
         .setEnableDecoderFallback(true)
-        .withAssSupport(assHandler),
+        .let {
+          LibassRenderersFactory(context.applicationContext, { ensureLibassRenderer() }) { positionUs ->
+            subtitleOverlay?.setPositionUs(positionUs)
+          }
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            .setEnableDecoderFallback(true)
+        },
     )
     .build()
   private var attachedView: PlayerView? = null
@@ -286,7 +291,6 @@ class NativeMedia3Engine(context: Context) {
     }
   }
   init {
-    assHandler.init(player)
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
@@ -298,7 +302,6 @@ class NativeMedia3Engine(context: Context) {
     attachedView?.player = null
     attachedView = view
     subtitleOverlay = view.rootView.findViewById(R.id.media3_subtitle_overlay)
-    view.subtitleView?.withAssSupport(assHandler)
     // SurfaceView is composed in a separate layer and can cover normal sibling Views. Mark it as
     // a media layer so the standalone libass bitmap remains visible above the video surface.
     (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
@@ -749,7 +752,6 @@ class NativeMedia3Engine(context: Context) {
     subtitleOverlay?.setRenderer(null)
     subtitleOverlay = null
     attachedView = null
-    assHandler.release()
     player.release()
   }
 
