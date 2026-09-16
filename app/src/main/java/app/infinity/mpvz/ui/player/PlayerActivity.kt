@@ -1463,8 +1463,10 @@ class PlayerActivity :
 
       // Auto-crop changes after playback becomes ready. Refreshing on the property itself keeps
       // YouTube Ambient's SurfaceView aligned with the newly cropped content rectangle.
-      LaunchedEffect(presentationActive, videoCrop) {
-        setVideoAmbientPresentationActive(presentationActive)
+      LaunchedEffect(active, presentationActive, videoCrop) {
+        // Resize before the first PixelCopy frame arrives; otherwise MPV briefly renders
+        // fullscreen and is then compressed into the ambient aspect window.
+        setVideoAmbientPresentationActive(active, showBackground = presentationActive)
       }
 
       MpvInfinityTheme {
@@ -1480,9 +1482,9 @@ class PlayerActivity :
     }
   }
 
-  private fun setVideoAmbientPresentationActive(active: Boolean) {
+  private fun setVideoAmbientPresentationActive(active: Boolean, showBackground: Boolean = active) {
     isVideoAmbientPresentationActive = active
-    binding.ambientBackground.visibility = if (active) View.VISIBLE else View.GONE
+    binding.ambientBackground.visibility = if (showBackground) View.VISIBLE else View.GONE
     if (active) {
       updateVideoAmbientPlayerBounds()
     } else {
@@ -1491,7 +1493,8 @@ class PlayerActivity :
   }
 
   private fun updateVideoAmbientPlayerBounds() {
-    if (!isVideoAmbientPresentationActive || binding.player.visibility != View.VISIBLE) return
+    val videoView = if (isNativeEngineActive()) binding.media3Player else binding.player
+    if (!isVideoAmbientPresentationActive || videoView.visibility != View.VISIBLE) return
     val containerWidth = binding.root.width
     val containerHeight = binding.root.height
     val videoAspect = VideoAspectGeometry.currentEffectiveDisplayAspect()
@@ -1508,7 +1511,7 @@ class PlayerActivity :
       videoHeight = (videoWidth / videoAspect).roundToInt().coerceAtLeast(1)
     }
 
-    val params = binding.player.layoutParams as ConstraintLayout.LayoutParams
+    val params = videoView.layoutParams as ConstraintLayout.LayoutParams
     if (params.width == videoWidth && params.height == videoHeight) return
     params.width = videoWidth
     params.height = videoHeight
@@ -1516,11 +1519,12 @@ class PlayerActivity :
     params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
     params.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
     params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
-    binding.player.layoutParams = params
+    videoView.layoutParams = params
   }
 
   private fun restoreFullSizePlayerBounds() {
-    val params = binding.player.layoutParams as ConstraintLayout.LayoutParams
+    val videoView = if (isNativeEngineActive()) binding.media3Player else binding.player
+    val params = videoView.layoutParams as ConstraintLayout.LayoutParams
     if (params.width == ViewGroup.LayoutParams.MATCH_PARENT &&
       params.height == ViewGroup.LayoutParams.MATCH_PARENT
     ) {
@@ -1528,7 +1532,7 @@ class PlayerActivity :
     }
     params.width = ViewGroup.LayoutParams.MATCH_PARENT
     params.height = ViewGroup.LayoutParams.MATCH_PARENT
-    binding.player.layoutParams = params
+    videoView.layoutParams = params
   }
 
   private var secondarySubMarginXSupported: Boolean? = null
