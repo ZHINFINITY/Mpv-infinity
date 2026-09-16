@@ -23,7 +23,6 @@ public final class LibassSubtitleSurfaceView extends SurfaceView implements Surf
   public LibassSubtitleSurfaceView(Context context, @Nullable AttributeSet attrs) { super(context, attrs); init(); }
 
   private void init() {
-    setZOrderMediaOverlay(true);
     getHolder().setFormat(PixelFormat.TRANSLUCENT);
     getHolder().addCallback(this);
     setFocusable(false);
