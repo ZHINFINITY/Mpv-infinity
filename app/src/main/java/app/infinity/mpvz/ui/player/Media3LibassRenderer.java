@@ -26,7 +26,8 @@ final class Media3LibassRenderer extends BaseRenderer {
   private boolean inputEnded;
   private long streamOffsetUs;
 
-  Media3LibassRenderer(java.util.function.Supplier<LibassSubtitleRenderer> rendererProvider) {
+  Media3LibassRenderer(java.util.function.Supplier<LibassSubtitleRenderer> rendererProvider,
+      java.util.function.Consumer<Long> ignoredPositionConsumer) {
     super(C.TRACK_TYPE_TEXT);
     this.rendererProvider = rendererProvider;
   }
