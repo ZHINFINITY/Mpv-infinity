@@ -78,7 +78,7 @@ public final class StandaloneAssSubtitleController implements AutoCloseable {
         String mime = format.getString(MediaFormat.KEY_MIME);
         if (mime == null || !(mime.contains("ssa") || mime.contains("ass"))) continue;
         String id = "raw-ass:" + i;
-        String label = format.containsKey(MediaFormat.KEY_TITLE) ? format.getString(MediaFormat.KEY_TITLE) : id;
+        String label = id;
         byte[] document = codecConfig(format);
         RawTrack track = new RawTrack(id, label == null ? id : label, i, document);
         synchronized (tracks) { tracks.add(track); }
