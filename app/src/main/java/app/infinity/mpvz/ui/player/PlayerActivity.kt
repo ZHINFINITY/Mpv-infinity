@@ -893,7 +893,11 @@ class PlayerActivity :
               viewModel.setNativeEngineActive(false)
               PlaybackSession.setPropertyBoolean("mute", false)
               binding.media3Player.alpha = 1f
-              binding.player.visibility = View.INVISIBLE
+              // Keep MPV's SurfaceView attached while the queue is reloaded. INVISIBLE causes
+              // unbindSurface() to set vid=no; audio then continues while video waits for a
+              // later surface reattachment.
+              binding.player.alpha = 0f
+              binding.player.visibility = View.VISIBLE
               nativeEngine.stop()
               // This is a renderer handoff, not a user-selected queue change. Avoid the normal
               // loader's outgoing-item stop/report path, which can race the new MPV load.
@@ -944,6 +948,11 @@ class PlayerActivity :
                 } == true
                 if (ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
                   binding.media3Player.alpha = 0f
+                  binding.player.alpha = 1f
+                  binding.player.visibility = View.VISIBLE
+                } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
+                  binding.media3Player.alpha = 0f
+                  binding.player.alpha = 1f
                   binding.player.visibility = View.VISIBLE
                 }
                 // Apply the captured state once after MPV is ready. Repeated time-pos writes
