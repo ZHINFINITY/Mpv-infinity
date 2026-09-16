@@ -91,6 +91,7 @@ fun PlayerSheets(
   onShowSheet: (Sheets) -> Unit,
   activeEngine: PlaybackEngineMode = PlaybackEngineMode.MPV,
   nativeSnapshot: NativePlaybackSnapshot = NativePlaybackSnapshot(),
+  onDisableNativeSubtitles: () -> Unit = {},
   onDismissRequest: () -> Unit,
 ) {
   val advancedPreferences = koinInject<AdvancedPreferences>()
@@ -224,9 +225,13 @@ fun PlayerSheets(
         realtimeSubsEnabled = realtimeSubsEnabled,
         subtitlesOff = subtitlesOff,
         onDisableSubtitles = {
-          setTrackSelectionId("sid", null)
-          setTrackSelectionId("secondary-sid", null)
-          subtitlesPreferences.autoEnableSubtitles.set(false)
+          if (activeEngine == PlaybackEngineMode.NATIVE) {
+            onDisableNativeSubtitles()
+          } else {
+            setTrackSelectionId("sid", null)
+            setTrackSelectionId("secondary-sid", null)
+            subtitlesPreferences.autoEnableSubtitles.set(false)
+          }
         },
       )
     }

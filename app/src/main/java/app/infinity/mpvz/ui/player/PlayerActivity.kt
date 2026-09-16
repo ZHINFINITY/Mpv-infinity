@@ -363,6 +363,14 @@ class PlayerActivity :
 
   override fun nativeSetSubtitlePosition(position: Int) = nativeEngine.setSubtitlePosition(position)
 
+  override fun nativeSelectSubtitle(groupIndex: Int, trackIndex: Int) {
+    nativeEngine.selectSubtitleTrack(groupIndex, trackIndex)
+  }
+
+  override fun nativeDisableSubtitles() {
+    nativeEngine.disableSubtitles()
+  }
+
   override fun nativeAddSubtitle(uri: Uri, select: Boolean): Boolean =
     nativeEngine.addExternalSubtitle(uri, select)
 
@@ -1392,11 +1400,16 @@ class PlayerActivity :
       val lifecycleActive by viewModel.isAmbientLifecycleActive.collectAsState()
       val isAudioOnly by viewModel.isAudioOnly.collectAsState()
       val playbackState by PlaybackSession.state.collectAsState()
+      val nativeSnapshot by nativeEngine.snapshot.collectAsState()
       val videoCrop by PlaybackSession.propString["video-crop"].collectAsState()
       val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
       val orientation = LocalConfiguration.current.orientation
-      val playbackReady =
+      val nativeActive = nativeSnapshot.isReady || nativeSnapshot.isBuffering
+      val playbackReady = if (nativeActive) {
+        nativeSnapshot.isReady || nativeSnapshot.isBuffering
+      } else {
         playbackState.phase == PlaybackPhase.READY || playbackState.phase == PlaybackPhase.BACKGROUND
+      }
       val active =
         enabled &&
           lifecycleActive &&
@@ -1404,29 +1417,38 @@ class PlayerActivity :
           !isAudioOnly &&
           !isAmbientPipMode &&
           playbackReady &&
-          playbackState.surfaceAttached
+          (if (nativeActive) nativeSnapshot.isReady else playbackState.surfaceAttached)
+      val ambientSurface = if (nativeActive) {
+        binding.media3Player.videoSurfaceView as? android.view.SurfaceView
+      } else {
+        binding.player
+      }
       val ambientFrame =
-        rememberVideoAmbientFrame(
-          surfaceView = binding.player,
+        ambientSurface?.let { surface -> rememberVideoAmbientFrame(
+          surfaceView = surface,
           active = active,
-          playbackGeneration = playbackState.generation,
+          playbackGeneration = if (nativeActive) nativeSnapshot.positionMs else playbackState.generation,
           hdrScreenMode = hdrScreenMode,
           orientation = orientation,
           isSurfaceReadyProvider = {
-            val state = PlaybackSession.state.value
-            state.surfaceAttached &&
-              (state.phase == PlaybackPhase.READY || state.phase == PlaybackPhase.BACKGROUND) &&
-              binding.player.isSurfaceReady
+            if (nativeActive) {
+              surface.holder.surface?.isValid == true && nativeEngine.snapshot.value.isReady
+            } else {
+              val state = PlaybackSession.state.value
+              state.surfaceAttached &&
+                (state.phase == PlaybackPhase.READY || state.phase == PlaybackPhase.BACKGROUND) &&
+                binding.player.isSurfaceReady
+            }
           },
           isPlayingProvider = {
-            !PlaybackSession.state.value.paused
+            if (nativeActive) nativeEngine.currentPlayer.isPlaying else !PlaybackSession.state.value.paused
           },
           fallbackFrameProvider = { dimension ->
             withContext(Dispatchers.IO) {
-              runCatching { PlaybackSession.grabThumbnail(dimension) }.getOrNull()
+              if (nativeActive) null else runCatching { PlaybackSession.grabThumbnail(dimension) }.getOrNull()
             }
           },
-        )
+        ) } ?: app.infinity.mpvz.ui.player.components.VideoAmbientFrame(supported = false)
       val presentationActive = active && ambientFrame.supported && ambientFrame.frame != null
 
       // Auto-crop changes after playback becomes ready. Refreshing on the property itself keeps

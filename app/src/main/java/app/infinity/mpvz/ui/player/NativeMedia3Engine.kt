@@ -200,6 +200,7 @@ class NativeMedia3Engine(context: Context) {
   )
   private val _snapshot = MutableStateFlow(NativePlaybackSnapshot())
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
+  private var selectedNativeSubtitleKey: Pair<Int, Int>? = null
   private val _hasRenderedFirstFrame = MutableStateFlow(false)
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
   val currentPlayer: Player get() = player
@@ -361,7 +362,9 @@ class NativeMedia3Engine(context: Context) {
         return false
       }
       val id = "external:$uri"
+      if (select) disableAssTracks()
       val added = renderer.addTrack(id, bytes)
+      if (added && select) renderer.setTrackEnabled(id, true)
       Log.i(logTag, "libass track id=$id added=$added bytes=${bytes.size} count=${renderer.trackCount}")
       subtitleOverlay?.visibility = if (added) View.VISIBLE else View.GONE
       return added
@@ -593,6 +596,7 @@ class NativeMedia3Engine(context: Context) {
       if (isAssFormat(format.sampleMimeType, format.codecs)) {
         disableAssTracks()
         libassRenderer?.setTrackEnabled(format.id ?: "embedded-ass:${track.trackIndex}", true)
+        selectedNativeSubtitleKey = track.groupIndex to track.trackIndex
         player.trackSelectionParameters = player.trackSelectionParameters
           .buildUpon()
           .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -601,6 +605,7 @@ class NativeMedia3Engine(context: Context) {
         publishSnapshot()
         return
       }
+      selectedNativeSubtitleKey = null
       val builder = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -636,12 +641,15 @@ class NativeMedia3Engine(context: Context) {
     publishSnapshot()
   }
 
-  fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
+  fun selectSubtitleTrack(groupIndex: Int, trackIndex: Int) {
+    val group = player.currentTracks.groups.getOrNull(groupIndex) ?: return
+    if (group.type != C.TRACK_TYPE_TEXT) return
     if (trackIndex !in 0 until group.length) return
     val format = group.getTrackFormat(trackIndex)
     if (isAssFormat(format.sampleMimeType, format.codecs)) {
       disableAssTracks()
       libassRenderer?.setTrackEnabled(format.id ?: "embedded-ass:$trackIndex", true)
+      selectedNativeSubtitleKey = groupIndex to trackIndex
       player.trackSelectionParameters = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -655,12 +663,14 @@ class NativeMedia3Engine(context: Context) {
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
       .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
       .build()
+    selectedNativeSubtitleKey = null
     Log.i(logTag, "silent subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }
 
   fun disableSubtitles() {
     disableAssTracks()
+    selectedNativeSubtitleKey = null
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -689,6 +699,7 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = null
     player.stop()
     player.clearMediaItems()
+    selectedNativeSubtitleKey = null
     libassRenderer?.let { renderer ->
       renderer.getTrackIds().keys.toList().forEach { renderer.removeTrack(it) }
     }
@@ -732,11 +743,9 @@ class NativeMedia3Engine(context: Context) {
             type = group.type,
             label = format.label ?: format.language ?: "$fallback ${trackIndex + 1}",
             language = format.language,
-            selected = if (type == C.TRACK_TYPE_TEXT) {
-              group.isTrackSelected(trackIndex)
-            } else {
-              group.isTrackSelected(trackIndex)
-            },
+            selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
+              true
+            } else group.isTrackSelected(trackIndex),
           )
         }
       }.flatten()

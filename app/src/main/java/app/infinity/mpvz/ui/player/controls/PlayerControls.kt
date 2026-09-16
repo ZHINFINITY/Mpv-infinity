@@ -465,6 +465,7 @@ fun PlayerControls(
         onShowSheet = onOpenSheet,
         activeEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
         nativeSnapshot = nativeSnapshot,
+        onDisableNativeSubtitles = { activity?.nativeDisableSubtitles() },
         onDismissRequest = { onOpenSheet(Sheets.None) },
       )
 
@@ -2042,7 +2043,9 @@ fun PlayerControls(
       viewModel = viewModel,
       sheetShown = sheetShown,
       subtitles = subtitles.toImmutableList(),
-      onAddSubtitle = viewModel::addSubtitle,
+      onAddSubtitle = { uri ->
+        if (nativeEngineActive) activity?.nativeAddSubtitle(uri, true) else viewModel.addSubtitle(uri)
+      },
       onToggleSubtitle = viewModel::toggleSubtitle,
       isSubtitleSelected = viewModel::isSubtitleSelected,
       subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,
@@ -2088,6 +2091,7 @@ fun PlayerControls(
       onShowSheet = onOpenSheet,
       activeEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
       nativeSnapshot = nativeSnapshot,
+      onDisableNativeSubtitles = { activity?.nativeDisableSubtitles() },
       onDismissRequest = { onOpenSheet(Sheets.None) },
     )
 
