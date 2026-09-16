@@ -154,6 +154,13 @@ class NativeMedia3Engine(context: Context) {
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
+  private var subtitleFontFamily = "sans-serif"
+  private var subtitleBold = false
+  private var subtitleItalic = false
+  private var subtitleTextColor = android.graphics.Color.WHITE
+  private var subtitleBorderColor = android.graphics.Color.BLACK
+  private var subtitleBackgroundColor = android.graphics.Color.TRANSPARENT
+  private var subtitleBorderSize = 3
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
@@ -400,6 +407,13 @@ class NativeMedia3Engine(context: Context) {
     italic: Boolean = false,
   ) {
     subtitleFontSize = fontSize.coerceIn(8, 160)
+    subtitleFontFamily = fontFamily?.takeIf { it.isNotBlank() } ?: "sans-serif"
+    subtitleBold = bold
+    subtitleItalic = italic
+    subtitleTextColor = textColor
+    subtitleBorderColor = borderColor
+    subtitleBackgroundColor = backgroundColor
+    subtitleBorderSize = borderSize.coerceAtLeast(0)
     val typefaceStyle = when {
       bold && italic -> android.graphics.Typeface.BOLD_ITALIC
       bold -> android.graphics.Typeface.BOLD
@@ -414,7 +428,21 @@ class NativeMedia3Engine(context: Context) {
       borderColor,
       android.graphics.Typeface.create(fontFamily?.takeIf { it.isNotBlank() }, typefaceStyle),
     )
+    applyAssStyle()
     configureSubtitleView()
+  }
+
+  private fun applyAssStyle() {
+    libassRenderer?.setStyle(
+      subtitleFontFamily,
+      subtitleFontSize,
+      subtitleTextColor,
+      subtitleBorderColor,
+      subtitleBackgroundColor,
+      subtitleBorderSize,
+      subtitleBold,
+      subtitleItalic,
+    )
   }
 
 
@@ -435,6 +463,7 @@ class NativeMedia3Engine(context: Context) {
       LibassSubtitleRenderer(width, height, null).also {
         libassRenderer = it
         view.setRenderer(it)
+        applyAssStyle()
         Log.i(logTag, "libass initialized size=${width}x${height} tracks=0")
       }
     }.onFailure { Log.e(logTag, "libass initialization failed", it) }.getOrNull()
