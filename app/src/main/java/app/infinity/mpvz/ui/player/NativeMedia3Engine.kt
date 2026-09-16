@@ -496,7 +496,11 @@ class NativeMedia3Engine(context: Context) {
       MediaItem.Builder()
         .setUri(mediaUri)
         .apply {
-          val declaredMime = mimeType?.takeUnless { it.equals("application/octet-stream", true) }
+          // Database/network metadata may contain broad values such as video/*; passing those
+          // to Media3 prevents extractor sniffing and makes otherwise valid MP4/WebM sources fail.
+          val declaredMime = mimeType
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !it.equals("application/octet-stream", true) && !it.endsWith("/*") }
           (declaredMime ?: nativeContainerMimeType(mediaUri) ?: sourceUri?.let(::nativeContainerMimeType))
             ?.let(::setMimeType)
         }
@@ -524,6 +528,14 @@ class NativeMedia3Engine(context: Context) {
       "ts", "m2ts", "mts" -> "video/mp2t"
       "mp4", "m4v" -> "video/mp4"
       "webm" -> "video/webm"
+      "mov", "qt" -> "video/quicktime"
+      "3gp", "3g2" -> "video/3gpp"
+      "avi" -> "video/avi"
+      "flv" -> "video/x-flv"
+      "mpeg", "mpg" -> "video/mpeg"
+      "ogv" -> "video/ogg"
+      "m3u8" -> "application/x-mpegURL"
+      "mpd" -> "application/dash+xml"
       else -> null
     }
 
