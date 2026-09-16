@@ -12,6 +12,7 @@ import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
 import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -28,6 +29,9 @@ final class Media3LibassRenderer extends BaseRenderer {
   private final Map<String, String> formatTrackIds = new LinkedHashMap<>();
   private boolean inputEnded;
   private long streamOffsetUs;
+  private String pendingTrackId;
+  private long pendingTimestampUs = Long.MIN_VALUE;
+  private final ByteArrayOutputStream pendingEvent = new ByteArrayOutputStream();
 
   Media3LibassRenderer(
       java.util.function.Supplier<LibassSubtitleRenderer> rendererProvider,
@@ -49,6 +53,7 @@ final class Media3LibassRenderer extends BaseRenderer {
 
   @Override protected void onStreamChanged(Format[] formats, long startPositionUs, long offsetUs, MediaSource.MediaPeriodId mediaPeriodId) throws ExoPlaybackException {
     if (formats.length == 0) return;
+    flushPending();
     renderer = rendererProvider.get();
     if (renderer == null) return;
     for (String id : formatTrackIds.values()) renderer.removeTrack(id);
@@ -67,6 +72,7 @@ final class Media3LibassRenderer extends BaseRenderer {
   }
 
   @Override protected void onPositionReset(long positionUs, boolean joining, boolean sampleStreamIsResetToKeyFrame) {
+    flushPending();
     inputEnded = false;
     inputBuffer.clear();
   }
@@ -98,6 +104,7 @@ final class Media3LibassRenderer extends BaseRenderer {
       }
       if (result != C.RESULT_BUFFER_READ) return;
       if (inputBuffer.isEndOfStream()) {
+        flushPending();
         inputEnded = true;
         return;
       }
@@ -107,7 +114,15 @@ final class Media3LibassRenderer extends BaseRenderer {
       data.get(event);
       long timestampUs = Math.max(0L, inputBuffer.timeUs - streamOffsetUs);
       long durationUs = 4_000_000L;
-      renderer.appendEvent(trackId, normalizeEvent(event, timestampUs, durationUs), timestampUs, durationUs);
+      if (pendingTimestampUs != Long.MIN_VALUE
+          && (timestampUs != pendingTimestampUs || !trackId.equals(pendingTrackId))) {
+        flushPending();
+      }
+      if (pendingTimestampUs == Long.MIN_VALUE) {
+        pendingTimestampUs = timestampUs;
+        pendingTrackId = trackId;
+      }
+      pendingEvent.write(event, 0, event.length);
     }
   }
 
@@ -115,12 +130,28 @@ final class Media3LibassRenderer extends BaseRenderer {
   @Override public boolean isEnded() { return inputEnded; }
 
   @Override protected void onDisabled() {
+    flushPending();
     if (renderer != null) {
       for (String id : formatTrackIds.values()) renderer.removeTrack(id);
     }
     formatTrackIds.clear();
     trackId = null;
     renderer = null;
+  }
+
+  private void flushPending() {
+    if (renderer == null || pendingTrackId == null || pendingEvent.size() == 0) {
+      pendingEvent.reset();
+      pendingTrackId = null;
+      pendingTimestampUs = Long.MIN_VALUE;
+      return;
+    }
+    byte[] bytes = pendingEvent.toByteArray();
+    long timestampUs = pendingTimestampUs;
+    renderer.appendEvent(pendingTrackId, normalizeEvent(bytes, timestampUs, 4_000_000L), timestampUs, 4_000_000L);
+    pendingEvent.reset();
+    pendingTrackId = null;
+    pendingTimestampUs = Long.MIN_VALUE;
   }
 
   private static byte[] join(java.util.List<byte[]> parts) {
