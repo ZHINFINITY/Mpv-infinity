@@ -1405,6 +1405,16 @@ class PlayerActivity :
       val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
       val orientation = LocalConfiguration.current.orientation
       val nativeActive = nativeSnapshot.isReady || nativeSnapshot.isBuffering
+      // Position changes arrive every 250 ms. They must not restart the capture coroutine;
+      // doing so clears the previous frame and produces visible ambient flicker. Duration and
+      // video dimensions change when Native switches media and provide a stable source key.
+      val ambientPlaybackKey = if (nativeActive) {
+        nativeSnapshot.durationMs xor
+          (nativeSnapshot.videoWidth.toLong() shl 32) xor
+          nativeSnapshot.videoHeight.toLong()
+      } else {
+        playbackState.generation
+      }
       val playbackReady = if (nativeActive) {
         nativeSnapshot.isReady || nativeSnapshot.isBuffering
       } else {
@@ -1427,7 +1437,7 @@ class PlayerActivity :
         ambientSurface?.let { surface -> rememberVideoAmbientFrame(
           surfaceView = surface,
           active = active,
-          playbackGeneration = if (nativeActive) nativeSnapshot.positionMs else playbackState.generation,
+          playbackGeneration = ambientPlaybackKey,
           hdrScreenMode = hdrScreenMode,
           orientation = orientation,
           isSurfaceReadyProvider = {

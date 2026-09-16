@@ -590,6 +590,7 @@ class NativeMedia3Engine(context: Context) {
         player.trackSelectionParameters = player.trackSelectionParameters
           .buildUpon()
           .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+          .clearOverridesOfType(C.TRACK_TYPE_TEXT)
           .addOverride(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
           .build()
         publishSnapshot()
@@ -599,6 +600,7 @@ class NativeMedia3Engine(context: Context) {
       val builder = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
       player.trackSelectionParameters = builder.build()
       publishSnapshot()
@@ -640,6 +642,7 @@ class NativeMedia3Engine(context: Context) {
       player.trackSelectionParameters = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
         .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
         .build()
       publishSnapshot()
@@ -648,6 +651,7 @@ class NativeMedia3Engine(context: Context) {
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
       .build()
     selectedNativeSubtitleKey = null
