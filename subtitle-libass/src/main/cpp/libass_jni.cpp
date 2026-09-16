@@ -333,16 +333,18 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeSetStyle(JNIEnv* env, jc
   if (!fontChars) return JNI_FALSE;
   std::string font(fontChars);
   env->ReleaseStringUTFChars(fontName, fontChars);
+  // ass_set_style_overrides expects bare style keys. The Default.* form is
+  // ignored by libass, so sheet colour/font/border values never took effect.
   std::vector<std::string> values = {
-      "Default.FontName=" + font,
-      "Default.FontSize=" + std::to_string(fontSize),
-      "Default.PrimaryColour=" + assColor(primaryColor),
-      "Default.OutlineColour=" + assColor(outlineColor),
-      "Default.BackColour=" + assColor(backgroundColor),
-      "Default.BorderStyle=1",
-      "Default.Outline=" + std::to_string(borderSize),
-      "Default.Bold=" + std::to_string(bold == JNI_TRUE ? 1 : 0),
-      "Default.Italic=" + std::to_string(italic == JNI_TRUE ? 1 : 0),
+      "FontName=" + font,
+      "FontSize=" + std::to_string(fontSize),
+      "PrimaryColour=" + assColor(primaryColor),
+      "OutlineColour=" + assColor(outlineColor),
+      "BackColour=" + assColor(backgroundColor),
+      "BorderStyle=1",
+      "Outline=" + std::to_string(borderSize),
+      "Bold=" + std::to_string(bold == JNI_TRUE ? 1 : 0),
+      "Italic=" + std::to_string(italic == JNI_TRUE ? 1 : 0),
   };
   std::vector<const char*> pointers;
   pointers.reserve(values.size() + 1);
