@@ -109,16 +109,7 @@ class NativeMedia3Engine(context: Context) {
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
   private val extractorsFactory = ExtractorsFactory {
-    // Keep ASS/SSA samples in their original codec-private/event form. The default Matroska
-    // subtitle transcoder emits application/x-media3-cues packets, which are decoded Cue data,
-    // not ASS Dialogue events and therefore cannot be passed to libass without losing drawings,
-    // styles, layers, and positions.
-    arrayOf(
-      MatroskaExtractor(
-        DefaultSubtitleParserFactory(),
-        MatroskaExtractor.FLAG_EMIT_RAW_SUBTITLE_DATA,
-      ),
-    )
+    arrayOf(AssMatroskaExtractor(DefaultSubtitleParserFactory()) { ensureLibassRenderer() })
   }
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
@@ -158,7 +149,6 @@ class NativeMedia3Engine(context: Context) {
   private var attachedView: PlayerView? = null
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
-  private var standaloneAssController: StandaloneAssSubtitleController? = null
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
@@ -506,23 +496,15 @@ class NativeMedia3Engine(context: Context) {
             ?.let(::setMimeType)
         }
         .build()
-    // ASS is demuxed independently before Media3 prepares the item. Do not allow the stock
-    // Matroska text renderer/extractor path to rewrite S_TEXT/ASS samples into SSA prefix packets.
+    // ASS is intercepted inside the Matroska extractor. Keep the generic text renderer disabled
+    // so only the integrated libass output is visible for ASS/SSA tracks.
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
       .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .build()
-    standaloneAssController?.close()
-    standaloneAssController = null
     ensureLibassRenderer()?.let { renderer ->
-      MatroskaFontScanner.scan(mediaUri).forEach { font ->
-        renderer.addFont(font.name, font.bytes)
-      }
-      standaloneAssController = StandaloneAssSubtitleController(dataSourceFactory, renderer).also {
-        it.load(mediaUri)
-        Log.i(logTag, "raw subtitle demux started before Media3 preparation uri=$mediaUri")
-      }
+      Log.i(logTag, "integrated ASS extractor enabled uri=$mediaUri rendererTracks=${renderer.getTrackCount()}")
     }
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
@@ -609,8 +591,8 @@ class NativeMedia3Engine(context: Context) {
     if (track.type == C.TRACK_TYPE_TEXT) {
       val format = group.getTrackFormat(track.trackIndex)
       if (isAssFormat(format.sampleMimeType, format.codecs)) {
-        standaloneAssController?.disableAll()
-        standaloneAssController?.enableTrackIndex(track.trackIndex)
+        disableAssTracks()
+        libassRenderer?.setTrackEnabled(format.id ?: "embedded-ass:${track.trackIndex}", true)
         player.trackSelectionParameters = player.trackSelectionParameters
           .buildUpon()
           .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -658,8 +640,8 @@ class NativeMedia3Engine(context: Context) {
     if (trackIndex !in 0 until group.length) return
     val format = group.getTrackFormat(trackIndex)
     if (isAssFormat(format.sampleMimeType, format.codecs)) {
-      standaloneAssController?.disableAll()
-      standaloneAssController?.enableTrackIndex(trackIndex)
+      disableAssTracks()
+      libassRenderer?.setTrackEnabled(format.id ?: "embedded-ass:$trackIndex", true)
       player.trackSelectionParameters = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -678,7 +660,7 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun disableSubtitles() {
-    standaloneAssController?.disableAll()
+    disableAssTracks()
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -692,6 +674,10 @@ class NativeMedia3Engine(context: Context) {
     return value.contains("ass") || value.contains("ssa")
   }
 
+  private fun disableAssTracks() {
+    libassRenderer?.getTrackIds()?.keys?.forEach { id -> libassRenderer?.setTrackEnabled(id, false) }
+  }
+
   fun addListener(listener: Player.Listener) = player.addListener(listener)
   fun removeListener(listener: Player.Listener) = player.removeListener(listener)
 
@@ -703,8 +689,6 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = null
     player.stop()
     player.clearMediaItems()
-    standaloneAssController?.close()
-    standaloneAssController = null
     libassRenderer?.let { renderer ->
       renderer.getTrackIds().keys.toList().forEach { renderer.removeTrack(it) }
     }
@@ -719,8 +703,6 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekPositionMs = null
     player.removeListener(listener)
     attachedView?.player = null
-    standaloneAssController?.close()
-    standaloneAssController = null
     libassRenderer?.close()
     libassRenderer = null
     subtitleOverlay?.setRenderer(null)
