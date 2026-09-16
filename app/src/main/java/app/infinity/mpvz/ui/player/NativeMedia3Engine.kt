@@ -463,8 +463,6 @@ class NativeMedia3Engine(context: Context) {
     }
     subtitleOverlay?.apply {
       visibility = View.VISIBLE
-      bringToFront()
-      elevation = 1f
       pivotX = width / 2f
       pivotY = height.toFloat()
       scaleX = subtitleScale
