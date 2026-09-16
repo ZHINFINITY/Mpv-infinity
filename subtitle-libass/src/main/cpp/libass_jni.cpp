@@ -41,6 +41,15 @@ Renderer* fromHandle(jlong handle) { return reinterpret_cast<Renderer*>(handle);
 
 #if MEDIA3_LIBASS_HAS_NATIVE
 long long parseAssTimeMs(std::string_view value);
+std::string assColor(int argb) {
+  const unsigned alpha = 255u - ((static_cast<unsigned>(argb) >> 24) & 0xffu);
+  const unsigned red = (static_cast<unsigned>(argb) >> 16) & 0xffu;
+  const unsigned green = (static_cast<unsigned>(argb) >> 8) & 0xffu;
+  const unsigned blue = static_cast<unsigned>(argb) & 0xffu;
+  char value[16];
+  std::snprintf(value, sizeof(value), "&H%02X%02X%02X%02X", alpha, blue, green, red);
+  return value;
+}
 void blendImage(const ASS_Image* image, int width, int height, uint8_t* out) {
   for (const ASS_Image* img = image; img != nullptr; img = img->next) {
     uint32_t color = img->color;
@@ -310,6 +319,42 @@ Java_androidx_media3_subtitle_libass_LibassNative_nativeSetSize(JNIEnv*, jclass,
   ass_set_storage_size(state->renderer, width, height);
 #endif
   return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_androidx_media3_subtitle_libass_LibassNative_nativeSetStyle(JNIEnv* env, jclass, jlong handle,
+    jstring fontName, jint fontSize, jint primaryColor, jint outlineColor, jint backgroundColor,
+    jint borderSize, jboolean bold, jboolean italic) {
+  auto* state = fromHandle(handle);
+  if (!state || !fontName || fontSize <= 0 || borderSize < 0) return JNI_FALSE;
+  std::lock_guard lock(state->mutex);
+#if MEDIA3_LIBASS_HAS_NATIVE
+  const char* fontChars = env->GetStringUTFChars(fontName, nullptr);
+  if (!fontChars) return JNI_FALSE;
+  std::string font(fontChars);
+  env->ReleaseStringUTFChars(fontName, fontChars);
+  std::vector<std::string> values = {
+      "Default.FontName=" + font,
+      "Default.FontSize=" + std::to_string(fontSize),
+      "Default.PrimaryColour=" + assColor(primaryColor),
+      "Default.OutlineColour=" + assColor(outlineColor),
+      "Default.BackColour=" + assColor(backgroundColor),
+      "Default.BorderStyle=1",
+      "Default.Outline=" + std::to_string(borderSize),
+      "Default.Bold=" + std::to_string(bold == JNI_TRUE ? 1 : 0),
+      "Default.Italic=" + std::to_string(italic == JNI_TRUE ? 1 : 0),
+  };
+  std::vector<const char*> pointers;
+  pointers.reserve(values.size() + 1);
+  for (auto& value : values) pointers.push_back(value.c_str());
+  pointers.push_back(nullptr);
+  ass_set_style_overrides(state->library, pointers.data());
+  return JNI_TRUE;
+#else
+  (void)env; (void)fontName; (void)fontSize; (void)primaryColor; (void)outlineColor;
+  (void)backgroundColor; (void)borderSize; (void)bold; (void)italic;
+  return JNI_FALSE;
+#endif
 }
 
 extern "C" JNIEXPORT jint JNICALL

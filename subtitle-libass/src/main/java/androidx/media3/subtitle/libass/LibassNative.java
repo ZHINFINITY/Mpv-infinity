@@ -12,6 +12,8 @@ final class LibassNative {
 
   static native long nativeCreate(int storageWidth, int storageHeight, @Nullable String fontsDirectory);
   static native boolean nativeSetSize(long handle, int storageWidth, int storageHeight);
+  static native boolean nativeSetStyle(long handle, String fontName, int fontSize, int primaryColor,
+      int outlineColor, int backgroundColor, int borderSize, boolean bold, boolean italic);
   static native int nativeAddTrack(long handle, byte[] data);
   static native boolean nativeAddFont(long handle, String fontName, byte[] data);
   static native boolean nativeAppendEvent(long handle, int trackId, byte[] data, long timestampUs, long durationUs);

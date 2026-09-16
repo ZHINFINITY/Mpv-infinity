@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 public final class LibassSubtitleRenderer implements AutoCloseable {
   private static final String TAG = "Media3Libass";
   private final Map<String, Integer> tracks = new LinkedHashMap<>();
+  private final Map<String, byte[]> trackData = new LinkedHashMap<>();
   private int width;
   private int height;
   private volatile long nativeHandle;
@@ -50,6 +51,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
       throw new IllegalArgumentException("Track id and ASS data are required");
     }
     Integer old = tracks.remove(id);
+    trackData.remove(id);
     if (old != null) LibassNative.nativeRemoveTrack(nativeHandle, old);
     int nativeId = LibassNative.nativeAddTrack(nativeHandle, assData);
     if (nativeId < 0) {
@@ -57,7 +59,24 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
       return false;
     }
     tracks.put(id, nativeId);
+    trackData.put(id, assData.clone());
     Log.i(TAG, "track_added id=" + id + " nativeId=" + nativeId + " count=" + tracks.size());
+    return true;
+  }
+
+  /** Applies subtitle-sheet values to libass and refreshes already loaded tracks. */
+  public synchronized boolean setStyle(String fontName, int fontSize, int primaryColor,
+      int outlineColor, int backgroundColor, int borderSize, boolean bold, boolean italic) {
+    checkOpen();
+    if (!LibassNative.nativeSetStyle(nativeHandle, fontName, fontSize, primaryColor,
+        outlineColor, backgroundColor, borderSize, bold, italic)) return false;
+    for (Map.Entry<String, byte[]> entry : trackData.entrySet()) {
+      Integer old = tracks.get(entry.getKey());
+      if (old != null) LibassNative.nativeRemoveTrack(nativeHandle, old);
+      int replacement = LibassNative.nativeAddTrack(nativeHandle, entry.getValue());
+      if (replacement < 0) return false;
+      tracks.put(entry.getKey(), replacement);
+    }
     return true;
   }
 
@@ -127,6 +146,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
   public synchronized boolean removeTrack(String id) {
     checkOpen();
     Integer nativeId = tracks.remove(id);
+    trackData.remove(id);
     boolean removed = nativeId != null && LibassNative.nativeRemoveTrack(nativeHandle, nativeId);
     Log.i(TAG, "track_removed id=" + id + " removed=" + removed + " count=" + tracks.size());
     return removed;
@@ -168,6 +188,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
       LibassNative.nativeRelease(nativeHandle);
       nativeHandle = 0;
       tracks.clear();
+      trackData.clear();
       frame = null;
       Log.i(TAG, "released");
     }
