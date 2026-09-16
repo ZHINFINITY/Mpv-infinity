@@ -81,15 +81,15 @@ fun SubtitleSettingsTypographyCard(
   val preferences = koinInject<SubtitlesPreferences>()
   val configOwnedOptions = currentMpvConfigOverrideOptions()
   val ownsAny: (Set<String>) -> Boolean = { options -> options.any(configOwnedOptions::contains) }
-  val boldOptions = setOf("sub-bold", "secondary-sub-bold")
-  val italicOptions = setOf("sub-italic", "secondary-sub-italic")
-  val justifyOptions = setOf("sub-ass-justify", "sub-justify", "secondary-sub-justify")
-  val fontOptions = setOf("sub-font", "secondary-sub-font")
-  val fontSizeOptions = setOf("sub-font-size", "secondary-sub-font-size")
-  val borderStyleOptions = setOf("sub-border-style", "secondary-sub-border-style")
+  val boldOptions = setOf("sub-bold")
+  val italicOptions = setOf("sub-italic")
+  val justifyOptions = setOf("sub-ass-justify", "sub-justify")
+  val fontOptions = setOf("sub-font")
+  val fontSizeOptions = setOf("sub-font-size")
+  val borderStyleOptions = setOf("sub-border-style")
   val borderSizeOptions =
-    setOf("sub-border-size", "sub-outline-size", "secondary-sub-border-size", "secondary-sub-outline-size")
-  val shadowOffsetOptions = setOf("sub-shadow-offset", "secondary-sub-shadow-offset")
+    setOf("sub-border-size", "sub-outline-size")
+  val shadowOffsetOptions = setOf("sub-shadow-offset")
   val typographyOptions =
     boldOptions + italicOptions + justifyOptions + fontOptions + fontSizeOptions +
       borderStyleOptions + borderSizeOptions + shadowOffsetOptions
@@ -174,7 +174,6 @@ fun SubtitleSettingsTypographyCard(
           onCheckedChange = {
             preferences.bold.set(it)
             PlaybackSession.setPropertyBoolean("sub-bold", it)
-            PlaybackSession.setPropertyBoolean("secondary-sub-bold", it)
           },
         ) {
           Icon(
@@ -189,7 +188,6 @@ fun SubtitleSettingsTypographyCard(
           onCheckedChange = {
             preferences.italic.set(it)
             PlaybackSession.setPropertyBoolean("sub-italic", it)
-            PlaybackSession.setPropertyBoolean("secondary-sub-italic", it)
           },
         ) {
           Icon(
@@ -207,11 +205,9 @@ fun SubtitleSettingsTypographyCard(
               if (it) {
                 preferences.justification.set(justification)
                 PlaybackSession.setPropertyString("sub-justify", justification.value)
-                PlaybackSession.setPropertyString("secondary-sub-justify", justification.value)
               } else {
                 preferences.justification.set(SubtitleJustification.Auto)
                 PlaybackSession.setPropertyString("sub-justify", SubtitleJustification.Auto.value)
-                PlaybackSession.setPropertyString("secondary-sub-justify", SubtitleJustification.Auto.value)
               }
             },
           ) {
@@ -251,7 +247,6 @@ fun SubtitleSettingsTypographyCard(
             val actualFont = storedFont.ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
             preferences.font.set(storedFont)
             PlaybackSession.setPropertyString("sub-font", actualFont)
-            PlaybackSession.setPropertyString("secondary-sub-font", actualFont)
           },
           leadingIcon = fontsLoadingIndicator,
           enabled = !ownsAny(fontOptions),
@@ -266,7 +261,6 @@ fun SubtitleSettingsTypographyCard(
         onChange = {
           preferences.fontSize.set(it)
           PlaybackSession.setPropertyInt("sub-font-size", it)
-          PlaybackSession.setPropertyInt("secondary-sub-font-size", it)
         },
         enabled = !ownsAny(fontSizeOptions),
       ) {
@@ -280,7 +274,6 @@ fun SubtitleSettingsTypographyCard(
           onValueChange = {
             preferences.borderStyle.set(it)
             PlaybackSession.setPropertyString("sub-border-style", it.value)
-            PlaybackSession.setPropertyString("secondary-sub-border-style", it.value)
           },
           title = { Text(stringResource(R.string.player_sheets_subtitles_border_style)) },
           valueToText = { AnnotatedString(resources.getString(it.titleRes)) },
@@ -299,8 +292,6 @@ fun SubtitleSettingsTypographyCard(
           preferences.borderSize.set(it)
           PlaybackSession.setPropertyInt("sub-border-size", it)
           PlaybackSession.setPropertyInt("sub-outline-size", it)
-          PlaybackSession.setPropertyInt("secondary-sub-border-size", it)
-          PlaybackSession.setPropertyInt("secondary-sub-outline-size", it)
         },
         max = 20,
         enabled = !ownsAny(borderSizeOptions),
@@ -317,7 +308,6 @@ fun SubtitleSettingsTypographyCard(
           localShadowOffset = it
           preferences.shadowOffset.set(it)
           PlaybackSession.setPropertyInt("sub-shadow-offset", it)
-          PlaybackSession.setPropertyInt("secondary-sub-shadow-offset", it)
         },
         min = -20,
         max = 20,
@@ -338,17 +328,15 @@ fun resetTypography(preferences: SubtitlesPreferences) {
   val shadowOffset = preferences.shadowOffset.deleteAndGet()
   val borderStyle = preferences.borderStyle.deleteAndGet().value
 
-  for (prefix in listOf("sub-", "secondary-sub-")) {
-    PlaybackSession.setPropertyBoolean("${prefix}bold", bold)
-    PlaybackSession.setPropertyBoolean("${prefix}italic", italic)
-    PlaybackSession.setPropertyString("${prefix}justify", justify)
-    PlaybackSession.setPropertyString("${prefix}font", font)
-    PlaybackSession.setPropertyInt("${prefix}font-size", fontSize)
-    PlaybackSession.setPropertyInt("${prefix}border-size", borderSize)
-    PlaybackSession.setPropertyInt("${prefix}outline-size", borderSize)
-    PlaybackSession.setPropertyInt("${prefix}shadow-offset", shadowOffset)
-    PlaybackSession.setPropertyString("${prefix}border-style", borderStyle)
-  }
+  PlaybackSession.setPropertyBoolean("sub-bold", bold)
+  PlaybackSession.setPropertyBoolean("sub-italic", italic)
+  PlaybackSession.setPropertyString("sub-justify", justify)
+  PlaybackSession.setPropertyString("sub-font", font)
+  PlaybackSession.setPropertyInt("sub-font-size", fontSize)
+  PlaybackSession.setPropertyInt("sub-border-size", borderSize)
+  PlaybackSession.setPropertyInt("sub-outline-size", borderSize)
+  PlaybackSession.setPropertyInt("sub-shadow-offset", shadowOffset)
+  PlaybackSession.setPropertyString("sub-border-style", borderStyle)
   PlaybackSession.setPropertyBoolean("sub-ass-justify", false)
 }
 

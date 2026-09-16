@@ -92,11 +92,7 @@ fun SubtitleSettingsColorsCard(
       LaunchedEffect(currentColorType) {
         currentColor = getCurrentMPVColor(currentColorType)
       }
-      val currentColorOptions =
-        setOf(
-          currentColorType.property,
-          currentColorType.property.replace("sub-", "secondary-sub-"),
-        )
+      val currentColorOptions = setOf(currentColorType.property)
       val colorEditingEnabled = currentColorOptions.none(configOwnedOptions::contains)
       Row(
         horizontalArrangement = Arrangement.Center,
@@ -148,8 +144,6 @@ fun SubtitleSettingsColorsCard(
           currentColorType.preference(preferences).set(it)
           val hexColor = it.toColorHexString()
           PlaybackSession.setPropertyString(currentColorType.property, hexColor)
-          val secondaryProp = currentColorType.property.replace("sub-", "secondary-sub-")
-          PlaybackSession.setPropertyString(secondaryProp, hexColor)
         },
       )
     }
@@ -204,7 +198,6 @@ fun resetColors(
       SubColorType.Shadow -> preferences.shadowColor.deleteAndGet().toColorHexString()
     }
   PlaybackSession.setPropertyString(type.property, hexColor)
-  PlaybackSession.setPropertyString(type.property.replace("sub-", "secondary-sub-"), hexColor)
 }
 
 val getCurrentMPVColor: (SubColorType) -> Int = {
