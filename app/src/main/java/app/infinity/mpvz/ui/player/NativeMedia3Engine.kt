@@ -506,15 +506,22 @@ class NativeMedia3Engine(context: Context) {
             ?.let(::setMimeType)
         }
         .build()
+    // ASS is demuxed independently before Media3 prepares the item. Do not allow the stock
+    // Matroska text renderer/extractor path to rewrite S_TEXT/ASS samples into SSA prefix packets.
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .build()
     standaloneAssController?.close()
     standaloneAssController = null
     ensureLibassRenderer()?.let { renderer ->
       MatroskaFontScanner.scan(mediaUri).forEach { font ->
         renderer.addFont(font.name, font.bytes)
+      }
+      standaloneAssController = StandaloneAssSubtitleController(dataSourceFactory, renderer).also {
+        it.load(mediaUri)
+        Log.i(logTag, "raw subtitle demux started before Media3 preparation uri=$mediaUri")
       }
     }
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
