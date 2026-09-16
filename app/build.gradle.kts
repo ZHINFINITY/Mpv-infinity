@@ -285,6 +285,8 @@ dependencies {
   implementation(libs.androidx.media3.ui)
   implementation(libs.androidx.media3.effect)
   implementation(libs.androidx.media3.transformer)
+  implementation("io.github.peerless2012:ass-kt:0.5.1")
+  implementation("io.github.peerless2012:ass-media:0.5.1")
   implementation(libs.jellyfin.media3.ffmpeg.decoder)
   implementation(project(":subtitle-libass"))
   implementation(platform(libs.sora.editor.bom))
