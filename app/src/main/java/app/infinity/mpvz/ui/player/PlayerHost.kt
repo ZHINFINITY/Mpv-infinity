@@ -108,5 +108,9 @@ interface PlayerHost {
 
   fun nativeSetSubtitlePosition(position: Int) {}
 
+  fun nativeSelectSubtitle(groupIndex: Int, trackIndex: Int) {}
+
+  fun nativeDisableSubtitles() {}
+
   fun nativeAddSubtitle(uri: android.net.Uri, select: Boolean): Boolean = false
 }
