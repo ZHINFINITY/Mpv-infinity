@@ -18,7 +18,7 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
   private final Map<String, Integer> tracks = new LinkedHashMap<>();
   private int width;
   private int height;
-  private long nativeHandle;
+  private volatile long nativeHandle;
   private byte[] frame;
 
   public LibassSubtitleRenderer(int width, int height, @Nullable String fontsDirectory) {
@@ -152,9 +152,10 @@ public final class LibassSubtitleRenderer implements AutoCloseable {
     LibassNative.nativeSetSurface(nativeHandle, surface);
   }
 
-  public synchronized boolean renderSurface(long positionUs) {
-    checkOpen();
-    return LibassNative.nativeRenderSurface(nativeHandle, positionUs);
+  public boolean renderSurface(long positionUs) {
+    long handle = nativeHandle;
+    if (handle == 0) return false;
+    return LibassNative.nativeRenderSurface(handle, positionUs);
   }
 
   public synchronized int getWidth() { return width; }
