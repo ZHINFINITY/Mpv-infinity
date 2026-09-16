@@ -33,13 +33,15 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.ExtractorsFactory
-import androidx.media3.extractor.mkv.MatroskaExtractor
-import androidx.media3.extractor.text.DefaultSubtitleParserFactory
-import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
+import io.github.peerless2012.ass.media.AssHandler
+import io.github.peerless2012.ass.media.kt.withAssMkvSupport
+import io.github.peerless2012.ass.media.kt.withAssSupport
+import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
+import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -108,10 +110,13 @@ class NativeMedia3Engine(context: Context) {
       CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
-  private val extractorsFactory = ExtractorsFactory {
-    arrayOf(AssMatroskaExtractor(DefaultSubtitleParserFactory()) { ensureLibassRenderer() })
-  }
+  private val assHandler = AssHandler(renderType = AssRenderType.OVERLAY_CANVAS)
+  private val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
+  private val extractorsFactory: ExtractorsFactory =
+    androidx.media3.extractor.DefaultExtractorsFactory()
+      .withAssMkvSupport(assSubtitleParserFactory, assHandler)
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+    .setSubtitleParserFactory(assSubtitleParserFactory)
   private val player = ExoPlayer.Builder(context.applicationContext)
     .setLoadControl(
       DefaultLoadControl.Builder()
@@ -134,11 +139,8 @@ class NativeMedia3Engine(context: Context) {
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(
-      LibassRenderersFactory(
-        context.applicationContext,
-        { ensureLibassRenderer() },
-        { positionUs -> subtitleOverlay?.setPositionUs(positionUs) },
-      )
+      DefaultRenderersFactory(context.applicationContext)
+        .withAssSupport(assHandler)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
@@ -279,6 +281,7 @@ class NativeMedia3Engine(context: Context) {
 
 
   init {
+    assHandler.init(player)
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
@@ -290,6 +293,7 @@ class NativeMedia3Engine(context: Context) {
     attachedView?.player = null
     attachedView = view
     subtitleOverlay = view.rootView.findViewById(R.id.media3_subtitle_overlay)
+    view.subtitleView?.withAssSupport(assHandler)
     // SurfaceView is composed in a separate layer and can cover normal sibling Views. Mark it as
     // a media layer so the standalone libass bitmap remains visible above the video surface.
     (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
@@ -439,11 +443,9 @@ class NativeMedia3Engine(context: Context) {
   private fun configureSubtitleView() {
     val view = attachedView ?: return
     view.subtitleView?.apply {
-      // Keep Media3's own Cue view hidden; ASS/SSA is rendered by the native surface above video.
-      visibility = View.INVISIBLE
-      // Player subtitle preferences must win over embedded ASS/Matroska style metadata.
-      setApplyEmbeddedStyles(false)
-      setApplyEmbeddedFontSizes(false)
+      // ass-media installs its ASS overlay inside this subtitle view. Keep the parent visible;
+      // normal SRT/WebVTT cues continue to use the same Media3 view.
+      visibility = View.VISIBLE
       setStyle(subtitleStyle)
       setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
       pivotX = width / 2f
@@ -499,16 +501,7 @@ class NativeMedia3Engine(context: Context) {
             ?.let(::setMimeType)
         }
         .build()
-    // ASS is intercepted inside the Matroska extractor. Keep the generic text renderer disabled
-    // so only the integrated libass output is visible for ASS/SSA tracks.
-    player.trackSelectionParameters = player.trackSelectionParameters
-      .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-      .build()
-    ensureLibassRenderer()?.let { renderer ->
-      Log.i(logTag, "integrated ASS extractor enabled uri=$mediaUri rendererTracks=${renderer.getTrackCount()}")
-    }
+    Log.i(logTag, "ass-media extractor enabled uri=$mediaUri")
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
@@ -594,13 +587,10 @@ class NativeMedia3Engine(context: Context) {
     if (track.type == C.TRACK_TYPE_TEXT) {
       val format = group.getTrackFormat(track.trackIndex)
       if (isAssFormat(format.sampleMimeType, format.codecs)) {
-        disableAssTracks()
-        libassRenderer?.setTrackEnabled(format.id ?: "embedded-ass:${track.trackIndex}", true)
-        selectedNativeSubtitleKey = track.groupIndex to track.trackIndex
         player.trackSelectionParameters = player.trackSelectionParameters
           .buildUpon()
-          .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-          .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+          .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+          .addOverride(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
           .build()
         publishSnapshot()
         return
@@ -647,13 +637,10 @@ class NativeMedia3Engine(context: Context) {
     if (trackIndex !in 0 until group.length) return
     val format = group.getTrackFormat(trackIndex)
     if (isAssFormat(format.sampleMimeType, format.codecs)) {
-      disableAssTracks()
-      libassRenderer?.setTrackEnabled(format.id ?: "embedded-ass:$trackIndex", true)
-      selectedNativeSubtitleKey = groupIndex to trackIndex
       player.trackSelectionParameters = player.trackSelectionParameters
         .buildUpon()
-        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
         .build()
       publishSnapshot()
       return
@@ -719,6 +706,7 @@ class NativeMedia3Engine(context: Context) {
     subtitleOverlay?.setRenderer(null)
     subtitleOverlay = null
     attachedView = null
+    assHandler.release()
     player.release()
   }
 

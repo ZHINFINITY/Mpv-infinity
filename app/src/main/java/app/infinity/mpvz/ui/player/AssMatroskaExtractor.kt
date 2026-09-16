@@ -151,8 +151,16 @@ private class AssTrackOutput(
       format.codecs?.lowercase(Locale.ROOT)?.let { it.contains("ass") || it.contains("ssa") } == true
     trackId = format.id ?: "embedded-ass:$extractorTrackId"
     if (isAss) {
-      val header = format.initializationData.firstOrNull()?.takeIf { it.isNotEmpty() } ?: DEFAULT_HEADER
-      rendererProvider()?.addTrack(trackId!!, header)
+      val codecPrivate = format.initializationData
+        .asSequence()
+        .filter { it.isNotEmpty() }
+        .fold(ByteArray(0)) { result, part -> result + part }
+      val document = completeAssDocument(codecPrivate)
+      val added = rendererProvider()?.addTrack(trackId!!, document) == true
+      android.util.Log.i(
+        "Mpv∞-Media3",
+        "ASS track document id=$trackId codecPrivate=${codecPrivate.size} document=${document.size} added=$added",
+      )
     }
     delegate.format(format)
   }
@@ -229,5 +237,18 @@ private class AssTrackOutput(
       [Events]
       Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     """.trimIndent().toByteArray(StandardCharsets.UTF_8)
+
+    private fun completeAssDocument(codecPrivate: ByteArray): ByteArray {
+      if (codecPrivate.isEmpty()) return DEFAULT_HEADER
+      val text = String(codecPrivate, StandardCharsets.UTF_8)
+        .replace("\u0000", "")
+        .trim()
+      if (text.contains("[Script Info]", ignoreCase = true)) {
+        return text.toByteArray(StandardCharsets.UTF_8)
+      }
+      val suffix = if (text.isEmpty()) "" else "\n$text\n"
+      return (String(DEFAULT_HEADER, StandardCharsets.UTF_8) + suffix)
+        .toByteArray(StandardCharsets.UTF_8)
+    }
   }
 }

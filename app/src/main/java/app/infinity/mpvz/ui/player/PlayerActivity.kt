@@ -3676,8 +3676,13 @@ class PlayerActivity :
   }
 
   private fun restoreForegroundVideoAndAmbientIfUnlocked(): Boolean {
-    if (!mpvInitialized || !ownsPlaybackSession() || isDeviceScreenOffOrLocked()) return false
-    enableVideoAfterBackground()
+    if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession() || isDeviceScreenOffOrLocked()) return false
+    if (isNativeEngineActive()) {
+      binding.media3Player.visibility = View.VISIBLE
+      binding.media3Player.alpha = 1f
+    } else {
+      enableVideoAfterBackground()
+    }
     viewModel.setAmbientLifecycleActive(true)
     return true
   }
@@ -6144,6 +6149,7 @@ class PlayerActivity :
         activeSaveMediaIdentifier = item.stableId
         activeEngineMode = PlaybackEngineMode.NATIVE
         viewModel.setNativeEngineActive(true)
+        viewModel.setAmbientLifecycleActive(true)
         binding.player.visibility = View.GONE
         binding.media3Player.alpha = 1f
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
