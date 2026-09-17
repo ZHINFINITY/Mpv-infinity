@@ -338,8 +338,8 @@ fun MpvInfinityTheme(
 
 private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
   if (theme == null) return this
-  val primary = Color(theme.primaryArgb)
-  val background = Color(theme.backgroundArgb)
+  val primary = Color(tuneCustomColor(theme.primaryArgb, theme))
+  val background = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true))
   val onBackground = Color(theme.onBackgroundArgb)
   return copy(
     primary = primary,
@@ -355,6 +355,14 @@ private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
     onSurface = onBackground,
     onSurfaceVariant = onBackground.copy(alpha = 0.78f),
   )
+}
+
+private fun tuneCustomColor(argb: Int, theme: CustomThemeData, dim: Boolean = false): Int {
+  val hsv = FloatArray(3)
+  android.graphics.Color.colorToHSV(argb, hsv)
+  hsv[1] = (hsv[1] * theme.saturation).coerceIn(0f, 1f)
+  hsv[2] = (hsv[2] * theme.brightness * if (dim) (1f - theme.overlay * 0.35f) else 1f).coerceIn(0f, 1f)
+  return android.graphics.Color.HSVToColor(android.graphics.Color.alpha(argb), hsv)
 }
 
 private fun resolveAppColorScheme(
