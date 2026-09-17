@@ -18,7 +18,8 @@ data class CustomThemeData(
   val name: String,
   val mediaPath: String,
   val isVideo: Boolean,
-  val overlay: Float = 0.18f,
+  // Custom media is the theme background; do not add a dim layer by default.
+  val overlay: Float = 0f,
   val blur: Float = 0f,
   val brightness: Float = 1f,
   val saturation: Float = 1f,
