@@ -26,6 +26,7 @@ data class CustomThemeData(
   val offsetX: Float = 0f,
   val offsetY: Float = 0f,
   val fitMode: String = "crop",
+  val aspectMode: String = "screen",
   val darkText: Boolean = false,
   val loopVideo: Boolean = true,
   val muted: Boolean = true,
