@@ -383,18 +383,20 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
 private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
   if (theme == null) return this
   val primary = Color(tuneCustomColor(theme.primaryArgb, theme))
-  val background = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true))
+  val background = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true)).copy(alpha = 0.46f)
   val onBackground = Color(theme.onBackgroundArgb)
   return copy(
     primary = primary,
     onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
     background = background,
-    surface = background,
-    surfaceContainerLowest = background,
-    surfaceContainerLow = background.copy(alpha = 0.92f),
-    surfaceContainer = background.copy(alpha = 0.88f),
-    surfaceContainerHigh = background.copy(alpha = 0.82f),
-    surfaceContainerHighest = background.copy(alpha = 0.76f),
+    surface = background.copy(alpha = 0.52f),
+    surfaceDim = background.copy(alpha = 0.18f),
+    surfaceBright = background.copy(alpha = 0.40f),
+    surfaceContainerLowest = background.copy(alpha = 0.14f),
+    surfaceContainerLow = background.copy(alpha = 0.22f),
+    surfaceContainer = background.copy(alpha = 0.30f),
+    surfaceContainerHigh = background.copy(alpha = 0.38f),
+    surfaceContainerHighest = background.copy(alpha = 0.46f),
     onBackground = onBackground,
     onSurface = onBackground,
     onSurfaceVariant = onBackground.copy(alpha = 0.78f),
