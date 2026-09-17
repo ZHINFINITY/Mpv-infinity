@@ -368,7 +368,7 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
           translationX = theme.offsetX * size.width * 0.5f
           translationY = theme.offsetY * size.height * 0.5f
         },
-        factory = { context -> CustomThemeVideoView(context).applyTheme(theme) },
+        factory = { context -> CustomThemeVideoView(context).also { it.applyTheme(theme) } },
         update = { view -> view.updateThemeEffects(theme) },
       )
     } else {
