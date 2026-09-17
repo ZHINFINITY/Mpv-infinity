@@ -343,6 +343,43 @@ fun MpvInfinityTheme(
   }
 }
 
+@Composable
+private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable () -> Unit) {
+  if (theme == null) {
+    content()
+    return
+  }
+  Box(Modifier.fillMaxSize()) {
+    if (theme.isVideo) {
+      AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { context ->
+          VideoView(context).apply {
+            setVideoPath(theme.mediaPath)
+            setOnPreparedListener { player ->
+              player.isLooping = theme.loopVideo
+              player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
+              start()
+            }
+          }
+        },
+      )
+    } else {
+      val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
+      bitmap?.let {
+        Image(
+          bitmap = it.asImageBitmap(),
+          contentDescription = null,
+          contentScale = ContentScale.Crop,
+          modifier = Modifier.fillMaxSize(),
+        )
+      }
+    }
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.92f))))
+    content()
+  }
+}
+
 private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
   if (theme == null) return this
   val primary = Color(tuneCustomColor(theme.primaryArgb, theme))
