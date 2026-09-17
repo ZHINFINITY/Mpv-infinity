@@ -33,6 +33,7 @@ import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -304,24 +305,26 @@ fun MpvInfinityTheme(
       DarkMode.System -> darkTheme
     }
 
+  // A custom selection is a complete theme, not a layer on top of the
+  // currently selected built-in palette. Resolve it before appTheme so
+  // Dynamic, AMOLED, and other built-in surfaces cannot leak into it.
+  val customScheme = customTheme?.let(::customColorScheme)
   val darkColorScheme =
-    resolveAppColorScheme(
-      context = context,
-      appTheme = appTheme,
-      useDarkTheme = true,
-      amoledMode = amoledMode,
-    ).withCustomTheme(customTheme)
-  val colorScheme =
-    if (useDarkTheme) {
-      darkColorScheme
-    } else {
-      resolveAppColorScheme(
+    customScheme
+      ?: resolveAppColorScheme(
         context = context,
         appTheme = appTheme,
-        useDarkTheme = false,
+        useDarkTheme = true,
         amoledMode = amoledMode,
-      ).withCustomTheme(customTheme)
-    }
+      )
+  val colorScheme =
+    customScheme
+      ?: resolveAppColorScheme(
+        context = context,
+        appTheme = appTheme,
+        useDarkTheme = useDarkTheme,
+        amoledMode = amoledMode,
+      )
 
   // Provide theme transition state first, OUTSIDE MaterialExpressiveTheme
   CompositionLocalProvider(
@@ -417,22 +420,22 @@ private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
   else -> ContentScale.Crop
 }
 
-private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
-  if (theme == null) return this
+private fun customColorScheme(theme: CustomThemeData): ColorScheme {
   val primary = Color(tuneCustomColor(theme.primaryArgb, theme))
   val background = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true)).copy(alpha = 0.46f)
   val onBackground = Color(theme.onBackgroundArgb)
-  return copy(
+  val onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White
+  return darkColorScheme(
     primary = primary,
-    onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
+    onPrimary = onPrimary,
     primaryContainer = primary.copy(alpha = 0.34f),
     onPrimaryContainer = onBackground,
     secondary = primary.copy(alpha = 0.86f),
-    onSecondary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
+    onSecondary = onPrimary,
     secondaryContainer = background.copy(alpha = 0.30f),
     onSecondaryContainer = onBackground,
     tertiary = primary.copy(alpha = 0.72f),
-    onTertiary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
+    onTertiary = onPrimary,
     tertiaryContainer = background.copy(alpha = 0.30f),
     onTertiaryContainer = onBackground,
     background = background,
