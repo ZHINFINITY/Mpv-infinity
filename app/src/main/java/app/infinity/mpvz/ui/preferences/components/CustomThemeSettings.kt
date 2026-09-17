@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
@@ -221,10 +220,13 @@ private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modif
 }
 
 private fun CustomThemeData.mediaColorFilter(): ColorFilter {
-  val matrix = ColorMatrix()
-  matrix.setToSaturation(saturation)
-  matrix.scale(brightness, brightness, brightness, 1f)
-  return ColorFilter.colorMatrix(matrix)
+  val saturationMatrix = ColorMatrix()
+  saturationMatrix.setToSaturation(saturation)
+  val values = saturationMatrix.values.copyOf()
+  values[0] *= brightness; values[1] *= brightness; values[2] *= brightness; values[4] *= brightness
+  values[5] *= brightness; values[6] *= brightness; values[7] *= brightness; values[9] *= brightness
+  values[10] *= brightness; values[11] *= brightness; values[12] *= brightness; values[14] *= brightness
+  return ColorFilter.colorMatrix(ColorMatrix(values))
 }
 
 private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
