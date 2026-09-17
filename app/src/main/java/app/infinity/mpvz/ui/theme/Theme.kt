@@ -407,13 +407,11 @@ private fun CustomThemeData.mediaColorFilter(): ColorFilter {
 }
 
 private fun VideoView.applyThemeVideoEffects(theme: CustomThemeData) {
-  alpha = theme.visibility.coerceIn(0.15f, 1f)
-  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-    val matrix = android.graphics.ColorMatrix().apply { setSaturation(theme.saturation) }
-    val values = matrix.array.copyOf()
-    for (index in intArrayOf(0, 1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 14)) values[index] *= theme.brightness
-    setRenderEffect(android.graphics.RenderEffect.createColorFilterEffect(android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(values))))
-  }
+  // Do not attach RenderEffect to VideoView's SurfaceView: on affected
+  // devices that makes the media surface render black. Brightness/visibility
+  // remain stable view-level adjustments; photo themes retain full matrix
+  // saturation/brightness filtering.
+  alpha = (theme.visibility * theme.brightness.coerceIn(0.25f, 1f)).coerceIn(0.15f, 1f)
 }
 
 private const val PHONE_ASPECT_RATIO = 320f / 693f
@@ -448,11 +446,12 @@ private fun customColorScheme(theme: CustomThemeData): ColorScheme {
     surface = Color.Transparent,
     surfaceDim = Color.Transparent,
     surfaceBright = Color.Transparent,
-    surfaceContainerLowest = background.copy(alpha = 0.14f),
-    surfaceContainerLow = background.copy(alpha = 0.22f),
-    surfaceContainer = background.copy(alpha = 0.30f),
-    surfaceContainerHigh = background.copy(alpha = 0.38f),
-    surfaceContainerHighest = background.copy(alpha = 0.46f),
+    surfaceVariant = background.copy(alpha = 0.52f),
+    surfaceContainerLowest = background.copy(alpha = 0.28f),
+    surfaceContainerLow = background.copy(alpha = 0.40f),
+    surfaceContainer = background.copy(alpha = 0.52f),
+    surfaceContainerHigh = background.copy(alpha = 0.64f),
+    surfaceContainerHighest = background.copy(alpha = 0.74f),
     onBackground = onBackground,
     onSurface = onBackground,
     onSurfaceVariant = onBackground.copy(alpha = 0.78f),
