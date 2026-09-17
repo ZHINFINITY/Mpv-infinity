@@ -72,6 +72,7 @@ import app.infinity.mpvz.preferences.CustomThemeData
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 import kotlin.math.hypot
+import kotlin.math.max
 
 // ============================================================================
 // Theme Transition Animation State & Components
@@ -358,9 +359,10 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
     if (theme.isVideo) {
       AndroidView(
         modifier = Modifier.fillMaxSize().graphicsLayer {
-          scaleX = theme.scale
-          scaleY = theme.scale
-          alpha = (0.55f + theme.brightness * 0.45f).coerceIn(0.35f, 1f)
+          val coverScale = if (theme.fitMode == "crop" && theme.aspectMode == "screen") max(1f, theme.mediaAspectRatio / PHONE_ASPECT_RATIO) else 1f
+          scaleX = theme.scale * coverScale
+          scaleY = theme.scale * coverScale
+          alpha = theme.visibility.coerceIn(0.15f, 1f)
           translationX = theme.offsetX * size.width * 0.5f
           translationY = theme.offsetY * size.height * 0.5f
         },
@@ -385,7 +387,7 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
           contentScale = theme.contentScale(),
           alignment = BiasAlignment(theme.offsetX, theme.offsetY),
           colorFilter = theme.mediaColorFilter(),
-          modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale),
+          modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale, alpha = theme.visibility.coerceIn(0.15f, 1f)),
         )
       }
     }
@@ -405,7 +407,7 @@ private fun CustomThemeData.mediaColorFilter(): ColorFilter {
 }
 
 private fun VideoView.applyThemeVideoEffects(theme: CustomThemeData) {
-  alpha = (0.55f + theme.brightness * 0.45f).coerceIn(0.35f, 1f)
+  alpha = theme.visibility.coerceIn(0.15f, 1f)
   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
     val matrix = android.graphics.ColorMatrix().apply { setSaturation(theme.saturation) }
     val values = matrix.array.copyOf()
@@ -413,6 +415,8 @@ private fun VideoView.applyThemeVideoEffects(theme: CustomThemeData) {
     setRenderEffect(android.graphics.RenderEffect.createColorFilterEffect(android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(values))))
   }
 }
+
+private const val PHONE_ASPECT_RATIO = 320f / 693f
 
 private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
   "fit" -> ContentScale.Fit
