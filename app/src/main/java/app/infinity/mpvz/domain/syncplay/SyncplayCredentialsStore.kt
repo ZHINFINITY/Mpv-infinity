@@ -42,7 +42,7 @@ class SyncplayCredentialsStore(
       port = preferences.getInt(KEY_PORT, SyncplayCredentials.DEFAULT_PORT),
       username =
         preferences.getString(KEY_USERNAME, SyncplayCredentials.DEFAULT_USERNAME)
-          ?.takeUnless { it == "MpvRxUser" }
+          ?.takeUnless { it == "MpvInfinityUser" }
           ?: SyncplayCredentials.DEFAULT_USERNAME,
       room =
         preferences.getString(KEY_ROOM, SyncplayCredentials.DEFAULT_ROOM)

@@ -9,6 +9,9 @@
 
 package app.infinity.mpvz.ui.browser.dialogs
 
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,8 +22,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -87,11 +93,26 @@ fun AddConnectionSheet(
       )
     onSave(connection)
   }
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-  AlertDialog(
+  ModalBottomSheet(
     onDismissRequest = handleDismiss,
-    modifier = Modifier.widthIn(min = 400.dp, max = 600.dp),
-    title = {
+    sheetState = sheetState,
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+    dragHandle = { BottomSheetDefaults.DragHandle() },
+  ) {
+    Column(
+      modifier = modifier.fillMaxWidth().imePadding().navigationBarsPadding(),
+    ) {
+      Column(
+        modifier =
+          Modifier
+            .widthIn(max = 640.dp)
+            .align(Alignment.CenterHorizontally)
+            .padding(horizontal = 24.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
       Text(
         text =
           androidx.compose.ui.res
@@ -99,8 +120,6 @@ fun AddConnectionSheet(
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Medium,
       )
-    },
-    text = {
       Column(
         modifier =
           Modifier
@@ -312,32 +331,33 @@ fun AddConnectionSheet(
           )
         }
       }
-    },
-    confirmButton = {
-      Button(
-        onClick = handleSave,
-        enabled = host.isNotBlank() && (isAnonymous || username.isNotBlank()),
-      ) {
-        Text(
-          text =
-            androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.ui_save),
-          fontWeight = FontWeight.SemiBold,
-        )
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+          horizontalArrangement = Arrangement.End,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          TextButton(onClick = handleDismiss) {
+            Text(
+              text =
+                androidx.compose.ui.res
+                  .stringResource(app.infinity.mpvz.R.string.generic_cancel),
+              fontWeight = FontWeight.Medium,
+            )
+          }
+          Spacer(modifier = Modifier.width(8.dp))
+          Button(
+            onClick = handleSave,
+            enabled = host.isNotBlank() && (isAnonymous || username.isNotBlank()),
+          ) {
+            Text(
+              text =
+                androidx.compose.ui.res
+                  .stringResource(app.infinity.mpvz.R.string.ui_save),
+              fontWeight = FontWeight.SemiBold,
+            )
+          }
+        }
       }
-    },
-    dismissButton = {
-      TextButton(onClick = handleDismiss) {
-        Text(
-          text =
-            androidx.compose.ui.res
-              .stringResource(app.infinity.mpvz.R.string.generic_cancel),
-          fontWeight = FontWeight.Medium,
-        )
-      }
-    },
-    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-    tonalElevation = 6.dp,
-    shape = MaterialTheme.shapes.extraLarge,
-  )
+    }
+  }
 }

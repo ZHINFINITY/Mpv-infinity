@@ -2,6 +2,124 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.0.0 - Native Streaming, Authenticated Downloads & Playback Expansion
+
+Mpv∞ 2.0.0 is a major release containing the complete feature, improvement, and reliability work added after v1.0.9.
+
+### 🎬 Native Stream catalog and browsing
+
+- Added a dedicated Stream screen with catalog rails, posters, media details, hero carousel, seasons, episodes, source selection, and direct playback.
+- Added progressive catalog loading, caching, refresh, loading/error/empty states, provider browsing, name-based search, stale-search cancellation, and preserved search state.
+- Added per-video aspect-ratio handling and persistent crop, pan, zoom, stretch, and geometry controls so one video's display settings do not unexpectedly affect another video.
+- Added automatic black-bar crop detection with variable-aspect safety, ambient-background compatibility, and translated crop states.
+- Added animated catalog rails, improved details sheets, source filters, ranked sources, poster handling, and native playback handoff.
+
+### 🧩 Addon catalogs and stream resolvers
+
+- Added persistent custom catalog manifests, multiple addon catalogs, arbitrary catalog types, provider names, catalog IDs, addon rails, and provider switches.
+- Added configurable external stream-resolver support, stream URL resolution, resilient parsing, link normalization, direct-stream support, resolver caching, and provider-aware search.
+- Added addon search paths, rate-limit handling, progressive refresh, stale-request cancellation, concurrent episode resolution, and resolver diagnostics in the in-app log catcher.
+
+### 🧲 Torrent and series source discovery
+
+- Added multi-source torrent catalogs, magnet metadata, episode source selection, ranked sources, native picker integration, loading states, posters, and source metadata.
+- Added season aggregation, missing-season discovery, long-series support, anime identifier fallbacks, alternate catalog routing, and parallel season/episode resolver requests.
+- Preserved the original source-selection experience while injecting additional resolver results into the native picker.
+
+### 🔗 Direct media and network playback
+
+- Added direct media playback paths for compatible stream sources and bypassed unnecessary extraction when a source can be played directly.
+- Improved browser-like playback, range requests, cache-key isolation, stale-cache rejection, proxy handling, snapshot filtering, episode discovery, and short-response recovery.
+- Added HTTP/range diagnostics, direct-stream validation, and better playback recovery for remote sources.
+
+### 🔐 Website WebView login and cookie sessions
+
+- Added in-app WebView login for supported websites including video, social, and media services.
+- Added JavaScript, DOM storage, database storage, third-party cookies, viewport support, loading feedback, page-error handling, focus handling, and in-WebView redirects.
+- Added persistent cookie-session export, multi-site cookie-file merging, complete WebView cookie-database export across domains and paths, Netscape cookie-file generation, cookie flushing, and non-sensitive cookie diagnostics.
+- Added a Jellyfin-style **User Agent** bottom sheet with editable, persistent custom User Agent support.
+- Added CookieWebView lifecycle, page, console, HTTP, focus, cookie-name, and export diagnostics to the in-app log catcher without logging cookie values.
+
+### 📥 yt-dlp, Quick Download and media metadata
+
+- Added Quick Download from supported websites through yt-dlp, including authenticated downloads using the configured cookie file.
+- Added consistent User Agent behavior across every yt-dlp path: a saved custom User Agent always takes precedence; otherwise the shared default is used.
+- Added supported-website referer handling, extractor options, JavaScript runtime support, retries, continuation, progress reporting, and improved shared-link handling.
+- Improved downloaded media handling with better source metadata, thumbnails, artwork retrieval, filename handling, and artwork-aware output where supported by the source and container.
+- Added separate-stream audio/video selection and merge handling, preventing video-only output when audio is available.
+- Added pause, resume, continuation, paused status, direct-download integrity improvements, subtitle authentication, and source-aware media downloads.
+
+### ▶️ Native Media3, MPV and player improvements
+
+- Expanded the Native Media3 playback engine and improved automatic Native/MPV engine selection.
+- Added stronger network playback, chapter synchronization, Native chapter seeking, skip-intro/outro seeking, source handoff, direct-playback eligibility checks, and playback-state persistence.
+- Improved MPV and Native resume, audio handoff, background playback, music-player standby mode, Picture-in-Picture transitions, player teardown, orientation handling, and end-of-file behavior.
+- Improved GPU/rendering configuration handling, decoder fallback, HDR compatibility, MediaCodec surface recovery, buffering, and playback diagnostics.
+- Added more reliable per-video display geometry, aspect-ratio, zoom, crop, pan, stretch, and ambient rendering behavior.
+
+### 💬 Subtitles and translation
+
+- Added and improved AI subtitle translation, translated subtitle overlays, native secondary subtitles, cue translation, translation request race handling, and translation-state reset.
+- Added automatic subtitle font fallback, configured subtitle typography, imported subtitle-font preservation, native subtitle auto-selection, embedded-subtitle restoration, and player-only translation opt-in.
+- Preserved subtitle visibility until translated cues are ready and restored native subtitle behavior when translation is disabled.
+
+### 🎵 Music, lyrics and visualizers
+
+- Improved online lyrics loading, portrait and landscape lyrics layouts, artwork visibility, audio standby, background audio, music controls, and audio-service startup.
+- Improved music-player standby mode, resume behavior, visualizer compositing, palettes, alpha handling, and orientation behavior.
+- Preserved configured audio seeking and improved music-player lifecycle handling.
+
+### 🌐 Jellyfin, WebDAV and network media
+
+- Added Jellyfin-style browsing, details sheets, connection sheets, media-source selection, selected-stream playback, source-aware downloads, and authenticated subtitle sidecar downloads.
+- Improved SMB, FTP, SFTP, WebDAV, and network-stream browsing, connection editing, bookmarks, hidden-folder handling, folder state, audio browsing, subtitle refresh, seeking, reconnects, and proxy recovery.
+- Added native playback handoff for supported network media and prevented local proxy streams from being incorrectly routed through yt-dlp.
+
+### 📂 Library, search and navigation
+
+- Added watched-state propagation, child-folder badges, last-folder highlighting, nine-column grids, retained folder/search state, progressive search, cached rails, and improved recently played synchronization.
+- Improved settings navigation, searchable preferences, bottom sheets, popup theming, system insets, orientation layouts, animations, and empty/loading states.
+- Added improved connection management, media-source browsing, playlist handling, and supported-link routing.
+
+### 🛠️ Diagnostics, build and reliability
+
+- Added catalog, resolver, direct-media, WebView, yt-dlp, playback, Media3, codec, and crash diagnostics with in-app log-catcher integration.
+- Added ARM64 catalog/debug build workflows, complete release-variant packaging, runtime asset preparation, resolver lifecycle hardening, Compose compatibility fixes, and activity/context leak prevention.
+- Improved background playback, Picture-in-Picture cleanup, download continuation, network reconnects, subtitle restoration, stream loading, stale-search handling, and playback lifecycle reliability.
+
+### ✅ Successful end-state fixes
+
+- Fixed WebView page loading, full-page layout, loading feedback, login-field visibility, keyboard focus, and in-WebView navigation.
+- Fixed complete WebView cookie export and cookie flushing after page completion.
+- Fixed yt-dlp User Agent mismatches by consistently honoring the saved custom User Agent or the shared default User Agent.
+- Fixed supported shared-link extraction and prevented video-only downloads when audio is available by requiring a combined stream or merging separate audio and video streams.
+- Fixed Quick Download and standard downloads to share cookie, User Agent, referer, retry, format-selection, metadata, and artwork-aware handling.
+- Fixed catalog loading, resolver errors, direct playback handoff, download pause/resume, PiP transitions, subtitle restoration, network reconnects, and multiple playback lifecycle issues.
+- The Android app/About version for this release is **v2.0.0**.
+
+## 1.0.9 - Playback Stability, Navigation & Library Improvements
+
+### Playback & HDR
+- Restored the fast Native Media3 local playback and seek path used by the stable v1.0.8 release.
+- Restored default Media3 load control to avoid excessive memory pressure on high-bitrate 4K HDR and Dolby Vision files.
+- Preserved direct local content-URI playback, HDR decoder fallback, and Native playback diagnostics.
+- Improved navigation animation behavior and bounded transition work so rapid settings navigation remains responsive.
+
+### Folder State & Library
+- Fixed folder swipe actions so watched/new state propagates to child videos and their NEW badges.
+- Refreshed retained video lists after folder-wide watched-state changes.
+- Kept explicit folder overrides authoritative for child watched and NEW state calculations.
+
+### Optional Extra Features
+- Added a Settings > Extra features sub-screen with persisted opt-in controls.
+- Added read-only watch-history summaries and library-oriented status checks using existing data.
+- Moved the missing-file check and history loading off the UI thread.
+
+### Network & UI
+- Improved WebDAV/network media thumbnail handling through the authenticated network stream path.
+- Restored configurable screen animations while using bounded animation specs to reduce rapid-open/close UI lag.
+- Reverted Navigation3 to stable 1.1.1 after testing newer versions with rapid nested-settings transitions.
+
 ## 2.5.0 - Frame Review, Auto Crop & Library Performance
 
 > [!IMPORTANT]
@@ -380,7 +498,7 @@ These notes are written in plain English and focus on what changed for real use.
 - **Tablet Responsiveness**: Improved Secure Folder UI for tablet and foldable devices.
 
 ### 🏷️ Branding, Licensing & Cleanup
-- **App Rename**: The app is now branded **Mpv∞** (renamed from "MpvRx") across UI, docs, and metadata.
+- **App Rename**: The app is now branded **Mpv∞** (renamed from "MpvInfinity") across UI, docs, and metadata.
 - **New License**: Relicensed to **CC BY-NC 4.0** with license headers applied across the codebase.
 - **Acknowledgements**: Added credit for MpvRex and Pixel Player (UI and thumbnail pipeline inspiration) and AFinity.
 - **Code Quality**: Added ktlint formatting enforcement and fixed AAPT resource and Kotlin compiler warnings.
@@ -707,7 +825,7 @@ These notes are written in plain English and focus on what changed for real use.
 > # 🚀 **CURL IS NOW SUPPORTED!** 
 > ### ⚠️ **EXPERIMENTAL** — This is brand new and may or may not work properly on your device. ⚠️
 > Lua and JavaScript scripts can now make HTTP requests through the new native libcurl bridge via JNI.
-> Use it, break it, and report issues so we can make it stable!, see `MPVRX_CUSTOM_COMMANDS.d` for tutorial on how to use in Lua and JS.
+> Use it, break it, and report issues so we can make it stable!, see `MPV_INFINITY_CUSTOM_COMMANDS.d` for tutorial on how to use in Lua and JS.
 >
 > **What this means:** You can now write scripts that fetch data from the internet — APIs, subtitles, metadata, you name it — all through libcurl compiled directly into the app.
 
@@ -718,14 +836,14 @@ These notes are written in plain English and focus on what changed for real use.
 - Added Hybrid Skip Markers. The player can now check IntroDB, TIDB, and AniSkip together and use whichever result is found first.
 - Anime4K settings are now easier to use with a collapsible section in Decoder Preferences and also Added Optimization by Sunny Vishnu .
 - Added a setting to show or hide Media Info from Android's share/open-with screen.
-- Added documentation for custom Lua/JS player commands in `MPVRX_CUSTOM_COMMANDS.md`.
+- Added documentation for custom Lua/JS player commands in `MPV_INFINITY_CUSTOM_COMMANDS.md`.
 
 ## 1.3.8
 
 - **Integrated yt-dlp by [**SunnyVishnu3**](https://github.com/SunnyVishnu3)** — Added full yt-dlp integration for video watching audio/video from YouTube and other supported sites directly within the app (_Dont expect from me to add Download Functionality_). **Note: You need to download yt-dlp first (Settings > Advanced > yt-dlp Manager) before playing YouTube links — don't be clueless.**
 - Fixed Issue of USer defined Colors Filters were not getting Saved and not getting applied through Mpv conf by [**SunnyVishnu3**](https://github.com/SunnyVishnu3)
 - Fixed Gemini AI Error Generating / Translating Subs.
-- Fixed Crashing issue of MpvRx , in a nutshell Ambient mode and Custom lua were not initialized in Sync causing to crash player sometimes
+- Fixed Crashing issue of MpvInfinity , in a nutshell Ambient mode and Custom lua were not initialized in Sync causing to crash player sometimes
 - That's all for Today Adiosss!!
 
 ## 1.3.7
@@ -773,7 +891,7 @@ These notes are written in plain English and focus on what changed for real use.
 - Cleaned old thumbnail cache paths when clearing thumbnail cache.
 - Fixed the About and crash info screen showing `UNKNOWN` in the bundled mpv version.
 - Updated Gradle, Kotlin, Compose, Koin, Navigation 3, AndroidX, and related dependency versions through the version catalog.
-- Added SUbHub MpvRx specific Subtitle Fetching nd Downloading featured developed by me
+- Added SUbHub MpvInfinity specific Subtitle Fetching nd Downloading featured developed by me
 - Added Video COmpresser Overlay in Tree Mode also
 - Cleaned up codebase and Improved Playback bottlenecks
 - Added Window Offset to prevent Camera notch overlap issues
@@ -821,7 +939,7 @@ These notes are written in plain English and focus on what changed for real use.
 ### Stats Page 6  Fixes
 
 - **GPU estimate bar fixed**: was using cumulative drop + delay totals that drifted to 100% after long sessions and added a fixed FPS-proportional baseline (120fps with zero drops showed 70% GPU load). Now uses per-second delta counts relative to the current frame rate  0 drops = 0%, all frames dropped = 100%.
-- **CPU label corrected**: relabelled from "CPU Usage" to "App CPU (this process)" to accurately reflect that `getElapsedCpuTime()` measures only MpvRx's own process, not the whole device.
+- **CPU label corrected**: relabelled from "CPU Usage" to "App CPU (this process)" to accurately reflect that `getElapsedCpuTime()` measures only MpvInfinity's own process, not the whole device.
 - **Frame drop text now shows per-second deltas** alongside the all-time totals, so you can tell current rendering pressure at a glance.
 - **Pause-aware poll backoff**: the stats loop backs off from 1 s to 2 s intervals when playback is paused, cutting pointless JNI calls when metrics are static.
 
@@ -859,7 +977,7 @@ These notes are written in plain English and focus on what changed for real use.
 
 ## 1.3.0
 
-- The project now carries the `MpvRx` name across the app, docs, and release files.
+- The project now carries the `MpvInfinity` name across the app, docs, and release files.
 - Tree View `NEW` labels now work properly and update as you watch.
 - Single-child folders now flatten automatically so you reach files faster.
 - Subtitle matching is smarter and better at finding subtitles that line up.

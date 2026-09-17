@@ -161,8 +161,8 @@ class OpenRouterClient(
             .Builder()
             .url("$BASE_URL/chat/completions")
             .header("Authorization", "Bearer $apiKey")
-            .header("HTTP-Referer", "https://Mpv∞.app")
-            .header("X-OpenRouter-Title", "Mpv∞")
+            .header("HTTP-Referer", "https://github.com/ZHINFINITY/Mpv-infinity")
+            .header("X-OpenRouter-Title", "Mpv Infinity")
             .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 

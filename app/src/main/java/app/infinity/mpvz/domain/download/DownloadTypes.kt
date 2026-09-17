@@ -15,6 +15,7 @@ import java.io.File
 enum class AppDownloadStatus {
   QUEUED,
   RUNNING,
+  PAUSED,
   SUCCESS,
   FAILED,
   CANCELLED,

@@ -62,13 +62,15 @@ class PlayerPreferences(
   val customAspectRatios = preferenceStore.getStringSet("custom_aspect_ratios", emptySet())
   val lastVideoAspect = preferenceStore.getEnum("last_video_aspect", VideoAspect.Fit)
   val lastCustomAspectRatio = preferenceStore.getFloat("last_custom_aspect_ratio", -1f)
+  val rememberVideoAspectPerVideo = preferenceStore.getBoolean("remember_video_aspect_per_video", false)
+  val videoAspectStateMigrationVersion = preferenceStore.getInt("video_aspect_state_migration_version", 0)
   val autoCropBlackBars = preferenceStore.getBoolean("auto_crop_black_bars", false)
 
   val defaultSpeed = preferenceStore.getFloat("default_speed", 1f)
   val speedPresets =
     preferenceStore.getStringSet(
       "default_speed_presets",
-      setOf("0.25", "0.5", "0.75", "1.0", "1.25", "1.5", "1.75", "2.0", "2.5", "3.0", "3.5", "4.0"),
+      setOf("0.25", "0.5", "0.75", "1.0", "1.25", "1.5", "1.75", "2.0", "2.5", "3.0", "3.5", "4.0", "5.0", "6.0", "7.0", "8.0"),
     )
   val displayVolumeAsPercentage = preferenceStore.getBoolean("display_volume_as_percentage", true)
   val swapVolumeAndBrightness = preferenceStore.getBoolean("display_volume_on_right")
@@ -98,6 +100,7 @@ class PlayerPreferences(
   val screenshotQuality = preferenceStore.getInt("screenshot_quality", 90)
   val screenshotPngCompression = preferenceStore.getInt("screenshot_png_compression", 7)
   val screenshotWebpLossless = preferenceStore.getBoolean("screenshot_webp_lossless", false)
+  val screenshotFolderUri = preferenceStore.getString("screenshot_folder_uri", "")
 
   val playlistMode = preferenceStore.getBoolean("playlist_mode", true)
   val playlistViewMode = preferenceStore.getBoolean("playlist_view_mode_list", true) // true = list, false = grid

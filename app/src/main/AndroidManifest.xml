@@ -66,7 +66,7 @@
 
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
-            android:value="app.infinity.mpvz.ui.cast.MpvRxCastOptionsProvider" />
+            android:value="app.infinity.mpvz.ui.cast.MpvInfinityCastOptionsProvider" />
 
         <receiver
             android:name="androidx.mediarouter.media.MediaTransferReceiver"
@@ -78,6 +78,7 @@
             android:enableOnBackInvokedCallback="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"
             android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.mpvinfinity">
             <intent-filter>
@@ -443,6 +444,27 @@
             android:theme="@style/Theme.mpvinfinity"
             android:label="@string/ui_media_info" />
 
+        <activity
+            android:name=".ui.downloads.QuickDownloadActivity"
+            android:exported="true"
+            android:theme="@style/Theme.mpvinfinity.QuickDownload"
+            android:label="Quick Download" />
+
+        <activity-alias
+            android:name=".ui.downloads.QuickDownloadActivityAlias"
+            android:targetActivity=".ui.downloads.QuickDownloadActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:label="Quick Download">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/uri-list" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+        </activity-alias>
+
         <activity-alias
             android:name=".ui.mediainfo.MediaInfoActivityAlias"
             android:targetActivity=".ui.mediainfo.MediaInfoActivity"
@@ -529,4 +551,3 @@
         </provider>
     </application>
 </manifest>
-

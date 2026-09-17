@@ -164,6 +164,7 @@ object AiIntegrationScreen : Screen {
     val subtitleFormatWithAi by preferences.subtitleFormatWithAi.collectAsState()
     val subtitleTranslationEnabled by preferences.subtitleTranslationEnabled.collectAsState()
     val subtitleTranslationFirstTime by preferences.subtitleTranslationFirstTime.collectAsState()
+    val automaticSubtitleFontFallback by preferences.automaticSubtitleFontFallback.collectAsState()
     val subtitleGenerationOutputFormat by preferences.subtitleGenerationOutputFormat.collectAsState()
     val autoTranslateLanguages by preferences.autoTranslateLanguages.collectAsState()
     val embeddedTranslationProvider by preferences.embeddedSubtitleTranslationProvider.collectAsState()
@@ -992,6 +993,14 @@ val apiKeyInfo =
                         color = MaterialTheme.colorScheme.outline,
                       )
                     },
+                  )
+
+                  SwitchPreference(
+                    modifier = Modifier.settingsSearchTarget(R.string.pref_automatic_subtitle_font_fallback_title),
+                    value = automaticSubtitleFontFallback,
+                    onValueChange = { preferences.automaticSubtitleFontFallback.set(it) },
+                    title = { Text(stringResource(R.string.pref_automatic_subtitle_font_fallback_title)) },
+                    summary = { Text(stringResource(R.string.pref_automatic_subtitle_font_fallback_summary), color = MaterialTheme.colorScheme.outline) },
                   )
 
                   PreferenceDivider()

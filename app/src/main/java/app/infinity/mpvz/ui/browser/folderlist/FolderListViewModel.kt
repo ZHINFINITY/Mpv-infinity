@@ -27,6 +27,7 @@ import app.infinity.mpvz.utils.media.MetadataRetrieval
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps
 import app.infinity.mpvz.utils.storage.FolderViewScanner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -64,7 +65,7 @@ class FolderListViewModel(
 
   private val _foldersWithNewCount = MutableStateFlow<List<FolderWithNewCount>>(emptyList())
   val foldersWithNewCount: StateFlow<List<FolderWithNewCount>> = _foldersWithNewCount.asStateFlow()
-  private val folderWatchedOverrides = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+  private val folderWatchedOverrides = MutableStateFlow<Map<String, Boolean>>(loadFolderWatchedOverrides())
 
   // Only show loading on fresh install (when there's no cached data)
   private val _isLoading = MutableStateFlow(false)
@@ -92,8 +93,12 @@ class FolderListViewModel(
 
   // Track the current scan job to prevent concurrent scans
   private var currentScanJob: Job? = null
+  // The newest manual refresh wins. This prevents rapid gestures or repeated taps from starting
+  // competing MediaStore/provider scans and emitting stale lists while Compose is animating.
+  private var refreshJob: Job? = null
   private var newCountJob: Job? = null
   private var cacheWriteJob: Job? = null
+  private var newCountGeneration = 0L
 
     companion object {
     private const val TAG = "FolderListViewModel"
@@ -106,6 +111,25 @@ class FolderListViewModel(
       @Suppress("UNCHECKED_CAST")
       override fun <T : ViewModel> create(modelClass: Class<T>): T = FolderListViewModel(application, audioOnly) as T
     }
+  }
+
+  private fun loadFolderWatchedOverrides(): Map<String, Boolean> {
+    val stored =
+      getApplication<Application>()
+        .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+        .getStringSet("values", emptySet<String>())
+        ?: emptySet<String>()
+    return stored.mapNotNull { value ->
+      val split = value.split("\u001f", limit = 2)
+      if (split.size == 2) split[0] to (split[1] == "1") else null
+    }.toMap()
+  }
+
+  private fun saveFolderWatchedOverrides(values: Map<String, Boolean>) {
+    val encoded = values.map { (key, watched) -> key + "\u001f" + if (watched) "1" else "0" }.toSet()
+    getApplication<Application>()
+      .getSharedPreferences("folder_watched_overrides", android.content.Context.MODE_PRIVATE)
+      .edit().putStringSet("values", encoded).apply()
   }
 
   init {
@@ -261,6 +285,7 @@ class FolderListViewModel(
 
   private fun calculateNewVideoCounts(folders: List<VideoFolder>) {
     newCountJob?.cancel()
+    val generation = ++newCountGeneration
     newCountJob =
       viewModelScope.launch(Dispatchers.IO) {
         delay(400)
@@ -268,7 +293,9 @@ class FolderListViewModel(
           val showLabel = appearancePreferences.showUnplayedOldVideoLabel.get()
           if (!showLabel) {
             // If feature is disabled, just return folders with 0 count
-            _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+            if (generation == newCountGeneration) {
+              _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+            }
             return@launch
           }
 
@@ -285,11 +312,43 @@ class FolderListViewModel(
                   app.infinity.mpvz.repository.MediaFileRepository
                     .getVideosInFolder(getApplication(), folder.bucketId)
 
-                // Count new unplayed videos
+                // Count new unplayed videos. A watched folder is the default state, but an
+                // explicit child swipe-to-unwatched must override that default for the folder
+                // badge as well.
+                val watchedOverride = folderWatchedOverrides.value[folder.bucketId]
                 val newCount =
-                  folderWatchedOverrides.value[folder.bucketId]?.let { if (it) 0 else null } ?: run {
+                  if (watchedOverride == true) {
+                    videos.count { video ->
+                      val durationSeconds = video.duration / 1000L
+                      val explicitOverride =
+                        getApplication<Application>()
+                          .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+                          .getStringSet("values", emptySet())
+                          ?.contains("${video.path}\u001f0") == true
+                      val playbackState = playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forLocalPath(video.path))
+                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.uri.toString()))
+                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.path))
+                        ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri("file://${video.path}"))
+                      explicitOverride || (
+                        playbackState != null &&
+                          !playbackState.hasBeenWatched &&
+                          playbackState.lastPosition <= 0 &&
+                          playbackState.timeRemaining >= durationSeconds - 1
+                      )
+                    }
+                  } else if (watchedOverride == false) {
+                    videos.count { video ->
+                      // An unwatched folder makes children NEW by default, but an explicit
+                      // child swipe-to-watched must remove that child from the folder badge.
+                      getApplication<Application>()
+                        .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+                        .getStringSet("values", emptySet())
+                        ?.contains("${video.path}\u001f1") != true
+                    }
+                  } else {
                   videos.count { video ->
-                    // Check if video was modified within threshold days
+                    // Check if video was modified within threshold days unless the user
+                    // explicitly marked the whole folder as unwatched.
                     val videoAge = currentTime - (video.dateModified * 1000)
                     val isRecent = videoAge <= thresholdMillis
 
@@ -299,8 +358,13 @@ class FolderListViewModel(
                       ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.uri.toString()))
                       ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri(video.path))
                       ?: playbackStateRepository.getVideoDataByTitle(PlaybackIdentity.forUri("file://${video.path}"))
+                    val explicitlyUnwatched =
+                      getApplication<Application>()
+                        .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+                        .getStringSet("values", emptySet())
+                        ?.contains("${video.path}\u001f0") == true
                     val isUnplayed =
-                      if (playbackState != null && video.duration > 0) {
+                      explicitlyUnwatched || if (playbackState != null && video.duration > 0) {
                         val durationSeconds = video.duration / 1000
                         val watched = durationSeconds - playbackState.timeRemaining.toLong()
                         val progressValue =
@@ -310,21 +374,29 @@ class FolderListViewModel(
                         playbackState == null
                       }
 
-                    isRecent && isUnplayed
+                    if (watchedOverride == false) true else explicitlyUnwatched || (isRecent && isUnplayed)
                   }
                 }
 
                 FolderWithNewCount(folder, newCount)
+              } catch (e: CancellationException) {
+                throw e
               } catch (e: Exception) {
                 Log.e(TAG, "Error counting new videos for folder ${folder.name}", e)
                 FolderWithNewCount(folder, 0)
               }
             }
 
-          _foldersWithNewCount.value = foldersWithCounts
+          if (generation == newCountGeneration) {
+            _foldersWithNewCount.value = foldersWithCounts
+          }
+        } catch (e: CancellationException) {
+          throw e
         } catch (e: Exception) {
           Log.e(TAG, "Error calculating new video counts", e)
-          _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+          if (generation == newCountGeneration) {
+            _foldersWithNewCount.value = folders.map { FolderWithNewCount(it, 0) }
+          }
         }
       }
   }
@@ -334,17 +406,23 @@ class FolderListViewModel(
 
     // Set loading state
     _isLoading.value = true
+    refreshJob?.cancel()
 
-    // Clear all caches to force fresh data from filesystem
-    MediaFileRepository.clearCache()
-    FolderViewScanner.clearCache()
+    // Cache invalidation and the root MediaStore scan both cross into Android's content-provider
+    // service. Keep the complete refresh behavior, but never run those calls on the Compose/UI
+    // thread; a slow provider transaction can otherwise stall the renderer.
+    refreshJob = viewModelScope.launch(Dispatchers.IO) {
+      // Clear all caches to force fresh data from filesystem
+      MediaFileRepository.clearCache()
+      FolderViewScanner.clearCache()
 
-    // Force the direct hidden index first; MediaScanner cannot see .nomedia trees.
-    loadVideoFolders(forceFileSystemCheck = true)
+      // Force the direct hidden index first; MediaScanner cannot see .nomedia trees.
+      loadVideoFolders(forceFileSystemCheck = true)
 
-    // Preserve full Refresh semantics for ordinary files copied by other apps. Completion emits a
-    // debounced MediaLibraryEvents update, while this asynchronous pass never blocks hidden results.
-    triggerMediaScan()
+      // Preserve full Refresh semantics for ordinary files copied by other apps. Completion emits
+      // a debounced MediaLibraryEvents update, while this asynchronous pass never blocks the UI.
+      triggerMediaScan()
+    }
   }
 
   private fun triggerMediaScan() {
@@ -371,7 +449,11 @@ class FolderListViewModel(
   }
 
   fun setFolderWatched(folder: VideoFolder, watched: Boolean) {
-    folderWatchedOverrides.value = folderWatchedOverrides.value + (folder.bucketId to watched)
+    newCountGeneration++
+    val updatedOverrides = folderWatchedOverrides.value + (folder.bucketId to watched)
+    folderWatchedOverrides.value = updatedOverrides
+    saveFolderWatchedOverrides(updatedOverrides)
+    newCountJob?.cancel()
     _foldersWithNewCount.value =
       _foldersWithNewCount.value.map { entry ->
         if (entry.folder.bucketId == folder.bucketId) {
@@ -382,6 +464,17 @@ class FolderListViewModel(
       }
     viewModelScope.launch(Dispatchers.IO) {
       val videos = MediaFileRepository.getVideosInFolder(getApplication(), folder.bucketId)
+      val videoOverrides =
+        getApplication<Application>()
+          .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
+      val overrideValues = videoOverrides.getStringSet("values", emptySet())?.toMutableSet() ?: mutableSetOf()
+      videos.forEach { video ->
+        overrideValues.removeIf { it.startsWith("${video.path}\u001f") }
+        if (!watched) {
+          overrideValues.add("${video.path}\u001f0")
+        }
+      }
+      videoOverrides.edit().putStringSet("values", overrideValues).apply()
       videos.forEach { video ->
         val durationSeconds = (video.duration / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val identifier = PlaybackIdentity.forLocalPath(video.path)
@@ -408,6 +501,9 @@ class FolderListViewModel(
         )
         PlaybackStateEvents.notifyChanged(identifier)
       }
+      // A video screen can remain retained in Navigation3 while the folder screen is visible.
+      // Notify it after the complete batch so it reloads the folder override and child NEW state.
+      MediaLibraryEvents.notifyChanged()
     }
   }
 

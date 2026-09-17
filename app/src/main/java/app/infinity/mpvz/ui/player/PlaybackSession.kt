@@ -1563,6 +1563,10 @@ object PlaybackSession : MPVLib.EventObserver {
    */
   fun resolvePlayableUriForNative(item: PlaybackItem): String {
     releaseActiveNetworkStream()
+    // Keep MediaStore content URIs for Media3. ContentDataSource can obtain the provider's
+    // descriptor directly; converting this back to file:// reintroduces the slow FUSE path.
+    if (item.playableUri.startsWith("content://")) return item.playableUri
+    if (item.originalUri.startsWith("content://")) return item.originalUri
     val resolved = resolvePlayableUri(item)
     nativeLock.withLock { activeNetworkStream = resolved.registration }
     return resolved.uri
@@ -1612,10 +1616,8 @@ object PlaybackSession : MPVLib.EventObserver {
       return ResolvedPlayable(refreshedUri)
     }
 
-    // Prefer a verified local path for MediaStore items. The Xiaomi Media3 ContentDataSource
-    // path can spend 10–20 seconds scanning a large Dolby Vision MKV before creating the codec;
-    // a readable path lets the extractor seek the local file directly. Keep content:// as the
-    // fallback for providers that do not expose a readable filesystem path.
+    // Resolve a local path for native integrations that cannot consume content:// directly.
+    // Native Media3 uses resolvePlayableUriForNative above and deliberately retains content://.
     val context = applicationContext
     if (context != null) {
       val localPath = sequenceOf(item.playableUri, item.originalUri)

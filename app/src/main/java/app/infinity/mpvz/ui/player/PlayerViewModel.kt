@@ -300,6 +300,7 @@ class PlayerViewModel : ViewModel(),
   private var embeddedTranslationRequestId = 0L
   private var lastEmbeddedCue = ""
   private var nativeSubtitleHiddenForTranslation = false
+  private var nativeSubtitleVisibilityListener: ((Boolean) -> Unit)? = null
 
   private val _isGeneratingSubtitles = MutableStateFlow(false)
   val isGeneratingSubtitles: StateFlow<Boolean> = _isGeneratingSubtitles.asStateFlow()
@@ -640,8 +641,12 @@ class PlayerViewModel : ViewModel(),
         external = false,
       )
     }
-    nativeChapters.value = snapshot.chapters.map { chapter ->
-      Segment(chapter.title, chapter.startSeconds)
+    // Media3 does not expose Matroska Chapters for every extractor/source. Do not erase a chapter
+    // list already obtained from mpv while the native engine is still preparing its tracks.
+    if (snapshot.chapters.isNotEmpty()) {
+      nativeChapters.value = snapshot.chapters.map { chapter ->
+        Segment(chapter.title, chapter.startSeconds)
+      }
     }
   }
 
@@ -651,6 +656,27 @@ class PlayerViewModel : ViewModel(),
 
   fun setNativeSubtitleToggleListener(listener: ((Int) -> Unit)?) {
     nativeSubtitleToggleListener = listener
+  }
+
+  fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
+    nativeSubtitleVisibilityListener = listener
+  }
+
+  /** Re-applies the translation visibility state after switching playback engines. */
+  fun syncNativeSubtitleVisibility() {
+    // The listener parameter is `hidden`, not `visible`. Passing the inverse here hid Native's
+    // SubtitleView on every MPV -> Native handoff when translation was not active.
+    nativeSubtitleVisibilityListener?.invoke(nativeSubtitleHiddenForTranslation)
+  }
+
+  /** Clears the old MPV translation before Native starts emitting its own subtitle cues. */
+  fun prepareNativeEngineHandoffForTranslation() {
+    if (!aiPreferences.playerSubtitleTranslationEnabled.get()) return
+    clearEmbeddedSubtitleTranslationCue(native = true)
+    if (!nativeSubtitleHiddenForTranslation) {
+      nativeSubtitleVisibilityListener?.invoke(true)
+      nativeSubtitleHiddenForTranslation = true
+    }
   }
 
   fun setNativeAudioToggleListener(listener: ((Int) -> Unit)?) {
@@ -1034,7 +1060,12 @@ class PlayerViewModel : ViewModel(),
     val defaultTargetLang = audioPreferences.lyricsTargetLanguage.get().ifBlank { "en" }
 
     if (sourceType == app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE && current.onlineLyrics == null) {
-      lyricsUiState.value = current.copy(isLoading = true)
+      lyricsUiState.value = current.copy(
+        isLoading = true,
+        selectedSource = app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE,
+        lyrics = null,
+        originalLyrics = null,
+      )
       lyricsLoadJob?.cancel()
       lyricsTranslateJob?.cancel()
       lyricsLoadJob = viewModelScope.launch(Dispatchers.IO) {
@@ -1049,10 +1080,6 @@ class PlayerViewModel : ViewModel(),
         val duration = PlaybackSession.getPropertyInt("duration") ?: 0
 
         val online = lyricsRepository.fetchOnlineLyrics(title, artist, duration)
-
-        val stillCurrentPath = PlaybackSession.getPropertyString("path")
-          ?: PlaybackSession.getPropertyString("stream-open-filename")
-        if (stillCurrentPath != path) return@launch
 
         val updatedSources = (current.availableSources + app.infinity.mpvz.domain.lyrics.LyricsSourceType.ONLINE).distinct()
         val activeLyrics = online ?: current.embeddedLyrics
@@ -1764,8 +1791,16 @@ class PlayerViewModel : ViewModel(),
           continue
         }
         runCatching {
-          val time = PlaybackSession.getPropertyDouble("time-pos")
-          if (time != null) {
+          // Poll only the active renderer. Reading MPV time-pos while Native Media3 is active
+          // produced redundant bridge traffic, stale positions, and unnecessary work on every
+          // playback tick; it also prevented auto-skip from following Native playback.
+          val time =
+            if (host.isNativeEngineActive()) {
+              host.nativePlaybackPositionSeconds()
+            } else {
+              PlaybackSession.getPropertyDouble("time-pos") ?: Double.NaN
+            }
+          if (time.isFinite()) {
             val posFloat = time.toFloat()
             if (_precisePosition.value != posFloat) {
               _precisePosition.value = posFloat
@@ -2781,51 +2816,68 @@ class PlayerViewModel : ViewModel(),
 
   private var translationJob: Job? = null
 
-  fun clearEmbeddedSubtitleTranslationCue() {
+  fun clearEmbeddedSubtitleTranslationCue(native: Boolean = false) {
     embeddedTranslationRequestId += 1L
-    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _embeddedTranslatedSubtitle.value = null
-    if (aiPreferences.subtitleTranslationEnabled.get() && !nativeSubtitleHiddenForTranslation) {
-      PlaybackSession.setPropertyBoolean("sub-visibility", false)
+
+    // A blank cue is emitted while changing tracks and while seeking. When translation
+    // is enabled, keep text subtitles hidden during that gap; the next non-empty cue
+    // below starts a fresh request. Restoring visibility here causes the original cue
+    // to flash/show while the translated overlay is empty.
+    if (aiPreferences.playerSubtitleTranslationEnabled.get()) {
+      if (native) {
+        nativeSubtitleVisibilityListener?.invoke(true)
+      } else {
+        PlaybackSession.setPropertyBoolean("sub-visibility", false)
+      }
       nativeSubtitleHiddenForTranslation = true
+    } else {
+      if (native) nativeSubtitleVisibilityListener?.invoke(false)
+      else PlaybackSession.setPropertyBoolean("sub-visibility", true)
+      nativeSubtitleHiddenForTranslation = false
     }
   }
 
   fun resetEmbeddedSubtitleTranslation() {
     embeddedTranslationRequestId += 1L
-    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = null
     lastEmbeddedCue = ""
     _translationStatus.value = ""
     _embeddedTranslatedSubtitle.value = null
-    if (nativeSubtitleHiddenForTranslation) {
-      PlaybackSession.setPropertyBoolean("sub-visibility", true)
-      nativeSubtitleHiddenForTranslation = false
-    }
+    // Always restore both subtitle renderers. The hidden flag can be false when the
+    // translation request is cancelled before its result arrives, but either renderer may
+    // already have been hidden by the translation handoff.
+    PlaybackSession.setPropertyBoolean("sub-visibility", true)
+    nativeSubtitleVisibilityListener?.invoke(false)
+    nativeSubtitleHiddenForTranslation = false
   }
 
-  fun translateEmbeddedSubtitleCue(rawCue: String) {
+  fun translateEmbeddedSubtitleCue(rawCue: String, native: Boolean = false) {
     val cue = rawCue.trim()
     if (cue.isBlank()) {
-      if (aiPreferences.subtitleTranslationEnabled.get()) clearEmbeddedSubtitleTranslationCue()
+      if (aiPreferences.playerSubtitleTranslationEnabled.get()) clearEmbeddedSubtitleTranslationCue(native)
       else resetEmbeddedSubtitleTranslation()
       return
     }
-    if (cue == lastEmbeddedCue || !aiPreferences.subtitleTranslationEnabled.get()) return
+    if (cue == lastEmbeddedCue || !aiPreferences.playerSubtitleTranslationEnabled.get()) return
     val target =
       (aiPreferences.embeddedSubtitleTargetLanguage.get().trim().takeIf { it.isNotBlank() }
         ?: aiPreferences.autoTranslateLanguages.get().split(",").firstOrNull { it.isNotBlank() }?.trim())
         ?: java.util.Locale.getDefault().language.ifBlank { "en" }
     lastEmbeddedCue = cue
     _embeddedTranslatedSubtitle.value = null
-    if (!nativeSubtitleHiddenForTranslation) {
+    // Suppress the original text cue immediately. This prevents the embedded subtitle
+    // from appearing while the translation request is in flight; image-based subtitles
+    // never enter this method and therefore retain their existing rendering behavior.
+    if (native) {
+      nativeSubtitleVisibilityListener?.invoke(true)
+    } else {
       PlaybackSession.setPropertyBoolean("sub-visibility", false)
-      nativeSubtitleHiddenForTranslation = true
     }
+    nativeSubtitleHiddenForTranslation = true
     val requestId = ++embeddedTranslationRequestId
-    embeddedCueTranslationJob?.cancel()
     embeddedCueTranslationJob = viewModelScope.launch(Dispatchers.IO) {
       _translationStatus.value = "Translating embedded subtitle…"
       val provider = aiPreferences.embeddedSubtitleTranslationProvider.get().trim()
@@ -2842,16 +2894,54 @@ class PlayerViewModel : ViewModel(),
       result.onSuccess { translated ->
         withContext(Dispatchers.Main.immediate) {
           if (requestId == embeddedTranslationRequestId && cue == lastEmbeddedCue) {
-            _embeddedTranslatedSubtitle.value = translated.trim().takeIf { it.isNotBlank() }
+            val cleanedTranslation = translated.trim().takeIf { it.isNotBlank() }
+            if (cleanedTranslation != null && !translationMatchesOriginal(cue, cleanedTranslation, target)) {
+              if (native && !nativeSubtitleHiddenForTranslation) {
+                nativeSubtitleVisibilityListener?.invoke(true)
+                nativeSubtitleHiddenForTranslation = true
+              }
+              if (!native && !nativeSubtitleHiddenForTranslation) {
+                PlaybackSession.setPropertyBoolean("sub-visibility", false)
+                nativeSubtitleHiddenForTranslation = true
+              }
+              _embeddedTranslatedSubtitle.value = cleanedTranslation
+            } else {
+              // Keep the native subtitle visible when it is already in the requested language.
+              // This preserves the original font, outline, position, and line layout exactly.
+              _embeddedTranslatedSubtitle.value = null
+              if (native && nativeSubtitleHiddenForTranslation) {
+                nativeSubtitleVisibilityListener?.invoke(false)
+                nativeSubtitleHiddenForTranslation = false
+              }
+              if (!native && nativeSubtitleHiddenForTranslation) {
+                PlaybackSession.setPropertyBoolean("sub-visibility", true)
+                nativeSubtitleHiddenForTranslation = false
+              }
+            }
           }
           if (requestId == embeddedTranslationRequestId) _translationStatus.value = ""
         }
       }.onFailure {
         if (requestId == embeddedTranslationRequestId) {
-          withContext(Dispatchers.Main.immediate) { _translationStatus.value = "" }
+          withContext(Dispatchers.Main.immediate) {
+            _embeddedTranslatedSubtitle.value = null
+            _translationStatus.value = ""
+            if (!aiPreferences.playerSubtitleTranslationEnabled.get()) {
+              if (native) nativeSubtitleVisibilityListener?.invoke(false)
+              else PlaybackSession.setPropertyBoolean("sub-visibility", true)
+              nativeSubtitleHiddenForTranslation = false
+            }
+          }
         }
       }
     }
+  }
+
+  private fun translationMatchesOriginal(original: String, translated: String, target: String): Boolean {
+    fun normalized(value: String) = value.trim().split(Regex("\\s+")).joinToString(" ")
+    if (normalized(original).equals(normalized(translated), ignoreCase = true)) return true
+    val language = target.trim().lowercase().substringBefore('-').substringBefore('_')
+    return language in setOf("ar", "ara") && original.any { it in '\u0600'..'\u06ff' }
   }
 
   fun translateSubtitle(
@@ -3210,6 +3300,10 @@ class PlayerViewModel : ViewModel(),
 
   fun setMediaTitle(mediaTitle: String) {
     if (currentMediaTitle != mediaTitle) {
+      // A translated cue and the hidden-renderer flag belong to the previous media item.
+      // Clear both before the next file starts so its first subtitle can trigger a fresh
+      // translation request and the original renderer is not left hidden by stale state.
+      resetEmbeddedSubtitleTranslation()
       currentMediaTitle = mediaTitle
       lastAutoSelectedMediaTitle = null
       introLookupJob?.cancel()
@@ -3222,7 +3316,6 @@ class PlayerViewModel : ViewModel(),
       scanLocalSubtitles(mediaTitle)
       syncplayManager.updateFileInfo(currentSyncplayFileInfo())
 
-      restoreSavedVideoAspect(showUpdate = false)
       skippedSegments.clear()
       chapterDerivedSegments = emptyList()
       introDbSegments = emptyList()
@@ -3301,12 +3394,18 @@ class PlayerViewModel : ViewModel(),
     auto: Boolean,
   ) {
     val seekTarget = SkipMarkerResolver.seekTarget(segment, currentDurationSeconds())
-    PlaybackSession.setPropertyDouble("time-pos", seekTarget)
-    syncplayManager.updatePlayerState(
-      seekTarget,
-      PlaybackSession.getPropertyBoolean("pause") ?: false,
-      doSeek = true,
-    )
+    if (host.isNativeEngineActive()) {
+      // Skip markers were previously always written to MPV's time-pos. When Native Media3 was
+      // active that changed an inactive renderer, so the chip appeared but playback did not move.
+      host.nativeSeekTo((seekTarget * 1000.0).toLong().coerceAtLeast(0L))
+    } else {
+      PlaybackSession.setPropertyDouble("time-pos", seekTarget)
+      syncplayManager.updatePlayerState(
+        seekTarget,
+        PlaybackSession.getPropertyBoolean("pause") ?: false,
+        doSeek = true,
+      )
+    }
     showToast(if (auto) "${segment.label} (auto)" else segment.label)
   }
 
@@ -3905,6 +4004,8 @@ class PlayerViewModel : ViewModel(),
     val wyziePlan = buildWyzieSearchPlan(searchTitle, year, queryInfo, fileInfo)
     val includeWyzie = mode != OnlineSubtitleSearchMode.SUBHUB && wyziePlan.request != null
     val includeSubtitleHub = mode != OnlineSubtitleSearchMode.WYZIE
+    val detectedSeason = queryInfo.season ?: fileInfo.season
+    val detectedEpisode = queryInfo.episode ?: fileInfo.episode
 
     if (mode == OnlineSubtitleSearchMode.WYZIE && wyziePlan.request == null) {
       wyziePlan.missingSelectionMessage?.let(::showToast)
@@ -3912,7 +4013,16 @@ class PlayerViewModel : ViewModel(),
       return
     }
 
-    val wyzieRequest = wyziePlan.request ?: OnlineSubtitleSearchRequest(query = searchTitle, year = year)
+    val wyzieRequest =
+      wyziePlan.request
+        ?: OnlineSubtitleSearchRequest(
+          query = searchTitle,
+          year = year,
+          // Keep the parsed episode for SubtitleHub in HYBRID/SUBHUB mode even when Wyzie
+          // requires an explicit show selection and therefore is disabled for this search.
+          season = detectedSeason,
+          episode = detectedEpisode,
+        )
     searchSubtitles(
       query = wyzieRequest.query,
       season = wyzieRequest.season,
@@ -4556,10 +4666,13 @@ class PlayerViewModel : ViewModel(),
     changeVolumeTo(currentSystemVolume + change, showUi)
   }
 
-  fun changeVolumePercentTo(volumePercent: Int) {
+  fun changeVolumePercentTo(
+    volumePercent: Int,
+    showUi: Boolean = false,
+  ) {
     val newPercent = volumePercent.coerceIn(0, 100)
     val newVolume = percentToSystemVolume(newPercent)
-    val flags = if (isAudioOnly.value) AudioManager.FLAG_SHOW_UI else 0
+    val flags = if (showUi || isAudioOnly.value) AudioManager.FLAG_SHOW_UI else 0
     (appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager).setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, flags)
     currentVolume.value = syncCurrentSystemVolume()
     currentVolumePercent.value = newPercent
@@ -4618,7 +4731,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun setPlaybackSpeed(speed: Float) {
-    val clamped = speed.coerceIn(0.25f, 4f)
+    val clamped = speed.coerceIn(0.25f, 8f)
     if (host.isNativeEngineActive()) host.nativeSetSpeed(clamped)
     else PlaybackSession.setPropertyFloat("speed", clamped)
   }
@@ -4661,14 +4774,20 @@ class PlayerViewModel : ViewModel(),
   fun changeVideoAspect(
     aspect: VideoAspect,
     showUpdate: Boolean = true,
+    persistGlobal: Boolean = true,
   ) {
     if (host.isNativeEngineActive()) {
       host.nativeSetVideoAspect(aspect)
-      playerPreferences.lastVideoAspect.set(aspect)
-      playerPreferences.lastCustomAspectRatio.set(-1f)
+      if (persistGlobal) {
+        playerPreferences.lastVideoAspect.set(aspect)
+        playerPreferences.lastCustomAspectRatio.set(-1f)
+      }
       _videoAspect.value = aspect
       _currentAspectRatio.value = -1.0
-      if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
+      if (showUpdate) {
+        playerUpdate.value = PlayerUpdates.AspectRatio
+        host.onVideoAspectChanged()
+      }
       return
     }
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
@@ -4715,24 +4834,28 @@ class PlayerViewModel : ViewModel(),
     }
 
     // Update the state
-    playerPreferences.lastVideoAspect.set(aspect)
-    playerPreferences.lastCustomAspectRatio.set(-1f)
+    if (persistGlobal) {
+      playerPreferences.lastVideoAspect.set(aspect)
+      playerPreferences.lastCustomAspectRatio.set(-1f)
+    }
     _videoAspect.value = aspect
     _currentAspectRatio.value = -1.0 // Reset custom ratio when using standard modes
 
     // Notify the UI
     if (showUpdate) {
       playerUpdate.value = PlayerUpdates.AspectRatio
+      host.onVideoAspectChanged()
     }
   }
 
   fun setCustomAspectRatio(
     ratio: Double,
     showUpdate: Boolean = true,
+    persistGlobal: Boolean = true,
   ) {
     if (host.isNativeEngineActive()) {
       host.nativeSetVideoAspect(VideoAspect.Stretch)
-      playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
+      if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
       _currentAspectRatio.value = ratio
       if (showUpdate) playerUpdate.value = PlayerUpdates.AspectRatio
       return
@@ -4740,14 +4863,21 @@ class PlayerViewModel : ViewModel(),
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
     PlaybackSession.setPropertyDouble("panscan", 0.0)
     PlaybackSession.setPropertyDouble("video-aspect-override", ratio)
-    playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
+    if (persistGlobal) playerPreferences.lastCustomAspectRatio.set(ratio.toFloat())
     _currentAspectRatio.value = ratio
     if (showUpdate) {
       playerUpdate.value = PlayerUpdates.AspectRatio
+      host.onVideoAspectChanged()
     }
   }
 
   fun restoreSavedVideoAspect(showUpdate: Boolean = false) {
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) {
+      // Per-video mode must never fall back to the global aspect value. A missed lifecycle
+      // callback must not reapply the previous video's Crop/Stretch setting.
+      changeVideoAspect(VideoAspect.Fit, showUpdate, persistGlobal = false)
+      return
+    }
     val customAspectRatio = playerPreferences.lastCustomAspectRatio.get()
     if (customAspectRatio > 0f) {
       setCustomAspectRatio(customAspectRatio.toDouble(), showUpdate)
@@ -4755,6 +4885,19 @@ class PlayerViewModel : ViewModel(),
     }
 
     changeVideoAspect(playerPreferences.lastVideoAspect.get(), showUpdate)
+  }
+
+  fun restoreVideoAspect(
+    aspectName: String,
+    customAspectRatio: Float,
+    showUpdate: Boolean = false,
+  ) {
+    if (customAspectRatio > 0f) {
+      setCustomAspectRatio(customAspectRatio.toDouble(), showUpdate, persistGlobal = false)
+      return
+    }
+    val aspect = VideoAspect.entries.firstOrNull { it.name.equals(aspectName, ignoreCase = true) } ?: VideoAspect.Fit
+    changeVideoAspect(aspect, showUpdate, persistGlobal = false)
   }
 
   fun setAutoCropBlackBars(enabled: Boolean) {
@@ -5013,6 +5156,7 @@ class PlayerViewModel : ViewModel(),
   }
 
   private fun refreshStretchAspectAfterCropChange() {
+    if (playerPreferences.rememberVideoAspectPerVideo.get()) return
     if (playerPreferences.lastCustomAspectRatio.get() > 0f) return
     if (playerPreferences.lastVideoAspect.get() != VideoAspect.Stretch) return
     changeVideoAspect(VideoAspect.Stretch, showUpdate = false)
@@ -6650,7 +6794,6 @@ class PlayerViewModel : ViewModel(),
     // ViewModel normally cancels this scope after onCleared; cancel it first so dispatcher workers
     // cannot start another callback while the player resources below are being released.
     viewModelScope.cancel()
-    embeddedCueTranslationJob?.cancel()
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)
       nativeSubtitleHiddenForTranslation = false

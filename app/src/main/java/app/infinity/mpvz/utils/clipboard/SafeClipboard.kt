@@ -82,7 +82,7 @@ object SafeClipboard {
     }
 
     fun suffixFor(copiedBytes: Int) =
-      "\n\n[MPVRX: copied first $copiedBytes of $bytes bytes. Use Share/Export for full content.]"
+      "\n\n[MPV_INFINITY: copied first $copiedBytes of $bytes bytes. Use Share/Export for full content.]"
 
     val suffixBytes = suffixFor(0).toByteArray(StandardCharsets.UTF_8).size
     val budget = (maxBytes - suffixBytes).coerceAtLeast(0)

@@ -362,7 +362,7 @@ fun FolderCard(
           Text(
             folder.name,
             style = if (isSingleColumn) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
-            color = if (isRecentlyPlayed) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+            color = if (isRecentlyPlayed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             maxLines = maxLines,
             overflow = TextOverflow.Ellipsis,
             textAlign = if (isSingleColumn) androidx.compose.ui.text.style.TextAlign.Start else (if (centerGridTitles) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Start),
@@ -460,7 +460,7 @@ fun FolderCard(
             Text(
               folder.name,
               style = MaterialTheme.typography.titleMedium,
-              color = if (isRecentlyPlayed) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+              color = if (isRecentlyPlayed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
               maxLines = maxLines,
               overflow = TextOverflow.Ellipsis,
             )

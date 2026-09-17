@@ -635,6 +635,7 @@ fun JellyfinTracksList(
         isPlaying = isPlaying,
         onClick = { onTrackClick(track) },
         onLongClick = { onTrackLongClick(track) },
+        coverArtSizeDp = 64,
       )
     }
   }

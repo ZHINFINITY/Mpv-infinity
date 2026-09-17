@@ -15,7 +15,7 @@ enum class SubtitleProvider(
   val displayName: String,
 ) {
   WYZIE("Wyzie"),
-  MPVRX_SUBTITLE_HUB("SubHub"),
+  MPV_INFINITY_SUBTITLE_HUB("SubHub"),
 }
 
 enum class OnlineSubtitleSearchMode(
@@ -56,7 +56,7 @@ data class OnlineSubtitle(
 )
 
 fun OnlineSubtitle.subdlGroupEpisodeRange(): IntRange? {
-  if (provider != SubtitleProvider.MPVRX_SUBTITLE_HUB || source != "SubDL.com") return null
+  if (provider != SubtitleProvider.MPV_INFINITY_SUBTITLE_HUB || source != "SubDL.com") return null
   val start = metadata[SUBDL_GROUP_EPISODE_START_KEY]?.toIntOrNull() ?: return null
   val end = metadata[SUBDL_GROUP_EPISODE_END_KEY]?.toIntOrNull() ?: return null
   if (start <= 0 || end < start || end - start >= MAX_SUBDL_GROUP_EPISODES) return null

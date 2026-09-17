@@ -16,6 +16,7 @@ import android.util.Log
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.domain.jellyfin.JellyfinAuthResult
 import app.infinity.mpvz.domain.jellyfin.JellyfinItem
+import app.infinity.mpvz.domain.jellyfin.JellyfinMediaSource
 import app.infinity.mpvz.domain.jellyfin.JellyfinUser
 import app.infinity.mpvz.network.awaitResponse
 import app.infinity.mpvz.utils.media.PlaybackSubtitleTrack
@@ -26,6 +27,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -140,10 +142,12 @@ class JellyfinClient(
       itemId: String,
       token: String,
       isAudio: Boolean = false,
+      mediaSourceId: String? = null,
     ): String {
       val base = normalizeUrl(serverUrl)
       val endpoint = if (isAudio) "Audio" else "Videos"
-      return "$base/$endpoint/$itemId/stream?static=true&api_key=$token"
+      val sourceParam = mediaSourceId?.takeIf { it.isNotBlank() }?.let { "&mediaSourceId=$it" }.orEmpty()
+      return "$base/$endpoint/$itemId/stream?static=true&api_key=$token$sourceParam"
     }
 
     fun getImageUrl(
@@ -719,7 +723,8 @@ class JellyfinClient(
     itemId: String,
     token: String,
     isAudio: Boolean = false,
-  ): String = Companion.getStreamUrl(serverUrl, itemId, token, isAudio)
+    mediaSourceId: String? = null,
+  ): String = Companion.getStreamUrl(serverUrl, itemId, token, isAudio, mediaSourceId)
 
   fun getImageUrl(
     serverUrl: String,
@@ -737,6 +742,39 @@ class JellyfinClient(
     maxWidth: Int = 1280,
     token: String? = null,
   ): String = Companion.getBackdropUrl(serverUrl, itemId, imageTag, maxWidth, token)
+
+  suspend fun getMediaSources(
+    serverUrl: String,
+    token: String,
+    userId: String,
+    itemId: String,
+  ): Result<List<JellyfinMediaSource>> = withContext(Dispatchers.IO) {
+    runCatching {
+      val endpoint = "${normalizeUrl(serverUrl)}/Users/$userId/Items/$itemId?Fields=MediaSources"
+      val request = Request.Builder().url(endpoint).addJellyfinHeaders(token).get().build()
+      httpClient.newCall(request).awaitResponse().use { response ->
+        check(response.isSuccessful) { "HTTP ${response.code}" }
+        val sources = json.parseToJsonElement(response.body.string()).jsonObject["MediaSources"]?.jsonArray.orEmpty()
+        sources.mapNotNull { element ->
+          val obj = element.jsonObject
+          val id = obj["Id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+          JellyfinMediaSource(
+            id = id,
+            name = obj["Name"]?.jsonPrimitive?.contentOrNull,
+            container = obj["Container"]?.jsonPrimitive?.contentOrNull,
+            sizeBytes = obj["Size"]?.jsonPrimitive?.longOrNull,
+            bitrate = obj["Bitrate"]?.jsonPrimitive?.longOrNull,
+            width = obj["Width"]?.jsonPrimitive?.intOrNull,
+            height = obj["Height"]?.jsonPrimitive?.intOrNull,
+            videoCodec = obj["VideoCodec"]?.jsonPrimitive?.contentOrNull,
+            audioCodec = obj["AudioCodec"]?.jsonPrimitive?.contentOrNull,
+            audioChannels = obj["AudioChannels"]?.jsonPrimitive?.intOrNull,
+            videoRange = obj["VideoRange"]?.jsonPrimitive?.contentOrNull,
+          )
+        }
+      }
+    }
+  }
 
   suspend fun getSubtitleTracks(
     serverUrl: String,

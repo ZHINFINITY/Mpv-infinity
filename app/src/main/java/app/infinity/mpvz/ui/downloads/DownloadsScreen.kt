@@ -18,15 +18,18 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +37,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +55,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +69,7 @@ import app.infinity.mpvz.domain.download.AppDownloadManager
 import app.infinity.mpvz.domain.download.AppDownloadStatus
 import app.infinity.mpvz.domain.download.YtdlpDownloadEngine
 import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.ui.browser.states.EmptyState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -118,6 +125,13 @@ object DownloadsScreen : Screen {
     var pendingDelete by remember { mutableStateOf<AppDownload?>(null) }
 
     val activeDownloads = downloads.filter { !it.isCompleted }
+    val activeJellyfinSeries =
+      activeDownloads
+        .filter { it.entity.source == "jellyfin" && !it.entity.jellyfinSeriesName.isNullOrBlank() }
+        .groupBy { it.entity.jellyfinSeriesName.orEmpty() }
+        .toList()
+    val activeStandaloneDownloads =
+      activeDownloads.filter { it.entity.source != "jellyfin" || it.entity.jellyfinSeriesName.isNullOrBlank() }
     val completedDownloads = downloads.filter { it.isCompleted }
     val activeYtdlp = ytdlpJobs.filter { it.state != YtdlpDownloadEngine.JobState.SUCCESS }
     val completedYtdlp = ytdlpJobs.filter { it.state == YtdlpDownloadEngine.JobState.SUCCESS }
@@ -171,15 +185,30 @@ object DownloadsScreen : Screen {
           items(activeYtdlp, key = { "ytdlp_${it.id}" }) { job ->
             YtdlpJobRow(
               job = job,
-              onCancel = { ytdlpEngine.cancel(job.id) },
+              onPause = { ytdlpEngine.pause(job.id) },
+              onResume = { ytdlpEngine.resume(job.id) },
+              onCancel = { ytdlpEngine.remove(job.id) },
               onRetry = { ytdlpEngine.retry(job.id) },
               onRemove = { ytdlpEngine.remove(job.id) },
             )
           }
-          items(activeDownloads, key = { "dl_${it.id}" }) { download ->
+          items(activeJellyfinSeries, key = { "series_${it.first}" }) { (seriesName, episodes) ->
+            JellyfinDownloadGroupCard(
+              seriesName = seriesName,
+              episodes = episodes,
+              activeSnapshot = activeSnapshot,
+              onPause = { downloadManager.pause(it.id) },
+              onResume = { downloadManager.resume(it.id) },
+              onRetry = { downloadManager.retry(it.id) },
+              onCancel = { downloadManager.remove(it, deleteFile = true) },
+            )
+          }
+          items(activeStandaloneDownloads, key = { "dl_${it.id}" }) { download ->
             ActiveDownloadRow(
               download = download,
               speedBytesPerSec = activeSnapshot?.takeIf { it.id == download.id }?.speedBytesPerSec ?: 0L,
+              onPause = { downloadManager.pause(download.id) },
+              onResume = { downloadManager.resume(download.id) },
               onRetry = { downloadManager.retry(download.id) },
               onCancel = { downloadManager.remove(download, deleteFile = true) },
             )
@@ -332,15 +361,24 @@ private fun DownloadLocationCard(
 private fun ActiveDownloadRow(
   download: AppDownload,
   speedBytesPerSec: Long,
+  onPause: () -> Unit,
+  onResume: () -> Unit,
   onRetry: () -> Unit,
   onCancel: () -> Unit,
+  showCard: Boolean = true,
 ) {
   val status = download.status
-  Card(
-    shape = RoundedCornerShape(14.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-  ) {
+  val content: @Composable () -> Unit = {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+      if (showCard && download.entity.source == "jellyfin" && !download.entity.posterUrl.isNullOrBlank()) {
+        RemoteImage(
+          url = download.entity.posterUrl.orEmpty(),
+          contentDescription = download.displayTitle,
+          modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+          contentScale = ContentScale.Crop,
+        )
+        Spacer(modifier = Modifier.size(10.dp))
+      }
       Row(verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
           Text(
@@ -353,15 +391,15 @@ private fun ActiveDownloadRow(
           Text(
             text = downloadStatusLine(download, speedBytesPerSec),
             style = MaterialTheme.typography.bodySmall,
-            color =
-              if (status == AppDownloadStatus.FAILED) {
-                MaterialTheme.colorScheme.error
-              } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-              },
+            color = if (status == AppDownloadStatus.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
+        }
+        if (status == AppDownloadStatus.PAUSED) {
+          IconButton(onClick = onResume) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Resume") }
+        } else if (status == AppDownloadStatus.RUNNING || status == AppDownloadStatus.QUEUED) {
+          IconButton(onClick = onPause) { Icon(Icons.RoundedFilled.Pause, contentDescription = "Pause") }
         }
         if (status == AppDownloadStatus.FAILED || status == AppDownloadStatus.CANCELLED) {
           IconButton(onClick = onRetry) {
@@ -372,10 +410,64 @@ private fun ActiveDownloadRow(
           Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_cancel))
         }
       }
-      if (status == AppDownloadStatus.RUNNING || status == AppDownloadStatus.QUEUED) {
+      if (status == AppDownloadStatus.RUNNING || status == AppDownloadStatus.QUEUED || status == AppDownloadStatus.PAUSED) {
         LinearProgressIndicator(
           progress = { (download.entity.progress / 100f).coerceIn(0f, 1f) },
           modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+      }
+    }
+  }
+  if (showCard) {
+    Card(
+      shape = RoundedCornerShape(14.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) { content() }
+  } else {
+    content()
+  }
+}
+
+@Composable
+private fun JellyfinDownloadGroupCard(
+  seriesName: String,
+  episodes: List<AppDownload>,
+  activeSnapshot: AppDownloadManager.ActiveSnapshot?,
+  onPause: (AppDownload) -> Unit,
+  onResume: (AppDownload) -> Unit,
+  onRetry: (AppDownload) -> Unit,
+  onCancel: (AppDownload) -> Unit,
+) {
+  val posterUrl = episodes.firstOrNull()?.entity?.posterUrl
+  Card(
+    shape = RoundedCornerShape(14.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+  ) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+      if (!posterUrl.isNullOrBlank()) {
+        RemoteImage(
+          url = posterUrl,
+          contentDescription = seriesName,
+          modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+          contentScale = ContentScale.Crop,
+        )
+      }
+      Text(
+        text = seriesName,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+      )
+      episodes.forEachIndexed { index, episode ->
+        if (index > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        ActiveDownloadRow(
+          download = episode,
+          speedBytesPerSec = activeSnapshot?.takeIf { it.id == episode.id }?.speedBytesPerSec ?: 0L,
+          onPause = { onPause(episode) },
+          onResume = { onResume(episode) },
+          onRetry = { onRetry(episode) },
+          onCancel = { onCancel(episode) },
+          showCard = false,
         )
       }
     }
@@ -385,6 +477,8 @@ private fun ActiveDownloadRow(
 @Composable
 private fun YtdlpJobRow(
   job: YtdlpDownloadEngine.Job,
+  onPause: () -> Unit,
+  onResume: () -> Unit,
   onCancel: () -> Unit,
   onRetry: () -> Unit,
   onRemove: () -> Unit,
@@ -394,6 +488,28 @@ private fun YtdlpJobRow(
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
   ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+      val thumbnailUrl = ytdlThumbnailUrl(job.url)
+      Box(
+        modifier = Modifier.fillMaxWidth().height(156.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center,
+      ) {
+        if (thumbnailUrl != null) {
+          RemoteImage(
+            url = thumbnailUrl,
+            contentDescription = job.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+          )
+        } else {
+          Icon(
+            Icons.RoundedFilled.VideoLibrary,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(42.dp),
+          )
+        }
+      }
+      Spacer(modifier = Modifier.size(10.dp))
       Row(verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
           Text(
@@ -425,14 +541,17 @@ private fun YtdlpJobRow(
               Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_remove_entry))
             }
           }
+          YtdlpDownloadEngine.JobState.PAUSED -> {
+            IconButton(onClick = onResume) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Resume") }
+            IconButton(onClick = onCancel) { Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_cancel)) }
+          }
           else -> {
-            IconButton(onClick = onCancel) {
-              Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_cancel))
-            }
+            IconButton(onClick = onPause) { Icon(Icons.RoundedFilled.Pause, contentDescription = "Pause") }
+            IconButton(onClick = onCancel) { Icon(Icons.RoundedFilled.Close, contentDescription = stringResource(R.string.downloads_cancel)) }
           }
         }
       }
-      if (job.state == YtdlpDownloadEngine.JobState.RUNNING) {
+      if (job.state == YtdlpDownloadEngine.JobState.RUNNING || job.state == YtdlpDownloadEngine.JobState.PAUSED) {
         LinearProgressIndicator(
           progress = { (job.progressPercent / 100f).coerceIn(0f, 1f) },
           modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -440,6 +559,16 @@ private fun YtdlpJobRow(
       }
     }
   }
+}
+
+private fun ytdlThumbnailUrl(url: String): String? {
+  val videoId =
+    Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?v=|shorts/|embed/))([^?&/]+)")
+      .find(url)
+      ?.groupValues
+      ?.getOrNull(1)
+      ?.takeIf { it.isNotBlank() }
+  return videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
 }
 
 @Composable
@@ -503,6 +632,7 @@ private fun downloadStatusLine(
     AppDownloadStatus.FAILED ->
       stringResource(R.string.downloads_failed) +
         entity.failureReason?.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+    AppDownloadStatus.PAUSED -> "Paused"
     AppDownloadStatus.CANCELLED -> stringResource(R.string.downloads_cancelled)
     AppDownloadStatus.SUCCESS -> stringResource(R.string.downloads_downloaded)
     AppDownloadStatus.RUNNING ->
@@ -525,6 +655,7 @@ private fun ytdlpStatusLine(job: YtdlpDownloadEngine.Job): String =
       "${"%.1f".format(Locale.US, job.progressPercent)}% ${job.detail}".trim()
     YtdlpDownloadEngine.JobState.FAILED ->
       stringResource(R.string.downloads_failed) + job.error?.let { ": $it" }.orEmpty()
+    YtdlpDownloadEngine.JobState.PAUSED -> "Paused"
     YtdlpDownloadEngine.JobState.CANCELLED -> stringResource(R.string.downloads_cancelled)
     YtdlpDownloadEngine.JobState.SUCCESS -> stringResource(R.string.downloads_downloaded)
   }

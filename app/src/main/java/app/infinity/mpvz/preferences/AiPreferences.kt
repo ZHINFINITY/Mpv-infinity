@@ -85,7 +85,18 @@ class AiPreferences(
 
   val renameWithAi = preferenceStore.getBoolean("ai_rename_enabled", true)
   val subtitleFormatWithAi = preferenceStore.getBoolean("ai_subtitle_format_enabled", true)
-  val subtitleTranslationEnabled = preferenceStore.getBoolean("ai_subtitle_translation_enabled", false)
+  // A new key intentionally resets the Player > Subtitles translation switch to off for
+  // existing installations that may have retained the earlier opt-in value.
+  val subtitleTranslationEnabled =
+    preferenceStore.getBoolean("ai_subtitle_translation_enabled_v2", false)
+  // Separate player-sheet opt-in. Global AI translation settings configure availability,
+  // but must never automatically enable translation during playback.
+  // When enabled, translated subtitle text may use Android font fallback for missing glyphs.
+  val automaticSubtitleFontFallback =
+    preferenceStore.getBoolean("ai_automatic_subtitle_font_fallback", true)
+
+  val playerSubtitleTranslationEnabled =
+    preferenceStore.getBoolean("ai_player_subtitle_translation_enabled", false)
 
   // Real-time subtitle generation (speech-to-text while playing)
   val realtimeSubsEnabled = preferenceStore.getBoolean("ai_realtime_subs_enabled", true)

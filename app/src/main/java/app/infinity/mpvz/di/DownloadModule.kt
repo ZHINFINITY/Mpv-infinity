@@ -19,7 +19,7 @@ import org.koin.dsl.module
 val DownloadModule =
   module {
     single { DownloadLocations(androidContext(), get()) }
-    single { AppDownloadManager(androidContext(), get<app.infinity.mpvz.database.MpvRxDatabase>().downloadItemDao(), get()) }
+    single { AppDownloadManager(androidContext(), get<app.infinity.mpvz.database.MpvInfinityDatabase>().downloadItemDao(), get()) }
     single { YtdlpDownloadEngine(androidContext(), get()) }
     single { LinkDownloadCoordinator(get(), get()) }
   }

@@ -9,6 +9,18 @@
 
 package app.infinity.mpvz.ui.cast
 
+data class CastSubtitleTrack(
+  val id: Long,
+  val name: String,
+  val language: String?,
+)
+
+data class CastAudioTrack(
+  val id: Long,
+  val name: String,
+  val language: String?,
+)
+
 data class CastSessionState(
   val isConnected: Boolean = false,
   val deviceName: String? = null,
@@ -21,4 +33,8 @@ data class CastSessionState(
   val isMuted: Boolean = false,
   val playbackSpeed: Float = 1.0f,
   val title: String = "",
+  val subtitleTracks: List<CastSubtitleTrack> = emptyList(),
+  val activeSubtitleTrackId: Long? = null,
+  val audioTracks: List<CastAudioTrack> = emptyList(),
+  val activeAudioTrackId: Long? = null,
 )
