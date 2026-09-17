@@ -425,6 +425,16 @@ private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
   return copy(
     primary = primary,
     onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
+    primaryContainer = primary.copy(alpha = 0.34f),
+    onPrimaryContainer = onBackground,
+    secondary = primary.copy(alpha = 0.86f),
+    onSecondary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
+    secondaryContainer = background.copy(alpha = 0.30f),
+    onSecondaryContainer = onBackground,
+    tertiary = primary.copy(alpha = 0.72f),
+    onTertiary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
+    tertiaryContainer = background.copy(alpha = 0.30f),
+    onTertiaryContainer = onBackground,
     background = background,
     surface = background.copy(alpha = 0.52f),
     surfaceDim = background.copy(alpha = 0.18f),
@@ -437,6 +447,8 @@ private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
     onBackground = onBackground,
     onSurface = onBackground,
     onSurfaceVariant = onBackground.copy(alpha = 0.78f),
+    inverseSurface = background.copy(alpha = 0.72f),
+    inverseOnSurface = onBackground,
   )
 }
 
