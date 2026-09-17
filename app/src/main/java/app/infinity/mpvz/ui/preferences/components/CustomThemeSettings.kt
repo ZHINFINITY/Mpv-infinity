@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -163,7 +164,14 @@ private fun CustomThemeEditor(
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
       Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-      ThemeMediaPreview(theme = edited, modifier = Modifier.fillMaxWidth().height(220.dp))
+      // Use a phone-shaped portrait viewport so crop/fit/position changes are
+      // previewed in the same geometry users will see in the app.
+      Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        ThemeMediaPreview(
+          theme = edited,
+          modifier = Modifier.width(150.dp).aspectRatio(320f / 693f),
+        )
+      }
       Column(modifier = Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Text("Media framing", style = MaterialTheme.typography.titleMedium)

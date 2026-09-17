@@ -358,8 +358,8 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
     if (theme.isVideo) {
       AndroidView(
         modifier = Modifier.fillMaxSize().graphicsLayer {
-          scaleX = theme.scale * if (theme.aspectMode == "screen" && theme.fitMode == "crop") 2f else if (theme.fitMode == "crop") 1.45f else 1f
-          scaleY = theme.scale * if (theme.aspectMode == "screen" && theme.fitMode == "crop") 2f else if (theme.fitMode == "crop") 1.45f else 1f
+          scaleX = theme.scale
+          scaleY = theme.scale
           alpha = (0.55f + theme.brightness * 0.45f).coerceIn(0.35f, 1f)
           translationX = theme.offsetX * size.width * 0.5f
           translationY = theme.offsetY * size.height * 0.5f
@@ -438,10 +438,12 @@ private fun customColorScheme(theme: CustomThemeData): ColorScheme {
     onTertiary = onPrimary,
     tertiaryContainer = background.copy(alpha = 0.30f),
     onTertiaryContainer = onBackground,
-    background = background,
-    surface = background.copy(alpha = 0.52f),
-    surfaceDim = background.copy(alpha = 0.18f),
-    surfaceBright = background.copy(alpha = 0.40f),
+    // Keep root and generic surfaces transparent so they reveal the selected
+    // media instead of painting a purple/built-in canvas over it.
+    background = Color.Transparent,
+    surface = Color.Transparent,
+    surfaceDim = Color.Transparent,
+    surfaceBright = Color.Transparent,
     surfaceContainerLowest = background.copy(alpha = 0.14f),
     surfaceContainerLow = background.copy(alpha = 0.22f),
     surfaceContainer = background.copy(alpha = 0.30f),
