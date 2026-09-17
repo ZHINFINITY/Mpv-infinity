@@ -439,6 +439,12 @@
   <string name="pref_about_donate_upi_id" translatable="false">zhjjk001-1@oksbi</string>
   <string name="player_sheets_add_ext_sub">Add external subtitles</string>
   <string name="player_sheets_add_ext_audio">Add external audio tracks</string>
+  <string name="player_sheets_pick_file">Pick file</string>
+  <string name="player_sheets_open_url">Open URL</string>
+  <string name="player_sheets_audio_url_title">Add external audio URL</string>
+  <string name="player_sheets_audio_url_placeholder">https://example.com/audio.m4a</string>
+  <string name="player_sheets_audio_url_invalid">Enter a valid HTTP or HTTPS URL</string>
+  <string name="player_sheets_audio_added">Audio track added</string>
   <string name="player_sheets_embedded_audio_tracks">Embedded Audio</string>
   <string name="player_sheets_external_audio_tracks">External Audio</string>
   <string name="player_sheets_tracks_off">Off</string>

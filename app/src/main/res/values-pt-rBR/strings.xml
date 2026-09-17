@@ -373,6 +373,12 @@ Próximo: NEXT</string>
   <string name="pref_about_donate_upi">UPI</string>
   <string name="player_sheets_add_ext_sub">Adicionar legendas externas</string>
   <string name="player_sheets_add_ext_audio">Adicionar faixas de áudio externas</string>
+  <string name="player_sheets_pick_file">Escolher arquivo</string>
+  <string name="player_sheets_open_url">Abrir URL</string>
+  <string name="player_sheets_audio_url_title">Adicionar URL de áudio externa</string>
+  <string name="player_sheets_audio_url_placeholder">https://exemplo.com/audio.m4a</string>
+  <string name="player_sheets_audio_url_invalid">Insira uma URL HTTP ou HTTPS válida</string>
+  <string name="player_sheets_audio_added">Faixa de áudio adicionada</string>
   <string name="player_sheets_embedded_audio_tracks">Faixas de áudio embutidas</string>
   <string name="player_sheets_external_audio_tracks">Faixas de áudio externas</string>
   <string name="player_sheets_tracks_off">Desativado</string>
