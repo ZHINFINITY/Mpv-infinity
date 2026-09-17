@@ -15,8 +15,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.Image
@@ -116,8 +116,8 @@ private fun CustomThemeRailCard(theme: CustomThemeData, isSelected: Boolean, onC
   }
   Column(modifier = Modifier.width(100.dp), horizontalAlignment = Alignment.CenterHorizontally) {
     Box(modifier = Modifier.size(width = 90.dp, height = 140.dp).clip(RoundedCornerShape(12.dp)).border(if (isSelected) 3.dp else 1.dp, if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(12.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
-      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize()) }
-      Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = (theme.overlay * 0.35f).coerceIn(0f, 0.35f))))
+      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+      Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (theme.overlay * 0.35f).coerceIn(0f, 0.35f))))
     }
     Spacer(modifier = Modifier.height(6.dp))
     Text(theme.name, style = MaterialTheme.typography.bodySmall, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, maxLines = 2, modifier = Modifier.fillMaxWidth())
