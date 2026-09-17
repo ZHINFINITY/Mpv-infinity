@@ -197,8 +197,13 @@ private fun CustomThemeEditor(
       }
       Column(modifier = Modifier.weight(1f).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        AnimatedVisibility(visible = showEditor, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-          Column(modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 230.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (showEditor) {
+          Card(
+            modifier = Modifier.fillMaxWidth().height(230.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+          ) {
+          Column(modifier = Modifier.fillMaxWidth().fillMaxHeight().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Edit background", style = MaterialTheme.typography.titleMedium)
         Text("Media framing", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
           if (fitMode == "crop") Button(onClick = { fitMode = "crop" }) { Text("Crop") } else OutlinedButton(onClick = { fitMode = "crop" }) { Text("Crop") }
@@ -221,6 +226,7 @@ private fun CustomThemeEditor(
         Text("Background visibility"); Slider(value = visibility, onValueChange = { visibility = it }, valueRange = 0.15f..1f)
         Text("Dim overlay (lower shows more media)"); Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0f..0.65f)
         if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
+          }
           }
         }
       }
