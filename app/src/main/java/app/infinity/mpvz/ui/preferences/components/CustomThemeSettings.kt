@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -132,63 +136,73 @@ private fun CustomThemeEditor(
   var overlay by remember(initial.id) { mutableStateOf(initial.overlay) }
   var brightness by remember(initial.id) { mutableStateOf(initial.brightness) }
   var saturation by remember(initial.id) { mutableStateOf(initial.saturation) }
+  var scale by remember(initial.id) { mutableStateOf(initial.scale) }
+  var offsetX by remember(initial.id) { mutableStateOf(initial.offsetX) }
+  var offsetY by remember(initial.id) { mutableStateOf(initial.offsetY) }
+  var fitMode by remember(initial.id) { mutableStateOf(initial.fitMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(if (isNew) "Create custom theme" else "Edit custom theme") },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        ThemeMediaPreview(
-          theme = initial.copy(name = name, overlay = overlay, brightness = brightness, saturation = saturation, muted = muted),
-        )
-        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true)
-        Text("Background dimming")
-        Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0.1f..0.9f)
+  val edited = initial.copy(name = name, overlay = overlay, brightness = brightness, saturation = saturation, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, muted = muted)
+  androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+    androidx.compose.material3.Surface(modifier = Modifier.fillMaxWidth().padding(12.dp), shape = MaterialTheme.shapes.extraLarge) {
+      Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
+        ThemeMediaPreview(theme = edited, modifier = Modifier.fillMaxWidth().size(280.dp))
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          Button(onClick = { fitMode = "crop" }) { Text("Crop") }
+          OutlinedButton(onClick = { fitMode = "fit" }) { Text("Fit") }
+          OutlinedButton(onClick = { fitMode = "fill" }) { Text("Fill") }
+        }
+        Text("Zoom / scale")
+        Slider(value = scale, onValueChange = { scale = it }, valueRange = 0.5f..2.5f)
+        Text("Horizontal position")
+        Slider(value = offsetX, onValueChange = { offsetX = it }, valueRange = -1f..1f)
+        Text("Vertical position")
+        Slider(value = offsetY, onValueChange = { offsetY = it }, valueRange = -1f..1f)
         Text("Brightness")
-        Slider(value = brightness, onValueChange = { brightness = it }, valueRange = 0.5f..1.5f)
+        Slider(value = brightness, onValueChange = { brightness = it }, valueRange = 0.25f..2f)
         Text("Saturation")
         Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..2f)
-        if (initial.isVideo) {
-          Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
+        Text("Background visibility")
+        Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0f..0.85f)
+        if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+          OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+          Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Save") }
         }
       }
-    },
-    confirmButton = {
-      Button(enabled = name.isNotBlank(), onClick = {
-        onSave(initial.copy(name = name.trim(), overlay = overlay, brightness = brightness, saturation = saturation, muted = muted))
-      }) { Text("Save") }
-    },
-    dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } },
-  )
+    }
+  }
 }
 
-
 @Composable
-private fun ThemeMediaPreview(theme: CustomThemeData) {
-  Box(modifier = Modifier.fillMaxWidth().size(180.dp)) {
+private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modifier) {
+  Box(modifier = modifier.clip(MaterialTheme.shapes.large).background(androidx.compose.ui.graphics.Color.Black)) {
     if (theme.isVideo) {
-      AndroidView(
-        modifier = Modifier.fillMaxWidth().size(180.dp),
-        factory = { context ->
-          VideoView(context).apply {
-            setVideoPath(theme.mediaPath)
-            setOnPreparedListener { player ->
-              player.isLooping = theme.loopVideo
-              player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
-              start()
-            }
+      AndroidView(modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = theme.scale; scaleY = theme.scale; translationX = theme.offsetX * size.width * 0.5f; translationY = theme.offsetY * size.height * 0.5f }, factory = { context ->
+        VideoView(context).apply {
+          setVideoPath(theme.mediaPath)
+          setOnPreparedListener { player ->
+            player.isLooping = theme.loopVideo
+            player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
+            start()
           }
-        },
-        update = { view -> view.setOnPreparedListener { player ->
-          player.isLooping = theme.loopVideo
-          player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
-          if (!player.isPlaying) view.start()
-        } },
-      )
+        }
+      }, update = { view -> view.setOnPreparedListener { player ->
+        player.isLooping = theme.loopVideo
+        player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
+        if (!player.isPlaying) view.start()
+      } })
     } else {
       val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
-      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().size(180.dp)) }
+      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = theme.contentScale(), alignment = androidx.compose.ui.BiasAlignment(theme.offsetX, theme.offsetY), modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale)) }
     }
-    Box(Modifier.fillMaxWidth().size(180.dp).background(androidx.compose.ui.graphics.Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.92f))))
+    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.85f))))
   }
+}
+
+private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
+  "fit" -> ContentScale.Fit
+  "fill" -> ContentScale.FillBounds
+  else -> ContentScale.Crop
 }

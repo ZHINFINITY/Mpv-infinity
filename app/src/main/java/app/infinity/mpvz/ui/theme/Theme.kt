@@ -20,7 +20,6 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.background
@@ -45,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
@@ -352,7 +352,12 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
   Box(Modifier.fillMaxSize()) {
     if (theme.isVideo) {
       AndroidView(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().graphicsLayer {
+          scaleX = theme.scale
+          scaleY = theme.scale
+          translationX = theme.offsetX * size.width * 0.5f
+          translationY = theme.offsetY * size.height * 0.5f
+        },
         factory = { context ->
           VideoView(context).apply {
             setVideoPath(theme.mediaPath)
@@ -370,14 +375,21 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
         Image(
           bitmap = it.asImageBitmap(),
           contentDescription = null,
-          contentScale = ContentScale.Crop,
-          modifier = Modifier.fillMaxSize(),
+          contentScale = theme.contentScale(),
+          alignment = BiasAlignment(theme.offsetX, theme.offsetY),
+          modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale),
         )
       }
     }
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.92f))))
     content()
   }
+}
+
+private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
+  "fit" -> ContentScale.Fit
+  "fill" -> ContentScale.FillBounds
+  else -> ContentScale.Crop
 }
 
 private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
