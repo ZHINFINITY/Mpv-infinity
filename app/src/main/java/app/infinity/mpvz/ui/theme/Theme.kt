@@ -13,6 +13,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.view.View
+import android.widget.VideoView
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -21,6 +22,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
 import androidx.compose.material.ripple.RippleAlpha
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,10 +58,13 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.drawToBitmap
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.CustomThemeData
+import app.infinity.mpvz.preferences.mediaFile
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 import kotlin.math.hypot
@@ -277,6 +282,9 @@ fun MpvInfinityTheme(
   val darkMode by preferences.darkMode.collectAsState()
   val amoledMode by preferences.amoledMode.collectAsState()
   val appTheme by preferences.appTheme.collectAsState()
+  val customThemes by preferences.customThemes.collectAsState()
+  val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
+  val customTheme = customThemes.firstOrNull { it.id == activeCustomThemeId && it.mediaFile().exists() }
   val useSystemFont by preferences.useSystemFont.collectAsState()
   val darkTheme = isSystemInDarkTheme()
   val configuration = LocalConfiguration.current
@@ -299,7 +307,7 @@ fun MpvInfinityTheme(
       appTheme = appTheme,
       useDarkTheme = true,
       amoledMode = amoledMode,
-    )
+    ).withCustomTheme(customTheme)
   val colorScheme =
     if (useDarkTheme) {
       darkColorScheme
@@ -309,7 +317,7 @@ fun MpvInfinityTheme(
         appTheme = appTheme,
         useDarkTheme = false,
         amoledMode = amoledMode,
-      )
+      ).withCustomTheme(customTheme)
     }
 
   // Provide theme transition state first, OUTSIDE MaterialExpressiveTheme
@@ -320,15 +328,65 @@ fun MpvInfinityTheme(
     LocalEmphasizedTypography provides AppEmphasizedTypography,
     LocalDarkAppColorScheme provides darkColorScheme,
   ) {
-    ThemeTransitionContent {
-      MaterialExpressiveTheme(
-        colorScheme = colorScheme,
-        typography = if (useSystemFont || localeNeedsSystemFont) SystemTypography else AppTypography,
-        shapes = AppShapes,
-        motionScheme = MotionScheme.expressive(),
-        content = content,
-      )
+    CustomThemeBackdrop(customTheme) {
+      ThemeTransitionContent {
+        MaterialExpressiveTheme(
+          colorScheme = colorScheme,
+          typography = if (useSystemFont || localeNeedsSystemFont) SystemTypography else AppTypography,
+          shapes = AppShapes,
+          motionScheme = MotionScheme.expressive(),
+          content = content,
+        )
+      }
     }
+  }
+}
+
+private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
+  if (theme == null) return this
+  val primary = Color(theme.primaryArgb)
+  val background = Color(theme.backgroundArgb)
+  val onBackground = Color(theme.onBackgroundArgb)
+  return copy(
+    primary = primary,
+    onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White,
+    background = background,
+    surface = background,
+    surfaceContainerLowest = background,
+    surfaceContainerLow = background.copy(alpha = 0.92f),
+    surfaceContainer = background.copy(alpha = 0.88f),
+    surfaceContainerHigh = background.copy(alpha = 0.82f),
+    surfaceContainerHighest = background.copy(alpha = 0.76f),
+    onBackground = onBackground,
+    onSurface = onBackground,
+    onSurfaceVariant = onBackground.copy(alpha = 0.78f),
+  )
+}
+
+@Composable
+private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable () -> Unit) {
+  if (theme == null) { content(); return }
+  Box(Modifier.fillMaxSize()) {
+    if (theme.isVideo) {
+      AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { context ->
+          VideoView(context).apply {
+            setVideoPath(theme.mediaPath)
+            setOnPreparedListener { player ->
+              player.isLooping = theme.loopVideo
+              player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
+              start()
+            }
+          }
+        },
+      )
+    } else {
+      val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
+      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+    }
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.92f))))
+    content()
   }
 }
 

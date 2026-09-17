@@ -60,6 +60,7 @@ import app.infinity.mpvz.ui.player.ControlsAnimationStyle
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.player.VideoOpenAnimation
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.preferences.components.CustomThemeSettings
 import app.infinity.mpvz.ui.preferences.components.ThemePicker
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
@@ -95,8 +96,9 @@ object AppearancePreferencesScreen : Screen {
     val systemDarkTheme = isSystemInDarkTheme()
     val themeTransition = LocalThemeTransitionState.current
 
-    val darkMode by preferences.darkMode.collectAsState()
-    val appTheme by preferences.appTheme.collectAsState()
+  val darkMode by preferences.darkMode.collectAsState()
+  val appTheme by preferences.appTheme.collectAsState()
+  val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
     var pendingThumbnailMode by remember { mutableStateOf<ThumbnailMode?>(null) }
     var isThemeSectionExpanded by rememberSaveable { mutableStateOf(true) }
     val storedThumbnailMode by browserPreferences.thumbnailMode.collectAsState()
@@ -269,15 +271,23 @@ object AppearancePreferencesScreen : Screen {
                     currentTheme = appTheme,
                     isDarkMode = isDarkMode,
                     onThemeSelected = { theme, position ->
-                      if (theme != appTheme && themeTransition?.isAnimating != true) {
+                      if ((theme != appTheme || activeCustomThemeId.isNotEmpty()) && themeTransition?.isAnimating != true) {
                         themeTransition?.startTransition(position)
                         scope.launch {
                           delay(50)
                           preferences.appTheme.set(theme)
+                          preferences.activeCustomThemeId.set("")
                         }
                       }
                     },
                     modifier = Modifier.padding(vertical = 8.dp),
+                  )
+
+                  PreferenceDivider()
+
+                  CustomThemeSettings(
+                    preferences = preferences,
+                    modifier = Modifier.padding(horizontal = 16.dp),
                   )
 
                   PreferenceDivider()
