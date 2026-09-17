@@ -171,18 +171,13 @@ private fun CustomThemeEditor(
   androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
-      Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        androidx.compose.material3.IconButton(onClick = { showEditor = !showEditor }) {
-          Icon(if (showEditor) Icons.RoundedFilled.Edit else Icons.RoundedFilled.Tune, contentDescription = if (showEditor) "Hide editing controls" else "Show editing controls")
-        }
-      }
+      Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
       // The preview fills the sheet width. Its height is derived from the
       // phone viewport ratio, so there is no unexplained side box or distortion.
       Box(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainer).padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
           ThemeMediaPreview(
             theme = edited,
-            modifier = Modifier.width(220.dp).aspectRatio(320f / 693f),
+            modifier = Modifier.width(150.dp).aspectRatio(320f / 693f),
             onTransform = { zoom, panX, panY, focusX, focusY ->
               val oldScale = scale
               val newScale = (oldScale * zoom).coerceIn(0.5f, 4f)
@@ -195,8 +190,11 @@ private fun CustomThemeEditor(
             },
         )
       }
+      Button(onClick = { showEditor = !showEditor }, modifier = Modifier.fillMaxWidth()) {
+        Icon(if (showEditor) Icons.RoundedFilled.Edit else Icons.RoundedFilled.Tune, contentDescription = null)
+        Text(if (showEditor) "Hide editing options" else "Edit theme")
+      }
       Column(modifier = Modifier.weight(1f).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         if (showEditor) {
           Card(
             modifier = Modifier.fillMaxWidth().height(230.dp),
@@ -229,6 +227,7 @@ private fun CustomThemeEditor(
           }
           }
         }
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
       }
       Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.End) { OutlinedButton(onClick = onDismiss) { Text("Cancel") }; Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Save theme") } }
     }
