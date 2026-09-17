@@ -74,7 +74,6 @@ import app.infinity.mpvz.preferences.updateThemeEffects
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 import kotlin.math.hypot
-import kotlin.math.max
 
 // ============================================================================
 // Theme Transition Animation State & Components
@@ -361,12 +360,9 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
     if (theme.isVideo) {
       AndroidView(
         modifier = Modifier.fillMaxSize().graphicsLayer {
-          val coverScale = if (theme.fitMode == "crop" && theme.aspectMode == "screen") max(1f, theme.mediaAspectRatio / PHONE_ASPECT_RATIO) else 1f
-          scaleX = theme.scale * coverScale
-          scaleY = theme.scale * coverScale
+          scaleX = 1f
+          scaleY = 1f
           alpha = theme.visibility.coerceIn(0.15f, 1f)
-          translationX = theme.offsetX * size.width * 0.5f
-          translationY = theme.offsetY * size.height * 0.5f
         },
         factory = { context -> CustomThemeVideoView(context).also { it.applyTheme(theme) } },
         update = { view -> view.updateThemeEffects(theme) },
@@ -399,32 +395,33 @@ private fun CustomThemeData.mediaColorFilter(): ColorFilter {
   return ColorFilter.colorMatrix(ColorMatrix(values))
 }
 
-private const val PHONE_ASPECT_RATIO = 320f / 693f
-
 private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
   "fit" -> ContentScale.Fit
-  "fill" -> ContentScale.FillBounds
+  // Fill the viewport by cropping while preserving the source aspect ratio.
+  "fill" -> ContentScale.Crop
   else -> ContentScale.Crop
 }
 
 private fun customColorScheme(theme: CustomThemeData): ColorScheme {
   val primary = Color(tuneCustomColor(theme.primaryArgb, theme))
   val backgroundColor = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true))
-  val background = backgroundColor.copy(alpha = 0.72f)
+  // Keep the media visible, but make app surfaces opaque enough that labels
+  // and controls do not disappear into a bright or busy background.
+  val background = backgroundColor.copy(alpha = 0.90f)
   val onBackground = if (backgroundColor.luminance() > 0.46f) Color.Black else Color.White
   val onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White
   return darkColorScheme(
     primary = primary,
     onPrimary = onPrimary,
-    primaryContainer = primary.copy(alpha = 0.34f),
+    primaryContainer = primary.copy(alpha = 0.48f),
     onPrimaryContainer = onBackground,
     secondary = primary.copy(alpha = 0.86f),
     onSecondary = onPrimary,
-    secondaryContainer = background.copy(alpha = 0.30f),
+    secondaryContainer = background.copy(alpha = 0.78f),
     onSecondaryContainer = onBackground,
     tertiary = primary.copy(alpha = 0.72f),
     onTertiary = onPrimary,
-    tertiaryContainer = background.copy(alpha = 0.30f),
+    tertiaryContainer = background.copy(alpha = 0.78f),
     onTertiaryContainer = onBackground,
     // Keep root and generic surfaces transparent so they reveal the selected
     // media instead of painting a purple/built-in canvas over it.
@@ -432,12 +429,12 @@ private fun customColorScheme(theme: CustomThemeData): ColorScheme {
     surface = Color.Transparent,
     surfaceDim = Color.Transparent,
     surfaceBright = Color.Transparent,
-    surfaceVariant = background.copy(alpha = 0.52f),
-    surfaceContainerLowest = background.copy(alpha = 0.28f),
-    surfaceContainerLow = background.copy(alpha = 0.40f),
-    surfaceContainer = background.copy(alpha = 0.52f),
-    surfaceContainerHigh = background.copy(alpha = 0.64f),
-    surfaceContainerHighest = background.copy(alpha = 0.74f),
+    surfaceVariant = background.copy(alpha = 0.78f),
+    surfaceContainerLowest = background.copy(alpha = 0.68f),
+    surfaceContainerLow = background.copy(alpha = 0.82f),
+    surfaceContainer = background.copy(alpha = 0.88f),
+    surfaceContainerHigh = background.copy(alpha = 0.92f),
+    surfaceContainerHighest = background.copy(alpha = 0.96f),
     onBackground = onBackground,
     onSurface = onBackground,
     onSurfaceVariant = onBackground.copy(alpha = 0.78f),
