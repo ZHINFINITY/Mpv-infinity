@@ -642,12 +642,10 @@ class MainActivity : AppCompatActivity() {
               }
             },
             sizeTransform = null,
-            // Keep tab changes atomic: animated enter/exit layers left the previous tab
-            // briefly composited above the new tab on slower devices.
-            transitionSpec = { EnterTransition.None togetherWith ExitTransition.None },
-            popTransitionSpec = { EnterTransition.None togetherWith ExitTransition.None },
+            transitionSpec = { screenNavTransition(forward = true, style = appNavStyle, speed = animSpeed) },
+            popTransitionSpec = { screenNavTransition(forward = false, style = appNavStyle, speed = animSpeed) },
             predictivePopTransitionSpec = { _: Int ->
-              EnterTransition.None togetherWith ExitTransition.None
+              screenNavTransition(forward = false, style = appNavStyle, speed = animSpeed)
             },
           )
 
