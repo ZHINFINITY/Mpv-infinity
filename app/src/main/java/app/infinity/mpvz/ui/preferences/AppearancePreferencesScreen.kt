@@ -223,9 +223,7 @@ object AppearancePreferencesScreen : Screen {
                     fontWeight = FontWeight.SemiBold,
                   )
                   Text(
-                    text = "${stringResource(
-                      darkMode.titleRes,
-                    )} · ${stringResource(appTheme.titleRes)}",
+                    text = "${stringResource(darkMode.titleRes)} · ${customThemes.firstOrNull { it.id == activeCustomThemeId }?.name ?: stringResource(appTheme.titleRes)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline,
                   )

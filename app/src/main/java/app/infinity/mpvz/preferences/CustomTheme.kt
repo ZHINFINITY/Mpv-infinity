@@ -23,6 +23,7 @@ data class CustomThemeData(
   val blur: Float = 0f,
   val brightness: Float = 1f,
   val saturation: Float = 1f,
+  val visibility: Float = 1f,
   val scale: Float = 1f,
   val offsetX: Float = 0f,
   val offsetY: Float = 0f,
@@ -31,6 +32,7 @@ data class CustomThemeData(
   val darkText: Boolean = false,
   val loopVideo: Boolean = true,
   val muted: Boolean = true,
+  val mediaAspectRatio: Float = 1f,
   val primaryArgb: Int = Color(0xFF6750A4).toArgb(),
   val backgroundArgb: Int = Color(0xFF1C1B1F).toArgb(),
   val onBackgroundArgb: Int = Color.White.toArgb(),
@@ -80,4 +82,21 @@ fun sampleThemeColors(file: File, isVideo: Boolean): Triple<Int, Int, Int> {
   )
   val primary = android.graphics.Color.rgb(red, green, blue)
   return Triple(primary, background, if (luminance > 150) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+}
+
+fun sampleMediaAspectRatio(file: File, isVideo: Boolean): Float {
+  if (isVideo) {
+    return MediaMetadataRetriever().runCatching {
+      setDataSource(file.absolutePath)
+      val width = extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toFloatOrNull() ?: 1f
+      val height = extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toFloatOrNull() ?: 1f
+      release()
+      (width / height).coerceIn(0.05f, 20f)
+    }.getOrDefault(1f)
+  }
+  return BitmapFactory.decodeFile(file.absolutePath)?.let { bitmap ->
+    val ratio = bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1)
+    bitmap.recycle()
+    ratio.coerceIn(0.05f, 20f)
+  } ?: 1f
 }
