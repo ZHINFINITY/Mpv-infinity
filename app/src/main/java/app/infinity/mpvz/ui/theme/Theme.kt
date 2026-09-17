@@ -13,7 +13,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.view.View
-import android.widget.VideoView
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -69,6 +68,9 @@ import androidx.core.view.drawToBitmap
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.CustomThemeData
+import app.infinity.mpvz.preferences.CustomThemeVideoView
+import app.infinity.mpvz.preferences.applyTheme
+import app.infinity.mpvz.preferences.updateThemeEffects
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 import kotlin.math.hypot
@@ -366,17 +368,8 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
           translationX = theme.offsetX * size.width * 0.5f
           translationY = theme.offsetY * size.height * 0.5f
         },
-        factory = { context ->
-          VideoView(context).apply {
-            setVideoPath(theme.mediaPath)
-            setOnPreparedListener { player ->
-              player.isLooping = theme.loopVideo
-              player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
-              applyThemeVideoEffects(theme)
-              start()
-            }
-          }
-        },
+        factory = { context -> CustomThemeVideoView(context).applyTheme(theme) },
+        update = { view -> view.updateThemeEffects(theme) },
       )
     } else {
       val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
@@ -406,14 +399,6 @@ private fun CustomThemeData.mediaColorFilter(): ColorFilter {
   return ColorFilter.colorMatrix(ColorMatrix(values))
 }
 
-private fun VideoView.applyThemeVideoEffects(theme: CustomThemeData) {
-  // Do not attach RenderEffect to VideoView's SurfaceView: on affected
-  // devices that makes the media surface render black. Brightness/visibility
-  // remain stable view-level adjustments; photo themes retain full matrix
-  // saturation/brightness filtering.
-  alpha = (theme.visibility * theme.brightness.coerceIn(0.25f, 1f)).coerceIn(0.15f, 1f)
-}
-
 private const val PHONE_ASPECT_RATIO = 320f / 693f
 
 private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
@@ -424,8 +409,9 @@ private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
 
 private fun customColorScheme(theme: CustomThemeData): ColorScheme {
   val primary = Color(tuneCustomColor(theme.primaryArgb, theme))
-  val background = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true)).copy(alpha = 0.46f)
-  val onBackground = Color(theme.onBackgroundArgb)
+  val backgroundColor = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true))
+  val background = backgroundColor.copy(alpha = 0.72f)
+  val onBackground = if (backgroundColor.luminance() > 0.46f) Color.Black else Color.White
   val onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White
   return darkColorScheme(
     primary = primary,
