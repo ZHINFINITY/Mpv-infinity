@@ -25,6 +25,7 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
   private var mediaScale = 1f
   private var offsetX = 0f
   private var offsetY = 0f
+  private var retryGeneration = 0
 
   init { surfaceTextureListener = this }
 
@@ -68,8 +69,24 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
       isLooping = loop
       setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
       setOnPreparedListener { it.start() }
-      setOnCompletionListener { if (loop) it.start() }
-      setOnErrorListener { _, _, _ -> true }
+      setOnCompletionListener { completedPlayer ->
+        if (loop) {
+          completedPlayer.seekTo(0)
+          completedPlayer.start()
+        }
+      }
+      setOnErrorListener { _, _, _ ->
+        // Do not leave a failed player displaying its last frame. Recreate it
+        // against the current surface so transient decoder errors recover.
+        val generation = ++retryGeneration
+        postDelayed({
+          if (generation == retryGeneration && isAvailable) {
+            releasePlayer()
+            startIfReady()
+          }
+        }, 250L)
+        true
+      }
       runCatching { setDataSource(path); prepareAsync() }.onFailure { releasePlayer() }
     }
   }
@@ -107,6 +124,7 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
   }
 
   private fun releasePlayer() {
+    retryGeneration++
     player?.runCatching { stop() }
     player?.release()
     player = null
