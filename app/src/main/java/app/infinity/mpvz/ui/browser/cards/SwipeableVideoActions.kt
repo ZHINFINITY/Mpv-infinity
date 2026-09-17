@@ -62,10 +62,12 @@ fun SwipeableVideoActions(
   onDelete: () -> Unit,
   content: @Composable () -> Unit,
 ) {
-  val actionWidth = 88.dp
+  // Two actions are revealed on the right. The previous reveal distance was
+  // only one action wide, leaving Rename underneath the translated content.
+  val actionWidth = 80.dp
   val density = LocalDensity.current
   val leftRevealPx = with(density) { actionWidth.toPx() }
-  val rightRevealPx = with(density) { actionWidth.toPx() }
+  val rightRevealPx = with(density) { (actionWidth * 2).toPx() }
   val thresholdPx = with(density) { 56.dp.toPx() }
   val scope = rememberCoroutineScope()
   val reduceMotion = LocalMotionPolicy.current.reduceMotion
