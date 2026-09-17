@@ -50,6 +50,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
@@ -353,8 +355,9 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
     if (theme.isVideo) {
       AndroidView(
         modifier = Modifier.fillMaxSize().graphicsLayer {
-          scaleX = theme.scale
-          scaleY = theme.scale
+          scaleX = theme.scale * if (theme.fitMode == "crop") 1.45f else 1f
+          scaleY = theme.scale * if (theme.fitMode == "crop") 1.45f else 1f
+          alpha = (0.55f + theme.brightness * 0.45f).coerceIn(0.35f, 1f)
           translationX = theme.offsetX * size.width * 0.5f
           translationY = theme.offsetY * size.height * 0.5f
         },
@@ -377,13 +380,21 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
           contentDescription = null,
           contentScale = theme.contentScale(),
           alignment = BiasAlignment(theme.offsetX, theme.offsetY),
+          colorFilter = theme.mediaColorFilter(),
           modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale),
         )
       }
     }
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.92f))))
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (theme.overlay * 0.35f).coerceIn(0f, 0.35f))))
     content()
   }
+}
+
+private fun CustomThemeData.mediaColorFilter(): ColorFilter {
+  val matrix = ColorMatrix()
+  matrix.setToSaturation(saturation)
+  matrix.scale(brightness, brightness, brightness, 1f)
+  return ColorFilter.colorMatrix(matrix)
 }
 
 private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {

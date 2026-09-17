@@ -13,9 +13,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.ContentScale
@@ -40,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -94,21 +102,35 @@ fun CustomThemeSettings(
     if (themes.isNotEmpty()) {
       Text("Saved themes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     }
-    themes.forEach { theme ->
-      Card(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-          RadioButton(selected = activeId == theme.id, onClick = { preferences.activeCustomThemeId.set(theme.id) })
-          Column(modifier = Modifier.weight(1f)) {
-            Text(theme.name, style = MaterialTheme.typography.titleSmall)
-            Text(if (theme.isVideo) "Video theme" else "Photo theme", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
+    LazyRow(contentPadding = PaddingValues(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      items(themes, key = { it.id }) { theme ->
+        Card(modifier = Modifier.width(190.dp), border = if (activeId == theme.id) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null) {
+          Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().height(92.dp).clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
+              if (!theme.isVideo) {
+                val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
+                bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
+              } else {
+                Text("VIDEO", modifier = Modifier.align(androidx.compose.ui.Alignment.Center), style = MaterialTheme.typography.labelLarge)
+              }
+            }
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+              RadioButton(selected = activeId == theme.id, onClick = { preferences.activeCustomThemeId.set(theme.id) })
+              Column(modifier = Modifier.weight(1f)) {
+                Text(theme.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                Text(if (theme.isVideo) "Video theme" else "Photo theme", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
+              }
+            }
+            Row {
+              OutlinedButton(onClick = { editingExisting = true; draft = theme }, modifier = Modifier.weight(1f)) { Text("Edit") }
+              IconButton(onClick = {
+                val remaining = themes.filterNot { it.id == theme.id }
+                preferences.customThemes.set(remaining)
+                if (activeId == theme.id) preferences.activeCustomThemeId.set("")
+                scope.launch(Dispatchers.IO) { runCatching { File(theme.mediaPath).delete() } }
+              }) { Text("×", style = MaterialTheme.typography.titleLarge) }
+            }
           }
-          OutlinedButton(onClick = { editingExisting = true; draft = theme }) { Text("Edit") }
-          IconButton(onClick = {
-            val remaining = themes.filterNot { it.id == theme.id }
-            preferences.customThemes.set(remaining)
-            if (activeId == theme.id) preferences.activeCustomThemeId.set("")
-            scope.launch(Dispatchers.IO) { runCatching { File(theme.mediaPath).delete() } }
-          }) { Text("×", style = MaterialTheme.typography.titleLarge) }
         }
       }
     }
@@ -140,7 +162,7 @@ private fun CustomThemeEditor(
   onSave: (CustomThemeData) -> Unit,
 ) {
   var name by remember(initial.id) { mutableStateOf(initial.name) }
-  var overlay by remember(initial.id) { mutableStateOf(initial.overlay) }
+  var overlay by remember(initial.id) { mutableStateOf(initial.overlay.coerceIn(0f, 0.65f)) }
   var brightness by remember(initial.id) { mutableStateOf(initial.brightness) }
   var saturation by remember(initial.id) { mutableStateOf(initial.saturation) }
   var scale by remember(initial.id) { mutableStateOf(initial.scale) }
@@ -149,44 +171,25 @@ private fun CustomThemeEditor(
   var fitMode by remember(initial.id) { mutableStateOf(initial.fitMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
   val edited = initial.copy(name = name, overlay = overlay, brightness = brightness, saturation = saturation, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, muted = muted)
-  val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
-  androidx.compose.material3.ModalBottomSheet(
-    onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() },
-  ) {
-    Column(
-      modifier = Modifier.fillMaxWidth().fillMaxHeight(0.92f).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+  androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
+    Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
-      Text("Adjust the preview below. The saved theme uses these exact settings.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      ThemeMediaPreview(theme = edited, modifier = Modifier.fillMaxWidth().size(280.dp))
-      OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-      Text("Media framing", style = MaterialTheme.typography.titleMedium)
-      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Button(onClick = { fitMode = "crop" }) { Text("Crop") }
-        OutlinedButton(onClick = { fitMode = "fit" }) { Text("Fit") }
-        OutlinedButton(onClick = { fitMode = "fill" }) { Text("Fill") }
+      Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+      ThemeMediaPreview(theme = edited, modifier = Modifier.fillMaxWidth().height(220.dp))
+      Column(modifier = Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text("Media framing", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { Button(onClick = { fitMode = "crop" }) { Text("Crop") }; OutlinedButton(onClick = { fitMode = "fit" }) { Text("Fit") }; OutlinedButton(onClick = { fitMode = "fill" }) { Text("Fill") } }
+        Text("Zoom / scale"); Slider(value = scale, onValueChange = { scale = it }, valueRange = 0.5f..2.5f)
+        Text("Horizontal position"); Slider(value = offsetX, onValueChange = { offsetX = it }, valueRange = -1f..1f)
+        Text("Vertical position"); Slider(value = offsetY, onValueChange = { offsetY = it }, valueRange = -1f..1f)
+        Text("Media appearance", style = MaterialTheme.typography.titleMedium)
+        Text("Brightness"); Slider(value = brightness, onValueChange = { brightness = it }, valueRange = 0.25f..2f)
+        Text("Saturation"); Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..2f)
+        Text("Dim overlay (lower shows more media)"); Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0f..0.65f)
+        if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
       }
-      Text("Zoom / scale")
-      Slider(value = scale, onValueChange = { scale = it }, valueRange = 0.5f..2.5f)
-      Text("Horizontal position")
-      Slider(value = offsetX, onValueChange = { offsetX = it }, valueRange = -1f..1f)
-      Text("Vertical position")
-      Slider(value = offsetY, onValueChange = { offsetY = it }, valueRange = -1f..1f)
-      Text("Appearance", style = MaterialTheme.typography.titleMedium)
-      Text("Brightness")
-      Slider(value = brightness, onValueChange = { brightness = it }, valueRange = 0.25f..2f)
-      Text("Saturation")
-      Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..2f)
-      Text("Background visibility")
-      Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0f..0.85f)
-      if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
-      Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp), horizontalArrangement = Arrangement.End) {
-        OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-        Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Save theme") }
-      }
+      Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.End) { OutlinedButton(onClick = onDismiss) { Text("Cancel") }; Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Save theme") } }
     }
   }
 }
@@ -195,7 +198,7 @@ private fun CustomThemeEditor(
 private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modifier) {
   Box(modifier = modifier.clip(MaterialTheme.shapes.large).background(androidx.compose.ui.graphics.Color.Black)) {
     if (theme.isVideo) {
-      AndroidView(modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = theme.scale; scaleY = theme.scale; translationX = theme.offsetX * size.width * 0.5f; translationY = theme.offsetY * size.height * 0.5f }, factory = { context ->
+      AndroidView(modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = theme.scale * if (theme.fitMode == "crop") 1.45f else 1f; scaleY = theme.scale * if (theme.fitMode == "crop") 1.45f else 1f; translationX = theme.offsetX * size.width * 0.5f; translationY = theme.offsetY * size.height * 0.5f }, factory = { context ->
         VideoView(context).apply {
           setVideoPath(theme.mediaPath)
           setOnPreparedListener { player ->
@@ -211,10 +214,17 @@ private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modif
       } })
     } else {
       val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
-      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = theme.contentScale(), alignment = androidx.compose.ui.BiasAlignment(theme.offsetX, theme.offsetY), modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale)) }
+      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = theme.contentScale(), alignment = androidx.compose.ui.BiasAlignment(theme.offsetX, theme.offsetY), colorFilter = theme.mediaColorFilter(), modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale)) }
     }
-    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.85f))))
+    Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = (theme.overlay * 0.35f).coerceIn(0f, 0.35f))))
   }
+}
+
+private fun CustomThemeData.mediaColorFilter(): ColorFilter {
+  val matrix = ColorMatrix()
+  matrix.setToSaturation(saturation)
+  matrix.scale(brightness, brightness, brightness, 1f)
+  return ColorFilter.colorMatrix(matrix)
 }
 
 private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
