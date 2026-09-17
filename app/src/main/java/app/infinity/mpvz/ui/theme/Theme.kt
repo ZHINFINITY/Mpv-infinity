@@ -355,8 +355,8 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
     if (theme.isVideo) {
       AndroidView(
         modifier = Modifier.fillMaxSize().graphicsLayer {
-          scaleX = theme.scale * if (theme.fitMode == "crop") 1.45f else 1f
-          scaleY = theme.scale * if (theme.fitMode == "crop") 1.45f else 1f
+          scaleX = theme.scale * if (theme.aspectMode == "screen" && theme.fitMode == "crop") 2f else if (theme.fitMode == "crop") 1.45f else 1f
+          scaleY = theme.scale * if (theme.aspectMode == "screen" && theme.fitMode == "crop") 2f else if (theme.fitMode == "crop") 1.45f else 1f
           alpha = (0.55f + theme.brightness * 0.45f).coerceIn(0.35f, 1f)
           translationX = theme.offsetX * size.width * 0.5f
           translationY = theme.offsetY * size.height * 0.5f
@@ -367,6 +367,7 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
             setOnPreparedListener { player ->
               player.isLooping = theme.loopVideo
               player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
+              applyThemeVideoEffects(theme)
               start()
             }
           }
@@ -398,6 +399,16 @@ private fun CustomThemeData.mediaColorFilter(): ColorFilter {
   values[5] *= brightness; values[6] *= brightness; values[7] *= brightness; values[9] *= brightness
   values[10] *= brightness; values[11] *= brightness; values[12] *= brightness; values[14] *= brightness
   return ColorFilter.colorMatrix(ColorMatrix(values))
+}
+
+private fun VideoView.applyThemeVideoEffects(theme: CustomThemeData) {
+  alpha = (0.55f + theme.brightness * 0.45f).coerceIn(0.35f, 1f)
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    val matrix = android.graphics.ColorMatrix().apply { setSaturation(theme.saturation) }
+    val values = matrix.array.copyOf()
+    for (index in intArrayOf(0, 1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 14)) values[index] *= theme.brightness
+    setRenderEffect(android.graphics.RenderEffect.createColorFilterEffect(android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(values))))
+  }
 }
 
 private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {

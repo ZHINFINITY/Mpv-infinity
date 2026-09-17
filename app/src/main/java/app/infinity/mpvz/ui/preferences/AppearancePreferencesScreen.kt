@@ -99,6 +99,7 @@ object AppearancePreferencesScreen : Screen {
   val darkMode by preferences.darkMode.collectAsState()
   val appTheme by preferences.appTheme.collectAsState()
   val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
+  val customThemes by preferences.customThemes.collectAsState()
     var pendingThumbnailMode by remember { mutableStateOf<ThumbnailMode?>(null) }
     var isThemeSectionExpanded by rememberSaveable { mutableStateOf(true) }
     val storedThumbnailMode by browserPreferences.thumbnailMode.collectAsState()
@@ -277,6 +278,17 @@ object AppearancePreferencesScreen : Screen {
                           delay(50)
                           preferences.appTheme.set(theme)
                           preferences.activeCustomThemeId.set("")
+                        }
+                      }
+                    },
+                    customThemes = customThemes,
+                    activeCustomThemeId = activeCustomThemeId,
+                    onCustomThemeSelected = { theme, position ->
+                      if (activeCustomThemeId != theme.id && themeTransition?.isAnimating != true) {
+                        themeTransition?.startTransition(position)
+                        scope.launch {
+                          delay(50)
+                          preferences.activeCustomThemeId.set(theme.id)
                         }
                       }
                     },
