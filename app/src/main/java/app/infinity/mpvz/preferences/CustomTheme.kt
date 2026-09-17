@@ -18,7 +18,7 @@ data class CustomThemeData(
   val name: String,
   val mediaPath: String,
   val isVideo: Boolean,
-  val overlay: Float = 0.58f,
+  val overlay: Float = 0.18f,
   val blur: Float = 0f,
   val brightness: Float = 1f,
   val saturation: Float = 1f,
