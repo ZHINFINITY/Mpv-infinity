@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
@@ -165,7 +166,7 @@ private fun CustomThemeEditor(
   var fitMode by remember(initial.id) { mutableStateOf(initial.fitMode) }
   var aspectMode by remember(initial.id) { mutableStateOf(initial.aspectMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
-  var showEditor by remember(initial.id) { mutableStateOf(true) }
+  var showEditor by remember(initial.id) { mutableStateOf(false) }
   val edited = initial.copy(name = name, overlay = overlay, brightness = brightness, saturation = saturation, visibility = visibility, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
   androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
@@ -178,24 +179,26 @@ private fun CustomThemeEditor(
       }
       // The preview fills the sheet width. Its height is derived from the
       // phone viewport ratio, so there is no unexplained side box or distortion.
-      Box(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainer).padding(8.dp), contentAlignment = Alignment.Center) {
+      Box(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainer).padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
           ThemeMediaPreview(
             theme = edited,
-            modifier = Modifier.fillMaxWidth().aspectRatio(320f / 693f),
+            modifier = Modifier.width(220.dp).aspectRatio(320f / 693f),
             onTransform = { zoom, panX, panY, focusX, focusY ->
               val oldScale = scale
               val newScale = (oldScale * zoom).coerceIn(0.5f, 4f)
-              val focusWeight = ((newScale / oldScale) - 1f).coerceIn(-1f, 1f)
+              val effectiveZoom = newScale / oldScale
               scale = newScale
-              offsetX = (offsetX + panX + focusX * focusWeight * 0.5f).coerceIn(-1f, 1f)
-              offsetY = (offsetY + panY + focusY * focusWeight * 0.5f).coerceIn(-1f, 1f)
+              // Keep the media point below the pinch centroid fixed while
+              // scaling, then apply the user's pan in viewport coordinates.
+              offsetX = (offsetX + (offsetX + focusX) / effectiveZoom - offsetX + panX - focusX).coerceIn(-1f, 1f)
+              offsetY = (offsetY + (offsetY + focusY) / effectiveZoom - offsetY + panY - focusY).coerceIn(-1f, 1f)
             },
         )
       }
-      Column(modifier = Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Column(modifier = Modifier.weight(1f).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         AnimatedVisibility(visible = showEditor, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
-          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Column(modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 230.dp).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Media framing", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
           if (fitMode == "crop") Button(onClick = { fitMode = "crop" }) { Text("Crop") } else OutlinedButton(onClick = { fitMode = "crop" }) { Text("Crop") }
