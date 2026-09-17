@@ -139,7 +139,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -736,7 +735,7 @@ class PlayerActivity :
           subtitlesPreferences.fontSize.changes(),
         ) { textColor, backgroundColor, borderColor, borderSize, fontSize ->
           listOf(textColor, backgroundColor, borderColor, borderSize, fontSize)
-        }.debounce(120).collect { values ->
+        }.collect { values ->
           nativeEngine.setSubtitleStyle(
             textColor = values[0],
             backgroundColor = values[1],
@@ -769,7 +768,6 @@ class PlayerActivity :
           subtitlesPreferences.bold.changes(),
           subtitlesPreferences.italic.changes(),
         ) { font, bold, italic -> font to (bold to italic) }
-          .debounce(120)
           .collect { (font, flags) ->
             nativeEngine.setSubtitleStyle(
               textColor = subtitlesPreferences.textColor.get(),
