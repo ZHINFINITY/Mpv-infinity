@@ -366,6 +366,17 @@ object AudioPreferencesScreen : Screen {
                   )
                 },
               )
+              val audioStandbyDelaySeconds by preferences.audioStandbyDelaySeconds.collectAsState()
+              SliderPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_standby_mode_title),
+                value = audioStandbyDelaySeconds.toFloat().coerceIn(1f, 60f),
+                enabled = audioStandbyMode,
+                onValueChange = { preferences.audioStandbyDelaySeconds.set(it.toInt().coerceIn(1, 60)) },
+                title = { Text("Standby delay") },
+                valueRange = 1f..60f,
+                steps = 58,
+                summary = { Text("Enter standby after $audioStandbyDelaySeconds seconds of inactivity", color = MaterialTheme.colorScheme.outline) },
+              )
 
               PreferenceDivider()
               val audioWavySeekbar by preferences.audioWavySeekbar.collectAsState()

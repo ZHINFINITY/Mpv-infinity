@@ -741,6 +741,7 @@ fun AudioPlayerControls(
   val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
   val audioWavySeekbar by audioPreferences.audioWavySeekbar.collectAsState()
   val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
+  val audioStandbyDelaySeconds by audioPreferences.audioStandbyDelaySeconds.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
@@ -899,10 +900,10 @@ fun AudioPlayerControls(
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
 
-  LaunchedEffect(audioStandbyMode, isPlaying, isPortrait, lastUserInteractionTime) {
+  LaunchedEffect(audioStandbyMode, audioStandbyDelaySeconds, isPlaying, isPortrait, lastUserInteractionTime) {
     isStandbyActive = false
     if (audioStandbyMode && isPlaying) {
-      kotlinx.coroutines.delay(5000L)
+      kotlinx.coroutines.delay(audioStandbyDelaySeconds.coerceIn(1, 60) * 1000L)
       isStandbyActive = true
     }
   }
