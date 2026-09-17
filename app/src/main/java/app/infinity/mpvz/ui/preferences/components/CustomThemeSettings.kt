@@ -13,6 +13,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.layout.ContentScale
@@ -88,6 +91,9 @@ fun CustomThemeSettings(
   Column(modifier = modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     Text("Custom themes", style = MaterialTheme.typography.titleMedium)
     Text("Save a photo or video theme and adjust it later.", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
+    if (themes.isNotEmpty()) {
+      Text("Saved themes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    }
     themes.forEach { theme ->
       Card(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -143,34 +149,43 @@ private fun CustomThemeEditor(
   var fitMode by remember(initial.id) { mutableStateOf(initial.fitMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
   val edited = initial.copy(name = name, overlay = overlay, brightness = brightness, saturation = saturation, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, muted = muted)
-  androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-    androidx.compose.material3.Surface(modifier = Modifier.fillMaxWidth().padding(12.dp), shape = MaterialTheme.shapes.extraLarge) {
-      Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
-        ThemeMediaPreview(theme = edited, modifier = Modifier.fillMaxWidth().size(280.dp))
-        OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          Button(onClick = { fitMode = "crop" }) { Text("Crop") }
-          OutlinedButton(onClick = { fitMode = "fit" }) { Text("Fit") }
-          OutlinedButton(onClick = { fitMode = "fill" }) { Text("Fill") }
-        }
-        Text("Zoom / scale")
-        Slider(value = scale, onValueChange = { scale = it }, valueRange = 0.5f..2.5f)
-        Text("Horizontal position")
-        Slider(value = offsetX, onValueChange = { offsetX = it }, valueRange = -1f..1f)
-        Text("Vertical position")
-        Slider(value = offsetY, onValueChange = { offsetY = it }, valueRange = -1f..1f)
-        Text("Brightness")
-        Slider(value = brightness, onValueChange = { brightness = it }, valueRange = 0.25f..2f)
-        Text("Saturation")
-        Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..2f)
-        Text("Background visibility")
-        Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0f..0.85f)
-        if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-          OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-          Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Save") }
-        }
+  val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  androidx.compose.material3.ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    sheetState = sheetState,
+    dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() },
+  ) {
+    Column(
+      modifier = Modifier.fillMaxWidth().fillMaxHeight(0.92f).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
+      Text("Adjust the preview below. The saved theme uses these exact settings.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      ThemeMediaPreview(theme = edited, modifier = Modifier.fillMaxWidth().size(280.dp))
+      OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+      Text("Media framing", style = MaterialTheme.typography.titleMedium)
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Button(onClick = { fitMode = "crop" }) { Text("Crop") }
+        OutlinedButton(onClick = { fitMode = "fit" }) { Text("Fit") }
+        OutlinedButton(onClick = { fitMode = "fill" }) { Text("Fill") }
+      }
+      Text("Zoom / scale")
+      Slider(value = scale, onValueChange = { scale = it }, valueRange = 0.5f..2.5f)
+      Text("Horizontal position")
+      Slider(value = offsetX, onValueChange = { offsetX = it }, valueRange = -1f..1f)
+      Text("Vertical position")
+      Slider(value = offsetY, onValueChange = { offsetY = it }, valueRange = -1f..1f)
+      Text("Appearance", style = MaterialTheme.typography.titleMedium)
+      Text("Brightness")
+      Slider(value = brightness, onValueChange = { brightness = it }, valueRange = 0.25f..2f)
+      Text("Saturation")
+      Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..2f)
+      Text("Background visibility")
+      Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0f..0.85f)
+      if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
+      Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp), horizontalArrangement = Arrangement.End) {
+        OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+        Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Save theme") }
       }
     }
   }
