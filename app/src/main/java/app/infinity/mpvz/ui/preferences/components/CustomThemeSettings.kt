@@ -62,6 +62,8 @@ import app.infinity.mpvz.preferences.copyThemeMedia
 import app.infinity.mpvz.preferences.sampleThemeColors
 import app.infinity.mpvz.preferences.sampleMediaAspectRatio
 import app.infinity.mpvz.preferences.preference.collectAsState
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -110,12 +112,14 @@ fun CustomThemeSettings(
         Column(modifier = Modifier.weight(1f)) {
           Text("Selected in theme rail: ${selected.name}", style = MaterialTheme.typography.bodySmall)
         }
-        OutlinedButton(onClick = { editingExisting = true; draft = selected }) { Text("Edit") }
+        IconButton(onClick = { editingExisting = true; draft = selected }) {
+          Icon(Icons.RoundedFilled.Edit, contentDescription = "Edit theme")
+        }
         IconButton(onClick = {
           preferences.customThemes.set(themes.filterNot { it.id == selected.id })
           preferences.activeCustomThemeId.set("")
           scope.launch(Dispatchers.IO) { runCatching { File(selected.mediaPath).delete() } }
-        }) { Text("×", style = MaterialTheme.typography.titleLarge) }
+        }) { Icon(Icons.RoundedFilled.Delete, contentDescription = "Delete theme", tint = MaterialTheme.colorScheme.error) }
       }
     }
     Button(onClick = { picker.launch(arrayOf("image/*", "video/*")) }, modifier = Modifier.fillMaxWidth()) {
@@ -198,13 +202,10 @@ private fun CustomThemeEditor(
 }
 
 private fun VideoView.applyThemeVideoEffects(theme: CustomThemeData) {
-  alpha = theme.visibility.coerceIn(0.15f, 1f)
-  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-    val matrix = android.graphics.ColorMatrix().apply { setSaturation(theme.saturation) }
-    val values = matrix.array.copyOf()
-    for (index in intArrayOf(0, 1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 14)) values[index] *= theme.brightness
-    setRenderEffect(android.graphics.RenderEffect.createColorFilterEffect(android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix(values))))
-  }
+  // VideoView is backed by a SurfaceView on many devices. Applying a
+  // RenderEffect to that surface can make the preview black, so keep the
+  // surface visible and use the stable view-level controls here.
+  alpha = (theme.visibility * theme.brightness.coerceIn(0.25f, 1f)).coerceIn(0.15f, 1f)
 }
 
 @Composable
