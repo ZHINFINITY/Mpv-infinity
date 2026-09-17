@@ -1919,7 +1919,14 @@ fun AudioPlayerControls(
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+            tonalElevation = 4.dp,
+            shadowElevation = 8.dp,
+          ) {
+          Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Spacer(modifier = Modifier.height(16.dp))
             trackMetadataView()
             Spacer(modifier = Modifier.height(16.dp))
@@ -1928,6 +1935,7 @@ fun AudioPlayerControls(
             playbackControlsRow()
             Spacer(modifier = Modifier.height(24.dp))
             bottomActionRow()
+          }
           }
         }
       }

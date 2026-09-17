@@ -44,6 +44,8 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
     offsetY: Float = 0f,
   ) {
     val changed = this.path != path
+    val effectsChanged = this.brightness != brightness || this.saturation != saturation
+    val transformChanged = this.mediaAspectRatio != mediaAspectRatio || this.fitMode != fitMode || this.aspectMode != aspectMode || this.mediaScale != scale || this.offsetX != offsetX || this.offsetY != offsetY
     this.path = path
     this.loop = loop
     this.muted = muted
@@ -58,8 +60,8 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
     alpha = visibility.coerceIn(0.15f, 1f)
     if (changed) releasePlayer()
     if (isAvailable) startIfReady()
-    applyEffects()
-    applyAspectTransform()
+    if (effectsChanged || changed) applyEffects()
+    if (transformChanged || changed) applyAspectTransform()
   }
 
   private fun startIfReady() {
@@ -69,22 +71,20 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
       isLooping = loop
       setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
       setOnPreparedListener { it.start() }
-      setOnCompletionListener { completedPlayer ->
-        if (loop) {
-          completedPlayer.seekTo(0)
-          completedPlayer.start()
-        }
-      }
+      // MediaPlayer's native isLooping path is smoother than seeking and
+      // starting manually at completion, which can produce a visible hitch.
+      setOnCompletionListener { completedPlayer -> if (loop && !completedPlayer.isPlaying) completedPlayer.start() }
       setOnErrorListener { _, _, _ ->
         // Do not leave a failed player displaying its last frame. Recreate it
-        // against the current surface so transient decoder errors recover.
-        val generation = ++retryGeneration
+        // once after a short backoff so transient decoder errors recover
+        // without a rapid restart loop that causes stutter.
+        releasePlayer()
+        val generation = retryGeneration
         postDelayed({
           if (generation == retryGeneration && isAvailable) {
-            releasePlayer()
             startIfReady()
           }
-        }, 250L)
+        }, 1000L)
         true
       }
       runCatching { setDataSource(path); prepareAsync() }.onFailure { releasePlayer() }
