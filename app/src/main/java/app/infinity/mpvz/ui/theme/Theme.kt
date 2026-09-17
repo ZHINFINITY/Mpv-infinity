@@ -13,12 +13,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.view.View
-import android.widget.VideoView
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,7 +48,6 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -59,13 +56,11 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.drawToBitmap
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.CustomThemeData
-import app.infinity.mpvz.preferences.mediaFile
 import app.infinity.mpvz.preferences.preference.collectAsState
 import org.koin.compose.koinInject
 import kotlin.math.hypot
@@ -285,7 +280,7 @@ fun MpvInfinityTheme(
   val appTheme by preferences.appTheme.collectAsState()
   val customThemes by preferences.customThemes.collectAsState()
   val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
-  val customTheme = customThemes.firstOrNull { it.id == activeCustomThemeId && it.mediaFile().exists() }
+  val customTheme = customThemes.firstOrNull { it.id == activeCustomThemeId }
   val useSystemFont by preferences.useSystemFont.collectAsState()
   val darkTheme = isSystemInDarkTheme()
   val configuration = LocalConfiguration.current
@@ -329,7 +324,6 @@ fun MpvInfinityTheme(
     LocalEmphasizedTypography provides AppEmphasizedTypography,
     LocalDarkAppColorScheme provides darkColorScheme,
   ) {
-    CustomThemeBackdrop(customTheme) {
       ThemeTransitionContent {
         MaterialExpressiveTheme(
           colorScheme = colorScheme,
@@ -339,7 +333,6 @@ fun MpvInfinityTheme(
           content = content,
         )
       }
-    }
   }
 }
 
@@ -362,33 +355,6 @@ private fun ColorScheme.withCustomTheme(theme: CustomThemeData?): ColorScheme {
     onSurface = onBackground,
     onSurfaceVariant = onBackground.copy(alpha = 0.78f),
   )
-}
-
-@Composable
-private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable () -> Unit) {
-  if (theme == null) { content(); return }
-  Box(Modifier.fillMaxSize()) {
-    if (theme.isVideo) {
-      AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { context ->
-          VideoView(context).apply {
-            setVideoPath(theme.mediaPath)
-            setOnPreparedListener { player ->
-              player.isLooping = theme.loopVideo
-              player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
-              start()
-            }
-          }
-        },
-      )
-    } else {
-      val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
-      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
-    }
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.92f))))
-    content()
-  }
 }
 
 private fun resolveAppColorScheme(
