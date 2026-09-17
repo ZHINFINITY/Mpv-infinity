@@ -59,9 +59,10 @@ fun CustomThemeSettings(
         val isVideo = type.startsWith("video/")
         val file = copyThemeMedia(context, uri, isVideo)
         val (primary, background, onBackground) = sampleThemeColors(file, isVideo)
+        file.delete()
         CustomThemeData(
           name = "My theme",
-          mediaPath = file.absolutePath,
+          mediaPath = "",
           isVideo = isVideo,
           primaryArgb = primary,
           backgroundArgb = background,
