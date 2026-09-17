@@ -20,6 +20,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -160,26 +165,37 @@ private fun CustomThemeEditor(
   var fitMode by remember(initial.id) { mutableStateOf(initial.fitMode) }
   var aspectMode by remember(initial.id) { mutableStateOf(initial.aspectMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
+  var showEditor by remember(initial.id) { mutableStateOf(true) }
   val edited = initial.copy(name = name, overlay = overlay, brightness = brightness, saturation = saturation, visibility = visibility, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
   androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
-      Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-      // Use a phone-shaped portrait viewport so crop/fit/position changes are
-      // previewed in the same geometry users will see in the app.
-        Box(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainer).padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+      Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Text("Live preview", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        androidx.compose.material3.IconButton(onClick = { showEditor = !showEditor }) {
+          Icon(if (showEditor) Icons.RoundedFilled.Edit else Icons.RoundedFilled.Tune, contentDescription = if (showEditor) "Hide editing controls" else "Show editing controls")
+        }
+      }
+      // The preview fills the sheet width. Its height is derived from the
+      // phone viewport ratio, so there is no unexplained side box or distortion.
+      Box(modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainer).padding(8.dp), contentAlignment = Alignment.Center) {
           ThemeMediaPreview(
             theme = edited,
-            modifier = Modifier.width(150.dp).aspectRatio(320f / 693f),
-            onTransform = { zoom, panX, panY ->
-              scale = (scale * zoom).coerceIn(0.5f, 4f)
-              offsetX = (offsetX + panX).coerceIn(-1f, 1f)
-              offsetY = (offsetY + panY).coerceIn(-1f, 1f)
+            modifier = Modifier.fillMaxWidth().aspectRatio(320f / 693f),
+            onTransform = { zoom, panX, panY, focusX, focusY ->
+              val oldScale = scale
+              val newScale = (oldScale * zoom).coerceIn(0.5f, 4f)
+              val focusWeight = ((newScale / oldScale) - 1f).coerceIn(-1f, 1f)
+              scale = newScale
+              offsetX = (offsetX + panX + focusX * focusWeight * 0.5f).coerceIn(-1f, 1f)
+              offsetY = (offsetY + panY + focusY * focusWeight * 0.5f).coerceIn(-1f, 1f)
             },
         )
       }
       Column(modifier = Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        AnimatedVisibility(visible = showEditor, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Media framing", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
           if (fitMode == "crop") Button(onClick = { fitMode = "crop" }) { Text("Crop") } else OutlinedButton(onClick = { fitMode = "crop" }) { Text("Crop") }
@@ -202,6 +218,8 @@ private fun CustomThemeEditor(
         Text("Background visibility"); Slider(value = visibility, onValueChange = { visibility = it }, valueRange = 0.15f..1f)
         Text("Dim overlay (lower shows more media)"); Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0f..0.65f)
         if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
+          }
+        }
       }
       Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.End) { OutlinedButton(onClick = onDismiss) { Text("Cancel") }; Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Save theme") } }
     }
@@ -209,9 +227,13 @@ private fun CustomThemeEditor(
 }
 
 @Composable
-private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modifier, onTransform: (Float, Float, Float) -> Unit = { _, _, _ -> }) {
+private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modifier, onTransform: (Float, Float, Float, Float, Float) -> Unit = { _, _, _, _, _ -> }) {
   Box(modifier = modifier.clip(MaterialTheme.shapes.large).background(androidx.compose.ui.graphics.Color.Black).pointerInput(theme.id) {
-    detectTransformGestures { _, pan, zoom, _ -> onTransform(zoom, pan.x / 300f, pan.y / 650f) }
+    detectTransformGestures { centroid, pan, zoom, _ ->
+      val focusX = ((centroid.x / size.width.toFloat()) * 2f - 1f).coerceIn(-1f, 1f)
+      val focusY = ((centroid.y / size.height.toFloat()) * 2f - 1f).coerceIn(-1f, 1f)
+      onTransform(zoom, pan.x / size.width.coerceAtLeast(1), pan.y / size.height.coerceAtLeast(1), focusX, focusY)
+    }
   }) {
     if (theme.isVideo) {
           AndroidView(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = theme.visibility }, factory = { context -> CustomThemeVideoView(context).also { it.applyTheme(theme) } }, update = { view -> view.updateThemeEffects(theme) })
