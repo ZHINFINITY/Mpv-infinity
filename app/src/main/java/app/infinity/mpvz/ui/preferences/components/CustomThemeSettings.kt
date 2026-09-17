@@ -4,12 +4,17 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -28,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.preferences.AppearancePreferences
@@ -38,6 +44,7 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.widget.VideoView
 import java.io.File
 
 @Composable
@@ -59,10 +66,9 @@ fun CustomThemeSettings(
         val isVideo = type.startsWith("video/")
         val file = copyThemeMedia(context, uri, isVideo)
         val (primary, background, onBackground) = sampleThemeColors(file, isVideo)
-        file.delete()
         CustomThemeData(
           name = "My theme",
-          mediaPath = "",
+          mediaPath = file.absolutePath,
           isVideo = isVideo,
           primaryArgb = primary,
           backgroundArgb = background,
@@ -132,6 +138,9 @@ private fun CustomThemeEditor(
     title = { Text(if (isNew) "Create custom theme" else "Edit custom theme") },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ThemeMediaPreview(
+          theme = initial.copy(name = name, overlay = overlay, brightness = brightness, saturation = saturation, muted = muted),
+        )
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true)
         Text("Background dimming")
         Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0.1f..0.9f)
@@ -151,4 +160,35 @@ private fun CustomThemeEditor(
     },
     dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } },
   )
+}
+
+
+@Composable
+private fun ThemeMediaPreview(theme: CustomThemeData) {
+  Box(modifier = Modifier.fillMaxWidth().size(180.dp)) {
+    if (theme.isVideo) {
+      AndroidView(
+        modifier = Modifier.fillMaxWidth().size(180.dp),
+        factory = { context ->
+          VideoView(context).apply {
+            setVideoPath(theme.mediaPath)
+            setOnPreparedListener { player ->
+              player.isLooping = theme.loopVideo
+              player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
+              start()
+            }
+          }
+        },
+        update = { view -> view.setOnPreparedListener { player ->
+          player.isLooping = theme.loopVideo
+          player.setVolume(if (theme.muted) 0f else 1f, if (theme.muted) 0f else 1f)
+          if (!player.isPlaying) view.start()
+        } },
+      )
+    } else {
+      val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
+      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().size(180.dp)) }
+    }
+    Box(Modifier.fillMaxWidth().size(180.dp).background(androidx.compose.ui.graphics.Color.Black.copy(alpha = theme.overlay.coerceIn(0f, 0.92f))))
+  }
 }

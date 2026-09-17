@@ -13,11 +13,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Build
 import android.view.View
+import android.widget.VideoView
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -58,6 +60,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.drawToBitmap
 import app.infinity.mpvz.R
@@ -326,6 +329,7 @@ fun MpvInfinityTheme(
     LocalEmphasizedTypography provides AppEmphasizedTypography,
     LocalDarkAppColorScheme provides darkColorScheme,
   ) {
+    CustomThemeBackdrop(customTheme) {
       ThemeTransitionContent {
         MaterialExpressiveTheme(
           colorScheme = colorScheme,
@@ -335,6 +339,7 @@ fun MpvInfinityTheme(
           content = content,
         )
       }
+    }
   }
 }
 
