@@ -52,13 +52,13 @@ fun copyThemeMedia(context: Context, source: android.net.Uri, isVideo: Boolean):
 }
 
 fun sampleThemeColors(file: File, isVideo: Boolean): Triple<Int, Int, Int> {
-  val bitmap = if (isVideo) {
+  val bitmap: Bitmap? = if (isVideo) {
     MediaMetadataRetriever().run {
       setDataSource(file.absolutePath)
       getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC).also { release() }
     }
   } else BitmapFactory.decodeFile(file.absolutePath)
-  ?: return Triple(Color(0xFF6750A4).toArgb(), Color(0xFF1C1B1F).toArgb(), Color.White.toArgb())
+  if (bitmap == null) return Triple(Color(0xFF6750A4).toArgb(), Color(0xFF1C1B1F).toArgb(), Color.White.toArgb())
   val scaled = Bitmap.createScaledBitmap(bitmap, 1, 1, true)
   val color = scaled.getPixel(0, 0)
   if (scaled !== bitmap) scaled.recycle()
