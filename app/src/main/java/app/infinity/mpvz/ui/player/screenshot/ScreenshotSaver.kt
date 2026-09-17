@@ -20,6 +20,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
 import app.infinity.mpvz.preferences.PlayerPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -48,6 +49,7 @@ data class ScreenshotSettings(
   val quality: Int = 90,
   val pngCompression: Int = 7,
   val webpLossless: Boolean = false,
+  val folderUri: String = "",
 ) {
   companion object {
     fun fromPreferences(preferences: PlayerPreferences): ScreenshotSettings =
@@ -57,6 +59,7 @@ data class ScreenshotSettings(
         quality = preferences.screenshotQuality.get(),
         pngCompression = preferences.screenshotPngCompression.get(),
         webpLossless = preferences.screenshotWebpLossless.get(),
+        folderUri = preferences.screenshotFolderUri.get(),
       )
   }
 }
@@ -93,7 +96,7 @@ object ScreenshotSaver {
             ?: captureWithAndroidFallback(context, settings, includeSubtitles)
             ?: error("mpv does not support ${settings.format.title} format on this device")
 
-        saveToPictures(context, tempFile, displayName, settings.format).also {
+          saveToPictures(context, tempFile, displayName, settings.format, settings.folderUri).also {
           tempFile.delete()
         }
       }
@@ -188,7 +191,18 @@ object ScreenshotSaver {
     tempFile: File,
     displayName: String,
     format: ScreenshotFormat,
+    folderUri: String,
   ): ScreenshotSaveResult {
+    if (folderUri.isNotBlank()) {
+      val tree = DocumentFile.fromTreeUri(context, Uri.parse(folderUri))
+        ?: error("Selected screenshot folder is unavailable")
+      val target = tree.createFile(format.mimeType, displayName)
+        ?: error("Cannot create screenshot in selected folder")
+      context.contentResolver.openOutputStream(target.uri)?.use { output ->
+        tempFile.inputStream().use { input -> input.copyTo(output) }
+      } ?: error("Cannot open selected screenshot folder")
+      return ScreenshotSaveResult(displayName = displayName, uri = target.uri, file = null)
+    }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       val values =
         ContentValues().apply {

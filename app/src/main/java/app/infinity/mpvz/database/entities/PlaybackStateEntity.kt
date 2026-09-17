@@ -27,4 +27,6 @@ data class PlaybackStateEntity(
   val timeRemaining: Int = 0, // in seconds (duration - lastPosition)
   val externalSubtitles: String = "", // Comma-separated list of external subtitle URIs
   val hasBeenWatched: Boolean = false, // Persistent flag: true if video has ever reached the watched threshold
+  val videoAspect: String = "Fit", // Per-video aspect mode
+  val customAspectRatio: Float = -1f, // Per-video custom aspect ratio; negative means none
 )

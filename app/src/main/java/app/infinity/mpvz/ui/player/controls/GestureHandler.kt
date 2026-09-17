@@ -94,7 +94,7 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-private val holdSpeedPresets = listOf(0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f)
+private val holdSpeedPresets = listOf(0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 5f, 6f, 7f, 8f)
 private const val SPEED_HOLD_INTENT_THRESHOLD_MS = 250L
 
 private enum class GestureOwner {
@@ -200,6 +200,7 @@ fun GestureHandler(
   val brightnessGesture by playerPreferences.brightnessGesture.collectAsState()
   val volumeGesture by playerPreferences.volumeGesture.collectAsState()
   val swapVolumeAndBrightness by playerPreferences.swapVolumeAndBrightness.collectAsState()
+  val showVolumeGestureOverlay by playerPreferences.showVolumeGestureOverlay.collectAsState()
   val pinchToZoomGesture by playerPreferences.pinchToZoomGesture.collectAsState()
   val panAndZoomEnabled by playerPreferences.panAndZoomEnabled.collectAsState()
   val horizontalSwipeToSeek by playerPreferences.horizontalSwipeToSeek.collectAsState()
@@ -878,7 +879,10 @@ fun GestureHandler(
                                 ).coerceIn(0, 100)
 
                               if (newVolumePercent != lastVolumePercentValue) {
-                                viewModel.changeVolumePercentTo(newVolumePercent)
+                                viewModel.changeVolumePercentTo(
+                                  newVolumePercent,
+                                  showUi = !showVolumeGestureOverlay,
+                                )
                                 lastVolumePercentValue = newVolumePercent
                               }
                             }

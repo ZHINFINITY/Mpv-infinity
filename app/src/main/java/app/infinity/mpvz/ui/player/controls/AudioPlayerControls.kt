@@ -51,6 +51,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.horizontalScroll
@@ -577,17 +578,15 @@ fun AudioPlayerControls(
 
   var showInPlaceLyrics by rememberSaveable { mutableStateOf(false) }
   var wasLyricsActiveBeforeLandscape by rememberSaveable { mutableStateOf(false) }
-  var isLyricsFullscreen by remember { mutableStateOf(false) }
+  var isStandbyActive by remember { mutableStateOf(false) }
   var lastUserInteractionTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
   val resetInactivityTimer = {
     lastUserInteractionTime = System.currentTimeMillis()
-    if (isLyricsFullscreen) {
-      isLyricsFullscreen = false
-    }
+    isStandbyActive = false
   }
 
-  BackHandler(enabled = isLyricsFullscreen) {
+  BackHandler(enabled = isStandbyActive) {
     resetInactivityTimer()
   }
 
@@ -741,6 +740,7 @@ fun AudioPlayerControls(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
   val audioWavySeekbar by audioPreferences.audioWavySeekbar.collectAsState()
+  val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
@@ -899,26 +899,11 @@ fun AudioPlayerControls(
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
 
-  LaunchedEffect(isTabletLandscape) {
-    if (isTabletLandscape) {
-      if (showInPlaceLyrics) {
-        wasLyricsActiveBeforeLandscape = true
-        showInPlaceLyrics = false
-      }
-    } else {
-      if (wasLyricsActiveBeforeLandscape) {
-        showInPlaceLyrics = true
-        wasLyricsActiveBeforeLandscape = false
-      }
-    }
-  }
-
-  LaunchedEffect(showInPlaceLyrics, isPlaying, isTabletLandscape, lastUserInteractionTime) {
-    if (showInPlaceLyrics && !isTabletLandscape && isPlaying) {
+  LaunchedEffect(audioStandbyMode, isPlaying, isPortrait, lastUserInteractionTime) {
+    isStandbyActive = false
+    if (audioStandbyMode && isPlaying) {
       kotlinx.coroutines.delay(5000L)
-      isLyricsFullscreen = true
-    } else {
-      isLyricsFullscreen = false
+      isStandbyActive = true
     }
   }
 
@@ -1008,7 +993,17 @@ fun AudioPlayerControls(
           }
         }
         .windowInsetsPadding(WindowInsets.safeDrawing)
-        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp),
+        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+        .pointerInput(Unit) {
+          var totalDrag = 0f
+          detectVerticalDragGestures(
+            onDragStart = { totalDrag = 0f },
+            onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
+            onDragEnd = {
+              if (totalDrag > 160f) onBackPress()
+            },
+          )
+        },
   ) {
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
@@ -1113,7 +1108,7 @@ fun AudioPlayerControls(
       )
 
     @OptIn(ExperimentalFoundationApi::class)
-    val centerVisualizerView = @Composable { visualizerModifier: Modifier ->
+    val centerVisualizerView: @Composable (Modifier, Boolean) -> Unit = { visualizerModifier, forceArtwork ->
       BoxWithConstraints(
         modifier =
           visualizerModifier
@@ -1135,16 +1130,16 @@ fun AudioPlayerControls(
         val containerWidthPx = constraints.maxWidth.toFloat()
         val currentOffset = animatableOffsetX.value
 
-        if (showInPlaceLyrics && !isTabletLandscape) {
+        if (showInPlaceLyrics && !forceArtwork) {
           app.infinity.mpvz.ui.player.controls.components.LyricsView(
             viewModel = viewModel,
             modifier = Modifier.fillMaxSize(),
-            isLyricsFullscreen = isLyricsFullscreen,
+            isLyricsFullscreen = isStandbyActive,
             onTap = resetInactivityTimer,
           )
         } else {
           AnimatedContent(
-            targetState = showVisualizer,
+            targetState = showVisualizer && !forceArtwork,
             transitionSpec = {
               if (targetState) {
                 (fadeIn(animationSpec = tween(350, easing = FastOutSlowInEasing)) +
@@ -1289,6 +1284,16 @@ fun AudioPlayerControls(
         }
       }
     }
+    }
+
+    val lyricsPanel = @Composable { panelModifier: Modifier ->
+      app.infinity.mpvz.ui.player.controls.components.LyricsView(
+        viewModel = viewModel,
+        modifier = panelModifier.padding(12.dp),
+        showTitleHeader = false,
+        isLyricsFullscreen = !isPortrait,
+        onTap = resetInactivityTimer,
+      )
     }
 
     val trackMetadataView = @Composable {
@@ -1887,7 +1892,7 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         androidx.compose.animation.AnimatedVisibility(
-          visible = !isLyricsFullscreen,
+          visible = !isStandbyActive,
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
@@ -1898,11 +1903,18 @@ fun AudioPlayerControls(
           }
         }
 
-        val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
-        centerVisualizerView(visualizerModifier)
+        if (showInPlaceLyrics && !isStandbyActive) {
+          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
+        } else {
+          val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
+          centerVisualizerView(visualizerModifier, false)
+        }
+        if (isStandbyActive) {
+          seekbarView()
+        }
 
         androidx.compose.animation.AnimatedVisibility(
-          visible = !isLyricsFullscreen,
+          visible = !isStandbyActive,
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
@@ -1918,7 +1930,7 @@ fun AudioPlayerControls(
           }
         }
       }
-    } else if (isTabletLandscape) {
+    } else if (false && isTabletLandscape) {
       Row(
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -1940,6 +1952,7 @@ fun AudioPlayerControls(
               .weight(1f)
               .fillMaxWidth()
               .padding(vertical = 12.dp, horizontal = 24.dp),
+            false,
           )
           Spacer(modifier = Modifier.height(6.dp))
           trackMetadataView()
@@ -1951,58 +1964,59 @@ fun AudioPlayerControls(
           bottomActionRow()
         }
 
-        Surface(
-          modifier = Modifier
-            .weight(1.1f)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(24.dp)),
-          color = MaterialTheme.colorScheme.surfaceContainerLow,
-          shape = RoundedCornerShape(24.dp),
-        ) {
-          DualPaneSidePanel(
-            viewModel = viewModel,
-            playlist = filteredPlaylist,
-            initialLyricsActive = wasLyricsActiveBeforeLandscape,
-          )
+        if (showInPlaceLyrics || wasLyricsActiveBeforeLandscape) {
+          lyricsPanel(Modifier.weight(1.1f).fillMaxHeight())
+        } else {
+          Surface(
+            modifier = Modifier.weight(1.1f).fillMaxHeight().clip(RoundedCornerShape(24.dp)),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(24.dp),
+          ) {
+            DualPaneSidePanel(viewModel = viewModel, playlist = filteredPlaylist)
+          }
         }
       }
     } else {
-      // Landscape keeps the artwork and its metadata together on the left, while the right pane
-      // is reserved for the seekbar and controls. This prevents the metadata from pushing the
-      // lower action row below the available height on short landscape displays.
-      Row(
+      Column(
         modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(24.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        Column(
-          modifier = Modifier.weight(1f).fillMaxHeight(),
-          verticalArrangement = Arrangement.Center,
-          horizontalAlignment = Alignment.CenterHorizontally,
+        Row(
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(20.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          centerVisualizerView(
-            Modifier
-              .weight(1f)
-              .fillMaxWidth()
-              .padding(vertical = 12.dp, horizontal = 24.dp),
-          )
-          Spacer(modifier = Modifier.height(12.dp))
-          trackMetadataView()
-        }
-        Column(
-          modifier = Modifier.weight(1.2f).fillMaxHeight(),
-          verticalArrangement = Arrangement.SpaceEvenly,
-          horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-          headerBar()
-          losslessBadge()
-          seekbarView()
-          playbackControlsRow()
-          bottomActionRow()
+          Box(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            contentAlignment = Alignment.Center,
+          ) {
+            centerVisualizerView(
+              Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+              true,
+            )
+          }
+          Column(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            if (showInPlaceLyrics) {
+              lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
+            } else {
+              if (!isStandbyActive) headerBar()
+              if (!isStandbyActive) losslessBadge()
+              if (!isStandbyActive) trackMetadataView()
+              Spacer(modifier = Modifier.weight(1f))
+            }
+            seekbarView()
+            if (!showInPlaceLyrics && !isStandbyActive) {
+              playbackControlsRow()
+              bottomActionRow()
+            }
+          }
         }
       }
     }
-
     if (addToPlaylistDialogOpen && !mediaPath.isNullOrBlank()) {
       val displayTitle = remember(lastValidTitle, displayArtist) {
         cleanSongTitle(lastValidTitle, displayArtist)

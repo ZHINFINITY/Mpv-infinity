@@ -43,6 +43,9 @@ interface PlaybackStateDao {
   @Query("SELECT * FROM PlaybackStateEntity")
   suspend fun getAllPlaybackStates(): List<PlaybackStateEntity>
 
+  @Query("UPDATE PlaybackStateEntity SET videoAspect = 'Fit', customAspectRatio = -1.0")
+  suspend fun resetAllVideoAspectSettings()
+
   @Upsert
   suspend fun upsertAll(playbackStates: List<PlaybackStateEntity>)
 }

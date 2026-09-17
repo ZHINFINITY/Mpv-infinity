@@ -20,7 +20,7 @@ val activeAbis =
     listOf("arm64-v8a", "armeabi-v7a") + x86Abis
   }
 val universalOnlyDistributions = setOf("noVulkan", "fongmi")
-val releaseVersionCode = 250
+val releaseVersionCode = 253
 val versionCodeBandSize = 10_000
 val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
 val previewVersionCode =
@@ -48,7 +48,7 @@ android {
     // Stable occupies the top of its version band. Preview uses the next band's commit-count
     // offset, so Stable -> Preview -> newer Preview -> next Stable is always an Android upgrade.
     versionCode = stableVersionCode
-    versionName = "1.0.7"
+    versionName = "2.0.0"
 
     vectorDrawables {
       useSupportLibrary = true
@@ -207,7 +207,9 @@ androidComponents {
           .find { it.filterType == FilterConfiguration.FilterType.ABI }
           ?.identifier
 
-      if (isUniversalOnly && abi != null) {
+      // Keep universal packages for these flavors, but also publish the arm64-v8a split for
+      // modern devices that need the architecture-specific native playback profile.
+      if (isUniversalOnly && abi != null && abi != "arm64-v8a") {
         output.enabled.set(false)
       }
 
@@ -277,6 +279,11 @@ dependencies {
   implementation(libs.kotlinx.immutable.collections)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.okhttp)
+  implementation(libs.retrofit)
+  implementation(libs.retrofit.kotlinx.serialization)
+  implementation(libs.coil.compose)
+  implementation(libs.coil.network.okhttp)
+  implementation(libs.androidx.security.crypto)
   implementation(libs.jsoup)
   implementation(libs.androidx.media3.common)
   implementation(libs.androidx.media3.exoplayer)

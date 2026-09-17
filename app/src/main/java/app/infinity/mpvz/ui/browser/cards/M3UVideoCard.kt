@@ -144,7 +144,7 @@ fun M3UVideoCard(
         }
       }
 
-    LaunchedEffect(thumbnailKey) {
+    LaunchedEffect(thumbnailKey, showNetworkThumbnails) {
       thumbnailRepository.thumbnailReadyKeys.filter { it == thumbnailKey }.collect {
         thumbnail =
           if (networkReference != null) {
@@ -166,7 +166,7 @@ fun M3UVideoCard(
       }
     }
 
-    LaunchedEffect(thumbnailKey) {
+    LaunchedEffect(thumbnailKey, showNetworkThumbnails) {
       if (thumbnail == null) {
         thumbnail =
           withContext(Dispatchers.IO) {

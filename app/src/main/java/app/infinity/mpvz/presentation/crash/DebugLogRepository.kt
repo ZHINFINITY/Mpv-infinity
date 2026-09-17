@@ -58,8 +58,10 @@ internal data class DebugLogSnapshot(
  * still surfaced instead of being silently discarded.
  */
 internal object DebugLogReader {
-  private const val PRIMARY_RAW_LIMIT = 2_000
-  private const val FALLBACK_RAW_LIMIT = 4_000
+  // Player startup and codec traces can be very verbose. A small tail evicts the earlier
+  // MpvCatalogDiag search/resolver entries before the user opens the viewer.
+  private const val PRIMARY_RAW_LIMIT = 10_000
+  private const val FALLBACK_RAW_LIMIT = 20_000
 
   private val threadTimePattern =
     Regex(

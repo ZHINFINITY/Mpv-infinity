@@ -400,6 +400,9 @@ fun JellyfinContent(
           },
           additionalActions = {
             if (!selectionManager.isInSelectionMode) {
+              IconButton(onClick = { isManageServersOpen = true }, modifier = Modifier.padding(horizontal = 2.dp)) {
+                Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers", modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.secondary)
+              }
               IconButton(
                 onClick = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
                 modifier = Modifier.padding(horizontal = 2.dp),
@@ -1168,7 +1171,8 @@ fun JellyfinContent(
           viewModel.closeDetail()
         }
       },
-      onDownload = { itemToDownload -> viewModel.downloadItem(itemToDownload) },
+      onLoadMediaSources = { itemToDownload -> viewModel.availableDownloadSources(itemToDownload) },
+      onDownload = { itemToDownload, mediaSource -> viewModel.downloadItem(itemToDownload, mediaSource) },
       onDownloadSeason = { viewModel.downloadSelectedSeason() },
       onDownloadSeries = { viewModel.downloadWholeSeries() },
       downloadedItemIds = downloadedItemIds,

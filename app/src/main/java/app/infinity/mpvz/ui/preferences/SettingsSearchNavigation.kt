@@ -148,6 +148,9 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
         SettingsSearchListAnchor(titleRes = R.string.pref_audio, itemIndex = 0),
         SettingsSearchListAnchor(titleRes = R.string.pref_audio_visualizer_style_title, itemIndex = 3),
         SettingsSearchListAnchor(titleRes = R.string.pref_audio_orientation_title, itemIndex = 3),
+        SettingsSearchListAnchor(titleRes = R.string.pref_audio_standby_mode_title, itemIndex = 3),
+        SettingsSearchListAnchor(titleRes = R.string.pref_audio_ambient_mode_title, itemIndex = 3),
+        SettingsSearchListAnchor(titleRes = R.string.pref_audio_wavy_seekbar_title, itemIndex = 3),
         SettingsSearchListAnchor(titleRes = R.string.pref_preferred_languages, itemIndex = 5),
         SettingsSearchListAnchor(titleRes = R.string.pref_audio_pitch_correction_title, itemIndex = 5),
         SettingsSearchListAnchor(titleRes = R.string.pref_audio_volume_normalization_title, itemIndex = 5),
@@ -182,6 +185,7 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
         SettingsSearchListAnchor(titleRes = R.string.pref_ai_search_title, itemIndex = 9),
         SettingsSearchListAnchor(titleRes = R.string.search_stt_title, itemIndex = 11),
         SettingsSearchListAnchor(titleRes = R.string.pref_translation_section, itemIndex = 13),
+        SettingsSearchListAnchor(titleRes = R.string.pref_automatic_subtitle_font_fallback_title, itemIndex = 13),
         SettingsSearchListAnchor(titleRes = R.string.search_custom_ai_prompts_title, itemIndex = 15),
       ),
     AdvancedPreferencesScreen to

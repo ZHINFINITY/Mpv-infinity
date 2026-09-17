@@ -353,6 +353,21 @@ object AudioPreferencesScreen : Screen {
               )
 
               PreferenceDivider()
+              val audioStandbyMode by preferences.audioStandbyMode.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_standby_mode_title),
+                value = audioStandbyMode,
+                onValueChange = { preferences.audioStandbyMode.set(it) },
+                title = { Text(stringResource(R.string.pref_audio_standby_mode_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_audio_standby_mode_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
               val audioWavySeekbar by preferences.audioWavySeekbar.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_audio_wavy_seekbar_title),

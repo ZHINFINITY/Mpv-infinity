@@ -10,10 +10,12 @@
 package app.infinity.mpvz.domain.download
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.preferences.YtdlPreferences
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpOptionsBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,13 +38,14 @@ class YtdlpDownloadEngine(
   private val context: Context,
   private val preferences: YtdlPreferences,
 ) {
-  enum class JobState { QUEUED, RUNNING, SUCCESS, FAILED, CANCELLED }
+  enum class JobState { QUEUED, RUNNING, PAUSED, SUCCESS, FAILED, CANCELLED }
 
   data class Job(
     val id: Int,
     val url: String,
     val title: String,
     val directory: String,
+    val qualityHeight: Int = -1,
     val state: JobState = JobState.QUEUED,
     val progressPercent: Float = 0f,
     val detail: String = "",
@@ -64,22 +67,32 @@ class YtdlpDownloadEngine(
 
   @Volatile
   private var cancelRequested = false
+  @Volatile
+  private var pauseRequested = false
 
   fun enqueue(
     url: String,
     title: String,
     directory: File,
+    qualityHeight: Int = -1,
   ): Int {
     val id = nextId.getAndIncrement()
     if (!directory.exists()) directory.mkdirs()
     _jobs.update { current ->
-      current + Job(id = id, url = url, title = title, directory = directory.absolutePath)
+      current + Job(
+        id = id,
+        url = url,
+        title = title,
+        directory = directory.absolutePath,
+        qualityHeight = qualityHeight,
+      )
     }
     YtdlpDownloadService.start(context)
     return id
   }
 
   fun cancel(id: Int) {
+    val job = currentJob(id)
     _jobs.update { current ->
       current.map { job ->
         if (job.id == id && job.state == JobState.QUEUED) job.copy(state = JobState.CANCELLED) else job
@@ -89,6 +102,19 @@ class YtdlpDownloadEngine(
       cancelRequested = true
       activeProcess?.destroyForcibly()
     }
+    job?.let(::deleteJobFiles)
+  }
+  fun pause(id: Int) {
+    if (activeJobId == id) {
+      pauseRequested = true
+      activeProcess?.destroyForcibly()
+    } else {
+      _jobs.update { current -> current.map { job -> if (job.id == id && job.state == JobState.QUEUED) job.copy(state = JobState.PAUSED) else job } }
+    }
+  }
+  fun resume(id: Int) {
+    _jobs.update { current -> current.map { job -> if (job.id == id && job.state == JobState.PAUSED) job.copy(state = JobState.QUEUED, error = null) else job } }
+    if (hasQueuedWork()) YtdlpDownloadService.start(context)
   }
 
   fun retry(id: Int) {
@@ -107,6 +133,7 @@ class YtdlpDownloadEngine(
   fun remove(id: Int) {
     val job = _jobs.value.firstOrNull { it.id == id } ?: return
     if (job.isActive) cancel(id)
+    deleteJobFiles(job)
     _jobs.update { current -> current.filterNot { it.id == id } }
   }
 
@@ -128,6 +155,7 @@ class YtdlpDownloadEngine(
   ) {
     val job = currentJob(id) ?: return
     cancelRequested = false
+    pauseRequested = false
     activeJobId = id
 
     val ready = YtdlpManager.ensureRuntimeInstalled(context)
@@ -138,7 +166,7 @@ class YtdlpDownloadEngine(
     }
 
     val outputTemplate = "${job.directory}/${DownloadLocations.sanitizeName(job.title)}.%(ext)s"
-    val command = buildCommand(job.url, outputTemplate)
+    val command = buildCommand(job.url, outputTemplate, job.qualityHeight)
 
     val result =
       withContext(Dispatchers.IO) {
@@ -146,8 +174,18 @@ class YtdlpDownloadEngine(
           val process = startProcess(command)
           activeProcess = process
           var destination: String? = null
+          var lastOutputLine = ""
+          val diagnosticLines = ArrayDeque<String>()
           BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
+              if (line.isNotBlank()) lastOutputLine = line.trim()
+              if (!line.contains("[download]", ignoreCase = true) &&
+                !line.contains("[Merger]", ignoreCase = true) &&
+                !line.contains("Destination:", ignoreCase = true)
+              ) {
+                if (diagnosticLines.size >= 12) diagnosticLines.removeFirst()
+                diagnosticLines.addLast(line.trim())
+              }
               parseDestination(line)?.let { destination = it }
               val progress = parseProgressLine(line)
               if (progress != null) {
@@ -157,7 +195,7 @@ class YtdlpDownloadEngine(
             }
           }
           val exitCode = runInterruptible { process.waitFor() }
-          Pair(exitCode, destination)
+          Triple(exitCode, destination, diagnosticLines.joinToString("\n").ifBlank { lastOutputLine })
         }
       }
 
@@ -165,9 +203,13 @@ class YtdlpDownloadEngine(
     activeJobId = -1
 
     result
-      .onSuccess { (exitCode, destination) ->
+      .onSuccess { (exitCode, destination, lastOutputLine) ->
         when {
-          cancelRequested -> updateJob(id) { it.copy(state = JobState.CANCELLED, detail = "") }
+          cancelRequested -> {
+            deleteJobFiles(job)
+            updateJob(id) { it.copy(state = JobState.CANCELLED, detail = "") }
+          }
+          pauseRequested -> updateJob(id) { it.copy(state = JobState.PAUSED, detail = "") }
           exitCode == 0 -> {
             val resolved = destination ?: findNewestOutput(job)
             updateJob(id) {
@@ -176,13 +218,24 @@ class YtdlpDownloadEngine(
           }
           else ->
             updateJob(id) {
-              it.copy(state = JobState.FAILED, error = "yt-dlp exited with code $exitCode")
+              it.copy(
+                state = JobState.FAILED,
+                error = lastOutputLine.takeIf { output -> output.isNotBlank() }
+                  ?: "yt-dlp exited with code $exitCode",
+              )
             }
         }
       }.onFailure { error ->
         if (error is CancellationException) throw error
         Log.e(TAG, "yt-dlp download failed", error)
-        updateJob(id) { it.copy(state = JobState.FAILED, error = error.message ?: "Unknown error") }
+        if (pauseRequested) {
+          updateJob(id) { it.copy(state = JobState.PAUSED, error = null, detail = "") }
+        } else if (cancelRequested) {
+          deleteJobFiles(job)
+          updateJob(id) { it.copy(state = JobState.CANCELLED, error = null, detail = "") }
+        } else {
+          updateJob(id) { it.copy(state = JobState.FAILED, error = error.message ?: "Unknown error") }
+        }
       }
     currentJob(id)?.let(onJobUpdate)
   }
@@ -190,6 +243,7 @@ class YtdlpDownloadEngine(
   private fun buildCommand(
     url: String,
     outputTemplate: String,
+    qualityHeight: Int,
   ): List<String> =
     buildList {
       add(YtdlpManager.getExecutablePath(context))
@@ -204,16 +258,57 @@ class YtdlpDownloadEngine(
       add("5")
       add("--concurrent-fragments")
       add("4")
+      add("--continue")
+      add("--part")
+      add("--no-overwrites")
+      val sourceHost = Uri.parse(url).host?.lowercase().orEmpty()
+      val isInstagram = sourceHost == "instagram.com" || sourceHost.endsWith(".instagram.com")
+      add("-f")
+      if (isInstagram) {
+        // Instagram commonly exposes a single progressive MP4 or separate MP4/M4A streams.
+        // Prefer those before the generic best-video+best-audio selection so downloads do not
+        // fail when a mergeable audio-only format is unavailable.
+        add(
+          if (qualityHeight > 0) {
+            "best[ext=mp4][vcodec!=none][acodec!=none][height<=?$qualityHeight]/bestvideo*[vcodec!=none][ext=mp4][height<=?$qualityHeight]+bestaudio*[acodec!=none]/best[vcodec!=none][acodec!=none]"
+          } else {
+            "best[ext=mp4][vcodec!=none][acodec!=none]/bestvideo*[vcodec!=none][ext=mp4]+bestaudio*[acodec!=none]/best[vcodec!=none][acodec!=none]"
+          },
+        )
+      } else if (qualityHeight > 0) {
+        add("bv*[height<=?$qualityHeight]+ba/b[height<=?$qualityHeight]")
+      } else {
+        add("bv*+ba/b")
+      }
+      add("--merge-output-format")
+      add("mp4")
       add("-o")
       add(outputTemplate)
 
-      preferences.customUserAgent.get().takeIf(String::isNotBlank)?.let { userAgent ->
+      val configuredUserAgent = preferences.customUserAgent.get().trim()
+      if (configuredUserAgent.isNotBlank()) {
         add("--user-agent")
-        add(userAgent)
+        add(configuredUserAgent)
+      } else {
+        add("--user-agent")
+        add(YtdlpOptionsBuilder.DEFAULT_USER_AGENT)
       }
       preferences.referer.get().takeIf(String::isNotBlank)?.let { referer ->
         add("--referer")
         add(referer)
+      }
+      if (preferences.referer.get().isBlank()) {
+        Uri.parse(url).host?.lowercase()?.let { host ->
+          when {
+            host == "instagram.com" || host.endsWith(".instagram.com") -> "https://www.instagram.com/"
+            host == "facebook.com" || host.endsWith(".facebook.com") -> "https://www.facebook.com/"
+            host == "tiktok.com" || host.endsWith(".tiktok.com") -> "https://www.tiktok.com/"
+            else -> null
+          }
+        }?.let { referer ->
+          add("--referer")
+          add(referer)
+        }
       }
       preferences.proxy.get().takeIf(String::isNotBlank)?.let { proxy ->
         add("--proxy")
@@ -271,6 +366,15 @@ class YtdlpDownloadEngine(
       ?.absolutePath
   }
 
+  private fun deleteJobFiles(job: Job) {
+    val prefix = DownloadLocations.sanitizeName(job.title)
+    File(job.directory).listFiles()?.forEach { file ->
+      if (file.isFile && file.name.startsWith(prefix)) {
+        runCatching { file.delete() }
+      }
+    }
+  }
+
   private fun currentJob(id: Int): Job? = _jobs.value.firstOrNull { it.id == id }
 
   private fun updateJob(
@@ -284,12 +388,12 @@ class YtdlpDownloadEngine(
     private const val TAG = "YtdlpDownloadEngine"
 
     // Example: "[download]  42.3% of ~ 123.45MiB at 2.34MiB/s ETA 01:23"
-    private val PROGRESS_REGEX = Regex("""\[download]\s+([0-9.]+)%(.*)""")
-    private val DESTINATION_REGEX = Regex("""\[download] Destination: (.+)""")
-    private val ALREADY_DOWNLOADED_REGEX = Regex("""\[download] (.+) has already been downloaded""")
+    private val PROGRESS_REGEX = Regex("""(?i)\[download]\s+([0-9.]+)%(.*)""")
+    private val DESTINATION_REGEX = Regex("""(?i)\[download] Destination: (.+)""")
+    private val ALREADY_DOWNLOADED_REGEX = Regex("""(?i)\[download] (.+) has already been downloaded""")
 
     fun parseProgressLine(line: String): Pair<Float, String>? {
-      val match = PROGRESS_REGEX.find(line.trim()) ?: return null
+      val match = PROGRESS_REGEX.find(line.replace("\r", "").trim()) ?: return null
       val percent = match.groupValues[1].toFloatOrNull() ?: return null
       return percent.coerceIn(0f, 100f) to match.groupValues[2].trim()
     }

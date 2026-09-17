@@ -145,7 +145,7 @@ data class YtdlpResolvedOptions(
 
 object YtdlpOptionsBuilder {
   const val DEFAULT_USER_AGENT =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
   fun build(settings: YtdlpOptionSettings): YtdlpResolvedOptions {
     val format = buildFormat(settings)
@@ -228,14 +228,15 @@ object YtdlpOptionsBuilder {
       settings.audioQuality.maxBitrateKbps
         ?.let { "[abr<=?$it]" }
         .orEmpty()
-    val singleGroup = "b*" + settings.formatFilters() + audioBitrateFilter
+    val singleGroup = "bv*[vcodec!=none]" + settings.formatFilters() + audioBitrateFilter
     val primary =
       if (videoGroup.isBlank()) {
         singleGroup
       } else {
         "($videoGroup)+$audioSel/$singleGroup"
       }
-    return "$primary/bv*+$audioSel/b$audioBitrateFilter"
+    // Never fall back to an audio-only selector for a video download.
+    return "$primary/bv*[vcodec!=none]+$audioSel/bv*[vcodec!=none]"
   }
 
   fun parseRawOptions(raw: String): List<RawYtdlpOption> =

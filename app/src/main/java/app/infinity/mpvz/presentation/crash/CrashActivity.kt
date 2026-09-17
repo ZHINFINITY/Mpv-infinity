@@ -251,6 +251,60 @@ class CrashActivity : AppCompatActivity() {
       logcat.appendLine()
       logcat.appendLine("===== Media3 / ExoPlayer / Codec diagnostics =====")
       logcat.appendLine(if (media3Lines.isBlank()) "No matching Media3 lines captured." else media3Lines)
+      val uiLines =
+        logcat
+          .lineSequence()
+          .filter { line ->
+            listOf(
+              "Choreographer",
+              "Skipped",
+              "Davey",
+              "Janky",
+              "RenderInspector",
+              "RenderThread",
+              "OpenGLRenderer",
+              "QueueBuffer",
+              "VRI[",
+              "reportDrawFinished",
+              "InsetsController",
+              "WmSystemUiDebug",
+              "AndroidRuntime",
+            ).any { marker -> line.contains(marker, ignoreCase = true) }
+          }.joinToString("\n")
+      logcat.appendLine()
+      logcat.appendLine("===== UI frame / Compose / window diagnostics =====")
+      logcat.appendLine(if (uiLines.isBlank()) "No matching UI diagnostics captured." else uiLines)
+      val catalogLines =
+        logcat
+          .lineSequence()
+          .filter { line -> line.contains("MpvCatalogDiag", ignoreCase = true) }
+          .joinToString("\n")
+      logcat.appendLine()
+      logcat.appendLine("===== Catalog / resolver diagnostics =====")
+      logcat.appendLine(if (catalogLines.isBlank()) "No catalog diagnostics captured." else catalogLines)
+      val cookieWebViewLines =
+        logcat
+          .lineSequence()
+          .filter { line -> line.contains("CookieWebView", ignoreCase = true) }
+          .joinToString("\n")
+      logcat.appendLine()
+      logcat.appendLine("===== Cookie WebView diagnostics =====")
+      logcat.appendLine(
+        if (cookieWebViewLines.isBlank()) "No CookieWebView diagnostics captured."
+        else cookieWebViewLines,
+      )
+      logcat.appendLine()
+      logcat.appendLine("===== gfxinfo frame statistics =====")
+      logcat.appendLine(
+        runCatching {
+          Runtime.getRuntime()
+            .exec(arrayOf("dumpsys", "gfxinfo", BuildConfig.APPLICATION_ID, "framestats"))
+            .inputStream
+            .bufferedReader()
+            .use { it.readText() }
+            .ifBlank { "No gfxinfo frame statistics returned." }
+        }.getOrElse { error -> "Unable to collect gfxinfo: ${error.javaClass.simpleName}: ${error.message}" },
+      )
       return logcat.toString()
     }
 
