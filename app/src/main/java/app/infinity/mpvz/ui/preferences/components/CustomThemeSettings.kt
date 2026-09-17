@@ -214,7 +214,7 @@ private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modif
     detectTransformGestures { _, pan, zoom, _ -> onTransform(zoom, pan.x / 300f, pan.y / 650f) }
   }) {
     if (theme.isVideo) {
-      AndroidView(modifier = Modifier.fillMaxSize().graphicsLayer { val coverScale = if (theme.fitMode == "crop" && theme.aspectMode == "screen") maxOf(1f, theme.mediaAspectRatio / (320f / 693f)) else 1f; scaleX = theme.scale * coverScale; scaleY = theme.scale * coverScale; alpha = theme.visibility; translationX = theme.offsetX * size.width * 0.5f; translationY = theme.offsetY * size.height * 0.5f }, factory = { context -> CustomThemeVideoView(context).also { it.applyTheme(theme) } }, update = { view -> view.updateThemeEffects(theme) })
+          AndroidView(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = theme.visibility }, factory = { context -> CustomThemeVideoView(context).also { it.applyTheme(theme) } }, update = { view -> view.updateThemeEffects(theme) })
     } else {
       val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
       bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = theme.contentScale(), alignment = androidx.compose.ui.BiasAlignment(theme.offsetX, theme.offsetY), colorFilter = theme.mediaColorFilter(), modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale, alpha = theme.visibility)) }
@@ -235,6 +235,7 @@ private fun CustomThemeData.mediaColorFilter(): ColorFilter {
 
 private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
   "fit" -> ContentScale.Fit
-  "fill" -> ContentScale.FillBounds
+  // Fill means fill the viewport by cropping, never distort the source.
+  "fill" -> ContentScale.Crop
   else -> ContentScale.Crop
 }
