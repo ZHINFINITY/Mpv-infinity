@@ -33,6 +33,7 @@ class AudioPreferences(
   val audioOrientation = preferenceStore.getEnum("audio_player_orientation", AudioPlayerOrientation.Auto)
   val audioAmbientMode = preferenceStore.getBoolean("audio_ambient_mode", true)
   val audioStandbyMode = preferenceStore.getBoolean("audio_standby_mode", true)
+  val audioStandbyDelaySeconds = preferenceStore.getInt("audio_standby_delay_seconds", 5)
   val audioWavySeekbar = preferenceStore.getBoolean("audio_wavy_seekbar", true)
   val enabledMusicTabs = preferenceStore.getStringSet(
     "enabled_music_tabs",
