@@ -26,7 +26,7 @@ class LibassRenderersFactory(
     extensionRendererMode: Int,
     out: ArrayList<Renderer>,
   ) {
-    out.add(Media3LibassRenderer(rendererProvider, positionConsumer))
     super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+    out.add(Media3LibassRenderer(rendererProvider, positionConsumer))
   }
 }
