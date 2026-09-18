@@ -6612,6 +6612,28 @@ class PlayerActivity :
     if (requestedOrientation != initialOrientation) requestedOrientation = initialOrientation
   }
 
+  /** External players often provide a bare CDN URL, so preserve stream metadata separately. */
+  private fun intentVideoDimension(sourceIntent: Intent, axis: String): Int? {
+    val keys = if (axis == "width") arrayOf(EXTRA_VIDEO_WIDTH, "videoWidth", "width")
+    else arrayOf(EXTRA_VIDEO_HEIGHT, "videoHeight", "height")
+    return keys.firstNotNullOfOrNull { key ->
+      sourceIntent.getIntExtra(key, 0).takeIf { it > 0 }
+        ?: sourceIntent.getStringExtra(key)?.toIntOrNull()?.takeIf { it > 0 }
+    }
+  }
+
+  private fun intentHdrMetadata(sourceIntent: Intent): Boolean? {
+    val booleanKeys = arrayOf("is_hdr", "hdr", "video_hdr", "hdr_video", "dolby_vision")
+    if (booleanKeys.any { sourceIntent.getBooleanExtra(it, false) }) return true
+    val stringKeys = arrayOf("hdr_type", "color_transfer", "transfer", "video_color_transfer")
+    if (stringKeys.any { key ->
+        sourceIntent.getStringExtra(key)?.let { value ->
+          value.isNotBlank() && !value.equals("sdr", ignoreCase = true) && !value.equals("false", ignoreCase = true)
+        } == true
+      }) return true
+    return null
+  }
+
   private fun isKnownAudioLaunch(sourceIntent: Intent): Boolean =
     sourceIntent.getBooleanExtra("is_audio", false) ||
       sourceIntent.type?.startsWith("audio/") == true ||
@@ -8111,6 +8133,9 @@ class PlayerActivity :
           artist = existingItem?.artist,
           mimeType = launchMimeType,
           headers = headers,
+          videoWidth = intentVideoDimension(intent, "width"),
+          videoHeight = intentVideoDimension(intent, "height"),
+          hdrMetadata = intentHdrMetadata(intent),
           networkSource = networkSource,
           playlistItemId = databaseItem?.id,
           artworkUri =
