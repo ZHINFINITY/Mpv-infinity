@@ -130,7 +130,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1911,33 +1910,43 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         if (edgeToEdgeVisualizer && !isStandbyActive) {
+          // The visualizer owns the complete upper player region. Header and track metadata are
+          // composited over that same layer, so there is no separate visualizer/metadata seam.
           Box(
             modifier = Modifier
               .weight(1f)
-              .fillMaxWidth()
-              .layout { measurable, constraints ->
-                // Continue the visualizer into the metadata title area so there is
-                // no hard horizontal boundary immediately above the song name.
-                val extensionPx = (10.dp + 16.dp).roundToPx()
-                val placeable = measurable.measure(
-                  constraints.copy(maxHeight = constraints.maxHeight + extensionPx),
-                )
-                layout(constraints.maxWidth, constraints.maxHeight) {
-                  placeable.place(0, 0)
-                }
-              },
+              .fillMaxWidth(),
           ) {
             centerVisualizerView(Modifier.fillMaxSize(), false)
+
             Column(
               modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                .fillMaxSize()
+                .windowInsetsPadding(
+                  WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
+                )
                 .padding(horizontal = controlsSidePadding)
                 .padding(top = 6.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
             ) {
               headerBar()
               losslessBadge()
+              Spacer(modifier = Modifier.weight(1f))
+
+              AnimatedVisibility(
+                visible = !isStandbyActive,
+                enter = fadeIn(animationSpec = tween(300)) +
+                  androidx.compose.animation.expandVertically(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(300)) +
+                  androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
+              ) {
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                  trackMetadataView()
+                }
+              }
             }
           }
         } else {
@@ -1960,6 +1969,7 @@ fun AudioPlayerControls(
             centerVisualizerView(visualizerModifier, false)
           }
         }
+
         if (isStandbyActive) {
           seekbarView()
         }
@@ -1969,30 +1979,18 @@ fun AudioPlayerControls(
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
-          Surface(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 12.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = Color.Transparent,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-          ) {
           Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-              .padding(horizontal = 14.dp, vertical = 10.dp)
+              .fillMaxWidth()
               .padding(horizontal = controlsSidePadding),
           ) {
-            Spacer(modifier = Modifier.height(16.dp))
-            trackMetadataView()
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             seekbarView()
             Spacer(modifier = Modifier.height(16.dp))
             playbackControlsRow()
             Spacer(modifier = Modifier.height(24.dp))
             bottomActionRow()
-          }
           }
         }
       }
