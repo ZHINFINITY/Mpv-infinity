@@ -1919,11 +1919,11 @@ fun AudioPlayerControls(
           ) {
             centerVisualizerView(Modifier.fillMaxSize(), false)
 
-            if (audioPaletteBackground && albumArtBitmap != null &&
+            if (ambientModeEnabled && audioPaletteBackground && albumArtBitmap != null &&
               (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
             ) {
-              // Use the same artwork-derived palette as the ambient player background. The
-              // boundary is a broad atmospheric blend rather than a visible gradient strip.
+              // Blend the artwork palette through the boundary as atmospheric fog. The visualizer
+              // keeps its original bounds; only the palette transition overlaps the edge.
               Box(
                 modifier = Modifier
                   .fillMaxWidth()
@@ -1931,12 +1931,15 @@ fun AudioPlayerControls(
                   .align(Alignment.BottomCenter)
                   .offset(y = 40.dp)
                   .drawWithCache {
+                    val top = animatedAmbientTop
+                    val bottom = animatedAmbientBottom
                     val fog = Brush.verticalGradient(
                       colors = listOf(
                         Color.Transparent,
-                        animatedAmbientTop.copy(alpha = animatedAmbientTop.alpha * 0.12f),
-                        animatedAmbientBottom.copy(alpha = animatedAmbientBottom.alpha * 0.22f),
-                        animatedAmbientBottom.copy(alpha = animatedAmbientBottom.alpha * 0.08f),
+                        top.copy(alpha = top.alpha * 0.08f),
+                        top.copy(alpha = top.alpha * 0.16f),
+                        bottom.copy(alpha = bottom.alpha * 0.20f),
+                        bottom.copy(alpha = bottom.alpha * 0.06f),
                         Color.Transparent,
                       ),
                       startY = 0f,
