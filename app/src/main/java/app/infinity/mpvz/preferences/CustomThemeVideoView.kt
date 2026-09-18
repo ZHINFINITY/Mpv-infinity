@@ -19,6 +19,7 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
   private var muted = true
   private var brightness = 1f
   private var saturation = 1f
+  private var blur = 0f
   private var mediaAspectRatio = 1f
   private var fitMode = "crop"
   private var aspectMode = "screen"
@@ -35,6 +36,7 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
     muted: Boolean,
     brightness: Float,
     saturation: Float,
+    blur: Float,
     visibility: Float,
     mediaAspectRatio: Float = 1f,
     fitMode: String = "crop",
@@ -44,7 +46,7 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
     offsetY: Float = 0f,
   ) {
     val changed = this.path != path
-    val effectsChanged = this.brightness != brightness || this.saturation != saturation
+    val effectsChanged = this.brightness != brightness || this.saturation != saturation || this.blur != blur
     val transformChanged = this.mediaAspectRatio != mediaAspectRatio || this.fitMode != fitMode || this.aspectMode != aspectMode || this.mediaScale != scale || this.offsetX != offsetX || this.offsetY != offsetY
     this.path = path
     this.loop = loop
@@ -97,7 +99,14 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
       val values = matrix.array.copyOf()
       val b = brightness.coerceIn(0.25f, 2f)
       for (index in intArrayOf(0, 1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 14)) values[index] *= b
-      runCatching { setRenderEffect(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(ColorMatrix(values)))) }
+      val colorEffect = RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(ColorMatrix(values)))
+      val effect = if (blur > 0f) {
+        RenderEffect.createChainEffect(
+          colorEffect,
+          RenderEffect.createBlurEffect(blur, blur, android.graphics.Shader.TileMode.CLAMP),
+        )
+      } else colorEffect
+      runCatching { setRenderEffect(effect) }
     }
   }
 
@@ -155,6 +164,7 @@ fun CustomThemeVideoView.applyTheme(theme: CustomThemeData) = configure(
   muted = theme.muted,
   brightness = theme.brightness,
   saturation = theme.saturation,
+  blur = theme.blur,
   visibility = theme.visibility,
   mediaAspectRatio = theme.mediaAspectRatio,
   fitMode = theme.fitMode,
@@ -165,5 +175,5 @@ fun CustomThemeVideoView.applyTheme(theme: CustomThemeData) = configure(
 )
 
 fun CustomThemeVideoView.updateThemeEffects(theme: CustomThemeData) {
-  configure(theme.mediaPath, theme.loopVideo, theme.muted, theme.brightness, theme.saturation, theme.visibility, theme.mediaAspectRatio, theme.fitMode, theme.aspectMode, theme.scale, theme.offsetX, theme.offsetY)
+  configure(theme.mediaPath, theme.loopVideo, theme.muted, theme.brightness, theme.saturation, theme.blur, theme.visibility, theme.mediaAspectRatio, theme.fitMode, theme.aspectMode, theme.scale, theme.offsetX, theme.offsetY)
 }

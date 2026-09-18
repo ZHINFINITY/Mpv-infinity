@@ -122,7 +122,6 @@ fun rememberVideoAmbientFrame(
   isSurfaceReadyProvider: () -> Boolean,
   isPlayingProvider: () -> Boolean,
   fallbackFrameProvider: suspend (Int) -> Bitmap?,
-  previewBlurRadius: Int = 2,
 ): VideoAmbientFrame {
   var state by remember { mutableStateOf(VideoAmbientFrame()) }
   val currentIsSurfaceReadyProvider by rememberUpdatedState(isSurfaceReadyProvider)
@@ -137,7 +136,6 @@ fun rememberVideoAmbientFrame(
     playbackGeneration,
     hdrScreenMode,
     orientation,
-    previewBlurRadius,
   ) {
     state = VideoAmbientFrame()
     if (!active) {
@@ -146,7 +144,7 @@ fun rememberVideoAmbientFrame(
 
     lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
       state = VideoAmbientFrame()
-      val pipeline = VideoAmbientPipeline(previewBlurRadius = previewBlurRadius)
+      val pipeline = VideoAmbientPipeline()
       var unsupported = false
       try {
         coroutineScope {
@@ -177,9 +175,7 @@ fun rememberVideoAmbientFrame(
   return state
 }
 
-private class VideoAmbientPipeline(
-  private val previewBlurRadius: Int,
-) : AutoCloseable {
+private class VideoAmbientPipeline : AutoCloseable {
   private val sample = Bitmap.createBitmap(SAMPLE_WIDTH, SAMPLE_HEIGHT, Bitmap.Config.ARGB_8888)
   private val samplePixels = IntArray(SAMPLE_WIDTH * SAMPLE_HEIGHT)
   private val previousPixels = IntArray(SAMPLE_WIDTH * SAMPLE_HEIGHT)
@@ -281,14 +277,7 @@ private class VideoAmbientPipeline(
     samplePixels.copyInto(previousPixels)
     hasPreviousSample = true
     decimateToLinear(samplePixels, stagingGrid)
-    ambientBoxBlur(
-      stagingGrid,
-      scratchGrid,
-      DISPLAY_WIDTH,
-      DISPLAY_HEIGHT,
-      previewBlurRadius.coerceIn(0, 8),
-      BLUR_PASSES,
-    )
+    ambientBoxBlur(stagingGrid, scratchGrid, DISPLAY_WIDTH, DISPLAY_HEIGHT, BLUR_RADIUS, BLUR_PASSES)
 
     val (base, accent) = extractAmbientColors(sample)
     stagingBase.fill(0f)

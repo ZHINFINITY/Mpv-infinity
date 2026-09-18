@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -157,6 +158,7 @@ private fun CustomThemeEditor(
 ) {
   var name by remember(initial.id) { mutableStateOf(initial.name) }
   var overlay by remember(initial.id) { mutableStateOf(initial.overlay.coerceIn(0f, 0.65f)) }
+  var blur by remember(initial.id) { mutableStateOf(initial.blur.coerceIn(0f, 24f)) }
   var brightness by remember(initial.id) { mutableStateOf(initial.brightness) }
   var saturation by remember(initial.id) { mutableStateOf(initial.saturation) }
   var visibility by remember(initial.id) { mutableStateOf(initial.visibility) }
@@ -167,7 +169,7 @@ private fun CustomThemeEditor(
   var aspectMode by remember(initial.id) { mutableStateOf(initial.aspectMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
   var showEditor by remember(initial.id) { mutableStateOf(false) }
-  val edited = initial.copy(name = name, overlay = overlay, brightness = brightness, saturation = saturation, visibility = visibility, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
+  val edited = initial.copy(name = name, overlay = overlay, blur = blur, brightness = brightness, saturation = saturation, visibility = visibility, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
   androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
@@ -219,6 +221,7 @@ private fun CustomThemeEditor(
         Text("Horizontal position"); Slider(value = offsetX, onValueChange = { offsetX = it }, valueRange = -1f..1f)
         Text("Vertical position"); Slider(value = offsetY, onValueChange = { offsetY = it }, valueRange = -1f..1f)
         Text("Media appearance", style = MaterialTheme.typography.titleMedium)
+        Text("Background blur"); Slider(value = blur, onValueChange = { blur = it }, valueRange = 0f..24f)
         Text("Brightness"); Slider(value = brightness, onValueChange = { brightness = it }, valueRange = 0.25f..2f)
         Text("Saturation"); Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..2f)
         Text("Background visibility"); Slider(value = visibility, onValueChange = { visibility = it }, valueRange = 0.15f..1f)
@@ -247,7 +250,7 @@ private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modif
           AndroidView(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = theme.visibility }, factory = { context -> CustomThemeVideoView(context).also { it.applyTheme(theme) } }, update = { view -> view.updateThemeEffects(theme) })
     } else {
       val bitmap = remember(theme.mediaPath) { android.graphics.BitmapFactory.decodeFile(theme.mediaPath) }
-      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = theme.contentScale(), alignment = androidx.compose.ui.BiasAlignment(theme.offsetX, theme.offsetY), colorFilter = theme.mediaColorFilter(), modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale, alpha = theme.visibility)) }
+      bitmap?.let { Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = theme.contentScale(), alignment = androidx.compose.ui.BiasAlignment(theme.offsetX, theme.offsetY), colorFilter = theme.mediaColorFilter(), modifier = Modifier.fillMaxSize().blur(theme.blur.dp).graphicsLayer(scaleX = theme.scale, scaleY = theme.scale, alpha = theme.visibility)) }
     }
     Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = (theme.overlay * 0.35f).coerceIn(0f, 0.35f))))
   }

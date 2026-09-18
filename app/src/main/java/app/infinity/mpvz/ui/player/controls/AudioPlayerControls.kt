@@ -1924,9 +1924,9 @@ fun AudioPlayerControls(
               .fillMaxWidth()
               .padding(horizontal = 12.dp),
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.96f),
-            tonalElevation = 2.dp,
-            shadowElevation = 6.dp,
+            color = Color.Transparent,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
           ) {
           Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Spacer(modifier = Modifier.height(16.dp))
