@@ -53,6 +53,7 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
     this.muted = muted
     this.brightness = brightness
     this.saturation = saturation
+    this.blur = blur.coerceIn(0f, 24f)
     this.mediaAspectRatio = mediaAspectRatio.coerceIn(0.05f, 20f)
     this.fitMode = fitMode
     this.aspectMode = aspectMode
