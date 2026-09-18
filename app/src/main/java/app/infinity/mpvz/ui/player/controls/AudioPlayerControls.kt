@@ -1916,8 +1916,39 @@ fun AudioPlayerControls(
             modifier = Modifier
               .weight(1f)
               .fillMaxWidth()
-              .drawBehind {
-                drawRect(Color(visualizerPalette.background))
+              .drawWithCache {
+                if (ambientModeEnabled && audioPaletteBackground && albumArtBitmap != null &&
+                  (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
+                ) {
+                  val topColor = animatedAmbientTop
+                  val bottomColor = animatedAmbientBottom
+                  val radialGradient = Brush.radialGradient(
+                    colors = listOf(
+                      topColor,
+                      bottomColor,
+                      Color.Transparent,
+                    ),
+                    center = Offset(size.width * 0.5f, size.height * 0.25f),
+                    radius = size.width * 1.3f,
+                  )
+                  val linearGradient = Brush.verticalGradient(
+                    colors = listOf(
+                      topColor.copy(alpha = topColor.alpha * 0.65f),
+                      bottomColor.copy(alpha = bottomColor.alpha * 0.35f),
+                      Color.Transparent,
+                    ),
+                    startY = 0f,
+                    endY = size.height * 0.80f,
+                  )
+                  onDrawBehind {
+                    drawRect(radialGradient)
+                    drawRect(linearGradient)
+                  }
+                } else {
+                  onDrawBehind {
+                    drawRect(Color(visualizerPalette.background))
+                  }
+                }
               },
           ) {
             Column(modifier = Modifier.fillMaxSize()) {
