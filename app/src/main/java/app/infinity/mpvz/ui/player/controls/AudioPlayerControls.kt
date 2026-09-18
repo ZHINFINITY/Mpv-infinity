@@ -1886,15 +1886,12 @@ fun AudioPlayerControls(
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
     if (isPortrait) {
-      // The visualizer is a full-screen background layer in portrait mode. The player chrome
-      // stays on top of it, matching the intended edge-to-edge Now Playing presentation.
-      Box(
-        modifier = Modifier.fillMaxSize(),
-      ) {
+      // Render the visualizer as the full-screen background. Player chrome overlays it instead
+      // of constraining the visualizer to a bounded middle container.
+      Box(modifier = Modifier.fillMaxSize()) {
         centerVisualizerView(
-          Modifier
-            .fillMaxSize(),
-            false,
+          Modifier.fillMaxSize(),
+          false,
         )
 
         Column(
@@ -1923,8 +1920,6 @@ fun AudioPlayerControls(
             Spacer(modifier = Modifier.weight(1f))
             seekbarView()
           } else {
-            // Keep the upper visualizer completely unobstructed by a layout boundary. The
-            // metadata and controls are an overlay at the bottom of the same full-screen Box.
             Spacer(modifier = Modifier.weight(1f))
 
             Surface(
@@ -1953,6 +1948,7 @@ fun AudioPlayerControls(
           }
         }
       }
+    }
     } else if (false && isTabletLandscape) {
       Row(
         modifier = Modifier.fillMaxSize(),
@@ -2006,3 +2002,523 @@ fun AudioPlayerControls(
       ) {
         Row(
           modifier = Modifier.weight(1f).fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(20.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Box(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            contentAlignment = Alignment.Center,
+          ) {
+            centerVisualizerView(
+              Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+              true,
+            )
+          }
+          Column(
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            if (showInPlaceLyrics) {
+              lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
+            } else {
+              if (!isStandbyActive) headerBar()
+              if (!isStandbyActive) losslessBadge()
+              if (!isStandbyActive) trackMetadataView()
+              Spacer(modifier = Modifier.weight(1f))
+            }
+            seekbarView()
+            if (!showInPlaceLyrics && !isStandbyActive) {
+              playbackControlsRow()
+              bottomActionRow()
+            }
+          }
+        }
+      }
+    }
+    if (addToPlaylistDialogOpen && !mediaPath.isNullOrBlank()) {
+      val displayTitle = remember(lastValidTitle, displayArtist) {
+        cleanSongTitle(lastValidTitle, displayArtist)
+      }
+      val videoForPlaylist =
+        remember(mediaPath, displayTitle) {
+          Video(
+            id = mediaPath.hashCode().toLong(),
+            title = displayTitle,
+            displayName = displayTitle,
+            path = mediaPath,
+            uri = Uri.parse(mediaPath),
+            duration = duration?.toLong() ?: 0L,
+            durationFormatted = "",
+            size = 0L,
+            sizeFormatted = "",
+            dateModified = 0L,
+            dateAdded = 0L,
+            mimeType = "audio/*",
+            bucketId = "",
+            bucketDisplayName = "",
+            width = 0,
+            height = 0,
+            fps = 0f,
+            resolution = "",
+            isAudio = true,
+          )
+        }
+
+      val isJellyfinMedia = remember(mediaPath) {
+        !mediaPath.isNullOrBlank() &&
+          (mediaPath.contains("api_key=", ignoreCase = true) ||
+            mediaPath.contains("/Items/", ignoreCase = true) ||
+            mediaPath.contains("/Audio/", ignoreCase = true) ||
+            mediaPath.contains("jellyfin", ignoreCase = true))
+      }
+
+      AddToPlaylistDialog(
+        isOpen = true,
+        videos = listOf(videoForPlaylist),
+        onDismiss = { addToPlaylistDialogOpen = false },
+        onSuccess = { addToPlaylistDialogOpen = false },
+        isJellyfin = isJellyfinMedia,
+      )
+    }
+  }
+}
+
+@Composable
+private fun DualPaneSidePanel(
+  viewModel: PlayerViewModel,
+  playlist: List<PlaylistItem>,
+  initialLyricsActive: Boolean = false,
+) {
+  var selectedTab by remember(initialLyricsActive) { mutableIntStateOf(if (initialLyricsActive) 1 else 0) }
+
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(16.dp),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(bottom = 12.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      androidx.compose.material3.FilterChip(
+        selected = selectedTab == 0,
+        onClick = { selectedTab = 0 },
+        label = { Text(stringResource(R.string.player_up_next_title), fontWeight = FontWeight.Bold) },
+        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+          selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+          selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+      )
+      androidx.compose.material3.FilterChip(
+        selected = selectedTab == 1,
+        onClick = { selectedTab = 1 },
+        label = { Text(stringResource(R.string.player_lyrics_title), fontWeight = FontWeight.Bold) },
+        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+          selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+          selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+      )
+    }
+
+    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+      if (selectedTab == 0) {
+        UpNextPlaylistContent(
+          viewModel = viewModel,
+          playlist = playlist,
+        )
+      } else {
+        app.infinity.mpvz.ui.player.controls.components.LyricsView(
+          viewModel = viewModel,
+          showTitleHeader = false,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun UpNextPlaylistContent(
+  viewModel: PlayerViewModel,
+  playlist: List<PlaylistItem>,
+) {
+  val lazyListState = rememberLazyListState()
+  val isM3U = viewModel.isPlaylistM3U()
+
+  var displayPlaylist by remember(playlist) { mutableStateOf(playlist) }
+  LaunchedEffect(playlist) {
+    displayPlaylist = playlist
+  }
+
+  val showDragHandle = !isM3U && displayPlaylist.size > 1
+
+  val playingItemIndex by remember(displayPlaylist) {
+    derivedStateOf { displayPlaylist.indexOfFirst { it.isPlaying } }
+  }
+
+  LaunchedEffect(playingItemIndex) {
+    if (playingItemIndex >= 0) {
+      lazyListState.animateScrollToItem(playingItemIndex)
+    }
+  }
+
+  var dragStartIndex by remember { mutableIntStateOf(-1) }
+  var dragEndIndex by remember { mutableIntStateOf(-1) }
+
+  val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
+    if (showDragHandle) {
+      if (dragStartIndex == -1) {
+        dragStartIndex = from.index
+      }
+      dragEndIndex = to.index
+      displayPlaylist = displayPlaylist.toMutableList().apply {
+        add(to.index, removeAt(from.index))
+      }
+    }
+  }
+
+  Column(modifier = Modifier.fillMaxSize()) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(bottom = 12.dp, start = 4.dp, end = 4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Text(
+        text = "Coming up next",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
+      Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+      ) {
+        Text(
+          text = "${displayPlaylist.size} tracks",
+          style = MaterialTheme.typography.labelSmall,
+          fontWeight = FontWeight.SemiBold,
+          color = MaterialTheme.colorScheme.onSecondaryContainer,
+          modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+        )
+      }
+    }
+
+    if (displayPlaylist.isEmpty()) {
+      Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "No songs in queue",
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    } else {
+      LazyColumn(
+        state = lazyListState,
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        // A queue can contain the same URI more than once.
+        items(displayPlaylist.size, key = { index -> displayPlaylist[index].index }) { index ->
+          val item = displayPlaylist[index]
+          if (showDragHandle) {
+            ReorderableItem(reorderableLazyListState, key = item.index) { isDragging ->
+              val isDraggingPrev = remember { mutableStateOf(false) }
+              LaunchedEffect(isDragging) {
+                if (isDraggingPrev.value && !isDragging) {
+                  if (dragStartIndex != -1 && dragEndIndex != -1 && dragStartIndex != dragEndIndex) {
+                    viewModel.reorderPlaylistItem(dragStartIndex, dragEndIndex)
+                  }
+                  dragStartIndex = -1
+                  dragEndIndex = -1
+                }
+                isDraggingPrev.value = isDragging
+              }
+
+              UpNextPlaylistItemRow(
+                item = item,
+                isPlaying = item.isPlaying,
+                onClick = { viewModel.playPlaylistItem(item.index) },
+                scope = this,
+              )
+            }
+          } else {
+            UpNextPlaylistItemRow(
+              item = item,
+              isPlaying = item.isPlaying,
+              onClick = { viewModel.playPlaylistItem(item.index) },
+              scope = null,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun UpNextPlaylistItemRow(
+  item: PlaylistItem,
+  isPlaying: Boolean,
+  onClick: () -> Unit,
+  scope: ReorderableCollectionItemScope?,
+) {
+  val bgColor = if (isPlaying) {
+    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+  } else {
+    MaterialTheme.colorScheme.surfaceContainer
+  }
+
+  val itemCoverArt =
+    rememberAudioAlbumArt(
+      pathOrUri = item.path.ifBlank { item.uri.toString() },
+      artworkUri = item.tvgLogo,
+    )
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(RoundedCornerShape(16.dp))
+      .clickable(onClick = onClick),
+    shape = RoundedCornerShape(16.dp),
+    color = bgColor,
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 12.dp, vertical = 10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      if (scope != null) {
+        Icon(
+          imageVector = Icons.RoundedFilled.DragHandle,
+          contentDescription = "Reorder",
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = with(scope) {
+            Modifier
+              .size(24.dp)
+              .draggableHandle()
+          },
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+      }
+
+      Surface(
+        modifier = Modifier.size(44.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+      ) {
+        val itemImageBitmap = remember(itemCoverArt) { itemCoverArt?.asImageBitmap() }
+        val hasRemoteImage = item.tvgLogo.isNotBlank() && (item.tvgLogo.startsWith("http://", ignoreCase = true) || item.tvgLogo.startsWith("https://", ignoreCase = true))
+        if (itemImageBitmap != null || hasRemoteImage) {
+          if (itemImageBitmap != null) {
+            Image(
+              bitmap = itemImageBitmap,
+              contentDescription = null,
+              contentScale = ContentScale.Crop,
+              modifier = Modifier.fillMaxSize(),
+            )
+          } else {
+            RemoteImage(
+              url = item.tvgLogo,
+              contentDescription = null,
+              contentScale = ContentScale.Crop,
+              modifier = Modifier.fillMaxSize(),
+            )
+          }
+          if (isPlaying) {
+            val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+            val isPlaybackActive = paused != true
+            Box(
+              modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f)),
+              contentAlignment = Alignment.Center,
+            ) {
+              MiniAudioVisualizer(
+                isPlaying = isPlaybackActive,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(width = 18.dp, height = 16.dp),
+              )
+            }
+          }
+        } else {
+          if (isPlaying) {
+            val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+            val isPlaybackActive = paused != true
+            Box(
+              modifier = Modifier.fillMaxSize(),
+              contentAlignment = Alignment.Center,
+            ) {
+              MiniAudioVisualizer(
+                isPlaying = isPlaybackActive,
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(width = 18.dp, height = 16.dp),
+              )
+            }
+          } else {
+            Icon(
+              imageVector = Icons.RoundedFilled.Audiotrack,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.size(20.dp),
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.width(12.dp))
+
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = item.title.stripAudioExtension(),
+          style = MaterialTheme.typography.bodyMedium,
+          fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.SemiBold,
+          color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        if (item.duration.isNotBlank()) {
+          Text(
+            text = item.duration,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      }
+    }
+  }
+}
+
+
+
+private fun formatSec(totalSeconds: Long): String {
+  val secs = totalSeconds.coerceAtLeast(0L)
+  val hours = secs / 3600
+  val minutes = (secs % 3600) / 60
+  val remainingSecs = secs % 60
+  return if (hours > 0) {
+    String.format(Locale.US, "%d:%02d:%02d", hours, minutes, remainingSecs)
+  } else {
+    String.format(Locale.US, "%d:%02d", minutes, remainingSecs)
+  }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ReactiveIconButton(
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  onLongClick: (() -> Unit)? = null,
+  enabled: Boolean = true,
+  content: @Composable () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val isPressed by interactionSource.collectIsPressedAsState()
+  val haptic = LocalHapticFeedback.current
+
+  val scale by animateFloatAsState(
+    targetValue = if (isPressed) 0.82f else 1f,
+    animationSpec = spring(dampingRatio = 0.55f, stiffness = 900f),
+    label = "reactive_icon_button_scale",
+  )
+
+  if (onLongClick != null) {
+    Box(
+      modifier =
+        modifier
+          .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+          }
+          .clip(CircleShape)
+          .combinedClickable(
+            interactionSource = interactionSource,
+            indication = ripple(bounded = false, radius = 24.dp),
+            enabled = enabled,
+            onClick = {
+              haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+              onClick()
+            },
+            onLongClick = {
+              haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+              onLongClick()
+            },
+          )
+          .padding(8.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      content()
+    }
+  } else {
+    IconButton(
+      onClick = {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        onClick()
+      },
+      enabled = enabled,
+      interactionSource = interactionSource,
+      modifier =
+        modifier.graphicsLayer {
+          scaleX = scale
+          scaleY = scale
+        },
+    ) {
+      content()
+    }
+  }
+}
+
+@Composable
+private fun ReactiveSurfaceButton(
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  shape: Shape = CircleShape,
+  color: Color = MaterialTheme.colorScheme.primary,
+  shadowElevation: Dp = 0.dp,
+  enabled: Boolean = true,
+  content: @Composable () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val isPressed by interactionSource.collectIsPressedAsState()
+  val haptic = LocalHapticFeedback.current
+
+  val scale by animateFloatAsState(
+    targetValue = if (isPressed) 0.88f else 1f,
+    animationSpec = spring(dampingRatio = 0.55f, stiffness = 900f),
+    label = "reactive_surface_button_scale",
+  )
+
+  Surface(
+    onClick = {
+      haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+      onClick()
+    },
+    shape = shape,
+    color = color,
+    shadowElevation = shadowElevation,
+    enabled = enabled,
+    interactionSource = interactionSource,
+    modifier =
+      modifier.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+      },
+  ) {
+    content()
+  }
+}
+
+private fun String.stripAudioExtension(): String {
+  val dotIndex = lastIndexOf('.')
+  if (dotIndex <= 0) return this
+  val ext = substring(dotIndex + 1)
+  return if (ext.length in 2..5 && ext.none { it.isWhitespace() }) substring(0, dotIndex) else this
+}
