@@ -1956,12 +1956,11 @@ fun AudioPlayerControls(
                     .fillMaxWidth()
                     .padding(horizontal = controlsSidePadding),
                 ) {
-                  Spacer(modifier = Modifier.height(6.dp))
-                  trackMetadataView()
                 }
               }
             }
-          }        } else {
+          }
+        } else {
           androidx.compose.animation.AnimatedVisibility(
             visible = !isStandbyActive,
             enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
@@ -1998,8 +1997,10 @@ fun AudioPlayerControls(
               .padding(horizontal = controlsSidePadding),
           ) {
             Spacer(modifier = Modifier.height(6.dp))
-            trackMetadataView()
-            Spacer(modifier = Modifier.height(16.dp))
+            if (!edgeToEdgeVisualizer) {
+              trackMetadataView()
+              Spacer(modifier = Modifier.height(16.dp))
+            }
             seekbarView()
             Spacer(modifier = Modifier.height(16.dp))
             playbackControlsRow()
