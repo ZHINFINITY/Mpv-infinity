@@ -145,8 +145,6 @@ class PlayerPreferences(
   // Ambience Mode
   val ambientStyle = preferenceStore.getEnum("ambient_style", AmbientStyle.Glow)
   val ambientBlurSamples = preferenceStore.getInt("ambient_blur_samples", 12)
-  /** Blur radius for the captured image/video preview background. */
-  val ambientPreviewBlurRadius = preferenceStore.getInt("ambient_preview_blur_radius", 2)
   val ambientMaxRadius = preferenceStore.getFloat("ambient_max_radius", 0.15f)
   val ambientGlowIntensity = preferenceStore.getFloat("ambient_glow_intensity", 1.2f)
   val ambientSatBoost = preferenceStore.getFloat("ambient_sat_boost", 1.0f)

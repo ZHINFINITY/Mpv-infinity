@@ -1419,7 +1419,6 @@ class PlayerActivity :
     binding.ambientBackground.setContent {
       val enabled by viewModel.isAmbientEnabled.collectAsState()
       val style by viewModel.ambientStyle.collectAsState()
-      val previewBlurRadius by viewModel.ambientPreviewBlurRadius.collectAsState()
       val lifecycleActive by viewModel.isAmbientLifecycleActive.collectAsState()
       val isAudioOnly by viewModel.isAudioOnly.collectAsState()
       val playbackState by PlaybackSession.state.collectAsState()
@@ -1481,7 +1480,6 @@ class PlayerActivity :
               if (nativeActive) null else runCatching { PlaybackSession.grabThumbnail(dimension) }.getOrNull()
             }
           },
-          previewBlurRadius = previewBlurRadius,
         ) } ?: app.infinity.mpvz.ui.player.components.VideoAmbientFrame(supported = false)
       val presentationActive = active && ambientFrame.supported && ambientFrame.frame != null
 

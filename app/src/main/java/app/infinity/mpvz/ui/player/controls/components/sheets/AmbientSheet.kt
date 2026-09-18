@@ -49,7 +49,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.presentation.components.SliderItem
@@ -72,7 +71,6 @@ fun AmbientSheet(
   // ── Collect all state flows ──────────────────────────────────────────────
   val ambientStyle by viewModel.ambientStyle.collectAsState()
   val blurSamples by viewModel.ambientBlurSamples.collectAsState()
-  val previewBlurRadius by viewModel.ambientPreviewBlurRadius.collectAsState()
   val maxRadius by viewModel.ambientMaxRadius.collectAsState()
   val glowIntensity by viewModel.ambientGlowIntensity.collectAsState()
   val satBoost by viewModel.ambientSatBoost.collectAsState()
@@ -156,23 +154,6 @@ fun AmbientSheet(
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
       )
 
-      SliderItem(
-        label = "Preview background blur",
-        valueText = if (previewBlurRadius == 0) "Off" else "${previewBlurRadius}px",
-        value = previewBlurRadius.toFloat(),
-        onChange = { viewModel.updateAmbientParams(previewBlurRadius = it.roundToInt()) },
-        min = 0f,
-        max = 8f,
-        steps = 7,
-        icon = {
-          AppSymbolIcon(
-            imageVector = Icons.RoundedFilled.BlurOn,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-          )
-        },
-      )
       if (ambientStyle == AmbientStyle.Glow) {
       // ── Quality Presets ──────────────────────────────────────────────
       Row(

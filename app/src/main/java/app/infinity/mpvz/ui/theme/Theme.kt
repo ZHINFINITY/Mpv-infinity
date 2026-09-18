@@ -45,6 +45,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
@@ -378,7 +379,7 @@ private fun CustomThemeBackdrop(theme: CustomThemeData?, content: @Composable ()
           contentScale = theme.contentScale(),
           alignment = BiasAlignment(theme.offsetX, theme.offsetY),
           colorFilter = theme.mediaColorFilter(),
-          modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = theme.scale, scaleY = theme.scale, alpha = theme.visibility.coerceIn(0.15f, 1f)),
+          modifier = Modifier.fillMaxSize().blur(theme.blur.dp).graphicsLayer(scaleX = theme.scale, scaleY = theme.scale, alpha = theme.visibility.coerceIn(0.15f, 1f)),
         )
       }
     }
