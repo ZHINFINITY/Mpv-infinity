@@ -32,6 +32,8 @@ class AudioPreferences(
   val audioVisualizerStyle = preferenceStore.getEnum("audio_visualizer_style", AudioVisualizerStyle.Blob)
   val audioOrientation = preferenceStore.getEnum("audio_player_orientation", AudioPlayerOrientation.Auto)
   val audioAmbientMode = preferenceStore.getBoolean("audio_ambient_mode", true)
+  /** Use colors extracted from the current artwork as the music player's background. */
+  val audioPaletteBackground = preferenceStore.getBoolean("audio_palette_background", true)
   val enabledMusicTabs = preferenceStore.getStringSet(
     "enabled_music_tabs",
     setOf("SONGS", "ALBUMS", "ARTISTS", "PLAYLISTS", "FOLDERS"),
