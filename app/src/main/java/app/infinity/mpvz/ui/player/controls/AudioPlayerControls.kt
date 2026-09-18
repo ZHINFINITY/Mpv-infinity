@@ -1920,11 +1920,17 @@ fun AudioPlayerControls(
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
           Surface(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 12.dp)
+              .border(
+                BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)),
+                RoundedCornerShape(28.dp),
+              ),
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-            tonalElevation = 4.dp,
-            shadowElevation = 8.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.48f),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
           ) {
           Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Spacer(modifier = Modifier.height(16.dp))
