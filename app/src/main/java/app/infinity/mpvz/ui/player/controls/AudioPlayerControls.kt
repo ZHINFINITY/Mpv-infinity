@@ -1948,7 +1948,6 @@ fun AudioPlayerControls(
           }
         }
       }
-    }
     } else if (false && isTabletLandscape) {
       Row(
         modifier = Modifier.fillMaxSize(),
