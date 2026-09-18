@@ -961,6 +961,8 @@ fun AudioPlayerControls(
     animationSpec = tween(durationMillis = 800),
     label = "ambient_bottom_color",
   )
+  val edgeToEdgeVisualizer = showVisualizer && (!showInPlaceLyrics || isTabletLandscape)
+  val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
   Box(
     modifier =
       modifier
@@ -998,7 +1000,8 @@ fun AudioPlayerControls(
           }
         }
         .windowInsetsPadding(WindowInsets.safeDrawing)
-        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+        .padding(horizontal = if (edgeToEdgeVisualizer) 0.dp else 16.dp)
+        .padding(top = 6.dp, bottom = 12.dp)
         .pointerInput(Unit) {
           var totalDrag = 0f
           detectVerticalDragGestures(
@@ -1163,7 +1166,8 @@ fun AudioPlayerControls(
               }
             },
             label = "visualizer_toggle",
-            modifier = Modifier.fillMaxHeight().fillMaxWidth(if (isTabletPortrait) 0.65f else 1.0f),
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize(),
           ) { isVisualizerActive ->
           if (isVisualizerActive) {
             AudioVisualizerViewport(
@@ -1901,10 +1905,13 @@ fun AudioPlayerControls(
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          Column(
+            modifier = Modifier.padding(horizontal = controlsSidePadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
             headerBar()
             losslessBadge()
-            Spacer(modifier = Modifier.height(16.dp))
+            if (!edgeToEdgeVisualizer) Spacer(modifier = Modifier.height(16.dp))
           }
         }
 
@@ -1932,7 +1939,12 @@ fun AudioPlayerControls(
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
           ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+          Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+              .padding(horizontal = 14.dp, vertical = 10.dp)
+              .padding(horizontal = controlsSidePadding),
+          ) {
             Spacer(modifier = Modifier.height(16.dp))
             trackMetadataView()
             Spacer(modifier = Modifier.height(16.dp))
