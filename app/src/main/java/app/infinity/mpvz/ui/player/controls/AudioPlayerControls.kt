@@ -130,6 +130,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1914,7 +1915,15 @@ fun AudioPlayerControls(
             modifier = Modifier
               .weight(1f)
               .fillMaxWidth()
-              .padding(bottom = 104.dp),
+              .layout { measurable, constraints ->
+                val extensionPx = 104.dp.roundToPx()
+                val placeable = measurable.measure(
+                  constraints.copy(maxHeight = constraints.maxHeight + extensionPx),
+                )
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                  placeable.place(0, 0)
+                }
+              },
           ) {
             centerVisualizerView(Modifier.fillMaxSize(), false)
             Column(
