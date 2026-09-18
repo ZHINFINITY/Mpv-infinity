@@ -940,9 +940,13 @@ class PlayerActivity :
                 )
               }
               engineHandoffJob = lifecycleScope.launch {
+                // READY can be reached while the MPV SurfaceView is still being recreated after
+                // Native playback hid it. In that window MPV may keep audio running with vid=no;
+                // wait for the renderer surface as well before exposing MPV as the active engine.
                 val ready = withTimeoutOrNull(15_000L) {
                   PlaybackSession.state.first {
-                    it.phase == PlaybackPhase.READY || it.phase == PlaybackPhase.BACKGROUND
+                    (it.phase == PlaybackPhase.READY || it.phase == PlaybackPhase.BACKGROUND) &&
+                      it.surfaceAttached
                   }
                   true
                 } == true
