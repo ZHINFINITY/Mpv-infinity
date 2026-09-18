@@ -1910,8 +1910,8 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         if (edgeToEdgeVisualizer && !isStandbyActive) {
-          // The visualizer owns the complete upper player region. Header and track metadata are
-          // composited over that same layer, so there is no separate visualizer/metadata seam.
+          // Keep the visualizer at its original vertical boundary. A palette-colored fade is
+          // drawn over its bottom edge so the renderer dissolves naturally into the metadata.
           Box(
             modifier = Modifier
               .weight(1f)
@@ -1919,34 +1919,38 @@ fun AudioPlayerControls(
           ) {
             centerVisualizerView(Modifier.fillMaxSize(), false)
 
+            if (audioPaletteBackground && albumArtBitmap != null) {
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(72.dp)
+                  .align(Alignment.BottomCenter)
+                  .drawWithCache {
+                    val fade = Brush.verticalGradient(
+                      colors = listOf(
+                        Color.Transparent,
+                        animatedAmbientBottom.copy(alpha = 0.34f),
+                        animatedAmbientBottom.copy(alpha = 0.72f),
+                        animatedAmbientBottom.copy(alpha = 0.92f),
+                      ),
+                    )
+                    onDrawBehind { drawRect(fade) }
+                  },
+              )
+            }
+
             Column(
               modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .windowInsetsPadding(
                   WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
                 )
                 .padding(horizontal = controlsSidePadding)
                 .padding(top = 6.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
             ) {
               headerBar()
               losslessBadge()
-              Spacer(modifier = Modifier.weight(1f))
-
-              AnimatedVisibility(
-                visible = !isStandbyActive,
-                enter = fadeIn(animationSpec = tween(300)) +
-                  androidx.compose.animation.expandVertically(animationSpec = tween(300)),
-                exit = fadeOut(animationSpec = tween(300)) +
-                  androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
-              ) {
-                Box(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                ) {
-                  trackMetadataView()
-                }
-              }
             }
           }
         } else {
@@ -1986,6 +1990,8 @@ fun AudioPlayerControls(
               .padding(horizontal = controlsSidePadding),
           ) {
             Spacer(modifier = Modifier.height(6.dp))
+            trackMetadataView()
+            Spacer(modifier = Modifier.height(16.dp))
             seekbarView()
             Spacer(modifier = Modifier.height(16.dp))
             playbackControlsRow()
