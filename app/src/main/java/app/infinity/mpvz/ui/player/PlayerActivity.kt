@@ -1386,7 +1386,9 @@ class PlayerActivity :
 
   private fun setupPlayerControls() {
     binding.controls.setContent {
-      MpvInfinityTheme {
+      // The controls ComposeView sits above the native video surface. Do not draw the
+      // library custom media backdrop here or it will cover the episode while audio continues.
+      MpvInfinityTheme(showCustomThemeBackdrop = false) {
         Box(modifier = Modifier.fillMaxSize()) {
           PlayerControls(
             viewModel = viewModel,
