@@ -1922,13 +1922,9 @@ fun AudioPlayerControls(
           Surface(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = 12.dp)
-              .border(
-                BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)),
-                RoundedCornerShape(28.dp),
-              ),
+              .padding(horizontal = 12.dp),
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.48f),
+            color = Color.Transparent,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
           ) {
