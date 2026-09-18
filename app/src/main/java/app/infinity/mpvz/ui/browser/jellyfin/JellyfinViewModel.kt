@@ -32,6 +32,7 @@ import app.infinity.mpvz.domain.jellyfin.JellyfinServer
 import app.infinity.mpvz.domain.jellyfin.JellyfinSortBy
 import app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.repository.JellyfinRepository
@@ -138,6 +139,7 @@ class JellyfinViewModel(
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val subtitlesPreferences: SubtitlesPreferences by inject()
   private val audioPreferences: AudioPreferences by inject()
+  private val appearancePreferences: AppearancePreferences by inject()
   private val downloadManager: AppDownloadManager by inject()
 
   private var loadDashboardJob: Job? = null
@@ -1519,6 +1521,11 @@ class JellyfinViewModel(
             val id = jellyfinRepository.saveServer(serverToSave)
             serverToSave.copy(id = id)
           }
+        // A successful Jellyfin connection can enable the Jellyfin tab automatically, while
+        // still respecting the user's global preference for this behavior.
+        if (appearancePreferences.autoShowJellyfinTab.get()) {
+          appearancePreferences.showJellyfinTab.set(true)
+        }
         _uiState.update {
           it.copy(
             isAuthenticating = false,
