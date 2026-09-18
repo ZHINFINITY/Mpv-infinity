@@ -1616,6 +1616,8 @@ class PlayerViewModel : ViewModel(),
 
   private val _ambientBlurSamples = MutableStateFlow(playerPreferences.ambientBlurSamples.get())
   val ambientBlurSamples: StateFlow<Int> = _ambientBlurSamples.asStateFlow()
+  private val _ambientPreviewBlurRadius = MutableStateFlow(playerPreferences.ambientPreviewBlurRadius.get())
+  val ambientPreviewBlurRadius: StateFlow<Int> = _ambientPreviewBlurRadius.asStateFlow()
 
   private val _ambientMaxRadius = MutableStateFlow(playerPreferences.ambientMaxRadius.get())
   val ambientMaxRadius: StateFlow<Float> = _ambientMaxRadius.asStateFlow()
@@ -6497,6 +6499,7 @@ class PlayerViewModel : ViewModel(),
 
   fun updateAmbientParams(
     blurSamples: Int = _ambientBlurSamples.value,
+    previewBlurRadius: Int = _ambientPreviewBlurRadius.value,
     maxRadius: Float = _ambientMaxRadius.value,
     glowIntensity: Float = _ambientGlowIntensity.value,
     satBoost: Float = _ambientSatBoost.value,
@@ -6506,6 +6509,7 @@ class PlayerViewModel : ViewModel(),
     opacity: Float = _ambientOpacity.value,
   ) {
     _ambientBlurSamples.value = blurSamples
+    _ambientPreviewBlurRadius.value = previewBlurRadius.coerceIn(0, 8)
     _ambientMaxRadius.value = maxRadius
     _ambientGlowIntensity.value = glowIntensity
     _ambientSatBoost.value = satBoost
@@ -6516,6 +6520,7 @@ class PlayerViewModel : ViewModel(),
 
     // Persist to preferences
     playerPreferences.ambientBlurSamples.set(blurSamples)
+    playerPreferences.ambientPreviewBlurRadius.set(_ambientPreviewBlurRadius.value)
     playerPreferences.ambientMaxRadius.set(maxRadius)
     playerPreferences.ambientGlowIntensity.set(glowIntensity)
     playerPreferences.ambientSatBoost.set(satBoost)
