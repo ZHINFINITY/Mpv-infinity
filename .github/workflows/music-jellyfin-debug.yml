@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - music-jellyfin-debug
+      - debug
   workflow_dispatch:
 
 permissions:
