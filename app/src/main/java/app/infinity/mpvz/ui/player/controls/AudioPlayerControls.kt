@@ -914,8 +914,9 @@ fun AudioPlayerControls(
     initialValue = null,
     key1 = albumArtBitmap,
     key2 = ambientModeEnabled,
+    key3 = audioPaletteBackground,
   ) {
-    if (albumArtBitmap == null) {
+    if (!ambientModeEnabled || !audioPaletteBackground || albumArtBitmap == null) {
       value = null
       return@produceState
     }
@@ -964,7 +965,9 @@ fun AudioPlayerControls(
       modifier
         .fillMaxSize()
         .drawWithCache {
-          if (albumArtBitmap != null && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
+          if (ambientModeEnabled && audioPaletteBackground && albumArtBitmap != null &&
+          (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
+        ) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
             val radialGradient = Brush.radialGradient(
