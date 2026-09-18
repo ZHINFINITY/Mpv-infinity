@@ -54,6 +54,11 @@ data class PlaybackItem(
   val playlistItemId: Int? = null,
   val artworkUri: String? = null,
   val durationSeconds: Int? = null,
+  /** Dimensions supplied by external launchers when the stream URL has no descriptive filename. */
+  val videoWidth: Int? = null,
+  val videoHeight: Int? = null,
+  /** HDR signal supplied by external launchers (for example, Nuvio/Jellyfin). */
+  val hdrMetadata: Boolean? = null,
   /** File index inside a multi-file torrent; lets a series episode restart its stream. */
   val torrentFileIndex: Int? = null,
 ) {
@@ -73,6 +78,9 @@ data class PlaybackItem(
       playlistItemId: Int? = null,
       artworkUri: String? = null,
       durationSeconds: Int? = null,
+      videoWidth: Int? = null,
+      videoHeight: Int? = null,
+      hdrMetadata: Boolean? = null,
     ): PlaybackItem =
       PlaybackItem(
         stableId =
@@ -89,6 +97,9 @@ data class PlaybackItem(
         playlistItemId = playlistItemId,
         artworkUri = artworkUri,
         durationSeconds = durationSeconds,
+        videoWidth = videoWidth,
+        videoHeight = videoHeight,
+        hdrMetadata = hdrMetadata,
       )
   }
 }
@@ -129,13 +140,15 @@ internal fun PlaybackItem.isDefinitelyAudioOnly(): Boolean =
  * labels available before the decoder is started.
  */
 internal fun PlaybackItem.isHdrOrDolbyVision(): Boolean {
+  if (hdrMetadata == true) return true
   val metadata = sequenceOf(title, mimeType, originalUri, playableUri).filterNotNull().joinToString(" ")
   return HDR_MARKERS.any { marker -> metadata.contains(marker, ignoreCase = true) }
 }
 
-/** AUTO keeps ordinary video on MPV and selects Native only for identifiable 4K HDR media. */
+/** AUTO keeps ordinary video on MPV and selects Native for identifiable 4K HDR media. */
 internal fun PlaybackItem.isAutoNativeCandidate(): Boolean {
   if (!isHdrOrDolbyVision()) return false
+  if ((videoWidth ?: 0) >= UHD_MIN_DIMENSION || (videoHeight ?: 0) >= UHD_MIN_DIMENSION) return true
   val metadata = sequenceOf(title, mimeType, originalUri, playableUri).filterNotNull().joinToString(" ")
   return UHD_MARKERS.any { marker -> metadata.contains(marker, ignoreCase = true) }
 }
@@ -143,6 +156,7 @@ internal fun PlaybackItem.isAutoNativeCandidate(): Boolean {
 private val HDR_MARKERS =
   setOf("dolby vision", "dolby-vision", "dolbyvision", "dovi", "hdr10+", "hdr10", "hdr", "hlg")
 
+private const val UHD_MIN_DIMENSION = 2160
 private val UHD_MARKERS = setOf("4k", "2160p", "2160", "uhd")
 
 internal enum class PlaybackVideoSelection {
