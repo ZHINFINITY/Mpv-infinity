@@ -130,7 +130,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1915,17 +1914,8 @@ fun AudioPlayerControls(
             modifier = Modifier
               .weight(1f)
               .fillMaxWidth()
-              .layout { measurable, constraints ->
-                // Match the metadata card's top spacing: 10.dp card padding + 16.dp spacer.
-                // This lets the visualizer end in the song-title area, removing the hard seam.
-                val extensionPx = (10.dp + 16.dp).roundToPx()
-                val placeable = measurable.measure(
-                  constraints.copy(maxHeight = constraints.maxHeight + extensionPx),
-                )
-                layout(constraints.maxWidth, constraints.maxHeight) {
-                  placeable.place(0, 0)
-                }
-              },
+              // Keep the visualizer viewport structural; the metadata overlay is responsible for the blend.
+
           ) {
             centerVisualizerView(Modifier.fillMaxSize(), false)
             Column(
