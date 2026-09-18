@@ -63,7 +63,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,7 +74,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -902,6 +900,8 @@ fun AudioPlayerControls(
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
+  val edgeToEdgeVisualizer = showVisualizer && (!showInPlaceLyrics || isTabletLandscape)
+  val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
 
   LaunchedEffect(audioStandbyMode, audioStandbyDelaySeconds, isPlaying, isPortrait, lastUserInteractionTime) {
     isStandbyActive = false
@@ -963,8 +963,6 @@ fun AudioPlayerControls(
     animationSpec = tween(durationMillis = 800),
     label = "ambient_bottom_color",
   )
-  val edgeToEdgeVisualizer = showVisualizer && (!showInPlaceLyrics || isTabletLandscape)
-  val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
   Box(
     modifier =
       modifier
@@ -1003,9 +1001,7 @@ fun AudioPlayerControls(
         }
         .windowInsetsPadding(
           if (edgeToEdgeVisualizer) {
-            WindowInsets.safeDrawing.only(
-              WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-            )
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
           } else {
             WindowInsets.safeDrawing
           },
@@ -1910,45 +1906,12 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         if (edgeToEdgeVisualizer && !isStandbyActive) {
-          // Keep the original visualizer height, but give it and the metadata one continuous
-          // artwork-derived surface. This removes the renderer's hard lower background edge.
           Box(
             modifier = Modifier
               .weight(1f)
               .fillMaxWidth()
-              .drawWithCache {
-                if (ambientModeEnabled && audioPaletteBackground && albumArtBitmap != null &&
-                  (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
-                ) {
-                  val topColor = animatedAmbientTop
-                  val bottomColor = animatedAmbientBottom
-                  val radialGradient = Brush.radialGradient(
-                    colors = listOf(
-                      topColor,
-                      bottomColor,
-                      Color.Transparent,
-                    ),
-                    center = Offset(size.width * 0.5f, size.height * 0.25f),
-                    radius = size.width * 1.3f,
-                  )
-                  val linearGradient = Brush.verticalGradient(
-                    colors = listOf(
-                      topColor.copy(alpha = topColor.alpha * 0.65f),
-                      bottomColor.copy(alpha = bottomColor.alpha * 0.35f),
-                      Color.Transparent,
-                    ),
-                    startY = 0f,
-                    endY = size.height * 0.80f,
-                  )
-                  onDrawBehind {
-                    drawRect(radialGradient)
-                    drawRect(linearGradient)
-                  }
-                } else {
-                  onDrawBehind {
-                    drawRect(Color(visualizerPalette.background))
-                  }
-                }
+              .drawBehind {
+                drawRect(Color(visualizerPalette.background))
               },
           ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -1958,13 +1921,10 @@ fun AudioPlayerControls(
                   .fillMaxWidth(),
               ) {
                 centerVisualizerView(Modifier.fillMaxSize(), false)
-
                 Column(
                   modifier = Modifier
                     .fillMaxWidth()
-                    .windowInsetsPadding(
-                      WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
-                    )
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
                     .padding(horizontal = controlsSidePadding)
                     .padding(top = 6.dp),
                   horizontalAlignment = Alignment.CenterHorizontally,
@@ -1973,7 +1933,6 @@ fun AudioPlayerControls(
                   losslessBadge()
                 }
               }
-
               AnimatedVisibility(
                 visible = !isStandbyActive,
                 enter = fadeIn(animationSpec = tween(300)) +
@@ -1987,6 +1946,7 @@ fun AudioPlayerControls(
                     .fillMaxWidth()
                     .padding(horizontal = controlsSidePadding),
                 ) {
+                  trackMetadataView()
                 }
               }
             }
@@ -2003,7 +1963,6 @@ fun AudioPlayerControls(
               Spacer(modifier = Modifier.height(16.dp))
             }
           }
-
           if (showInPlaceLyrics && !isStandbyActive) {
             centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
           } else {
@@ -2021,25 +1980,36 @@ fun AudioPlayerControls(
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
-          Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+          Surface(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = controlsSidePadding),
+              .padding(horizontal = if (edgeToEdgeVisualizer) 0.dp else 12.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = Color.Transparent,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
           ) {
-            Spacer(modifier = Modifier.height(6.dp))
-            if (!edgeToEdgeVisualizer) {
-              trackMetadataView()
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              modifier = Modifier
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+                .padding(horizontal = controlsSidePadding),
+            ) {
               Spacer(modifier = Modifier.height(16.dp))
+              if (!edgeToEdgeVisualizer) {
+                trackMetadataView()
+              }
+              Spacer(modifier = Modifier.height(16.dp))
+              seekbarView()
+              Spacer(modifier = Modifier.height(16.dp))
+              playbackControlsRow()
+              Spacer(modifier = Modifier.height(24.dp))
+              bottomActionRow()
             }
-            seekbarView()
-            Spacer(modifier = Modifier.height(16.dp))
-            playbackControlsRow()
-            Spacer(modifier = Modifier.height(24.dp))
-            bottomActionRow()
           }
         }
       }
+    }
     } else if (false && isTabletLandscape) {
       Row(
         modifier = Modifier.fillMaxSize(),
