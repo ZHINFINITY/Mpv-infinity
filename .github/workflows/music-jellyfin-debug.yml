@@ -5,6 +5,7 @@ on:
     branches:
       - music-jellyfin-debug
       - manus/source-base-media3-port
+      - manus/native-auto-engine-fix
   workflow_dispatch:
 
 permissions:
