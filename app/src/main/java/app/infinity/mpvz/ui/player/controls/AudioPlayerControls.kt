@@ -1919,22 +1919,30 @@ fun AudioPlayerControls(
           ) {
             centerVisualizerView(Modifier.fillMaxSize(), false)
 
-            if (audioPaletteBackground && albumArtBitmap != null) {
+            if (audioPaletteBackground && albumArtBitmap != null &&
+              (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
+            ) {
+              // Use the same artwork-derived palette as the ambient player background. The
+              // boundary is a broad atmospheric blend rather than a visible gradient strip.
               Box(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .height(72.dp)
+                  .height(112.dp)
                   .align(Alignment.BottomCenter)
+                  .offset(y = 40.dp)
                   .drawWithCache {
-                    val fade = Brush.verticalGradient(
+                    val fog = Brush.verticalGradient(
                       colors = listOf(
                         Color.Transparent,
-                        animatedAmbientBottom.copy(alpha = 0.34f),
-                        animatedAmbientBottom.copy(alpha = 0.72f),
-                        animatedAmbientBottom.copy(alpha = 0.92f),
+                        animatedAmbientTop.copy(alpha = animatedAmbientTop.alpha * 0.12f),
+                        animatedAmbientBottom.copy(alpha = animatedAmbientBottom.alpha * 0.22f),
+                        animatedAmbientBottom.copy(alpha = animatedAmbientBottom.alpha * 0.08f),
+                        Color.Transparent,
                       ),
+                      startY = 0f,
+                      endY = size.height,
                     )
-                    onDrawBehind { drawRect(fade) }
+                    onDrawBehind { drawRect(fog) }
                   },
               )
             }
