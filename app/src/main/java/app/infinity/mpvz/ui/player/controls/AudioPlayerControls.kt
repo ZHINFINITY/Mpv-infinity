@@ -1910,61 +1910,58 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         if (edgeToEdgeVisualizer && !isStandbyActive) {
-          // Keep the visualizer at its original vertical boundary. A palette-colored fade is
-          // drawn over its bottom edge so the renderer dissolves naturally into the metadata.
+          // Keep the original visualizer height, but give it and the metadata one continuous
+          // artwork-derived surface. This removes the renderer's hard lower background edge.
           Box(
             modifier = Modifier
               .weight(1f)
-              .fillMaxWidth(),
+              .fillMaxWidth()
+              .drawBehind {
+                drawRect(Color(visualizerPalette.background))
+              },
           ) {
-            centerVisualizerView(Modifier.fillMaxSize(), false)
-
-            if (ambientModeEnabled && audioPaletteBackground && albumArtBitmap != null &&
-              (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
-            ) {
-              // Blend the artwork palette through the boundary as atmospheric fog. The visualizer
-              // keeps its original bounds; only the palette transition overlaps the edge.
+            Column(modifier = Modifier.fillMaxSize()) {
               Box(
                 modifier = Modifier
-                  .fillMaxWidth()
-                  .height(112.dp)
-                  .align(Alignment.BottomCenter)
-                  .offset(y = 40.dp)
-                  .drawWithCache {
-                    val top = animatedAmbientTop
-                    val bottom = animatedAmbientBottom
-                    val fog = Brush.verticalGradient(
-                      colors = listOf(
-                        Color.Transparent,
-                        top.copy(alpha = top.alpha * 0.08f),
-                        top.copy(alpha = top.alpha * 0.16f),
-                        bottom.copy(alpha = bottom.alpha * 0.20f),
-                        bottom.copy(alpha = bottom.alpha * 0.06f),
-                        Color.Transparent,
-                      ),
-                      startY = 0f,
-                      endY = size.height,
-                    )
-                    onDrawBehind { drawRect(fog) }
-                  },
-              )
-            }
+                  .weight(1f)
+                  .fillMaxWidth(),
+              ) {
+                centerVisualizerView(Modifier.fillMaxSize(), false)
 
-            Column(
-              modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(
-                  WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
-                )
-                .padding(horizontal = controlsSidePadding)
-                .padding(top = 6.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-              headerBar()
-              losslessBadge()
+                Column(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(
+                      WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
+                    )
+                    .padding(horizontal = controlsSidePadding)
+                    .padding(top = 6.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                  headerBar()
+                  losslessBadge()
+                }
+              }
+
+              AnimatedVisibility(
+                visible = !isStandbyActive,
+                enter = fadeIn(animationSpec = tween(300)) +
+                  androidx.compose.animation.expandVertically(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(300)) +
+                  androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
+              ) {
+                Column(
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = controlsSidePadding),
+                ) {
+                  Spacer(modifier = Modifier.height(6.dp))
+                  trackMetadataView()
+                }
+              }
             }
-          }
-        } else {
+          }        } else {
           androidx.compose.animation.AnimatedVisibility(
             visible = !isStandbyActive,
             enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
