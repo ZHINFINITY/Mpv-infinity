@@ -282,6 +282,7 @@ private fun ThemeTransitionContent(content: @Composable () -> Unit) {
 @Composable
 fun MpvInfinityTheme(
   transitionState: ThemeTransitionState = rememberThemeTransitionState(),
+  showCustomThemeBackdrop: Boolean = true,
   content: @Composable () -> Unit,
 ) {
   val preferences = koinInject<AppearancePreferences>()
@@ -336,7 +337,7 @@ fun MpvInfinityTheme(
     LocalEmphasizedTypography provides AppEmphasizedTypography,
     LocalDarkAppColorScheme provides darkColorScheme,
   ) {
-    CustomThemeBackdrop(customTheme) {
+    val themedContent: @Composable () -> Unit = {
       ThemeTransitionContent {
         MaterialExpressiveTheme(
           colorScheme = colorScheme,
@@ -347,6 +348,7 @@ fun MpvInfinityTheme(
         )
       }
     }
+    if (showCustomThemeBackdrop) CustomThemeBackdrop(customTheme, themedContent) else themedContent()
   }
 }
 
