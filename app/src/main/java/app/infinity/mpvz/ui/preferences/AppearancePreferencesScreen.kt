@@ -867,6 +867,22 @@ object AppearancePreferencesScreen : Screen {
 
               PreferenceDivider()
 
+              val autoShowJellyfinTab by preferences.autoShowJellyfinTab.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_jellyfin_auto_title),
+                value = autoShowJellyfinTab,
+                onValueChange = preferences.autoShowJellyfinTab::set,
+                title = { Text(text = stringResource(id = R.string.pref_nav_jellyfin_auto_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(id = R.string.pref_nav_jellyfin_auto_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
               val showQuickPlayFab by preferences.showQuickPlayFab.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_quick_play_fab_title),
