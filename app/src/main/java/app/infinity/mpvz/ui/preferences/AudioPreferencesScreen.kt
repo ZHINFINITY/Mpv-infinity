@@ -331,8 +331,24 @@ object AudioPreferencesScreen : Screen {
               )
 
               PreferenceDivider()
+              val audioPaletteBackground by preferences.audioPaletteBackground.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_palette_background_title),
+                value = audioPaletteBackground,
+                onValueChange = { preferences.audioPaletteBackground.set(it) },
+                title = { Text(stringResource(R.string.pref_audio_palette_background_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_audio_palette_background_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
               val audioAmbientMode by preferences.audioAmbientMode.collectAsState()
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_ambient_mode_title),
                 value = audioAmbientMode,
                 onValueChange = { preferences.audioAmbientMode.set(it) },
                 title = { Text(stringResource(R.string.pref_audio_ambient_mode_title)) },
