@@ -1916,7 +1916,9 @@ fun AudioPlayerControls(
               .weight(1f)
               .fillMaxWidth()
               .layout { measurable, constraints ->
-                val extensionPx = 104.dp.roundToPx()
+                // Match the metadata card's top spacing: 10.dp card padding + 16.dp spacer.
+                // This lets the visualizer end in the song-title area, removing the hard seam.
+                val extensionPx = (10.dp + 16.dp).roundToPx()
                 val placeable = measurable.measure(
                   constraints.copy(maxHeight = constraints.maxHeight + extensionPx),
                 )
