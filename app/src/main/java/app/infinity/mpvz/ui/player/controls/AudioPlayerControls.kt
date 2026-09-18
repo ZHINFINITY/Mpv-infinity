@@ -71,11 +71,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -130,6 +130,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1914,8 +1915,17 @@ fun AudioPlayerControls(
             modifier = Modifier
               .weight(1f)
               .fillMaxWidth()
-              // Keep the visualizer viewport structural; the metadata overlay is responsible for the blend.
-
+              .layout { measurable, constraints ->
+                // Continue the visualizer into the metadata title area so there is
+                // no hard horizontal boundary immediately above the song name.
+                val extensionPx = (10.dp + 16.dp).roundToPx()
+                val placeable = measurable.measure(
+                  constraints.copy(maxHeight = constraints.maxHeight + extensionPx),
+                )
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                  placeable.place(0, 0)
+                }
+              },
           ) {
             centerVisualizerView(Modifier.fillMaxSize(), false)
             Column(
@@ -2404,3 +2414,158 @@ private fun UpNextPlaylistItemRow(
             Icon(
               imageVector = Icons.RoundedFilled.Audiotrack,
               contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.size(20.dp),
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.width(12.dp))
+
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = item.title.stripAudioExtension(),
+          style = MaterialTheme.typography.bodyMedium,
+          fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.SemiBold,
+          color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        if (item.duration.isNotBlank()) {
+          Text(
+            text = item.duration,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      }
+    }
+  }
+}
+
+
+
+private fun formatSec(totalSeconds: Long): String {
+  val secs = totalSeconds.coerceAtLeast(0L)
+  val hours = secs / 3600
+  val minutes = (secs % 3600) / 60
+  val remainingSecs = secs % 60
+  return if (hours > 0) {
+    String.format(Locale.US, "%d:%02d:%02d", hours, minutes, remainingSecs)
+  } else {
+    String.format(Locale.US, "%d:%02d", minutes, remainingSecs)
+  }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ReactiveIconButton(
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  onLongClick: (() -> Unit)? = null,
+  enabled: Boolean = true,
+  content: @Composable () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val isPressed by interactionSource.collectIsPressedAsState()
+  val haptic = LocalHapticFeedback.current
+
+  val scale by animateFloatAsState(
+    targetValue = if (isPressed) 0.82f else 1f,
+    animationSpec = spring(dampingRatio = 0.55f, stiffness = 900f),
+    label = "reactive_icon_button_scale",
+  )
+
+  if (onLongClick != null) {
+    Box(
+      modifier =
+        modifier
+          .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+          }
+          .clip(CircleShape)
+          .combinedClickable(
+            interactionSource = interactionSource,
+            indication = ripple(bounded = false, radius = 24.dp),
+            enabled = enabled,
+            onClick = {
+              haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+              onClick()
+            },
+            onLongClick = {
+              haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+              onLongClick()
+            },
+          )
+          .padding(8.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      content()
+    }
+  } else {
+    IconButton(
+      onClick = {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        onClick()
+      },
+      enabled = enabled,
+      interactionSource = interactionSource,
+      modifier =
+        modifier.graphicsLayer {
+          scaleX = scale
+          scaleY = scale
+        },
+    ) {
+      content()
+    }
+  }
+}
+
+@Composable
+private fun ReactiveSurfaceButton(
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  shape: Shape = CircleShape,
+  color: Color = MaterialTheme.colorScheme.primary,
+  shadowElevation: Dp = 0.dp,
+  enabled: Boolean = true,
+  content: @Composable () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val isPressed by interactionSource.collectIsPressedAsState()
+  val haptic = LocalHapticFeedback.current
+
+  val scale by animateFloatAsState(
+    targetValue = if (isPressed) 0.88f else 1f,
+    animationSpec = spring(dampingRatio = 0.55f, stiffness = 900f),
+    label = "reactive_surface_button_scale",
+  )
+
+  Surface(
+    onClick = {
+      haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+      onClick()
+    },
+    shape = shape,
+    color = color,
+    shadowElevation = shadowElevation,
+    enabled = enabled,
+    interactionSource = interactionSource,
+    modifier =
+      modifier.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+      },
+  ) {
+    content()
+  }
+}
+
+private fun String.stripAudioExtension(): String {
+  val dotIndex = lastIndexOf('.')
+  if (dotIndex <= 0) return this
+  val ext = substring(dotIndex + 1)
+  return if (ext.length in 2..5 && ext.none { it.isWhitespace() }) substring(0, dotIndex) else this
+}
