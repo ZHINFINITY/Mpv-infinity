@@ -1886,65 +1886,62 @@ fun AudioPlayerControls(
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
     if (isPortrait) {
-      // Render the visualizer as the full-screen background. Player chrome overlays it instead
-      // of constraining the visualizer to a bounded middle container.
-      Box(modifier = Modifier.fillMaxSize()) {
-        centerVisualizerView(
-          Modifier.fillMaxSize(),
-          false,
-        )
-
-        Column(
-          modifier = Modifier
-            .fillMaxSize()
-            .clickable(
-              enabled = showInPlaceLyrics,
-              interactionSource = remember { MutableInteractionSource() },
-              indication = null,
-            ) { resetInactivityTimer() },
-          horizontalAlignment = Alignment.CenterHorizontally,
+      Column(
+        modifier = Modifier
+          .fillMaxSize()
+          .clickable(
+            enabled = showInPlaceLyrics,
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+          ) { resetInactivityTimer() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+      ) {
+        androidx.compose.animation.AnimatedVisibility(
+          visible = !isStandbyActive,
+          enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
+          exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
-          androidx.compose.animation.AnimatedVisibility(
-            visible = !isStandbyActive,
-            enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
-            exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
-          ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-              headerBar()
-              losslessBadge()
-              Spacer(modifier = Modifier.height(16.dp))
-            }
+          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            headerBar()
+            losslessBadge()
+            Spacer(modifier = Modifier.height(16.dp))
           }
+        }
 
-          if (isStandbyActive) {
-            Spacer(modifier = Modifier.weight(1f))
+        if (showInPlaceLyrics && !isStandbyActive) {
+          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
+        } else {
+          val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
+          centerVisualizerView(visualizerModifier, false)
+        }
+        if (isStandbyActive) {
+          seekbarView()
+        }
+
+        androidx.compose.animation.AnimatedVisibility(
+          visible = !isStandbyActive,
+          enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
+          exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
+        ) {
+          Surface(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 12.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = Color.Transparent,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+          ) {
+          Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Spacer(modifier = Modifier.height(16.dp))
+            trackMetadataView()
+            Spacer(modifier = Modifier.height(16.dp))
             seekbarView()
-          } else {
-            Spacer(modifier = Modifier.weight(1f))
-
-            Surface(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-              shape = RoundedCornerShape(28.dp),
-              color = Color.Transparent,
-              tonalElevation = 0.dp,
-              shadowElevation = 0.dp,
-            ) {
-              Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-              ) {
-                Spacer(modifier = Modifier.height(16.dp))
-                trackMetadataView()
-                Spacer(modifier = Modifier.height(16.dp))
-                seekbarView()
-                Spacer(modifier = Modifier.height(16.dp))
-                playbackControlsRow()
-                Spacer(modifier = Modifier.height(24.dp))
-                bottomActionRow()
-              }
-            }
+            Spacer(modifier = Modifier.height(16.dp))
+            playbackControlsRow()
+            Spacer(modifier = Modifier.height(24.dp))
+            bottomActionRow()
+          }
           }
         }
       }
