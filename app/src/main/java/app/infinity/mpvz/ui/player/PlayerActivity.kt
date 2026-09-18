@@ -853,6 +853,7 @@ class PlayerActivity :
               // not leave controls and engine state on MPV while Media3 is opening the source.
               activeEngineMode = PlaybackEngineMode.NATIVE
               viewModel.setNativeEngineActive(true)
+              binding.media3Player.visibility = View.VISIBLE
               binding.media3Player.alpha = 1f
               binding.player.visibility = View.GONE
               nativeEngine.play(
@@ -885,6 +886,7 @@ class PlayerActivity :
                   }
                   return@launch
                 }
+                binding.media3Player.visibility = View.VISIBLE
                 binding.media3Player.alpha = 1f
                 binding.player.visibility = View.GONE
               }
@@ -6187,6 +6189,7 @@ class PlayerActivity :
         viewModel.setNativeEngineActive(true)
         viewModel.setAmbientLifecycleActive(true)
         binding.player.visibility = View.GONE
+        binding.media3Player.visibility = View.VISIBLE
         binding.media3Player.alpha = 1f
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.play(
