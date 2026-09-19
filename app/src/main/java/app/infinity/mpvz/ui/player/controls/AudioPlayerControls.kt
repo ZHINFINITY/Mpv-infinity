@@ -43,6 +43,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -119,6 +120,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -400,6 +402,32 @@ private fun AudioVisualizerViewport(
     modifier =
       modifier
         .clipToBounds()
+        .drawWithContent {
+          drawContent()
+          // Keep the renderer unboxed: dissolve every edge into the album-palette surface.
+          val surface = Color(palette.background)
+          drawRect(
+            brush = Brush.verticalGradient(
+              colors = listOf(surface.copy(alpha = 0.92f), surface.copy(alpha = 0.38f), Color.Transparent),
+              startY = 0f,
+              endY = size.height * 0.20f,
+            ),
+          )
+          drawRect(
+            brush = Brush.verticalGradient(
+              colors = listOf(Color.Transparent, surface.copy(alpha = 0.38f), surface.copy(alpha = 0.94f)),
+              startY = size.height * 0.78f,
+              endY = size.height,
+            ),
+          )
+          drawRect(
+            brush = Brush.horizontalGradient(
+              colors = listOf(surface.copy(alpha = 0.58f), Color.Transparent, Color.Transparent, surface.copy(alpha = 0.58f)),
+              startX = 0f,
+              endX = size.width,
+            ),
+          )
+        }
         .combinedClickable(
           interactionSource = remember { MutableInteractionSource() },
           indication = null,
@@ -414,6 +442,15 @@ private fun AudioVisualizerViewport(
           scaleX = 1.03f
           scaleY = 1.03f
         }
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      drawCircle(
+        brush = Brush.radialGradient(
+          colors = listOf(Color(palette.primary).copy(alpha = 0.16f), Color.Transparent),
+          center = center,
+          radius = size.minDimension * 0.90f,
+        ),
+      )
+    }
 
     when (style) {
       AudioVisualizerStyle.Galaxy ->
@@ -1970,8 +2007,7 @@ fun AudioPlayerControls(
           centerVisualizerView(
             Modifier
               .weight(1f)
-              .fillMaxWidth()
-              .padding(vertical = 12.dp, horizontal = 24.dp),
+              .fillMaxWidth(),
             false,
           )
           Spacer(modifier = Modifier.height(6.dp))
@@ -2011,7 +2047,7 @@ fun AudioPlayerControls(
             contentAlignment = Alignment.Center,
           ) {
             centerVisualizerView(
-              Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+              Modifier.fillMaxSize(),
               true,
             )
           }
