@@ -958,11 +958,55 @@ fun AudioPlayerControls(
     animationSpec = tween(durationMillis = 800),
     label = "ambient_bottom_color",
   )
-  Box(
-    modifier =
-      modifier
-        .fillMaxSize()
-        .drawWithCache {
+  Box(modifier = modifier.fillMaxSize()) {
+    if (isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
+      Box(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.72f)
+            .align(Alignment.TopCenter),
+      ) {
+        AudioVisualizerViewport(
+          style = audioVisualizerStyle,
+          palette = visualizerPalette,
+          isPlaying = isPlaying,
+          isSheetOpen = isSheetOpen,
+          volumeScale = volumeScale,
+          features = visualizerFeatures,
+          onClick = viewModel::toggleAudioVisualizer,
+          onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
+          modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .fillMaxHeight(0.24f)
+              .align(Alignment.BottomCenter)
+              .drawWithCache {
+                val fade =
+                  Brush.verticalGradient(
+                    colors =
+                      listOf(
+                        Color.Transparent,
+                        MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
+                        MaterialTheme.colorScheme.background,
+                      ),
+                  )
+                onDrawWithContent {
+                  drawContent()
+                  drawRect(fade)
+                }
+              },
+        )
+      }
+    }
+    Box(
+      modifier =
+        modifier
+          .fillMaxSize()
+          .drawWithCache {
           if (albumArtBitmap != null && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
@@ -1903,7 +1947,9 @@ fun AudioPlayerControls(
           }
         }
 
-        if (showInPlaceLyrics && !isStandbyActive) {
+        if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
+          Spacer(modifier = Modifier.weight(1f).fillMaxWidth())
+        } else if (showInPlaceLyrics && !isStandbyActive) {
           centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
           val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
@@ -2061,6 +2107,7 @@ fun AudioPlayerControls(
         onSuccess = { addToPlaylistDialogOpen = false },
         isJellyfin = isJellyfinMedia,
       )
+    }
     }
   }
 }
