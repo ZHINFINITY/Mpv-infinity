@@ -12,6 +12,7 @@ import android.view.SurfaceView
 import java.io.File
 import app.infinity.mpvz.R
 import androidx.media3.common.C
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
@@ -295,6 +296,16 @@ class NativeMedia3Engine(context: Context) {
     }
   }
   init {
+    // Keep Native playback in Android's media-audio focus lifecycle. A reused Media3 player can
+    // otherwise continue buffering after a video item while the next music item has no focus.
+    player.setAudioAttributes(
+      AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build(),
+      true,
+    )
+    player.setHandleAudioBecomingNoisy(true)
     assHandler.init(player)
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
@@ -621,6 +632,9 @@ class NativeMedia3Engine(context: Context) {
   ) {
     _hasRenderedFirstFrame.value = false
     lastKnownDurationMs = 0L
+    // The player instance survives item changes; reset any ducked/zero output level before the
+    // first audio-only item after a video transition.
+    player.volume = 1f
     pendingExternalSelectionId = null
     externalAssEnabled.clear()
     libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
@@ -684,7 +698,12 @@ class NativeMedia3Engine(context: Context) {
     }
 
   fun setPlaying(playing: Boolean) {
-    if (playing) player.play() else player.pause()
+    if (playing) {
+      player.volume = 1f
+      player.play()
+    } else {
+      player.pause()
+    }
     publishSnapshot()
     startTimelineUpdates()
   }
