@@ -63,6 +63,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -117,7 +118,6 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -400,7 +400,6 @@ private fun AudioVisualizerViewport(
   BoxWithConstraints(
     modifier =
       modifier
-        .clipToBounds()
         .combinedClickable(
           interactionSource = remember { MutableInteractionSource() },
           indication = null,
@@ -1010,10 +1009,13 @@ fun AudioPlayerControls(
     animationSpec = tween(durationMillis = 800),
     label = "ambient_bottom_color",
   )
+  val edgeToEdgeVisualizer = isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive
+  val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
   Box(
     modifier =
       modifier
         .fillMaxSize()
+        .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
           if (albumArtBitmap != null && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
@@ -1044,8 +1046,15 @@ fun AudioPlayerControls(
             onDrawBehind {}
           }
         }
-        .windowInsetsPadding(WindowInsets.safeDrawing)
-        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+        .windowInsetsPadding(
+          if (edgeToEdgeVisualizer) {
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+          } else {
+            WindowInsets.safeDrawing
+          },
+        )
+        .padding(horizontal = if (edgeToEdgeVisualizer) 0.dp else 16.dp)
+        .padding(top = if (edgeToEdgeVisualizer) 0.dp else 6.dp, bottom = 12.dp)
         .pointerInput(Unit) {
           var totalDrag = 0f
           detectVerticalDragGestures(
@@ -1943,23 +1952,35 @@ fun AudioPlayerControls(
           ) { resetInactivityTimer() },
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
-        androidx.compose.animation.AnimatedVisibility(
-          visible = !isStandbyActive,
-          enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
-          exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
-        ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            headerBar()
-            losslessBadge()
-            Spacer(modifier = Modifier.height(16.dp))
+        if (edgeToEdgeVisualizer) {
+          Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            centerVisualizerView(Modifier.fillMaxSize(), false)
+            Column(
+              modifier =
+                Modifier
+                  .fillMaxWidth()
+                  .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                  .padding(horizontal = controlsSidePadding)
+                  .padding(top = 6.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              headerBar()
+              losslessBadge()
+            }
           }
-        }
-
-        if (showInPlaceLyrics && !isStandbyActive) {
-          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
-          val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
-          centerVisualizerView(visualizerModifier, false)
+          androidx.compose.animation.AnimatedVisibility(
+            visible = !isStandbyActive,
+            enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
+            exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
+          ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              headerBar()
+              losslessBadge()
+              Spacer(modifier = Modifier.height(16.dp))
+            }
+          }
+          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         }
         if (isStandbyActive) {
           seekbarView()
@@ -1970,7 +1991,10 @@ fun AudioPlayerControls(
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          Column(
+            modifier = Modifier.padding(horizontal = controlsSidePadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
             Spacer(modifier = Modifier.height(16.dp))
             trackMetadataView()
             Spacer(modifier = Modifier.height(16.dp))
