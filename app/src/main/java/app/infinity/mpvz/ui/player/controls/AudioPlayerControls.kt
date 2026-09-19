@@ -932,10 +932,7 @@ fun AudioPlayerControls(
   val ambientColors by produceState<Pair<Color, Color>?>(
     initialValue = null,
     key1 = albumArtBitmap,
-    key2 = ambientModeEnabled,
-    key3 = audioPaletteBackground,
-    key4 = showVisualizer,
-    key5 = showInPlaceLyrics,
+    key2 = listOf(ambientModeEnabled, audioPaletteBackground, showVisualizer, showInPlaceLyrics),
   ) {
     if (!audioPaletteBackground || !ambientModeEnabled || showVisualizer || showInPlaceLyrics || albumArtBitmap == null) {
       value = null
