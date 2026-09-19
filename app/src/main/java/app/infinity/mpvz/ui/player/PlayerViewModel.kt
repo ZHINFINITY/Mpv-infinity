@@ -2835,10 +2835,15 @@ class PlayerViewModel : ViewModel(),
             showToast("$displayName added")
           }
         }
-      }.onFailure {
+      }.onFailure { error ->
+        android.util.Log.e(
+          "PlayerViewModel",
+          "Failed to load subtitle uri=$uri native=${host.isNativeEngineActive()}",
+          error,
+        )
         if (!silent) {
           withContext(Dispatchers.Main) {
-            showToast("Failed to load subtitle")
+            showToast("Failed to load subtitle: ${error.message ?: "unknown error"}")
           }
         }
       }

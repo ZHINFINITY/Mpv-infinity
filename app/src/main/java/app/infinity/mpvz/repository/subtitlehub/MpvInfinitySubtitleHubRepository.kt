@@ -133,6 +133,7 @@ class MpvInfinitySubtitleHubRepository(
             .Builder()
             .url(resolved.url)
             .header("User-Agent", USER_AGENT)
+            .header("Accept", "text/plain, text/*, application/zip, application/octet-stream, */*")
             .apply {
               resolved.referer?.let { header("Referer", it) }
               apiSources.authenticateDownload(subtitle, this)

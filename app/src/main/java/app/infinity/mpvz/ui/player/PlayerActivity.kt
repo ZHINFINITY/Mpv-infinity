@@ -1429,10 +1429,14 @@ class PlayerActivity :
       val isAudioOnly by viewModel.isAudioOnly.collectAsState()
       val playbackState by PlaybackSession.state.collectAsState()
       val nativeSnapshot by nativeEngine.snapshot.collectAsState()
+      val nativeFrameAvailable by nativeEngine.hasRenderedFirstFrame.collectAsState()
       val videoCrop by PlaybackSession.propString["video-crop"].collectAsState()
       val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
       val orientation = LocalConfiguration.current.orientation
-      val nativeActive = nativeSnapshot.isReady || nativeSnapshot.isBuffering
+      // A seek briefly leaves Media3 in BUFFERING/IDLE even though its video Surface is still
+      // valid. Keep using the native surface after the first frame instead of tearing down the
+      // ambient pipeline and exposing a black background during that transient state.
+      val nativeActive = nativeSnapshot.isReady || nativeSnapshot.isBuffering || nativeFrameAvailable
       // Position changes arrive every 250 ms. They must not restart the capture coroutine;
       // doing so clears the previous frame and produces visible ambient flicker. Duration and
       // video dimensions change when Native switches media and provide a stable source key.
@@ -1455,7 +1459,7 @@ class PlayerActivity :
           !isAudioOnly &&
           !isAmbientPipMode &&
           playbackReady &&
-          (if (nativeActive) nativeSnapshot.isReady else playbackState.surfaceAttached)
+          (if (nativeActive) nativeFrameAvailable else playbackState.surfaceAttached)
       val ambientSurface = if (nativeActive) {
         binding.media3Player.videoSurfaceView as? android.view.SurfaceView
       } else {
@@ -1470,7 +1474,10 @@ class PlayerActivity :
           orientation = orientation,
           isSurfaceReadyProvider = {
             if (nativeActive) {
-              surface.holder.surface?.isValid == true && nativeEngine.snapshot.value.isReady
+              surface.holder.surface?.isValid == true &&
+                (nativeEngine.snapshot.value.isReady ||
+                  nativeEngine.snapshot.value.isBuffering ||
+                  nativeEngine.hasRenderedFirstFrame.value)
             } else {
               val state = PlaybackSession.state.value
               state.surfaceAttached &&
@@ -1492,9 +1499,9 @@ class PlayerActivity :
       // Auto-crop changes after playback becomes ready. Refreshing on the property itself keeps
       // YouTube Ambient's SurfaceView aligned with the newly cropped content rectangle.
       LaunchedEffect(active, presentationActive, videoCrop) {
-        // Resize before the first PixelCopy frame arrives; otherwise MPV briefly renders
-        // fullscreen and is then compressed into the ambient aspect window.
-        setVideoAmbientPresentationActive(active, showBackground = presentationActive)
+        // Do not resize the video until a real ambient frame exists. Otherwise MPV briefly
+        // renders fullscreen and is then compressed into the ambient aspect window.
+        setVideoAmbientPresentationActive(presentationActive, showBackground = presentationActive)
       }
 
       MpvInfinityTheme {
