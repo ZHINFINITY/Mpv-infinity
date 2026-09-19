@@ -529,6 +529,7 @@ class PlayerActivity :
   private var eofAdvanceJob: Job? = null
 
   @Volatile private var isAdvancingAtEof = false
+  @Volatile private var nativeEofHandled = false
 
   @Volatile private var playWhenFileLoaded = false
   private var pendingVideoParamRefreshRequiresShaderReload = false
@@ -1008,6 +1009,16 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         nativeEngine.snapshot.collect { snapshot ->
           viewModel.setNativeTracks(snapshot)
+          if (!snapshot.isEnded) {
+            nativeEofHandled = false
+          } else if (isNativeEngineActive() && !nativeEofHandled) {
+            nativeEofHandled = true
+            handleEndOfFile(
+              isEof = true,
+              nativeDurationSecs = (snapshot.durationMs / 1000L).toInt(),
+              nativePositionSecs = (snapshot.positionMs / 1000L).toInt(),
+            )
+          }
           if (playerPreferences.orientation.get() == PlayerOrientation.Video &&
             snapshot.videoWidth > 0 && snapshot.videoHeight > 0
           ) {
@@ -4394,7 +4405,11 @@ class PlayerActivity :
    *
    * @param isEof true if end of file reached
    */
-  private fun handleEndOfFile(isEof: Boolean) {
+  private fun handleEndOfFile(
+    isEof: Boolean,
+    nativeDurationSecs: Int? = null,
+    nativePositionSecs: Int? = null,
+  ) {
     if (!isEof) {
       eofAdvanceJob?.cancel()
       eofAdvanceJob = null
@@ -4405,8 +4420,8 @@ class PlayerActivity :
     if (isBackgroundPlaybackSessionActive || !MediaPlaybackService.activityForeground) return
     // A dropped network stream can drain the demuxer and flip eof-reached mid-file. Only a
     // position at (or within a couple of seconds of) the known duration is a real end.
-    val durationSecs = viewModel.duration ?: 0
-    val positionSecs = viewModel.pos ?: 0
+    val durationSecs = nativeDurationSecs ?: viewModel.duration ?: 0
+    val positionSecs = nativePositionSecs ?: viewModel.pos ?: 0
     if (durationSecs > 0 && positionSecs < durationSecs - 2) return
     if (fileName.isNotBlank()) saveVideoPlaybackState(fileName, immediate = true)
 
@@ -4456,6 +4471,11 @@ class PlayerActivity :
 
   private fun restartCurrentAtEof() {
     isAdvancingAtEof = false
+    if (isNativeEngineActive()) {
+      nativeEngine.seekTo(0L)
+      nativeEngine.setPlaying(true)
+      return
+    }
     PlaybackSession.command("seek", "0", "absolute")
     viewModel.unpause()
   }
