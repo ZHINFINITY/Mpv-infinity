@@ -1025,20 +1025,25 @@ fun AudioPlayerControls(
           } else {
             onDrawBehind {}
           }
-        }
-        .windowInsetsPadding(WindowInsets.safeDrawing)
-        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
-        .pointerInput(Unit) {
-          var totalDrag = 0f
-          detectVerticalDragGestures(
-            onDragStart = { totalDrag = 0f },
-            onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
-            onDragEnd = {
-              if (totalDrag > 160f) onBackPress()
-            },
-          )
         },
   ) {
+    Box(
+      modifier =
+        Modifier
+          .fillMaxSize()
+          .windowInsetsPadding(WindowInsets.safeDrawing)
+          .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+          .pointerInput(Unit) {
+            var totalDrag = 0f
+            detectVerticalDragGestures(
+              onDragStart = { totalDrag = 0f },
+              onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
+              onDragEnd = {
+                if (totalDrag > 160f) onBackPress()
+              },
+            )
+          },
+    ) {
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
@@ -1941,9 +1946,12 @@ fun AudioPlayerControls(
           Modifier
             .weight(1f)
             .fillMaxWidth()
-            .expandVisualizerHorizontally(16.dp)
             .then(
-              if (showInPlaceLyrics) Modifier
+              if (showVisualizer && !showInPlaceLyrics) Modifier.expandVisualizerHorizontally(16.dp)
+              else Modifier,
+            )
+            .then(
+              if (!showVisualizer || showInPlaceLyrics) Modifier
               else Modifier.expandVisualizerVertically(top = 120.dp, bottom = 96.dp),
             ),
           false,
@@ -2109,6 +2117,7 @@ fun AudioPlayerControls(
         onSuccess = { addToPlaylistDialogOpen = false },
         isJellyfin = isJellyfinMedia,
       )
+    }
     }
   }
 }
