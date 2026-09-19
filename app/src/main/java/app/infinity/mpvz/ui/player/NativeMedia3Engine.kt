@@ -374,6 +374,9 @@ class NativeMedia3Engine(context: Context) {
         return false
       }
       val id = "external:$uri"
+      // External ASS uses the dedicated libass overlay; disable Media3 text tracks first so an
+      // embedded ASS stream cannot remain visible underneath it.
+      disableNativeTextTracks()
       if (select) disableAssTracks()
       val added = renderer.addTrack(id, bytes)
       if (added) {
@@ -406,7 +409,10 @@ class NativeMedia3Engine(context: Context) {
     val renderer = libassRenderer ?: return false
     if (id !in renderer.getTrackIds().keys) return false
     val enabled = !(externalAssEnabled[id] ?: false)
-    if (enabled) disableAssTracks()
+    if (enabled) {
+      disableNativeTextTracks()
+      disableAssTracks()
+    }
     renderer.setTrackEnabled(id, enabled)
     externalAssEnabled[id] = enabled
     subtitleOverlay?.visibility = if (enabled) View.VISIBLE else View.GONE
@@ -414,6 +420,15 @@ class NativeMedia3Engine(context: Context) {
   }
 
   /** Content-provider URIs can hide the actual downloaded filename in their last path segment. */
+  private fun disableNativeTextTracks() {
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .build()
+    publishSnapshot()
+  }
+
   private fun subtitleExtension(uri: Uri): String {
     val uriName = Uri.decode(uri.lastPathSegment.orEmpty())
     val providerName =
