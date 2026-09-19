@@ -43,7 +43,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -395,18 +394,22 @@ private fun AudioVisualizerViewport(
   features: AudioFeatures,
   onClick: () -> Unit,
   onLongClick: () -> Unit,
-  rendererHeightFraction: Float = 1f,
   modifier: Modifier = Modifier,
 ) {
   BoxWithConstraints(
-    modifier = modifier.clipToBounds(),
+    modifier =
+      modifier
+        .clipToBounds()
+        .combinedClickable(
+          interactionSource = remember { MutableInteractionSource() },
+          indication = null,
+          onClick = onClick,
+          onLongClick = onLongClick,
+        ),
     contentAlignment = Alignment.Center,
   ) {
     val rendererModifier =
-      Modifier
-        .fillMaxWidth()
-        .fillMaxHeight(rendererHeightFraction)
-        .align(Alignment.TopCenter)
+      Modifier.fillMaxSize()
         .graphicsLayer {
           scaleX = 1.03f
           scaleY = 1.03f
@@ -738,9 +741,7 @@ fun AudioPlayerControls(
   val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
   val audioWavySeekbar by audioPreferences.audioWavySeekbar.collectAsState()
   val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
-  val audioStandbyDelaySeconds by audioPreferences.audioStandbyDelaySeconds.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
-  val audioPaletteBackground by audioPreferences.audioPaletteBackground.collectAsState()
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
@@ -897,10 +898,11 @@ fun AudioPlayerControls(
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
-  LaunchedEffect(audioStandbyMode, audioStandbyDelaySeconds, isPlaying, isPortrait, lastUserInteractionTime) {
+
+  LaunchedEffect(audioStandbyMode, isPlaying, isPortrait, lastUserInteractionTime) {
     isStandbyActive = false
     if (audioStandbyMode && isPlaying) {
-      kotlinx.coroutines.delay(audioStandbyDelaySeconds.coerceIn(1, 60) * 1000L)
+      kotlinx.coroutines.delay(5000L)
       isStandbyActive = true
     }
   }
@@ -911,9 +913,8 @@ fun AudioPlayerControls(
     initialValue = null,
     key1 = albumArtBitmap,
     key2 = ambientModeEnabled,
-    key3 = audioPaletteBackground,
   ) {
-    if (!ambientModeEnabled || albumArtBitmap == null) {
+    if (albumArtBitmap == null) {
       value = null
       return@produceState
     }
@@ -941,8 +942,10 @@ fun AudioPlayerControls(
     }
   }
 
-  val targetTopColor = if (ambientModeEnabled) ambientColors?.first ?: Color.Transparent else Color.Transparent
-  val targetBottomColor = if (ambientModeEnabled) ambientColors?.second ?: Color.Transparent else Color.Transparent
+  val targetTopColor =
+    ambientColors?.first ?: Color(visualizerPalette.primary).copy(alpha = 0.38f)
+  val targetBottomColor =
+    ambientColors?.second ?: Color(visualizerPalette.secondary).copy(alpha = 0.30f)
 
   val animatedAmbientTop: Color by animateColorAsState(
     targetValue = targetTopColor,
@@ -959,11 +962,8 @@ fun AudioPlayerControls(
     modifier =
       modifier
         .fillMaxSize()
-        .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
-          if (ambientModeEnabled &&
-            (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
-          ) {
+          if (albumArtBitmap != null && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
             val radialGradient = Brush.radialGradient(
@@ -991,39 +991,20 @@ fun AudioPlayerControls(
           } else {
             onDrawBehind {}
           }
+        }
+        .windowInsetsPadding(WindowInsets.safeDrawing)
+        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+        .pointerInput(Unit) {
+          var totalDrag = 0f
+          detectVerticalDragGestures(
+            onDragStart = { totalDrag = 0f },
+            onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
+            onDragEnd = {
+              if (totalDrag > 160f) onBackPress()
+            },
+          )
         },
   ) {
-    if (isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
-      AudioVisualizerViewport(
-        style = audioVisualizerStyle,
-        palette = visualizerPalette,
-        isPlaying = isPlaying,
-        isSheetOpen = isSheetOpen,
-        volumeScale = volumeScale,
-        features = visualizerFeatures,
-        onClick = viewModel::toggleAudioVisualizer,
-        onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-        rendererHeightFraction = 0.56f,
-        modifier = Modifier.fillMaxSize(),
-      )
-    }
-    Box(
-      modifier =
-        Modifier
-          .fillMaxSize()
-          .windowInsetsPadding(WindowInsets.safeDrawing)
-          .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
-          .pointerInput(Unit) {
-            var totalDrag = 0f
-            detectVerticalDragGestures(
-              onDragStart = { totalDrag = 0f },
-              onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
-              onDragEnd = {
-                if (totalDrag > 160f) onBackPress()
-              },
-            )
-          },
-    ) {
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
         ReactiveIconButton(
@@ -1900,8 +1881,7 @@ fun AudioPlayerControls(
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
     if (isPortrait) {
-      Box(modifier = Modifier.fillMaxSize()) {
-        Column(
+      Column(
         modifier = Modifier
           .fillMaxSize()
           .clickable(
@@ -1923,9 +1903,7 @@ fun AudioPlayerControls(
           }
         }
 
-        if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
-          Spacer(modifier = Modifier.weight(1f).fillMaxWidth())
-        } else if (showInPlaceLyrics && !isStandbyActive) {
+        if (showInPlaceLyrics && !isStandbyActive) {
           centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
           val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
@@ -1952,7 +1930,6 @@ fun AudioPlayerControls(
           }
         }
       }
-      }
     } else if (false && isTabletLandscape) {
       Row(
         modifier = Modifier.fillMaxSize(),
@@ -1973,7 +1950,8 @@ fun AudioPlayerControls(
           centerVisualizerView(
             Modifier
               .weight(1f)
-              .fillMaxWidth(),
+              .fillMaxWidth()
+              .padding(vertical = 12.dp, horizontal = 24.dp),
             false,
           )
           Spacer(modifier = Modifier.height(6.dp))
@@ -2013,7 +1991,7 @@ fun AudioPlayerControls(
             contentAlignment = Alignment.Center,
           ) {
             centerVisualizerView(
-              Modifier.fillMaxSize(),
+              Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
               true,
             )
           }
@@ -2083,7 +2061,6 @@ fun AudioPlayerControls(
         onSuccess = { addToPlaylistDialogOpen = false },
         isJellyfin = isJellyfinMedia,
       )
-    }
     }
   }
 }
