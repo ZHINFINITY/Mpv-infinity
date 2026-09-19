@@ -1007,7 +1007,11 @@ fun AudioPlayerControls(
         features = visualizerFeatures,
         onClick = viewModel::toggleAudioVisualizer,
         onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-        modifier = Modifier.fillMaxSize(),
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.72f)
+            .align(Alignment.TopCenter),
       )
     }
     Box(
