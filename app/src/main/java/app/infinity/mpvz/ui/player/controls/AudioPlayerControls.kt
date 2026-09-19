@@ -129,7 +129,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -138,7 +137,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.offset
@@ -386,34 +384,6 @@ private fun artworkVisualizerPalette(
     tertiary = ColorUtils.blendARGB(materialPalette.tertiary, artworkTones.tertiary, 0.58f),
   )
 }
-
-private fun Modifier.expandVisualizerHorizontally(inset: Dp): Modifier =
-  layout { measurable, constraints ->
-    val insetPx = inset.roundToPx()
-    val expandedWidth =
-      if (constraints.maxWidth == Constraints.Infinity) constraints.maxWidth
-      else constraints.maxWidth + insetPx * 2
-    val placeable = measurable.measure(constraints.copy(minWidth = expandedWidth, maxWidth = expandedWidth))
-    layout(constraints.maxWidth, placeable.height) {
-      placeable.place(-insetPx, 0)
-    }
-  }
-
-private fun Modifier.expandVisualizerVertically(
-  top: Dp,
-  bottom: Dp,
-): Modifier =
-  layout { measurable, constraints ->
-    val topPx = top.roundToPx()
-    val bottomPx = bottom.roundToPx()
-    val expandedHeight =
-      if (constraints.maxHeight == Constraints.Infinity) constraints.maxHeight
-      else constraints.maxHeight + topPx + bottomPx
-    val placeable = measurable.measure(constraints.copy(minHeight = expandedHeight, maxHeight = expandedHeight))
-    layout(constraints.maxWidth, constraints.maxHeight) {
-      placeable.place(0, -topPx)
-    }
-  }
 
 @Composable
 private fun AudioVisualizerViewport(
@@ -1027,6 +997,19 @@ fun AudioPlayerControls(
           }
         },
   ) {
+    if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
+      AudioVisualizerViewport(
+        style = audioVisualizerStyle,
+        palette = visualizerPalette,
+        isPlaying = isPlaying,
+        isSheetOpen = isSheetOpen,
+        volumeScale = volumeScale,
+        features = visualizerFeatures,
+        onClick = viewModel::toggleAudioVisualizer,
+        onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
+        modifier = Modifier.fillMaxSize(),
+      )
+    }
     Box(
       modifier =
         Modifier
@@ -1942,20 +1925,14 @@ fun AudioPlayerControls(
           }
         }
 
-        centerVisualizerView(
-          Modifier
-            .weight(1f)
-            .fillMaxWidth()
-            .then(
-              if (showVisualizer && !showInPlaceLyrics) Modifier.expandVisualizerHorizontally(16.dp)
-              else Modifier,
-            )
-            .then(
-              if (!showVisualizer || showInPlaceLyrics) Modifier
-              else Modifier.expandVisualizerVertically(top = 120.dp, bottom = 96.dp),
-            ),
-          false,
-        )
+        if (showVisualizer && !showInPlaceLyrics) {
+          Spacer(modifier = Modifier.weight(1f).fillMaxWidth())
+        } else {
+          centerVisualizerView(
+            Modifier.weight(1f).fillMaxWidth(),
+            false,
+          )
+        }
         if (isStandbyActive) {
           seekbarView()
         }
