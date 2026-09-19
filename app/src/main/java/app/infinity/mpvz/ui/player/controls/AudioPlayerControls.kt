@@ -119,6 +119,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -415,40 +416,91 @@ private fun AudioVisualizerViewport(
           scaleY = 1.03f
         }
 
-    when (style) {
-      AudioVisualizerStyle.Galaxy ->
-        GalaxyOverlay(
-          palette = palette,
-          isSheetOpen = isSheetOpen,
-          volumeScale = volumeScale,
-          features = features,
-          modifier = rendererModifier,
-        )
-      AudioVisualizerStyle.Blob ->
-        BlobOverlay(
-          palette = palette,
-          isSheetOpen = isSheetOpen,
-          volumeScale = volumeScale,
-          features = features,
-          modifier = rendererModifier,
-        )
-      AudioVisualizerStyle.Cuboid ->
-        CuboidOverlay(
-          isPlaying = isPlaying,
-          palette = palette,
-          isSheetOpen = isSheetOpen,
-          volumeScale = volumeScale,
-          features = features,
-          modifier = rendererModifier,
-        )
-      AudioVisualizerStyle.Particle ->
-        ParticleOverlay(
-          palette = palette,
-          isSheetOpen = isSheetOpen,
-          volumeScale = volumeScale,
-          features = features,
-          modifier = rendererModifier,
-        )
+    val boundaryFadeColor = MaterialTheme.colorScheme.surface
+    Box(
+      modifier =
+        Modifier
+          .fillMaxSize()
+          .drawWithContent {
+            drawContent()
+
+            drawRect(
+              brush =
+                Brush.verticalGradient(
+                  colors =
+                    listOf(
+                      boundaryFadeColor.copy(alpha = 0.95f),
+                      boundaryFadeColor.copy(alpha = 0.45f),
+                      Color.Transparent,
+                    ),
+                  startY = 0f,
+                  endY = size.height * 0.22f,
+                ),
+            )
+            drawRect(
+              brush =
+                Brush.verticalGradient(
+                  colors =
+                    listOf(
+                      Color.Transparent,
+                      boundaryFadeColor.copy(alpha = 0.50f),
+                      boundaryFadeColor.copy(alpha = 0.96f),
+                    ),
+                  startY = size.height * 0.72f,
+                  endY = size.height,
+                ),
+            )
+            drawRect(
+              brush =
+                Brush.horizontalGradient(
+                  colors =
+                    listOf(
+                      boundaryFadeColor.copy(alpha = 0.60f),
+                      Color.Transparent,
+                      Color.Transparent,
+                      boundaryFadeColor.copy(alpha = 0.60f),
+                    ),
+                  startX = 0f,
+                  endX = size.width,
+                ),
+            )
+          },
+    ) {
+      when (style) {
+        AudioVisualizerStyle.Galaxy ->
+          GalaxyOverlay(
+            palette = palette,
+            isSheetOpen = isSheetOpen,
+            volumeScale = volumeScale,
+            features = features,
+            modifier = rendererModifier,
+          )
+        AudioVisualizerStyle.Blob ->
+          BlobOverlay(
+            palette = palette,
+            isSheetOpen = isSheetOpen,
+            volumeScale = volumeScale,
+            features = features,
+            modifier = rendererModifier,
+          )
+        AudioVisualizerStyle.Cuboid ->
+          CuboidOverlay(
+            isPlaying = isPlaying,
+            palette = palette,
+            isSheetOpen = isSheetOpen,
+            volumeScale = volumeScale,
+            features = features,
+            modifier = rendererModifier,
+          )
+        AudioVisualizerStyle.Particle ->
+          ParticleOverlay(
+            palette = palette,
+            isSheetOpen = isSheetOpen,
+            volumeScale = volumeScale,
+            features = features,
+            modifier = rendererModifier,
+          )
+      }
     }
 
   }
