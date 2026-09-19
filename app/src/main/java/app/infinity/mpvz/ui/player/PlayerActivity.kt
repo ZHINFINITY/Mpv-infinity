@@ -3793,8 +3793,6 @@ class PlayerActivity :
     val subList = extractSubtitleUriList(extras, "subs")
     val subsToEnable = extractSubtitleUriList(extras, "subs.enable")
     val hasSubsToEnable = extras.containsKey("subs.enable")
-    val subtitleTitles = extractSubtitleStringArray(extras, "subs.name", "subs.titles", "subs.filename")
-    val subtitleLanguages = extractSubtitleStringArray(extras, "subs.langs", "subs.languages")
     val subtitleEntries =
       IntentSubtitleLoadPolicy.entriesToLoad(
         subtitles = subList,
@@ -3806,60 +3804,14 @@ class PlayerActivity :
     intentSubtitleJob =
       lifecycleScope.launch(Dispatchers.IO) {
         for (entry in subtitleEntries) {
-          if (!isActive || !canIssueMpvCommands()) break
-          val suburi = entry.value
-          val subfile = suburi.resolveUri(this@PlayerActivity) ?: continue
-          val flag = if (entry.select) "select" else "auto"
-          val title =
-            if (entry.metadataIndex >= 0) {
-              subtitleTitles
-                .getOrNull(entry.metadataIndex)
-                ?.trim()
-                .orEmpty()
-                .ifBlank { null }
-            } else {
-              null
-            }
-          val language =
-            if (entry.metadataIndex >= 0) {
-              subtitleLanguages
-                .getOrNull(entry.metadataIndex)
-                ?.trim()
-                .orEmpty()
-                .ifBlank { null }
-            } else {
-              null
-            }
-          val displayTitle = title ?: language
-
-          withContext(Dispatchers.Main.immediate) {
-            if (!canIssueMpvCommands()) return@withContext
-
-            Log.v(TAG, "Adding subtitles from intent extras: $subfile")
-            val trackCountBefore = PlaybackSession.getPropertyInt("track-list/count") ?: 0
-            runCatching {
-              when {
-                displayTitle != null -> PlaybackSession.command("sub-add", subfile, flag, displayTitle)
-                else -> PlaybackSession.command("sub-add", subfile, flag)
-              }
-            }.onSuccess {
-              val trackCountAfter = PlaybackSession.getPropertyInt("track-list/count") ?: 0
-              if (trackCountAfter > trackCountBefore) {
-                val newTrackIndex = trackCountAfter - 1
-                if (displayTitle != null) {
-                  runCatching {
-                    PlaybackSession.setPropertyString("track-list/$newTrackIndex/title", displayTitle)
-                  }
-                }
-                if (language != null) {
-                  runCatching {
-                    PlaybackSession.setPropertyString("track-list/$newTrackIndex/lang", language)
-                  }
-                }
-              }
-            }.onFailure { error ->
-              Log.w(TAG, "Failed to add subtitle from intent extras: $subfile", error)
-            }
+          if (!isActive) break
+          // Route through PlayerViewModel so both MPV and the native Media3 subtitle renderer
+          // receive external/content/downloaded subtitles. The old direct sub-add path silently
+          // did nothing whenever the native engine owned playback.
+          runCatching {
+            viewModel.addSubtitleSuspend(entry.value, select = entry.select, silent = true)
+          }.onFailure { error ->
+            Log.w(TAG, "Failed to add subtitle from intent extras: ${entry.value}", error)
           }
         }
       }
