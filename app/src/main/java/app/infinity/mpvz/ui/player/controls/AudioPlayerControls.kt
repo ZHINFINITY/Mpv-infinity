@@ -478,7 +478,6 @@ private fun AudioVisualizerViewport(
     }
   }
 }
-}
 
 /** Compose Canvas visualizers need scoped spectrum capture outside VisualizerOverlay. */
 @Composable
