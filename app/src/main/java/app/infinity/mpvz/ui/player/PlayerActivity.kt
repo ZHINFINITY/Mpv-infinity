@@ -1448,14 +1448,17 @@ class PlayerActivity :
         playbackState.generation
       }
       val playbackReady = if (nativeActive) {
-        nativeSnapshot.isReady || nativeSnapshot.isBuffering
+        nativeSnapshot.isReady || nativeSnapshot.isBuffering || nativeFrameAvailable
       } else {
         playbackState.phase == PlaybackPhase.READY || playbackState.phase == PlaybackPhase.BACKGROUND
       }
+      // Native uses the frame-captured presentation even when the persisted MPV style is Glow.
+      // Keep the preference unchanged so returning to MPV restores the user’s selected style.
+      val effectiveAmbientStyle = if (nativeActive) AmbientStyle.YouTube else style
       val active =
         enabled &&
           lifecycleActive &&
-          style == AmbientStyle.YouTube &&
+          effectiveAmbientStyle == AmbientStyle.YouTube &&
           !isAudioOnly &&
           !isAmbientPipMode &&
           playbackReady &&
