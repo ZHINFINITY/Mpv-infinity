@@ -746,6 +746,7 @@ object PlaybackSession : MPVLib.EventObserver {
         buildList {
           add("pause=yes")
           add(if (selectVideoForNewFile) "vid=auto" else "vid=no")
+          if (resolvedItem.isDefinitelyAudioOnly()) add("aid=auto")
           initialPosition?.let { add("start=$it") }
           if (flattenEditions && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions")) {
             add("flatten-editions=yes")
@@ -1190,6 +1191,10 @@ object PlaybackSession : MPVLib.EventObserver {
             }
             propBoolean.emit("pause", appliedPaused)
             restoreSuspendedVideoTrackLocked()
+            // Some audio-only demuxers do not emit PLAYBACK_RESTART reliably. Keep the normal
+            // restart restoration, but also provide a delayed FILE_LOADED fallback so the
+            // transition guard cannot leave the first music item permanently muted.
+            schedulePlaybackTransitionAudioGuardRestoreLocked(750L)
             true
           }
           MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
