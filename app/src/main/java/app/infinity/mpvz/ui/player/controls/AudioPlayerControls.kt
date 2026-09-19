@@ -1899,7 +1899,14 @@ fun AudioPlayerControls(
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
     if (isPortrait) {
-      Column(
+      Box(modifier = Modifier.fillMaxSize()) {
+        if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
+          centerVisualizerView(
+            Modifier.fillMaxSize().expandVisualizerHorizontally(16.dp),
+            false,
+          )
+        }
+        Column(
         modifier = Modifier
           .fillMaxSize()
           .clickable(
@@ -1927,9 +1934,7 @@ fun AudioPlayerControls(
             false,
           )
         } else {
-          val visualizerModifier =
-            Modifier.weight(1f).fillMaxWidth().expandVisualizerHorizontally(16.dp)
-          centerVisualizerView(visualizerModifier, false)
+          Spacer(modifier = Modifier.weight(1f).fillMaxWidth())
         }
         if (isStandbyActive) {
           seekbarView()
@@ -1961,6 +1966,7 @@ fun AudioPlayerControls(
           }
           }
         }
+      }
       }
     } else if (false && isTabletLandscape) {
       Row(
