@@ -991,7 +991,8 @@ class PlayerActivity :
     }
     viewModel.setNativeExternalSubtitleToggleListener { id ->
       viewModel.subtitleTracks.value.firstOrNull { it.id == id }?.externalFilename?.let { rawUri ->
-        nativeEngine.toggleExternalSubtitle(Uri.parse(rawUri))
+        val enabled = nativeEngine.toggleExternalSubtitle(Uri.parse(rawUri))
+        enabled?.let { viewModel.setNativeExternalSubtitleSelected(id, it) }
       }
     }
     viewModel.setNativeAudioToggleListener { id ->
@@ -6148,6 +6149,7 @@ class PlayerActivity :
         binding.player.visibility = View.GONE
         binding.media3Player.visibility = View.VISIBLE
         binding.media3Player.alpha = 1f
+        viewModel.clearNativeExternalSubtitles()
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.play(
           nativePlayableUri.toUri(),

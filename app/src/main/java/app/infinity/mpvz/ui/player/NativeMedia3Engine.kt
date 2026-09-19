@@ -40,7 +40,6 @@ import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.kt.withAssMkvSupport
-import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -140,13 +139,16 @@ class NativeMedia3Engine(context: Context) {
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(
-      DefaultRenderersFactory(context.applicationContext)
+      LibassRenderersFactory(
+        context.applicationContext,
+        { ensureLibassRenderer() },
+        { positionUs -> subtitleOverlay?.setPositionUs(positionUs) },
+      )
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
         // devices reject the first candidate even though a compatible Media3 decoder is available.
-        .setEnableDecoderFallback(true)
-        .withAssSupport(assHandler),
+        .setEnableDecoderFallback(true),
     )
     .build()
   private var attachedView: PlayerView? = null
@@ -163,6 +165,8 @@ class NativeMedia3Engine(context: Context) {
   private var subtitleBorderColor = android.graphics.Color.BLACK
   private var subtitleBackgroundColor = android.graphics.Color.TRANSPARENT
   private var subtitleBorderSize = 3
+  private val subtitleStyleRunnable = Runnable { applyAssStyle() }
+  private val subtitleViewRunnable = Runnable { configureSubtitleView() }
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
@@ -300,7 +304,7 @@ class NativeMedia3Engine(context: Context) {
     attachedView?.player = null
     attachedView = view
     subtitleOverlay = view.rootView.findViewById(R.id.media3_subtitle_overlay)
-    view.subtitleView?.withAssSupport(assHandler)
+    ensureLibassRenderer()
     // SurfaceView is composed in a separate layer and can cover normal sibling Views. Mark it as
     // a media layer so the standalone libass bitmap remains visible above the video surface.
     (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
@@ -347,12 +351,12 @@ class NativeMedia3Engine(context: Context) {
 
   fun setSubtitleScale(scale: Float) {
     subtitleScale = scale.coerceIn(0.1f, 5f)
-    configureSubtitleView()
+    scheduleSubtitleViewConfiguration()
   }
 
   fun setSubtitlePosition(position: Int) {
     subtitlePosition = position.coerceIn(0, 150)
-    configureSubtitleView()
+    scheduleSubtitleViewConfiguration()
   }
 
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
@@ -388,6 +392,7 @@ class NativeMedia3Engine(context: Context) {
       return added
     }
     val configuration = MediaItem.SubtitleConfiguration.Builder(uri)
+      .setId("external:$uri")
       .setMimeType(mimeType)
       .setSelectionFlags(if (select) C.SELECTION_FLAG_DEFAULT else 0)
       .build()
@@ -404,19 +409,38 @@ class NativeMedia3Engine(context: Context) {
     return true
   }
 
-  fun toggleExternalSubtitle(uri: Uri): Boolean {
+  fun toggleExternalSubtitle(uri: Uri): Boolean? {
     val id = "external:$uri"
-    val renderer = libassRenderer ?: return false
-    if (id !in renderer.getTrackIds().keys) return false
-    val enabled = !(externalAssEnabled[id] ?: false)
-    if (enabled) {
-      disableNativeTextTracks()
-      disableAssTracks()
+    if (subtitleExtension(uri) in setOf("ass", "ssa")) {
+      val renderer = libassRenderer ?: return null
+      if (id !in renderer.getTrackIds().keys) return null
+      val enabled = !(externalAssEnabled[id] ?: false)
+      if (enabled) {
+        disableNativeTextTracks()
+        disableAssTracks()
+      }
+      renderer.setTrackEnabled(id, enabled)
+      externalAssEnabled[id] = enabled
+      subtitleOverlay?.visibility = if (enabled) View.VISIBLE else View.GONE
+      return enabled
     }
-    renderer.setTrackEnabled(id, enabled)
-    externalAssEnabled[id] = enabled
-    subtitleOverlay?.visibility = if (enabled) View.VISIBLE else View.GONE
-    return true
+    val match = player.currentTracks.groups
+      .asSequence()
+      .filter { it.type == C.TRACK_TYPE_TEXT }
+      .flatMap { group ->
+        (0 until group.length).asSequence().map { index -> group to index }
+      }
+      .firstOrNull { (group, index) -> group.getTrackFormat(index).id == id }
+      ?: return null
+    val group = match.first
+    val trackIndex = match.second
+    val enabled = !group.isTrackSelected(trackIndex)
+    val builder = player.trackSelectionParameters.buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !enabled)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+    if (enabled) builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+    player.trackSelectionParameters = builder.build()
+    return enabled
   }
 
   /** Content-provider URIs can hide the actual downloaded filename in their last path segment. */
@@ -483,8 +507,9 @@ class NativeMedia3Engine(context: Context) {
       borderColor,
       android.graphics.Typeface.create(fontFamily?.takeIf { it.isNotBlank() }, typefaceStyle),
     )
-    applyAssStyle()
-    configureSubtitleView()
+    loopHandler.removeCallbacks(subtitleStyleRunnable)
+    loopHandler.postDelayed(subtitleStyleRunnable, 60L)
+    scheduleSubtitleViewConfiguration()
   }
 
   private fun applyAssStyle() {
@@ -498,6 +523,11 @@ class NativeMedia3Engine(context: Context) {
       subtitleBold,
       subtitleItalic,
     )
+  }
+
+  private fun scheduleSubtitleViewConfiguration() {
+    loopHandler.removeCallbacks(subtitleViewRunnable)
+    loopHandler.postDelayed(subtitleViewRunnable, 40L)
   }
 
 
@@ -566,6 +596,10 @@ class NativeMedia3Engine(context: Context) {
     sourceUri: Uri? = null,
   ) {
     _hasRenderedFirstFrame.value = false
+    externalAssEnabled.clear()
+    libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
+      libassRenderer?.removeTrack(id)
+    }
     // Uri.parse("/storage/...") has no scheme. Make local paths explicit so Media3 selects
     // FileDataSource instead of treating the original MediaStore URI as the playable source.
     val mediaUri =
