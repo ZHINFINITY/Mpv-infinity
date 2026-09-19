@@ -993,6 +993,20 @@ fun AudioPlayerControls(
           }
         },
   ) {
+    if (isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
+      AudioVisualizerViewport(
+        style = audioVisualizerStyle,
+        palette = visualizerPalette,
+        isPlaying = isPlaying,
+        isSheetOpen = isSheetOpen,
+        volumeScale = volumeScale,
+        features = visualizerFeatures,
+        onClick = viewModel::toggleAudioVisualizer,
+        onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
+        rendererHeightFraction = 0.56f,
+        modifier = Modifier.fillMaxSize(),
+      )
+    }
     Box(
       modifier =
         Modifier
@@ -1887,20 +1901,6 @@ fun AudioPlayerControls(
 
     if (isPortrait) {
       Box(modifier = Modifier.fillMaxSize()) {
-        if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
-          AudioVisualizerViewport(
-            style = audioVisualizerStyle,
-            palette = visualizerPalette,
-            isPlaying = isPlaying,
-            isSheetOpen = isSheetOpen,
-            volumeScale = volumeScale,
-            features = visualizerFeatures,
-            onClick = viewModel::toggleAudioVisualizer,
-            onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-            rendererHeightFraction = 0.56f,
-            modifier = Modifier.fillMaxSize(),
-          )
-        }
         Column(
         modifier = Modifier
           .fillMaxSize()
