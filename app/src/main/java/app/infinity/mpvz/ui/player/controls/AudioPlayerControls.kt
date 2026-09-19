@@ -395,6 +395,7 @@ private fun AudioVisualizerViewport(
   features: AudioFeatures,
   onClick: () -> Unit,
   onLongClick: () -> Unit,
+  rendererHeightFraction: Float = 1f,
   modifier: Modifier = Modifier,
 ) {
   BoxWithConstraints(
@@ -410,7 +411,10 @@ private fun AudioVisualizerViewport(
     contentAlignment = Alignment.Center,
   ) {
     val rendererModifier =
-      Modifier.fillMaxSize()
+      Modifier
+        .fillMaxWidth()
+        .fillMaxHeight(rendererHeightFraction)
+        .align(Alignment.TopCenter)
         .graphicsLayer {
           scaleX = 1.03f
           scaleY = 1.03f
@@ -1890,7 +1894,22 @@ fun AudioPlayerControls(
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
     if (isPortrait) {
-      Column(
+      Box(modifier = Modifier.fillMaxSize()) {
+        if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
+          AudioVisualizerViewport(
+            style = audioVisualizerStyle,
+            palette = visualizerPalette,
+            isPlaying = isPlaying,
+            isSheetOpen = isSheetOpen,
+            volumeScale = volumeScale,
+            features = visualizerFeatures,
+            onClick = viewModel::toggleAudioVisualizer,
+            onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
+            rendererHeightFraction = 0.56f,
+            modifier = Modifier.fillMaxSize(),
+          )
+        }
+        Column(
         modifier = Modifier
           .fillMaxSize()
           .clickable(
@@ -1912,7 +1931,9 @@ fun AudioPlayerControls(
           }
         }
 
-        if (showInPlaceLyrics && !isStandbyActive) {
+        if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
+          Spacer(modifier = Modifier.weight(1f).fillMaxWidth())
+        } else if (showInPlaceLyrics && !isStandbyActive) {
           centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
           val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
@@ -1938,6 +1959,7 @@ fun AudioPlayerControls(
             bottomActionRow()
           }
         }
+      }
       }
     } else if (false && isTabletLandscape) {
       Row(
