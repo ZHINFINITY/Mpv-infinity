@@ -750,7 +750,9 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun setSpeed(speed: Float, pitchCorrection: Boolean = true) {
-    val clampedSpeed = speed.coerceIn(0.25f, 4f)
+    // Keep Native aligned with the shared speed sheet and ViewModel, both of which support up to
+    // 8x. The old 4x clamp made the 4x-8x presets appear selectable but silently ineffective.
+    val clampedSpeed = speed.coerceIn(0.25f, 8f)
     player.setPlaybackParameters(
       PlaybackParameters(clampedSpeed, if (pitchCorrection) 1f else clampedSpeed),
     )
