@@ -2754,10 +2754,13 @@ class PlayerViewModel : ViewModel(),
     silent: Boolean = false,
   ) {
     subtitleAddMutex.withLock {
+      // This method runs on Dispatchers.IO. Use the ViewModel state flow instead of asking the
+      // Media3 host, whose ExoPlayer instance is main-thread confined.
+      val nativeActive = nativeEngineActive.value
       val uriString = uri.toString()
       val nativeAlreadyRegistered =
         nativeExternalSubtitleTracks.value.any { it.externalFilename == uriString }
-      if (_externalSubtitles.contains(uriString) && (!host.isNativeEngineActive() || nativeAlreadyRegistered)) {
+      if (_externalSubtitles.contains(uriString) && (!nativeActive || nativeAlreadyRegistered)) {
         android.util.Log.d("PlayerViewModel", "Subtitle already tracked, skipping: $uriString")
         return@withLock
       }
@@ -2790,7 +2793,7 @@ class PlayerViewModel : ViewModel(),
         val mpvPath = uri.resolveUri(appContext) ?: uri.toString()
         val mode = if (select) "select" else "auto"
 
-        if (host.isNativeEngineActive()) {
+        if (nativeActive) {
           val attached = withContext(Dispatchers.Main) { host.nativeAddSubtitle(uri, select) }
           if (!attached) throw Exception("Native subtitle renderer is not ready")
           if (!_externalSubtitles.contains(uriString)) _externalSubtitles.add(uriString)
@@ -2838,7 +2841,7 @@ class PlayerViewModel : ViewModel(),
       }.onFailure { error ->
         android.util.Log.e(
           "PlayerViewModel",
-          "Failed to load subtitle uri=$uri native=${host.isNativeEngineActive()}",
+          "Failed to load subtitle uri=$uri native=$nativeActive",
           error,
         )
         if (!silent) {
