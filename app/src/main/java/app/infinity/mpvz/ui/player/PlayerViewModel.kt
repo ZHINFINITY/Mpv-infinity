@@ -4081,7 +4081,9 @@ class PlayerViewModel : ViewModel(),
             includeWyzie = includeWyzie,
             includeSubtitleHub = includeSubtitleHub,
             onResults = { results ->
-              _onlineSubtitleSearchResults.value = results
+              if (subtitleSearchJob?.isActive == true) {
+                _onlineSubtitleSearchResults.value = results
+              }
             },
           ).onSuccess { results ->
             _onlineSubtitleSearchResults.value = results
@@ -6793,6 +6795,10 @@ class PlayerViewModel : ViewModel(),
   override fun onCleared() {
     // ViewModel normally cancels this scope after onCleared; cancel it first so dispatcher workers
     // cannot start another callback while the player resources below are being released.
+    subtitleSearchJob?.cancel()
+    subtitleSearchJob = null
+    mediaSearchJob?.cancel()
+    mediaSearchJob = null
     viewModelScope.cancel()
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)

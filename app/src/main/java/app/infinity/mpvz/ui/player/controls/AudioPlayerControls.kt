@@ -398,13 +398,13 @@ private fun AudioVisualizerViewport(
   onLongClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val surface = MaterialTheme.colorScheme.surface
   BoxWithConstraints(
     modifier =
       modifier
         .drawWithContent {
           drawContent()
           // Keep the renderer unboxed: dissolve every edge into the album-palette surface.
-          val surface = MaterialTheme.colorScheme.surface
           drawRect(
             brush = Brush.verticalGradient(
               colors = listOf(surface.copy(alpha = 0.92f), surface.copy(alpha = 0.38f), Color.Transparent),
