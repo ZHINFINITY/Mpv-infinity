@@ -958,56 +958,11 @@ fun AudioPlayerControls(
     animationSpec = tween(durationMillis = 800),
     label = "ambient_bottom_color",
   )
-  Box(modifier = modifier.fillMaxSize()) {
-    if (isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
-      val visualizerFadeColor = MaterialTheme.colorScheme.background
-      Box(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.72f)
-            .align(Alignment.TopCenter),
-      ) {
-        AudioVisualizerViewport(
-          style = audioVisualizerStyle,
-          palette = visualizerPalette,
-          isPlaying = isPlaying,
-          isSheetOpen = isSheetOpen,
-          volumeScale = volumeScale,
-          features = visualizerFeatures,
-          onClick = viewModel::toggleAudioVisualizer,
-          onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-          modifier = Modifier.fillMaxSize(),
-        )
-        Box(
-          modifier =
-            Modifier
-              .fillMaxWidth()
-              .fillMaxHeight(0.24f)
-              .align(Alignment.BottomCenter)
-              .drawWithCache {
-                val fade =
-                  Brush.verticalGradient(
-                    colors =
-                      listOf(
-                        Color.Transparent,
-                        visualizerFadeColor.copy(alpha = 0.72f),
-                        visualizerFadeColor,
-                      ),
-                  )
-                onDrawWithContent {
-                  drawContent()
-                  drawRect(fade)
-                }
-              },
-        )
-      }
-    }
-    Box(
-      modifier =
-        modifier
-          .fillMaxSize()
-          .drawWithCache {
+  Box(
+    modifier =
+      modifier
+        .fillMaxSize()
+        .drawWithCache {
           if (albumArtBitmap != null && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
@@ -1039,22 +994,16 @@ fun AudioPlayerControls(
         }
         .windowInsetsPadding(WindowInsets.safeDrawing)
         .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
-        .then(
-          if (isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
-            Modifier
-          } else {
-            Modifier.pointerInput(Unit) {
-              var totalDrag = 0f
-              detectVerticalDragGestures(
-                onDragStart = { totalDrag = 0f },
-                onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
-                onDragEnd = {
-                  if (totalDrag > 160f) onBackPress()
-                },
-              )
-            }
-          },
-        ),
+        .pointerInput(Unit) {
+          var totalDrag = 0f
+          detectVerticalDragGestures(
+            onDragStart = { totalDrag = 0f },
+            onVerticalDrag = { _, dragAmount -> totalDrag += dragAmount },
+            onDragEnd = {
+              if (totalDrag > 160f) onBackPress()
+            },
+          )
+        },
   ) {
     val headerBar = @Composable {
       Box(modifier = Modifier.fillMaxWidth()) {
@@ -1954,9 +1903,7 @@ fun AudioPlayerControls(
           }
         }
 
-        if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
-          Spacer(modifier = Modifier.weight(1f).fillMaxWidth())
-        } else if (showInPlaceLyrics && !isStandbyActive) {
+        if (showInPlaceLyrics && !isStandbyActive) {
           centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
           val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
@@ -2114,7 +2061,6 @@ fun AudioPlayerControls(
         onSuccess = { addToPlaylistDialogOpen = false },
         isJellyfin = isJellyfinMedia,
       )
-    }
     }
   }
 }
