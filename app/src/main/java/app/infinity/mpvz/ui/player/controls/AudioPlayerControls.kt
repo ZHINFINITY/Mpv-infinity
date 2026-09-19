@@ -121,10 +121,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -411,100 +412,72 @@ private fun AudioVisualizerViewport(
     contentAlignment = Alignment.Center,
   ) {
     val rendererModifier =
-      Modifier.fillMaxSize()
+      Modifier
+        .fillMaxSize()
+        .then(
+          if (style == AudioVisualizerStyle.Cuboid) {
+            Modifier
+              .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+              .drawWithCache {
+                val bottomFade =
+                  Brush.verticalGradient(
+                    0f to Color.White,
+                    0.78f to Color.White,
+                    1f to Color.Transparent,
+                    startY = 0f,
+                    endY = size.height,
+                  )
+                onDrawWithContent {
+                  drawContent()
+                  drawRect(brush = bottomFade, blendMode = BlendMode.DstIn)
+                }
+              }
+          } else {
+            Modifier
+          },
+        )
         .graphicsLayer {
           scaleX = 1.03f
           scaleY = 1.03f
         }
 
-    val boundaryFadeColor = MaterialTheme.colorScheme.surface
-    Box(
-      modifier =
-        Modifier
-          .fillMaxSize()
-          .drawWithContent {
-            drawContent()
-
-            drawRect(
-              brush =
-                Brush.verticalGradient(
-                  colors =
-                    listOf(
-                      boundaryFadeColor.copy(alpha = 0.95f),
-                      boundaryFadeColor.copy(alpha = 0.45f),
-                      Color.Transparent,
-                    ),
-                  startY = 0f,
-                  endY = size.height * 0.22f,
-                ),
-            )
-            drawRect(
-              brush =
-                Brush.verticalGradient(
-                  colors =
-                    listOf(
-                      Color.Transparent,
-                      boundaryFadeColor.copy(alpha = 0.50f),
-                      boundaryFadeColor.copy(alpha = 0.96f),
-                    ),
-                  startY = size.height * 0.72f,
-                  endY = size.height,
-                ),
-            )
-            drawRect(
-              brush =
-                Brush.horizontalGradient(
-                  colors =
-                    listOf(
-                      boundaryFadeColor.copy(alpha = 0.60f),
-                      Color.Transparent,
-                      Color.Transparent,
-                      boundaryFadeColor.copy(alpha = 0.60f),
-                    ),
-                  startX = 0f,
-                  endX = size.width,
-                ),
-            )
-          },
-    ) {
-      when (style) {
-        AudioVisualizerStyle.Galaxy ->
-          GalaxyOverlay(
-            palette = palette,
-            isSheetOpen = isSheetOpen,
-            volumeScale = volumeScale,
-            features = features,
-            modifier = rendererModifier,
-          )
-        AudioVisualizerStyle.Blob ->
-          BlobOverlay(
-            palette = palette,
-            isSheetOpen = isSheetOpen,
-            volumeScale = volumeScale,
-            features = features,
-            modifier = rendererModifier,
-          )
-        AudioVisualizerStyle.Cuboid ->
-          CuboidOverlay(
-            isPlaying = isPlaying,
-            palette = palette,
-            isSheetOpen = isSheetOpen,
-            volumeScale = volumeScale,
-            features = features,
-            modifier = rendererModifier,
-          )
-        AudioVisualizerStyle.Particle ->
-          ParticleOverlay(
-            palette = palette,
-            isSheetOpen = isSheetOpen,
-            volumeScale = volumeScale,
-            features = features,
-            modifier = rendererModifier,
-          )
-      }
+    when (style) {
+      AudioVisualizerStyle.Galaxy ->
+        GalaxyOverlay(
+          palette = palette,
+          isSheetOpen = isSheetOpen,
+          volumeScale = volumeScale,
+          features = features,
+          modifier = rendererModifier,
+        )
+      AudioVisualizerStyle.Blob ->
+        BlobOverlay(
+          palette = palette,
+          isSheetOpen = isSheetOpen,
+          volumeScale = volumeScale,
+          features = features,
+          modifier = rendererModifier,
+        )
+      AudioVisualizerStyle.Cuboid ->
+        CuboidOverlay(
+          isPlaying = isPlaying,
+          palette = palette,
+          isSheetOpen = isSheetOpen,
+          volumeScale = volumeScale,
+          features = features,
+          modifier = rendererModifier,
+        )
+      AudioVisualizerStyle.Particle ->
+        ParticleOverlay(
+          palette = palette,
+          isSheetOpen = isSheetOpen,
+          volumeScale = volumeScale,
+          features = features,
+          modifier = rendererModifier,
+        )
     }
-
   }
+}
 }
 
 /** Compose Canvas visualizers need scoped spectrum capture outside VisualizerOverlay. */
