@@ -401,11 +401,10 @@ private fun AudioVisualizerViewport(
   BoxWithConstraints(
     modifier =
       modifier
-        .clipToBounds()
         .drawWithContent {
           drawContent()
           // Keep the renderer unboxed: dissolve every edge into the album-palette surface.
-          val surface = Color(palette.background)
+          val surface = MaterialTheme.colorScheme.surface
           drawRect(
             brush = Brush.verticalGradient(
               colors = listOf(surface.copy(alpha = 0.92f), surface.copy(alpha = 0.38f), Color.Transparent),
@@ -436,12 +435,7 @@ private fun AudioVisualizerViewport(
         ),
     contentAlignment = Alignment.Center,
   ) {
-    val rendererModifier =
-      Modifier.fillMaxSize()
-        .graphicsLayer {
-          scaleX = 1.03f
-          scaleY = 1.03f
-        }
+    val rendererModifier = Modifier.fillMaxSize()
     Canvas(modifier = Modifier.fillMaxSize()) {
       drawCircle(
         brush = Brush.radialGradient(
@@ -1001,6 +995,7 @@ fun AudioPlayerControls(
     modifier =
       modifier
         .fillMaxSize()
+        .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
           val paletteBackground = Color(visualizerPalette.background)
           onDrawBehind {
@@ -1159,7 +1154,6 @@ fun AudioPlayerControls(
       BoxWithConstraints(
         modifier =
           visualizerModifier
-            .clipToBounds()
             .then(
               if (showVisualizer || showInPlaceLyrics) {
                 Modifier
