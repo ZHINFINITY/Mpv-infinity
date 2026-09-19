@@ -971,6 +971,10 @@ fun AudioPlayerControls(
       modifier
         .fillMaxSize()
         .drawWithCache {
+          val paletteBackground = Color(visualizerPalette.background)
+          onDrawBehind {
+            drawRect(paletteBackground)
+          }
           if (ambientModeEnabled && audioPaletteBackground && albumArtBitmap != null &&
           (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
         ) {
@@ -1986,7 +1990,7 @@ fun AudioPlayerControls(
           Surface(
             modifier = Modifier
               .fillMaxWidth()
-              .padding(horizontal = if (edgeToEdgeVisualizer) 0.dp else 12.dp),
+              .padding(horizontal = 12.dp),
             shape = RoundedCornerShape(28.dp),
             color = Color.Transparent,
             tonalElevation = 0.dp,
@@ -1995,8 +1999,7 @@ fun AudioPlayerControls(
             Column(
               horizontalAlignment = Alignment.CenterHorizontally,
               modifier = Modifier
-                .padding(horizontal = 14.dp, vertical = 10.dp)
-                .padding(horizontal = controlsSidePadding),
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
               Spacer(modifier = Modifier.height(16.dp))
               if (!edgeToEdgeVisualizer) {
