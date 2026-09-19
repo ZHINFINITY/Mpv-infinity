@@ -47,10 +47,6 @@ internal class ParticleVisualizerView(
   }
 
   override fun onTouchEvent(event: MotionEvent): Boolean {
-    if (event.y > height * 0.72f) {
-      parent?.requestDisallowInterceptTouchEvent(false)
-      return false
-    }
     when (event.actionMasked) {
       MotionEvent.ACTION_DOWN -> {
         parent?.requestDisallowInterceptTouchEvent(true)
