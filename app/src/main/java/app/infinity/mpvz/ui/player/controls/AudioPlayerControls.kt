@@ -399,6 +399,22 @@ private fun Modifier.expandVisualizerHorizontally(inset: Dp): Modifier =
     }
   }
 
+private fun Modifier.expandVisualizerVertically(
+  top: Dp,
+  bottom: Dp,
+): Modifier =
+  layout { measurable, constraints ->
+    val topPx = top.roundToPx()
+    val bottomPx = bottom.roundToPx()
+    val expandedHeight =
+      if (constraints.maxHeight == Constraints.Infinity) constraints.maxHeight
+      else constraints.maxHeight + topPx + bottomPx
+    val placeable = measurable.measure(constraints.copy(minHeight = expandedHeight, maxHeight = expandedHeight))
+    layout(constraints.maxWidth, constraints.maxHeight) {
+      placeable.place(0, -topPx)
+    }
+  }
+
 @Composable
 private fun AudioVisualizerViewport(
   style: AudioVisualizerStyle,
@@ -1899,14 +1915,7 @@ fun AudioPlayerControls(
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
     if (isPortrait) {
-      Box(modifier = Modifier.fillMaxSize()) {
-        if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
-          centerVisualizerView(
-            Modifier.fillMaxSize().expandVisualizerHorizontally(16.dp),
-            false,
-          )
-        }
-        Column(
+      Column(
         modifier = Modifier
           .fillMaxSize()
           .clickable(
@@ -1928,14 +1937,17 @@ fun AudioPlayerControls(
           }
         }
 
-        if (showInPlaceLyrics && !isStandbyActive) {
-          centerVisualizerView(
-            Modifier.weight(1f).fillMaxWidth().expandVisualizerHorizontally(16.dp),
-            false,
-          )
-        } else {
-          Spacer(modifier = Modifier.weight(1f).fillMaxWidth())
-        }
+        centerVisualizerView(
+          Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .expandVisualizerHorizontally(16.dp)
+            .then(
+              if (showInPlaceLyrics) Modifier
+              else Modifier.expandVisualizerVertically(top = 120.dp, bottom = 96.dp),
+            ),
+          false,
+        )
         if (isStandbyActive) {
           seekbarView()
         }
@@ -1966,7 +1978,6 @@ fun AudioPlayerControls(
           }
           }
         }
-      }
       }
     } else if (false && isTabletLandscape) {
       Row(
