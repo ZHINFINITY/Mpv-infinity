@@ -947,7 +947,7 @@ fun AudioPlayerControls(
     key2 = ambientModeEnabled,
     key3 = audioPaletteBackground,
   ) {
-    if (!ambientModeEnabled || !audioPaletteBackground || albumArtBitmap == null) {
+    if (!ambientModeEnabled || albumArtBitmap == null) {
       value = null
       return@produceState
     }
@@ -976,9 +976,17 @@ fun AudioPlayerControls(
   }
 
   val targetTopColor =
-    ambientColors?.first ?: Color(visualizerPalette.primary).copy(alpha = 0.38f)
+    if (ambientModeEnabled && (!showVisualizer || showInPlaceLyrics)) {
+      ambientColors?.first ?: Color.Transparent
+    } else {
+      Color.Transparent
+    }
   val targetBottomColor =
-    ambientColors?.second ?: Color(visualizerPalette.secondary).copy(alpha = 0.30f)
+    if (ambientModeEnabled && (!showVisualizer || showInPlaceLyrics)) {
+      ambientColors?.second ?: Color.Transparent
+    } else {
+      Color.Transparent
+    }
 
   val animatedAmbientTop: Color by animateColorAsState(
     targetValue = targetTopColor,
@@ -997,15 +1005,9 @@ fun AudioPlayerControls(
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
-          val paletteBackground = Color(visualizerPalette.background)
-          onDrawBehind {
-            if (audioPaletteBackground && albumArtBitmap != null) {
-              drawRect(paletteBackground)
-            }
-          }
-          if (ambientModeEnabled && audioPaletteBackground && albumArtBitmap != null &&
-          (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
-        ) {
+          if (ambientModeEnabled && (!showVisualizer || showInPlaceLyrics) &&
+            (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
+          ) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
             val radialGradient = Brush.radialGradient(
