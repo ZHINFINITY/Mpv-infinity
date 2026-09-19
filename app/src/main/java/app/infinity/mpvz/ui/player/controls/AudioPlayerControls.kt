@@ -414,28 +414,21 @@ private fun AudioVisualizerViewport(
     val rendererModifier =
       Modifier
         .fillMaxSize()
-        .then(
-          if (style == AudioVisualizerStyle.Cuboid) {
-            Modifier
-              .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-              .drawWithCache {
-                val bottomFade =
-                  Brush.verticalGradient(
-                    0f to Color.White,
-                    0.78f to Color.White,
-                    1f to Color.Transparent,
-                    startY = 0f,
-                    endY = size.height,
-                  )
-                onDrawWithContent {
-                  drawContent()
-                  drawRect(brush = bottomFade, blendMode = BlendMode.DstIn)
-                }
-              }
-          } else {
-            Modifier
-          },
-        )
+        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithCache {
+          val bottomFade =
+            Brush.verticalGradient(
+              0f to Color.White,
+              0.78f to Color.White,
+              1f to Color.Transparent,
+              startY = 0f,
+              endY = size.height,
+            )
+          onDrawWithContent {
+            drawContent()
+            drawRect(brush = bottomFade, blendMode = BlendMode.DstIn)
+          }
+        }
         .graphicsLayer {
           scaleX = 1.03f
           scaleY = 1.03f
