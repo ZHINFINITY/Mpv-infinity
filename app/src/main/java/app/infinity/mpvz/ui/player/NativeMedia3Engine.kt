@@ -40,6 +40,7 @@ import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.kt.withAssMkvSupport
+import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -139,16 +140,13 @@ class NativeMedia3Engine(context: Context) {
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(
-      LibassRenderersFactory(
-        context.applicationContext,
-        { ensureLibassRenderer() },
-        { positionUs -> subtitleOverlay?.setPositionUs(positionUs) },
-      )
+      DefaultRenderersFactory(context.applicationContext)
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
         // devices reject the first candidate even though a compatible Media3 decoder is available.
-        .setEnableDecoderFallback(true),
+        .setEnableDecoderFallback(true)
+        .withAssSupport(assHandler),
     )
     .build()
   private var attachedView: PlayerView? = null
@@ -304,6 +302,7 @@ class NativeMedia3Engine(context: Context) {
     attachedView?.player = null
     attachedView = view
     subtitleOverlay = view.rootView.findViewById(R.id.media3_subtitle_overlay)
+    view.subtitleView?.withAssSupport(assHandler)
     ensureLibassRenderer()
     // SurfaceView is composed in a separate layer and can cover normal sibling Views. Mark it as
     // a media layer so the standalone libass bitmap remains visible above the video surface.
