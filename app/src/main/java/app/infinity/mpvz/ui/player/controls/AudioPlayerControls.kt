@@ -120,7 +120,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -130,6 +129,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -138,6 +138,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.offset
@@ -385,6 +386,18 @@ private fun artworkVisualizerPalette(
     tertiary = ColorUtils.blendARGB(materialPalette.tertiary, artworkTones.tertiary, 0.58f),
   )
 }
+
+private fun Modifier.expandVisualizerHorizontally(inset: Dp): Modifier =
+  layout { measurable, constraints ->
+    val insetPx = inset.roundToPx()
+    val expandedWidth =
+      if (constraints.maxWidth == Constraints.Infinity) constraints.maxWidth
+      else constraints.maxWidth + insetPx * 2
+    val placeable = measurable.measure(constraints.copy(minWidth = expandedWidth, maxWidth = expandedWidth))
+    layout(constraints.maxWidth, placeable.height) {
+      placeable.place(-insetPx, 0)
+    }
+  }
 
 @Composable
 private fun AudioVisualizerViewport(
@@ -946,18 +959,8 @@ fun AudioPlayerControls(
     }
   }
 
-  val targetTopColor =
-    if (ambientModeEnabled && (!showVisualizer || showInPlaceLyrics)) {
-      ambientColors?.first ?: Color.Transparent
-    } else {
-      Color.Transparent
-    }
-  val targetBottomColor =
-    if (ambientModeEnabled && (!showVisualizer || showInPlaceLyrics)) {
-      ambientColors?.second ?: Color.Transparent
-    } else {
-      Color.Transparent
-    }
+  val targetTopColor = if (ambientModeEnabled) ambientColors?.first ?: Color.Transparent else Color.Transparent
+  val targetBottomColor = if (ambientModeEnabled) ambientColors?.second ?: Color.Transparent else Color.Transparent
 
   val animatedAmbientTop: Color by animateColorAsState(
     targetValue = targetTopColor,
@@ -976,7 +979,7 @@ fun AudioPlayerControls(
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
-          if (ambientModeEnabled && (!showVisualizer || showInPlaceLyrics) &&
+          if (ambientModeEnabled &&
             (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
           ) {
             val topColor = animatedAmbientTop
@@ -1919,9 +1922,13 @@ fun AudioPlayerControls(
         }
 
         if (showInPlaceLyrics && !isStandbyActive) {
-          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
+          centerVisualizerView(
+            Modifier.weight(1f).fillMaxWidth().expandVisualizerHorizontally(16.dp),
+            false,
+          )
         } else {
-          val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
+          val visualizerModifier =
+            Modifier.weight(1f).fillMaxWidth().expandVisualizerHorizontally(16.dp)
           centerVisualizerView(visualizerModifier, false)
         }
         if (isStandbyActive) {

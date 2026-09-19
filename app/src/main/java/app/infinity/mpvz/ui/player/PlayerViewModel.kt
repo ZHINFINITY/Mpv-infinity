@@ -3987,9 +3987,16 @@ class PlayerViewModel : ViewModel(),
   // --- Subtitle Search ---
   private var subtitleSearchJob: Job? = null
 
+  private fun subtitleSearchMediaTitle(): String {
+    currentMediaTitle.takeIf { it.isNotBlank() }?.let { return it }
+    val source = host.currentMediaLookupHint().orEmpty()
+    val uriName = runCatching { Uri.decode(Uri.parse(source).lastPathSegment.orEmpty()) }.getOrDefault("")
+    return uriName.substringAfterLast('/').takeIf { it.isNotBlank() } ?: source
+  }
+
   fun searchOnlineSubtitles(query: String) {
     val queryInfo = MediaInfoParser.parse(query)
-    val fileInfo = MediaInfoParser.parse(currentMediaTitle)
+    val fileInfo = MediaInfoParser.parse(subtitleSearchMediaTitle())
     val searchTitle = queryInfo.title.ifBlank { query.trim() }.ifBlank { fileInfo.title }
     if (searchTitle.isBlank()) return
 
@@ -4045,19 +4052,20 @@ class PlayerViewModel : ViewModel(),
   ) {
     subtitleSearchJob?.cancel()
     _onlineSubtitleSearchResults.value = emptyList()
+    val effectiveQuery = query.ifBlank { subtitleSearchMediaTitle() }
     subtitleSearchJob =
       viewModelScope.launch {
         _isSearchingSub.value = true
-        val cleanSubHubTitle = MediaInfoParser.parse(query).title.ifBlank { query.trim() }
+        val cleanSubHubTitle = MediaInfoParser.parse(effectiveQuery).title.ifBlank { effectiveQuery.trim() }
         val lookupHints = host.currentPlayerLookupHints()
-        val lookupTitle = lookupHints.canonicalTitle ?: currentMediaTitle
+        val lookupTitle = lookupHints.canonicalTitle ?: subtitleSearchMediaTitle()
         val cleanLookupTitle = MediaInfoParser.parse(lookupTitle).title.ifBlank { lookupTitle.trim() }
         val matchesCurrentLookup =
           cleanLookupTitle.equals(cleanSubHubTitle, ignoreCase = true) ||
             (tmdbId != null && tmdbId == lookupHints.tmdbId)
         val wyzieRequest =
           OnlineSubtitleSearchRequest(
-            query = query,
+            query = effectiveQuery,
             tmdbId = tmdbId,
             season = season,
             episode = episode,
