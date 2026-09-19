@@ -960,6 +960,7 @@ fun AudioPlayerControls(
   )
   Box(modifier = modifier.fillMaxSize()) {
     if (isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
+      val visualizerFadeColor = MaterialTheme.colorScheme.background
       Box(
         modifier =
           Modifier
@@ -990,8 +991,8 @@ fun AudioPlayerControls(
                     colors =
                       listOf(
                         Color.Transparent,
-                        MaterialTheme.colorScheme.background.copy(alpha = 0.72f),
-                        MaterialTheme.colorScheme.background,
+                        visualizerFadeColor.copy(alpha = 0.72f),
+                        visualizerFadeColor,
                       ),
                   )
                 onDrawWithContent {
