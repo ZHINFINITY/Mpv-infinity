@@ -1721,7 +1721,12 @@ fun PlayerControls(
                 precisePosition
               }
             val displayedSeekbarDuration =
-              if (nativeEngineActive) nativeSnapshot.durationMs / 1000f
+              if (nativeEngineActive) {
+                nativeSnapshot.durationMs.takeIf { it > 0L }?.div(1000f)
+                  ?: preciseDuration.takeIf { it > 0 }
+                  ?: duration?.toFloat()
+                  ?: 0f
+              }
               else if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
             // Memoize the immutable copies so they are not reallocated on every position
             // tick (this scope recomposes ~20x/sec while scrubbing).

@@ -172,6 +172,7 @@ class NativeMedia3Engine(context: Context) {
   private val loopHandler = Handler(Looper.getMainLooper())
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
+  private var lastKnownDurationMs: Long = 0L
   private var pendingExternalSelectionId: String? = null
   private val seekRunnable = Runnable {
     val positionMs = pendingSeekPositionMs ?: return@Runnable
@@ -619,6 +620,7 @@ class NativeMedia3Engine(context: Context) {
     sourceUri: Uri? = null,
   ) {
     _hasRenderedFirstFrame.value = false
+    lastKnownDurationMs = 0L
     pendingExternalSelectionId = null
     externalAssEnabled.clear()
     libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
@@ -915,12 +917,16 @@ class NativeMedia3Engine(context: Context) {
       ?.getTrackFormat(0)
     val audio = groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
       ?.getTrackFormat(0)
+    val reportedDurationMs = player.duration
+      .takeIf { it != C.TIME_UNSET && it > 0L }
+      ?.also { lastKnownDurationMs = it }
+      ?: lastKnownDurationMs
     _snapshot.value = NativePlaybackSnapshot(
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
-      durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
+      durationMs = reportedDurationMs,
       videoWidth = video?.width ?: 0,
       videoHeight = video?.height ?: 0,
       videoMimeType = video?.sampleMimeType,
@@ -940,12 +946,16 @@ class NativeMedia3Engine(context: Context) {
   /** Publishes only rapidly changing playback values; track/metadata enumeration is expensive. */
   private fun publishPlaybackSnapshot() {
     val previous = _snapshot.value
+    val reportedDurationMs = player.duration
+      .takeIf { it != C.TIME_UNSET && it > 0L }
+      ?.also { lastKnownDurationMs = it }
+      ?: lastKnownDurationMs
     _snapshot.value = previous.copy(
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
       isBuffering = player.playbackState == Player.STATE_BUFFERING,
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
-      durationMs = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
+      durationMs = reportedDurationMs,
       speed = player.playbackParameters.speed,
     )
   }
