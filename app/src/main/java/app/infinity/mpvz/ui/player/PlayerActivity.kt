@@ -530,6 +530,8 @@ class PlayerActivity :
 
   @Volatile private var isAdvancingAtEof = false
   @Volatile private var nativeEofHandled = false
+  /** Native and MPV use different audio-track identifiers across an engine handoff. */
+  @Volatile private var forceMpvAudioTrackAutoOnNextLoad = false
 
   @Volatile private var playWhenFileLoaded = false
   private var pendingVideoParamRefreshRequiresShaderReload = false
@@ -894,6 +896,7 @@ class PlayerActivity :
             } else if (mpvInitialized) {
               activeEngineMode = PlaybackEngineMode.MPV
               viewModel.setNativeEngineActive(false)
+              forceMpvAudioTrackAutoOnNextLoad = outgoingEngine == PlaybackEngineMode.NATIVE
               // Remove the Native ambient frame/presentation before MPV owns the surface.
               viewModel.setAmbientLifecycleActive(false)
               setVideoAmbientPresentationActive(false)
@@ -4783,6 +4786,12 @@ class PlayerActivity :
 
         // Apply track selection logic (defaults only apply when no saved state)
         trackSelector.onFileLoaded(hasState)
+        if (activeEngineMode == PlaybackEngineMode.MPV && forceMpvAudioTrackAutoOnNextLoad) {
+          // A saved Native track id is not valid for MPV and can leave the handoff silent.
+          runCatching { PlaybackSession.setPropertyString("aid", "auto") }
+          runCatching { PlaybackSession.setPropertyBoolean("mute", false) }
+          forceMpvAudioTrackAutoOnNextLoad = false
+        }
 
         // Apply default zoom only if there's no saved state
         if (!hasState) {
