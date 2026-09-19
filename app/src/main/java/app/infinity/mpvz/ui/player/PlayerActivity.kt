@@ -6182,6 +6182,10 @@ class PlayerActivity :
       if (requiresYtdlp || selectedEngine != PlaybackEngineMode.NATIVE) {
         activeEngineMode = PlaybackEngineMode.MPV
         viewModel.setNativeEngineActive(false)
+        // Remove the ambient frame before MPV binds its SurfaceView. Re-enabling it is deferred
+        // until the MPV surface is ready, avoiding a one-frame scale/deformation during startup.
+        viewModel.setAmbientLifecycleActive(false)
+        setVideoAmbientPresentationActive(false)
         nativeEngine.stop()
         binding.media3Player.alpha = 0f
         binding.player.visibility = View.VISIBLE

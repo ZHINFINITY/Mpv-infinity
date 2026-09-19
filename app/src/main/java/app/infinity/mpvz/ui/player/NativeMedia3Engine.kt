@@ -375,6 +375,9 @@ class NativeMedia3Engine(context: Context) {
     }
     val configuration = MediaItem.SubtitleConfiguration.Builder(uri)
       .setId("external:$uri")
+      // Keep the identity available even when an ASS/SSA parser replaces the Format id.
+      // The snapshot code uses this marker to keep the track in the external section only.
+      .setLabel("external:$uri")
       .setMimeType(mimeType)
       .setSelectionFlags(if (select) C.SELECTION_FLAG_DEFAULT else 0)
       .build()
@@ -410,7 +413,10 @@ class NativeMedia3Engine(context: Context) {
       .flatMap { group ->
         (0 until group.length).asSequence().map { index -> group to index }
       }
-      .firstOrNull { (group, index) -> group.getTrackFormat(index).id == id }
+      .firstOrNull { (group, index) ->
+        val format = group.getTrackFormat(index)
+        format.id == id || format.label == id
+      }
       ?: return null
     val group = match.first
     val trackIndex = match.second
@@ -444,7 +450,10 @@ class NativeMedia3Engine(context: Context) {
       .asSequence()
       .filter { it.type == C.TRACK_TYPE_TEXT }
       .flatMap { group -> (0 until group.length).asSequence().map { group to it } }
-      .firstOrNull { (group, index) -> group.getTrackFormat(index).id == id }
+      .firstOrNull { (group, index) ->
+        val format = group.getTrackFormat(index)
+        format.id == id || format.label == id
+      }
       ?: return
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
@@ -875,14 +884,25 @@ class NativeMedia3Engine(context: Context) {
         if (group.type != type) return@mapIndexedNotNull null
         (0 until group.length).mapNotNull { trackIndex ->
           val format = group.getTrackFormat(trackIndex)
+          val externalUri = format.id
+            ?.takeIf { it.startsWith("external:") }
+            ?.removePrefix("external:")
+            ?: format.label
+              ?.takeIf { it.startsWith("external:") }
+              ?.removePrefix("external:")
+          val isExternal = externalUri != null
           NativeTrack(
             groupIndex = groupIndex,
             trackIndex = trackIndex,
             type = group.type,
-            label = format.label ?: format.language ?: "$fallback ${trackIndex + 1}",
+            label = if (isExternal) {
+              externalUri.orEmpty().substringAfterLast('/').ifBlank { externalUri.orEmpty() }
+            } else {
+              format.label ?: format.language ?: "$fallback ${trackIndex + 1}"
+            },
             language = format.language,
-            formatId = format.id,
-            external = format.id.orEmpty().startsWith("external:"),
+            formatId = externalUri?.let { "external:$it" } ?: format.id,
+            external = isExternal,
             selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
               true
             } else group.isTrackSelected(trackIndex),
