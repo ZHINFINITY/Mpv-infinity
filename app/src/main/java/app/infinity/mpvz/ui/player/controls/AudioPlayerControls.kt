@@ -399,15 +399,7 @@ private fun AudioVisualizerViewport(
   modifier: Modifier = Modifier,
 ) {
   BoxWithConstraints(
-    modifier =
-      modifier
-        .clipToBounds()
-        .combinedClickable(
-          interactionSource = remember { MutableInteractionSource() },
-          indication = null,
-          onClick = onClick,
-          onLongClick = onLongClick,
-        ),
+    modifier = modifier.clipToBounds(),
     contentAlignment = Alignment.Center,
   ) {
     val rendererModifier =
