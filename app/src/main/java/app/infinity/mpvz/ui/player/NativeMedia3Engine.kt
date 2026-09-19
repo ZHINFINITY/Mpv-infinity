@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import android.util.Log
 import android.view.View
 import android.view.SurfaceView
@@ -355,7 +356,7 @@ class NativeMedia3Engine(context: Context) {
 
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
     val current = player.currentMediaItem?.localConfiguration ?: return false
-    val mimeType = when (uri.toString().substringAfterLast('.', "").lowercase()) {
+    val mimeType = when (subtitleExtension(uri)) {
       "srt" -> "application/x-subrip"
       "vtt" -> "text/vtt"
       "ass", "ssa" -> "text/x-ssa"
@@ -392,6 +393,29 @@ class NativeMedia3Engine(context: Context) {
     player.prepare()
     player.playWhenReady = wasPlaying
     return true
+  }
+
+  /** Content-provider URIs can hide the actual downloaded filename in their last path segment. */
+  private fun subtitleExtension(uri: Uri): String {
+    val uriName = Uri.decode(uri.lastPathSegment.orEmpty())
+    val providerName =
+      if (uri.scheme == "content") {
+        runCatching {
+          appContext.contentResolver
+            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+              val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+              if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            }
+        }.getOrNull().orEmpty()
+      } else {
+        ""
+      }
+    return listOf(providerName, uriName)
+      .firstOrNull { it.substringAfterLast('.', "").lowercase() in setOf("srt", "vtt", "ass", "ssa", "sub") }
+      ?.substringAfterLast('.', "")
+      ?.lowercase()
+      .orEmpty()
   }
 
   fun setSubtitleStyle(
