@@ -127,6 +127,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -1140,7 +1141,7 @@ fun AudioPlayerControls(
       BoxWithConstraints(
         modifier =
           visualizerModifier
-            .clipToBounds()
+            .then(if (edgeToEdgeVisualizer) Modifier else Modifier.clipToBounds())
             .then(
               if (showVisualizer || showInPlaceLyrics) {
                 Modifier
@@ -1921,7 +1922,15 @@ fun AudioPlayerControls(
       ) {
         if (edgeToEdgeVisualizer) {
           Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            centerVisualizerView(Modifier.fillMaxSize(), false)
+            centerVisualizerView(
+              Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                  scaleY = 1.12f
+                  transformOrigin = TransformOrigin(0.5f, 0f)
+                },
+              false,
+            )
             Column(
               modifier =
                 Modifier
