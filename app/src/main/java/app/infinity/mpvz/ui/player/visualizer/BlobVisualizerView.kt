@@ -42,10 +42,6 @@ internal class BlobVisualizerView(
   }
 
   override fun onTouchEvent(event: MotionEvent): Boolean {
-    if (event.y > height * 0.72f) {
-      parent?.requestDisallowInterceptTouchEvent(false)
-      return false
-    }
     val pointerCount = event.pointerCount
     when (event.actionMasked) {
       MotionEvent.ACTION_DOWN -> {

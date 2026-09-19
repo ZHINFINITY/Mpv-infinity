@@ -997,23 +997,6 @@ fun AudioPlayerControls(
           }
         },
   ) {
-    if (showVisualizer && !showInPlaceLyrics && !isStandbyActive) {
-      AudioVisualizerViewport(
-        style = audioVisualizerStyle,
-        palette = visualizerPalette,
-        isPlaying = isPlaying,
-        isSheetOpen = isSheetOpen,
-        volumeScale = volumeScale,
-        features = visualizerFeatures,
-        onClick = viewModel::toggleAudioVisualizer,
-        onLongClick = { onOpenSheet(Sheets.VisualizerStyle) },
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.72f)
-            .align(Alignment.TopCenter),
-      )
-    }
     Box(
       modifier =
         Modifier
@@ -1929,13 +1912,11 @@ fun AudioPlayerControls(
           }
         }
 
-        if (showVisualizer && !showInPlaceLyrics) {
-          Spacer(modifier = Modifier.weight(1f).fillMaxWidth())
+        if (showInPlaceLyrics && !isStandbyActive) {
+          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
-          centerVisualizerView(
-            Modifier.weight(1f).fillMaxWidth(),
-            false,
-          )
+          val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
+          centerVisualizerView(visualizerModifier, false)
         }
         if (isStandbyActive) {
           seekbarView()
@@ -1946,16 +1927,7 @@ fun AudioPlayerControls(
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
-          Surface(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(horizontal = 12.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = Color.Transparent,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-          ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+          Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(modifier = Modifier.height(16.dp))
             trackMetadataView()
             Spacer(modifier = Modifier.height(16.dp))
@@ -1964,7 +1936,6 @@ fun AudioPlayerControls(
             playbackControlsRow()
             Spacer(modifier = Modifier.height(24.dp))
             bottomActionRow()
-          }
           }
         }
       }
