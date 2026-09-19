@@ -398,35 +398,10 @@ private fun AudioVisualizerViewport(
   onLongClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val surface = MaterialTheme.colorScheme.surface
   BoxWithConstraints(
     modifier =
       modifier
-        .drawWithContent {
-          drawContent()
-          // Keep the renderer unboxed: dissolve every edge into the album-palette surface.
-          drawRect(
-            brush = Brush.verticalGradient(
-              colors = listOf(surface.copy(alpha = 0.92f), surface.copy(alpha = 0.38f), Color.Transparent),
-              startY = 0f,
-              endY = size.height * 0.20f,
-            ),
-          )
-          drawRect(
-            brush = Brush.verticalGradient(
-              colors = listOf(Color.Transparent, surface.copy(alpha = 0.38f), surface.copy(alpha = 0.94f)),
-              startY = size.height * 0.78f,
-              endY = size.height,
-            ),
-          )
-          drawRect(
-            brush = Brush.horizontalGradient(
-              colors = listOf(surface.copy(alpha = 0.58f), Color.Transparent, Color.Transparent, surface.copy(alpha = 0.58f)),
-              startX = 0f,
-              endX = size.width,
-            ),
-          )
-        }
+        .clipToBounds()
         .combinedClickable(
           interactionSource = remember { MutableInteractionSource() },
           indication = null,
@@ -435,16 +410,12 @@ private fun AudioVisualizerViewport(
         ),
     contentAlignment = Alignment.Center,
   ) {
-    val rendererModifier = Modifier.fillMaxSize()
-    Canvas(modifier = Modifier.fillMaxSize()) {
-      drawCircle(
-        brush = Brush.radialGradient(
-          colors = listOf(Color(palette.primary).copy(alpha = 0.16f), Color.Transparent),
-          center = center,
-          radius = size.minDimension * 0.90f,
-        ),
-      )
-    }
+    val rendererModifier =
+      Modifier.fillMaxSize()
+        .graphicsLayer {
+          scaleX = 1.03f
+          scaleY = 1.03f
+        }
 
     when (style) {
       AudioVisualizerStyle.Galaxy ->
@@ -1156,6 +1127,7 @@ fun AudioPlayerControls(
       BoxWithConstraints(
         modifier =
           visualizerModifier
+            .clipToBounds()
             .then(
               if (showVisualizer || showInPlaceLyrics) {
                 Modifier
