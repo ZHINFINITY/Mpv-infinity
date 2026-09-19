@@ -1511,6 +1511,22 @@ class PlayerActivity :
         setVideoAmbientPresentationActive(presentationActive, showBackground = presentationActive)
       }
 
+      LaunchedEffect(
+        playbackState.phase,
+        playbackState.surfaceAttached,
+        nativeActive,
+        nativeFrameAvailable,
+      ) {
+        if (!nativeActive &&
+          activeEngineMode == PlaybackEngineMode.MPV &&
+          playbackState.surfaceAttached &&
+          playbackState.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+        ) {
+          viewModel.setAmbientLifecycleActive(true)
+          binding.player.alpha = 1f
+        }
+      }
+
       MpvInfinityTheme {
         if (presentationActive) {
           VideoAmbientBackground(

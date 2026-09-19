@@ -934,25 +934,29 @@ fun AudioPlayerControls(
     key1 = albumArtBitmap,
     key2 = listOf(ambientModeEnabled, audioPaletteBackground, showVisualizer, showInPlaceLyrics),
   ) {
-    if (!audioPaletteBackground || !ambientModeEnabled || showVisualizer || showInPlaceLyrics || albumArtBitmap == null) {
+    if (!audioPaletteBackground || !ambientModeEnabled || albumArtBitmap == null) {
       value = null
       return@produceState
     }
     withContext(Dispatchers.Default) {
       runCatching {
         val palette = Palette.from(albumArtBitmap).maximumColorCount(16).generate()
-        val vibrant = palette.getVibrantColor(
-          palette.getDominantColor(
-            palette.getMutedColor(0)
-          )
-        )
-        val darkVibrant = palette.getDarkVibrantColor(
-          palette.getDarkMutedColor(vibrant)
-        )
-        if (vibrant == 0 && darkVibrant == 0) return@runCatching null
+        val dominant = palette.getDominantColor(0)
+        val muted = palette.getMutedColor(0)
+        val darkMuted = palette.getDarkMutedColor(0)
+        val vibrant = palette.getVibrantColor(0)
+        val darkVibrant = palette.getDarkVibrantColor(0)
+        val base = vibrant.takeIf { it != 0 } ?: dominant.takeIf { it != 0 } ?: muted
+        val accent = darkVibrant.takeIf { it != 0 }
+          ?: muted.takeIf { it != 0 }
+          ?: darkMuted.takeIf { it != 0 }
+          ?: base
+        if (base == 0 && accent == 0) return@runCatching null
 
-        val topColor = Color(if (vibrant != 0) vibrant else darkVibrant).copy(alpha = 0.20f)
-        val bottomColor = Color(if (darkVibrant != 0) darkVibrant else vibrant).copy(alpha = 0.12f)
+        // Keep the extracted colors visibly present over the surface while retaining enough
+        // transparency for foreground controls and artwork to remain readable.
+        val topColor = Color(if (base != 0) base else accent).copy(alpha = 0.62f)
+        val bottomColor = Color(if (accent != 0) accent else base).copy(alpha = 0.46f)
         Pair(topColor, bottomColor)
       }.onSuccess { colors ->
         value = colors
@@ -984,7 +988,7 @@ fun AudioPlayerControls(
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
-          if (audioPaletteBackground && ambientModeEnabled && !showVisualizer && !showInPlaceLyrics &&
+          if (audioPaletteBackground && ambientModeEnabled &&
             (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
@@ -999,8 +1003,8 @@ fun AudioPlayerControls(
             )
             val linearGradient = Brush.verticalGradient(
               colors = listOf(
-                topColor.copy(alpha = topColor.alpha * 0.65f),
-                bottomColor.copy(alpha = bottomColor.alpha * 0.35f),
+                topColor.copy(alpha = topColor.alpha * 0.82f),
+                bottomColor.copy(alpha = bottomColor.alpha * 0.62f),
                 Color.Transparent,
               ),
               startY = 0f,
