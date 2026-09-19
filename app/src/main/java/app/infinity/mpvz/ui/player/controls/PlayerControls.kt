@@ -1733,7 +1733,7 @@ fun PlayerControls(
 
             Box(
               contentAlignment = Alignment.Center,
-              modifier = if (showSeekbarOuterContainer || liquidGlassSurfaces) {
+              modifier = if (showSeekbarOuterContainer) {
                 Modifier
                   .padding(horizontal = if (isPortrait) 8.dp else 6.dp)
                   .fillMaxWidth()

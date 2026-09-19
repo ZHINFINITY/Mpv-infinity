@@ -677,6 +677,14 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun registerNativeExternalSubtitle(uri: Uri, fileName: String, selected: Boolean) {
+    val uriString = uri.toString()
+    if (nativeExternalSubtitleTracks.value.any { it.externalFilename == uriString }) {
+      setNativeExternalSubtitleSelected(
+        nativeExternalSubtitleTracks.value.first { it.externalFilename == uriString }.id,
+        selected,
+      )
+      return
+    }
     val id = -10_000 - nativeExternalSubtitleTracks.value.size
     nativeExternalSubtitleTracks.value = nativeExternalSubtitleTracks.value + TrackNode(
       id = id,
@@ -684,7 +692,7 @@ class PlayerViewModel : ViewModel(),
       title = fileName,
       selected = selected,
       external = true,
-      externalFilename = uri.toString(),
+      externalFilename = uriString,
     )
   }
 

@@ -759,6 +759,7 @@ fun AudioPlayerControls(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
   val audioWavySeekbar by audioPreferences.audioWavySeekbar.collectAsState()
+  val audioPaletteBackground by audioPreferences.audioPaletteBackground.collectAsState()
   val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
@@ -932,8 +933,11 @@ fun AudioPlayerControls(
     initialValue = null,
     key1 = albumArtBitmap,
     key2 = ambientModeEnabled,
+    key3 = audioPaletteBackground,
+    key4 = showVisualizer,
+    key5 = showInPlaceLyrics,
   ) {
-    if (albumArtBitmap == null) {
+    if (!audioPaletteBackground || !ambientModeEnabled || showVisualizer || showInPlaceLyrics || albumArtBitmap == null) {
       value = null
       return@produceState
     }
@@ -961,10 +965,8 @@ fun AudioPlayerControls(
     }
   }
 
-  val targetTopColor =
-    ambientColors?.first ?: Color(visualizerPalette.primary).copy(alpha = 0.38f)
-  val targetBottomColor =
-    ambientColors?.second ?: Color(visualizerPalette.secondary).copy(alpha = 0.30f)
+  val targetTopColor = ambientColors?.first ?: Color.Transparent
+  val targetBottomColor = ambientColors?.second ?: Color.Transparent
 
   val animatedAmbientTop: Color by animateColorAsState(
     targetValue = targetTopColor,
@@ -985,7 +987,8 @@ fun AudioPlayerControls(
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
-          if (albumArtBitmap != null && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
+          if (audioPaletteBackground && ambientModeEnabled && !showVisualizer && !showInPlaceLyrics &&
+            (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
             val radialGradient = Brush.radialGradient(
