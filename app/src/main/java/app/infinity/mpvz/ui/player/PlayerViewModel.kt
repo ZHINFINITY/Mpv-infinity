@@ -676,6 +676,16 @@ class PlayerViewModel : ViewModel(),
     )
   }
 
+  fun setNativeExternalSubtitleSelected(id: Int, selected: Boolean) {
+    nativeExternalSubtitleTracks.value = nativeExternalSubtitleTracks.value.map { track ->
+      if (track.id == id) track.copy(selected = selected) else track
+    }
+  }
+
+  fun clearNativeExternalSubtitles() {
+    nativeExternalSubtitleTracks.value = emptyList()
+  }
+
   fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
     nativeSubtitleVisibilityListener = listener
   }
@@ -2745,7 +2755,9 @@ class PlayerViewModel : ViewModel(),
   ) {
     subtitleAddMutex.withLock {
       val uriString = uri.toString()
-      if (_externalSubtitles.contains(uriString)) {
+      val nativeAlreadyRegistered =
+        nativeExternalSubtitleTracks.value.any { it.externalFilename == uriString }
+      if (_externalSubtitles.contains(uriString) && (!host.isNativeEngineActive() || nativeAlreadyRegistered)) {
         android.util.Log.d("PlayerViewModel", "Subtitle already tracked, skipping: $uriString")
         return@withLock
       }
