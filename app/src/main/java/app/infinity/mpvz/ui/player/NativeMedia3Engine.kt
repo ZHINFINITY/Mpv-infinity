@@ -88,6 +88,8 @@ data class NativeTrack(
   val label: String,
   val language: String?,
   val selected: Boolean,
+  val formatId: String? = null,
+  val external: Boolean = false,
 )
 
 data class NativeChapter(
@@ -170,6 +172,7 @@ class NativeMedia3Engine(context: Context) {
   private val loopHandler = Handler(Looper.getMainLooper())
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
+  private var pendingExternalSelectionId: String? = null
   private val seekRunnable = Runnable {
     val positionMs = pendingSeekPositionMs ?: return@Runnable
     pendingSeekPositionMs = null
@@ -263,6 +266,7 @@ class NativeMedia3Engine(context: Context) {
           Log.d(logTag, "text track group=${group.mediaTrackGroup.id} index=$index selected=${group.isTrackSelected(index)} mime=${format.sampleMimeType} codecs=${format.codecs} label=${format.label} language=${format.language}")
         }
       }
+      applyPendingExternalSelection()
     }
 
     override fun onIsLoadingChanged(isLoading: Boolean) {
@@ -350,12 +354,14 @@ class NativeMedia3Engine(context: Context) {
 
   fun setSubtitleScale(scale: Float) {
     subtitleScale = scale.coerceIn(0.1f, 5f)
-    scheduleSubtitleViewConfiguration()
+    loopHandler.removeCallbacks(subtitleViewRunnable)
+    configureSubtitleView()
   }
 
   fun setSubtitlePosition(position: Int) {
     subtitlePosition = position.coerceIn(0, 150)
-    scheduleSubtitleViewConfiguration()
+    loopHandler.removeCallbacks(subtitleViewRunnable)
+    configureSubtitleView()
   }
 
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
@@ -372,6 +378,13 @@ class NativeMedia3Engine(context: Context) {
       .setMimeType(mimeType)
       .setSelectionFlags(if (select) C.SELECTION_FLAG_DEFAULT else 0)
       .build()
+    if (localConfiguration.subtitleConfigurations.any { it.id == configuration.id }) {
+      if (select) {
+        pendingExternalSelectionId = configuration.id
+        loopHandler.post { applyPendingExternalSelection() }
+      }
+      return true
+    }
     val wasPlaying = player.isPlaying
     val positionMs = player.currentPosition.coerceAtLeast(0L)
     // Keep the original MediaItem (headers, DRM, metadata and stream identity) intact. Rebuilding
@@ -382,6 +395,10 @@ class NativeMedia3Engine(context: Context) {
     player.setMediaItem(updated, positionMs)
     player.prepare()
     player.playWhenReady = wasPlaying
+    if (select) {
+      pendingExternalSelectionId = configuration.id
+      loopHandler.post { applyPendingExternalSelection() }
+    }
     return true
   }
 
@@ -399,11 +416,44 @@ class NativeMedia3Engine(context: Context) {
     val trackIndex = match.second
     val enabled = !group.isTrackSelected(trackIndex)
     val builder = player.trackSelectionParameters.buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !enabled)
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
       .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-    if (enabled) builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+    if (enabled) {
+      builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+    } else {
+      val fallback = player.currentTracks.groups
+        .asSequence()
+        .filter { it.type == C.TRACK_TYPE_TEXT }
+        .flatMap { candidate -> (0 until candidate.length).asSequence().map { candidate to it } }
+        .firstOrNull { (candidate, index) ->
+          candidate !== group && !candidate.getTrackFormat(index).id.orEmpty().startsWith("external:")
+        }
+      if (fallback != null) {
+        builder.addOverride(TrackSelectionOverride(fallback.first.mediaTrackGroup, fallback.second))
+      } else {
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      }
+    }
     player.trackSelectionParameters = builder.build()
     return enabled
+  }
+
+  private fun applyPendingExternalSelection() {
+    val id = pendingExternalSelectionId ?: return
+    val match = player.currentTracks.groups
+      .asSequence()
+      .filter { it.type == C.TRACK_TYPE_TEXT }
+      .flatMap { group -> (0 until group.length).asSequence().map { group to it } }
+      .firstOrNull { (group, index) -> group.getTrackFormat(index).id == id }
+      ?: return
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .addOverride(TrackSelectionOverride(match.first.mediaTrackGroup, match.second))
+      .build()
+    pendingExternalSelectionId = null
+    publishSnapshot()
   }
 
   /** Content-provider URIs can hide the actual downloaded filename in their last path segment. */
@@ -471,8 +521,9 @@ class NativeMedia3Engine(context: Context) {
       android.graphics.Typeface.create(fontFamily?.takeIf { it.isNotBlank() }, typefaceStyle),
     )
     loopHandler.removeCallbacks(subtitleStyleRunnable)
-    loopHandler.postDelayed(subtitleStyleRunnable, 60L)
-    scheduleSubtitleViewConfiguration()
+    applyAssStyle()
+    loopHandler.removeCallbacks(subtitleViewRunnable)
+    configureSubtitleView()
   }
 
   private fun applyAssStyle() {
@@ -559,6 +610,7 @@ class NativeMedia3Engine(context: Context) {
     sourceUri: Uri? = null,
   ) {
     _hasRenderedFirstFrame.value = false
+    pendingExternalSelectionId = null
     externalAssEnabled.clear()
     libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
       libassRenderer?.removeTrack(id)
@@ -829,6 +881,8 @@ class NativeMedia3Engine(context: Context) {
             type = group.type,
             label = format.label ?: format.language ?: "$fallback ${trackIndex + 1}",
             language = format.language,
+            formatId = format.id,
+            external = format.id.orEmpty().startsWith("external:"),
             selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
               true
             } else group.isTrackSelected(trackIndex),

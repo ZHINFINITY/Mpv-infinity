@@ -893,6 +893,9 @@ class PlayerActivity :
             } else if (mpvInitialized) {
               activeEngineMode = PlaybackEngineMode.MPV
               viewModel.setNativeEngineActive(false)
+              // Remove the Native ambient frame/presentation before MPV owns the surface.
+              viewModel.setAmbientLifecycleActive(false)
+              setVideoAmbientPresentationActive(false)
               PlaybackSession.setPropertyBoolean("mute", false)
               binding.media3Player.alpha = 1f
               // Keep MPV's SurfaceView attached while the queue is reloaded. INVISIBLE causes
@@ -960,6 +963,7 @@ class PlayerActivity :
                   binding.media3Player.visibility = View.GONE
                   binding.player.alpha = 1f
                   binding.player.visibility = View.VISIBLE
+                  viewModel.setAmbientLifecycleActive(true)
                 } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
                   binding.media3Player.alpha = 0f
                   binding.media3Player.visibility = View.GONE
@@ -1922,7 +1926,7 @@ class PlayerActivity :
     pendingPipExitResolution = false
     val keepBackgroundPlaybackAlive =
       ownsPlaybackSession && !pipDismissalCommitted && PlayerLifecyclePolicy.shouldKeepBackgroundPlaybackAliveOnDestroy(
-        backgroundPlaybackEnabled = playbackWasInitialized && isBackgroundPlaybackEnabled(),
+        backgroundPlaybackEnabled = (playbackWasInitialized || nativeWasActive) && isBackgroundPlaybackEnabled(),
         backgroundPlaybackSessionActive = isBackgroundPlaybackSessionActive,
       )
 

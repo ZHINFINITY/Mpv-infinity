@@ -623,7 +623,8 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun setNativeTracks(snapshot: NativePlaybackSnapshot) {
-    nativeSubtitleTracks.value = snapshot.subtitleTracks.mapIndexed { index, track ->
+    nativeSubtitleTracks.value = snapshot.subtitleTracks.mapIndexedNotNull { index, track ->
+      if (track.external) return@mapIndexedNotNull null
       TrackNode(
         id = -(index + 1),
         type = "sub",
@@ -632,6 +633,17 @@ class PlayerViewModel : ViewModel(),
         selected = track.selected,
         external = false,
       )
+    }
+    val externalSelection = snapshot.subtitleTracks
+      .filter { it.external }
+      .mapNotNull { track -> track.formatId?.removePrefix("external:")?.let { it to track.selected } }
+      .toMap()
+    if (externalSelection.isNotEmpty()) {
+      nativeExternalSubtitleTracks.value = nativeExternalSubtitleTracks.value.map { track ->
+        track.externalFilename?.let { rawUri ->
+          externalSelection[rawUri]?.let { selected -> track.copy(selected = selected) } ?: track
+        } ?: track
+      }
     }
     nativeAudioTracks.value = snapshot.audioTracks.mapIndexed { index, track ->
       TrackNode(
