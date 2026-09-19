@@ -2048,9 +2048,8 @@ fun PlayerControls(
       viewModel = viewModel,
       sheetShown = sheetShown,
       subtitles = subtitles.toImmutableList(),
-      onAddSubtitle = { uri ->
-        if (nativeEngineActive) activity?.nativeAddSubtitle(uri, true) else viewModel.addSubtitle(uri)
-      },
+      // The ViewModel routes Native additions to Media3 and registers them in the sheet.
+      onAddSubtitle = { uri -> viewModel.addSubtitle(uri) },
       onToggleSubtitle = viewModel::toggleSubtitle,
       isSubtitleSelected = viewModel::isSubtitleSelected,
       subtitleSelectionIndicator = viewModel::subtitleSelectionIndicator,

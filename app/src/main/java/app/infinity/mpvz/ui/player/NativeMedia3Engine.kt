@@ -367,29 +367,6 @@ class NativeMedia3Engine(context: Context) {
       "ass", "ssa" -> "text/x-ssa"
       else -> "text/plain"
     }
-    if (mimeType == "text/x-ssa") {
-      val bytes = runCatching {
-        appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-      }.getOrNull()
-      val renderer = ensureLibassRenderer()
-      if (bytes == null || renderer == null) {
-        Log.e(logTag, "libass track load failed uri=$uri bytes=${bytes?.size ?: 0}")
-        return false
-      }
-      val id = "external:$uri"
-      // External ASS uses the dedicated libass overlay; disable Media3 text tracks first so an
-      // embedded ASS stream cannot remain visible underneath it.
-      disableNativeTextTracks()
-      if (select) disableAssTracks()
-      val added = renderer.addTrack(id, bytes)
-      if (added) {
-        externalAssEnabled[id] = select
-        renderer.setTrackEnabled(id, select)
-      }
-      Log.i(logTag, "libass track id=$id added=$added bytes=${bytes.size} count=${renderer.trackCount}")
-      subtitleOverlay?.visibility = if (added) View.VISIBLE else View.GONE
-      return added
-    }
     val configuration = MediaItem.SubtitleConfiguration.Builder(uri)
       .setId("external:$uri")
       .setMimeType(mimeType)
@@ -410,19 +387,6 @@ class NativeMedia3Engine(context: Context) {
 
   fun toggleExternalSubtitle(uri: Uri): Boolean? {
     val id = "external:$uri"
-    if (subtitleExtension(uri) in setOf("ass", "ssa")) {
-      val renderer = libassRenderer ?: return null
-      if (id !in renderer.getTrackIds().keys) return null
-      val enabled = !(externalAssEnabled[id] ?: false)
-      if (enabled) {
-        disableNativeTextTracks()
-        disableAssTracks()
-      }
-      renderer.setTrackEnabled(id, enabled)
-      externalAssEnabled[id] = enabled
-      subtitleOverlay?.visibility = if (enabled) View.VISIBLE else View.GONE
-      return enabled
-    }
     val match = player.currentTracks.groups
       .asSequence()
       .filter { it.type == C.TRACK_TYPE_TEXT }
