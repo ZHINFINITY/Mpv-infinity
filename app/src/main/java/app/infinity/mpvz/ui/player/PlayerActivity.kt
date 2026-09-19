@@ -989,6 +989,11 @@ class PlayerActivity :
         }
       }
     }
+    viewModel.setNativeExternalSubtitleToggleListener { id ->
+      viewModel.subtitleTracks.value.firstOrNull { it.id == id }?.externalFilename?.let { rawUri ->
+        nativeEngine.toggleExternalSubtitle(Uri.parse(rawUri))
+      }
+    }
     viewModel.setNativeAudioToggleListener { id ->
       if (id <= -1001) {
         nativeEngine.snapshot.value.audioTracks.getOrNull(-1001 - id)?.let(nativeEngine::selectTrack)

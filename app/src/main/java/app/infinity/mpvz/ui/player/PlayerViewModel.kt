@@ -611,10 +611,12 @@ class PlayerViewModel : ViewModel(),
 
   // These MPV-backed state flows must be initialized before any init block collects them.
   private val nativeSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
+  private val nativeExternalSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeAudioTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeEngineActive = MutableStateFlow(false)
   private val nativeChapters = MutableStateFlow<List<Segment>>(emptyList())
   private var nativeSubtitleToggleListener: ((Int) -> Unit)? = null
+  private var nativeExternalSubtitleToggleListener: ((Int) -> Unit)? = null
   private var nativeAudioToggleListener: ((Int) -> Unit)? = null
   fun setNativeEngineActive(active: Boolean) {
     nativeEngineActive.value = active
@@ -658,6 +660,22 @@ class PlayerViewModel : ViewModel(),
     nativeSubtitleToggleListener = listener
   }
 
+  fun setNativeExternalSubtitleToggleListener(listener: ((Int) -> Unit)?) {
+    nativeExternalSubtitleToggleListener = listener
+  }
+
+  fun registerNativeExternalSubtitle(uri: Uri, fileName: String, selected: Boolean) {
+    val id = -10_000 - nativeExternalSubtitleTracks.value.size
+    nativeExternalSubtitleTracks.value = nativeExternalSubtitleTracks.value + TrackNode(
+      id = id,
+      type = "sub",
+      title = fileName,
+      selected = selected,
+      external = true,
+      externalFilename = uri.toString(),
+    )
+  }
+
   fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
     nativeSubtitleVisibilityListener = listener
   }
@@ -689,8 +707,8 @@ class PlayerViewModel : ViewModel(),
       .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val subtitleTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, nativeSubtitleTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, nativeActive, engine ->
-      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isSubtitle }
+    combine(allTracks, nativeSubtitleTracks, nativeExternalSubtitleTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, externalTracks, nativeActive, engine ->
+      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks + externalTracks else tracks.filter { it.isSubtitle }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val audioTracks: StateFlow<List<TrackNode>> =
@@ -2764,6 +2782,7 @@ class PlayerViewModel : ViewModel(),
           val attached = withContext(Dispatchers.Main) { host.nativeAddSubtitle(uri, select) }
           if (!attached) throw Exception("Native subtitle renderer is not ready")
           if (!_externalSubtitles.contains(uriString)) _externalSubtitles.add(uriString)
+          registerNativeExternalSubtitle(uri, fileName, select)
           if (!silent) {
             withContext(Dispatchers.Main) { showToast("$fileName added") }
           }
@@ -3311,6 +3330,7 @@ class PlayerViewModel : ViewModel(),
       videoHashJob?.cancel()
       // Clear external subtitles when media changes
       _externalSubtitles.clear()
+      nativeExternalSubtitleTracks.value = emptyList()
       // Reset subtitle hash when media changes.
       _videoHash.value = null
       scanLocalSubtitles(mediaTitle)
@@ -4174,6 +4194,10 @@ class PlayerViewModel : ViewModel(),
     // is updated. Route the click by the actual active engine, otherwise this would write MPV's
     // sid/sub-visibility properties while Media3 is the visible player.
     if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+      if (id <= -10_000) {
+        nativeExternalSubtitleToggleListener?.invoke(id)
+        return
+      }
       nativeSubtitleToggleListener?.invoke(id)
       return
     }

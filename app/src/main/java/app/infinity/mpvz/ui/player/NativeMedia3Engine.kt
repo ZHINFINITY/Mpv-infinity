@@ -152,6 +152,7 @@ class NativeMedia3Engine(context: Context) {
   private var attachedView: PlayerView? = null
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
+  private val externalAssEnabled = mutableMapOf<String, Boolean>()
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
@@ -355,7 +356,8 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
-    val current = player.currentMediaItem?.localConfiguration ?: return false
+    val current = player.currentMediaItem ?: return false
+    val localConfiguration = current.localConfiguration ?: return false
     val mimeType = when (subtitleExtension(uri)) {
       "srt" -> "application/x-subrip"
       "vtt" -> "text/vtt"
@@ -374,7 +376,10 @@ class NativeMedia3Engine(context: Context) {
       val id = "external:$uri"
       if (select) disableAssTracks()
       val added = renderer.addTrack(id, bytes)
-      if (added && select) renderer.setTrackEnabled(id, true)
+      if (added) {
+        externalAssEnabled[id] = select
+        renderer.setTrackEnabled(id, select)
+      }
       Log.i(logTag, "libass track id=$id added=$added bytes=${bytes.size} count=${renderer.trackCount}")
       subtitleOverlay?.visibility = if (added) View.VISIBLE else View.GONE
       return added
@@ -385,13 +390,26 @@ class NativeMedia3Engine(context: Context) {
       .build()
     val wasPlaying = player.isPlaying
     val positionMs = player.currentPosition.coerceAtLeast(0L)
-    val updated = MediaItem.Builder()
-      .setUri(current.uri)
-      .setSubtitleConfigurations(current.subtitleConfigurations + configuration)
+    // Keep the original MediaItem (headers, DRM, metadata and stream identity) intact. Rebuilding
+    // from only current.uri makes downloaded online subtitles fail on authenticated/network media.
+    val updated = current.buildUpon()
+      .setSubtitleConfigurations(localConfiguration.subtitleConfigurations + configuration)
       .build()
     player.setMediaItem(updated, positionMs)
     player.prepare()
     player.playWhenReady = wasPlaying
+    return true
+  }
+
+  fun toggleExternalSubtitle(uri: Uri): Boolean {
+    val id = "external:$uri"
+    val renderer = libassRenderer ?: return false
+    if (id !in renderer.getTrackIds().keys) return false
+    val enabled = !(externalAssEnabled[id] ?: false)
+    if (enabled) disableAssTracks()
+    renderer.setTrackEnabled(id, enabled)
+    externalAssEnabled[id] = enabled
+    subtitleOverlay?.visibility = if (enabled) View.VISIBLE else View.GONE
     return true
   }
 
@@ -754,6 +772,7 @@ class NativeMedia3Engine(context: Context) {
     player.stop()
     player.clearMediaItems()
     selectedNativeSubtitleKey = null
+    externalAssEnabled.clear()
     libassRenderer?.let { renderer ->
       renderer.getTrackIds().keys.toList().forEach { renderer.removeTrack(it) }
     }
