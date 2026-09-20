@@ -42,7 +42,8 @@ class AppearancePreferences(
   preferenceStore: PreferenceStore,
 ) {
   val darkMode = preferenceStore.getEnum("dark_mode", DarkMode.System)
-  val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Dynamic)
+  // Monochrome is the neutral first-install experience; a persisted user choice always wins.
+  val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Monochrome)
   val customThemes = preferenceStore.getObject(
     key = "custom_themes",
     defaultValue = emptyList<CustomThemeData>(),
