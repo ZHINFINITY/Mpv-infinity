@@ -24,11 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.MediaServerPreferences
 import app.infinity.mpvz.preferences.MusicSourceProvider
 import app.infinity.mpvz.preferences.preference.collectAsState
-import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import org.koin.compose.koinInject
@@ -50,6 +50,29 @@ fun MusicSourceChooser(
     MusicSourceProvider.NAVIDROME -> stringResource(R.string.music_source_navidrome)
   }
 
+  @Composable
+  fun sourceIcon(source: MusicSourceProvider, size: androidx.compose.ui.unit.Dp) {
+    when (source) {
+      MusicSourceProvider.JELLYFIN -> androidx.compose.material3.Icon(
+        painter = painterResource(R.drawable.ic_jellyfin),
+        contentDescription = null,
+        modifier = Modifier.size(size),
+        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+      )
+      MusicSourceProvider.NAVIDROME -> androidx.compose.material3.Icon(
+        painter = painterResource(R.drawable.ic_navidrome),
+        contentDescription = null,
+        modifier = Modifier.size(size),
+        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+      )
+      MusicSourceProvider.LOCAL -> Icon(
+        Icons.RoundedFilled.Folder,
+        contentDescription = null,
+        modifier = Modifier.size(size),
+      )
+    }
+  }
+
   Surface(
     modifier = modifier
       .clip(RoundedCornerShape(20.dp))
@@ -61,7 +84,7 @@ fun MusicSourceChooser(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.Center,
     ) {
-      Icon(Icons.RoundedFilled.Equalizer, contentDescription = null, modifier = Modifier.size(18.dp))
+      sourceIcon(currentSource, 18.dp)
       Spacer(Modifier.width(6.dp))
       Text(sourceTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1)
       Spacer(Modifier.width(4.dp))
@@ -73,13 +96,13 @@ fun MusicSourceChooser(
         expanded = false
       }
       if (hasJellyfin) {
-        MusicSourceItem(stringResource(R.string.music_source_jellyfin), Icons.RoundedFilled.Language, currentSource == MusicSourceProvider.JELLYFIN) {
+        MusicSourceItem(stringResource(R.string.music_source_jellyfin), MusicSourceProvider.JELLYFIN, currentSource == MusicSourceProvider.JELLYFIN) {
           preferences.musicSourceProvider.set(MusicSourceProvider.JELLYFIN)
           expanded = false
         }
       }
       if (hasNavidrome) {
-        MusicSourceItem(stringResource(R.string.music_source_navidrome), Icons.RoundedFilled.Equalizer, currentSource == MusicSourceProvider.NAVIDROME) {
+        MusicSourceItem(stringResource(R.string.music_source_navidrome), MusicSourceProvider.NAVIDROME, currentSource == MusicSourceProvider.NAVIDROME) {
           preferences.musicSourceProvider.set(MusicSourceProvider.NAVIDROME)
           expanded = false
         }
@@ -97,7 +120,7 @@ fun MusicSourceChooser(
 }
 
 @Composable
-private fun MusicSourceItem(title: String, icon: AppIcon, selected: Boolean, onClick: () -> Unit) {
+private fun MusicSourceItem(title: String, source: MusicSourceProvider, selected: Boolean, onClick: () -> Unit) {
   DropdownMenuItem(
     text = {
       Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -108,7 +131,13 @@ private fun MusicSourceItem(title: String, icon: AppIcon, selected: Boolean, onC
         }
       }
     },
-    leadingIcon = { Icon(icon, contentDescription = null) },
+    leadingIcon = {
+      when (source) {
+        MusicSourceProvider.JELLYFIN -> androidx.compose.material3.Icon(painterResource(R.drawable.ic_jellyfin), contentDescription = null)
+        MusicSourceProvider.NAVIDROME -> androidx.compose.material3.Icon(painterResource(R.drawable.ic_navidrome), contentDescription = null)
+        MusicSourceProvider.LOCAL -> Icon(Icons.RoundedFilled.Folder, contentDescription = null)
+      }
+    },
     onClick = onClick,
   )
 }

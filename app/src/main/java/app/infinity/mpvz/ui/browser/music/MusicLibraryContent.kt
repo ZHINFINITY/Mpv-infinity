@@ -506,7 +506,7 @@ fun MusicLibraryContent(
               onSettingsClick = {
                 backStack.add(PreferencesScreen)
               },
-              additionalActions = {
+              leadingActions = {
                 if (!activeSelectionManager.isInSelectionMode) {
                   MusicSourceChooser(
                     hasJellyfin = jellyfinServers.isNotEmpty(),
@@ -514,6 +514,10 @@ fun MusicLibraryContent(
                     onManageServers = { backStack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
                   )
+                }
+              },
+              additionalActions = {
+                if (!activeSelectionManager.isInSelectionMode) {
                   IconButton(
                     onClick = { backStack.add(AudiobookLibraryScreen) },
                     modifier = Modifier.padding(horizontal = 2.dp),
@@ -740,7 +744,7 @@ fun MusicLibraryContent(
     ) {
       PullRefreshBox(
         isRefreshing = isRefreshing,
-        onRefresh = { musicViewModel.refreshLibrary(context) },
+        onRefresh = { musicViewModel.scanLibrary(context) },
         modifier = Modifier.fillMaxSize()
       ) {
         if (isLoading && songs.isEmpty()) {

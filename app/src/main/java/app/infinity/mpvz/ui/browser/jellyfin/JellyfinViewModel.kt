@@ -1724,9 +1724,7 @@ class JellyfinViewModel(
                 limit = 500,
               ).getOrNull()?.items.orEmpty()
             } else if (item.type == "MusicAlbum" || item.type == "MusicArtist" || (item.isFolder && item.collectionType == "music") || item.type == "Playlist") {
-              jellyfinRepository.getItems(server = server, parentId = item.id, includeItemTypes = "Audio").getOrNull()?.items.orEmpty().ifEmpty {
-                jellyfinRepository.getItems(server = server, parentId = item.id).getOrNull()?.items.orEmpty()
-              }
+              jellyfinRepository.getItems(server = server, parentId = item.id, includeItemTypes = "Audio").getOrNull()?.items.orEmpty()
             } else {
               val potentialSources = listOf(
                 _uiState.value.detailEpisodes,
@@ -2061,4 +2059,3 @@ class JellyfinViewModel(
       }
   }
 }
-

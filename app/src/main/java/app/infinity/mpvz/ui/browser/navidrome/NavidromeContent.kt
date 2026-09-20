@@ -233,7 +233,7 @@ fun NavidromeContent(
           } else null,
           onSearchClick = { isSearching = true },
           onSettingsClick = { backStack.add(PreferencesScreen) },
-          additionalActions = {
+          leadingActions = {
             if (isMusicOnlyMode) {
               MusicSourceChooser(
                 hasJellyfin = jellyfinServers.isNotEmpty(),
@@ -242,6 +242,8 @@ fun NavidromeContent(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
               )
             }
+          },
+          additionalActions = {
             IconButton(
               onClick = { backStack.add(MediaServersPreferencesScreen) },
               modifier = Modifier.padding(horizontal = 2.dp),
