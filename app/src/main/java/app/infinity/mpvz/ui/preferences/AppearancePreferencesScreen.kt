@@ -776,6 +776,7 @@ object AppearancePreferencesScreen : Screen {
               val showPlaylistsTab by preferences.showPlaylistsTab.collectAsState()
               val showNetworkTab by preferences.showNetworkTab.collectAsState()
               val showJellyfinTab by preferences.showJellyfinTab.collectAsState()
+              val showNavidromeTab by preferences.showNavidromeTab.collectAsState()
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_nav_home_title),
@@ -860,6 +861,21 @@ object AppearancePreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = stringResource(id = R.string.pref_nav_jellyfin_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_navidrome_title),
+                value = showNavidromeTab,
+                onValueChange = preferences.showNavidromeTab::set,
+                title = { Text(text = stringResource(id = R.string.pref_nav_navidrome_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(id = R.string.pref_nav_navidrome_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

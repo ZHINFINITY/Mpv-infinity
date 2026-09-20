@@ -289,6 +289,19 @@ object PreferencesScreen : Screen {
             } else {
               null
             },
+        ),
+      ),
+      SettingsSection(
+        title = stringResource(R.string.pref_section_network),
+        tint = colorScheme.onSurfaceVariant,
+        items =
+          listOf(
+            SettingsDestination(
+              title = stringResource(R.string.pref_media_servers_title),
+              summary = stringResource(R.string.pref_media_servers_summary),
+              icon = Icons.RoundedFilled.CloudDone,
+              screen = MediaServersPreferencesScreen,
+            ),
           ),
       ),
       SettingsSection(

@@ -82,6 +82,24 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
+          titleRes = R.string.pref_media_servers_title,
+          summaryRes = R.string.pref_media_servers_summary,
+          keywords = listOf("media server", "servers", "jellyfin", "navidrome", "audiobookshelf", "network"),
+          category = "Network",
+          screen = MediaServersPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_nav_navidrome_title,
+          summaryRes = R.string.pref_nav_navidrome_summary,
+          keywords = listOf("navidrome", "navigation", "tab", "appearance"),
+          category = "Appearance",
+          screen = AppearancePreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
           titleRes = R.string.pref_appearance_amoled_mode_title,
           summaryRes = R.string.pref_appearance_amoled_mode_summary,
           keywords = listOf("amoled", "black", "dark", "oled", "pure black"),
