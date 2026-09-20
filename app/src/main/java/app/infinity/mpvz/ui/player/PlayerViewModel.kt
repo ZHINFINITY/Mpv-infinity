@@ -955,8 +955,15 @@ class PlayerViewModel : ViewModel(),
       }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
-    combine(mpvChapters, nativeChapters, nativeEngineActive) { mpv, native, nativeActive ->
-      if (nativeActive && native.isNotEmpty()) native else mpv
+    combine(mpvChapters, nativeChapters, nativeEngineActive, AudiobookPlayback.chapters) { mpv, native, nativeActive, audiobookChapters ->
+      when {
+        PlaybackSession.state.value.currentItem?.audiobook != null && audiobookChapters.isNotEmpty() ->
+          audiobookChapters.map { chapter ->
+            Segment(chapter.title, chapter.bookStartMs / 1000f)
+          }
+        nativeActive && native.isNotEmpty() -> native
+        else -> mpv
+      }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   // Audio player UI state
@@ -4428,6 +4435,35 @@ class PlayerViewModel : ViewModel(),
       return
     }
     coalesceSeek(offset)
+  }
+
+  fun seekToPlaybackChapter(chapter: Segment) {
+    if (PlaybackSession.state.value.currentItem?.audiobook != null) {
+      AudiobookPlayback.seekInBook((chapter.start * 1000f).toLong())
+    } else {
+      PlaybackSession.setPropertyInt("chapter", chapters.value.indexOf(chapter).coerceAtLeast(0))
+      unpause()
+    }
+  }
+
+  fun stepPlaybackChapter(offset: Int) {
+    if (PlaybackSession.state.value.currentItem?.audiobook == null) {
+      if (offset < 0) playPrevious() else playNext()
+      return
+    }
+    val current = AudiobookPlayback.currentChapter() ?: return
+    val audiobookChapters = AudiobookPlayback.chapters.value
+    val index = audiobookChapters.indexOf(current)
+    val target = audiobookChapters.getOrNull(index + offset) ?: return
+    AudiobookPlayback.seekInBook(target.bookStartMs, resumePlayback = true)
+  }
+
+  fun sleepAtCurrentChapterEnd() {
+    val progress = PlaybackSession.audiobookProgress() ?: return
+    val chapter = AudiobookPlayback.currentChapter() ?: return
+    if (chapter.trackId == progress.item.trackId && chapter.endMs > progress.positionMs) {
+      AudiobookPlayback.setTimer(null, chapter.endMs)
+    }
   }
 
   fun nativePlaybackPositionSeconds(): Double = host.nativePlaybackPositionSeconds()

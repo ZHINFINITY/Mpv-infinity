@@ -584,6 +584,7 @@ fun AudioPlayerControls(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentItem = playbackState.currentItem ?: queueState.currentItem
+  val isAudiobook = currentItem?.audiobook != null
   LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
     if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {
       PlaybackSession.command("script-binding", "stats/display-stats-toggle")
@@ -1624,7 +1625,10 @@ fun AudioPlayerControls(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        ReactiveIconButton(onClick = { viewModel.playPrevious() }, enabled = playlistModeEnabled) {
+        ReactiveIconButton(
+          onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(-1) else viewModel.playPrevious() },
+          enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
+        ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipPrevious,
             contentDescription = null,
@@ -1640,7 +1644,7 @@ fun AudioPlayerControls(
             modifier = Modifier.size(28.dp),
           )
         }
-        ReactiveIconButton(onClick = { viewModel.seekBy(-audioSeekDuration) }) {
+        ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) }) {
           Icon(
             imageVector = Icons.RoundedFilled.FastRewind,
             contentDescription = null,
@@ -1667,7 +1671,7 @@ fun AudioPlayerControls(
             )
           }
         }
-        ReactiveIconButton(onClick = { viewModel.seekBy(audioSeekDuration) }) {
+        ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) }) {
           Icon(
             imageVector = Icons.RoundedFilled.FastForward,
             contentDescription = null,
@@ -1675,7 +1679,10 @@ fun AudioPlayerControls(
             modifier = Modifier.size(34.dp),
           )
         }
-        ReactiveIconButton(onClick = { viewModel.playNext() }, enabled = playlistModeEnabled) {
+        ReactiveIconButton(
+          onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
+          enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
+        ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipNext,
             contentDescription = null,
@@ -1691,6 +1698,29 @@ fun AudioPlayerControls(
             modifier = Modifier.size(28.dp),
           )
         }
+      }
+    }
+
+    val audiobookModeButtons = @Composable {
+      ReactiveIconButton(
+        onClick = { onOpenSheet(Sheets.AudiobookSleepTimer) },
+        modifier = Modifier.size(40.dp),
+      ) {
+        Icon(
+          imageVector = Icons.RoundedFilled.Timer,
+          contentDescription = stringResource(R.string.audiobook_sleep_timer),
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      ReactiveIconButton(
+        onClick = { onOpenSheet(Sheets.Chapters) },
+        modifier = Modifier.size(40.dp),
+      ) {
+        Icon(
+          imageVector = Icons.RoundedFilled.MenuBook,
+          contentDescription = stringResource(R.string.audiobook_chapters),
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
       }
     }
 
@@ -1735,38 +1765,32 @@ fun AudioPlayerControls(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-              ReactiveIconButton(
-                onClick = viewModel::toggleShuffle,
-                enabled = playlistModeEnabled,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Icon(
-                  imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
-                  contentDescription = null,
-                  tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              ReactiveIconButton(
-                onClick = viewModel::cycleRepeatMode,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Icon(
-                  imageVector =
-                    when (repeatMode) {
+              if (isAudiobook) audiobookModeButtons() else {
+                ReactiveIconButton(
+                  onClick = viewModel::toggleShuffle,
+                  enabled = playlistModeEnabled,
+                  modifier = Modifier.size(40.dp),
+                ) {
+                  Icon(
+                    imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
+                    contentDescription = null,
+                    tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+                ReactiveIconButton(
+                  onClick = viewModel::cycleRepeatMode,
+                  modifier = Modifier.size(40.dp),
+                ) {
+                  Icon(
+                    imageVector = when (repeatMode) {
                       RepeatMode.OFF -> Icons.RoundedFilled.Repeat
                       RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
                       RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
                     },
-                  contentDescription = null,
-                  tint =
-                    if (repeatMode !=
-                      RepeatMode.OFF
-                    ) {
-                      MaterialTheme.colorScheme.primary
-                    } else {
-                      MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                    contentDescription = null,
+                    tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
               }
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
@@ -1816,38 +1840,32 @@ fun AudioPlayerControls(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-              ReactiveIconButton(
-                onClick = viewModel::toggleShuffle,
-                enabled = playlistModeEnabled,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Icon(
-                  imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
-                  contentDescription = null,
-                  tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              ReactiveIconButton(
-                onClick = viewModel::cycleRepeatMode,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Icon(
-                  imageVector =
-                    when (repeatMode) {
+              if (isAudiobook) audiobookModeButtons() else {
+                ReactiveIconButton(
+                  onClick = viewModel::toggleShuffle,
+                  enabled = playlistModeEnabled,
+                  modifier = Modifier.size(40.dp),
+                ) {
+                  Icon(
+                    imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
+                    contentDescription = null,
+                    tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+                ReactiveIconButton(
+                  onClick = viewModel::cycleRepeatMode,
+                  modifier = Modifier.size(40.dp),
+                ) {
+                  Icon(
+                    imageVector = when (repeatMode) {
                       RepeatMode.OFF -> Icons.RoundedFilled.Repeat
                       RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
                       RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
                     },
-                  contentDescription = null,
-                  tint =
-                    if (repeatMode !=
-                      RepeatMode.OFF
-                    ) {
-                      MaterialTheme.colorScheme.primary
-                    } else {
-                      MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                    contentDescription = null,
+                    tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
               }
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
@@ -1946,7 +1964,7 @@ fun AudioPlayerControls(
               horizontalAlignment = Alignment.CenterHorizontally,
             ) {
               headerBar()
-              losslessBadge()
+              if (!isAudiobook) losslessBadge()
             }
           }
         } else {
@@ -1957,7 +1975,7 @@ fun AudioPlayerControls(
           ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
               headerBar()
-              losslessBadge()
+              if (!isAudiobook) losslessBadge()
               Spacer(modifier = Modifier.height(16.dp))
             }
           }
@@ -2002,7 +2020,7 @@ fun AudioPlayerControls(
         ) {
           headerBar()
           Spacer(modifier = Modifier.height(4.dp))
-          losslessBadge()
+          if (!isAudiobook) losslessBadge()
           Spacer(modifier = Modifier.height(6.dp))
           centerVisualizerView(
             Modifier
@@ -2061,7 +2079,7 @@ fun AudioPlayerControls(
               lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
             } else {
               if (!isStandbyActive) headerBar()
-              if (!isStandbyActive) losslessBadge()
+              if (!isStandbyActive && !isAudiobook) losslessBadge()
               if (!isStandbyActive) trackMetadataView()
               Spacer(modifier = Modifier.weight(1f))
             }
