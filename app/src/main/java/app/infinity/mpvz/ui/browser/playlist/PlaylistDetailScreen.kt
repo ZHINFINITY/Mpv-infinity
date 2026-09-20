@@ -268,6 +268,9 @@ data class PlaylistDetailScreen(
       context.startActivity(intent)
     }
 
+    val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
+    val miniPlayerClearance = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance
+
     Scaffold(
       topBar = {
         if (isSearching) {
@@ -482,7 +485,9 @@ data class PlaylistDetailScreen(
           val isAudioPlaylist = playlist?.isAudio == true || videoItems.any { it.video.isAudio }
           ExtendedFloatingActionButton(
             modifier =
-              Modifier.padding(bottom = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance),
+              Modifier.padding(
+                bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp) + miniPlayerClearance,
+              ),
             onClick = { backStack.add(PlaylistAddVideosScreen(playlistId, isAudio = isAudioPlaylist)) },
             icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
             text = { Text(if (isAudioPlaylist) "Add Songs" else stringResource(R.string.playlist_add_videos)) },
