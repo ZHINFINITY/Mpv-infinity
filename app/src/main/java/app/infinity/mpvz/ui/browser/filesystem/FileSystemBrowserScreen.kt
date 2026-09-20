@@ -203,6 +203,18 @@ fun FileSystemBrowserScreen(path: String? = null) {
   val playlistMode by playerPreferences.playlistMode.collectAsState()
   val itemsWereDeletedOrMoved by viewModel.itemsWereDeletedOrMoved.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
+  val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
+  val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
+
+  var metadataPreferencesInitialized by remember { mutableStateOf(false) }
+  LaunchedEffect(showResolutionChip, showFramerateInResolution, showCodecSupportIndicator, showSubtitleIndicator) {
+    if (metadataPreferencesInitialized) {
+      viewModel.refresh()
+    } else {
+      metadataPreferencesInitialized = true
+    }
+  }
 
   // Use standalone local states instead of CompositionLocal to avoid scroll issues with predictive back gesture
   val mediaLayoutMode by browserPreferences.mediaLayoutMode.collectAsState()

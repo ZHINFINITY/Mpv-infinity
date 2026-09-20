@@ -1409,17 +1409,30 @@ private fun SongsTabContent(
             )
           }
         }
-        if (songs.size >= 12) {
-          ExpressiveScrollBar(
-            listState = listState,
-            dragLabelProvider = { index ->
-              fastScrollGlyph(songs.getOrNull(index)?.title)
-            },
-            modifier = Modifier.align(Alignment.CenterEnd),
-          )
-        }
+        MusicTabFastScroller(
+          itemCount = songs.size,
+          listState = listState,
+          dragLabelProvider = { index -> fastScrollGlyph(songs.getOrNull(index)?.title) },
+          modifier = Modifier.align(Alignment.CenterEnd),
+        )
       }
     }
+  }
+}
+
+@Composable
+private fun MusicTabFastScroller(
+  itemCount: Int,
+  listState: LazyListState,
+  dragLabelProvider: (Int) -> String?,
+  modifier: Modifier = Modifier,
+) {
+  if (itemCount >= 12) {
+    ExpressiveScrollBar(
+      listState = listState,
+      dragLabelProvider = dragLabelProvider,
+      modifier = modifier,
+    )
   }
 }
 
@@ -1595,20 +1608,28 @@ private fun AlbumsTabContent(
       }
     }
   } else {
-    LazyColumn(
-      state = listState,
-      modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
-    ) {
-      items(albums, key = { it.id }) { album ->
-        AlbumListCard(
-          album = album,
-          isSelected = selectionManager.isSelected(album),
-          coverArtSizeDp = coverArtSizeDp,
-          onClick = { onAlbumClick(album) },
-          onLongClick = { onAlbumLongClick(album) }
-        )
+    Box(modifier = Modifier.fillMaxSize()) {
+      LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+      ) {
+        items(albums, key = { it.id }) { album ->
+          AlbumListCard(
+            album = album,
+            isSelected = selectionManager.isSelected(album),
+            coverArtSizeDp = coverArtSizeDp,
+            onClick = { onAlbumClick(album) },
+            onLongClick = { onAlbumLongClick(album) }
+          )
+        }
       }
+      MusicTabFastScroller(
+        itemCount = albums.size,
+        listState = listState,
+        dragLabelProvider = { index -> fastScrollGlyph(albums.getOrNull(index)?.title) },
+        modifier = Modifier.align(Alignment.CenterEnd),
+      )
     }
   }
 }
@@ -1819,20 +1840,28 @@ private fun ArtistsTabContent(
       }
     }
   } else {
-    LazyColumn(
-      state = listState,
-      modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
-    ) {
-      items(artists, key = { it.id }) { artist ->
-        ArtistListCard(
-          artist = artist,
-          isSelected = selectionManager.isSelected(artist),
-          coverArtSizeDp = coverArtSizeDp,
-          onClick = { onArtistClick(artist) },
-          onLongClick = { onArtistLongClick(artist) }
-        )
+    Box(modifier = Modifier.fillMaxSize()) {
+      LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+      ) {
+        items(artists, key = { it.id }) { artist ->
+          ArtistListCard(
+            artist = artist,
+            isSelected = selectionManager.isSelected(artist),
+            coverArtSizeDp = coverArtSizeDp,
+            onClick = { onArtistClick(artist) },
+            onLongClick = { onArtistLongClick(artist) }
+          )
+        }
       }
+      MusicTabFastScroller(
+        itemCount = artists.size,
+        listState = listState,
+        dragLabelProvider = { index -> fastScrollGlyph(artists.getOrNull(index)?.name) },
+        modifier = Modifier.align(Alignment.CenterEnd),
+      )
     }
   }
 }
@@ -2355,26 +2384,34 @@ private fun PlaylistsTabContent(
           }
         }
       } else {
-        LazyColumn(
-          state = listState,
-          modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
-        ) {
-          items(playlists, key = { it.id }) { playlist ->
-            val details = playlistDetails[playlist.id]
-            val itemCount = details?.first ?: 0
-            val artUris = details?.second ?: emptyList()
-            MusicPlaylistCard(
-              playlist = playlist,
-              itemCount = itemCount,
-              artUris = artUris,
-              isSelected = selectionManager.isSelected(playlist),
-              isGridMode = false,
-              coverArtSizeDp = coverArtSizeDp,
-              onClick = { onPlaylistClick(playlist) },
-              onLongClick = { onPlaylistLongClick(playlist) }
-            )
+        Box(modifier = Modifier.fillMaxSize()) {
+          LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+          ) {
+            items(playlists, key = { it.id }) { playlist ->
+              val details = playlistDetails[playlist.id]
+              val itemCount = details?.first ?: 0
+              val artUris = details?.second ?: emptyList()
+              MusicPlaylistCard(
+                playlist = playlist,
+                itemCount = itemCount,
+                artUris = artUris,
+                isSelected = selectionManager.isSelected(playlist),
+                isGridMode = false,
+                coverArtSizeDp = coverArtSizeDp,
+                onClick = { onPlaylistClick(playlist) },
+                onLongClick = { onPlaylistLongClick(playlist) }
+              )
+            }
           }
+          MusicTabFastScroller(
+            itemCount = playlists.size,
+            listState = listState,
+            dragLabelProvider = { index -> fastScrollGlyph(playlists.getOrNull(index)?.name) },
+            modifier = Modifier.align(Alignment.CenterEnd),
+          )
         }
       }
     }
