@@ -2124,4 +2124,6 @@
   <string name="extra_features_activity_log">Library activity log</string>
   <string name="extra_features_activity_log_summary">See recent library additions, removals, renames, scans, and watched-state changes.</string>
   <string name="extra_features_activity_log_entry">Recent activity: %1$s</string>
+  <string name="pref_navidrome_title">Navidrome</string>
+  <string name="pref_navidrome_no_server">Connect a Navidrome or compatible Subsonic server to browse and play your music.</string>
 </resources>

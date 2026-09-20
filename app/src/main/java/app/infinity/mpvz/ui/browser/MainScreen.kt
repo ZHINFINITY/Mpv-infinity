@@ -119,6 +119,7 @@ object MainScreen : Screen {
     PLAYLISTS,
     NETWORK,
     JELLYFIN,
+    NAVIDROME,
   }
 
   // Use a companion object to store state more persistently
@@ -189,6 +190,7 @@ object MainScreen : Screen {
           if (showPlaylistsTab) add(MainTab.PLAYLISTS)
           if (showNetworkTab) add(MainTab.NETWORK)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
+          add(MainTab.NAVIDROME)
         }
       }
 
@@ -309,6 +311,7 @@ object MainScreen : Screen {
         MainTab.PLAYLISTS -> 52.dp
         MainTab.NETWORK -> 50.dp
         MainTab.JELLYFIN -> 44.dp
+        MainTab.NAVIDROME -> 56.dp
       }
 
     val unselectedCount = (visibleTabs.size - 1).coerceAtLeast(0)
@@ -358,6 +361,13 @@ object MainScreen : Screen {
             context.applicationContext as android.app.Application,
           ),
       )
+    val navidromeViewModel: app.infinity.mpvz.ui.browser.navidrome.NavidromeViewModel =
+      androidx.lifecycle.viewmodel.compose.viewModel(
+        factory =
+          app.infinity.mpvz.ui.browser.navidrome.NavidromeViewModel.factory(
+            context.applicationContext as android.app.Application,
+          ),
+      )
 
     // Scaffold with bottom navigation bar
     Scaffold(
@@ -391,6 +401,7 @@ object MainScreen : Screen {
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
                 MainTab.JELLYFIN -> app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
+                MainTab.NAVIDROME -> app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(viewModel = navidromeViewModel)
               }
             }
           }
@@ -537,6 +548,7 @@ private fun ExpressivePillNavigationBar(
       MainScreen.MainTab.PLAYLISTS -> 108.dp
       MainScreen.MainTab.NETWORK -> 106.dp
       MainScreen.MainTab.JELLYFIN -> 100.dp
+      MainScreen.MainTab.NAVIDROME -> 108.dp
     }
 
   val inactiveTabWidth = 44.dp
@@ -689,6 +701,13 @@ private fun ExpressivePillNavigationBar(
                     tint = contentColor,
                     modifier = Modifier.size(22.dp),
                   )
+                MainScreen.MainTab.NAVIDROME ->
+                  androidx.compose.material3.Icon(
+                    painter = painterResource(R.drawable.ic_navidrome),
+                    contentDescription = stringResource(R.string.pref_navidrome_title),
+                    tint = contentColor,
+                    modifier = Modifier.size(22.dp),
+                  )
               }
 
               if (tabFraction > 0.05f) {
@@ -702,6 +721,7 @@ private fun ExpressivePillNavigationBar(
                       MainScreen.MainTab.PLAYLISTS -> stringResource(R.string.ui_playlists)
                       MainScreen.MainTab.NETWORK -> stringResource(R.string.ui_network)
                       MainScreen.MainTab.JELLYFIN -> stringResource(R.string.ui_jellyfin)
+                      MainScreen.MainTab.NAVIDROME -> stringResource(R.string.pref_navidrome_title)
                     },
                   style = MaterialTheme.typography.labelMedium,
                   fontWeight = FontWeight.Bold,

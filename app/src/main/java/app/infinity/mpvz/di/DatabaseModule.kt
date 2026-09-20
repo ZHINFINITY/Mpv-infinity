@@ -741,6 +741,26 @@ val MIGRATION_17_18 =
     }
   }
 
+val MIGRATION_19_20 =
+  object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `navidrome_servers` (
+          `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          `name` TEXT NOT NULL,
+          `serverUrl` TEXT NOT NULL,
+          `username` TEXT NOT NULL,
+          `password` TEXT NOT NULL,
+          `token` TEXT NOT NULL,
+          `authMode` TEXT NOT NULL,
+          `lastConnected` INTEGER NOT NULL
+        )
+        """.trimIndent(),
+      )
+    }
+  }
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -774,6 +794,7 @@ val DatabaseModule =
           MIGRATION_16_17,
           MIGRATION_17_18,
           MIGRATION_18_19,
+          MIGRATION_19_20,
         ).build()
     }
 
@@ -849,6 +870,24 @@ val DatabaseModule =
 
     single {
       app.infinity.mpvz.repository.JellyfinRepository(
+        dao = get(),
+        client = get(),
+      )
+    }
+
+    single {
+      get<MpvInfinityDatabase>().navidromeServerDao()
+    }
+
+    single {
+      app.infinity.mpvz.data.navidrome.NavidromeClient(
+        httpClient = get(),
+        json = get(),
+      )
+    }
+
+    single {
+      app.infinity.mpvz.repository.NavidromeRepository(
         dao = get(),
         client = get(),
       )
