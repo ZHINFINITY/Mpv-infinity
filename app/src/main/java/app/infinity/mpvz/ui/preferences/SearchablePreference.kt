@@ -100,6 +100,15 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
+          titleRes = R.string.pref_nav_audiobooks_title,
+          summaryRes = R.string.pref_nav_audiobooks_summary,
+          keywords = listOf("audiobook", "audiobookshelf", "local audio", "navigation", "tab", "appearance"),
+          category = "Appearance",
+          screen = AppearancePreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
           titleRes = R.string.pref_appearance_amoled_mode_title,
           summaryRes = R.string.pref_appearance_amoled_mode_summary,
           keywords = listOf("amoled", "black", "dark", "oled", "pure black"),

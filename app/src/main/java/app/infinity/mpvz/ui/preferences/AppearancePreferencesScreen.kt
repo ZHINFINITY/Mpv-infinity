@@ -777,6 +777,7 @@ object AppearancePreferencesScreen : Screen {
               val showNetworkTab by preferences.showNetworkTab.collectAsState()
               val showJellyfinTab by preferences.showJellyfinTab.collectAsState()
               val showNavidromeTab by preferences.showNavidromeTab.collectAsState()
+              val showAudiobooksTab by preferences.showAudiobooksTab.collectAsState()
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_nav_home_title),
@@ -876,6 +877,21 @@ object AppearancePreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = stringResource(id = R.string.pref_nav_navidrome_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_audiobooks_title),
+                value = showAudiobooksTab,
+                onValueChange = preferences.showAudiobooksTab::set,
+                title = { Text(text = stringResource(id = R.string.pref_nav_audiobooks_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(id = R.string.pref_nav_audiobooks_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
