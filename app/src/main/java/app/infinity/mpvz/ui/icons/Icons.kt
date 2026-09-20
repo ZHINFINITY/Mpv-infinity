@@ -165,6 +165,7 @@ object Icons {
     val MonetizationOn by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Monetization_on) }
     val MoreTime by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.More_time) }
     val MoreVert by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.More_vert) }
+    val MenuBook by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Menu_book) }
     val Movie by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Movie) }
     val Notifications by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Notifications) }
     val NotInterested by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Block) }
@@ -407,6 +408,7 @@ object Icons {
     val HelpOutline get() = Shared.HelpOutline
     val PlaylistAdd get() = Shared.PlaylistAdd
     val PlaylistPlay get() = Shared.PlaylistPlay
+    val MenuBook get() = Shared.MenuBook
     val PushPin get() = Shared.PushPin
     val QueueMusic get() = Shared.QueueMusic
     val Refresh get() = Shared.Refresh

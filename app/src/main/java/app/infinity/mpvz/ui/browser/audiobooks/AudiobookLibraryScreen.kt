@@ -262,7 +262,7 @@ object AudiobookLibraryScreen : Screen {
     val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
 
     Scaffold(
-      containerColor = MaterialTheme.colorScheme.background,
+      containerColor = app.infinity.mpvz.ui.theme.wallpaperAwareBackgroundColor(),
       topBar = {
         BrowserTopBar(
           title = if (isAbsSource) {
@@ -277,7 +277,141 @@ object AudiobookLibraryScreen : Screen {
           onCancelSelection = { },
           onSortClick = { isSortMenuExpanded = true },
           onSearchClick = { search = !search },
-          onSettingsClick = { backStack.add(PreferencesScreen) },
+          onSettingsClick = { backStack.navigateTo(PreferencesScreen) },
+          preSearchActions = {
+            if (absState.servers.isNotEmpty()) {
+              var isSourceDropdownOpen by remember { mutableStateOf(false) }
+              Box {
+                Surface(
+                  shape = RoundedCornerShape(16.dp),
+                  color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f),
+                  modifier = Modifier
+                    .padding(horizontal = 4.dp, vertical = 6.dp)
+                    .clickable { isSourceDropdownOpen = true },
+                ) {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                  ) {
+                    when (currentSource) {
+                      AudiobookSourceProvider.AUDIOBOOKSHELF -> {
+                        androidx.compose.material3.Icon(
+                          painter = painterResource(R.drawable.ic_audiobookshelf),
+                          contentDescription = null,
+                          modifier = Modifier.size(16.dp),
+                          tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                      }
+                      else -> {
+                        Icon(
+                          Icons.RoundedFilled.Folder,
+                          contentDescription = null,
+                          modifier = Modifier.size(16.dp),
+                          tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                      }
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                      text = when (currentSource) {
+                        AudiobookSourceProvider.AUDIOBOOKSHELF -> absState.activeServer?.name ?: stringResource(R.string.audiobook_source_audiobookshelf)
+                        else -> stringResource(R.string.audiobook_source_local)
+                      },
+                      style = MaterialTheme.typography.labelMedium,
+                      fontWeight = FontWeight.Bold,
+                      color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Icon(
+                      Icons.RoundedFilled.ArrowDropDown,
+                      contentDescription = null,
+                      modifier = Modifier.size(16.dp),
+                      tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                  }
+                }
+
+                DropdownMenu(
+                  expanded = isSourceDropdownOpen,
+                  onDismissRequest = { isSourceDropdownOpen = false },
+                ) {
+                  DropdownMenuItem(
+                    text = {
+                      Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth(),
+                      ) {
+                        Text(stringResource(R.string.audiobook_source_local))
+                        if (currentSource == AudiobookSourceProvider.LOCAL) {
+                          Spacer(Modifier.width(12.dp))
+                          Icon(
+                            Icons.RoundedFilled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                          )
+                        }
+                      }
+                    },
+                    leadingIcon = {
+                      Icon(Icons.RoundedFilled.Folder, contentDescription = null)
+                    },
+                    onClick = {
+                      mediaServerPreferences.audiobookSourceProvider.set(AudiobookSourceProvider.LOCAL)
+                      isSourceDropdownOpen = false
+                    },
+                  )
+
+                  DropdownMenuItem(
+                    text = {
+                      Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth(),
+                      ) {
+                        Text(stringResource(R.string.audiobook_source_audiobookshelf))
+                        if (currentSource == AudiobookSourceProvider.AUDIOBOOKSHELF) {
+                          Spacer(Modifier.width(12.dp))
+                          Icon(
+                            Icons.RoundedFilled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                          )
+                        }
+                      }
+                    },
+                    leadingIcon = {
+                      androidx.compose.material3.Icon(
+                        painter = painterResource(R.drawable.ic_audiobookshelf),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                      )
+                    },
+                    onClick = {
+                      mediaServerPreferences.audiobookSourceProvider.set(AudiobookSourceProvider.AUDIOBOOKSHELF)
+                      isSourceDropdownOpen = false
+                    },
+                  )
+
+                  HorizontalDivider()
+
+                  DropdownMenuItem(
+                    text = { Text(stringResource(R.string.pref_media_servers_title)) },
+                    leadingIcon = {
+                      Icon(Icons.RoundedFilled.Settings, contentDescription = null)
+                    },
+                    onClick = {
+                      isSourceDropdownOpen = false
+                      backStack.navigateTo(MediaServersPreferencesScreen)
+                    },
+                  )
+                }
+              }
+            }
+          },
           additionalActions = {
             if (!isAbsSource) {
               Box {
@@ -378,7 +512,7 @@ object AudiobookLibraryScreen : Screen {
                   modifier = Modifier.padding(16.dp),
                   style = MaterialTheme.typography.titleMedium,
                 )
-                Button(onClick = { backStack.add(MediaServersPreferencesScreen) }) {
+                Button(onClick = { backStack.navigateTo(MediaServersPreferencesScreen) }) {
                   Text(stringResource(R.string.pref_audiobookshelf_add_server))
                 }
               }
@@ -394,7 +528,7 @@ object AudiobookLibraryScreen : Screen {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
               ) {
-                Icon(Icons.RoundedFilled.Bookmarks, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.secondary)
+                Icon(Icons.RoundedFilled.MenuBook, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.secondary)
                 Text(
                   stringResource(R.string.audiobook_empty),
                   modifier = Modifier.padding(16.dp),
@@ -473,7 +607,7 @@ object AudiobookLibraryScreen : Screen {
             books == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             visibleLocalBooks.isEmpty() -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
               horizontalAlignment = Alignment.CenterHorizontally) {
-              Icon(Icons.RoundedFilled.Bookmarks, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.secondary)
+              Icon(Icons.RoundedFilled.MenuBook, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.secondary)
               Text(stringResource(R.string.audiobook_empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
               if (books.orEmpty().isEmpty()) {
                 Button(onClick = { files.launch(arrayOf("*/*")) }, enabled = importing == null) {
@@ -1115,7 +1249,7 @@ internal fun AudiobookArtwork(uri: String?, modifier: Modifier = Modifier) {
       )
     } else {
       Icon(
-        Icons.RoundedFilled.Bookmarks,
+        Icons.RoundedFilled.MenuBook,
         contentDescription = null,
         modifier = Modifier.fillMaxSize(0.42f),
         tint = MaterialTheme.colorScheme.onSecondaryContainer,

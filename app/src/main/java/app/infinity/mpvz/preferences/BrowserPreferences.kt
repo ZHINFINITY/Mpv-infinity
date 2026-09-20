@@ -254,6 +254,17 @@ enum class AudiobookSortType {
   Progress,
   LastPlayed,
   DateAdded,
+  ;
+
+  val displayName: String
+    get() = when (this) {
+      Title -> "Title"
+      Author -> "Author"
+      Duration -> "Duration"
+      Progress -> "Progress"
+      LastPlayed -> "Recent"
+      DateAdded -> "Date Added"
+    }
 }
 
 enum class MediaLibraryType {
