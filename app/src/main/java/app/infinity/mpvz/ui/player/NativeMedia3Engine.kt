@@ -155,6 +155,7 @@ class NativeMedia3Engine(context: Context) {
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
         // devices reject the first candidate even though a compatible Media3 decoder is available.
         .setEnableDecoderFallback(true)
+        .withAssSupport(assHandler)
     )
     .build()
   private var attachedView: PlayerView? = null
