@@ -471,9 +471,13 @@ object FileTypeUtils {
 
   val AUDIO_EXTENSIONS =
     setOf(
+      "aa",
+      "aax",
+      "aaxc",
       "mp3",
       "m4a",
       "m4b",
+      "m4p",
       "aac",
       "flac",
       "ogg",
@@ -567,7 +571,8 @@ object FileTypeUtils {
       "3g2" -> "video/3gpp2"
       "mpg", "mpeg" -> "video/mpeg"
       "mp1", "mp2", "mp3", "mpa" -> "audio/mpeg"
-      "m4a", "m4b", "aac" -> "audio/mp4"
+      "m4a", "m4b", "aac", "m4p" -> "audio/mp4"
+      "aa", "aax", "aaxc" -> "audio/audible"
       "flac" -> "audio/flac"
       "ogg", "oga", "opus", "spx" -> "audio/ogg"
       "wav", "wave" -> "audio/wav"
