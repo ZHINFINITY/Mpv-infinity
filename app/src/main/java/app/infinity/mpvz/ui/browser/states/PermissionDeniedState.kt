@@ -833,6 +833,8 @@ private fun PillBadge(text: String) {
       style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
       fontWeight = FontWeight.Bold,
       color = MaterialTheme.colorScheme.onPrimaryContainer,
+      maxLines = 1,
+      softWrap = false,
     )
   }
 }
