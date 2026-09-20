@@ -68,6 +68,7 @@ import org.koin.compose.koinInject
 @Composable
 fun BrowserTopBar(
   title: String,
+  showTitle: Boolean = true,
   isInSelectionMode: Boolean,
   selectedCount: Int,
   totalCount: Int,
@@ -127,8 +128,9 @@ fun BrowserTopBar(
       additionalActions = additionalActions,
     )
   } else {
-    NormalTopBar(
-      title = title,
+            NormalTopBar(
+              title = title,
+              showTitle = showTitle,
       onBackClick = onBackClick,
       onSortClick = onSortClick,
       onSearchClick = onSearchClick,
@@ -154,6 +156,7 @@ fun BrowserTopBar(
 @Composable
 private fun NormalTopBar(
   title: String,
+  showTitle: Boolean = true,
   onBackClick: (() -> Unit)?,
   onSortClick: (() -> Unit)?,
   onSearchClick: (() -> Unit)?,
@@ -213,6 +216,7 @@ private fun NormalTopBar(
           },
       ),
     title = {
+      if (showTitle) {
       val betaBadgeSuffix =
         if (showBetaBadge) {
           stringResource(R.string.ui_beta_badge_suffix)
@@ -291,6 +295,7 @@ private fun NormalTopBar(
             },
           ),
       )
+      }
     },
     navigationIcon = {
       Row(verticalAlignment = Alignment.CenterVertically) {

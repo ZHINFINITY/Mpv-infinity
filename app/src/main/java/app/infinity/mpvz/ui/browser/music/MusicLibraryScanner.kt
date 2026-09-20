@@ -81,7 +81,12 @@ object MusicLibraryScanner {
           val year = cursor.getInt(yearCol)
 
           val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-          val albumArtUri = findArtworkUri(context, contentUri, path, albumId)
+          // Keep the initial scan MediaStore-only. Extracting embedded artwork with
+          // MediaMetadataRetriever for every track blocks the first library render;
+          // the album-art content URI is resolved lazily by the image layer.
+          val albumArtUri = albumId.takeIf { it > 0 }?.let {
+            ContentUris.withAppendedId(ALBUM_ART_BASE_URI, it)
+          }
 
           songs.add(
             MusicSong(

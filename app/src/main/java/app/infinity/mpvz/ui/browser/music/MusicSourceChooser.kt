@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import app.infinity.mpvz.R
@@ -48,6 +47,11 @@ fun MusicSourceChooser(
   val currentSource by preferences.musicSourceProvider.collectAsState()
   var expanded by remember { mutableStateOf(false) }
   val lifecycleOwner = LocalLifecycleOwner.current
+  val sourceTitle = when (currentSource) {
+    MusicSourceProvider.LOCAL -> stringResource(R.string.music_source_local)
+    MusicSourceProvider.JELLYFIN -> stringResource(R.string.music_source_jellyfin)
+    MusicSourceProvider.NAVIDROME -> stringResource(R.string.music_source_navidrome)
+  }
 
   DisposableEffect(lifecycleOwner) {
     val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -85,7 +89,6 @@ fun MusicSourceChooser(
 
   Surface(
     modifier = modifier
-      .widthIn(min = 56.dp)
       .clip(RoundedCornerShape(20.dp))
       .clickable { expanded = true },
     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f),
@@ -97,7 +100,7 @@ fun MusicSourceChooser(
     ) {
       sourceIcon(currentSource, 18.dp)
       Spacer(Modifier.width(6.dp))
-      Text("M", style = MaterialTheme.typography.labelLarge, maxLines = 1)
+      Text(sourceTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1)
       Spacer(Modifier.width(4.dp))
       Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
     }

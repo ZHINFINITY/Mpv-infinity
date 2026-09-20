@@ -388,6 +388,7 @@ fun JellyfinContent(
       } else {
         BrowserTopBar(
           title = pageTitle,
+          showTitle = !isMusicOnlyMode,
           isInSelectionMode = selectionManager.isInSelectionMode,
           selectedCount = selectionManager.selectedCount,
           totalCount = uiState.currentItems.size,
@@ -413,11 +414,17 @@ fun JellyfinContent(
           },
           leadingActions = {
             if (!selectionManager.isInSelectionMode && isMusicOnlyMode) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Audiotrack,
+                contentDescription = stringResource(R.string.ui_music),
+                modifier = Modifier.size(22.dp).padding(horizontal = 2.dp),
+                tint = MaterialTheme.colorScheme.secondary,
+              )
               MusicSourceChooser(
                 hasJellyfin = uiState.servers.isNotEmpty(),
                 hasNavidrome = navidromeServers.isNotEmpty(),
                 onManageServers = { backstack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                modifier = Modifier.padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
               )
             }
           },
@@ -530,8 +537,14 @@ fun JellyfinContent(
               )
             }
 
+            // Shared Music mode must never reveal the normal Jellyfin discovery
+            // dashboard while its audio library is being selected.
+            isMusicOnlyMode && uiState.openLibrary == null -> {
+              CircularProgressIndicator()
+            }
+
             // Root / Discovery Home View (Expressive UI)
-            uiState.openLibrary == null && uiState.searchQuery.isBlank() -> {
+            !isMusicOnlyMode && uiState.openLibrary == null && uiState.searchQuery.isBlank() -> {
               val server = uiState.activeServer
 
               if (server != null) {
