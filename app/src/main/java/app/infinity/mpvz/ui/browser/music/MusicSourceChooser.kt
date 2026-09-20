@@ -95,15 +95,15 @@ fun MusicSourceChooser(
     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f),
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.Center,
     ) {
-      sourceIcon(currentSource, 22.dp)
-      Spacer(Modifier.width(8.dp))
-      Text(sourceTitle, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+      sourceIcon(currentSource, 20.dp)
       Spacer(Modifier.width(6.dp))
-      Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(22.dp))
+      Text(sourceTitle, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+      Spacer(Modifier.width(4.dp))
+      Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(20.dp))
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
       MusicSourceItem(stringResource(R.string.music_source_local), MusicSourceProvider.LOCAL, currentSource == MusicSourceProvider.LOCAL) {

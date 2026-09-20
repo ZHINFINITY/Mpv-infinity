@@ -131,6 +131,7 @@ fun JellyfinContent(
   val context = LocalContext.current
   val backstack = LocalBackStack.current
   var modeReady by remember(isMusicOnlyMode, uiState.activeServer?.id) { mutableStateOf(false) }
+  var requestedModeKey by remember(isMusicOnlyMode, uiState.activeServer?.id) { mutableStateOf<String?>(null) }
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val navidromeRepository = koinInject<NavidromeRepository>()
@@ -292,11 +293,29 @@ fun JellyfinContent(
 
   LaunchedEffect(isMusicOnlyMode, uiState.activeServer?.id) {
     modeReady = false
-    uiState.activeServer?.let { server ->
-      if (isMusicOnlyMode) viewModel.enterMusicOnlyMode(server)
-      else viewModel.enterFullLibraryMode(server)
+    val server = uiState.activeServer
+    requestedModeKey = server?.id?.let { id -> "$id:${if (isMusicOnlyMode) "music" else "full"}" }
+    server?.let {
+      if (isMusicOnlyMode) viewModel.enterMusicOnlyMode(it)
+      else viewModel.enterFullLibraryMode(it)
     }
-    modeReady = true
+  }
+
+  LaunchedEffect(
+    requestedModeKey,
+    uiState.isLoading,
+    uiState.isMusicLoading,
+    uiState.openLibrary?.id,
+    uiState.libraries.size,
+    uiState.librarySections.size,
+    uiState.heroItems.size,
+  ) {
+    val loaded = if (isMusicOnlyMode) {
+      !uiState.isLoading && !uiState.isMusicLoading && uiState.openLibrary?.isMusic == true
+    } else {
+      !uiState.isLoading && uiState.libraries.isNotEmpty()
+    }
+    if (requestedModeKey != null && loaded) modeReady = true
   }
 
   if (!modeReady) {
