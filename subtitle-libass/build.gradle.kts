@@ -25,6 +25,11 @@ android {
     }
 
     buildFeatures { buildConfig = false }
+    buildTypes {
+        create("preview") {
+            initWith(getByName("release"))
+        }
+    }
     packaging { jniLibs { useLegacyPackaging = false } }
 }
 
