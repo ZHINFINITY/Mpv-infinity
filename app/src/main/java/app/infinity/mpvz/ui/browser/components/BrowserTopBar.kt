@@ -89,6 +89,7 @@ fun BrowserTopBar(
   onSelectAll: (() -> Unit)? = null,
   onInvertSelection: (() -> Unit)? = null,
   onDeselectAll: (() -> Unit)? = null,
+  leadingActions: @Composable RowScope.() -> Unit = { },
   preSearchActions: @Composable RowScope.() -> Unit = { },
   additionalActions: @Composable RowScope.() -> Unit = { },
   onTitleLongPress: (() -> Unit)? = null,
@@ -133,6 +134,7 @@ fun BrowserTopBar(
       onSearchClick = onSearchClick,
       onRequestClick = onRequestClick,
       onSettingsClick = onSettingsClick,
+      leadingActions = leadingActions,
       preSearchActions = preSearchActions,
       additionalActions = additionalActions,
       modifier = modifier,
@@ -157,6 +159,7 @@ private fun NormalTopBar(
   onSearchClick: (() -> Unit)?,
   onRequestClick: (() -> Unit)? = null,
   onSettingsClick: (() -> Unit)?,
+  leadingActions: @Composable RowScope.() -> Unit = { },
   preSearchActions: @Composable RowScope.() -> Unit = { },
   additionalActions: @Composable RowScope.() -> Unit,
   modifier: Modifier = Modifier,
@@ -290,18 +293,21 @@ private fun NormalTopBar(
       )
     },
     navigationIcon = {
-      if (onBackClick != null) {
-        IconButton(
-          onClick = onBackClick,
-          modifier = Modifier.padding(horizontal = 2.dp),
-        ) {
-          Icon(
-            Icons.RoundedFilled.ArrowBack,
-            contentDescription = stringResource(R.string.back),
-            modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
-          )
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        if (onBackClick != null) {
+          IconButton(
+            onClick = onBackClick,
+            modifier = Modifier.padding(horizontal = 2.dp),
+          ) {
+            Icon(
+              Icons.RoundedFilled.ArrowBack,
+              contentDescription = stringResource(R.string.back),
+              modifier = Modifier.size(24.dp),
+              tint = MaterialTheme.colorScheme.secondary,
+            )
+          }
         }
+        leadingActions()
       }
     },
     actions = {

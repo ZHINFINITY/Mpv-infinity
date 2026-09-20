@@ -403,16 +403,18 @@ fun JellyfinContent(
           onSettingsClick = {
             backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
           },
+          leadingActions = {
+            if (!selectionManager.isInSelectionMode && isMusicOnlyMode) {
+              MusicSourceChooser(
+                hasJellyfin = uiState.servers.isNotEmpty(),
+                hasNavidrome = navidromeServers.isNotEmpty(),
+                onManageServers = { backstack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+              )
+            }
+          },
           additionalActions = {
             if (!selectionManager.isInSelectionMode) {
-              if (isMusicOnlyMode) {
-                MusicSourceChooser(
-                  hasJellyfin = uiState.servers.isNotEmpty(),
-                  hasNavidrome = navidromeServers.isNotEmpty(),
-                  onManageServers = { backstack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
-                  modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
-                )
-              }
               IconButton(onClick = { isManageServersOpen = true }, modifier = Modifier.padding(horizontal = 2.dp)) {
                 Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers", modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.secondary)
               }

@@ -277,7 +277,7 @@ object AudiobookLibraryScreen : Screen {
           onSortClick = { isSortMenuExpanded = true },
           onSearchClick = { search = !search },
           onSettingsClick = { backStack.add(PreferencesScreen) },
-          preSearchActions = {
+          leadingActions = {
             if (absState.servers.isNotEmpty()) {
               var isSourceDropdownOpen by remember { mutableStateOf(false) }
               Box {
