@@ -73,6 +73,16 @@
   <string name="audiobook_source_audiobookshelf_desc">Stream audiobooks from your Audiobookshelf server</string>
   <string name="audiobook_source_local">Local audiobooks</string>
   <string name="pref_audiobookshelf_no_server">No Audiobookshelf server connected</string>
+  <string name="pref_server_active">Active</string>
+  <string name="pref_server_set_active">Set as active</string>
+  <string name="pref_server_more_options">More options</string>
+  <string name="pref_navidrome_add_server">Connect Navidrome</string>
+  <string name="pref_navidrome_add_server_desc">Add and connect to a Navidrome or OpenSubsonic server</string>
+  <string name="pref_navidrome_add_another_server">Add another server</string>
+  <string name="pref_navidrome_add_another_server_desc">Connect an additional Navidrome server</string>
+  <string name="pref_audiobookshelf_title">Audiobookshelf</string>
+  <string name="pref_audiobookshelf_add_another_server">Add another server</string>
+  <string name="pref_audiobookshelf_add_another_server_desc">Connect an additional Audiobookshelf server</string>
   <string name="pref_quick_play_fab_title">Quick Play FAB</string>
   <string name="pref_quick_play_fab_summary">Show the quick play floating action button in browser screens</string>
   <string name="pref_quick_play_fab_direct_title">Direct Quick Play</string>
