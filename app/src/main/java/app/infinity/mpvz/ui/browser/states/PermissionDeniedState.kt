@@ -750,12 +750,13 @@ private fun PermissionSectionCard(
 
       Spacer(modifier = Modifier.width(14.dp))
 
-      // Middle Title & Description
+          // Middle Title & Description
       Column(
         modifier = Modifier.weight(1f),
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           Text(
             text = title,
@@ -766,10 +767,12 @@ private fun PermissionSectionCard(
             } else {
               MaterialTheme.colorScheme.onSurface
             },
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
 
           if (isGranted) {
-            Spacer(modifier = Modifier.width(8.dp))
             PillBadge(text = stringResource(R.string.ui_permission_granted))
           }
         }

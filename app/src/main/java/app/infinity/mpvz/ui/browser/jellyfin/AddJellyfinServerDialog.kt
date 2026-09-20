@@ -578,6 +578,7 @@ fun ManageJellyfinServersDialog(
                         } else {
                           MaterialTheme.colorScheme.onSurface
                         },
+                      modifier = Modifier.weight(1f),
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
                     )
