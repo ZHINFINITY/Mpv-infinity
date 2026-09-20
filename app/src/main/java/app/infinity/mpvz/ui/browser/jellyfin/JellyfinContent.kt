@@ -289,8 +289,9 @@ fun JellyfinContent(
   }
 
   LaunchedEffect(isMusicOnlyMode, uiState.activeServer?.id) {
-    if (isMusicOnlyMode) {
-      uiState.activeServer?.let(viewModel::enterMusicOnlyMode)
+    uiState.activeServer?.let { server ->
+      if (isMusicOnlyMode) viewModel.enterMusicOnlyMode(server)
+      else viewModel.enterFullLibraryMode(server)
     }
   }
 
