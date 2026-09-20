@@ -33,6 +33,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.ui.CaptionStyleCompat
@@ -72,6 +73,10 @@ data class NativePlaybackSnapshot(
   val videoHeight: Int = 0,
   val videoMimeType: String? = null,
   val videoCodec: String? = null,
+  val videoDecoder: String? = null,
+  val audioDecoder: String? = null,
+  val videoDynamicRange: String? = null,
+  val videoColorSpace: String? = null,
   val videoBitrate: Int = 0,
   val audioCodec: String? = null,
   val audioBitrate: Int = 0,
@@ -227,6 +232,30 @@ class NativeMedia3Engine(context: Context) {
   private var preparationStartedAtMs: Long = 0L
   private var preparationUri: Uri? = null
   private var sourceSizeBytes: Long = 0L
+  private var videoDecoderName: String? = null
+  private var audioDecoderName: String? = null
+
+  private val analyticsListener = object : AnalyticsListener {
+    override fun onVideoDecoderInitialized(
+      eventTime: AnalyticsListener.EventTime,
+      decoderName: String,
+      initializedTimestampMs: Long,
+      initializationDurationMs: Long,
+    ) {
+      videoDecoderName = decoderName
+      publishSnapshot()
+    }
+
+    override fun onAudioDecoderInitialized(
+      eventTime: AnalyticsListener.EventTime,
+      decoderName: String,
+      initializedTimestampMs: Long,
+      initializationDurationMs: Long,
+    ) {
+      audioDecoderName = decoderName
+      publishSnapshot()
+    }
+  }
 
   private val listener = object : Player.Listener {
     override fun onRenderedFirstFrame() {
@@ -314,6 +343,7 @@ class NativeMedia3Engine(context: Context) {
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
     player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     player.addListener(listener)
+    player.addAnalyticsListener(analyticsListener)
   }
 
   fun attach(view: PlayerView) {
@@ -634,6 +664,8 @@ class NativeMedia3Engine(context: Context) {
   ) {
     _hasRenderedFirstFrame.value = false
     lastKnownDurationMs = 0L
+    videoDecoderName = null
+    audioDecoderName = null
     // The player instance survives item changes; reset any ducked/zero output level before the
     // first audio-only item after a video transition.
     player.volume = 1f
@@ -992,6 +1024,19 @@ class NativeMedia3Engine(context: Context) {
       .takeIf { it != C.TIME_UNSET && it > 0L }
       ?.also { lastKnownDurationMs = it }
       ?: lastKnownDurationMs
+    val colorInfo = video?.colorInfo
+    val dynamicRange = video?.let {
+      when (colorInfo?.colorTransfer) {
+        C.COLOR_TRANSFER_ST2084, C.COLOR_TRANSFER_HLG -> "HDR"
+        else -> "SDR"
+      }
+    }
+    val colorSpace =
+      when (colorInfo?.colorSpace) {
+        C.COLOR_SPACE_BT2020 -> "BT.2020"
+        C.COLOR_SPACE_BT709 -> "BT.709"
+        else -> null
+      }
     val declaredVideoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0
     val estimatedVideoBitrate =
       if (declaredVideoBitrate == 0 && sourceSizeBytes > 0L && reportedDurationMs > 0L) {
@@ -1012,6 +1057,10 @@ class NativeMedia3Engine(context: Context) {
       videoHeight = video?.height ?: 0,
       videoMimeType = video?.sampleMimeType,
       videoCodec = video?.codecs,
+      videoDecoder = videoDecoderName,
+      audioDecoder = audioDecoderName,
+      videoDynamicRange = dynamicRange,
+      videoColorSpace = colorSpace,
       videoBitrate = declaredVideoBitrate.takeIf { it > 0 } ?: estimatedVideoBitrate,
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
       audioBitrate = audio?.bitrate?.takeIf { it > 0 } ?: 0,

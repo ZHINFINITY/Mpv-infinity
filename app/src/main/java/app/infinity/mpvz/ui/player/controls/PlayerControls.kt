@@ -2285,6 +2285,12 @@ private fun NativeStatsPageOverlay(
   }
   val videoBitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
   val audioBitrate = if (snapshot.audioBitrate > 0) "${snapshot.audioBitrate / 1000} kbps" else "--"
+  val videoCodec = snapshot.videoCodec ?: snapshot.videoMimeType?.substringAfterLast('/') ?: "--"
+  val videoDecoder = snapshot.videoDecoder ?: "Media3"
+  val outputRange = snapshot.videoDynamicRange ?: "--"
+  val colorSpace = snapshot.videoColorSpace ?: "--"
+  val audioCodec = snapshot.audioCodec ?: "--"
+  val audioDecoder = snapshot.audioDecoder ?: "Media3"
   Surface(
     modifier = modifier,
     color = Color.Transparent,
@@ -2295,16 +2301,14 @@ private fun NativeStatsPageOverlay(
       Text("Engine: Native", style = MaterialTheme.typography.bodySmall, color = Color.White)
       when (page) {
         1 -> {
-          Text("Video output: $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Codec: ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Video bitrate: $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Duration: ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Output: $quality · $outputRange · $colorSpace", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video: $videoCodec · Decoder: $videoDecoder", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Bitrate: $videoBitrate · Duration: ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         2 -> {
-          Text("Audio codec: ${snapshot.audioCodec ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Audio bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Channels: ${snapshot.audioChannels}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Sample rate: ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio: $audioCodec · Decoder: $audioDecoder", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Bitrate: $audioBitrate · ${snapshot.audioChannels} ch · ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Tracks: ${snapshot.audioTracks.size} audio · ${snapshot.subtitleTracks.size} subtitles", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         3 -> {
           Text("Tracks: ${snapshot.audioTracks.size} audio · ${snapshot.subtitleTracks.size} subtitles", style = MaterialTheme.typography.bodySmall, color = Color.White)
@@ -2317,9 +2321,9 @@ private fun NativeStatsPageOverlay(
           Text("State: ${if (snapshot.isBuffering) "Buffering" else if (snapshot.isPlaying) "Playing" else "Paused"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         5 -> {
-          Text("Video: $quality · ${snapshot.videoCodec ?: snapshot.videoMimeType ?: "--"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Audio: ${snapshot.audioCodec ?: "--"} · $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Chapters: ${snapshot.chapters.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Output: $outputRange · $colorSpace · $quality", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video: $videoCodec · $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio: $audioCodec · $audioBitrate · Chapters: ${snapshot.chapters.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         else -> {
           Text("Ready: ${snapshot.isReady}", style = MaterialTheme.typography.bodySmall, color = Color.White)
