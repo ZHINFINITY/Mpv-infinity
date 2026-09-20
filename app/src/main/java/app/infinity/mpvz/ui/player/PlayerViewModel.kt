@@ -6188,6 +6188,13 @@ class PlayerViewModel : ViewModel(),
     host.playNextQueueItem()
   }
 
+  fun playNextAudiobook() {
+    val currentBookId = PlaybackSession.state.value.currentItem?.audiobook?.bookId ?: return
+    viewModelScope.launch {
+      AudiobookPlayback.launchNextBook(appContext, currentBookId)
+    }
+  }
+
   fun playPrevious() {
     host.playPreviousQueueItem()
   }

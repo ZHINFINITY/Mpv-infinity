@@ -240,14 +240,14 @@ fun NavidromeContent(
               Icon(
                 imageVector = Icons.RoundedFilled.Audiotrack,
                 contentDescription = stringResource(R.string.ui_music),
-                modifier = Modifier.size(22.dp).padding(horizontal = 2.dp),
+                modifier = Modifier.size(24.dp).padding(horizontal = 2.dp),
                 tint = MaterialTheme.colorScheme.secondary,
               )
               MusicSourceChooser(
                 hasJellyfin = jellyfinServers.isNotEmpty(),
                 hasNavidrome = uiState.servers.isNotEmpty(),
                 onManageServers = { backStack.add(MediaServersPreferencesScreen) },
-                modifier = Modifier.padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
               )
             }
           },
