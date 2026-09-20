@@ -38,6 +38,11 @@ data class NetworkPlaybackSource(
   val relativePath: String,
 )
 
+data class AudiobookPlaybackInfo(
+  val bookId: Long,
+  val trackId: Long,
+)
+
 /**
  * One self-contained queue item. Keeping these values together prevents URI/title/network path
  * lists from drifting out of alignment when a queue is moved or played in the background.
@@ -54,6 +59,7 @@ data class PlaybackItem(
   val playlistItemId: Int? = null,
   val artworkUri: String? = null,
   val durationSeconds: Int? = null,
+  val audiobook: AudiobookPlaybackInfo? = null,
   /** Dimensions supplied by external launchers when the stream URL has no descriptive filename. */
   val videoWidth: Int? = null,
   val videoHeight: Int? = null,
@@ -78,6 +84,7 @@ data class PlaybackItem(
       playlistItemId: Int? = null,
       artworkUri: String? = null,
       durationSeconds: Int? = null,
+      audiobook: AudiobookPlaybackInfo? = null,
       videoWidth: Int? = null,
       videoHeight: Int? = null,
       hdrMetadata: Boolean? = null,
@@ -97,6 +104,7 @@ data class PlaybackItem(
         playlistItemId = playlistItemId,
         artworkUri = artworkUri,
         durationSeconds = durationSeconds,
+        audiobook = audiobook,
         videoWidth = videoWidth,
         videoHeight = videoHeight,
         hdrMetadata = hdrMetadata,

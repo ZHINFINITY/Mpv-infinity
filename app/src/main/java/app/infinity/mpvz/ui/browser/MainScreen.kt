@@ -557,6 +557,7 @@ private fun ExpressivePillNavigationBar(
       MainScreen.MainTab.NETWORK -> 106.dp
       MainScreen.MainTab.JELLYFIN -> 100.dp
       MainScreen.MainTab.NAVIDROME -> 108.dp
+      MainScreen.MainTab.AUDIOBOOKS -> 112.dp
     }
 
   val inactiveTabWidth = 44.dp

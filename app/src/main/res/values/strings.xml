@@ -82,6 +82,16 @@
   <string name="pref_navidrome_add_server_desc">Add and connect to a Navidrome or OpenSubsonic server</string>
   <string name="pref_navidrome_add_another_server">Add another server</string>
   <string name="pref_navidrome_add_another_server_desc">Connect an additional Navidrome server</string>
+  <string name="pref_jellyfin_title">Jellyfin</string>
+  <string name="pref_jellyfin_server_management">Jellyfin server management</string>
+  <string name="pref_jellyfin_add_server">Connect Jellyfin</string>
+  <string name="pref_jellyfin_add_server_desc">Add and connect to a Jellyfin server</string>
+  <string name="pref_jellyfin_add_another_server">Add another server</string>
+  <string name="pref_jellyfin_add_another_server_desc">Connect an additional Jellyfin server</string>
+  <string name="pref_seerr_title">Seerr</string>
+  <string name="pref_seerr_server_management">Seerr server management</string>
+  <string name="pref_seerr_add_server">Connect Seerr</string>
+  <string name="pref_seerr_add_server_desc">Add and connect to a Seerr server</string>
   <string name="pref_audiobookshelf_title">Audiobookshelf</string>
   <string name="pref_audiobookshelf_add_another_server">Add another server</string>
   <string name="pref_audiobookshelf_add_another_server_desc">Connect an additional Audiobookshelf server</string>

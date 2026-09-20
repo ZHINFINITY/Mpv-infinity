@@ -792,6 +792,35 @@ object PlaybackSession : MPVLib.EventObserver {
 
   fun isCurrentGeneration(generation: Long): Boolean = generation > 0L && _state.value.generation == generation
 
+  internal fun audiobookProgress(reachedEnd: Boolean = false): AudiobookProgress? {
+    val info = _state.value.currentItem?.audiobook ?: return null
+    val positionMs = ((getPropertyDouble("time-pos") ?: 0.0) * 1000.0).toLong().coerceAtLeast(0L)
+    return AudiobookProgress(
+      item = info,
+      positionMs = positionMs,
+      reachedEnd = reachedEnd,
+      capturedAtNanos = System.nanoTime(),
+    )
+  }
+
+  internal fun seekAudiobookTrack(
+    bookId: Long,
+    trackId: Long,
+    positionMs: Long,
+    generation: Long,
+    resumePlayback: Boolean,
+  ) {
+    if (!isCurrentGeneration(generation)) return
+    val info = _state.value.currentItem?.audiobook ?: return
+    if (info.bookId != bookId || info.trackId != trackId) return
+    setPropertyDouble("time-pos", positionMs.coerceAtLeast(0L) / 1000.0)
+    setPropertyBoolean("pause", !resumePlayback)
+  }
+
+  internal fun applyAudiobookSpeed(generation: Long, speed: Float) {
+    if (isCurrentGeneration(generation)) setPropertyDouble("speed", speed.toDouble().coerceAtLeast(0.05))
+  }
+
   fun isPositionRestorePending(generation: Long): Boolean =
     nativeLock.withLock {
       generation > 0L && pendingPositionRestoreGeneration == generation

@@ -138,6 +138,8 @@ enum class Sheets {
   AudioProperties,
   VisualizerStyle,
   Lyrics,
+  AudiobookRewind,
+  AudiobookSleepTimer,
 }
 
 enum class Panels {
