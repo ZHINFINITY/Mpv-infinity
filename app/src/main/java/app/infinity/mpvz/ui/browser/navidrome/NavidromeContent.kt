@@ -386,7 +386,7 @@ fun NavidromeContent(
           pagerState = musicPagerState,
           visibleTabs = musicTabs,
           onTabSelected = { tab ->
-            navigateMusicTab(musicTabs.indexOf(tab))
+            pagerScope.launch { musicPagerState.animateScrollToPage(musicTabs.indexOf(tab)) }
           },
           onSongClick = { song -> viewModel.playSong(context, song) },
           onAlbumClick = { album -> viewModel.openAlbumDetail(album) },
