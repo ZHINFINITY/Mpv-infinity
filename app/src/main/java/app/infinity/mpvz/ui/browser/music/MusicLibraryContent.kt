@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -101,6 +103,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -108,7 +112,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.floor
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -152,6 +158,7 @@ import app.infinity.mpvz.utils.permission.PermissionUtils
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -1390,19 +1397,124 @@ private fun SongsTabContent(
         }
       }
     } else {
-      LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
+      Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+          state = listState,
+          modifier = Modifier.fillMaxSize(),
+          contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+        ) {
+          items(songs, key = { it.id }) { song ->
+            SongListItem(
+              song = song,
+              isSelected = selectionManager.isSelected(song),
+              isPlaying = song.isNowPlaying(),
+              coverArtSizeDp = coverArtSizeDp,
+              onClick = { onSongClick(song) },
+              onLongClick = { onSongLongClick(song) }
+            )
+          }
+        }
+        if (songs.size >= 12) {
+          AlphabetFastScroller(
+            songs = songs,
+            listState = listState,
+            modifier = Modifier.align(Alignment.CenterEnd),
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun AlphabetFastScroller(
+  songs: List<MusicSong>,
+  listState: LazyListState,
+  modifier: Modifier = Modifier,
+) {
+  val scope = rememberCoroutineScope()
+  val letters = remember { listOf("#") + ('A'..'Z').map(Char::toString) }
+  var activeLetter by remember { mutableStateOf<String?>(null) }
+  var railSize by remember { mutableStateOf(IntSize.Zero) }
+
+  fun selectAt(y: Float) {
+    if (railSize.height <= 0) return
+    val index = ((y / railSize.height) * letters.lastIndex)
+      .roundToInt()
+      .coerceIn(0, letters.lastIndex)
+    val letter = letters[index]
+    activeLetter = letter
+    val target = songs.indexOfFirst { song ->
+      val first = song.title.trim().firstOrNull()?.uppercaseChar()
+      if (letter == "#") first == null || !first.isLetter() else first?.toString() == letter
+    }
+    if (target >= 0) scope.launch { listState.animateScrollToItem(target) }
+  }
+
+  LaunchedEffect(activeLetter) {
+    if (activeLetter != null) {
+      delay(650L)
+      activeLetter = null
+    }
+  }
+
+  Box(
+    modifier = modifier
+      .padding(end = 4.dp)
+      .width(28.dp)
+      .fillMaxHeight(0.72f)
+      .onSizeChanged { railSize = it }
+      .pointerInput(letters) {
+        detectTapGestures { offset -> selectAt(offset.y) }
+      }
+      .pointerInput(letters) {
+        detectDragGestures(
+          onDragStart = { offset -> selectAt(offset.y) },
+          onDrag = { change, _ ->
+            change.consume()
+            selectAt(change.position.y)
+          },
+        )
+      },
+    contentAlignment = Alignment.Center,
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxHeight()
+        .background(
+          MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.72f),
+          RoundedCornerShape(14.dp),
+        )
+        .padding(vertical = 5.dp, horizontal = 3.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.SpaceEvenly,
+    ) {
+      letters.forEach { letter ->
+        Text(
+          text = letter,
+          style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          textAlign = TextAlign.Center,
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+    }
+    activeLetter?.let { letter ->
+      Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shadowElevation = 8.dp,
+        modifier = Modifier
+          .align(Alignment.CenterStart)
+          .size(52.dp)
+          .offset(x = (-60).dp),
       ) {
-        items(songs, key = { it.id }) { song ->
-          SongListItem(
-            song = song,
-            isSelected = selectionManager.isSelected(song),
-            isPlaying = song.isNowPlaying(),
-            coverArtSizeDp = coverArtSizeDp,
-            onClick = { onSongClick(song) },
-            onLongClick = { onSongLongClick(song) }
+        Box(contentAlignment = Alignment.Center) {
+          Text(
+            text = letter,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
           )
         }
       }
