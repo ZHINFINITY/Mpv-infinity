@@ -91,7 +91,7 @@ fun MusicSourceChooser(
       Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-      MusicSourceItem(stringResource(R.string.music_source_local), Icons.RoundedFilled.Folder, currentSource == MusicSourceProvider.LOCAL) {
+      MusicSourceItem(stringResource(R.string.music_source_local), MusicSourceProvider.LOCAL, currentSource == MusicSourceProvider.LOCAL) {
         preferences.musicSourceProvider.set(MusicSourceProvider.LOCAL)
         expanded = false
       }

@@ -606,7 +606,10 @@ fun PlayerSheets(
     Sheets.AudiobookSleepTimer -> {
       app.infinity.mpvz.ui.player.controls.components.sheets.AudiobookSheet(
         sheet = sheetShown,
-        onChapterEnd = { onDismissRequest() },
+        onChapterEnd = {
+          viewModel.sleepAtCurrentChapterEnd()
+          onDismissRequest()
+        },
         onDismiss = onDismissRequest,
       )
     }

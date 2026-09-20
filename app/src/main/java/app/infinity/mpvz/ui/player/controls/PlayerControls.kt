@@ -483,7 +483,9 @@ fun PlayerControls(
         chapters = chapters.toImmutableList(),
         onSeekToChapter = {
           val selectedChapter = chapters.getOrNull(it)
-          if (nativeEngineActive && selectedChapter != null) {
+          if (currentPlaybackItem?.audiobook != null && selectedChapter != null) {
+            viewModel.seekToPlaybackChapter(selectedChapter)
+          } else if (nativeEngineActive && selectedChapter != null) {
             activity?.nativeSeekTo((selectedChapter.start * 1000.0).toLong())
             activity?.nativeUnpause()
           } else {
