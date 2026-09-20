@@ -1796,10 +1796,15 @@ fun PlayerControls(
                 if (showChapterIndicators) chapters.toImmutableList() else persistentListOf()
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
+            // Liquid glass needs a surface container to render against. It therefore enables
+            // the outer box when that box setting is off, while the effect itself is applied
+            // only to this active seekbar container.
+            val seekbarContainerEnabled = showSeekbarOuterContainer || liquidGlassSurfaces
+            val useLiquidGlassSeekbar = liquidGlassSurfaces && seekbarContainerEnabled
 
             Box(
               contentAlignment = Alignment.Center,
-              modifier = if (showSeekbarOuterContainer || liquidGlassSurfaces) {
+              modifier = if (seekbarContainerEnabled) {
                 Modifier
                   .padding(horizontal = if (isPortrait) 8.dp else 6.dp)
                   .fillMaxWidth()
@@ -1807,7 +1812,7 @@ fun PlayerControls(
                   .clip(RoundedCornerShape(26.dp))
                   .background(
                     when {
-                      liquidGlassSurfaces -> {
+                      useLiquidGlassSeekbar -> {
                         val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
                         if (darkSurface) Color.Black.copy(alpha = 0.24f) else Color.White.copy(alpha = 0.28f)
                       }
