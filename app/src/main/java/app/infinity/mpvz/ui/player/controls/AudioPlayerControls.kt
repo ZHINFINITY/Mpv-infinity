@@ -918,11 +918,12 @@ fun AudioPlayerControls(
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
+  val audioStandbyDelaySeconds by audioPreferences.audioStandbyDelaySeconds.collectAsState()
 
-  LaunchedEffect(audioStandbyMode, isPlaying, isPortrait, lastUserInteractionTime) {
+  LaunchedEffect(audioStandbyMode, audioStandbyDelaySeconds, isPlaying, isPortrait, lastUserInteractionTime) {
     isStandbyActive = false
     if (audioStandbyMode && isPlaying) {
-      kotlinx.coroutines.delay(5000L)
+      kotlinx.coroutines.delay(audioStandbyDelaySeconds.coerceIn(1, 60) * 1000L)
       isStandbyActive = true
     }
   }

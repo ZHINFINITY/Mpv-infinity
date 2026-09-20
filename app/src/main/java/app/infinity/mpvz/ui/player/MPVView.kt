@@ -494,15 +494,18 @@ class MPVView(
 
     val preferredFont = subtitlesPreferences.font.get().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
     PlaybackSession.setOptionString("sub-font", preferredFont)
+    PlaybackSession.setOptionString("secondary-sub-font", preferredFont)
 
     if (subtitlesPreferences.overrideAssSubs.get()) {
       PlaybackSession.setOptionString("sub-ass-override", "force")
       PlaybackSession.setOptionString("sub-ass-justify", "yes")
+      PlaybackSession.setOptionString("secondary-sub-ass-override", "force")
     } else {
       PlaybackSession.setOptionString("sub-ass-override", "no")
+      PlaybackSession.setOptionString("secondary-sub-ass-override", "no")
     }
 
-    // Typography and styling for mpv's supported primary subtitle path.
+    // Typography and styling for both primary and secondary MPV subtitle tracks.
     val fontSize = subtitlesPreferences.fontSize.get().toString()
     val bold = if (subtitlesPreferences.bold.get()) "yes" else "no"
     val italic = if (subtitlesPreferences.italic.get()) "yes" else "no"
@@ -515,6 +518,9 @@ class MPVView(
     val borderStyle = subtitlesPreferences.borderStyle.get().value
     val shadowOffset = subtitlesPreferences.shadowOffset.get().toString()
     val subPos = clampSubtitlePosition(subtitlesPreferences.subPos.get())
+    val w = width.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.widthPixels.toFloat()
+    val h = height.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.heightPixels.toFloat()
+    val secondarySubPos = calculateSecondarySubtitlePosition(subPos, w, h)
     val subScale = subtitlesPreferences.subScale.get().toString()
 
     val scaleByWindow = if (subtitlesPreferences.scaleByWindow.get()) "yes" else "no"
@@ -528,21 +534,23 @@ class MPVView(
       }
     PlaybackSession.setOptionString("blend-subtitles", blendMode)
 
-    PlaybackSession.setOptionString("sub-font-size", fontSize)
-    PlaybackSession.setOptionString("sub-bold", bold)
-    PlaybackSession.setOptionString("sub-italic", italic)
-    PlaybackSession.setOptionString("sub-justify", justify)
-    PlaybackSession.setOptionString("sub-color", textColor)
-    PlaybackSession.setOptionString("sub-back-color", backgroundColor)
-    PlaybackSession.setOptionString("sub-border-color", borderColor)
-    PlaybackSession.setOptionString("sub-shadow-color", shadowColor)
-    PlaybackSession.setOptionString("sub-border-size", borderSize)
-    PlaybackSession.setOptionString("sub-border-style", borderStyle)
-    PlaybackSession.setOptionString("sub-shadow-offset", shadowOffset)
-    PlaybackSession.setOptionString("sub-scale", subScale)
-    PlaybackSession.setOptionString("sub-pos", subPos.toString())
-    PlaybackSession.setOptionString("sub-scale-by-window", scaleByWindow)
-    PlaybackSession.setOptionString("sub-use-margins", scaleByWindow)
+    for ((prefix, pos) in listOf("sub-" to subPos.toString(), "secondary-sub-" to secondarySubPos.toString())) {
+      PlaybackSession.setOptionString("${prefix}font-size", fontSize)
+      PlaybackSession.setOptionString("${prefix}bold", bold)
+      PlaybackSession.setOptionString("${prefix}italic", italic)
+      PlaybackSession.setOptionString("${prefix}justify", justify)
+      PlaybackSession.setOptionString("${prefix}color", textColor)
+      PlaybackSession.setOptionString("${prefix}back-color", backgroundColor)
+      PlaybackSession.setOptionString("${prefix}border-color", borderColor)
+      PlaybackSession.setOptionString("${prefix}shadow-color", shadowColor)
+      PlaybackSession.setOptionString("${prefix}border-size", borderSize)
+      PlaybackSession.setOptionString("${prefix}border-style", borderStyle)
+      PlaybackSession.setOptionString("${prefix}shadow-offset", shadowOffset)
+      PlaybackSession.setOptionString("${prefix}scale", subScale)
+      PlaybackSession.setOptionString("${prefix}pos", pos)
+      PlaybackSession.setOptionString("${prefix}scale-by-window", scaleByWindow)
+      PlaybackSession.setOptionString("${prefix}use-margins", scaleByWindow)
+    }
   }
 
   fun applyAnime4KShaders() {

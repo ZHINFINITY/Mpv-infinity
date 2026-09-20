@@ -57,6 +57,9 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      - name: Install native subtitle build dependencies
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
