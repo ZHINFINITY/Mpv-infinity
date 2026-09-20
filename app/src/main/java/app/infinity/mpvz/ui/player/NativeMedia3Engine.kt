@@ -226,6 +226,7 @@ class NativeMedia3Engine(context: Context) {
   private var metadataChapters: List<NativeChapter> = emptyList()
   private var preparationStartedAtMs: Long = 0L
   private var preparationUri: Uri? = null
+  private var sourceSizeBytes: Long = 0L
 
   private val listener = object : Player.Listener {
     override fun onRenderedFirstFrame() {
@@ -668,6 +669,16 @@ class NativeMedia3Engine(context: Context) {
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
+    sourceSizeBytes = resolveLocalSize(mediaUri)
+    if (sourceSizeBytes <= 0L && (mediaUri.scheme.equals("http", true) || mediaUri.scheme.equals("https", true))) {
+      Thread {
+        val resolved = resolveHttpSize(mediaUri, headers)
+        if (resolved > 0L && preparationUri == mediaUri) {
+          sourceSizeBytes = resolved
+          loopHandler.post { publishSnapshot() }
+        }
+      }.apply { name = "native-media-size"; isDaemon = true }.start()
+    }
     metadataChapters = emptyList()
     Log.d(logTag, "prepare begin uri=$preparationUri")
     player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
@@ -697,6 +708,44 @@ class NativeMedia3Engine(context: Context) {
       "mpd" -> "application/dash+xml"
       else -> null
     }
+
+  private fun resolveLocalSize(uri: Uri): Long {
+    if (uri.scheme.equals("file", true)) return File(uri.path.orEmpty()).length()
+    if (uri.scheme.equals("content", true)) {
+      return runCatching {
+        appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+      }.getOrNull()?.takeIf { it > 0L } ?: 0L
+    }
+    return 0L
+  }
+
+  private fun resolveHttpSize(uri: Uri, requestHeaders: Map<String, String>): Long =
+    runCatching {
+      fun open(method: String, range: String? = null) =
+        (java.net.URL(uri.toString()).openConnection() as java.net.HttpURLConnection).apply {
+          requestMethod = method
+          connectTimeout = 4_000
+          readTimeout = 4_000
+          range?.let { setRequestProperty("Range", it) }
+          requestHeaders.forEach { (key, value) -> setRequestProperty(key, value) }
+        }
+      open("HEAD").let { connection ->
+        try {
+          if (connection.responseCode in 200..399 && connection.contentLengthLong > 0L) connection.contentLengthLong else -1L
+        } finally {
+          connection.disconnect()
+        }
+      }.takeIf { it > 0L } ?: open("GET", "bytes=0-0").let { connection ->
+        try {
+          val range = connection.getHeaderField("Content-Range").orEmpty()
+          Regex("/(\\d+)$").find(range)?.groupValues?.get(1)?.toLongOrNull()
+            ?: connection.contentLengthLong.takeIf { it > 0L }
+            ?: -1L
+        } finally {
+          connection.disconnect()
+        }
+      }
+    }.getOrDefault(-1L).coerceAtLeast(0L)
 
   fun setPlaying(playing: Boolean) {
     if (playing) {
@@ -943,6 +992,15 @@ class NativeMedia3Engine(context: Context) {
       .takeIf { it != C.TIME_UNSET && it > 0L }
       ?.also { lastKnownDurationMs = it }
       ?: lastKnownDurationMs
+    val declaredVideoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0
+    val estimatedVideoBitrate =
+      if (declaredVideoBitrate == 0 && sourceSizeBytes > 0L && reportedDurationMs > 0L) {
+        ((sourceSizeBytes * 8_000L) / reportedDurationMs)
+          .coerceIn(1L, Int.MAX_VALUE.toLong())
+          .toInt()
+      } else {
+        0
+      }
     _snapshot.value = NativePlaybackSnapshot(
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
@@ -954,7 +1012,7 @@ class NativeMedia3Engine(context: Context) {
       videoHeight = video?.height ?: 0,
       videoMimeType = video?.sampleMimeType,
       videoCodec = video?.codecs,
-      videoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0,
+      videoBitrate = declaredVideoBitrate.takeIf { it > 0 } ?: estimatedVideoBitrate,
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
       audioBitrate = audio?.bitrate?.takeIf { it > 0 } ?: 0,
       audioChannels = audio?.channelCount ?: 0,

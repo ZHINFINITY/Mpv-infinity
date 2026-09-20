@@ -173,6 +173,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var playbackTransitionAudioGuardToken = 0L
   private var playbackTransitionAudioGuardPreviousMute: Boolean? = null
   private var playbackTransitionAudioGuardCanRestore = false
+  private var mutedForTeardown = false
   private val activeAmbientShaderPaths = linkedSetOf<String>()
   private var desiredAmbientScaleX = 1.0
   private var desiredAmbientScaleY = 1.0
@@ -226,6 +227,7 @@ object PlaybackSession : MPVLib.EventObserver {
         initialPositionGeneration = 0L
         clearSeekAudioGuardLocked(restoreMute = false)
         clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+        mutedForTeardown = false
         resetAmbientShaderTrackingLocked()
         updateState { it.copy(phase = PlaybackPhase.INITIALIZING, error = null) }
         try {
@@ -271,6 +273,7 @@ object PlaybackSession : MPVLib.EventObserver {
           initialPositionGeneration = 0L
           clearSeekAudioGuardLocked(restoreMute = false)
           clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+          mutedForTeardown = false
           resetAmbientShaderTrackingLocked()
           updateState {
             it.copy(
@@ -482,7 +485,10 @@ object PlaybackSession : MPVLib.EventObserver {
    * so the output remains muted through destruction.
    */
   fun muteForTeardown() {
-    withCore(Unit) { beginPlaybackTransitionAudioGuardLocked(canRestore = false) }
+    withCore(Unit) {
+      beginPlaybackTransitionAudioGuardLocked(canRestore = false)
+      mutedForTeardown = true
+    }
   }
 
   private fun destroyLocked() {
@@ -704,6 +710,14 @@ object PlaybackSession : MPVLib.EventObserver {
       suspendedVideoTrack = null
       desiredPaused = positionRestoreOverride?.paused ?: false
       clearSeekAudioGuardLocked(restoreMute = true)
+      // Activity teardown mutes the process-wide MPV core synchronously. The core is intentionally
+      // reused by the next Activity, so do not let that terminal mute become the previous value of
+      // the next transition guard; otherwise Native -> MPV handoff and the music player stay silent.
+      if (mutedForTeardown) {
+        clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+        runCatching { MPVLib.setPropertyBoolean("mute", false) }
+        mutedForTeardown = false
+      }
 
       // Keep replacement/startup audio muted until mpv has restarted cleanly. FILE_LOADED can be
       // followed by saved-position and audio-track restoration; without this guard tiny fragments
