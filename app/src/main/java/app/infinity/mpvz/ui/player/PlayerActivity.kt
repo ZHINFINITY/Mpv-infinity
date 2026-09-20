@@ -197,6 +197,7 @@ class PlayerActivity :
    */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
   private val nativeEngine by lazy { NativeMedia3Engine(this) }
+  private var nativeSubtitleBeforeTranslation: NativeTrack? = null
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
   private var activeEngineMode = PlaybackEngineMode.MPV
   private var engineHandoffJob: Job? = null
@@ -995,6 +996,19 @@ class PlayerActivity :
         nativeEngine.snapshot.value.subtitleTracks.getOrNull(-id - 1)?.let { track ->
           if (track.selected) nativeEngine.disableSubtitles() else nativeEngine.selectTrack(track)
         }
+      }
+    }
+    viewModel.setNativeSubtitleVisibilityListener { hidden ->
+      if (hidden) {
+        if (nativeSubtitleBeforeTranslation == null) {
+          nativeSubtitleBeforeTranslation = nativeEngine.snapshot.value.subtitleTracks
+            .firstOrNull { it.selected }
+        }
+        nativeEngine.disableSubtitles()
+      } else {
+        val track = nativeSubtitleBeforeTranslation
+        nativeSubtitleBeforeTranslation = null
+        if (track != null) nativeEngine.selectTrack(track) else nativeEngine.disableSubtitles()
       }
     }
     viewModel.setNativeExternalSubtitleToggleListener { id ->
