@@ -512,7 +512,7 @@ fun MusicLibraryContent(
                   Icon(
                     imageVector = Icons.RoundedFilled.Audiotrack,
                     contentDescription = stringResource(R.string.ui_music),
-                    modifier = Modifier.size(24.dp).padding(horizontal = 2.dp),
+                    modifier = Modifier.size(26.dp),
                     tint = MaterialTheme.colorScheme.secondary,
                   )
                   MusicSourceChooser(

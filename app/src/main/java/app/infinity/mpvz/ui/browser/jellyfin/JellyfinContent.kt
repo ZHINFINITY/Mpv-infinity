@@ -130,6 +130,7 @@ fun JellyfinContent(
   val uiState by viewModel.uiState.collectAsState()
   val context = LocalContext.current
   val backstack = LocalBackStack.current
+  var modeReady by remember(isMusicOnlyMode, uiState.activeServer?.id) { mutableStateOf(false) }
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val navidromeRepository = koinInject<NavidromeRepository>()
@@ -290,10 +291,19 @@ fun JellyfinContent(
   }
 
   LaunchedEffect(isMusicOnlyMode, uiState.activeServer?.id) {
+    modeReady = false
     uiState.activeServer?.let { server ->
       if (isMusicOnlyMode) viewModel.enterMusicOnlyMode(server)
       else viewModel.enterFullLibraryMode(server)
     }
+    modeReady = true
+  }
+
+  if (!modeReady) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+      CircularProgressIndicator()
+    }
+    return
   }
 
   val pageTitle =
@@ -420,7 +430,7 @@ fun JellyfinContent(
                 Icon(
                   imageVector = Icons.RoundedFilled.Audiotrack,
                   contentDescription = stringResource(R.string.ui_music),
-                  modifier = Modifier.size(24.dp).padding(horizontal = 2.dp),
+                  modifier = Modifier.size(26.dp),
                   tint = MaterialTheme.colorScheme.secondary,
                 )
                 MusicSourceChooser(
@@ -433,7 +443,7 @@ fun JellyfinContent(
                 androidx.compose.material3.Icon(
                   painter = painterResource(R.drawable.ic_jellyfin),
                   contentDescription = stringResource(R.string.ui_jellyfin),
-                  modifier = Modifier.size(24.dp),
+                  modifier = Modifier.padding(start = 8.dp).size(30.dp),
                   tint = MaterialTheme.colorScheme.secondary,
                 )
               }
