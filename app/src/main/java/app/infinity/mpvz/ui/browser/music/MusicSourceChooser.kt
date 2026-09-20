@@ -15,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import app.infinity.mpvz.R
@@ -32,6 +34,8 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import org.koin.compose.koinInject
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @Composable
 fun MusicSourceChooser(
@@ -43,11 +47,17 @@ fun MusicSourceChooser(
   val preferences = koinInject<MediaServerPreferences>()
   val currentSource by preferences.musicSourceProvider.collectAsState()
   var expanded by remember { mutableStateOf(false) }
+  val lifecycleOwner = LocalLifecycleOwner.current
 
-  val sourceTitle = when (currentSource) {
-    MusicSourceProvider.LOCAL -> stringResource(R.string.music_source_local)
-    MusicSourceProvider.JELLYFIN -> stringResource(R.string.music_source_jellyfin)
-    MusicSourceProvider.NAVIDROME -> stringResource(R.string.music_source_navidrome)
+  DisposableEffect(lifecycleOwner) {
+    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_STOP) expanded = false
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose {
+      lifecycleOwner.lifecycle.removeObserver(observer)
+      expanded = false
+    }
   }
 
   @Composable
@@ -75,6 +85,7 @@ fun MusicSourceChooser(
 
   Surface(
     modifier = modifier
+      .widthIn(min = 56.dp)
       .clip(RoundedCornerShape(20.dp))
       .clickable { expanded = true },
     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f),
@@ -86,7 +97,7 @@ fun MusicSourceChooser(
     ) {
       sourceIcon(currentSource, 18.dp)
       Spacer(Modifier.width(6.dp))
-      Text(sourceTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+      Text("M", style = MaterialTheme.typography.labelLarge, maxLines = 1)
       Spacer(Modifier.width(4.dp))
       Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
     }

@@ -1965,7 +1965,7 @@ fun AudioPlayerControls(
               horizontalAlignment = Alignment.CenterHorizontally,
             ) {
               headerBar()
-              if (!isAudiobook) losslessBadge()
+              losslessBadge()
             }
           }
         } else {
@@ -1976,7 +1976,7 @@ fun AudioPlayerControls(
           ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
               headerBar()
-              if (!isAudiobook) losslessBadge()
+              losslessBadge()
               Spacer(modifier = Modifier.height(16.dp))
             }
           }
@@ -2021,7 +2021,7 @@ fun AudioPlayerControls(
         ) {
           headerBar()
           Spacer(modifier = Modifier.height(4.dp))
-          if (!isAudiobook) losslessBadge()
+          losslessBadge()
           Spacer(modifier = Modifier.height(6.dp))
           centerVisualizerView(
             Modifier
@@ -2080,7 +2080,7 @@ fun AudioPlayerControls(
               lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
             } else {
               if (!isStandbyActive) headerBar()
-              if (!isStandbyActive && !isAudiobook) losslessBadge()
+              if (!isStandbyActive) losslessBadge()
               if (!isStandbyActive) trackMetadataView()
               Spacer(modifier = Modifier.weight(1f))
             }

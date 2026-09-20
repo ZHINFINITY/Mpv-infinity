@@ -221,6 +221,56 @@ class JellyfinViewModel(
     loadHomeDashboard(server)
   }
 
+  fun enterMusicOnlyMode(server: JellyfinServer) {
+    loadDashboardJob?.cancel()
+    loadItemsJob?.cancel()
+    musicLoadJob?.cancel()
+    _uiState.update {
+      it.copy(
+        isLoading = true,
+        isMusicLoading = false,
+        openLibrary = null,
+        currentItems = emptyList(),
+        resumeItems = emptyList(),
+        heroItems = emptyList(),
+        latestMovies = emptyList(),
+        latestShows = emptyList(),
+        librarySections = emptyList(),
+        recommendations = emptyList(),
+        detailItem = null,
+      )
+    }
+    viewModelScope.launch {
+      _uiState.update { it.copy(error = null) }
+      val musicLibrary = jellyfinRepository.getLibraries(server).getOrDefault(emptyList())
+        .firstOrNull { isMusicLibrary(it) }
+      if (musicLibrary == null) {
+        _uiState.update {
+          it.copy(
+            isLoading = false,
+            isMusicLoading = false,
+            openLibrary = null,
+            currentItems = emptyList(),
+            libraries = emptyList(),
+            error = "No music library was found on this Jellyfin server",
+          )
+        }
+        return@launch
+      }
+      _uiState.update { it.copy(isLoading = false, libraries = listOf(musicLibrary)) }
+      openLibrary(
+        server,
+        JellyfinLibraryView(
+          id = musicLibrary.id,
+          title = musicLibrary.name,
+          itemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
+          collectionType = musicLibrary.collectionType,
+          isMusic = true,
+        ),
+      )
+    }
+  }
+
   fun loadHomeDashboard(server: JellyfinServer) {
     loadDashboardJob?.cancel()
     loadItemsJob?.cancel()
