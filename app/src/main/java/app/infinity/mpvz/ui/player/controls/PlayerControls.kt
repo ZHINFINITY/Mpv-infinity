@@ -1799,7 +1799,7 @@ fun PlayerControls(
 
             Box(
               contentAlignment = Alignment.Center,
-              modifier = if (showSeekbarOuterContainer) {
+              modifier = if (showSeekbarOuterContainer || liquidGlassSurfaces) {
                 Modifier
                   .padding(horizontal = if (isPortrait) 8.dp else 6.dp)
                   .fillMaxWidth()
@@ -2279,7 +2279,12 @@ private fun NativeStatsPageOverlay(
   } else {
     "--"
   }
-  val videoBitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
+  val videoBitrate =
+    if (snapshot.videoBitrate > 0) {
+      "${if (snapshot.videoBitrateEstimated) "~" else ""}${snapshot.videoBitrate / 1000} kbps"
+    } else {
+      "--"
+    }
   val audioBitrate = if (snapshot.audioBitrate > 0) "${snapshot.audioBitrate / 1000} kbps" else "--"
   Surface(
     modifier = modifier,
