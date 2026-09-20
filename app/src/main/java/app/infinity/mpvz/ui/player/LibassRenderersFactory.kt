@@ -18,6 +18,7 @@ class LibassRenderersFactory(
   context: Context,
   private val rendererProvider: () -> LibassSubtitleRenderer?,
   private val positionConsumer: (Long) -> Unit,
+  private val cueConsumer: (String) -> Unit = {},
 ) : DefaultRenderersFactory(context) {
   override fun buildTextRenderers(
     context: Context,
@@ -27,6 +28,8 @@ class LibassRenderersFactory(
     out: ArrayList<Renderer>,
   ) {
     super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
-    out.add(Media3LibassRenderer(rendererProvider, positionConsumer))
+    // Put the raw renderer first so the dependency's generic ASS renderer does not consume the
+    // stream before we can preserve its original bytes and expose cue text to translation.
+    out.add(0, Media3LibassRenderer(rendererProvider, positionConsumer, cueConsumer))
   }
 }

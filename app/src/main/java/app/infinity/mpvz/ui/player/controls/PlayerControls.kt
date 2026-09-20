@@ -2285,7 +2285,7 @@ private fun NativeStatsPageOverlay(
   }
   val videoBitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
   val audioBitrate = if (snapshot.audioBitrate > 0) "${snapshot.audioBitrate / 1000} kbps" else "--"
-  val videoCodec = snapshot.videoCodec ?: snapshot.videoMimeType?.substringAfterLast('/') ?: "--"
+  val videoCodec = nativeStatsCodecLabel(snapshot.videoMimeType, snapshot.videoCodec)
   val videoDecoder = snapshot.videoDecoder ?: "Media3"
   val outputRange = snapshot.videoDynamicRange ?: "--"
   val colorSpace = snapshot.videoColorSpace ?: "--"
@@ -2333,6 +2333,22 @@ private fun NativeStatsPageOverlay(
         }
       }
     }
+  }
+}
+
+private fun nativeStatsCodecLabel(mimeType: String?, codecs: String?): String {
+  val value = "${mimeType.orEmpty()} ${codecs.orEmpty()}".lowercase()
+  return when {
+    value.contains("dolby-vision") || value.contains("dvhe") || value.contains("dvh1") -> "Dolby Vision"
+    value.contains("hevc") || value.contains("hvc1") || value.contains("hev1") -> "HEVC / H.265"
+    value.contains("avc") || value.contains("h264") -> "AVC / H.264"
+    value.contains("av01") || value.contains("av1") -> "AV1"
+    value.contains("vp9") -> "VP9"
+    value.contains("vp8") -> "VP8"
+    value.contains("mpeg4") || value.contains("mp4v") -> "MPEG-4"
+    else -> codecs?.takeIf { it.isNotBlank() }
+      ?: mimeType?.substringAfterLast('/')?.uppercase()
+      ?: "--"
   }
 }
 
