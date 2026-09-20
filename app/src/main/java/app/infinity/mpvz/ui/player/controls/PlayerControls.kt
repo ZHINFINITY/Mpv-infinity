@@ -125,6 +125,7 @@ import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.AiPreferences
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
+import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.PlayerButton
 import app.infinity.mpvz.preferences.PlayerPreferences
@@ -169,6 +170,7 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.toFixed
 import app.infinity.mpvz.ui.theme.controlColor
 import app.infinity.mpvz.ui.theme.playerRippleConfiguration
 import app.infinity.mpvz.ui.theme.spacing
+import app.infinity.mpvz.utils.media.loadCustomFontEntries
 import dev.vivvvek.seeker.Segment
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -229,6 +231,40 @@ fun PlayerControls(
   val subtitleBold by subtitlesPreferences.bold.collectAsState()
   val subtitleItalic by subtitlesPreferences.italic.collectAsState()
   val subtitleJustification by subtitlesPreferences.justification.collectAsState()
+  val subtitleFont by subtitlesPreferences.font.collectAsState()
+  val mpvSubtitlePosition by PlaybackSession.propInt["sub-pos"].collectAsState()
+  val mpvSubtitleFontSize by PlaybackSession.propInt["sub-font-size"].collectAsState()
+  val mpvSubtitleMarginX by PlaybackSession.propInt["sub-margin-x"].collectAsState()
+  val mpvSubtitleScale by PlaybackSession.propFloat["sub-scale"].collectAsState()
+  val mpvOsdWidth by PlaybackSession.propInt["osd-width"].collectAsState()
+  val mpvOsdHeight by PlaybackSession.propInt["osd-height"].collectAsState()
+  val subtitleFontContext = LocalContext.current
+  val translatedSubtitleFontFamily by produceState<androidx.compose.ui.text.font.FontFamily>(
+    initialValue = androidx.compose.ui.text.font.FontFamily.SansSerif,
+    key1 = "$subtitleFont:$subtitleBold:$subtitleItalic",
+  ) {
+    val family = subtitleFont.trim().ifBlank { DEFAULT_SUBTITLE_FONT_FAMILY }
+    val typefaceStyle = when {
+      subtitleBold && subtitleItalic -> android.graphics.Typeface.BOLD_ITALIC
+      subtitleBold -> android.graphics.Typeface.BOLD
+      subtitleItalic -> android.graphics.Typeface.ITALIC
+      else -> android.graphics.Typeface.NORMAL
+    }
+    if (family == DEFAULT_SUBTITLE_FONT_FAMILY) {
+      value = androidx.compose.ui.text.font.FontFamily.SansSerif
+    } else {
+      val custom = withContext(Dispatchers.IO) {
+        loadCustomFontEntries(subtitleFontContext).firstOrNull {
+          it.familyName.equals(family, ignoreCase = true)
+        }
+      }
+      value = custom?.let {
+        androidx.compose.ui.text.font.FontFamily(android.graphics.Typeface.createFromFile(it.file))
+      } ?: androidx.compose.ui.text.font.FontFamily(
+        android.graphics.Typeface.create(family, typefaceStyle),
+      )
+    }
+  }
   val decoderPreferences = koinInject<DecoderPreferences>()
   val playbackEngine by decoderPreferences.playbackEngine.collectAsState()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
@@ -897,21 +933,33 @@ fun PlayerControls(
             exit = fadeOut(),
             modifier = Modifier.constrainAs(translatedSubtitle) {
               linkTo(parent.start, parent.end)
-              val configuredOffset =
-                (((100 - subtitlePosition) * (if (isPortrait) 1.55f else 2.1f))
-                  .coerceIn(-250f, 250f)).dp
+              val configuredOffset = with(density) {
+                val heightPx = (mpvOsdHeight ?: controlsLayoutHeightPx.takeIf { it > 0 } ?: 720).toFloat()
+                (((100 - (mpvSubtitlePosition ?: subtitlePosition)).coerceIn(0, 100) / 100f) * heightPx).toDp()
+              }
               bottom.linkTo(parent.bottom, configuredOffset)
             },
           ) {
             embeddedTranslatedSubtitle?.takeIf { it.isNotBlank() }?.let { translated ->
               val translatedFontSize = with(density) {
-                val osdHeightPx = controlsLayoutHeightPx.takeIf { it > 0 }?.toFloat() ?: 720f
-                val fontSizePx = subtitleFontSize * (osdHeightPx / 720f) * subtitleScale
+                val osdHeightPx = (mpvOsdHeight ?: controlsLayoutHeightPx.takeIf { it > 0 } ?: 720).toFloat()
+                val fontSizePx =
+                  (mpvSubtitleFontSize ?: subtitleFontSize) *
+                    (osdHeightPx / 720f) *
+                    (mpvSubtitleScale ?: subtitleScale)
                 (fontSizePx / density.density).coerceIn(8f, 120f).sp
               }
               TranslatedSubtitleText(
                 text = translated,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                modifier =
+                  Modifier
+                    .fillMaxWidth(
+                      ((1f -
+                        2f * (mpvSubtitleMarginX ?: 25).toFloat() /
+                          (mpvOsdWidth ?: 1280).toFloat())
+                        .coerceIn(0.45f, 1f))
+                        .coerceAtMost(0.86f),
+                    ).padding(horizontal = 0.dp),
                 fontSize = translatedFontSize,
                 textColor = Color(subtitleTextColor),
                 backgroundColor = Color(subtitleBackgroundColor),
@@ -920,6 +968,7 @@ fun PlayerControls(
                 shadowOffset = subtitleShadowOffset.toFloat(),
                 bold = subtitleBold,
                 italic = subtitleItalic,
+                fontFamily = translatedSubtitleFontFamily,
                 textAlign = when (subtitleJustification.name.lowercase()) {
                   "left" -> androidx.compose.ui.text.style.TextAlign.Start
                   "right" -> androidx.compose.ui.text.style.TextAlign.End
@@ -949,7 +998,7 @@ fun PlayerControls(
             when (currentPlayerUpdate) {
               is PlayerUpdates.MultipleSpeed ->
                 MultipleSpeedPlayerUpdate(
-                  currentSpeed = holdForMultipleSpeed.coerceIn(0.5f, 4f),
+                currentSpeed = holdForMultipleSpeed.coerceIn(0.5f, 8f),
                 )
               is PlayerUpdates.DynamicSpeedControl -> {
                 val speedUpdate = currentPlayerUpdate as PlayerUpdates.DynamicSpeedControl
@@ -2091,8 +2140,10 @@ fun PlayerControls(
       },
       decoder = decoder,
       onUpdateDecoder = { PlaybackSession.setPropertyString("hwdec", it.value) },
-      selectedEngine = if (nativeEngineActive) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV,
-      onSelectEngine = { decoderPreferences.playbackEngine.set(it) },
+      selectedEngine =
+        activity?.currentEngineSelectionForControls()
+          ?: if (nativeEngineActive) PlaybackEngineMode.NATIVE else playbackEngine,
+      onSelectEngine = onSelectEngine ?: { decoderPreferences.playbackEngine.set(it) },
       speed = playbackSpeed ?: playerPreferences.defaultSpeed.get(),
       onSpeedChange = {
         val speed = it.toFixed(2)
