@@ -358,6 +358,15 @@ internal object AudiobookPlayback {
     }
   }
 
+  suspend fun launchNextBook(context: Context, currentBookId: Long) {
+    val orderedBooks = dao.getAllBooks().sortedWith(
+      compareBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+    )
+    val currentIndex = orderedBooks.indexOfFirst { it.id == currentBookId }
+    val nextBook = orderedBooks.getOrNull(currentIndex + 1) ?: return
+    launch(context, nextBook.id, fromBeginning = true)
+  }
+
   suspend fun positionForLoad(item: PlaybackItem, intent: Intent): PlaybackPositionRestoreOverride? {
     val info = item.audiobook ?: return null
     val stored = dao.getBook(info.bookId) ?: return PlaybackPositionRestoreOverride(0.0, false)

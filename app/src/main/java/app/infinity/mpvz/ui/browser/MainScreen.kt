@@ -75,6 +75,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -651,6 +652,7 @@ private fun ExpressivePillNavigationBar(
         Modifier
           .wrapContentWidth()
           .horizontalScroll(rememberScrollState())
+          .clipToBounds()
           .padding(horizontal = startPadding, vertical = 6.dp),
     ) {
       // Sliding background pill indicator
@@ -755,7 +757,7 @@ private fun ExpressivePillNavigationBar(
                     Icons.RoundedFilled.AudiobookWave,
                     contentDescription = stringResource(R.string.audiobooks_title),
                     tint = contentColor,
-                    modifier = Modifier.size(22.dp),
+                    modifier = Modifier.size(24.dp),
                   )
               }
 

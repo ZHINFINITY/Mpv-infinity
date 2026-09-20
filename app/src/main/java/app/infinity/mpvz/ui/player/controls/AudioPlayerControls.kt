@@ -1681,14 +1681,14 @@ fun AudioPlayerControls(
           )
         }
         ReactiveIconButton(
-          onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
-          enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
+          onClick = { if (isAudiobook) viewModel.playNextAudiobook() else viewModel.playNext() },
+          enabled = if (isAudiobook) true else playlistModeEnabled,
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipNext,
             contentDescription = null,
             tint =
-              if (playlistModeEnabled) {
+              if (isAudiobook || playlistModeEnabled) {
                 MaterialTheme.colorScheme.onSurface
               } else {
                 MaterialTheme.colorScheme.onSurface

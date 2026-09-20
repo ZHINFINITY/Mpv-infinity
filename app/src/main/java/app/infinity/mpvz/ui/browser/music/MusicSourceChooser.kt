@@ -98,11 +98,11 @@ fun MusicSourceChooser(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.Center,
     ) {
-      sourceIcon(currentSource, 18.dp)
+      sourceIcon(currentSource, 20.dp)
+      Spacer(Modifier.width(8.dp))
+      Text(sourceTitle, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
       Spacer(Modifier.width(6.dp))
-      Text(sourceTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-      Spacer(Modifier.width(4.dp))
-      Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(18.dp))
+      Icon(Icons.RoundedFilled.ExpandMore, contentDescription = null, modifier = Modifier.size(20.dp))
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
       MusicSourceItem(stringResource(R.string.music_source_local), MusicSourceProvider.LOCAL, currentSource == MusicSourceProvider.LOCAL) {

@@ -390,7 +390,7 @@ fun JellyfinContent(
       } else {
         BrowserTopBar(
           title = pageTitle,
-          showTitle = !isMusicOnlyMode,
+          showTitle = false,
           isInSelectionMode = selectionManager.isInSelectionMode,
           selectedCount = selectionManager.selectedCount,
           totalCount = uiState.currentItems.size,
@@ -415,23 +415,32 @@ fun JellyfinContent(
             backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
           },
           leadingActions = {
-            if (!selectionManager.isInSelectionMode && isMusicOnlyMode) {
-              Icon(
-                imageVector = Icons.RoundedFilled.Audiotrack,
-                contentDescription = stringResource(R.string.ui_music),
-                modifier = Modifier.size(22.dp).padding(horizontal = 2.dp),
-                tint = MaterialTheme.colorScheme.secondary,
-              )
-              MusicSourceChooser(
-                hasJellyfin = uiState.servers.isNotEmpty(),
-                hasNavidrome = navidromeServers.isNotEmpty(),
-                onManageServers = { backstack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
-                modifier = Modifier.padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-              )
+            if (!selectionManager.isInSelectionMode) {
+              if (isMusicOnlyMode) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Audiotrack,
+                  contentDescription = stringResource(R.string.ui_music),
+                  modifier = Modifier.size(24.dp).padding(horizontal = 2.dp),
+                  tint = MaterialTheme.colorScheme.secondary,
+                )
+                MusicSourceChooser(
+                  hasJellyfin = uiState.servers.isNotEmpty(),
+                  hasNavidrome = navidromeServers.isNotEmpty(),
+                  onManageServers = { backstack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
+                  modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                )
+              } else {
+                androidx.compose.material3.Icon(
+                  painter = painterResource(R.drawable.ic_jellyfin),
+                  contentDescription = stringResource(R.string.ui_jellyfin),
+                  modifier = Modifier.size(24.dp),
+                  tint = MaterialTheme.colorScheme.secondary,
+                )
+              }
             }
           },
           additionalActions = {
-            if (!selectionManager.isInSelectionMode) {
+            if (!selectionManager.isInSelectionMode && isMusicOnlyMode) {
               if (isMusicOnlyMode) {
                 IconButton(
                   onClick = { backstack.add(AudiobookLibraryScreen) },
@@ -445,6 +454,8 @@ fun JellyfinContent(
                   )
                 }
               }
+            }
+            if (!selectionManager.isInSelectionMode && !isMusicOnlyMode) {
               IconButton(onClick = { isManageServersOpen = true }, modifier = Modifier.padding(horizontal = 2.dp)) {
                 Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers", modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.secondary)
               }
