@@ -9,7 +9,7 @@
 
 package app.infinity.mpvz.ui.browser.navidrome
 
-import app.infinity.mpvz.ui.utils.NavigationBackHandler as BackHandler
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -76,12 +76,12 @@ import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.navigateTo
-import app.infinity.mpvz.ui.utils.rememberTabNavigation
 import app.infinity.mpvz.ui.browser.dialogs.MusicSortDialog
 import app.infinity.mpvz.ui.browser.music.MusicSortField
 import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import org.koin.compose.koinInject
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,7 +92,6 @@ fun NavidromeContent(
 ) {
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val context = LocalContext.current
-  val backstack = LocalBackStack.current
 
   val navidromeRepository = koinInject<NavidromeRepository>()
 
@@ -115,7 +114,7 @@ fun NavidromeContent(
     initialPage = 0,
     pageCount = { musicTabs.size },
   )
-  val navigateMusicTab = rememberTabNavigation(musicPagerState)
+  val pagerScope = rememberCoroutineScope()
 
   LaunchedEffect(musicPagerState.settledPage, musicPagerState.isScrollInProgress) {
     if (!musicPagerState.isScrollInProgress) {
@@ -227,20 +226,7 @@ fun NavidromeContent(
           } else null,
           onSearchClick = { isSearching = true },
           onSettingsClick = { isAddDialogOpen = true },
-          preSearchActions = {},
-          postSearchActions = {
-            IconButton(
-              onClick = { backstack.navigateTo(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
-              modifier = Modifier.padding(horizontal = 2.dp),
-            ) {
-              Icon(
-                imageVector = Icons.RoundedFilled.Download,
-                contentDescription = stringResource(R.string.downloads_open_downloads),
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.secondary,
-              )
-            }
-          },
+          additionalActions = {},
         )
       }
 
@@ -256,7 +242,7 @@ fun NavidromeContent(
           musicTabs.forEachIndexed { index, tab ->
             Tab(
               selected = selectedTabIndex == index,
-              onClick = { navigateMusicTab(index) },
+              onClick = { pagerScope.launch { musicPagerState.animateScrollToPage(index) } },
               text = {
                 Text(
                   text = tab.title,
