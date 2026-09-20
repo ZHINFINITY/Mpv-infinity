@@ -9,7 +9,7 @@
 
 package app.infinity.mpvz.ui.browser.navidrome
 
-import androidx.activity.compose.BackHandler
+import app.infinity.mpvz.ui.utils.NavigationBackHandler as BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement

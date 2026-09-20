@@ -29,7 +29,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +59,7 @@ import app.infinity.mpvz.ui.browser.music.SharedMusicGridCard
 import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.utils.NavigationPager
 import org.koin.compose.koinInject
 
 @Composable
@@ -84,7 +84,7 @@ fun NavidromeMusicView(
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentSessionItem = queueState.currentItem
 
-  HorizontalPager(
+  NavigationPager(
     state = pagerState,
     modifier = modifier
       .fillMaxSize()
