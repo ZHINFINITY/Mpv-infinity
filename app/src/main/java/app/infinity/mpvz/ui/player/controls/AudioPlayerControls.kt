@@ -2250,7 +2250,7 @@ private fun UpNextPlaylistContent(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
 
   if (playbackState.currentItem?.audiobook != null) {
-    val chapters by viewModel.playbackChapters.collectAsStateWithLifecycle()
+    val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val filePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
     val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
     val currentItem = playbackState.currentItem
@@ -2308,7 +2308,7 @@ private fun UpNextPlaylistContent(
           modifier = Modifier.fillMaxSize(),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          items(chapters.size, key = { index -> "${chapters[index].name}_${chapters[index].start}" }) { index ->
+          items(chapters.size, key = { index -> "${chapters[index].title}_${chapters[index].start}" }) { index ->
             val chapter = chapters[index]
             val isSelected = currentChapterIndex == index
             Surface(
@@ -2328,7 +2328,7 @@ private fun UpNextPlaylistContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
               ) {
                 Text(
-                  text = "${index + 1}. ${chapter.name}",
+                  text = "${index + 1}. ${chapter.title}",
                   style = MaterialTheme.typography.bodyMedium,
                   fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                   color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
