@@ -1796,10 +1796,9 @@ fun PlayerControls(
                 if (showChapterIndicators) chapters.toImmutableList() else persistentListOf()
               }
             val skipSegmentsImmutable = remember(skipSegments) { skipSegments.toImmutableList() }
-            // Liquid glass needs a surface container to render against. It therefore enables
-            // the outer box when that box setting is off, while the effect itself is applied
-            // only to this active seekbar container.
-            val seekbarContainerEnabled = showSeekbarOuterContainer || liquidGlassSurfaces
+            // The outer-box preference controls container visibility. Liquid glass only changes
+            // the appearance when that independently-enabled container is present.
+            val seekbarContainerEnabled = showSeekbarOuterContainer
             val useLiquidGlassSeekbar = liquidGlassSurfaces && seekbarContainerEnabled
 
             Box(
