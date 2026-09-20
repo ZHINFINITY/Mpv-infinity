@@ -7136,6 +7136,9 @@ class PlayerActivity :
 
     pendingBackgroundPlaybackStart = false
     return if (startBackgroundPlaybackInternal(bindToActivity = true)) {
+      // Set this before returning: finish()/onDestroy() can run immediately after the handoff and
+      // must not interpret the still-running service as an ordinary player close.
+      isBackgroundPlaybackSessionActive = true
       BackgroundPlaybackStartResult.Started
     } else {
       BackgroundPlaybackStartResult.Blocked
@@ -7157,10 +7160,18 @@ class PlayerActivity :
       nativeEngine.setPlaying(false)
       activeEngineMode = PlaybackEngineMode.MPV
       viewModel.setNativeEngineActive(false)
+      forceMpvAudioTrackAutoOnNextLoad = true
       decoderPreferences.playbackEngine.set(PlaybackEngineMode.MPV)
       nativeEngine.stop()
       binding.media3Player.alpha = 0f
       binding.player.visibility = View.VISIBLE
+      if (!mpvInitialized) {
+        val setupError = setupMPV()
+        if (setupError != null) {
+          Log.e(TAG, "Unable to initialize MPV for Native background handoff: $setupError")
+          return false
+        }
+      }
       if (mpvInitialized) {
         loadPlaylistItem(playlistIndex.coerceAtLeast(0))
         lifecycleScope.launch {
@@ -7176,6 +7187,7 @@ class PlayerActivity :
     // Prevent starting service multiple times
     if (bindToActivity && serviceBound && mediaPlaybackService?.isForegroundReady() == true) {
       setActivityMediaSessionActive(false)
+      isBackgroundPlaybackSessionActive = true
       Log.d(TAG, "Service already bound, skipping start")
       return true
     }

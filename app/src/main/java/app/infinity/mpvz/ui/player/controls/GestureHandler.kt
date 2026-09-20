@@ -12,6 +12,7 @@ package app.infinity.mpvz.ui.player.controls
 import app.infinity.mpvz.ui.player.PlaybackSession
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -42,7 +43,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1500,12 +1500,24 @@ fun CombiningChevronsAnimation(
   trigger: Int,
   modifier: Modifier = Modifier,
 ) {
-  // Keep one feedback animation visible. Repeated taps restart it rather than accumulating
-  // in-flight chevrons, which is especially noticeable during native 4K/HDR playback.
-  var animationKey by remember { mutableStateOf(0L) }
+  // Use one animation instance. Restarting the same Animatable cancels the previous run instead
+  // of composing another moving chevron on every Native double-tap.
+  val progress = remember { Animatable(0f) }
 
   LaunchedEffect(trigger) {
-    animationKey++
+    if (trigger != 0) {
+      progress.snapTo(0f)
+      progress.animateTo(
+        targetValue = 1f,
+        animationSpec =
+          spring(
+            dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
+            stiffness = AppMotion.Spatial.Standard.stiffness,
+          ),
+      )
+    } else {
+      progress.snapTo(0f)
+    }
   }
 
   Row(
@@ -1525,31 +1537,13 @@ fun CombiningChevronsAnimation(
         modifier = Modifier.size(48.dp),
       )
 
-      // Changing the key cancels the previous animation and starts only the latest one.
-      key(animationKey) {
-        if (animationKey != 0L) {
-          MovingChevron()
-        }
-      }
+      MovingChevron(progress = progress)
     }
   }
 }
 
 @Composable
-fun MovingChevron() {
-  val progress = remember { Animatable(0f) }
-
-  LaunchedEffect(Unit) {
-    progress.animateTo(
-      targetValue = 1f,
-      animationSpec =
-        spring(
-          dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-          stiffness = AppMotion.Spatial.Standard.stiffness,
-      ),
-    )
-  }
-
+fun MovingChevron(progress: Animatable<Float, AnimationVector1D>) {
   val startOffsetDp = -15.dp
   Icon(
     imageVector = Icons.RoundedFilled.KeyboardArrowRight,
