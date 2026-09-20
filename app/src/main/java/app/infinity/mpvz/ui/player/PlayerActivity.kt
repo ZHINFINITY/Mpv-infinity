@@ -1026,6 +1026,13 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         nativeEngine.snapshot.collect { snapshot ->
           viewModel.setNativeTracks(snapshot)
+          if (isNativeEngineActive() && snapshot.isPlaying) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+          } else if (isNativeEngineActive() && !snapshot.isPlaying &&
+            !playerPreferences.keepScreenOnWhenPaused.get()
+          ) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+          }
           if (!snapshot.isEnded) {
             nativeEofHandled = false
           } else if (isNativeEngineActive() && !nativeEofHandled) {
