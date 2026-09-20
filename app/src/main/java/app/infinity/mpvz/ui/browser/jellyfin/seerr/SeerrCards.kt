@@ -242,6 +242,8 @@ fun SeerrStatusChip(
       fontWeight = FontWeight.Bold,
       fontSize = 9.5.sp,
       modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.5.dp),
+      maxLines = 1,
+      softWrap = false,
     )
   }
 }
@@ -291,6 +293,8 @@ fun SeerrRequestStatusChip(
       fontWeight = FontWeight.Bold,
       fontSize = 10.sp,
       modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+      maxLines = 1,
+      softWrap = false,
     )
   }
 }
