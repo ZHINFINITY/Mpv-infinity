@@ -77,6 +77,7 @@ import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
 import app.infinity.mpvz.ui.browser.music.MusicSourceChooser
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
@@ -251,6 +252,19 @@ fun NavidromeContent(
             }
           },
           additionalActions = {
+            if (isMusicOnlyMode) {
+              IconButton(
+                onClick = { backStack.add(AudiobookLibraryScreen) },
+                modifier = Modifier.padding(horizontal = 2.dp),
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.AudiobookWave,
+                  contentDescription = stringResource(R.string.audiobooks_title),
+                  modifier = Modifier.size(22.dp),
+                  tint = MaterialTheme.colorScheme.secondary,
+                )
+              }
+            }
             IconButton(
               onClick = { backStack.add(MediaServersPreferencesScreen) },
               modifier = Modifier.padding(horizontal = 2.dp),

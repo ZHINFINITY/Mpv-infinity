@@ -370,6 +370,15 @@ object MainScreen : Screen {
     val context = androidx.compose.ui.platform.LocalContext.current
     val jellyfinViewModel: app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel =
       androidx.lifecycle.viewmodel.compose.viewModel(
+        key = "main-jellyfin",
+        factory =
+          app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel.factory(
+            context.applicationContext as android.app.Application,
+          ),
+      )
+    val sharedMusicJellyfinViewModel: app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel =
+      androidx.lifecycle.viewmodel.compose.viewModel(
+        key = "shared-music-jellyfin",
         factory =
           app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel.factory(
             context.applicationContext as android.app.Application,
@@ -414,7 +423,7 @@ object MainScreen : Screen {
                   MusicSourceProvider.LOCAL -> MusicLibraryContent()
                   MusicSourceProvider.JELLYFIN ->
                     app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(
-                      viewModel = jellyfinViewModel,
+                      viewModel = sharedMusicJellyfinViewModel,
                       isMusicOnlyMode = true,
                     )
                   MusicSourceProvider.NAVIDROME ->

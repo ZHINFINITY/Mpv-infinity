@@ -110,6 +110,7 @@ import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
 import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.ui.browser.dialogs.JellyfinSortDialog
+import app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen
 import app.infinity.mpvz.ui.browser.music.MusicSourceChooser
 import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
@@ -399,7 +400,7 @@ fun JellyfinContent(
           onDeselectAll = { selectionManager.clear() },
           onPlayClick = { viewModel.playSelected(context, selectionManager.getSelectedItems()) },
           isSingleSelection = selectionManager.isSingleSelection,
-          onBackClick = if (uiState.openLibrary != null) { { viewModel.navigateBack() } } else null,
+          onBackClick = if (!isMusicOnlyMode && uiState.openLibrary != null) { { viewModel.navigateBack() } } else null,
           onSortClick = if (uiState.openLibrary != null && !(uiState.openLibrary?.isMusic == true && uiState.musicActiveTab == JellyfinMusicTab.HOME)) {
             { isSortDialogOpen = true }
           } else null,
@@ -431,6 +432,19 @@ fun JellyfinContent(
           },
           additionalActions = {
             if (!selectionManager.isInSelectionMode) {
+              if (isMusicOnlyMode) {
+                IconButton(
+                  onClick = { backstack.add(AudiobookLibraryScreen) },
+                  modifier = Modifier.padding(horizontal = 2.dp),
+                ) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.AudiobookWave,
+                    contentDescription = stringResource(R.string.audiobooks_title),
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.secondary,
+                  )
+                }
+              }
               IconButton(onClick = { isManageServersOpen = true }, modifier = Modifier.padding(horizontal = 2.dp)) {
                 Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers", modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.secondary)
               }
