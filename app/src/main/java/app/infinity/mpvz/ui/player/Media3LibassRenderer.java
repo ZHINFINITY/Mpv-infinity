@@ -18,6 +18,7 @@ import java.util.Map;
 /** Silent Media3 text renderer: forwards one raw subtitle sample at a time to libass. */
 final class Media3LibassRenderer extends BaseRenderer {
   private final java.util.function.Supplier<LibassSubtitleRenderer> rendererProvider;
+  private final java.util.function.Consumer<String> cueConsumer;
   private final FormatHolder formatHolder = new FormatHolder();
   private final DecoderInputBuffer inputBuffer = new DecoderInputBuffer(DecoderInputBuffer.BUFFER_REPLACEMENT_MODE_NORMAL);
   private LibassSubtitleRenderer renderer;
@@ -25,11 +26,15 @@ final class Media3LibassRenderer extends BaseRenderer {
   private final Map<String, String> formatTrackIds = new LinkedHashMap<>();
   private boolean inputEnded;
   private long streamOffsetUs;
+  private long lastCueEndUs = -1L;
+  private boolean cueActive;
 
   Media3LibassRenderer(java.util.function.Supplier<LibassSubtitleRenderer> rendererProvider,
-      java.util.function.Consumer<Long> ignoredPositionConsumer) {
+      java.util.function.Consumer<Long> ignoredPositionConsumer,
+      java.util.function.Consumer<String> cueConsumer) {
     super(C.TRACK_TYPE_TEXT);
     this.rendererProvider = rendererProvider;
+    this.cueConsumer = cueConsumer;
   }
   @Override public String getName() { return "Media3LibassRenderer"; }
   @Override public int supportsFormat(Format format) throws ExoPlaybackException {
@@ -59,9 +64,16 @@ final class Media3LibassRenderer extends BaseRenderer {
   @Override protected void onPositionReset(long positionUs, boolean joining, boolean sampleStreamIsResetToKeyFrame) {
     inputEnded = false;
     inputBuffer.clear();
+    lastCueEndUs = -1L;
+    cueActive = false;
+    cueConsumer.accept("");
   }
   @Override public void render(long positionUs, long elapsedRealtimeUs) throws ExoPlaybackException {
     if (inputEnded || renderer == null || trackId == null) return;
+    if (cueActive && lastCueEndUs >= 0L && positionUs >= lastCueEndUs) {
+      cueActive = false;
+      cueConsumer.accept("");
+    }
     for (int i = 0; i < 32; i++) {
       inputBuffer.clear();
       int result = readSource(formatHolder, inputBuffer, 0);
@@ -81,6 +93,12 @@ final class Media3LibassRenderer extends BaseRenderer {
       byte[] sample = new byte[data.remaining()];
       data.get(sample);
       long timestampUs = Math.max(0L, inputBuffer.timeUs - streamOffsetUs);
+      String cueText = extractCueText(sample);
+      if (!cueText.isEmpty()) {
+        cueConsumer.accept(cueText);
+        cueActive = true;
+        lastCueEndUs = timestampUs + 4_000_000L;
+      }
       renderer.appendEvent(trackId, normalizeRawSample(sample, timestampUs, 4_000_000L), timestampUs, 4_000_000L);
     }
   }
@@ -89,6 +107,20 @@ final class Media3LibassRenderer extends BaseRenderer {
   @Override protected void onDisabled() {
     if (renderer != null) for (String id : formatTrackIds.values()) renderer.removeTrack(id);
     formatTrackIds.clear(); trackId = null; renderer = null;
+    cueActive = false;
+    lastCueEndUs = -1L;
+    cueConsumer.accept("");
+  }
+  private static String extractCueText(byte[] data) {
+    String text = new String(data, StandardCharsets.UTF_8).replace("\u0000", "").trim();
+    if (text.isEmpty()) return "";
+    String line = text.split("\\r?\\n")[0].trim();
+    String body = line.regionMatches(true, 0, "Dialogue:", 0, 9)
+        || line.regionMatches(true, 0, "Comment:", 0, 8)
+        ? line.substring(line.indexOf(':') + 1).trim() : line;
+    String[] fields = body.split(",", 10);
+    String value = fields.length >= 10 ? fields[9] : body;
+    return value.replaceAll("\\\\{[^}]*}", "").replace("\\\\N", "\n").replace("\\\\n", "\n").trim();
   }
   private static byte[] join(java.util.List<byte[]> parts) {
     if (parts == null || parts.isEmpty()) return new byte[0];

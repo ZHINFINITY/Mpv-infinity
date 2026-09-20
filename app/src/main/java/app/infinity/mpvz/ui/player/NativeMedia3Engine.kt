@@ -42,7 +42,6 @@ import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
 import androidx.media3.subtitle.libass.LibassSubtitleRenderer
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.kt.withAssMkvSupport
-import io.github.peerless2012.ass.media.kt.withAssSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -149,13 +148,17 @@ class NativeMedia3Engine(context: Context) {
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
     .setRenderersFactory(
-      DefaultRenderersFactory(context.applicationContext)
+      LibassRenderersFactory(
+        context.applicationContext,
+        { ensureLibassRenderer() },
+        { /* Raw renderer is clocked by Media3. */ },
+        { cue -> _subtitleCueText.value = cue },
+      )
         // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
         // devices reject the first candidate even though a compatible Media3 decoder is available.
         .setEnableDecoderFallback(true)
-        .withAssSupport(assHandler),
     )
     .build()
   private var attachedView: PlayerView? = null
@@ -224,6 +227,8 @@ class NativeMedia3Engine(context: Context) {
   )
   private val _snapshot = MutableStateFlow(NativePlaybackSnapshot())
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
+  private val _subtitleCueText = MutableStateFlow("")
+  val subtitleCueText: StateFlow<String> = _subtitleCueText.asStateFlow()
   private var selectedNativeSubtitleKey: Pair<Int, Int>? = null
   private val _hasRenderedFirstFrame = MutableStateFlow(false)
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
@@ -277,10 +282,11 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onCues(cueGroup: CueGroup) {
-      // Do not convert Media3 Cue objects back into ASS. That loses the original ASS document,
-      // styles, drawing commands, layers, and positions, and duplicates the direct libass path.
-      // Native Media3 text renderers receive these cues through PlayerView; raw ASS is handled by
-      // DirectAssSubtitleRenderer and never reaches this callback.
+      // This is only a text bridge for embedded translation. Media3/ass-media still renders the
+      // original cue through PlayerView/libass; no cue is converted or re-rendered here.
+      _subtitleCueText.value = cueGroup.cues
+        .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotBlank) }
+        .joinToString("\n")
     }
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
@@ -949,6 +955,7 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = null
     player.stop()
     player.clearMediaItems()
+    _subtitleCueText.value = ""
     selectedNativeSubtitleKey = null
     externalAssEnabled.clear()
     libassRenderer?.let { renderer ->
@@ -1026,8 +1033,12 @@ class NativeMedia3Engine(context: Context) {
       ?: lastKnownDurationMs
     val colorInfo = video?.colorInfo
     val dynamicRange = video?.let {
-      when (colorInfo?.colorTransfer) {
-        C.COLOR_TRANSFER_ST2084, C.COLOR_TRANSFER_HLG -> "HDR"
+      val mime = it.sampleMimeType.orEmpty().lowercase()
+      val codecs = it.codecs.orEmpty().lowercase()
+      when {
+        mime.contains("dolby-vision") || codecs.startsWith("dvhe") || codecs.startsWith("dvh1") -> "Dolby Vision"
+        colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG -> "HLG"
+        colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 -> "HDR10"
         else -> "SDR"
       }
     }
