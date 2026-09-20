@@ -224,6 +224,7 @@ fun NavidromeContent(
       } else {
         BrowserTopBar(
           title = if (isMusicOnlyMode) stringResource(R.string.ui_music) else (uiState.activeServer?.name ?: stringResource(R.string.pref_navidrome_title)),
+          showTitle = !isMusicOnlyMode,
           isInSelectionMode = false,
           selectedCount = 0,
           totalCount = 0,
@@ -235,11 +236,17 @@ fun NavidromeContent(
           onSettingsClick = { backStack.add(PreferencesScreen) },
           leadingActions = {
             if (isMusicOnlyMode) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Audiotrack,
+                contentDescription = stringResource(R.string.ui_music),
+                modifier = Modifier.size(22.dp).padding(horizontal = 2.dp),
+                tint = MaterialTheme.colorScheme.secondary,
+              )
               MusicSourceChooser(
                 hasJellyfin = jellyfinServers.isNotEmpty(),
                 hasNavidrome = uiState.servers.isNotEmpty(),
                 onManageServers = { backStack.add(MediaServersPreferencesScreen) },
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                modifier = Modifier.padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
               )
             }
           },

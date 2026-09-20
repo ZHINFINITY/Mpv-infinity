@@ -273,7 +273,7 @@ object AudiobookLibraryScreen : Screen {
           isInSelectionMode = false,
           selectedCount = 0,
           totalCount = totalCount,
-          onBackClick = { backStack.popSafely() },
+          onBackClick = null,
           onCancelSelection = { },
           onSortClick = { isSortMenuExpanded = true },
           onSearchClick = { search = !search },

@@ -496,6 +496,7 @@ fun MusicLibraryContent(
           Box {
             BrowserTopBar(
               title = stringResource(R.string.ui_music),
+              showTitle = false,
               isInSelectionMode = activeSelectionManager.isInSelectionMode,
               selectedCount = activeSelectionManager.selectedCount,
               totalCount = totalCount,
@@ -508,11 +509,17 @@ fun MusicLibraryContent(
               },
               leadingActions = {
                 if (!activeSelectionManager.isInSelectionMode) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.Audiotrack,
+                    contentDescription = stringResource(R.string.ui_music),
+                    modifier = Modifier.size(22.dp).padding(horizontal = 2.dp),
+                    tint = MaterialTheme.colorScheme.secondary,
+                  )
                   MusicSourceChooser(
                     hasJellyfin = jellyfinServers.isNotEmpty(),
                     hasNavidrome = navidromeServers.isNotEmpty(),
                     onManageServers = { backStack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(start = 6.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                   )
                 }
               },
