@@ -35,17 +35,12 @@ import app.infinity.mpvz.preferences.preference.PreferenceStore
 import app.infinity.mpvz.preferences.preference.getEnum
 import app.infinity.mpvz.ui.theme.AppTheme
 import app.infinity.mpvz.ui.theme.DarkMode
-import app.infinity.mpvz.ui.theme.WallpaperScaleMode
 import app.infinity.mpvz.ui.theme.spacing
 import kotlinx.collections.immutable.ImmutableList
 
 class AppearancePreferences(
   preferenceStore: PreferenceStore,
 ) {
-  companion object {
-    const val CUSTOM_WALLPAPER_URI_KEY = "custom_wallpaper_uri"
-  }
-
   val darkMode = preferenceStore.getEnum("dark_mode", DarkMode.System)
   // Monochrome is the neutral first-install experience; a persisted user choice always wins.
   val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Monochrome)
@@ -56,13 +51,6 @@ class AppearancePreferences(
     deserializer = CustomThemeCodec::decode,
   )
   val activeCustomThemeId = preferenceStore.getString("active_custom_theme_id", "")
-  val customWallpaperUri = preferenceStore.getString(CUSTOM_WALLPAPER_URI_KEY, "")
-  val customWallpaperZoom = preferenceStore.getFloat("custom_wallpaper_zoom", 1f)
-  val customWallpaperOffsetX = preferenceStore.getFloat("custom_wallpaper_offset_x", 0f)
-  val customWallpaperOffsetY = preferenceStore.getFloat("custom_wallpaper_offset_y", 0f)
-  val customWallpaperScaleMode = preferenceStore.getEnum("custom_wallpaper_scale_mode", WallpaperScaleMode.Fit)
-  val customWallpaperBlur = preferenceStore.getFloat("custom_wallpaper_blur", 0f)
-  val customWallpaperAlpha = preferenceStore.getFloat("custom_wallpaper_alpha", 1f)
   val amoledMode = preferenceStore.getBoolean("amoled_mode", false)
   val liquidGlassSurfaces = preferenceStore.getBoolean("liquid_glass_surfaces", false)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)

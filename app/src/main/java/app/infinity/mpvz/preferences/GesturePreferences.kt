@@ -16,7 +16,6 @@ import app.infinity.mpvz.ui.player.SingleActionGesture
 class GesturePreferences(
   preferenceStore: PreferenceStore,
 ) {
-  val hapticFeedbackEnabled = preferenceStore.getBoolean("haptic_feedback_enabled", true)
   val doubleTapToSeekDuration = preferenceStore.getInt("double_tap_to_seek_duration", 10)
   val doubleTapSeekAreaWidth = preferenceStore.getInt("double_tap_seek_area_width", 35)
   val leftSingleActionGesture = preferenceStore.getEnum("left_double_tap_gesture", SingleActionGesture.Seek)
