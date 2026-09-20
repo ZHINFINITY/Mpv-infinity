@@ -277,7 +277,7 @@ object AudiobookLibraryScreen : Screen {
           onCancelSelection = { },
           onSortClick = { isSortMenuExpanded = true },
           onSearchClick = { search = !search },
-          onSettingsClick = { backStack.navigateTo(PreferencesScreen) },
+          onSettingsClick = { backStack.add(PreferencesScreen) },
           additionalActions = {
             if (!isAbsSource) {
               Box {
@@ -378,7 +378,7 @@ object AudiobookLibraryScreen : Screen {
                   modifier = Modifier.padding(16.dp),
                   style = MaterialTheme.typography.titleMedium,
                 )
-                Button(onClick = { backStack.navigateTo(MediaServersPreferencesScreen) }) {
+                Button(onClick = { backStack.add(MediaServersPreferencesScreen) }) {
                   Text(stringResource(R.string.pref_audiobookshelf_add_server))
                 }
               }

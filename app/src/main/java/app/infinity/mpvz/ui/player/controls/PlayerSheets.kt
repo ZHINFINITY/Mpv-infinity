@@ -601,5 +601,14 @@ fun PlayerSheets(
         onDismiss = onDismissRequest,
       )
     }
+
+    Sheets.AudiobookRewind,
+    Sheets.AudiobookSleepTimer -> {
+      app.infinity.mpvz.ui.player.controls.components.sheets.AudiobookSheet(
+        sheet = sheetShown,
+        onChapterEnd = { onDismissRequest() },
+        onDismiss = onDismissRequest,
+      )
+    }
   }
 }
