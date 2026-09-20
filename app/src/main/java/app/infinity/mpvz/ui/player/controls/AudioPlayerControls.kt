@@ -2308,7 +2308,7 @@ private fun UpNextPlaylistContent(
           modifier = Modifier.fillMaxSize(),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          items(chapters.size, key = { index -> "${chapters[index].title}_${chapters[index].start}" }) { index ->
+          items(chapters.size, key = { index -> "${chapters[index].name}_${chapters[index].start}" }) { index ->
             val chapter = chapters[index]
             val isSelected = currentChapterIndex == index
             Surface(
@@ -2328,7 +2328,7 @@ private fun UpNextPlaylistContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
               ) {
                 Text(
-                  text = "${index + 1}. ${chapter.title}",
+                  text = "${index + 1}. ${chapter.name}",
                   style = MaterialTheme.typography.bodyMedium,
                   fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                   color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
