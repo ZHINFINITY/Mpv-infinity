@@ -229,12 +229,20 @@ fun MoreSheet(
             } else {
               "Preparing output"
             }
+            val codec = nativeSnapshot.videoCodec
+              ?: nativeSnapshot.videoMimeType?.substringAfterLast('/')?.uppercase()
+              ?: "--"
+            val decoder = nativeSnapshot.videoDecoder ?: "Media3"
+            val range = nativeSnapshot.videoDynamicRange ?: "SDR"
+            val colorSpace = nativeSnapshot.videoColorSpace?.let { " · $it" }.orEmpty()
+            val audio = nativeSnapshot.audioCodec
+              ?: if (nativeSnapshot.audioTracks.isNotEmpty()) "Audio" else "--"
             Text(
-              "Output: $quality${nativeSnapshot.videoMimeType?.let { " · $it" } ?: ""}",
+              "Output: $quality · $range$colorSpace · $codec",
               style = MaterialTheme.typography.bodySmall,
             )
             Text(
-              "${if (nativeSnapshot.isPlaying) "Playing" else "Paused"} · Native statistics available",
+              "Decoder: $decoder · Audio: $audio · ${if (nativeSnapshot.isPlaying) "Playing" else "Paused"}",
               style = MaterialTheme.typography.bodySmall,
             )
           } else {
