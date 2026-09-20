@@ -42,8 +42,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -93,6 +96,8 @@ import androidx.compose.ui.util.lerp
 import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.MediaServerPreferences
+import app.infinity.mpvz.preferences.MusicSourceProvider
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
@@ -164,6 +169,7 @@ object MainScreen : Screen {
   @Composable
   override fun Content() {
     val appearancePreferences = koinInject<AppearancePreferences>()
+    val mediaServerPreferences = koinInject<MediaServerPreferences>()
     val showHomeTab by appearancePreferences.showHomeTab.collectAsState()
     val showMusicTab by appearancePreferences.showMusicTab.collectAsState()
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
@@ -172,6 +178,7 @@ object MainScreen : Screen {
     val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val showNavidromeTab by appearancePreferences.showNavidromeTab.collectAsState()
     val showAudiobooksTab by appearancePreferences.showAudiobooksTab.collectAsState()
+    val musicSourceProvider by mediaServerPreferences.musicSourceProvider.collectAsState()
     val hideNavigationBar = NavigationBarState.shouldHideNavigationBar
     val isPermissionDenied = NavigationBarState.isPermissionDenied
     val isDualPaneFolderSelected = NavigationBarState.isDualPaneFolderSelected
@@ -403,7 +410,19 @@ object MainScreen : Screen {
               val tab = visibleTabs.getOrNull(page) ?: return@HorizontalPager
               when (tab) {
                 MainTab.HOME -> FolderListScreen.Content()
-                MainTab.MUSIC -> MusicLibraryContent()
+                MainTab.MUSIC -> when (musicSourceProvider) {
+                  MusicSourceProvider.LOCAL -> MusicLibraryContent()
+                  MusicSourceProvider.JELLYFIN ->
+                    app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(
+                      viewModel = jellyfinViewModel,
+                      isMusicOnlyMode = true,
+                    )
+                  MusicSourceProvider.NAVIDROME ->
+                    app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(
+                      viewModel = navidromeViewModel,
+                      isMusicOnlyMode = true,
+                    )
+                }
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
@@ -505,12 +524,13 @@ object MainScreen : Screen {
                     }
                   ),
             ) {
-              ExpressivePillNavigationBar(
-                visibleTabs = visibleTabs,
-                selectedTab = selectedTab,
-                onTabSelected = onTabSelected,
-                pagerState = pagerState,
-                modifier =
+                ExpressivePillNavigationBar(
+                  visibleTabs = visibleTabs,
+                  selectedTab = selectedTab,
+                  onTabSelected = onTabSelected,
+                  pagerState = pagerState,
+                  maxWidth = (containerWidth - 32.dp).coerceAtLeast(180.dp),
+                  modifier =
                   Modifier.onGloballyPositioned { coords ->
                     val w = with(density) { coords.size.width.toDp() }
                     if (w > 0.dp && w != measuredWidthDp) {
@@ -533,6 +553,7 @@ private fun ExpressivePillNavigationBar(
   onTabSelected: (MainScreen.MainTab) -> Unit,
   modifier: Modifier = Modifier,
   pagerState: PagerState? = null,
+  maxWidth: androidx.compose.ui.unit.Dp? = null,
 ) {
   val haptics = LocalHapticFeedback.current
   val appearancePreferences = koinInject<AppearancePreferences>()
@@ -599,7 +620,9 @@ private fun ExpressivePillNavigationBar(
     }
 
   Surface(
-    modifier = modifier,
+    modifier = modifier
+      .then(if (maxWidth != null) Modifier.widthIn(max = maxWidth) else Modifier)
+      .clip(CircleShape),
     shape = CircleShape,
     color = if (liquidGlassSurfaces) {
       MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
@@ -618,6 +641,7 @@ private fun ExpressivePillNavigationBar(
       modifier =
         Modifier
           .wrapContentWidth()
+          .horizontalScroll(rememberScrollState())
           .padding(horizontal = startPadding, vertical = 6.dp),
     ) {
       // Sliding background pill indicator
@@ -719,7 +743,7 @@ private fun ExpressivePillNavigationBar(
                   )
                 MainScreen.MainTab.AUDIOBOOKS ->
                   Icon(
-                    Icons.RoundedFilled.Bookmarks,
+                    Icons.RoundedFilled.Equalizer,
                     contentDescription = stringResource(R.string.audiobooks_title),
                     tint = contentColor,
                     modifier = Modifier.size(22.dp),

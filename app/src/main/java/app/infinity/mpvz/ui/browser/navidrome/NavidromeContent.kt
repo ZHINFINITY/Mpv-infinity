@@ -69,10 +69,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.navidrome.NavidromeMusicTab
 import app.infinity.mpvz.domain.navidrome.NavidromeServer
+import app.infinity.mpvz.repository.JellyfinRepository
 import app.infinity.mpvz.repository.NavidromeRepository
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.music.SharedMusicGridCard
 import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
+import app.infinity.mpvz.ui.browser.music.MusicSourceChooser
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.utils.LocalBackStack
@@ -97,6 +99,8 @@ fun NavidromeContent(
   val backStack = LocalBackStack.current
 
   val navidromeRepository = koinInject<NavidromeRepository>()
+  val jellyfinRepository = koinInject<JellyfinRepository>()
+  val jellyfinServers by jellyfinRepository.allServers.collectAsState(initial = emptyList())
 
   var isSearching by rememberSaveable { mutableStateOf(false) }
   var isAddDialogOpen by remember { mutableStateOf(false) }
@@ -230,6 +234,14 @@ fun NavidromeContent(
           onSearchClick = { isSearching = true },
           onSettingsClick = { backStack.add(PreferencesScreen) },
           additionalActions = {
+            if (isMusicOnlyMode) {
+              MusicSourceChooser(
+                hasJellyfin = jellyfinServers.isNotEmpty(),
+                hasNavidrome = uiState.servers.isNotEmpty(),
+                onManageServers = { backStack.add(MediaServersPreferencesScreen) },
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+              )
+            }
             IconButton(
               onClick = { backStack.add(MediaServersPreferencesScreen) },
               modifier = Modifier.padding(horizontal = 2.dp),

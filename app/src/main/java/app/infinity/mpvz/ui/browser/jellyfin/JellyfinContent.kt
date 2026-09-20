@@ -97,6 +97,7 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.jellyfin.JellyfinItem
 import app.infinity.mpvz.domain.jellyfin.JellyfinSearchCategory
 import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.repository.NavidromeRepository
 import app.infinity.mpvz.preferences.AppearancePreferences
 import kotlinx.coroutines.launch
 import app.infinity.mpvz.preferences.BrowserPreferences
@@ -109,6 +110,7 @@ import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
 import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.ui.browser.dialogs.JellyfinSortDialog
+import app.infinity.mpvz.ui.browser.music.MusicSourceChooser
 import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.components.InlineSearchBar
@@ -122,12 +124,15 @@ import org.koin.compose.koinInject
 fun JellyfinContent(
   viewModel: JellyfinViewModel,
   modifier: Modifier = Modifier,
+  isMusicOnlyMode: Boolean = false,
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val context = LocalContext.current
   val backstack = LocalBackStack.current
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
+  val navidromeRepository = koinInject<NavidromeRepository>()
+  val navidromeServers by navidromeRepository.allServers.collectAsState(initial = emptyList())
   val layoutMode by browserPreferences.jellyfinLayoutMode.collectAsState()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
@@ -400,6 +405,14 @@ fun JellyfinContent(
           },
           additionalActions = {
             if (!selectionManager.isInSelectionMode) {
+              if (isMusicOnlyMode) {
+                MusicSourceChooser(
+                  hasJellyfin = uiState.servers.isNotEmpty(),
+                  hasNavidrome = navidromeServers.isNotEmpty(),
+                  onManageServers = { backstack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
+                  modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                )
+              }
               IconButton(onClick = { isManageServersOpen = true }, modifier = Modifier.padding(horizontal = 2.dp)) {
                 Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers", modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.secondary)
               }

@@ -37,7 +37,10 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
       AudiobookMarkerUtils.ensureMarker(context, uri, file)
       Source(file, file.name.orEmpty())
     }
-    val audio = sources.filter { it.document.name?.substringAfterLast('.')?.lowercase() in FileTypeUtils.AUDIO_EXTENSIONS }
+    val audio = sources.filter { source ->
+      val extension = source.document.name?.substringAfterLast('.', "")?.lowercase()
+      extension in FileTypeUtils.AUDIO_EXTENSIONS || source.document.type?.startsWith("audio/") == true
+    }
     if (audio.isEmpty()) throw IOException(context.getString(R.string.audiobook_no_audio))
     val sourceKey = folder?.toString() ?: digest(audio.map { it.document.uri.toString() }.sorted().joinToString("\n"))
     dao.findBySource(sourceKey)?.let {
