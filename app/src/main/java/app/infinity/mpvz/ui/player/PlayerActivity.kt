@@ -1026,11 +1026,11 @@ class PlayerActivity :
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         nativeEngine.snapshot.collect { snapshot ->
           viewModel.setNativeTracks(snapshot)
-          if (isNativeEngineActive() && snapshot.isPlaying) {
+          val keepNativeScreenOn = snapshot.isPlaying || playerPreferences.keepScreenOnWhenPaused.get()
+          binding.media3Player.keepScreenOn = keepNativeScreenOn
+          if (keepNativeScreenOn) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-          } else if (isNativeEngineActive() && !snapshot.isPlaying &&
-            !playerPreferences.keepScreenOnWhenPaused.get()
-          ) {
+          } else if (isNativeEngineActive()) {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
           }
           if (!snapshot.isEnded) {
