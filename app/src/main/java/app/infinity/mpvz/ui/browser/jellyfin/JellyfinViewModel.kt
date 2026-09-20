@@ -271,6 +271,29 @@ class JellyfinViewModel(
     }
   }
 
+  fun enterFullLibraryMode(server: JellyfinServer) {
+    loadDashboardJob?.cancel()
+    loadItemsJob?.cancel()
+    musicLoadJob?.cancel()
+    _uiState.update {
+      it.copy(
+        isLoading = true,
+        isMusicLoading = false,
+        openLibrary = null,
+        currentItems = emptyList(),
+        resumeItems = emptyList(),
+        heroItems = emptyList(),
+        latestMovies = emptyList(),
+        latestShows = emptyList(),
+        librarySections = emptyList(),
+        recommendations = emptyList(),
+        detailItem = null,
+        musicActiveTab = JellyfinMusicTab.HOME,
+      )
+    }
+    loadHomeDashboard(server)
+  }
+
   fun loadHomeDashboard(server: JellyfinServer) {
     loadDashboardJob?.cancel()
     loadItemsJob?.cancel()
