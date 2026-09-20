@@ -58,12 +58,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.BrowserPreferences
-import app.infinity.mpvz.preferences.VideoSwipeAction
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.components.RemoteImage
-import app.infinity.mpvz.ui.browser.cards.SelectionIndicator
-import app.infinity.mpvz.ui.browser.cards.VideoSwipeSurface
-import app.infinity.mpvz.ui.browser.cards.animatedSelectionColor
 import app.infinity.mpvz.ui.icons.AppIcon
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -94,18 +90,9 @@ fun SharedMusicTrackListItem(
   modifier: Modifier = Modifier,
   swipeIdentity: String = title,
   isWatched: Boolean? = null,
-  onSwipeAction: ((VideoSwipeAction) -> Unit)? = null,
+  onSwipeAction: ((Any) -> Unit)? = null,
 ) {
-  val preferences = koinInject<BrowserPreferences>()
-  val leftAction by preferences.videoSwipeLeft.collectAsState()
-  val rightAction by preferences.videoSwipeRight.collectAsState()
-  VideoSwipeSurface(
-    identity = swipeIdentity,
-    leftAction = leftAction,
-    rightAction = rightAction,
-    isWatched = isWatched,
-    enabled = !isSelected && onSwipeAction != null,
-    onAction = onSwipeAction,
+  Card(
     modifier = modifier
       .fillMaxWidth()
       .padding(horizontal = 8.dp, vertical = 3.dp)
@@ -120,11 +107,8 @@ fun SharedMusicTrackListItem(
       ),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = animatedSelectionColor(
-        selected = isSelected,
-        selectedColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-        unselectedColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f),
-      ),
+      containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+      else MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f),
       contentColor = MaterialTheme.colorScheme.onSurface,
     ),
   ) {
@@ -185,10 +169,14 @@ fun SharedMusicTrackListItem(
             )
           }
         }
-        SelectionIndicator(
-          selected = isSelected,
-          modifier = Modifier.align(if (isCircular) Alignment.Center else Alignment.TopEnd).padding(4.dp),
-        )
+        if (isSelected) {
+          Icon(
+            imageVector = Icons.RoundedFilled.CheckCircle,
+            contentDescription = "Selected",
+            tint = Color.White,
+            modifier = Modifier.align(if (isCircular) Alignment.Center else Alignment.TopEnd).padding(4.dp).size(24.dp),
+          )
+        }
       }
 
       Spacer(modifier = Modifier.width(14.dp))
