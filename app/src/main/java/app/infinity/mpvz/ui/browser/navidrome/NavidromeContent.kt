@@ -94,6 +94,7 @@ fun NavidromeContent(
 ) {
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val context = LocalContext.current
+  val backStack = LocalBackStack.current
 
   val navidromeRepository = koinInject<NavidromeRepository>()
 
