@@ -92,7 +92,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 fun NavidromeContent(
   viewModel: NavidromeViewModel,
   modifier: Modifier = Modifier,
-  isMusicOnlyMode: Boolean = true,
+  isMusicOnlyMode: Boolean = false,
 ) {
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val context = LocalContext.current
