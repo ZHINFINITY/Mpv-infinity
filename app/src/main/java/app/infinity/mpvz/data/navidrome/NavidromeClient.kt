@@ -88,6 +88,7 @@ class NavidromeClient(
     server: NavidromeServer,
     endpoint: String,
     extraParams: Map<String, String> = emptyMap(),
+    stableSalt: String? = null,
   ): String {
     val cleanBase = server.serverUrl.trimEnd('/')
     val secret = if (server.authMode == app.infinity.mpvz.domain.navidrome.NavidromeAuthMode.TOKEN && server.token.isNotBlank()) {
@@ -95,7 +96,7 @@ class NavidromeClient(
     } else {
       server.password
     }
-    val salt = generateSalt()
+    val salt = stableSalt?.takeIf { it.isNotBlank() } ?: generateSalt()
     val token = md5(secret + salt)
 
     val uriBuilder = Uri.parse("$cleanBase/rest/$endpoint").buildUpon()
@@ -125,7 +126,13 @@ class NavidromeClient(
     if (coverArtId.startsWith("/")) {
       return "${server.serverUrl.trimEnd('/')}$coverArtId"
     }
-    return buildSubsonicUrl(server, "getCoverArt.view", mapOf("id" to coverArtId, "size" to size.toString()))
+    val stableSalt = md5("${server.serverUrl}|${server.username}|$coverArtId|$size").take(8)
+    return buildSubsonicUrl(
+      server,
+      "getCoverArt.view",
+      mapOf("id" to coverArtId, "size" to size.toString()),
+      stableSalt = stableSalt,
+    )
   }
 
   fun getArtistImageUrl(server: NavidromeServer, artist: NavidromeArtist, size: Int = 500): String? {

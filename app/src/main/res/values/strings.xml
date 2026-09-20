@@ -64,6 +64,8 @@
   <string name="pref_nav_jellyfin_auto_summary">Enable the Jellyfin navigation tab after a successful server connection</string>
   <string name="pref_nav_navidrome_title">Show Navidrome tab</string>
   <string name="pref_nav_navidrome_summary">Show or hide Navidrome in the bottom navigation bar</string>
+  <string name="pref_nav_audiobooks_title">Show Audiobooks tab</string>
+  <string name="pref_nav_audiobooks_summary">Show or hide local and Audiobookshelf audiobooks in the bottom navigation bar</string>
   <string name="pref_section_network">Network</string>
   <string name="pref_media_servers_title">Media Servers</string>
   <string name="pref_media_servers_summary">Manage Jellyfin, Navidrome, and Audiobookshelf connections</string>

@@ -120,6 +120,7 @@ object MainScreen : Screen {
     NETWORK,
     JELLYFIN,
     NAVIDROME,
+    AUDIOBOOKS,
   }
 
   // Use a companion object to store state more persistently
@@ -170,6 +171,7 @@ object MainScreen : Screen {
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
     val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val showNavidromeTab by appearancePreferences.showNavidromeTab.collectAsState()
+    val showAudiobooksTab by appearancePreferences.showAudiobooksTab.collectAsState()
     val hideNavigationBar = NavigationBarState.shouldHideNavigationBar
     val isPermissionDenied = NavigationBarState.isPermissionDenied
     val isDualPaneFolderSelected = NavigationBarState.isDualPaneFolderSelected
@@ -184,6 +186,7 @@ object MainScreen : Screen {
         showNetworkTab,
         showJellyfinTab,
         showNavidromeTab,
+        showAudiobooksTab,
       ) {
         buildList {
           if (showHomeTab) add(MainTab.HOME)
@@ -193,6 +196,7 @@ object MainScreen : Screen {
           if (showNetworkTab) add(MainTab.NETWORK)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
           if (showNavidromeTab) add(MainTab.NAVIDROME)
+          if (showAudiobooksTab) add(MainTab.AUDIOBOOKS)
         }
       }
 
@@ -314,6 +318,7 @@ object MainScreen : Screen {
         MainTab.NETWORK -> 50.dp
         MainTab.JELLYFIN -> 44.dp
         MainTab.NAVIDROME -> 56.dp
+        MainTab.AUDIOBOOKS -> 68.dp
       }
 
     val unselectedCount = (visibleTabs.size - 1).coerceAtLeast(0)
@@ -404,6 +409,7 @@ object MainScreen : Screen {
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
                 MainTab.JELLYFIN -> app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
                 MainTab.NAVIDROME -> app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(viewModel = navidromeViewModel)
+                MainTab.AUDIOBOOKS -> app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen.Content()
               }
             }
           }
@@ -710,6 +716,13 @@ private fun ExpressivePillNavigationBar(
                     tint = contentColor,
                     modifier = Modifier.size(22.dp),
                   )
+                MainScreen.MainTab.AUDIOBOOKS ->
+                  Icon(
+                    Icons.RoundedFilled.Bookmarks,
+                    contentDescription = stringResource(R.string.audiobooks_title),
+                    tint = contentColor,
+                    modifier = Modifier.size(22.dp),
+                  )
               }
 
               if (tabFraction > 0.05f) {
@@ -724,6 +737,7 @@ private fun ExpressivePillNavigationBar(
                       MainScreen.MainTab.NETWORK -> stringResource(R.string.ui_network)
                       MainScreen.MainTab.JELLYFIN -> stringResource(R.string.ui_jellyfin)
                       MainScreen.MainTab.NAVIDROME -> stringResource(R.string.pref_navidrome_title)
+                      MainScreen.MainTab.AUDIOBOOKS -> stringResource(R.string.audiobooks_title)
                     },
                   style = MaterialTheme.typography.labelMedium,
                   fontWeight = FontWeight.Bold,
