@@ -743,7 +743,7 @@ private fun ExpressivePillNavigationBar(
                   )
                 MainScreen.MainTab.AUDIOBOOKS ->
                   Icon(
-                    Icons.RoundedFilled.Equalizer,
+                    Icons.RoundedFilled.AudiobookWave,
                     contentDescription = stringResource(R.string.audiobooks_title),
                     tint = contentColor,
                     modifier = Modifier.size(22.dp),

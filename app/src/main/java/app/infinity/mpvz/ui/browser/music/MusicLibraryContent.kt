@@ -519,7 +519,7 @@ fun MusicLibraryContent(
                     modifier = Modifier.padding(horizontal = 2.dp),
                   ) {
                     Icon(
-                      imageVector = Icons.RoundedFilled.Equalizer,
+                      imageVector = Icons.RoundedFilled.AudiobookWave,
                       contentDescription = stringResource(R.string.audiobooks_title),
                       modifier = Modifier.size(22.dp),
                       tint = MaterialTheme.colorScheme.secondary,
