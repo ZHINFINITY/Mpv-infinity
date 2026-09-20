@@ -625,20 +625,27 @@ object MediaFileRepository : KoinComponent {
 
         val items = mutableListOf<FileSystemItem>()
 
-        // Get folders using TreeViewScanner (instant from cache)
+        // A leaf directory cannot contain child folders, so avoid rebuilding the complete
+        // recursive tree just to discover an empty folder list. This keeps video-only folders
+        // responsive even when the storage volume contains a large media tree.
         val scanOptions = currentScanOptions()
-        val (showNewLabels, thresholdDays, playedMediaTitles) = getTreeViewNewBadgeParams()
+        val hasDirectSubdirectories = directory.listFiles()?.any { it.isDirectory } == true
         val folders =
-          TreeViewScanner.getFoldersInDirectory(
-            context = context,
-            parentPath = path,
-            options = scanOptions,
-            forceFileSystemCheck = forceFileSystemCheck,
-            playedMediaTitles = playedMediaTitles,
-            showNewLabels = showNewLabels,
-            thresholdDays = thresholdDays,
-            maxAutoFlattenLevels = browserPreferences.treeFlattenDepth.get().maxLevels,
-          )
+          if (!hasDirectSubdirectories) {
+            emptyList()
+          } else {
+            val (showNewLabels, thresholdDays, playedMediaTitles) = getTreeViewNewBadgeParams()
+            TreeViewScanner.getFoldersInDirectory(
+              context = context,
+              parentPath = path,
+              options = scanOptions,
+              forceFileSystemCheck = forceFileSystemCheck,
+              playedMediaTitles = playedMediaTitles,
+              showNewLabels = showNewLabels,
+              thresholdDays = thresholdDays,
+              maxAutoFlattenLevels = browserPreferences.treeFlattenDepth.get().maxLevels,
+            )
+          }
         folders.forEach { folderData ->
           items.add(
             FileSystemItem.Folder(
