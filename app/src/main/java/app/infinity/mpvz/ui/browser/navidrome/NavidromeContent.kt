@@ -76,6 +76,8 @@ import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen
+import app.infinity.mpvz.ui.preferences.PreferencesScreen
 import app.infinity.mpvz.ui.browser.dialogs.MusicSortDialog
 import app.infinity.mpvz.ui.browser.music.MusicSortField
 import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
@@ -225,8 +227,20 @@ fun NavidromeContent(
             { isSortDialogOpen = true }
           } else null,
           onSearchClick = { isSearching = true },
-          onSettingsClick = { isAddDialogOpen = true },
-          additionalActions = {},
+          onSettingsClick = { backStack.add(PreferencesScreen) },
+          additionalActions = {
+            IconButton(
+              onClick = { backStack.add(MediaServersPreferencesScreen) },
+              modifier = Modifier.padding(horizontal = 2.dp),
+            ) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Language,
+                contentDescription = "Manage Navidrome servers",
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.secondary,
+              )
+            }
+          },
         )
       }
 

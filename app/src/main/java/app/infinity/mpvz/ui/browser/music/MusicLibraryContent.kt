@@ -125,6 +125,7 @@ import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
+import app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen
 import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.browser.MainScreen
 import app.infinity.mpvz.ui.browser.NavigationBarState
@@ -498,6 +499,21 @@ fun MusicLibraryContent(
               onSearchClick = { isSearchActive = true },
               onSettingsClick = {
                 backStack.add(PreferencesScreen)
+              },
+              additionalActions = {
+                if (!activeSelectionManager.isInSelectionMode) {
+                  IconButton(
+                    onClick = { backStack.add(AudiobookLibraryScreen) },
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                  ) {
+                    Icon(
+                      imageVector = Icons.RoundedFilled.Bookmarks,
+                      contentDescription = stringResource(R.string.audiobooks_title),
+                      modifier = Modifier.size(22.dp),
+                      tint = MaterialTheme.colorScheme.secondary,
+                    )
+                  }
+                }
               },
               onSelectAll = { activeSelectionManager.selectAll() },
               onInvertSelection = { activeSelectionManager.invertSelection() },
