@@ -2239,4 +2239,8 @@
   <string name="audio_swipe_folder_empty">No audio files found in this folder</string>
   <string name="playlist_connect_source_title">No connected sources</string>
   <string name="playlist_connect_source_message">Connect a source on the Network tab first — only connected sources appear here.</string>
+  <string name="music_source_local">Local Device</string>
+  <string name="music_source_jellyfin">Jellyfin Music</string>
+  <string name="music_source_navidrome">Navidrome Music</string>
+  <string name="music_source_manage_servers">Media Servers</string>
 </resources>

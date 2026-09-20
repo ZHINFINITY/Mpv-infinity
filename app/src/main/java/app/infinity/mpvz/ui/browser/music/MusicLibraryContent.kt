@@ -119,6 +119,8 @@ import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.repository.JellyfinRepository
+import app.infinity.mpvz.repository.NavidromeRepository
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import app.infinity.mpvz.preferences.BrowserPreferences
@@ -213,6 +215,10 @@ fun MusicLibraryContent(
 
   val browserPreferences = koinInject<BrowserPreferences>()
   val foldersPreferences = koinInject<app.infinity.mpvz.preferences.FoldersPreferences>()
+  val jellyfinRepository = koinInject<JellyfinRepository>()
+  val navidromeRepository = koinInject<NavidromeRepository>()
+  val jellyfinServers by jellyfinRepository.allServers.collectAsState(initial = emptyList())
+  val navidromeServers by navidromeRepository.allServers.collectAsState(initial = emptyList())
   val folderSortType by browserPreferences.folderSortType.collectAsState()
   val folderSortOrder by browserPreferences.folderSortOrder.collectAsState()
   val coverArtSizeDp by browserPreferences.musicCoverArtSize.collectAsState()
@@ -502,12 +508,18 @@ fun MusicLibraryContent(
               },
               additionalActions = {
                 if (!activeSelectionManager.isInSelectionMode) {
+                  MusicSourceChooser(
+                    hasJellyfin = jellyfinServers.isNotEmpty(),
+                    hasNavidrome = navidromeServers.isNotEmpty(),
+                    onManageServers = { backStack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+                  )
                   IconButton(
                     onClick = { backStack.add(AudiobookLibraryScreen) },
                     modifier = Modifier.padding(horizontal = 2.dp),
                   ) {
                     Icon(
-                      imageVector = Icons.RoundedFilled.Bookmarks,
+                      imageVector = Icons.RoundedFilled.Equalizer,
                       contentDescription = stringResource(R.string.audiobooks_title),
                       modifier = Modifier.size(22.dp),
                       tint = MaterialTheme.colorScheme.secondary,
