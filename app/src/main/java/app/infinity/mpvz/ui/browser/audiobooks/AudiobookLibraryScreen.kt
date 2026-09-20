@@ -115,7 +115,6 @@ import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
 import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.utils.navigateTo
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.ui.utils.rememberAppHaptics
 import kotlinx.coroutines.CancellationException
@@ -262,7 +261,7 @@ object AudiobookLibraryScreen : Screen {
     val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
 
     Scaffold(
-      containerColor = app.infinity.mpvz.ui.theme.wallpaperAwareBackgroundColor(),
+      containerColor = MaterialTheme.colorScheme.surfaceContainer,
       topBar = {
         BrowserTopBar(
           title = if (isAbsSource) {
@@ -277,7 +276,7 @@ object AudiobookLibraryScreen : Screen {
           onCancelSelection = { },
           onSortClick = { isSortMenuExpanded = true },
           onSearchClick = { search = !search },
-          onSettingsClick = { backStack.navigateTo(PreferencesScreen) },
+          onSettingsClick = { backStack.add(PreferencesScreen) },
           preSearchActions = {
             if (absState.servers.isNotEmpty()) {
               var isSourceDropdownOpen by remember { mutableStateOf(false) }
@@ -405,7 +404,7 @@ object AudiobookLibraryScreen : Screen {
                     },
                     onClick = {
                       isSourceDropdownOpen = false
-                      backStack.navigateTo(MediaServersPreferencesScreen)
+                      backStack.add(MediaServersPreferencesScreen)
                     },
                   )
                 }
@@ -512,7 +511,7 @@ object AudiobookLibraryScreen : Screen {
                   modifier = Modifier.padding(16.dp),
                   style = MaterialTheme.typography.titleMedium,
                 )
-                Button(onClick = { backStack.navigateTo(MediaServersPreferencesScreen) }) {
+                Button(onClick = { backStack.add(MediaServersPreferencesScreen) }) {
                   Text(stringResource(R.string.pref_audiobookshelf_add_server))
                 }
               }

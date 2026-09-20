@@ -324,7 +324,6 @@ dependencies {
   implementation(libs.nanohttpd)
   implementation(libs.lazycolumnscrollbar)
   implementation(libs.reorderable)
-  implementation(libs.kmp.vibrate)
   implementation(libs.androidx.biometric)
 
   // libtorrent4j's Java API plus the native library for every enabled APK ABI.
