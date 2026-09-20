@@ -840,7 +840,7 @@ fun AudioPlayerControls(
    // An audiobook is one logical item. MPV still switches its source file at chapter
    // boundaries, but the seekbar must represent the complete book rather than the active file.
    val currentDurSec = if (isAudiobook && audiobook != null) {
-     (audiobook.book.durationMs / 1000f).takeIf { it > 0f } ?: preciseDuration.takeIf { it > 0f } ?: duration?.toFloat() ?: 0f
+     (audiobook.durationMs / 1000f).takeIf { it > 0f } ?: preciseDuration.takeIf { it > 0f } ?: duration?.toFloat() ?: 0f
    } else if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
    val currentVolumePercent by viewModel.currentVolumePercent.collectAsState()
    val volumeScale = currentVolumePercent / 100f
