@@ -585,6 +585,8 @@ fun AudioPlayerControls(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentItem = playbackState.currentItem ?: queueState.currentItem
+  val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
+  val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
   val isAudiobook = currentItem?.audiobook != null
   LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
     if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {
@@ -624,7 +626,31 @@ fun AudioPlayerControls(
   val audioFormat by PlaybackSession.propString["audio-params/format"].collectAsState()
   val bitsPerSample by PlaybackSession.propString["metadata/by-key/BITS_PER_SAMPLE"].collectAsState()
   val bitsPerSampleAlt by PlaybackSession.propString["metadata/by-key/bits_per_sample"].collectAsState()
+  val audioBitrateProp by PlaybackSession.propInt["audio-bitrate"].collectAsState()
+  val generalBitrateProp by PlaybackSession.propInt["bitrate"].collectAsState()
   val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
+
+  val cleanCodecName =
+    remember(audioCodec, mediaPath) {
+      val codec = audioCodec?.lowercase().orEmpty()
+      val ext = mediaPath?.fileExtension().orEmpty().uppercase()
+      when {
+        codec.contains("flac") -> "FLAC"
+        codec.contains("alac") -> "ALAC"
+        codec.contains("mp3") -> "MP3"
+        codec.contains("aac") -> "AAC"
+        codec.contains("opus") -> "OPUS"
+        codec.contains("vorbis") -> "VORBIS"
+        codec.contains("wavpack") -> "WAVPACK"
+        codec.contains("ape") -> "APE"
+        codec.contains("dsd") -> "DSD"
+        codec.contains("pcm") -> if (ext in setOf("WAV", "AIFF", "AIF")) ext else "PCM"
+        codec.contains("wma") -> "WMA"
+        codec.isNotBlank() && codec.length <= 10 && !codec.contains("/") && !codec.contains(":") -> codec.uppercase()
+        ext.isNotBlank() -> ext
+        else -> ""
+      }
+    }
 
   val isLosslessCodecOrExt =
     remember(audioCodec, mediaPath) {
@@ -652,7 +678,7 @@ fun AudioPlayerControls(
   }
 
   val fullLosslessDetailString =
-    remember(isHiRes, sampleRate, audioFormat, bitsPerSample, bitsPerSampleAlt, audioCodec, isLosslessCodecOrExt) {
+    remember(isHiRes, sampleRate, audioFormat, bitsPerSample, bitsPerSampleAlt, audioCodec, audioBitrateProp, generalBitrateProp, cleanCodecName, isLosslessCodecOrExt) {
       val baseLabel = if (isHiRes) "HI-RES LOSSLESS" else "LOSSLESS"
       val sr = sampleRate ?: 0
       val khzStr =
@@ -664,6 +690,8 @@ fun AudioPlayerControls(
         }
 
       val bps = bitsPerSample?.takeIf { it.isNotBlank() } ?: bitsPerSampleAlt?.takeIf { it.isNotBlank() }
+      val bitrate = audioBitrateProp?.takeIf { it > 0 } ?: generalBitrateProp?.takeIf { it > 0 }
+      val kbpsStr = bitrate?.let { "${it / 1000} kbps" }.orEmpty()
       val bitStr =
         when {
           !bps.isNullOrBlank() && bps.toIntOrNull() != null -> "${bps.toInt()}-bit"
@@ -685,24 +713,39 @@ fun AudioPlayerControls(
         }
 
       val codecName = audioCodec?.uppercase().orEmpty()
-      buildString {
-        append(baseLabel)
-        if (specsStr.isNotBlank()) {
-          append(" - ").append(specsStr)
+      if (isLosslessCodecOrExt) {
+        buildString {
+          append(baseLabel)
+          if (specsStr.isNotBlank()) append(" - ").append(specsStr)
+          if (codecName.isNotBlank()) append(" ").append(codecName)
         }
-        if (codecName.isNotBlank()) {
-          append(" ").append(codecName)
-        }
+      } else {
+        val baseLabel = cleanCodecName.ifBlank { "AUDIO" }
+        if (kbpsStr.isNotBlank() && khzStr.isNotBlank()) "$baseLabel - $kbpsStr/${khzStr}"
+        else if (kbpsStr.isNotBlank()) "$baseLabel - $kbpsStr"
+        else if (khzStr.isNotBlank()) "$baseLabel - $khzStr"
+        else baseLabel
+      }
+    }
+
+  val collapsedAudioBadgeLabel =
+    remember(isHiRes, isLosslessCodecOrExt, cleanCodecName) {
+      when {
+        isHiRes -> "HI-RES LOSSLESS"
+        isLosslessCodecOrExt -> "LOSSLESS"
+        cleanCodecName.isNotBlank() -> cleanCodecName
+        else -> ""
       }
     }
 
   val currentArtworkUri =
-    currentItem?.artworkUri?.takeIf { it.isNotBlank() }
+    audiobook?.book?.coverUri?.takeIf { it.isNotBlank() }
+      ?: currentItem?.artworkUri?.takeIf { it.isNotBlank() }
       ?: filteredPlaylist.firstOrNull { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }?.tvgLogo?.takeIf { it.isNotBlank() }
 
   val currentAudioPresentation =
     rememberAudioPresentationMetadata(
-      pathOrUri = mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
+      pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
       artworkUri = currentArtworkUri,
     )
   val albumArtBitmap = currentAudioPresentation?.artwork
@@ -1080,7 +1123,7 @@ fun AudioPlayerControls(
     }
 
     val losslessBadge = @Composable {
-      if (isLosslessCodecOrExt) {
+      if (collapsedAudioBadgeLabel.isNotBlank()) {
         Surface(
           shape = RoundedCornerShape(4.dp),
           color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
@@ -1098,7 +1141,7 @@ fun AudioPlayerControls(
               if (showLosslessDetails && fullLosslessDetailString.isNotBlank()) {
                 fullLosslessDetailString
               } else {
-                if (isHiRes) "HI-RES LOSSLESS" else "LOSSLESS"
+                collapsedAudioBadgeLabel
               },
             style =
               MaterialTheme.typography.labelSmall.copy(
@@ -2204,6 +2247,109 @@ private fun UpNextPlaylistContent(
 ) {
   val lazyListState = rememberLazyListState()
   val isM3U = viewModel.isPlaylistM3U()
+  val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
+
+  if (playbackState.currentItem?.audiobook != null) {
+    val chapters by viewModel.playbackChapters.collectAsStateWithLifecycle()
+    val filePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
+    val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
+    val currentItem = playbackState.currentItem
+    val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
+    val currentChapterIndex by remember(currentItem?.audiobook, chapters, audiobook?.tracks, filePosition) {
+      derivedStateOf {
+        val seconds = currentItem?.audiobook?.let { info ->
+          audiobook?.positionInBook(info.trackId, (filePosition * 1000).toLong())?.div(1000f)
+        } ?: filePosition
+        chapters.indexOfLast { it.start <= seconds }
+      }
+    }
+
+    LaunchedEffect(currentChapterIndex) {
+      if (currentChapterIndex >= 0) lazyListState.scrollToItem(currentChapterIndex)
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp, start = 4.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Text(
+          text = stringResource(R.string.audiobook_chapters),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colorScheme.onSurface,
+        )
+        Surface(
+          shape = RoundedCornerShape(50),
+          color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+        ) {
+          Text(
+            text = "${chapters.size} chapters",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+          )
+        }
+      }
+
+      if (chapters.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Text(
+            text = stringResource(R.string.playback_bookmarks_empty),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      } else {
+        LazyColumn(
+          state = lazyListState,
+          modifier = Modifier.fillMaxSize(),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          items(chapters.size, key = { index -> "${chapters[index].name}_${chapters[index].start}" }) { index ->
+            val chapter = chapters[index]
+            val isSelected = currentChapterIndex == index
+            Surface(
+              modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                viewModel.seekToPlaybackChapter(chapter)
+              },
+              shape = RoundedCornerShape(12.dp),
+              color = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+              } else {
+                MaterialTheme.colorScheme.surfaceContainer
+              },
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+              ) {
+                Text(
+                  text = "${index + 1}. ${chapter.name}",
+                  style = MaterialTheme.typography.bodyMedium,
+                  fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                  color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                  maxLines = 2,
+                  overflow = TextOverflow.Ellipsis,
+                  modifier = Modifier.weight(1f),
+                )
+                Text(
+                  text = formatSec(chapter.start.toLong()),
+                  style = MaterialTheme.typography.labelMedium,
+                  color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.padding(start = 12.dp),
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+    return
+  }
 
   var displayPlaylist by remember(playlist) { mutableStateOf(playlist) }
   LaunchedEffect(playlist) {
