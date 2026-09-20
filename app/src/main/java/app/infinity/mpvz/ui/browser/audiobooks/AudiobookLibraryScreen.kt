@@ -91,6 +91,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.Audiobook
@@ -163,6 +165,21 @@ object AudiobookLibraryScreen : Screen {
     var opening by remember { mutableStateOf(false) }
     var playbackError by remember { mutableStateOf<String?>(null) }
     var isLibDropdownOpen by remember { mutableStateOf(false) }
+    var isSourceDropdownOpen by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+      val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_STOP) {
+          isSortMenuExpanded = false
+          importMenu = false
+          isLibDropdownOpen = false
+          isSourceDropdownOpen = false
+        }
+      }
+      lifecycleOwner.lifecycle.addObserver(observer)
+      onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { model.importFiles(it) }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -280,10 +297,6 @@ object AudiobookLibraryScreen : Screen {
           onSettingsClick = { backStack.add(PreferencesScreen) },
           preSearchActions = {
             if (absState.servers.isNotEmpty()) {
-                var isSourceDropdownOpen by remember { mutableStateOf(false) }
-              DisposableEffect(Unit) {
-                onDispose { isSourceDropdownOpen = false }
-              }
               Box {
                 Surface(
                   shape = RoundedCornerShape(16.dp),
