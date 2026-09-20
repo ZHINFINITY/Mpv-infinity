@@ -114,6 +114,9 @@ private fun screenNavTransition(
           (slideOutHorizontally(tween(duration, easing = FastOutSlowInEasing)) { it * direction } +
             fadeOut(tween(duration)))
       }
+    NavigationAnimStyle.Elastic ->
+      fadeIn(tween(duration, easing = FastOutSlowInEasing)) togetherWith
+        fadeOut(tween(duration, easing = FastOutSlowInEasing))
     NavigationAnimStyle.Default ->
       if (forward) {
         slideInHorizontally(tween(duration, easing = FastOutSlowInEasing)) { it * direction } togetherWith

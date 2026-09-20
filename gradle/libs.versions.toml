@@ -51,6 +51,7 @@ androidxBiometric = "1.4.0-alpha07"
 leakcanary = "2.14"
 libtorrent4j = "2.1.0-39"
 libarchiveAndroid = "1.1.6"
+kmpVibrate = "1.1.0"
 ktlint = "14.2.0"
 
 [libraries]
@@ -130,6 +131,7 @@ androidx-security-crypto = { module = "androidx.security:security-crypto", versi
 google-cast-framework = { module = "com.google.android.gms:play-services-cast-framework", version.ref = "googleCast" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
+kmp-vibrate = { module = "io.github.jmseb3:vibrate", version.ref = "kmpVibrate" }
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "androidxBiometric" }
 leakcanary-android = { module = "com.squareup.leakcanary:leakcanary-android", version.ref = "leakcanary" }
 libtorrent4j = { module = "org.libtorrent4j:libtorrent4j", version.ref = "libtorrent4j" }

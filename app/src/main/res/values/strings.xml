@@ -2239,4 +2239,5 @@
   <string name="audio_swipe_folder_empty">No audio files found in this folder</string>
   <string name="playlist_connect_source_title">No connected sources</string>
   <string name="playlist_connect_source_message">Connect a source on the Network tab first — only connected sources appear here.</string>
+  <string name="wallpaper_save_failed">Could not save the wallpaper. Please choose the image again.</string>
 </resources>
