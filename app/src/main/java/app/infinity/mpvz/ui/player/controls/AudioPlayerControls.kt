@@ -794,8 +794,8 @@ fun AudioPlayerControls(
   val retrievedArtist = currentAudioPresentation?.artist
 
   val displayArtist =
-    remember(currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
-      sequenceOf(currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
+    remember(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
+      sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
         .filterNotNull()
         .firstOrNull { it.isNotBlank() } ?: "Unknown Artist"
     }
@@ -837,7 +837,11 @@ fun AudioPlayerControls(
   }
 
    val isPlaying = optimisticIsPlaying ?: (paused == false)
-   val currentDurSec = if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
+   // An audiobook is one logical item. MPV still switches its source file at chapter
+   // boundaries, but the seekbar must represent the complete book rather than the active file.
+   val currentDurSec = if (isAudiobook && audiobook != null) {
+     (audiobook.book.durationMs / 1000f).takeIf { it > 0f } ?: preciseDuration.takeIf { it > 0f } ?: duration?.toFloat() ?: 0f
+   } else if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
    val currentVolumePercent by viewModel.currentVolumePercent.collectAsState()
    val volumeScale = currentVolumePercent / 100f
    val visualizerFeatures = rememberAudioVisualizerFeatures(isPlaying, volumeScale)
@@ -1381,9 +1385,8 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.Start,
       ) {
         val displayTitle =
-          remember(lastValidTitle, displayArtist) {
-            cleanSongTitle(lastValidTitle, displayArtist)
-          }
+          if (isAudiobook) audiobook?.book?.title?.takeIf { it.isNotBlank() } ?: lastValidTitle
+          else cleanSongTitle(lastValidTitle, displayArtist)
 
         // 1. Song Title Only
         Text(
@@ -1411,7 +1414,11 @@ fun AudioPlayerControls(
 
         // 3. Track Info | A-B Loop Control
         val playlistInfo = viewModel.getPlaylistInfo()
-        val trackText = if (playlistInfo != null) "Track $playlistInfo" else "Audio Media"
+        val trackText = when {
+          isAudiobook -> "Audiobook"
+          playlistInfo != null -> "Track $playlistInfo"
+          else -> "Audio Media"
+        }
 
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -1628,7 +1635,12 @@ fun AudioPlayerControls(
       val position by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
       val remaining  by PlaybackSession.propFloat["playtime-remaining"].collectAsState()
       val precisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
-      val currentPosSec = if (precisePosition > 0f) precisePosition else position?.toFloat() ?: 0f
+      val chapterPositionSec = if (precisePosition > 0f) precisePosition else position?.toFloat() ?: 0f
+      val currentPosSec = if (isAudiobook && audiobook != null) {
+        currentItem?.audiobook?.trackId?.let { trackId ->
+          audiobook.positionInBook(trackId, (chapterPositionSec * 1000f).toLong()) / 1000f
+        } ?: chapterPositionSec
+      } else chapterPositionSec
       val isPaused = paused ?: false
 
       Box(
@@ -2123,7 +2135,7 @@ fun AudioPlayerControls(
               lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
             } else {
               if (!isStandbyActive) headerBar()
-              if (!isStandbyActive) losslessBadge()
+              if (!isStandbyActive && !isAudiobook) losslessBadge()
               if (!isStandbyActive) trackMetadataView()
               Spacer(modifier = Modifier.weight(1f))
             }

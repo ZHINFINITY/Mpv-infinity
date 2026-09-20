@@ -318,7 +318,10 @@ fun JellyfinContent(
     if (requestedModeKey != null && loaded) modeReady = true
   }
 
-  if (!modeReady) {
+  // A missing active server means setup/authentication is required, not that the
+  // already-authenticated library is still loading. Keep the configuration surface
+  // reachable; apply the readiness gate only after a server has been authenticated.
+  if (!modeReady && uiState.activeServer != null) {
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
       CircularProgressIndicator()
     }
