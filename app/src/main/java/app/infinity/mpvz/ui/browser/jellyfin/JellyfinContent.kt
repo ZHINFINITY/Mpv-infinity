@@ -288,8 +288,16 @@ fun JellyfinContent(
     }
   }
 
+  LaunchedEffect(isMusicOnlyMode, uiState.activeServer?.id) {
+    if (isMusicOnlyMode) {
+      uiState.activeServer?.let(viewModel::enterMusicOnlyMode)
+    }
+  }
+
   val pageTitle =
-    when {
+    if (isMusicOnlyMode) {
+      stringResource(R.string.ui_music)
+    } else when {
       uiState.openLibrary != null -> uiState.openLibrary!!.title
       uiState.activeServer != null -> uiState.activeServer!!.name
       else -> stringResource(R.string.ui_jellyfin)

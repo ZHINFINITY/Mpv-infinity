@@ -70,6 +70,7 @@ import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -277,20 +278,23 @@ object AudiobookLibraryScreen : Screen {
           onSortClick = { isSortMenuExpanded = true },
           onSearchClick = { search = !search },
           onSettingsClick = { backStack.add(PreferencesScreen) },
-          leadingActions = {
+          preSearchActions = {
             if (absState.servers.isNotEmpty()) {
-              var isSourceDropdownOpen by remember { mutableStateOf(false) }
+                var isSourceDropdownOpen by remember { mutableStateOf(false) }
+              DisposableEffect(Unit) {
+                onDispose { isSourceDropdownOpen = false }
+              }
               Box {
                 Surface(
                   shape = RoundedCornerShape(16.dp),
                   color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f),
-                  modifier = Modifier
-                    .padding(horizontal = 4.dp, vertical = 6.dp)
+                    modifier = Modifier
+                      .padding(horizontal = 2.dp, vertical = 4.dp)
                     .clickable { isSourceDropdownOpen = true },
                 ) {
                   Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                          modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                   ) {
                     when (currentSource) {
                       AudiobookSourceProvider.AUDIOBOOKSHELF -> {
