@@ -175,9 +175,9 @@ fun NavidromeContent(
     ) {
       if (isSearching) {
         Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(top = 12.dp, start = 16.dp, end = 16.dp, bottom = 6.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           OutlinedTextField(
@@ -265,16 +265,18 @@ fun NavidromeContent(
                 )
               }
             }
-            IconButton(
-              onClick = { backStack.add(MediaServersPreferencesScreen) },
-              modifier = Modifier.padding(horizontal = 2.dp),
-            ) {
-              Icon(
-                imageVector = Icons.RoundedFilled.Language,
-                contentDescription = "Manage Navidrome servers",
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.secondary,
-              )
+            if (!isMusicOnlyMode) {
+              IconButton(
+                onClick = { backStack.add(MediaServersPreferencesScreen) },
+                modifier = Modifier.padding(horizontal = 2.dp),
+              ) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Language,
+                  contentDescription = "Manage Navidrome servers",
+                  modifier = Modifier.size(24.dp),
+                  tint = MaterialTheme.colorScheme.secondary,
+                )
+              }
             }
           },
         )
