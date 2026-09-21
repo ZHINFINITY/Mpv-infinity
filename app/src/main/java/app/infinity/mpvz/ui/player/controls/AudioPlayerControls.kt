@@ -2310,7 +2310,7 @@ private fun UpNextPlaylistContent(
     val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
     val currentChapterIndex by remember(currentItem?.audiobook, chapters, audiobookChapters, audiobook?.tracks, filePosition) {
       derivedStateOf {
-        val currentChapter = viewModel.currentChapter()
+        val currentChapter = AudiobookPlayback.currentChapter()
         val activeIndex = currentChapter?.let { playing ->
           audiobookChapters.indexOfFirst { chapter ->
             chapter.trackId == playing.trackId && chapter.startMs == playing.startMs
