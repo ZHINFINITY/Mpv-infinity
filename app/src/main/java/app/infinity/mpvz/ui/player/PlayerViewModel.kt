@@ -4447,15 +4447,20 @@ class PlayerViewModel : ViewModel(),
   }
 
   fun stepPlaybackChapter(offset: Int) {
+    if (offset !in setOf(-1, 1)) return
     if (PlaybackSession.state.value.currentItem?.audiobook == null) {
       if (offset < 0) playPrevious() else playNext()
       return
     }
-    val current = AudiobookPlayback.currentChapter() ?: return
+    val progress = PlaybackSession.audiobookProgress() ?: return
     val audiobookChapters = AudiobookPlayback.chapters.value
+    val book = AudiobookPlayback.book.value?.takeIf { it.book.id == progress.item.bookId }
+    val positionInBook = book?.positionInBook(progress.item.trackId, progress.positionMs) ?: progress.positionMs
+    val current = audiobookChapters.lastOrNull { it.bookStartMs <= positionInBook } ?: return
     val index = audiobookChapters.indexOf(current)
-    val target = audiobookChapters.getOrNull(index + offset) ?: return
-    AudiobookPlayback.seekInBook(target.bookStartMs, resumePlayback = true)
+    val target = if (offset < 0 && positionInBook - current.bookStartMs > 3000L) current
+      else audiobookChapters.getOrNull(index + offset)
+    target?.let { AudiobookPlayback.seekInBook(it.bookStartMs, resumePlayback = true) }
   }
 
   fun sleepAtCurrentChapterEnd() {
