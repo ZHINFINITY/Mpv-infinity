@@ -564,12 +564,6 @@ fun JellyfinContent(
               )
             }
 
-            // Shared Music mode must never reveal the normal Jellyfin discovery
-            // dashboard while its audio library is being selected.
-            isMusicOnlyMode && uiState.openLibrary == null -> {
-              CircularProgressIndicator()
-            }
-
             // Root / Discovery Home View (Expressive UI)
             !isMusicOnlyMode && uiState.openLibrary == null && uiState.searchQuery.isBlank() -> {
               val server = uiState.activeServer
@@ -765,8 +759,8 @@ fun JellyfinContent(
 
             // Level / Search View: Inside a Library / Folder / Season / Search results
             else -> {
-              val openLib = uiState.openLibrary
-              if (openLib?.isMusic == true && uiState.searchQuery.isBlank() && uiState.activeServer != null) {
+              val openLib = uiState.openLibrary ?: if (isMusicOnlyMode) viewModel.getMusicLibraryView() else null
+              if ((isMusicOnlyMode || openLib?.isMusic == true) && uiState.searchQuery.isBlank() && uiState.activeServer != null) {
                 JellyfinMusicView(
                   uiState = uiState,
                   server = uiState.activeServer!!,
