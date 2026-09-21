@@ -7636,6 +7636,10 @@ class PlayerActivity :
    */
   override fun playNextQueueItem() {
     if (!PlaybackSession.hasNext() || !beginMediaRequest()) return
+    // A Native-to-MPV handoff may still be waiting for the old item's surface/READY state. Its
+    // delayed position/playback restore must never run after Next has selected a new queue item.
+    engineHandoffJob?.cancel()
+    engineHandoffJob = null
     PlaybackSession.selectNext() ?: return
     syncPlaylistFromSession()
     loadPlaylistItemInternal(
@@ -7649,6 +7653,8 @@ class PlayerActivity :
    */
   override fun playPreviousQueueItem() {
     if (!PlaybackSession.hasPrevious() || !beginMediaRequest()) return
+    engineHandoffJob?.cancel()
+    engineHandoffJob = null
     PlaybackSession.selectPrevious() ?: return
     syncPlaylistFromSession()
     loadPlaylistItemInternal(
@@ -7683,6 +7689,8 @@ class PlayerActivity :
       return
     }
     if (!requestAlreadyStarted && !beginMediaRequest()) return
+    engineHandoffJob?.cancel()
+    engineHandoffJob = null
     val requestGeneration = mediaRequestGeneration
 
     // Save current video's playback state before switching
