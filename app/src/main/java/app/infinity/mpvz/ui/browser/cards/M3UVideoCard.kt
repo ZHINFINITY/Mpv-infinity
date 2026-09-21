@@ -257,10 +257,7 @@ fun M3UVideoCard(
               )
             }
           }
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
+          Box(modifier = Modifier.fillMaxWidth()) {
             Text(
               text = title,
               style = MaterialTheme.typography.titleSmall,
@@ -269,10 +266,13 @@ fun M3UVideoCard(
               maxLines = 2,
               minLines = 2,
               overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.weight(1f),
+              modifier = Modifier.fillMaxWidth().padding(end = if (onFavoriteClick != null) 34.dp else 0.dp),
             )
             if (onFavoriteClick != null) {
-              IconButton(onClick = onFavoriteClick, modifier = Modifier.size(36.dp)) {
+              IconButton(
+                onClick = onFavoriteClick,
+                modifier = Modifier.size(32.dp).align(Alignment.TopEnd),
+              ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.Bookmarks,
                   contentDescription = if (isFavorite) "Unsave stream" else "Save stream",
@@ -281,12 +281,47 @@ fun M3UVideoCard(
               }
             }
           }
-          if (!groupTitle.isNullOrBlank()) {
-            M3UMetadataChip(
-              text = groupTitle,
-              containerColor = MaterialTheme.colorScheme.secondaryContainer,
-              contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
+          Text(
+            text = url,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+          )
+          FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            if (!groupTitle.isNullOrBlank()) {
+              M3UMetadataChip(
+                text = groupTitle,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+              )
+            }
+            if (hasDrm) {
+              M3UMetadataChip(
+                text = "DRM",
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+              )
+            }
+            if (hasCustomUserAgent) {
+              M3UMetadataChip(
+                text = "UA",
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+              )
+            }
+            if (isFavorite) {
+              M3UMetadataChip(
+                text = "Saved",
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+              )
+            }
           }
         }
       } else Row(
