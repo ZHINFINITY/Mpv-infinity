@@ -1501,7 +1501,15 @@ object PlaybackSession : MPVLib.EventObserver {
       // mute=true even when the user was unmuted. Preserve the pre-seek value so a later load does
       // not restore the temporary guard mute and remain permanently silent.
       playbackTransitionAudioGuardPreviousMute =
-        seekAudioGuardPreviousMute ?: (MPVLib.getPropertyBoolean("mute") ?: false)
+        if (canRestore) {
+          // A recoverable replacement load must not sample MPV's current mute property: it may
+          // still be the temporary mute from the outgoing handoff. Only an active seek guard can
+          // represent a user-visible mute state here; otherwise the incoming item must restore
+          // audible playback.
+          seekAudioGuardPreviousMute ?: false
+        } else {
+          seekAudioGuardPreviousMute ?: (MPVLib.getPropertyBoolean("mute") ?: false)
+        }
     }
     // A replacement load can arrive before the previous guard's delayed restore. Its true value
     // is the guard's temporary mute, not a user selection; carrying it into the new generation
