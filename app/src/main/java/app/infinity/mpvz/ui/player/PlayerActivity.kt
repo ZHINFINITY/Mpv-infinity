@@ -7805,6 +7805,13 @@ class PlayerActivity :
     isReady = false
     viewModel.onVideoLoadStarted()
 
+    // Stop the outgoing renderer before asynchronous URI preparation. Previously the old MPV
+    // generation could keep decoding audio while Previous/Next resolved the new item, causing both
+    // episodes to be audible during the transition. Keep the queue intact; issuePlaybackLoad still
+    // awaits this stop before committing the incoming generation.
+    PlaybackSession.stop(clearQueue = false)
+    nativeEngine.stop()
+
     startMediaLoad(playableUri, positionRestoreOverride = positionRestoreOverride)
 
     // Update media title (this will trigger UI update)
