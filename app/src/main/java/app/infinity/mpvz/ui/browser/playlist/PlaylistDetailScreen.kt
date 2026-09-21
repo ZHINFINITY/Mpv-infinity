@@ -441,23 +441,6 @@ data class PlaylistDetailScreen(
                     }
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    if (playlist?.isM3uPlaylist == true) {
-                      IconButton(
-                        onClick = {
-                          browserPreferences.iptvLayoutMode.set(
-                            if (isM3UGrid) MediaLayoutMode.LIST else MediaLayoutMode.GRID,
-                          )
-                        },
-                      ) {
-                        Icon(
-                          imageVector = if (isM3UGrid) Icons.RoundedFilled.ViewList else Icons.RoundedFilled.GridView,
-                          contentDescription = if (isM3UGrid) "List view" else "Grid view",
-                          tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                      }
-                      Spacer(modifier = Modifier.width(4.dp))
-                    }
-
                     // Reorder button (hide for M3U playlists)
                     if (playlist?.isM3uPlaylist != true) {
                       IconButton(
