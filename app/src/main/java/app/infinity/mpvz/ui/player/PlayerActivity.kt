@@ -312,10 +312,12 @@ class PlayerActivity :
 
   override fun isNativeEngineActive(): Boolean =
     activeEngineMode == PlaybackEngineMode.NATIVE &&
-      (nativeEngine.currentPlayer.currentMediaItem != null || nativeEngine.snapshot.value.isReady)
+      (nativeEngine.snapshot.value.isReady ||
+        nativeEngine.snapshot.value.isBuffering ||
+        nativeEngine.hasRenderedFirstFrame.value)
 
   override fun isNativePlaying(): Boolean =
-    isNativeEngineActive() && nativeEngine.currentPlayer.isPlaying
+    isNativeEngineActive() && nativeEngine.snapshot.value.isPlaying
 
   override fun nativePlaybackSpeed(): Float =
     nativeEngine.currentPlayer.playbackParameters.speed
@@ -341,10 +343,10 @@ class PlayerActivity :
   }
 
   override fun nativePlaybackPositionSeconds(): Double =
-    nativeEngine.currentPlayer.currentPosition.coerceAtLeast(0L) / 1000.0
+    nativeEngine.snapshot.value.positionMs.coerceAtLeast(0L) / 1000.0
 
   override fun nativePlaybackDurationSeconds(): Double =
-    nativeEngine.currentPlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L)?.div(1000.0) ?: 0.0
+    nativeEngine.snapshot.value.durationMs.coerceAtLeast(0L) / 1000.0
 
   override fun nativeSetLoopA(positionSeconds: Double?) = nativeEngine.setLoopA(positionSeconds)
 
