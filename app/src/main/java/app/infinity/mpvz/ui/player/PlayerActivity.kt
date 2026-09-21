@@ -4482,6 +4482,10 @@ class PlayerActivity :
     nativeDurationSecs: Int? = null,
     nativePositionSecs: Int? = null,
   ) {
+    // MPV remains initialized during a Native handoff and can deliver a stale eof-reached event
+    // while its hidden item is being drained. That callback must never finish the Activity or
+    // tear down Media3; Native has its own end-of-item handling.
+    if (activeEngineMode == PlaybackEngineMode.NATIVE) return
     if (!isEof) {
       eofAdvanceJob?.cancel()
       eofAdvanceJob = null
