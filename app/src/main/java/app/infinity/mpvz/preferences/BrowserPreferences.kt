@@ -61,6 +61,15 @@ class BrowserPreferences(
   private val isTablet = context.resources.configuration.smallestScreenWidthDp >= 600
   val maxColumns = if (isTablet) 8 else 4
 
+  // IPTV playlist index settings are intentionally separate from both the home browser and
+  // the generic network browser. Changing one surface must never change another surface.
+  val iptvLayoutMode = preferenceStore.getEnum("iptv_layout_mode", MediaLayoutMode.LIST)
+  val iptvManualGridColumnsEnabled = preferenceStore.getBoolean("iptv_manual_grid_columns_enabled", false)
+  private val _iptvGridColumnsPortrait = preferenceStore.getInt("iptv_grid_columns_portrait", 2)
+  private val _iptvGridColumnsLandscape = preferenceStore.getInt("iptv_grid_columns_landscape", 4)
+  val iptvGridColumnsPortrait: Preference<Int> = CoercedPreference(_iptvGridColumnsPortrait, maxColumns)
+  val iptvGridColumnsLandscape: Preference<Int> = CoercedPreference(_iptvGridColumnsLandscape, 8)
+
   private val _folderGridColumnsPortrait =
     preferenceStore.getInt(
       "folder_grid_columns_portrait",

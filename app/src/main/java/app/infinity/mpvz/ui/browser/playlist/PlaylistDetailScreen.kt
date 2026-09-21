@@ -127,10 +127,7 @@ data class PlaylistDetailScreen(
     val backStack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
     val browserPreferences = koinInject<BrowserPreferences>()
-    val networkLayoutMode by browserPreferences.networkLayoutMode.collectAsState()
-    val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
-    val videoGridColumnsPortrait by browserPreferences.videoGridColumnsPortrait.collectAsState()
-    val videoGridColumnsLandscape by browserPreferences.videoGridColumnsLandscape.collectAsState()
+    val iptvLayoutMode by browserPreferences.iptvLayoutMode.collectAsState()
 
     // ViewModel
     val viewModel: PlaylistDetailViewModel =
@@ -161,7 +158,7 @@ data class PlaylistDetailScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var selectedM3UFilter by rememberSaveable { mutableStateOf(M3U_FILTER_ALL) }
-    val isM3UGrid = networkLayoutMode == MediaLayoutMode.GRID
+    val isM3UGrid = iptvLayoutMode == MediaLayoutMode.GRID
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
     val hasFavoriteStreams = remember(videoItems) { videoItems.any { it.playlistItem.isFavorite } }
@@ -425,7 +422,7 @@ data class PlaylistDetailScreen(
                     if (playlist?.isM3uPlaylist == true) {
                       IconButton(
                         onClick = {
-                          browserPreferences.networkLayoutMode.set(
+                          browserPreferences.iptvLayoutMode.set(
                             if (isM3UGrid) MediaLayoutMode.LIST else MediaLayoutMode.GRID,
                           )
                         },
@@ -696,9 +693,9 @@ private fun PlaylistVideoListContent(
 ) {
   val gesturePreferences = koinInject<GesturePreferences>()
   val browserPreferences = koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
-  val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
-  val videoGridColumnsPortrait by browserPreferences.videoGridColumnsPortrait.collectAsState()
-  val videoGridColumnsLandscape by browserPreferences.videoGridColumnsLandscape.collectAsState()
+  val manualGridColumnsEnabled by browserPreferences.iptvManualGridColumnsEnabled.collectAsState()
+  val videoGridColumnsPortrait by browserPreferences.iptvGridColumnsPortrait.collectAsState()
+  val videoGridColumnsLandscape by browserPreferences.iptvGridColumnsLandscape.collectAsState()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val tapThumbnailToSelect by gesturePreferences.tapThumbnailToSelect.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
