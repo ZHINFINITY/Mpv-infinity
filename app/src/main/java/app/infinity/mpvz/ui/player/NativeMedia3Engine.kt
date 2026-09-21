@@ -99,6 +99,15 @@ data class NativeTrack(
   val external: Boolean = false,
 )
 
+private data class NativeSubtitleSelection(
+  val groupId: String?,
+  val formatId: String?,
+  val label: String?,
+  val language: String?,
+  val mimeType: String?,
+  val codecs: String?,
+)
+
 data class NativeChapter(
   val title: String,
   val startSeconds: Float,
@@ -236,6 +245,8 @@ class NativeMedia3Engine(context: Context) {
   private var sourceSizeBytes: Long = 0L
   private var videoDecoderName: String? = null
   private var audioDecoderName: String? = null
+  private var selectedNativeSubtitleSelection: NativeSubtitleSelection? = null
+  private var restoringNativeSubtitleSelection = false
 
   private val analyticsListener = object : AnalyticsListener {
     override fun onVideoDecoderInitialized(
@@ -302,6 +313,7 @@ class NativeMedia3Engine(context: Context) {
           Log.d(logTag, "text track group=${group.mediaTrackGroup.id} index=$index selected=${group.isTrackSelected(index)} mime=${format.sampleMimeType} codecs=${format.codecs} label=${format.label} language=${format.language}")
         }
       }
+      restoreSelectedNativeSubtitle(tracks)
       applyPendingExternalSelection()
     }
 
@@ -512,6 +524,57 @@ class NativeMedia3Engine(context: Context) {
     publishSnapshot()
   }
 
+  private fun subtitleSelectionFor(group: Tracks.Group, trackIndex: Int): NativeSubtitleSelection {
+    val format = group.getTrackFormat(trackIndex)
+    return NativeSubtitleSelection(
+      groupId = group.mediaTrackGroup.id,
+      formatId = format.id,
+      label = format.label,
+      language = format.language,
+      mimeType = format.sampleMimeType,
+      codecs = format.codecs,
+    )
+  }
+
+  /** Rebind an explicit user choice if Media3 replaces its TrackGroup after preparation. */
+  private fun restoreSelectedNativeSubtitle(tracks: Tracks) {
+    val wanted = selectedNativeSubtitleSelection ?: return
+    if (restoringNativeSubtitleSelection) return
+    val match = tracks.groups
+      .asSequence()
+      .filter { it.type == C.TRACK_TYPE_TEXT }
+      .flatMap { group -> (0 until group.length).asSequence().map { group to it } }
+      .firstOrNull { (group, index) ->
+        val candidate = subtitleSelectionFor(group, index)
+        val stableIdMatches = wanted.formatId != null && wanted.formatId == candidate.formatId
+        val descriptiveFieldsMatch =
+          wanted.label == candidate.label &&
+            wanted.language == candidate.language &&
+            wanted.mimeType == candidate.mimeType &&
+            wanted.codecs == candidate.codecs
+        (wanted.groupId == candidate.groupId && descriptiveFieldsMatch) ||
+          stableIdMatches || descriptiveFieldsMatch
+      }
+      ?: return
+    if (match.first.isTrackSelected(match.second)) {
+      selectedNativeSubtitleKey = tracks.groups.indexOf(match.first) to match.second
+      return
+    }
+    restoringNativeSubtitleSelection = true
+    try {
+      player.trackSelectionParameters = player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        .addOverride(TrackSelectionOverride(match.first.mediaTrackGroup, match.second))
+        .build()
+      selectedNativeSubtitleKey = tracks.groups.indexOf(match.first) to match.second
+      Log.d(logTag, "Restored selected native subtitle after track-group refresh index=${match.second}")
+    } finally {
+      restoringNativeSubtitleSelection = false
+    }
+  }
+
   /** Content-provider URIs can hide the actual downloaded filename in their last path segment. */
   private fun disableNativeTextTracks() {
     player.trackSelectionParameters = player.trackSelectionParameters
@@ -673,6 +736,7 @@ class NativeMedia3Engine(context: Context) {
     // first audio-only item after a video transition.
     player.volume = 1f
     pendingExternalSelectionId = null
+    selectedNativeSubtitleSelection = null
     externalAssEnabled.clear()
     libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
       libassRenderer?.removeTrack(id)
@@ -847,6 +911,7 @@ class NativeMedia3Engine(context: Context) {
     val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
     if (track.type == C.TRACK_TYPE_TEXT) {
+      selectedNativeSubtitleSelection = subtitleSelectionFor(group, track.trackIndex)
       val format = group.getTrackFormat(track.trackIndex)
       if (isAssFormat(format.sampleMimeType, format.codecs)) {
         selectedNativeSubtitleKey = track.groupIndex to track.trackIndex
@@ -917,6 +982,7 @@ class NativeMedia3Engine(context: Context) {
     val group = player.currentTracks.groups.getOrNull(groupIndex) ?: return
     if (group.type != C.TRACK_TYPE_TEXT) return
     if (trackIndex !in 0 until group.length) return
+    selectedNativeSubtitleSelection = subtitleSelectionFor(group, trackIndex)
     val format = group.getTrackFormat(trackIndex)
     if (isAssFormat(format.sampleMimeType, format.codecs)) {
       selectedNativeSubtitleKey = groupIndex to trackIndex
@@ -943,6 +1009,7 @@ class NativeMedia3Engine(context: Context) {
   fun disableSubtitles() {
     disableAssTracks()
     selectedNativeSubtitleKey = null
+    selectedNativeSubtitleSelection = null
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -973,6 +1040,7 @@ class NativeMedia3Engine(context: Context) {
     player.clearMediaItems()
     _subtitleCueText.value = ""
     selectedNativeSubtitleKey = null
+    selectedNativeSubtitleSelection = null
     externalAssEnabled.clear()
     libassRenderer?.let { renderer ->
       renderer.getTrackIds().keys.toList().forEach { renderer.removeTrack(it) }
