@@ -5293,24 +5293,27 @@ class PlayerViewModel : ViewModel(),
 
   fun cycleScreenRotations() {
     if (isAudioOnly.value) {
+      host.onManualOrientationOverride()
       host.hostRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
       return
     }
     // Temporarily cycle orientation WITHOUT modifying preferences
     // Preferences remain the single source of truth and will be reapplied on next video
-    host.hostRequestedOrientation =
-      when (host.hostRequestedOrientation) {
-        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
-        ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
-        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
-        -> {
-          ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        }
-        else -> {
-          ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
+    val nextOrientation = when (host.hostRequestedOrientation) {
+      ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+      ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+      ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+      -> {
+        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
       }
+      else -> {
+        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+      }
+    }
+    // Mark the tap before assigning requestedOrientation. On some devices the configuration
+    // callback is delivered synchronously and would otherwise reapply the video aspect first.
     host.onManualOrientationOverride()
+    host.hostRequestedOrientation = nextOrientation
   }
 
   // ==================== Lua Invocation Handling ====================
