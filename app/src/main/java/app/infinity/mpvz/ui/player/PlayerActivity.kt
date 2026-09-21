@@ -997,6 +997,12 @@ class PlayerActivity :
                 // during 4K/HDR handoff force repeated demuxer seeks and cause audible stalls.
                 delay(250L)
                 if (ownsPlaybackSession() && mpvInitialized && activeEngineMode == PlaybackEngineMode.MPV) {
+                  // Native and MPV do not share audio-track IDs or the Android audio session.
+                  // Reassert MPV's automatic audio track and unmute after the new file is ready;
+                  // doing this only before load is insufficient because file-loaded can recreate
+                  // the audio output and restore the old session state on some devices.
+                  PlaybackSession.setPropertyString("aid", "auto")
+                  PlaybackSession.setPropertyBoolean("mute", false)
                   PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
                   PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
                   if (outgoingPlaying) PlaybackSession.command("play")
