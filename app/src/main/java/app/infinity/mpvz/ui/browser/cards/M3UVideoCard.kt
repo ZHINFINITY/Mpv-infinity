@@ -79,6 +79,7 @@ fun M3UVideoCard(
   isRecentlyPlayed: Boolean = false,
   isFavorite: Boolean = false,
   video: Video? = null,
+  isGridMode: Boolean = false,
 ) {
   val thumbnailRepository = koinInject<ThumbnailRepository>()
   val appearancePreferences = koinInject<AppearancePreferences>()
@@ -216,7 +217,79 @@ fun M3UVideoCard(
         )
       }
 
-      Row(
+      if (isGridMode) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(8.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          Box(
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            contentAlignment = Alignment.Center,
+          ) {
+            val currentImageBitmap = remember(thumbnail) { thumbnail?.asImageBitmap() }
+            if (currentImageBitmap != null) {
+              androidx.compose.foundation.Image(
+                bitmap = currentImageBitmap,
+                contentDescription = title,
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop,
+              )
+            } else if (!logoUrl.isNullOrBlank()) {
+              RemoteImage(
+                url = logoUrl,
+                contentDescription = title,
+                contentScale = if (isYouTubeArtwork) ContentScale.Crop else ContentScale.Fit,
+                modifier = Modifier.matchParentSize().padding(6.dp),
+              )
+            } else {
+              Icon(
+                Icons.RoundedFilled.PlayArrow,
+                contentDescription = null,
+                modifier = Modifier.size(42.dp),
+                tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.65f),
+              )
+            }
+          }
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Text(
+              text = title,
+              style = MaterialTheme.typography.titleSmall,
+              color = if (isRecentlyPlayed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+              fontWeight = if (isFavorite) FontWeight.SemiBold else FontWeight.Normal,
+              maxLines = 2,
+              minLines = 2,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f),
+            )
+            if (onFavoriteClick != null) {
+              IconButton(onClick = onFavoriteClick, modifier = Modifier.size(36.dp)) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Bookmarks,
+                  contentDescription = if (isFavorite) "Unsave stream" else "Save stream",
+                  tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+          }
+          if (!groupTitle.isNullOrBlank()) {
+            M3UMetadataChip(
+              text = groupTitle,
+              containerColor = MaterialTheme.colorScheme.secondaryContainer,
+              contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+          }
+        }
+      } else Row(
         modifier =
           Modifier
             .fillMaxWidth()
