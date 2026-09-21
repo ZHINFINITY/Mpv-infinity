@@ -1053,7 +1053,8 @@ class PlayerActivity :
               nativePositionSecs = (snapshot.positionMs / 1000L).toInt(),
             )
           }
-          if (playerPreferences.orientation.get() == PlayerOrientation.Video &&
+          if (!hasManualOrientationOverride() &&
+            playerPreferences.orientation.get() == PlayerOrientation.Video &&
             snapshot.videoWidth > 0 && snapshot.videoHeight > 0
           ) {
             val targetOrientation =
