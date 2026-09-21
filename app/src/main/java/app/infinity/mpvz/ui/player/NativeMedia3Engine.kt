@@ -181,6 +181,7 @@ class NativeMedia3Engine(context: Context) {
   private var subtitleBorderColor = android.graphics.Color.BLACK
   private var subtitleBackgroundColor = android.graphics.Color.TRANSPARENT
   private var subtitleBorderSize = 3
+  private var subtitlePresentationVisible = true
   private val subtitleStyleRunnable = Runnable { applyAssStyle() }
   private val subtitleViewRunnable = Runnable { configureSubtitleView() }
   private var loopASeconds: Double? = null
@@ -421,6 +422,13 @@ class NativeMedia3Engine(context: Context) {
     subtitlePosition = position.coerceIn(0, 150)
     loopHandler.removeCallbacks(subtitleViewRunnable)
     configureSubtitleView()
+  }
+
+  /** Hide/show subtitle presentation only; keep the selected Media3 text track active. */
+  fun setSubtitlePresentationVisible(visible: Boolean) {
+    subtitlePresentationVisible = visible
+    attachedView?.subtitleView?.visibility = if (visible) View.VISIBLE else View.GONE
+    subtitleOverlay?.visibility = if (visible) View.VISIBLE else View.GONE
   }
 
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
@@ -692,7 +700,7 @@ class NativeMedia3Engine(context: Context) {
     view.subtitleView?.apply {
       // ass-media installs its ASS overlay inside this subtitle view. Keep the parent visible;
       // normal SRT/WebVTT cues continue to use the same Media3 view.
-      visibility = View.VISIBLE
+      visibility = if (subtitlePresentationVisible) View.VISIBLE else View.GONE
       setStyle(subtitleStyle)
       setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
       pivotX = width / 2f
@@ -704,7 +712,7 @@ class NativeMedia3Engine(context: Context) {
       setBottomPaddingFraction(0f)
     }
     subtitleOverlay?.apply {
-      visibility = View.VISIBLE
+      visibility = if (subtitlePresentationVisible) View.VISIBLE else View.GONE
       pivotX = width / 2f
       pivotY = height.toFloat()
       scaleX = subtitleScale
@@ -735,6 +743,7 @@ class NativeMedia3Engine(context: Context) {
     // The player instance survives item changes; reset any ducked/zero output level before the
     // first audio-only item after a video transition.
     player.volume = 1f
+    setSubtitlePresentationVisible(true)
     pendingExternalSelectionId = null
     selectedNativeSubtitleSelection = null
     externalAssEnabled.clear()
