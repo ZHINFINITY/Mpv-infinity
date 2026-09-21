@@ -122,15 +122,6 @@ fun PullRefreshBox(
     label = "indicator_scale",
   )
 
-  val expressivePolygons =
-    remember {
-      listOf(
-        MaterialShapes.Cookie4Sided,
-        MaterialShapes.SoftBurst,
-        MaterialShapes.Oval,
-      )
-    }
-
   val indicatorSize = 56.dp
   val indicatorSizePx = remember(density) { with(density) { indicatorSize.toPx() } }
 
