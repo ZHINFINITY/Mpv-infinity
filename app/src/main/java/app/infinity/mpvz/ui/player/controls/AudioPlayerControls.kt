@@ -586,6 +586,7 @@ fun AudioPlayerControls(
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentItem = playbackState.currentItem ?: queueState.currentItem
   val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
+  val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
   val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
   val isAudiobook = currentItem?.audiobook != null
   LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
@@ -780,7 +781,11 @@ fun AudioPlayerControls(
     )
   }
   LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle) {
-    val updatedTitle = currentItem?.title?.takeIf { it.isNotBlank() } ?: mediaTitle
+    val updatedTitle = if (currentItem?.audiobook != null) {
+      currentItem.title?.takeIf { it.isNotBlank() && !it.contains("/API/", ignoreCase = true) }
+    } else {
+      currentItem?.title?.takeIf { it.isNotBlank() } ?: mediaTitle
+    }
     if (!updatedTitle.isNullOrBlank()) {
       lastValidTitle = updatedTitle.stripAudioExtension()
     }
@@ -1416,10 +1421,10 @@ fun AudioPlayerControls(
         val playlistInfo = viewModel.getPlaylistInfo()
         val audiobookChapter = if (isAudiobook) AudiobookPlayback.currentChapter() else null
         val audiobookChapterNumber = audiobookChapter?.let { chapter ->
-          AudiobookPlayback.chapters.value.indexOf(chapter).takeIf { it >= 0 }?.plus(1)
+          audiobookChapters.indexOf(chapter).takeIf { it >= 0 }?.plus(1)
         }
         val trackText = when {
-          audiobookChapter != null && audiobookChapterNumber != null -> "Chapter $audiobookChapterNumber: ${audiobookChapter.title}"
+          audiobookChapterNumber != null -> "Chapter $audiobookChapterNumber/${audiobookChapters.size}"
           isAudiobook -> "Audiobook"
           playlistInfo != null -> "Track $playlistInfo"
           else -> "Audio Media"
@@ -2357,14 +2362,23 @@ private fun UpNextPlaylistContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
               ) {
                 Text(
-                  text = "${index + 1}. ${chapter.name}",
+                  text = "Chapter ${index + 1}",
                   style = MaterialTheme.typography.bodyMedium,
                   fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                   color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                  maxLines = 2,
+                  maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                   modifier = Modifier.weight(1f),
                 )
+                if (isSelected) {
+                  Text(
+                    text = "Playing",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp),
+                  )
+                }
                 Text(
                   text = formatSec(chapter.start.toLong()),
                   style = MaterialTheme.typography.labelMedium,
