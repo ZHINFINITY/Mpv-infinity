@@ -844,7 +844,7 @@ class PlayerActivity :
               // Keep MPV visible while Media3 opens the network source. Hiding the outgoing
               // surface before Media3 renders a frame produces the black/stuck handoff seen on
               // HDR WebDAV playback.
-              binding.media3Player.alpha = 0f
+              setNativeVideoSurfaceVisible(false)
               if (outgoingEngine == PlaybackEngineMode.MPV) {
                 PlaybackSession.setPropertyBoolean("pause", true)
                 PlaybackSession.setPropertyBoolean("mute", true)
@@ -860,8 +860,8 @@ class PlayerActivity :
               // not leave controls and engine state on MPV while Media3 is opening the source.
               activeEngineMode = PlaybackEngineMode.NATIVE
               viewModel.setNativeEngineActive(true)
-              binding.media3Player.visibility = View.VISIBLE
-              binding.media3Player.alpha = 1f
+              setNativeVideoSurfaceVisible(true)
+              binding.player.alpha = 0f
               binding.player.visibility = View.GONE
               nativeEngine.play(
                 nativeUri,
@@ -893,13 +893,13 @@ class PlayerActivity :
                     PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
                     PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
                     if (outgoingPlaying) PlaybackSession.command("play")
-                    binding.media3Player.alpha = 0f
+                    setNativeVideoSurfaceVisible(false)
                     binding.player.visibility = View.VISIBLE
+                    binding.player.alpha = 1f
                   }
                   return@launch
                 }
-                binding.media3Player.visibility = View.VISIBLE
-                binding.media3Player.alpha = 1f
+                setNativeVideoSurfaceVisible(true)
                 binding.player.visibility = View.GONE
               }
             } else if (mpvInitialized) {
@@ -912,8 +912,7 @@ class PlayerActivity :
               PlaybackSession.setPropertyBoolean("mute", false)
               // Media3 uses a SurfaceView/media overlay. Alpha alone does not remove its last
               // frame from composition, so hide that surface before MPV takes ownership.
-              binding.media3Player.alpha = 0f
-              binding.media3Player.visibility = View.GONE
+              setNativeVideoSurfaceVisible(false)
               // Keep MPV's SurfaceView attached while the queue is reloaded. INVISIBLE causes
               // unbindSurface() to set vid=no; audio then continues while video waits for a
               // later surface reattachment.
@@ -935,7 +934,14 @@ class PlayerActivity :
               // the proxy before MPV reconnects. Always use the retained torrent source directly
               // while a torrent session is active.
               if (!isTorrentHandoff && handoffIndex != null) {
-                loadPlaylistItemInternal(index = handoffIndex, saveCurrentPlaybackState = false)
+                loadPlaylistItemInternal(
+                  index = handoffIndex,
+                  saveCurrentPlaybackState = false,
+                  positionRestoreOverride = PlaybackPositionRestoreOverride(
+                    positionSeconds = outgoingPositionMs / 1000.0,
+                    paused = !outgoingPlaying,
+                  ),
+                )
               } else {
                 // Single-file/direct torrent sessions have no playlist entry. Reload from the
                 // original torrent source so MPV does not reopen the closed native/local URL.
@@ -958,6 +964,10 @@ class PlayerActivity :
                   playableUri = handoffPlayableSource,
                   originalUri = handoffSource,
                   preserveTorrentSession = isTorrentHandoff,
+                  positionRestoreOverride = PlaybackPositionRestoreOverride(
+                    positionSeconds = outgoingPositionMs / 1000.0,
+                    paused = !outgoingPlaying,
+                  ),
                 )
               }
               engineHandoffJob = lifecycleScope.launch {
@@ -975,14 +985,12 @@ class PlayerActivity :
                   // Native SurfaceView uses setZOrderMediaOverlay(true) for libass; alpha alone
                   // leaves its last frame composited on top of MPV. Hide the view fully so the
                   // media-overlay plane is removed and MPV video becomes visible.
-                  binding.media3Player.alpha = 0f
-                  binding.media3Player.visibility = View.GONE
+                  setNativeVideoSurfaceVisible(false)
                   binding.player.alpha = 1f
                   binding.player.visibility = View.VISIBLE
                   viewModel.setAmbientLifecycleActive(true)
                 } else if (!ready && ownsPlaybackSession() && activeEngineMode == PlaybackEngineMode.MPV) {
-                  binding.media3Player.alpha = 0f
-                  binding.media3Player.visibility = View.GONE
+                  setNativeVideoSurfaceVisible(false)
                   binding.player.alpha = 1f
                   binding.player.visibility = View.VISIBLE
                 }
@@ -1601,6 +1609,17 @@ class PlayerActivity :
     } else {
       restoreFullSizePlayerBounds()
     }
+  }
+
+  /** SurfaceView is a separate compositor layer; hiding only PlayerView can leave its last frame. */
+  private fun setNativeVideoSurfaceVisible(visible: Boolean) {
+    val state = if (visible) View.VISIBLE else View.GONE
+    binding.media3Player.videoSurfaceView?.apply {
+      alpha = if (visible) 1f else 0f
+      visibility = state
+    }
+    binding.media3Player.alpha = if (visible) 1f else 0f
+    binding.media3Player.visibility = state
   }
 
   private fun updateVideoAmbientPlayerBounds() {
@@ -3815,8 +3834,7 @@ class PlayerActivity :
   private fun restoreForegroundVideoAndAmbientIfUnlocked(): Boolean {
     if ((!mpvInitialized && !isNativeEngineActive()) || !ownsPlaybackSession() || isDeviceScreenOffOrLocked()) return false
     if (isNativeEngineActive()) {
-      binding.media3Player.visibility = View.VISIBLE
-      binding.media3Player.alpha = 1f
+      setNativeVideoSurfaceVisible(true)
     } else {
       enableVideoAfterBackground()
     }
@@ -5912,6 +5930,7 @@ class PlayerActivity :
     originalUri: String? = null,
     expandM3u: Boolean = false,
     preserveTorrentSession: Boolean = false,
+    positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   ) {
     if (!ownsPlaybackSession()) return
     mediaLoadJob?.cancel()
@@ -6156,6 +6175,7 @@ class PlayerActivity :
             attempt = 0,
             requestGeneration = requestGeneration,
             legacyMediaIdentifier = requestedLegacyMediaIdentifier.takeUnless { isTorrentRequest },
+            positionRestoreOverride = positionRestoreOverride,
           )
         } catch (error: CancellationException) {
           throw error
@@ -6261,8 +6281,7 @@ class PlayerActivity :
         viewModel.setNativeEngineActive(true)
         viewModel.setAmbientLifecycleActive(true)
         binding.player.visibility = View.GONE
-        binding.media3Player.visibility = View.VISIBLE
-        binding.media3Player.alpha = 1f
+        setNativeVideoSurfaceVisible(true)
         viewModel.clearNativeExternalSubtitles()
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
         nativeEngine.play(
@@ -6287,7 +6306,8 @@ class PlayerActivity :
         viewModel.setAmbientLifecycleActive(false)
         setVideoAmbientPresentationActive(false)
         nativeEngine.stop()
-        binding.media3Player.alpha = 0f
+        setNativeVideoSurfaceVisible(false)
+        binding.player.alpha = 1f
         binding.player.visibility = View.VISIBLE
       }
     }
@@ -7218,7 +7238,8 @@ class PlayerActivity :
       viewModel.setNativeEngineActive(false)
       forceMpvAudioTrackAutoOnNextLoad = true
       nativeEngine.stop()
-      binding.media3Player.alpha = 0f
+      setNativeVideoSurfaceVisible(false)
+      binding.player.alpha = 1f
       binding.player.visibility = View.VISIBLE
       if (!mpvInitialized) {
         val setupError = setupMPV()
@@ -7658,6 +7679,7 @@ class PlayerActivity :
     index: Int,
     saveCurrentPlaybackState: Boolean = true,
     requestAlreadyStarted: Boolean = false,
+    positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   ) {
     if (index < 0 || index >= playlist.size) {
       Log.e(TAG, "Invalid playlist index: $index (playlist size: ${playlist.size})")
@@ -7764,7 +7786,7 @@ class PlayerActivity :
     isReady = false
     viewModel.onVideoLoadStarted()
 
-    startMediaLoad(playableUri)
+    startMediaLoad(playableUri, positionRestoreOverride = positionRestoreOverride)
 
     // Update media title (this will trigger UI update)
     val shouldForceTitle =
