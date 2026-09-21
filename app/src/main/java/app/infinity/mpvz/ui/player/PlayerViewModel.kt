@@ -4437,6 +4437,15 @@ class PlayerViewModel : ViewModel(),
     coalesceSeek(offset)
   }
 
+  fun seekAudioTo(positionSeconds: Float) {
+    if (!positionSeconds.isFinite()) return
+    if (PlaybackSession.state.value.currentItem?.audiobook != null) {
+      AudiobookPlayback.seekInBook((positionSeconds * 1000f).toLong())
+    } else {
+      seekTo(positionSeconds.toInt(), fast = false)
+    }
+  }
+
   fun seekToPlaybackChapter(chapter: Segment) {
     if (PlaybackSession.state.value.currentItem?.audiobook != null) {
       AudiobookPlayback.seekInBook((chapter.start * 1000f).toLong())
@@ -4453,14 +4462,14 @@ class PlayerViewModel : ViewModel(),
       return
     }
     val progress = PlaybackSession.audiobookProgress() ?: return
-    val audiobookChapters = AudiobookPlayback.chapters.value
+    val audiobookChapters = playbackChapters.value
     val book = AudiobookPlayback.book.value?.takeIf { it.book.id == progress.item.bookId }
     val positionInBook = book?.positionInBook(progress.item.trackId, progress.positionMs) ?: progress.positionMs
-    val current = audiobookChapters.lastOrNull { it.bookStartMs <= positionInBook } ?: return
+    val current = audiobookChapters.lastOrNull { it.start * 1000f <= positionInBook } ?: return
     val index = audiobookChapters.indexOf(current)
-    val target = if (offset < 0 && positionInBook - current.bookStartMs > 3000L) current
+    val target = if (offset < 0 && positionInBook - (current.start * 1000f).toLong() > 3000L) current
       else audiobookChapters.getOrNull(index + offset)
-    target?.let { AudiobookPlayback.seekInBook(it.bookStartMs, resumePlayback = true) }
+    target?.let { AudiobookPlayback.seekInBook((it.start * 1000f).toLong(), resumePlayback = true) }
   }
 
   fun sleepAtCurrentChapterEnd() {

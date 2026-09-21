@@ -587,11 +587,21 @@ object PlaybackSession : MPVLib.EventObserver {
     }
 
   fun setRepeatMode(repeatMode: RepeatMode) {
-    nativeLock.withLock { _queue.value = PlaybackQueueReducer.setRepeatMode(_queue.value, repeatMode) }
+    nativeLock.withLock {
+      _queue.value = PlaybackQueueReducer.setRepeatMode(
+        _queue.value,
+        if (_queue.value.currentItem?.audiobook != null) RepeatMode.OFF else repeatMode,
+      )
+    }
   }
 
   fun setShuffleEnabled(enabled: Boolean) {
-    nativeLock.withLock { _queue.value = PlaybackQueueReducer.setShuffleEnabled(_queue.value, enabled) }
+    nativeLock.withLock {
+      _queue.value = PlaybackQueueReducer.setShuffleEnabled(
+        _queue.value,
+        enabled && _queue.value.currentItem?.audiobook == null,
+      )
+    }
   }
 
   fun hasNext(): Boolean = nativeLock.withLock { PlaybackQueueReducer.hasNext(_queue.value) }
