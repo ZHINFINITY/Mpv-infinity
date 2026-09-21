@@ -232,8 +232,26 @@ object NetworkStreamingScreen : Screen {
       }
     }
 
+    fun isReadableContentUri(source: String): Boolean {
+      val uri = runCatching { android.net.Uri.parse(source) }.getOrNull() ?: return false
+      if (uri.scheme?.equals("content", ignoreCase = true) != true) return true
+      return runCatching {
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+          descriptor.fileDescriptor.valid()
+        } ?: false
+      }.getOrDefault(false)
+    }
+
     fun submitPastedLink(url: String) {
       val playableSource = normalizeTorrentSource(url) ?: url.trim()
+      if (!isReadableContentUri(playableSource)) {
+        Toast.makeText(
+          context,
+          "This local content link is unavailable on this device",
+          Toast.LENGTH_LONG,
+        ).show()
+        return
+      }
       if (
         ytdlPreferences.showDownloadQualityChooser.get() &&
           linkDownloadCoordinator.routeFor(playableSource) ==
