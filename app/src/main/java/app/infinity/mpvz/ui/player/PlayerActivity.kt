@@ -993,9 +993,7 @@ class PlayerActivity :
       if (id == 0) {
         nativeEngine.disableSubtitles()
       } else {
-        nativeEngine.snapshot.value.subtitleTracks.getOrNull(-id - 1)?.let { track ->
-          if (track.selected) nativeEngine.disableSubtitles() else nativeEngine.selectTrack(track)
-        }
+        nativeEngine.snapshot.value.subtitleTracks.getOrNull(-id - 1)?.let(nativeEngine::toggleSubtitle)
       }
     }
     viewModel.setNativeSubtitleVisibilityListener { hidden ->

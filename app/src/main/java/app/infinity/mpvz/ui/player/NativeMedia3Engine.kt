@@ -887,6 +887,23 @@ class NativeMedia3Engine(context: Context) {
     publishSnapshot()
   }
 
+  /**
+   * Toggle an embedded subtitle using the current Media3 track state.
+   *
+   * The UI snapshot is asynchronous and can still contain the previous selected flag when a
+   * track-change callback arrives. Making the enable/disable decision from currentTracks avoids
+   * turning subtitles off immediately after selecting another track.
+   */
+  fun toggleSubtitle(track: NativeTrack) {
+    val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
+    if (group.type != C.TRACK_TYPE_TEXT || track.trackIndex !in 0 until group.length) return
+    if (group.isTrackSelected(track.trackIndex)) {
+      disableSubtitles()
+    } else {
+      selectTrack(track)
+    }
+  }
+
   fun selectAudioTrack(group: Tracks.Group, trackIndex: Int) {
     player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
