@@ -39,6 +39,9 @@ interface PlayerHost {
   val hostContentResolver: ContentResolver
   var hostRequestedOrientation: Int
 
+  /** Prevent source-geometry callbacks from undoing a rotation explicitly chosen by the user. */
+  fun onManualOrientationOverride() {}
+
   fun requestAudioFocus(): Boolean
 
   fun abandonAudioFocus()
