@@ -197,7 +197,6 @@ class PlayerActivity :
    */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
   private val nativeEngine by lazy { NativeMedia3Engine(this) }
-  private var nativeSubtitleBeforeTranslation: NativeTrack? = null
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
   private var activeEngineMode = PlaybackEngineMode.MPV
   private var engineHandoffJob: Job? = null
@@ -1016,17 +1015,11 @@ class PlayerActivity :
       }
     }
     viewModel.setNativeSubtitleVisibilityListener { hidden ->
-      if (hidden) {
-        if (nativeSubtitleBeforeTranslation == null) {
-          nativeSubtitleBeforeTranslation = nativeEngine.snapshot.value.subtitleTracks
-            .firstOrNull { it.selected }
-        }
-        nativeEngine.disableSubtitles()
-      } else {
-        val track = nativeSubtitleBeforeTranslation
-        nativeSubtitleBeforeTranslation = null
-        if (track != null) nativeEngine.selectTrack(track) else nativeEngine.disableSubtitles()
-      }
+      // Translation may temporarily hide the original cue, but must not disable the Media3 text
+      // track. Disabling it breaks normal UTF-8/SRT cue playback after the first cue and also
+      // destroys the user's selected-track state. Only change presentation visibility here; ASS/
+      // SSA and normal Media3 cue pipelines continue rendering through their existing renderers.
+      nativeEngine.setSubtitlePresentationVisible(!hidden)
     }
     viewModel.setNativeExternalSubtitleToggleListener { id ->
       viewModel.subtitleTracks.value.firstOrNull { it.id == id }?.externalFilename?.let { rawUri ->
