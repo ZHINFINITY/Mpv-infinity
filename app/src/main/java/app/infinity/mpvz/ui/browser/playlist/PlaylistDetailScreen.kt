@@ -28,6 +28,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material3.Button
@@ -149,6 +153,7 @@ data class PlaylistDetailScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var selectedM3UFilter by rememberSaveable { mutableStateOf(M3U_FILTER_ALL) }
+    var isM3UGrid by rememberSaveable { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
     val hasFavoriteStreams = remember(videoItems) { videoItems.any { it.playlistItem.isFavorite } }
@@ -409,6 +414,17 @@ data class PlaylistDetailScreen(
                     }
                     Spacer(modifier = Modifier.width(4.dp))
 
+                    if (playlist?.isM3uPlaylist == true) {
+                      IconButton(onClick = { isM3UGrid = !isM3UGrid }) {
+                        Icon(
+                          imageVector = if (isM3UGrid) Icons.RoundedFilled.ViewList else Icons.RoundedFilled.GridView,
+                          contentDescription = if (isM3UGrid) "List view" else "Grid view",
+                          tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                      }
+                      Spacer(modifier = Modifier.width(4.dp))
+                    }
+
                     // Reorder button (hide for M3U playlists)
                     if (playlist?.isM3uPlaylist != true) {
                       IconButton(
@@ -481,7 +497,7 @@ data class PlaylistDetailScreen(
         }
       },
       floatingActionButton = {
-        if (!isSearching && !isReorderMode && !selectionManager.isInSelectionMode) {
+        if (!isSearching && !isReorderMode && !selectionManager.isInSelectionMode && playlist?.isM3uPlaylist != true) {
           val isAudioPlaylist = playlist?.isAudio == true || videoItems.any { it.video.isAudio }
           ExtendedFloatingActionButton(
             modifier =
@@ -582,6 +598,7 @@ data class PlaylistDetailScreen(
               isLoading = isLoading && videoItems.isEmpty(),
               selectionManager = selectionManager,
               isM3uPlaylist = playlist?.isM3uPlaylist == true,
+              isGridMode = isM3UGrid,
               isAudio = playlist?.isAudio == true || videoItems.any { it.video.isAudio },
               isReorderMode = isReorderMode,
               onReorder = { fromIndex, toIndex ->
@@ -661,6 +678,7 @@ private fun PlaylistVideoListContent(
   modifier: Modifier = Modifier,
   isM3uPlaylist: Boolean = false,
   isAudio: Boolean = false,
+  isGridMode: Boolean = false,
 ) {
   val gesturePreferences = koinInject<GesturePreferences>()
   val browserPreferences = koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
@@ -799,11 +817,41 @@ private fun PlaylistVideoListContent(
         }
 
       Box(modifier = modifier.fillMaxSize()) {
-        LazyColumn(
-          state = listState,
-          modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(start = 8.dp, end = 8.dp),
-        ) {
+        if (isM3uPlaylist && isGridMode) {
+          val gridState = rememberLazyGridState()
+          LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 220.dp),
+            state = gridState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            gridItems(videoItems, key = { it.playlistItem.id }) { item ->
+              M3UVideoCard(
+                title = item.video.displayName,
+                url = item.video.path,
+                logoUrl = item.playlistItem.tvgLogo,
+                groupTitle = item.playlistItem.groupTitle,
+                hasDrm = !item.playlistItem.licenseType.isNullOrBlank() || !item.playlistItem.licenseKey.isNullOrBlank(),
+                hasCustomUserAgent = !item.playlistItem.userAgent.isNullOrBlank(),
+                onClick = { onVideoItemClick(item) },
+                onLongClick = { onVideoItemLongClick(item) },
+                onFavoriteClick = onToggleFavorite?.let { { it(item) } },
+                isSelected = selectionManager.isSelected(item),
+                isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
+                isFavorite = item.playlistItem.isFavorite,
+                video = item.video,
+                modifier = Modifier.fillMaxWidth(),
+              )
+            }
+          }
+        } else {
+          LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 8.dp, end = 8.dp),
+          ) {
           items(
             count = videoItems.size,
             key = { index -> videoItems[index].playlistItem.id },
@@ -882,6 +930,7 @@ private fun PlaylistVideoListContent(
                 }
               }
             }
+          }
           }
         }
 

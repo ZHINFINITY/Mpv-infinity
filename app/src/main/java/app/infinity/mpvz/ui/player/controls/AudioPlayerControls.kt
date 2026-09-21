@@ -2005,7 +2005,7 @@ fun AudioPlayerControls(
           }
           Spacer(modifier = Modifier.width(12.dp))
           ReactiveIconButton(
-            onClick = { onOpenSheet(Sheets.Playlist) },
+            onClick = { onOpenSheet(if (isAudiobook) Sheets.Chapters else Sheets.Playlist) },
             modifier =
               Modifier
                 .clip(
@@ -2016,7 +2016,7 @@ fun AudioPlayerControls(
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
               Icon(
                 imageVector = Icons.RoundedFilled.QueueMusic,
-                contentDescription = "Playlist",
+                contentDescription = if (isAudiobook) stringResource(R.string.audiobook_chapters) else "Playlist",
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(24.dp),
               )
@@ -2310,11 +2310,12 @@ private fun UpNextPlaylistContent(
     val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
     val currentChapterIndex by remember(currentItem?.audiobook, chapters, audiobookChapters, audiobook?.tracks, filePosition) {
       derivedStateOf {
-        val activeTrackId = currentItem?.audiobook?.trackId
-        val activePositionMs = (filePosition * 1000f).toLong().coerceAtLeast(0L)
-        val activeIndex = audiobookChapters.indexOfLast { chapter ->
-          chapter.trackId == activeTrackId && chapter.startMs <= activePositionMs
-        }
+        val currentChapter = viewModel.currentChapter()
+        val activeIndex = currentChapter?.let { playing ->
+          audiobookChapters.indexOfFirst { chapter ->
+            chapter.trackId == playing.trackId && chapter.startMs == playing.startMs
+          }
+        } ?: -1
         if (activeIndex >= 0) {
           activeIndex
         } else {
