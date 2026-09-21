@@ -457,9 +457,6 @@ fun JellyfinContent(
               }
             }
             if (!selectionManager.isInSelectionMode && !isMusicOnlyMode) {
-              IconButton(onClick = { isManageServersOpen = true }, modifier = Modifier.padding(horizontal = 2.dp)) {
-                Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers", modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.secondary)
-              }
               IconButton(
                 onClick = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
                 modifier = Modifier.padding(horizontal = 2.dp),
@@ -476,7 +473,7 @@ fun JellyfinContent(
         )
       }
 
-      if (uiState.openLibrary != null && uiState.openLibrary?.isMusic != true && !isSearching) {
+      if (uiState.openLibrary != null && uiState.openLibrary?.isMusic != true && !uiState.isLoading && !isSearching) {
         JellyfinGenreChipRow(
           genres = uiState.availableGenres,
           selectedGenre = uiState.selectedGenreFilter,

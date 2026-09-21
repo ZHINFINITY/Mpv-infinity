@@ -950,7 +950,7 @@ fun AudioPlayerControls(
   val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
   val invertDuration by playerPreferences.invertDuration.collectAsState()
   val showChapterIndicators by playerPreferences.showChapterIndicators.collectAsState()
-  val chapters by viewModel.chapters.collectAsState()
+  val chapters by viewModel.playbackChapters.collectAsState()
   val seekbarChapters =
     remember(chapters, showChapterIndicators) {
       if (showChapterIndicators) chapters.toImmutableList() else persistentListOf()
@@ -1385,7 +1385,7 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.Start,
       ) {
         val displayTitle =
-          if (isAudiobook) audiobook?.book?.title?.takeIf { it.isNotBlank() } ?: lastValidTitle
+          if (isAudiobook) audiobook?.book?.title?.takeIf { it.isNotBlank() }.orEmpty()
           else cleanSongTitle(lastValidTitle, displayArtist)
 
         // 1. Song Title Only
@@ -1414,7 +1414,12 @@ fun AudioPlayerControls(
 
         // 3. Track Info | A-B Loop Control
         val playlistInfo = viewModel.getPlaylistInfo()
+        val audiobookChapter = if (isAudiobook) AudiobookPlayback.currentChapter() else null
+        val audiobookChapterNumber = audiobookChapter?.let { chapter ->
+          AudiobookPlayback.chapters.value.indexOf(chapter).takeIf { it >= 0 }?.plus(1)
+        }
         val trackText = when {
+          audiobookChapter != null && audiobookChapterNumber != null -> "Chapter $audiobookChapterNumber: ${audiobookChapter.title}"
           isAudiobook -> "Audiobook"
           playlistInfo != null -> "Track $playlistInfo"
           else -> "Audio Media"
@@ -1641,6 +1646,16 @@ fun AudioPlayerControls(
           audiobook.positionInBook(trackId, (chapterPositionSec * 1000f).toLong()) / 1000f
         } ?: chapterPositionSec
       } else chapterPositionSec
+      val bookOffset = currentItem?.audiobook?.let { audiobook.positionInBook(it.trackId, 0) }?.div(1000f) ?: 0f
+      val timelinePosition = if (audiobook != null) {
+        (bookOffset + chapterPositionSec).coerceIn(0f, audiobook.durationMs / 1000f)
+      } else currentPosSec
+      val timelineDuration = audiobook?.durationMs?.div(1000f) ?: currentDurSec
+      val effectiveRemaining = if (audiobook != null) {
+        (timelineDuration - timelinePosition).coerceAtLeast(0f) / (playbackSpeed ?: 1f).coerceAtLeast(0.1f)
+      } else {
+        (remaining ?: 0f).takeIf { it > 0f } ?: (currentDurSec - currentPosSec).coerceAtLeast(0f)
+      }
       val isPaused = paused ?: false
 
       Box(
@@ -1648,12 +1663,12 @@ fun AudioPlayerControls(
         modifier = Modifier.fillMaxWidth(),
       ) {
       SeekbarWithTimers(
-        position = currentPosSec,
-        committedPosition = currentPosSec,
-        duration = currentDurSec.coerceAtLeast(1f),
-        remaining = remaining ?: 0f,
-        onValueChange = { value -> viewModel.seekPreviewTo(value) },
-        onValueChangeFinished = { targetPosition -> viewModel.seekTo(targetPosition.toInt(), fast = false) },
+        position = timelinePosition,
+        committedPosition = timelinePosition,
+        duration = timelineDuration.coerceAtLeast(1f),
+        remaining = effectiveRemaining,
+        onValueChange = { value -> if (!isAudiobook) viewModel.seekPreviewTo(value) },
+        onValueChangeFinished = viewModel::seekAudioTo,
         timersInverted = Pair(false, invertDuration),
         durationTimerOnCLick = { playerPreferences.invertDuration.set(!invertDuration) },
         positionTimerOnClick = {},
@@ -1736,7 +1751,7 @@ fun AudioPlayerControls(
           )
         }
         ReactiveIconButton(
-          onClick = { if (isAudiobook) viewModel.playNextAudiobook() else viewModel.playNext() },
+          onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
           enabled = if (isAudiobook) true else playlistModeEnabled,
         ) {
           Icon(
@@ -2262,7 +2277,7 @@ private fun UpNextPlaylistContent(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
 
   if (playbackState.currentItem?.audiobook != null) {
-    val chapters by viewModel.chapters.collectAsStateWithLifecycle()
+    val chapters by viewModel.playbackChapters.collectAsStateWithLifecycle()
     val filePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
     val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
     val currentItem = playbackState.currentItem
