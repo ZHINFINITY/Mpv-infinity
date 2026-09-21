@@ -713,7 +713,7 @@ data class PlaylistDetailScreen(
               val selected = selectionManager.getSelectedItems()
               val playlistId = playlistRepository.createPlaylist(name.trim())
               playlistRepository.addItemsToPlaylist(
-                playlistId,
+                playlistId.toInt(),
                 selected.map { it.video.path to (it.playlistItem.fileName.ifBlank { it.video.displayName }) },
               )
               createChannelPlaylistOpen = false
