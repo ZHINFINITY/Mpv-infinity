@@ -37,14 +37,19 @@ import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -127,7 +132,10 @@ data class PlaylistDetailScreen(
     val backStack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
     val browserPreferences = koinInject<BrowserPreferences>()
+    val playlistRepository = koinInject<PlaylistRepository>()
     val iptvLayoutMode by browserPreferences.iptvLayoutMode.collectAsState()
+    val iptvManualGridColumns by browserPreferences.iptvManualGridColumnsEnabled.collectAsState()
+    val iptvGridColumnsPortrait by browserPreferences.iptvGridColumnsPortrait.collectAsState()
 
     // ViewModel
     val viewModel: PlaylistDetailViewModel =
@@ -239,6 +247,8 @@ data class PlaylistDetailScreen(
 
     // Reorder mode state
     var isReorderMode by rememberSaveable { mutableStateOf(false) }
+    var iptvSettingsOpen by rememberSaveable { mutableStateOf(false) }
+    var createChannelPlaylistOpen by rememberSaveable { mutableStateOf(false) }
 
     // Predictive back: Intercept when in selection mode, reorder mode, or searching
     BackHandler(enabled = selectionManager.isInSelectionMode || isReorderMode || isSearching) {
@@ -367,6 +377,12 @@ data class PlaylistDetailScreen(
               } else {
                 null
               },
+            onSettingsClick =
+              if (playlist?.isM3uPlaylist == true) {
+                { iptvSettingsOpen = true }
+              } else {
+                null
+              },
             onShareClick =
               if (playlist?.isM3uPlaylist != true) {
                 // Hide share button for M3U playlists
@@ -374,6 +390,12 @@ data class PlaylistDetailScreen(
                   val videosToShare = selectionManager.getSelectedItems().map { it.video }
                   MediaUtils.shareVideos(context, videosToShare)
                 }
+              } else {
+                null
+              },
+            onAddToPlaylistClick =
+              if (playlist?.isM3uPlaylist == true && selectionManager.selectedCount > 0) {
+                { createChannelPlaylistOpen = true }
               } else {
                 null
               },
@@ -671,8 +693,124 @@ data class PlaylistDetailScreen(
           },
         )
       }
+      if (iptvSettingsOpen && playlist?.isM3uPlaylist == true) {
+        IptvSettingsDialog(
+          layoutMode = iptvLayoutMode,
+          manualGridColumns = iptvManualGridColumns,
+          gridColumns = iptvGridColumnsPortrait,
+          onLayoutModeChange = { browserPreferences.iptvLayoutMode.set(it) },
+          onManualGridColumnsChange = { browserPreferences.iptvManualGridColumnsEnabled.set(it) },
+          onGridColumnsChange = { browserPreferences.iptvGridColumnsPortrait.set(it) },
+          onDismiss = { iptvSettingsOpen = false },
+        )
+      }
+      if (createChannelPlaylistOpen && playlist?.isM3uPlaylist == true) {
+        CreateIptvPlaylistDialog(
+          selectedCount = selectionManager.selectedCount,
+          onDismiss = { createChannelPlaylistOpen = false },
+          onCreate = { name ->
+            coroutineScope.launch {
+              val selected = selectionManager.getSelectedItems()
+              val playlistId = playlistRepository.createPlaylist(name.trim())
+              playlistRepository.addItemsToPlaylist(
+                playlistId,
+                selected.map { it.video.path to (it.playlistItem.fileName.ifBlank { it.video.displayName }) },
+              )
+              createChannelPlaylistOpen = false
+              selectionManager.clear()
+              Toast.makeText(context, "Playlist created", Toast.LENGTH_SHORT).show()
+            }
+          },
+        )
+      }
     }
   }
+}
+
+@Composable
+private fun IptvSettingsDialog(
+  layoutMode: MediaLayoutMode,
+  manualGridColumns: Boolean,
+  gridColumns: Int,
+  onLayoutModeChange: (MediaLayoutMode) -> Unit,
+  onManualGridColumnsChange: (Boolean) -> Unit,
+  onGridColumnsChange: (Int) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("IPTV list settings") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Layout", style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(
+            selected = layoutMode == MediaLayoutMode.LIST,
+            onClick = { onLayoutModeChange(MediaLayoutMode.LIST) },
+            label = { Text("List") },
+          )
+          FilterChip(
+            selected = layoutMode == MediaLayoutMode.GRID,
+            onClick = { onLayoutModeChange(MediaLayoutMode.GRID) },
+            label = { Text("Grid") },
+          )
+        }
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Text("Manual grid columns")
+          Switch(
+            checked = manualGridColumns,
+            onCheckedChange = onManualGridColumnsChange,
+          )
+        }
+        if (layoutMode == MediaLayoutMode.GRID && manualGridColumns) {
+          Text("Columns: $gridColumns", style = MaterialTheme.typography.bodyMedium)
+          Slider(
+            value = gridColumns.toFloat(),
+            onValueChange = { onGridColumnsChange(it.toInt().coerceIn(1, 4)) },
+            valueRange = 1f..4f,
+            steps = 2,
+          )
+        }
+      }
+    },
+    confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+  )
+}
+
+@Composable
+private fun CreateIptvPlaylistDialog(
+  selectedCount: Int,
+  onDismiss: () -> Unit,
+  onCreate: (String) -> Unit,
+) {
+  var name by rememberSaveable { mutableStateOf("My IPTV channels") }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Create channel playlist") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Save $selectedCount selected channels as a playlist.")
+        OutlinedTextField(
+          value = name,
+          onValueChange = { name = it },
+          label = { Text("Playlist name") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    confirmButton = {
+      TextButton(
+        enabled = name.isNotBlank(),
+        onClick = { onCreate(name) },
+      ) { Text("Create") }
+    },
+  )
 }
 
 @Composable
@@ -864,6 +1002,7 @@ private fun PlaylistVideoListContent(
                 isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
                 isFavorite = item.playlistItem.isFavorite,
                 video = item.video,
+                isGridMode = true,
                 modifier = Modifier.fillMaxWidth(),
               )
             }
@@ -908,6 +1047,7 @@ private fun PlaylistVideoListContent(
                     isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
                     isFavorite = item.playlistItem.isFavorite,
                     video = item.video,
+                    isGridMode = false,
                     modifier = Modifier.weight(1f),
                   )
                 } else {
