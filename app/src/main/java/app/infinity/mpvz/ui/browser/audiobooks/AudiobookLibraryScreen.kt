@@ -282,11 +282,7 @@ object AudiobookLibraryScreen : Screen {
       containerColor = MaterialTheme.colorScheme.surfaceContainer,
       topBar = {
         BrowserTopBar(
-          title = if (isAbsSource) {
-            absState.activeServer?.name ?: stringResource(R.string.audiobook_source_audiobookshelf)
-          } else {
-            stringResource(R.string.audiobooks_title)
-          },
+          title = if (isAbsSource) "" else stringResource(R.string.audiobooks_title),
           isInSelectionMode = false,
           selectedCount = 0,
           totalCount = totalCount,

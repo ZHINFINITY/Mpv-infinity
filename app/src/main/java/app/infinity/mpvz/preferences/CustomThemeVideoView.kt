@@ -69,14 +69,20 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
 
   private fun startIfReady() {
     if (player != null || path.isBlank() || surface == null) return
+    val generation = retryGeneration
     player = MediaPlayer().apply {
       setSurface(surface)
       isLooping = loop
       setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
-      setOnPreparedListener { it.start() }
-      // MediaPlayer's native isLooping path is smoother than seeking and
-      // starting manually at completion, which can produce a visible hitch.
-      setOnCompletionListener { completedPlayer -> if (loop && !completedPlayer.isPlaying) completedPlayer.start() }
+      setOnPreparedListener { preparedPlayer ->
+        // prepareAsync can finish after the view has been reconfigured or detached.
+        // Never start a stale decoder; doing so can freeze the new surface and cause
+        // a visible restart/stutter when custom themes are edited or recomposed.
+        if (generation == retryGeneration && player === preparedPlayer && isAvailable) {
+          preparedPlayer.start()
+        }
+      }
+      // MediaPlayer's native looping path avoids the seek/restart hitch at the loop boundary.
       setOnErrorListener { _, _, _ ->
         // Do not leave a failed player displaying its last frame. Recreate it
         // once after a short backoff so transient decoder errors recover
