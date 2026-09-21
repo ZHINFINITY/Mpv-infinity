@@ -626,6 +626,9 @@ class PlayerViewModel : ViewModel(),
     nativeSubtitleTracks.value = snapshot.subtitleTracks.mapIndexedNotNull { index, track ->
       if (track.external) return@mapIndexedNotNull null
       TrackNode(
+        // Keep the ID based on the source snapshot index. PlayerActivity resolves the ID back
+        // through snapshot.subtitleTracks; using the filtered index selected the wrong track
+        // whenever an external subtitle appeared before an embedded one.
         id = -(index + 1),
         type = "sub",
         title = track.label,

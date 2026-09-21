@@ -849,6 +849,7 @@ class NativeMedia3Engine(context: Context) {
     if (track.type == C.TRACK_TYPE_TEXT) {
       val format = group.getTrackFormat(track.trackIndex)
       if (isAssFormat(format.sampleMimeType, format.codecs)) {
+        selectedNativeSubtitleKey = track.groupIndex to track.trackIndex
         player.trackSelectionParameters = player.trackSelectionParameters
           .buildUpon()
           .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -858,7 +859,7 @@ class NativeMedia3Engine(context: Context) {
         publishSnapshot()
         return
       }
-      selectedNativeSubtitleKey = null
+      selectedNativeSubtitleKey = track.groupIndex to track.trackIndex
       val builder = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -901,6 +902,7 @@ class NativeMedia3Engine(context: Context) {
     if (trackIndex !in 0 until group.length) return
     val format = group.getTrackFormat(trackIndex)
     if (isAssFormat(format.sampleMimeType, format.codecs)) {
+      selectedNativeSubtitleKey = groupIndex to trackIndex
       player.trackSelectionParameters = player.trackSelectionParameters
         .buildUpon()
         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
@@ -916,7 +918,7 @@ class NativeMedia3Engine(context: Context) {
       .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
       .build()
-    selectedNativeSubtitleKey = null
+    selectedNativeSubtitleKey = groupIndex to trackIndex
     Log.i(logTag, "silent subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }

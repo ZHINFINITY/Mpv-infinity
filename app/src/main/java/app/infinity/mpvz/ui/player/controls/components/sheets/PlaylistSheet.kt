@@ -274,9 +274,11 @@ fun PlaylistSheet(
   val isListModePreference by playerPreferences.playlistViewMode.collectAsState()
   var isListMode by remember { mutableStateOf(isListModePreference) }
 
-  // Update preference when view mode changes (only in landscape)
+  // Keep the playlist view mode consistent with the home-tree/browser settings in every
+  // orientation. Previously portrait taps changed only transient Compose state and were lost
+  // when the sheet recomposed.
   LaunchedEffect(isListMode) {
-    if (!isPortrait && isListMode != isListModePreference) {
+    if (isListMode != isListModePreference) {
       playerPreferences.playlistViewMode.set(isListMode)
     }
   }
