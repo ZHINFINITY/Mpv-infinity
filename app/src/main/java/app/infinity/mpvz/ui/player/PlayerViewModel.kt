@@ -4462,7 +4462,7 @@ class PlayerViewModel : ViewModel(),
       return
     }
     val progress = PlaybackSession.audiobookProgress() ?: return
-    val audiobookChapters = playbackChapters.value
+    val audiobookChapters = chapters.value
     val book = AudiobookPlayback.book.value?.takeIf { it.book.id == progress.item.bookId }
     val positionInBook = book?.positionInBook(progress.item.trackId, progress.positionMs) ?: progress.positionMs
     val current = audiobookChapters.lastOrNull { it.start * 1000f <= positionInBook } ?: return

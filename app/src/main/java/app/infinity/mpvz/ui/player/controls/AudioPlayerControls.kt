@@ -950,7 +950,7 @@ fun AudioPlayerControls(
   val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
   val invertDuration by playerPreferences.invertDuration.collectAsState()
   val showChapterIndicators by playerPreferences.showChapterIndicators.collectAsState()
-  val chapters by viewModel.playbackChapters.collectAsState()
+  val chapters by viewModel.chapters.collectAsState()
   val seekbarChapters =
     remember(chapters, showChapterIndicators) {
       if (showChapterIndicators) chapters.toImmutableList() else persistentListOf()
@@ -2277,7 +2277,7 @@ private fun UpNextPlaylistContent(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
 
   if (playbackState.currentItem?.audiobook != null) {
-    val chapters by viewModel.playbackChapters.collectAsStateWithLifecycle()
+    val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val filePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
     val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
     val currentItem = playbackState.currentItem
