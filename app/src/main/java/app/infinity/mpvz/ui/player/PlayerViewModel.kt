@@ -5310,6 +5310,7 @@ class PlayerViewModel : ViewModel(),
           ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         }
       }
+    host.onManualOrientationOverride()
   }
 
   // ==================== Lua Invocation Handling ====================

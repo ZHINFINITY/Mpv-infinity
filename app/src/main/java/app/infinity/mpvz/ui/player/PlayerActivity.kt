@@ -202,6 +202,7 @@ class PlayerActivity :
   private var activeEngineMode = PlaybackEngineMode.MPV
   private var engineHandoffJob: Job? = null
   private var manualEngineOverride: Pair<String, PlaybackEngineMode>? = null
+  private var manualOrientationOverride = false
   private val engineSelectionRequests = MutableSharedFlow<PlaybackEngineMode>(extraBufferCapacity = 1)
 
   /**
@@ -909,7 +910,10 @@ class PlayerActivity :
               viewModel.setAmbientLifecycleActive(false)
               setVideoAmbientPresentationActive(false)
               PlaybackSession.setPropertyBoolean("mute", false)
-              binding.media3Player.alpha = 1f
+              // Media3 uses a SurfaceView/media overlay. Alpha alone does not remove its last
+              // frame from composition, so hide that surface before MPV takes ownership.
+              binding.media3Player.alpha = 0f
+              binding.media3Player.visibility = View.GONE
               // Keep MPV's SurfaceView attached while the queue is reloaded. INVISIBLE causes
               // unbindSurface() to set vid=no; audio then continues while video waits for a
               // later surface reattachment.
@@ -2930,7 +2934,10 @@ class PlayerActivity :
   }
 
   private fun beginMediaRequest(): Boolean =
-    PlaybackActivityOwner.beginRequest(playbackOwnerToken) { mediaRequestGeneration++ }
+    PlaybackActivityOwner.beginRequest(playbackOwnerToken) {
+      mediaRequestGeneration++
+      manualOrientationOverride = false
+    }
 
   private fun isCurrentMediaRequest(requestGeneration: Long): Boolean =
     ownsPlaybackSession() && requestGeneration == mediaRequestGeneration
@@ -6627,6 +6634,7 @@ class PlayerActivity :
    * to the correct orientation, starting with landscape as fallback.
    */
   private fun setOrientation() {
+    if (manualOrientationOverride) return
     if (isCurrentMediaKnownAudio() || viewModel.isAudioOnly.value) {
       val audioOrient =
         when (audioPreferences.audioOrientation.get()) {
@@ -6671,6 +6679,8 @@ class PlayerActivity :
         PlayerOrientation.SensorLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
       }
   }
+
+  internal fun hasManualOrientationOverride(): Boolean = manualOrientationOverride
 
   private fun applyInitialVideoOrientation(sourceIntent: Intent) {
     if (playerPreferences.orientation.get() != PlayerOrientation.Video || isKnownAudioLaunch(sourceIntent)) return
@@ -7520,6 +7530,9 @@ class PlayerActivity :
     set(value) {
       requestedOrientation = value
     }
+  override fun onManualOrientationOverride() {
+    manualOrientationOverride = true
+  }
 
   // ==================== Playlist Management ====================
 
