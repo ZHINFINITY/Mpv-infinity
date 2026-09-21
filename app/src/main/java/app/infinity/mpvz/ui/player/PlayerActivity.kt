@@ -3012,6 +3012,11 @@ class PlayerActivity :
     if (initError != null) return initError
     runCatching { PlaybackSession.setThumbnailJavaVM(applicationContext) }
     mpvInitialized = true
+    // Some Android audio devices repeatedly underrun the default MPV output buffer. Keep the
+    // existing decoder/video/subtitle pipeline unchanged and give AudioTrack enough headroom to
+    // avoid the pause/flush/start loop seen during Native-to-MPV handoff and playlist advance.
+    runCatching { PlaybackSession.setOptionString("audio-buffer", "1.0") }
+      .onFailure { error -> Log.w(TAG, "Unable to increase MPV audio buffer", error) }
     Log.d(TAG, "MPV initialized")
 
     // Add observer after initialization
