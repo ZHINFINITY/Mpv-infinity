@@ -1670,7 +1670,7 @@ class PlayerActivity :
           // Transform only the native video surface, not the Media3 PlayerView container. This
           // keeps native subtitle overlays and controls out of the video pan/zoom transform while
           // giving both engines the same pan/zoom state.
-          binding.media3Player.videoSurfaceView.apply {
+          binding.media3Player.videoSurfaceView?.apply {
             scaleX = scale
             scaleY = scale
             translationX = panX
