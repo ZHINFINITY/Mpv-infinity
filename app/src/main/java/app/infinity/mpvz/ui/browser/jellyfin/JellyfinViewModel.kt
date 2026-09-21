@@ -523,6 +523,17 @@ class JellyfinViewModel(
     return col == "music" || type == "music" || type == "audio" || (name.contains("music") && !name.contains("video"))
   }
 
+  fun getMusicLibraryView(): JellyfinLibraryView? =
+    _uiState.value.libraries.firstOrNull(::isMusicLibrary)?.let { library ->
+      JellyfinLibraryView(
+        id = library.id,
+        title = library.name,
+        itemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
+        collectionType = library.collectionType,
+        isMusic = true,
+      )
+    }
+
   private fun sortJellyfinLibraries(libs: List<JellyfinItem>): List<JellyfinItem> {
     fun libraryRank(item: JellyfinItem): Int {
       val name = item.name.lowercase().trim()
