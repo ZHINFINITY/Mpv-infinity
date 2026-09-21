@@ -46,6 +46,7 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
     offsetY: Float = 0f,
   ) {
     val changed = this.path != path
+    val muteChanged = this.muted != muted
     val effectsChanged = this.brightness != brightness || this.saturation != saturation || this.blur != blur
     val transformChanged = this.mediaAspectRatio != mediaAspectRatio || this.fitMode != fitMode || this.aspectMode != aspectMode || this.mediaScale != scale || this.offsetX != offsetX || this.offsetY != offsetY
     this.path = path
@@ -62,6 +63,9 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
     this.offsetY = offsetY.coerceIn(-1f, 1f)
     alpha = visibility.coerceIn(0.15f, 1f)
     if (changed) releasePlayer()
+    if (muteChanged) {
+      runCatching { player?.setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f) }
+    }
     if (isAvailable) startIfReady()
     if (effectsChanged || changed) applyEffects()
     if (transformChanged || changed) applyAspectTransform()
