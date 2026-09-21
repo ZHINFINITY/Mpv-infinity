@@ -869,7 +869,12 @@ class PlayerActivity :
                 sourceUri = currentItem?.originalUri?.toUri(),
               )
               engineHandoffJob = lifecycleScope.launch {
-                val rendered = withTimeoutOrNull(15_000L) {
+                // Some Android 13 devices need longer than 15 seconds to decode a local
+                // MediaStore/content URI before producing the first frame. Falling back while
+                // tracks are still preparing clears the Native item; MPV then continues video
+                // playback but the Native subtitle selection is lost. Keep the renderer and
+                // subtitle pipeline unchanged and allow the slow Native start to finish.
+                val rendered = withTimeoutOrNull(60_000L) {
                   nativeEngine.hasRenderedFirstFrame.first { it }
                   true
                 } == true
