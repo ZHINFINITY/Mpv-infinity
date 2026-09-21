@@ -1132,14 +1132,27 @@ fun GestureHandler(
 
                     if (gestureStarted) {
                       if (pinchToZoomGesture && prevDist > 0f && distDelta > 0.5f) {
-                        // Per-frame zoom: ratio of current distance to previous distance
+                        // Keep the content below the pinch midpoint stationary while changing
+                        // scale. Without this correction every pinch is anchored at the view
+                        // center, preventing reliable zooming into corners.
+                        val previousZoom = zoom
                         val zoomRatio = dist / prevDist
                         val zoomDelta = ln(zoomRatio.toDouble()).toFloat() * 1.2f
                         zoom = (zoom + zoomDelta).coerceIn(-1f, 3f)
+                        val previousScale = 2f.pow(previousZoom)
+                        val nextScale = 2f.pow(zoom)
+                        if (previousScale > 0f && nextScale > 0f && sw > 0f && sh > 0f) {
+                          val scaleRatio = nextScale / previousScale
+                          val focalOffsetX = midX - sw / 2f
+                          val focalOffsetY = midY - sh / 2f
+                          currentPanX += (1f - scaleRatio) * (focalOffsetX - currentPanX)
+                          currentPanY += (1f - scaleRatio) * (focalOffsetY - currentPanY)
+                        }
                         viewModel.setVideoZoom(zoom)
                       }
 
-                      // Simultaneous pan while pinching or moving two fingers
+                      // Clamp after focal-point correction so the zoomed content remains
+                      // reachable without exposing empty edges.
                       if (panAndZoomEnabled && sw > 0f && sh > 0f) {
                         val currentZoom = viewModel.videoZoom.value
                         val scale = 2f.pow(currentZoom)
