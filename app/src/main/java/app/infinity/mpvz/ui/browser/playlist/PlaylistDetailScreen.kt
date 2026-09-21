@@ -60,6 +60,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -71,6 +72,8 @@ import app.infinity.mpvz.database.entities.PlaylistItemEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
 import app.infinity.mpvz.preferences.GesturePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
@@ -123,6 +126,11 @@ data class PlaylistDetailScreen(
     val context = LocalContext.current
     val backStack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
+    val browserPreferences = koinInject<BrowserPreferences>()
+    val networkLayoutMode by browserPreferences.networkLayoutMode.collectAsState()
+    val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
+    val videoGridColumnsPortrait by browserPreferences.videoGridColumnsPortrait.collectAsState()
+    val videoGridColumnsLandscape by browserPreferences.videoGridColumnsLandscape.collectAsState()
 
     // ViewModel
     val viewModel: PlaylistDetailViewModel =
@@ -153,7 +161,7 @@ data class PlaylistDetailScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var selectedM3UFilter by rememberSaveable { mutableStateOf(M3U_FILTER_ALL) }
-    var isM3UGrid by rememberSaveable { mutableStateOf(false) }
+    val isM3UGrid = networkLayoutMode == MediaLayoutMode.GRID
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
     val hasFavoriteStreams = remember(videoItems) { videoItems.any { it.playlistItem.isFavorite } }
@@ -415,7 +423,13 @@ data class PlaylistDetailScreen(
                     Spacer(modifier = Modifier.width(4.dp))
 
                     if (playlist?.isM3uPlaylist == true) {
-                      IconButton(onClick = { isM3UGrid = !isM3UGrid }) {
+                      IconButton(
+                        onClick = {
+                          browserPreferences.networkLayoutMode.set(
+                            if (isM3UGrid) MediaLayoutMode.LIST else MediaLayoutMode.GRID,
+                          )
+                        },
+                      ) {
                         Icon(
                           imageVector = if (isM3UGrid) Icons.RoundedFilled.ViewList else Icons.RoundedFilled.GridView,
                           contentDescription = if (isM3UGrid) "List view" else "Grid view",
@@ -682,6 +696,9 @@ private fun PlaylistVideoListContent(
 ) {
   val gesturePreferences = koinInject<GesturePreferences>()
   val browserPreferences = koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
+  val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
+  val videoGridColumnsPortrait by browserPreferences.videoGridColumnsPortrait.collectAsState()
+  val videoGridColumnsLandscape by browserPreferences.videoGridColumnsLandscape.collectAsState()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val tapThumbnailToSelect by gesturePreferences.tapThumbnailToSelect.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
@@ -817,10 +834,18 @@ private fun PlaylistVideoListContent(
         }
 
       Box(modifier = modifier.fillMaxSize()) {
-        if (isM3uPlaylist && isGridMode) {
-          val gridState = rememberLazyGridState()
-          LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 220.dp),
+          if (isM3uPlaylist && isGridMode) {
+            val gridState = rememberLazyGridState()
+            val configuration = LocalConfiguration.current
+            val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val gridColumns =
+              if (manualGridColumnsEnabled) {
+                if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
+              } else {
+                if (configuration.smallestScreenWidthDp >= 600 || isLandscape) 4 else 2
+              }
+            LazyVerticalGrid(
+            columns = GridCells.Fixed(gridColumns),
             state = gridState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 16.dp),
