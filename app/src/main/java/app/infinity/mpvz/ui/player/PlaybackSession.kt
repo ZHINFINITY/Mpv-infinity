@@ -1486,12 +1486,19 @@ object PlaybackSession : MPVLib.EventObserver {
    * first audible samples of a new file are from its settled timeline/track state.
    */
   private fun beginPlaybackTransitionAudioGuardLocked(canRestore: Boolean) {
-    if (playbackTransitionAudioGuardPreviousMute == null) {
+    val guardAlreadyActive = playbackTransitionAudioGuardPreviousMute != null
+    if (!guardAlreadyActive) {
       // Closing or replacing media can overlap the short seek guard. In that window mpv reports
       // mute=true even when the user was unmuted. Preserve the pre-seek value so a later load does
       // not restore the temporary guard mute and remain permanently silent.
       playbackTransitionAudioGuardPreviousMute =
         seekAudioGuardPreviousMute ?: (MPVLib.getPropertyBoolean("mute") ?: false)
+    }
+    // A replacement load can arrive before the previous guard's delayed restore. Its true value
+    // is the guard's temporary mute, not a user selection; carrying it into the new generation
+    // makes every subsequent item restore mute=true and leaves video playing without audio.
+    if (canRestore && guardAlreadyActive && playbackTransitionAudioGuardPreviousMute == true) {
+      playbackTransitionAudioGuardPreviousMute = false
     }
     runCatching { MPVLib.setPropertyBoolean("mute", true) }
     playbackTransitionAudioGuardCanRestore = canRestore
