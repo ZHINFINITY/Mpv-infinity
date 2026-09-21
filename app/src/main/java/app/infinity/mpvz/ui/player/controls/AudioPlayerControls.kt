@@ -1036,6 +1036,8 @@ fun AudioPlayerControls(
     label = "ambient_bottom_color",
   )
   val edgeToEdgeVisualizer = isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive
+  val standbyVisualizerBoundary = isStandbyActive && isPortrait && showVisualizer
+  val visualizerUsesFullTopAndSides = edgeToEdgeVisualizer || standbyVisualizerBoundary
   val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
   Box(
     modifier =
@@ -1074,14 +1076,14 @@ fun AudioPlayerControls(
           }
         }
         .windowInsetsPadding(
-          if (edgeToEdgeVisualizer) {
+          if (visualizerUsesFullTopAndSides) {
             WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
           } else {
             WindowInsets.safeDrawing
           },
         )
-        .padding(horizontal = if (edgeToEdgeVisualizer) 0.dp else 16.dp)
-        .padding(top = if (edgeToEdgeVisualizer) 0.dp else 6.dp, bottom = 12.dp)
+        .padding(horizontal = if (visualizerUsesFullTopAndSides) 0.dp else 16.dp)
+        .padding(top = if (visualizerUsesFullTopAndSides) 0.dp else 6.dp, bottom = 12.dp)
         .pointerInput(Unit) {
           var totalDrag = 0f
           detectVerticalDragGestures(
@@ -1200,7 +1202,7 @@ fun AudioPlayerControls(
       BoxWithConstraints(
         modifier =
           visualizerModifier
-            .then(if (edgeToEdgeVisualizer) Modifier else Modifier.clipToBounds())
+            .then(if (visualizerUsesFullTopAndSides) Modifier else Modifier.clipToBounds())
             .then(
               if (showVisualizer || showInPlaceLyrics) {
                 Modifier
@@ -1391,7 +1393,9 @@ fun AudioPlayerControls(
       ) {
         val displayTitle =
           if (isAudiobook) audiobook?.book?.title?.takeIf { it.isNotBlank() }.orEmpty()
-          else cleanSongTitle(lastValidTitle, displayArtist)
+          else cleanSongTitle(lastValidTitle, displayArtist).takeUnless { title ->
+            title.contains("/API/", ignoreCase = true) || title.contains("/ITEMS/", ignoreCase = true) || title.contains("/FILE/", ignoreCase = true)
+          }.orEmpty()
 
         // 1. Song Title Only
         Text(
@@ -1445,6 +1449,10 @@ fun AudioPlayerControls(
               color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.clickable(
+                enabled = isAudiobook && audiobookChapterNumber != null,
+                onClick = { onOpenSheet(Sheets.Chapters) },
+              ),
             )
             Text(
               text = "|",
@@ -2287,14 +2295,23 @@ private fun UpNextPlaylistContent(
     val chapters by viewModel.chapters.collectAsStateWithLifecycle()
     val filePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
     val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
+    val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
     val currentItem = playbackState.currentItem
     val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
-    val currentChapterIndex by remember(currentItem?.audiobook, chapters, audiobook?.tracks, filePosition) {
+    val currentChapterIndex by remember(currentItem?.audiobook, chapters, audiobookChapters, audiobook?.tracks, filePosition) {
       derivedStateOf {
-        val seconds = currentItem?.audiobook?.let { info ->
-          audiobook?.positionInBook(info.trackId, (filePosition * 1000).toLong())?.div(1000f)
-        } ?: filePosition
-        chapters.indexOfLast { it.start <= seconds }
+        val activeChapter = AudiobookPlayback.currentChapter()
+        val activeIndex = activeChapter?.let { chapter ->
+          audiobookChapters.indexOfFirst { it.trackId == chapter.trackId && it.startMs == chapter.startMs }
+        } ?: -1
+        if (activeIndex >= 0) {
+          activeIndex
+        } else {
+          val seconds = currentItem?.audiobook?.let { info ->
+            audiobook?.positionInBook(info.trackId, (filePosition * 1000).toLong())?.div(1000f)
+          } ?: filePosition
+          chapters.indexOfLast { it.start <= seconds }
+        }
       }
     }
 
