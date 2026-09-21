@@ -1036,6 +1036,15 @@ object PlaybackSession : MPVLib.EventObserver {
         property == "mute" &&
         (playbackTransitionAudioGuardPreviousMute != null || seekAudioGuardPreviousMute != null)
       ) {
+        if (!value) {
+          // An explicit unmute from the active engine/handoff is authoritative. Keeping the
+          // temporary transition guard armed here leaves AudioTrack receiving zero samples even
+          // though MPV reports audio=playing and volume is 1.0.
+          clearSeekAudioGuardLocked(restoreMute = false)
+          clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+          MPVLib.setPropertyBoolean("mute", false)
+          return@withCore
+        }
         // A user mute/unmute action while either audio guard is active should update the value that
         // will be restored, but must not open a guard and leak seek/transition audio immediately.
         if (playbackTransitionAudioGuardPreviousMute != null) {
