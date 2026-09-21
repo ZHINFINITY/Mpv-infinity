@@ -281,6 +281,7 @@ fun PlayerControls(
   val duration by PlaybackSession.propInt["duration"].collectAsState()
   val playbackQueue by PlaybackSession.queue.collectAsStateWithLifecycle()
   val preciseDuration by viewModel.preciseDuration.collectAsState()
+  val precisePosition by viewModel.precisePosition.collectAsState()
   val demuxerCacheTime by PlaybackSession.propDouble["demuxer-cache-time"].collectAsState()
   val mpvPlaybackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
   val seekbarDuration = if (preciseDuration > 0) preciseDuration else duration?.toFloat() ?: 0f
