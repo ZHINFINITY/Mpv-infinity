@@ -10,8 +10,13 @@
 package app.infinity.mpvz.presentation.components.pullrefresh
 
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -21,9 +26,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -36,11 +38,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -58,7 +63,7 @@ import kotlinx.coroutines.launch
  * @param delayAfterRefresh Delay (ms) to keep indicator visible after completion.
  * @param content Content displayed inside the Box.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PullRefreshBox(
   isRefreshing: MutableState<Boolean>,
@@ -78,6 +83,17 @@ fun PullRefreshBox(
   val maxTranslationPx = with(density) { refreshThreshold.toPx() }
 
   val activeJob = remember { mutableStateOf<Job?>(null) }
+  val infiniteTransition = rememberInfiniteTransition(label = "refreshRotation")
+  val spinningRotation by
+    infiniteTransition.animateFloat(
+      initialValue = 0f,
+      targetValue = 360f,
+      animationSpec =
+        infiniteRepeatable(
+          animation = tween(durationMillis = 900, easing = LinearEasing),
+        ),
+      label = "refreshRotation",
+    )
 
   val targetTranslationY =
     if (isRefreshing.value) {
@@ -164,18 +180,18 @@ fun PullRefreshBox(
           .padding(6.dp),
       contentAlignment = Alignment.Center,
     ) {
-      if (isRefreshing.value) {
-        LoadingIndicator(
-          polygons = expressivePolygons,
-          modifier = Modifier.fillMaxSize(),
-        )
-      } else {
-        LoadingIndicator(
-          progress = { state.distanceFraction.coerceIn(0f, 1f) },
-          polygons = expressivePolygons,
-          modifier = Modifier.fillMaxSize(),
-        )
-      }
+      Icon(
+        imageVector = Icons.RoundedFilled.Refresh,
+        contentDescription = "Refresh",
+        modifier =
+          Modifier
+            .fillMaxSize()
+            .rotate(
+              if (isRefreshing.value) spinningRotation
+              else state.distanceFraction.coerceIn(0f, 1f) * 360f,
+            ),
+        tint = MaterialTheme.colorScheme.primary,
+      )
     }
   }
 }

@@ -44,7 +44,6 @@ import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,6 +74,7 @@ import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.music.SharedMusicGridCard
 import app.infinity.mpvz.ui.browser.music.SharedMusicTrackListItem
 import app.infinity.mpvz.ui.browser.music.MusicSourceChooser
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen
@@ -96,6 +96,7 @@ fun NavidromeContent(
   isMusicOnlyMode: Boolean = false,
 ) {
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+  val isRefreshing = remember { mutableStateOf(false) }
   val context = LocalContext.current
   val backStack = LocalBackStack.current
 
@@ -136,6 +137,10 @@ fun NavidromeContent(
     if (isSearching) {
       searchFocusRequester.requestFocus()
     }
+  }
+
+  LaunchedEffect(uiState.isLoading) {
+    isRefreshing.value = uiState.isLoading
   }
 
   // Intercept back button if searching or detail open
@@ -427,8 +432,8 @@ fun NavidromeContent(
         }
       }
     } else {
-      PullToRefreshBox(
-        isRefreshing = uiState.isLoading,
+      PullRefreshBox(
+        isRefreshing = isRefreshing,
         onRefresh = { viewModel.refresh() },
         modifier = Modifier.fillMaxSize(),
       ) {
