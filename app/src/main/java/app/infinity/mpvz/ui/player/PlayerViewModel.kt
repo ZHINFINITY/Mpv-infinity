@@ -5522,8 +5522,18 @@ class PlayerViewModel : ViewModel(),
       host.nativeSetPan(x, y)
       return
     }
+    val width = PlaybackSession.getPropertyInt("osd-width")?.takeIf { it > 0 }?.toFloat()
+      ?: PlaybackSession.getPropertyInt("width")?.takeIf { it > 0 }?.toFloat()
+      ?: 1f
+    val height = PlaybackSession.getPropertyInt("osd-height")?.takeIf { it > 0 }?.toFloat()
+      ?: PlaybackSession.getPropertyInt("height")?.takeIf { it > 0 }?.toFloat()
+      ?: 1f
+    val panX = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-x")) 0f else x / width
+    val panY = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-y")) 0f else y / height
     _videoPanX.value = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-x")) 0f else x
     _videoPanY.value = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-y")) 0f else y
+    PlaybackSession.setPropertyDouble("video-pan-x", panX.toDouble())
+    PlaybackSession.setPropertyDouble("video-pan-y", panY.toDouble())
   }
 
   fun resetVideoPan() {
