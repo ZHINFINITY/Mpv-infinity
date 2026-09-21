@@ -589,6 +589,11 @@ fun AudioPlayerControls(
   val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
   val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
   val isAudiobook = currentItem?.audiobook != null
+  fun isTransientTransportTitle(value: String?): Boolean {
+    val normalized = value?.trim()?.uppercase(Locale.ROOT).orEmpty()
+    return normalized.isBlank() || normalized.contains("/API/") || normalized.contains("/ITEMS/") ||
+      normalized.contains("/FILE/") || normalized.startsWith("DEV/") || normalized.contains("AUDIOBOOKSHELF") && normalized.contains("HTTP")
+  }
   LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
     if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {
       PlaybackSession.command("script-binding", "stats/display-stats-toggle")
@@ -730,12 +735,16 @@ fun AudioPlayerControls(
     }
 
   val collapsedAudioBadgeLabel =
-    remember(isHiRes, isLosslessCodecOrExt, cleanCodecName) {
-      when {
-        isHiRes -> "HI-RES LOSSLESS"
-        isLosslessCodecOrExt -> "LOSSLESS"
-        cleanCodecName.isNotBlank() -> cleanCodecName
-        else -> ""
+    remember(isAudiobook, audiobook?.book?.id, isHiRes, isLosslessCodecOrExt, cleanCodecName) {
+      if (isAudiobook && audiobook == null) {
+        ""
+      } else {
+        when {
+          isHiRes -> "HI-RES LOSSLESS"
+          isLosslessCodecOrExt -> "LOSSLESS"
+          cleanCodecName.isNotBlank() && !isTransientTransportTitle(cleanCodecName) -> cleanCodecName
+          else -> ""
+        }
       }
     }
 
@@ -782,9 +791,10 @@ fun AudioPlayerControls(
   }
   LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle) {
     val updatedTitle = if (currentItem?.audiobook != null) {
-      currentItem.title?.takeIf { it.isNotBlank() && !it.contains("/API/", ignoreCase = true) }
+      currentItem.title?.takeUnless(::isTransientTransportTitle)
     } else {
-      currentItem?.title?.takeIf { it.isNotBlank() } ?: mediaTitle
+      currentItem?.title?.takeUnless(::isTransientTransportTitle)
+        ?: mediaTitle?.takeUnless(::isTransientTransportTitle)
     }
     if (!updatedTitle.isNullOrBlank()) {
       lastValidTitle = updatedTitle.stripAudioExtension()
@@ -1392,7 +1402,7 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.Start,
       ) {
         val displayTitle =
-          if (isAudiobook) audiobook?.book?.title?.takeIf { it.isNotBlank() }.orEmpty()
+          if (isAudiobook) audiobook?.book?.title?.takeUnless(::isTransientTransportTitle).orEmpty()
           else cleanSongTitle(lastValidTitle, displayArtist).takeUnless { title ->
             title.contains("/API/", ignoreCase = true) || title.contains("/ITEMS/", ignoreCase = true) || title.contains("/FILE/", ignoreCase = true)
           }.orEmpty()
@@ -2300,10 +2310,11 @@ private fun UpNextPlaylistContent(
     val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
     val currentChapterIndex by remember(currentItem?.audiobook, chapters, audiobookChapters, audiobook?.tracks, filePosition) {
       derivedStateOf {
-        val activeChapter = AudiobookPlayback.currentChapter()
-        val activeIndex = activeChapter?.let { chapter ->
-          audiobookChapters.indexOfFirst { it.trackId == chapter.trackId && it.startMs == chapter.startMs }
-        } ?: -1
+        val activeTrackId = currentItem?.audiobook?.trackId
+        val activePositionMs = (filePosition * 1000f).toLong().coerceAtLeast(0L)
+        val activeIndex = audiobookChapters.indexOfLast { chapter ->
+          chapter.trackId == activeTrackId && chapter.startMs <= activePositionMs
+        }
         if (activeIndex >= 0) {
           activeIndex
         } else {
