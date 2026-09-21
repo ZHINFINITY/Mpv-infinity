@@ -1003,7 +1003,9 @@ class PlayerActivity :
                   // the audio output and restore the old session state on some devices.
                   PlaybackSession.setPropertyString("aid", "auto")
                   PlaybackSession.setPropertyBoolean("mute", false)
-                  PlaybackSession.setPropertyDouble("time-pos", outgoingPositionMs / 1000.0)
+                  // The load's PlaybackPositionRestoreOverride is applied by handleFileLoaded.
+                  // Do not write time-pos again here: a second delayed seek flushes AudioTrack and
+                  // can race the next engine/playlist request, leaving video playing silently.
                   PlaybackSession.setPropertyBoolean("pause", !outgoingPlaying)
                   if (outgoingPlaying) PlaybackSession.command("play")
                 }
