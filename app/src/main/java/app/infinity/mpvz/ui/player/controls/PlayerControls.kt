@@ -145,6 +145,7 @@ import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerUpdates
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
+import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.Sheets
 import app.infinity.mpvz.ui.player.VideoOpenAnimationOverlay
 import app.infinity.mpvz.ui.player.buildControlsEnterH
@@ -417,8 +418,38 @@ fun PlayerControls(
   } else {
     mpvChapters
   }
+  val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
+  val activeAudiobook by AudiobookPlayback.book.collectAsStateWithLifecycle()
+  val currentPlaybackItem = playbackQueue.currentItem
+  val audiobookChapterIndex = remember(
+    currentPlaybackItem?.audiobook,
+    audiobookChapters,
+    activeAudiobook?.tracks,
+    precisePosition,
+    chapters,
+  ) {
+    val info = currentPlaybackItem?.audiobook
+    if (info == null || audiobookChapters.isEmpty()) {
+      -1
+    } else {
+      val active = AudiobookPlayback.currentChapter()
+      val activeIndex = active?.let { playing ->
+        audiobookChapters.indexOfFirst { it.trackId == playing.trackId && it.startMs == playing.startMs }
+      } ?: -1
+      if (activeIndex >= 0) {
+        activeIndex
+      } else {
+        val book = activeAudiobook?.takeIf { it.book.id == info.bookId }
+        val seconds = book?.positionInBook(info.trackId, (precisePosition * 1000).toLong())?.div(1000f)
+          ?: precisePosition
+        chapters.indexOfLast { it.start <= seconds }
+      }
+    }
+  }
   val currentChapter = if (nativeEngineActive) {
     chapters.indexOfLast { it.start <= nativeSnapshot.positionMs / 1000f }.takeIf { it >= 0 }
+  } else if (audiobookChapterIndex >= 0) {
+    audiobookChapterIndex
   } else {
     mpvCurrentChapter
   }
@@ -427,7 +458,6 @@ fun PlayerControls(
   val isSpeedNonOne = remember(playbackSpeed) {
     abs((playbackSpeed ?: 1f) - 1f) > 0.001f
   }
-  val currentPlaybackItem = playbackQueue.currentItem
   val useAudioPlayer =
     when (currentPlaybackItem?.declaredMediaKind()) {
       DeclaredPlaybackMediaKind.VIDEO -> false
