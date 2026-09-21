@@ -130,8 +130,6 @@ fun JellyfinContent(
   val uiState by viewModel.uiState.collectAsState()
   val context = LocalContext.current
   val backstack = LocalBackStack.current
-  var modeReady by remember(isMusicOnlyMode, uiState.activeServer?.id) { mutableStateOf(false) }
-  var requestedModeKey by remember(isMusicOnlyMode, uiState.activeServer?.id) { mutableStateOf<String?>(null) }
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val navidromeRepository = koinInject<NavidromeRepository>()
@@ -292,40 +290,11 @@ fun JellyfinContent(
   }
 
   LaunchedEffect(isMusicOnlyMode, uiState.activeServer?.id) {
-    modeReady = false
     val server = uiState.activeServer
-    requestedModeKey = server?.id?.let { id -> "$id:${if (isMusicOnlyMode) "music" else "full"}" }
     server?.let {
       if (isMusicOnlyMode) viewModel.enterMusicOnlyMode(it)
       else viewModel.enterFullLibraryMode(it)
     }
-  }
-
-  LaunchedEffect(
-    requestedModeKey,
-    uiState.isLoading,
-    uiState.isMusicLoading,
-    uiState.openLibrary?.id,
-    uiState.libraries.size,
-    uiState.librarySections.size,
-    uiState.heroItems.size,
-  ) {
-    val loaded = if (isMusicOnlyMode) {
-      !uiState.isLoading && !uiState.isMusicLoading && uiState.openLibrary?.isMusic == true
-    } else {
-      !uiState.isLoading && uiState.libraries.isNotEmpty()
-    }
-    if (requestedModeKey != null && loaded) modeReady = true
-  }
-
-  // A missing active server means setup/authentication is required, not that the
-  // already-authenticated library is still loading. Keep the configuration surface
-  // reachable; apply the readiness gate only after a server has been authenticated.
-  if (!modeReady && uiState.activeServer != null) {
-    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-      CircularProgressIndicator()
-    }
-    return
   }
 
   val pageTitle =

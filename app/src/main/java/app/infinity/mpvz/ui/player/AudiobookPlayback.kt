@@ -1,5 +1,6 @@
 package app.infinity.mpvz.ui.player
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -347,8 +348,9 @@ internal object AudiobookPlayback {
     val current = launch.items[launch.currentIndex]
     withContext(Dispatchers.Main) {
       val token = PreparedPlaybackLaunchStore.stage(launch.items, launch.currentIndex)
+      val taskFlag = if (context !is Activity) Intent.FLAG_ACTIVITY_NEW_TASK else 0
       context.startActivity(Intent(context, PlayerActivity::class.java).setAction(Intent.ACTION_VIEW).setData(Uri.parse(current.originalUri))
-        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION or taskFlag)
         .putExtra("internal_launch", true).putExtra("is_audio", true).putExtra("media_library_audio", true)
         .putExtra("title", launch.items[launch.currentIndex].title)
         .putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true).putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, token)
