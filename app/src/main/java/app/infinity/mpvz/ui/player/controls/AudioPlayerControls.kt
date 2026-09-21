@@ -1646,7 +1646,9 @@ fun AudioPlayerControls(
           audiobook.positionInBook(trackId, (chapterPositionSec * 1000f).toLong()) / 1000f
         } ?: chapterPositionSec
       } else chapterPositionSec
-      val bookOffset = currentItem?.audiobook?.let { audiobook.positionInBook(it.trackId, 0) }?.div(1000f) ?: 0f
+      val bookOffset = audiobook?.let { book ->
+        currentItem?.audiobook?.let { info -> book.positionInBook(info.trackId, 0) }
+      }?.div(1000f) ?: 0f
       val timelinePosition = if (audiobook != null) {
         (bookOffset + chapterPositionSec).coerceIn(0f, audiobook.durationMs / 1000f)
       } else currentPosSec
