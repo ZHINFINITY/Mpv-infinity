@@ -6,12 +6,16 @@ package app.infinity.mpvz.ui.browser.music
 
 import android.content.ContentUris
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.security.MessageDigest
 
 object MusicLibraryScanner {
 
@@ -59,14 +63,16 @@ object MusicLibraryScanner {
 
         while (cursor.moveToNext()) {
           val id = cursor.getLong(idCol)
-          val path = cursor.getString(dataCol) ?: continue
+          val path = cursor.getString(dataCol).orEmpty()
           val size = cursor.getLong(sizeCol)
           val duration = cursor.getLong(durationCol)
-          val file = File(path)
-          val fileExists = try { file.exists() } catch (_: Exception) { false }
+          val file = path.takeIf { it.isNotBlank() }?.let(::File)
+          val fileExists = try { file?.exists() == true } catch (_: Exception) { false }
           if (!fileExists && size <= 0L && duration <= 0L) continue
 
-          val title = cursor.getString(titleCol)?.takeIf { it.isNotBlank() } ?: file.nameWithoutExtension
+          val title = cursor.getString(titleCol)?.takeIf { it.isNotBlank() }
+            ?: file?.nameWithoutExtension
+            ?: "Unknown Track"
           val artist = cursor.getString(artistCol)?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: "Unknown Artist"
           val album = cursor.getString(albumCol)?.takeIf { it.isNotBlank() && it != "<unknown>" } ?: "Unknown Album"
           val albumId = cursor.getLong(albumIdCol)
@@ -75,7 +81,12 @@ object MusicLibraryScanner {
           val year = cursor.getInt(yearCol)
 
           val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-          val albumArtUri = if (albumId > 0) ContentUris.withAppendedId(ALBUM_ART_BASE_URI, albumId) else null
+          // Keep the initial scan MediaStore-only. Extracting embedded artwork with
+          // MediaMetadataRetriever for every track blocks the first library render;
+          // the album-art content URI is resolved lazily by the image layer.
+          val albumArtUri = albumId.takeIf { it > 0 }?.let {
+            ContentUris.withAppendedId(ALBUM_ART_BASE_URI, it)
+          }
 
           songs.add(
             MusicSong(
@@ -101,6 +112,56 @@ object MusicLibraryScanner {
     }
 
     songs
+  }
+
+  /** Prefer embedded/sidecar art because the legacy album-art provider is absent on many devices. */
+  private fun findArtworkUri(
+    context: Context,
+    contentUri: Uri,
+    path: String,
+    albumId: Long,
+  ): Uri? {
+    val embeddedBytes = runCatching {
+      MediaMetadataRetriever().use { retriever ->
+        if (path.isNotBlank() && File(path).canRead()) retriever.setDataSource(path)
+        else retriever.setDataSource(context, contentUri)
+        retriever.embeddedPicture
+      }
+    }.getOrNull()?.takeIf { it.isNotEmpty() }
+    if (embeddedBytes != null) saveArtwork(context, embeddedBytes, "embedded:$path")?.let { return it }
+
+    app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeSidecar(path)?.let { bitmap ->
+      return try {
+        saveArtwork(context, bitmap, "sidecar:$path:${File(path).lastModified()}")
+      } finally {
+        bitmap.recycle()
+      }
+    }
+
+    return albumId.takeIf { it > 0 }?.let { ContentUris.withAppendedId(ALBUM_ART_BASE_URI, it) }
+  }
+
+  private fun saveArtwork(context: Context, bytes: ByteArray, key: String): Uri? {
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+    return try {
+      saveArtwork(context, bitmap, key)
+    } finally {
+      bitmap.recycle()
+    }
+  }
+
+  private fun saveArtwork(context: Context, bitmap: Bitmap, key: String): Uri? {
+    val digest = MessageDigest.getInstance("SHA-256")
+      .digest(key.toByteArray(Charsets.UTF_8))
+      .joinToString("") { "%02x".format(it) }
+    val file = File(context.filesDir, "music_artwork/$digest.jpg")
+    return runCatching {
+      file.parentFile?.mkdirs()
+      if (!file.isFile || file.length() == 0L) {
+        file.outputStream().use { output -> check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) }
+      }
+      Uri.fromFile(file)
+    }.getOrNull()
   }
 
   suspend fun scanAlbums(context: Context, songs: List<MusicSong>): List<MusicAlbum> = withContext(Dispatchers.IO) {

@@ -666,7 +666,14 @@ class WyzieSearchRepository(
   ): Result<Uri> =
     withContext(Dispatchers.IO) {
       try {
-        client.newCall(Request.Builder().url(subtitle.url).build()).awaitResponse().use { response ->
+        client.newCall(
+          Request
+            .Builder()
+            .url(subtitle.url)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+            .header("Accept", "text/plain, text/*, application/octet-stream, */*")
+            .build(),
+        ).awaitResponse().use { response ->
           if (!response.isSuccessful) {
             return@withContext Result.failure(
               Exception("Download failed: ${response.code}"),

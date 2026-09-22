@@ -5,6 +5,7 @@ on:
     branches:
       - music-jellyfin-debug
       - manus/source-base-media3-port
+      - manus/native-auto-engine-fix
   workflow_dispatch:
 
 permissions:
@@ -25,6 +26,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -37,6 +39,9 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools platforms;android-37.0 build-tools;35.0.0 cmake;3.22.1 ndk;27.3.13750724'
+
+      - name: Install libass native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew

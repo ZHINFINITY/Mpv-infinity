@@ -333,8 +333,16 @@ object PlaylistScreen : Screen {
       isOpen = showPlaylistActionSheet,
       onDismiss = { showPlaylistActionSheet = false },
       onCreatePlaylist = viewModel::createPlaylist,
-      onCreateM3UPlaylistFromFile = viewModel::createM3UPlaylistFromFile,
-      onCreateM3UPlaylist = viewModel::createM3UPlaylist,
+      onCreateM3UPlaylistFromFile = { uri ->
+        viewModel.createM3UPlaylistFromFile(uri).also { result ->
+          if (result.isSuccess) viewModel.refresh()
+        }
+      },
+      onCreateM3UPlaylist = { url, userAgent ->
+        viewModel.createM3UPlaylist(url, userAgent).also { result ->
+          if (result.isSuccess) viewModel.refresh()
+        }
+      },
       context = context,
     )
 

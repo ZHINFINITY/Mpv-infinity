@@ -164,6 +164,10 @@ object PlaybackSession : MPVLib.EventObserver {
   private var pendingStopClearQueue = false
   private var desiredPaused = true
   private var loadedGeneration = 0L
+  private var loadedPlaybackItem: PlaybackItem? = null
+  private var loadedAudiobookEnded = false
+  private var loadedAudiobookDurationMs = 0L
+  private var speedBeforeAudiobook: Float? = null
   private var defaultUserAgent: String? = null
   private var pendingPositionRestoreGeneration = 0L
   private var pendingPositionRestoreOverride: Pair<Long, PlaybackPositionRestoreOverride>? = null
@@ -173,6 +177,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var playbackTransitionAudioGuardToken = 0L
   private var playbackTransitionAudioGuardPreviousMute: Boolean? = null
   private var playbackTransitionAudioGuardCanRestore = false
+  private var mutedForTeardown = false
   private val activeAmbientShaderPaths = linkedSetOf<String>()
   private var desiredAmbientScaleX = 1.0
   private var desiredAmbientScaleY = 1.0
@@ -226,6 +231,7 @@ object PlaybackSession : MPVLib.EventObserver {
         initialPositionGeneration = 0L
         clearSeekAudioGuardLocked(restoreMute = false)
         clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+        mutedForTeardown = false
         resetAmbientShaderTrackingLocked()
         updateState { it.copy(phase = PlaybackPhase.INITIALIZING, error = null) }
         try {
@@ -271,6 +277,7 @@ object PlaybackSession : MPVLib.EventObserver {
           initialPositionGeneration = 0L
           clearSeekAudioGuardLocked(restoreMute = false)
           clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+          mutedForTeardown = false
           resetAmbientShaderTrackingLocked()
           updateState {
             it.copy(
@@ -386,6 +393,9 @@ object PlaybackSession : MPVLib.EventObserver {
         return@withCore
       }
 
+      AudiobookPlayback.capture()
+      loadedPlaybackItem = null
+
       val nextGeneration = _state.value.generation + 1L
       suspendedVideoTrack = null
       deferredVideoSelectionGeneration = null
@@ -482,7 +492,10 @@ object PlaybackSession : MPVLib.EventObserver {
    * so the output remains muted through destruction.
    */
   fun muteForTeardown() {
-    withCore(Unit) { beginPlaybackTransitionAudioGuardLocked(canRestore = false) }
+    withCore(Unit) {
+      beginPlaybackTransitionAudioGuardLocked(canRestore = false)
+      mutedForTeardown = true
+    }
   }
 
   private fun destroyLocked() {
@@ -574,11 +587,21 @@ object PlaybackSession : MPVLib.EventObserver {
     }
 
   fun setRepeatMode(repeatMode: RepeatMode) {
-    nativeLock.withLock { _queue.value = PlaybackQueueReducer.setRepeatMode(_queue.value, repeatMode) }
+    nativeLock.withLock {
+      _queue.value = PlaybackQueueReducer.setRepeatMode(
+        _queue.value,
+        if (_queue.value.currentItem?.audiobook != null) RepeatMode.OFF else repeatMode,
+      )
+    }
   }
 
   fun setShuffleEnabled(enabled: Boolean) {
-    nativeLock.withLock { _queue.value = PlaybackQueueReducer.setShuffleEnabled(_queue.value, enabled) }
+    nativeLock.withLock {
+      _queue.value = PlaybackQueueReducer.setShuffleEnabled(
+        _queue.value,
+        enabled && _queue.value.currentItem?.audiobook == null,
+      )
+    }
   }
 
   fun hasNext(): Boolean = nativeLock.withLock { PlaybackQueueReducer.hasNext(_queue.value) }
@@ -599,6 +622,27 @@ object PlaybackSession : MPVLib.EventObserver {
       _queue.value = next
       updateState { it.copy(currentItem = next.currentItem) }
       next.currentItem
+    }
+
+  internal fun seekAudiobookTrack(
+    bookId: Long,
+    trackId: Long,
+    positionMs: Long,
+    expectedGeneration: Long,
+    resumePlayback: Boolean = false,
+  ): Boolean =
+    nativeLock.withLock {
+      val current = _state.value
+      if (current.generation != expectedGeneration || current.currentItem?.audiobook?.bookId != bookId ||
+        current.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+      ) return@withLock false
+      val index = _queue.value.items.indexOfFirst { it.audiobook == AudiobookPlaybackInfo(bookId, trackId) }
+      if (index < 0) return@withLock false
+      val paused = !resumePlayback && (MPVLib.getPropertyBoolean("pause") ?: current.paused)
+      val item = selectQueueItem(index) ?: return@withLock false
+      if (load(item, initialPositionSeconds = positionMs.coerceAtLeast(0) / 1000.0) < 0) return@withLock false
+      setPropertyBoolean("pause", paused)
+      true
     }
 
   fun playQueueItem(index: Int): PlaybackItem? =
@@ -687,7 +731,16 @@ object PlaybackSession : MPVLib.EventObserver {
   ): Long =
     withCore(default = -1L) {
       if (_state.value.phase == PlaybackPhase.STOPPING) return@withCore -1L
+      AudiobookPlayback.capture()
+      loadedPlaybackItem = null
       val resolvedItem = item ?: PlaybackItem.fromUri(playableUri)
+      if (resolvedItem.audiobook != null) AudiobookPlayback.ensureStarted()
+      if (resolvedItem.audiobook == null && speedBeforeAudiobook != null) {
+        if (!MpvConfigOverridePolicy.isOwnedByMpvConf("speed")) {
+          MPVLib.setPropertyDouble("speed", speedBeforeAudiobook!!.toDouble())
+        }
+        speedBeforeAudiobook = null
+      }
       val videoSelection = resolvedItem.videoSelection(_state.value.surfaceAttached)
       // A preceding surface detach may have left the outgoing file at vid=no. Select video in the
       // load command only when Android has already attached a valid render Surface; otherwise
@@ -704,6 +757,14 @@ object PlaybackSession : MPVLib.EventObserver {
       suspendedVideoTrack = null
       desiredPaused = positionRestoreOverride?.paused ?: false
       clearSeekAudioGuardLocked(restoreMute = true)
+      // Activity teardown mutes the process-wide MPV core synchronously. The core is intentionally
+      // reused by the next Activity, so do not let that terminal mute become the previous value of
+      // the next transition guard; otherwise Native -> MPV handoff and the music player stay silent.
+      if (mutedForTeardown) {
+        clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+        runCatching { MPVLib.setPropertyBoolean("mute", false) }
+        mutedForTeardown = false
+      }
 
       // Keep replacement/startup audio muted until mpv has restarted cleanly. FILE_LOADED can be
       // followed by saved-position and audio-track restoration; without this guard tiny fragments
@@ -746,6 +807,7 @@ object PlaybackSession : MPVLib.EventObserver {
         buildList {
           add("pause=yes")
           add(if (selectVideoForNewFile) "vid=auto" else "vid=no")
+          if (resolvedItem.isDefinitelyAudioOnly()) add("aid=auto")
           initialPosition?.let { add("start=$it") }
           if (flattenEditions && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions")) {
             add("flatten-editions=yes")
@@ -776,6 +838,32 @@ object PlaybackSession : MPVLib.EventObserver {
     }
 
   fun isCurrentGeneration(generation: Long): Boolean = generation > 0L && _state.value.generation == generation
+
+  internal fun audiobookProgress(reachedEnd: Boolean = false): AudiobookProgress? = withCore(null) {
+    val book = loadedPlaybackItem?.audiobook ?: return@withCore null
+    val current = _state.value
+    if (loadedGeneration != current.generation || current.phase == PlaybackPhase.STOPPING) return@withCore null
+    if (!reachedEnd && current.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return@withCore null
+    if (reachedEnd) loadedAudiobookEnded = true
+    val position = if (reachedEnd) loadedAudiobookDurationMs else {
+      val seconds = MPVLib.getPropertyDouble("time-pos")?.takeIf { it.isFinite() } ?: return@withCore null
+      (seconds * 1000).toLong().coerceAtLeast(0)
+    }
+    AudiobookProgress(
+      book,
+      position,
+      loadedAudiobookEnded || MPVLib.getPropertyBoolean("eof-reached") == true,
+      android.os.SystemClock.elapsedRealtimeNanos(),
+    )
+  }
+
+  internal fun applyAudiobookSpeed(generation: Long, speed: Float) = withCore(Unit) {
+    if (_state.value.generation != generation || _state.value.currentItem?.audiobook == null ||
+      MpvConfigOverridePolicy.isOwnedByMpvConf("speed")
+    ) return@withCore
+    if (speedBeforeAudiobook == null) speedBeforeAudiobook = MPVLib.getPropertyDouble("speed")?.toFloat() ?: 1f
+    MPVLib.setPropertyDouble("speed", speed.coerceIn(0.1f, 4f).toDouble())
+  }
 
   fun isPositionRestorePending(generation: Long): Boolean =
     nativeLock.withLock {
@@ -827,7 +915,10 @@ object PlaybackSession : MPVLib.EventObserver {
   fun command(vararg command: String) {
     if (MpvConfigOverridePolicy.shouldSuppress(command)) return
     withCore(Unit) {
-      if (command.firstOrNull() == "seek") beginSeekAudioGuardLocked()
+      if (command.firstOrNull() == "seek") {
+        loadedAudiobookEnded = false
+        beginSeekAudioGuardLocked()
+      }
       if (handleAmbientShaderCommandLocked(command)) return@withCore
       MPVLib.command(*command)
     }
@@ -932,6 +1023,7 @@ object PlaybackSession : MPVLib.EventObserver {
     if (MpvConfigOverridePolicy.isOwnedByMpvConf(property)) return
     withCore(Unit) {
       if (property == "pause") {
+        AudiobookPlayback.onPauseRequested(value)
         desiredPaused = value
         // Loading may include an asynchronous saved-position restore. Record user/service intent
         // now, then apply it once the load owner publishes READY.
@@ -944,6 +1036,15 @@ object PlaybackSession : MPVLib.EventObserver {
         property == "mute" &&
         (playbackTransitionAudioGuardPreviousMute != null || seekAudioGuardPreviousMute != null)
       ) {
+        if (!value) {
+          // An explicit unmute from the active engine/handoff is authoritative. Keeping the
+          // temporary transition guard armed here leaves AudioTrack receiving zero samples even
+          // though MPV reports audio=playing and volume is 1.0.
+          clearSeekAudioGuardLocked(restoreMute = false)
+          clearPlaybackTransitionAudioGuardLocked(restoreMute = false)
+          MPVLib.setPropertyBoolean("mute", false)
+          return@withCore
+        }
         // A user mute/unmute action while either audio guard is active should update the value that
         // will be restored, but must not open a guard and leak seek/transition audio immediately.
         if (playbackTransitionAudioGuardPreviousMute != null) {
@@ -967,8 +1068,9 @@ object PlaybackSession : MPVLib.EventObserver {
           desiredPaused
         } else {
           MPVLib.getPropertyBoolean("pause") ?: desiredPaused
-        }
+      }
       val nextPaused = !currentPaused
+      AudiobookPlayback.onPauseRequested(nextPaused)
       desiredPaused = nextPaused
       if (_state.value.phase != PlaybackPhase.LOADING) {
         MPVLib.setPropertyBoolean("pause", nextPaused)
@@ -1154,6 +1256,10 @@ object PlaybackSession : MPVLib.EventObserver {
               return@withLock true
             }
             loadedGeneration = current.generation
+            loadedPlaybackItem = current.currentItem
+            loadedAudiobookEnded = false
+            loadedAudiobookDurationMs = ((MPVLib.getPropertyDouble("duration") ?: 0.0) * 1000).toLong().coerceAtLeast(0)
+            current.currentItem?.let { AudiobookPlayback.onFileLoaded(it, current.generation) }
             val restoringPosition = pendingPositionRestoreGeneration == current.generation
             val appliedPaused = restoringPosition || desiredPaused
             // Track/decoder replacement is now complete. Apply the latest user/service intent
@@ -1190,6 +1296,10 @@ object PlaybackSession : MPVLib.EventObserver {
             }
             propBoolean.emit("pause", appliedPaused)
             restoreSuspendedVideoTrackLocked()
+            // Some audio-only demuxers do not emit PLAYBACK_RESTART reliably. Keep the normal
+            // restart restoration, but also provide a delayed FILE_LOADED fallback so the
+            // transition guard cannot leave the first music item permanently muted.
+            schedulePlaybackTransitionAudioGuardRestoreLocked(750L)
             true
           }
           MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
@@ -1211,6 +1321,7 @@ object PlaybackSession : MPVLib.EventObserver {
             }
             if (current.activeGeneration == current.generation) {
               val reason = parseEndFileReason(data)
+              if (reason == EndFileReason.EOF) AudiobookPlayback.capture(reachedEnd = true)
               if (reason == EndFileReason.REDIRECT && loadedGeneration != current.generation) {
                 // Redirects emit END_FILE before mpv starts the resolved target. Preserve LOADING;
                 // the following START_FILE belongs to the same app-level generation.
@@ -1249,6 +1360,9 @@ object PlaybackSession : MPVLib.EventObserver {
             true
           }
           MPVLib.MpvEvent.MPV_EVENT_SHUTDOWN -> {
+            loadedPlaybackItem = null
+            loadedAudiobookEnded = false
+            loadedAudiobookDurationMs = 0L
             releaseActiveNetworkStream()
             releaseAuxiliaryNetworkStreams()
             suspendedVideoTrack = null
@@ -1381,12 +1495,27 @@ object PlaybackSession : MPVLib.EventObserver {
    * first audible samples of a new file are from its settled timeline/track state.
    */
   private fun beginPlaybackTransitionAudioGuardLocked(canRestore: Boolean) {
-    if (playbackTransitionAudioGuardPreviousMute == null) {
+    val guardAlreadyActive = playbackTransitionAudioGuardPreviousMute != null
+    if (!guardAlreadyActive) {
       // Closing or replacing media can overlap the short seek guard. In that window mpv reports
       // mute=true even when the user was unmuted. Preserve the pre-seek value so a later load does
       // not restore the temporary guard mute and remain permanently silent.
       playbackTransitionAudioGuardPreviousMute =
-        seekAudioGuardPreviousMute ?: (MPVLib.getPropertyBoolean("mute") ?: false)
+        if (canRestore) {
+          // A recoverable replacement load must not sample MPV's current mute property: it may
+          // still be the temporary mute from the outgoing handoff. Only an active seek guard can
+          // represent a user-visible mute state here; otherwise the incoming item must restore
+          // audible playback.
+          seekAudioGuardPreviousMute ?: false
+        } else {
+          seekAudioGuardPreviousMute ?: (MPVLib.getPropertyBoolean("mute") ?: false)
+        }
+    }
+    // A replacement load can arrive before the previous guard's delayed restore. Its true value
+    // is the guard's temporary mute, not a user selection; carrying it into the new generation
+    // makes every subsequent item restore mute=true and leaves video playing without audio.
+    if (canRestore && guardAlreadyActive && playbackTransitionAudioGuardPreviousMute == true) {
+      playbackTransitionAudioGuardPreviousMute = false
     }
     runCatching { MPVLib.setPropertyBoolean("mute", true) }
     playbackTransitionAudioGuardCanRestore = canRestore

@@ -189,7 +189,7 @@ class JellyfinSessionReporter(
           .url(urlString)
           .header("Content-Type", "application/json")
           .header("X-Emby-Token", apiKey)
-          .header("User-Agent", "Mpv∞/1.0")
+          .header("User-Agent", "MpvInfinity/1.0")
           .post(jsonBody.toRequestBody(JSON_MEDIA_TYPE))
           .build()
 

@@ -24,6 +24,9 @@ import app.infinity.mpvz.database.dao.RecentlyPlayedDao
 import app.infinity.mpvz.database.dao.SecureMediaDao
 import app.infinity.mpvz.database.dao.VideoMetadataDao
 import app.infinity.mpvz.database.dao.JellyfinServerDao
+import app.infinity.mpvz.database.dao.NavidromeServerDao
+import app.infinity.mpvz.database.dao.AudiobookDao
+import app.infinity.mpvz.database.dao.AudiobookshelfServerDao
 import app.infinity.mpvz.database.entities.DirectoryScanEntity
 import app.infinity.mpvz.database.entities.DownloadItemEntity
 import app.infinity.mpvz.database.entities.JellyfinServerEntity
@@ -34,6 +37,11 @@ import app.infinity.mpvz.database.entities.PlaylistItemEntity
 import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
 import app.infinity.mpvz.database.entities.SecureMediaEntity
 import app.infinity.mpvz.database.entities.VideoMetadataEntity
+import app.infinity.mpvz.database.entities.NavidromeServerEntity
+import app.infinity.mpvz.database.entities.AudiobookEntity
+import app.infinity.mpvz.database.entities.AudiobookTrackEntity
+import app.infinity.mpvz.database.entities.AudiobookChapterEntity
+import app.infinity.mpvz.database.entities.AudiobookshelfServerEntity
 import app.infinity.mpvz.domain.network.NetworkConnection
 
 @Database(
@@ -48,9 +56,14 @@ import app.infinity.mpvz.domain.network.NetworkConnection
     SecureMediaEntity::class,
     NetworkStreamEntryEntity::class,
     JellyfinServerEntity::class,
+    NavidromeServerEntity::class,
+    AudiobookEntity::class,
+    AudiobookTrackEntity::class,
+    AudiobookChapterEntity::class,
+    AudiobookshelfServerEntity::class,
     DownloadItemEntity::class,
   ],
-  version = 19,
+  version = 21,
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)
@@ -72,6 +85,12 @@ abstract class MpvInfinityDatabase : RoomDatabase() {
   abstract fun secureMediaDao(): SecureMediaDao
 
   abstract fun jellyfinServerDao(): JellyfinServerDao
+
+  abstract fun navidromeServerDao(): NavidromeServerDao
+
+  abstract fun audiobookDao(): AudiobookDao
+
+  abstract fun audiobookshelfServerDao(): AudiobookshelfServerDao
 
   abstract fun downloadItemDao(): DownloadItemDao
 }

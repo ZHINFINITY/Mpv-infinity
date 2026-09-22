@@ -35,3 +35,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Mpv∞"
 include(":app")
+include(":subtitle-libass")

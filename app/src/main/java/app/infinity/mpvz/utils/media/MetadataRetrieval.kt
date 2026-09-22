@@ -91,7 +91,12 @@ object MetadataRetrieval {
         video.subtitleCodec.isNotEmpty() &&
         (!needsVideoCodec || video.videoCodec.isNotBlank())
       ) {
-        return@withContext video
+        // Recompute the display label even for fully cached metadata. The label policy can
+        // change independently of the extracted dimensions (for example, 768x576 is 576p),
+        // so returning the old Video object would keep a stale 480p chip indefinitely.
+        return@withContext video.copy(
+          resolution = formatResolutionWithFps(video.width, video.height, video.fps),
+        )
       }
 
       // Extract metadata
@@ -161,7 +166,15 @@ object MetadataRetrieval {
         }
 
       if (videosNeedingMetadata.isEmpty()) {
-        return@withContext videos
+        // Dimensions may already be cached while the display-label policy has changed. Refresh
+        // the derived resolution string without rescanning every file.
+        return@withContext videos.map { video ->
+          if (video.width > 0 && video.height > 0) {
+            video.copy(resolution = formatResolutionWithFps(video.width, video.height, video.fps))
+          } else {
+            video
+          }
+        }
       }
 
       Log.d(TAG, "Enriching ${videosNeedingMetadata.size} videos with metadata")
@@ -447,14 +460,15 @@ object MetadataRetrieval {
     if (width <= 0 || height <= 0) return "--"
 
     return when {
-      width >= 7680 || height >= 4320 -> "4320p"
-      width >= 3840 || height >= 2160 -> "2160p"
-      width >= 2560 || height >= 1440 -> "1440p"
-      width >= 1920 || height >= 1080 -> "1080p"
-      width >= 1280 || height >= 720 -> "720p"
-      width >= 854 || height >= 480 -> "480p"
-      width >= 640 || height >= 360 -> "360p"
-      width >= 426 || height >= 240 -> "240p"
+      height >= 4320 -> "4320p"
+      height >= 2160 -> "2160p"
+      height >= 1440 -> "1440p"
+      height >= 1080 -> "1080p"
+      height >= 720 -> "720p"
+      height >= 576 -> "576p"
+      height >= 480 -> "480p"
+      height >= 360 -> "360p"
+      height >= 240 -> "240p"
       else -> "${height}p"
     }
   }

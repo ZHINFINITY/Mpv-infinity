@@ -10,8 +10,6 @@
 package app.infinity.mpvz.ui.player.visualizer
 
 import android.content.Context
-import android.graphics.PixelFormat
-import android.opengl.GLSurfaceView
 import android.view.MotionEvent
 
 internal class BlobVisualizerView(
@@ -19,7 +17,7 @@ internal class BlobVisualizerView(
   features: AudioFeatures,
   palette: VisualizerPalette,
   reducedMotion: Boolean = false,
-) : GLSurfaceView(context),
+) : VisualizerTextureView(context),
   PaletteConsumer {
   private val blobRenderer =
     BlobRenderer(context.applicationContext, features, palette, reducedMotion)
@@ -32,13 +30,8 @@ internal class BlobVisualizerView(
   private var previousPointerCount = 0
 
   init {
-    setEGLContextClientVersion(3)
-    setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-    holder.setFormat(PixelFormat.TRANSLUCENT)
-    setZOrderOnTop(true)
-    preserveEGLContextOnPause = true
     setRenderer(blobRenderer)
-    renderMode = RENDERMODE_CONTINUOUSLY
+    renderMode = android.opengl.GLSurfaceView.RENDERMODE_CONTINUOUSLY
   }
 
   override fun onTouchEvent(event: MotionEvent): Boolean {
