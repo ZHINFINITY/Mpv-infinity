@@ -32,11 +32,14 @@ import app.infinity.mpvz.preferences.MediaServerPreferences
 import app.infinity.mpvz.repository.AudiobookshelfRepository
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -216,11 +219,22 @@ class AudiobookshelfViewModel(
       var lastError: String? = null
 
       for (candUrl in urlsToTry) {
-        val result = if (isToken) {
-          repository.verifyToken(candUrl, token.trim(), serverName.trim())
-        } else {
-          repository.login(candUrl, username.trim(), password)
-        }
+        val result =
+          try {
+            withTimeout(30_000L) {
+              if (isToken) {
+                repository.verifyToken(candUrl, token.trim(), serverName.trim())
+              } else {
+                repository.login(candUrl, username.trim(), password)
+              }
+            }
+          } catch (timeout: TimeoutCancellationException) {
+            Result.failure(Exception("Connection timed out. Check the server address and credentials."))
+          } catch (cancellation: CancellationException) {
+            throw cancellation
+          } catch (error: Exception) {
+            Result.failure(error)
+          }
 
         if (result.isSuccess) {
           successfulServer = result.getOrNull()?.copy(
