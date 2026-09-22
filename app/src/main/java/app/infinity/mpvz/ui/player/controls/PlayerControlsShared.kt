@@ -71,6 +71,7 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.cast.CastPlayerButton
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.AmbientStyle
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.clip.ClipOverlayView
@@ -1145,7 +1146,15 @@ fun RenderPlayerButton(
               indication = ripple(bounded = true),
               onClick = {
                 clickEvent()
-                viewModel.toggleAmbientMode()
+                if (activity.isNativeEngineActive()) {
+                  // Native Media3 cannot load MPV's GLSL shader stack. Use the frame-based
+                  // ambient presentation path instead of toggling an MPV-only shader.
+                  viewModel.setAmbientStyle(AmbientStyle.YouTube)
+                  viewModel.toggleAmbientMode()
+                  viewModel.setAmbientLifecycleActive(true)
+                } else {
+                  viewModel.toggleAmbientMode()
+                }
               },
               onLongClick = {
                 clickEvent()

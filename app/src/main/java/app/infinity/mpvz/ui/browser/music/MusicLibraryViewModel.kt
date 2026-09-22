@@ -31,6 +31,8 @@ import org.koin.core.component.inject
 
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 
 class MusicLibraryViewModel : ViewModel(), KoinComponent {
 
@@ -39,6 +41,7 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
   private val browserPreferences: app.infinity.mpvz.preferences.BrowserPreferences by inject()
   private val audioPreferences: app.infinity.mpvz.preferences.AudioPreferences by inject()
   private val foldersPreferences: app.infinity.mpvz.preferences.FoldersPreferences by inject()
+  private var refreshJob: Job? = null
 
   val visibleTabs: StateFlow<List<MusicTab>> = combine(
     audioPreferences.musicTabOrder.changes(),
@@ -113,12 +116,10 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
     }
     viewModelScope.launch {
       MediaLibraryEvents.changes.collectLatest {
-        refreshLibrary(context)
+        scanLibrary(context)
       }
     }
-    viewModelScope.launch {
-      refreshLibrary(context)
-    }
+    scanLibrary(context)
   }
 
   val filteredSongs: StateFlow<List<MusicSong>> = combine(
@@ -182,11 +183,13 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
   suspend fun refreshLibrary(context: Context) {
     _isLoading.value = true
     try {
-      _allSongs.value = MusicLibraryScanner.scanSongs(context)
+      _allSongs.value = MusicLibraryScanner.scanSongs(context.applicationContext)
       applyFilters(
         browserPreferences.minimumAudioDurationSeconds.get(),
         foldersPreferences.blacklistedAudioFolders.get()
       )
+    } catch (e: CancellationException) {
+      throw e
     } catch (e: Exception) {
       e.printStackTrace()
     } finally {
@@ -250,9 +253,16 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
       .sortedBy { it.name.lowercase() }
 
   fun scanLibrary(context: Context? = null) {
-    viewModelScope.launch {
-      refreshLibrary(context ?: this@MusicLibraryViewModel.context)
+    refreshJob?.cancel()
+    refreshJob = viewModelScope.launch {
+      refreshLibrary((context ?: this@MusicLibraryViewModel.context).applicationContext)
     }
+  }
+
+  override fun onCleared() {
+    refreshJob?.cancel()
+    refreshJob = null
+    super.onCleared()
   }
 
   fun setTab(tab: MusicTab) {
@@ -406,7 +416,7 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
       )
     }
     val result = app.infinity.mpvz.utils.permission.PermissionUtils.StorageOps.deleteVideos(context.applicationContext as android.app.Application, videos)
-    refreshLibrary(context)
+    scanLibrary(context)
     return result
   }
 }

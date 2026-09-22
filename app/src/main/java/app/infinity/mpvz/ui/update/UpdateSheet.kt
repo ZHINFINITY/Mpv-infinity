@@ -246,6 +246,8 @@ private fun VersionChip(
           MaterialTheme.colorScheme.onSurfaceVariant
         },
       modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+      maxLines = 1,
+      softWrap = false,
     )
   }
 }

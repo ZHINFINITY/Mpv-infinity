@@ -33,6 +33,7 @@ object Icons {
     val ArrowLeftAlt by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Arrow_left_alt) }
     val AspectRatio by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Aspect_ratio) }
     val Audiotrack by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Music_note) }
+    val AudiobookWave by lazy(LazyThreadSafetyMode.NONE) { AppIcon(AudiobookWaveVector) }
     val AutoAwesome by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Auto_awesome) }
     val AutoFixHigh by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Auto_fix_high) }
     val Aperture by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Shutter_speed) }
@@ -165,6 +166,7 @@ object Icons {
     val MonetizationOn by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Monetization_on) }
     val MoreTime by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.More_time) }
     val MoreVert by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.More_vert) }
+    val MenuBook by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Menu_book) }
     val Movie by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Movie) }
     val Notifications by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Notifications) }
     val NotInterested by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Block) }
@@ -277,6 +279,7 @@ object Icons {
     val ArrowLeftAlt get() = Shared.ArrowLeftAlt
     val AspectRatio get() = Shared.AspectRatio
     val Audiotrack get() = Shared.Audiotrack
+    val AudiobookWave get() = Shared.AudiobookWave
     val AutoAwesome get() = Shared.AutoAwesome
     val AutoFixHigh get() = Shared.AutoFixHigh
     val Aperture get() = Shared.Aperture
@@ -407,6 +410,7 @@ object Icons {
     val HelpOutline get() = Shared.HelpOutline
     val PlaylistAdd get() = Shared.PlaylistAdd
     val PlaylistPlay get() = Shared.PlaylistPlay
+    val MenuBook get() = Shared.MenuBook
     val PushPin get() = Shared.PushPin
     val QueueMusic get() = Shared.QueueMusic
     val Refresh get() = Shared.Refresh
@@ -547,6 +551,45 @@ private val FavoriteBorderVector: ImageVector by lazy(LazyThreadSafetyMode.NONE)
       curveTo(13.46f, 5.99f, 14.96f, 5.0f, 16.5f, 5.0f)
       curveTo(18.5f, 5.0f, 20.0f, 6.5f, 20.0f, 8.5f)
       curveTo(20.0f, 11.39f, 16.86f, 14.24f, 12.1f, 18.55f)
+      close()
+    }
+  }.build()
+}
+
+private val AudiobookWaveVector: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
+  ImageVector.Builder(
+    name = "AudiobookWave",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f,
+  ).apply {
+    path(fill = SolidColor(Color.Black)) {
+      // Open-book / chevron base.
+      moveTo(2.0f, 8.0f)
+      lineTo(12.0f, 16.0f)
+      lineTo(22.0f, 8.0f)
+      lineTo(22.0f, 11.0f)
+      lineTo(12.0f, 20.0f)
+      lineTo(2.0f, 11.0f)
+      close()
+
+      // Three progressively smaller sound-wave bands.
+      moveTo(5.0f, 7.2f)
+      curveTo(8.2f, 2.8f, 15.8f, 2.8f, 19.0f, 7.2f)
+      lineTo(17.2f, 8.6f)
+      curveTo(14.8f, 5.4f, 9.2f, 5.4f, 6.8f, 8.6f)
+      close()
+
+      moveTo(7.4f, 9.0f)
+      curveTo(9.7f, 5.8f, 14.3f, 5.8f, 16.6f, 9.0f)
+      lineTo(15.0f, 10.3f)
+      curveTo(13.5f, 8.3f, 10.5f, 8.3f, 9.0f, 10.3f)
+      close()
+
+      moveTo(9.7f, 10.8f)
+      curveTo(11.0f, 9.2f, 13.0f, 9.2f, 14.3f, 10.8f)
+      lineTo(12.0f, 12.7f)
       close()
     }
   }.build()

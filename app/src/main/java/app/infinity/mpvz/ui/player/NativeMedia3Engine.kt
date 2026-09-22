@@ -5,9 +5,14 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import android.util.Log
+import android.view.View
+import android.view.SurfaceView
 import java.io.File
+import app.infinity.mpvz.R
 import androidx.media3.common.C
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
@@ -20,24 +25,26 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.datasource.DataSource
-import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.FileDataSource
-import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ExtractorsFactory
-import androidx.media3.extractor.metadata.Chapter
-import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
+import androidx.media3.subtitle.libass.LibassSubtitleRenderer
+import io.github.peerless2012.ass.media.AssHandler
+import io.github.peerless2012.ass.media.kt.withAssMkvSupport
+import io.github.peerless2012.ass.media.kt.withAssSupport
+import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
+import io.github.peerless2012.ass.media.type.AssRenderType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,68 +62,22 @@ private object NativeMedia3Cache {
   }
 }
 
-private class HentaiStreamLoggingDataSource(
-  private val upstream: DataSource,
-) : DataSource {
-  private companion object {
-    const val RANGE_CHUNK_BYTES = 1L * 1024L * 1024L
-  }
-
-  override fun addTransferListener(transferListener: TransferListener) = upstream.addTransferListener(transferListener)
-
-  override fun open(dataSpec: DataSpec): Long {
-    val isHentai = dataSpec.uri.host?.contains("hentaistream-addon.", ignoreCase = true) == true &&
-      dataSpec.uri.path?.contains("/video-proxy", ignoreCase = true) == true
-    val requestSpec = if (isHentai) {
-      val start = dataSpec.position
-      // The proxy rejects open-ended ranges after the initial response with HTTP 416. Media3
-      // requests those ranges for normal continuation and seek operations, so make every unset
-      // request an explicit bounded chunk. The next read will request the following chunk.
-      val requestedLength =
-        if (dataSpec.length == C.LENGTH_UNSET.toLong()) RANGE_CHUNK_BYTES else dataSpec.length
-      val end = (start + requestedLength - 1).coerceAtLeast(start)
-      val separator = if (dataSpec.uri.query.isNullOrBlank()) "?" else "&"
-      val cacheKey = "${start}_${end}_${System.nanoTime()}"
-      val requestUri = Uri.parse("${dataSpec.uri}$separator" + "mpvinfinity_range=$cacheKey")
-      val headers = dataSpec.httpRequestHeaders.toMutableMap().apply {
-        if (dataSpec.length == C.LENGTH_UNSET.toLong()) {
-          put("Range", "bytes=$start-$end")
-        }
-      }
-      dataSpec.buildUpon().setUri(requestUri).setHttpRequestHeaders(headers).build()
-    } else dataSpec
-    val returned = runCatching { upstream.open(requestSpec) }.onFailure { error ->
-      Log.e("Mpv∞-StreamHTTP", "open failed uri=${dataSpec.uri} position=${dataSpec.position} length=${dataSpec.length}", error)
-    }.getOrThrow()
-    val headers = upstream.responseHeaders
-    fun header(name: String): String = headers.entries.firstOrNull { it.key.equals(name, true) }?.value?.joinToString("|") ?: "unknown"
-    Log.i(
-      "Mpv∞-StreamHTTP",
-      "response uri=${requestSpec.uri} position=${dataSpec.position} requested=${dataSpec.length} " +
-        "returned=$returned contentLength=${header("Content-Length")} contentRange=${header("Content-Range")} " +
-        "acceptRanges=${header("Accept-Ranges")} contentType=${header("Content-Type")}",
-    )
-    return returned
-  }
-
-  override fun read(buffer: ByteArray, offset: Int, length: Int): Int = upstream.read(buffer, offset, length)
-  override fun getUri(): Uri? = upstream.uri
-  override fun getResponseHeaders(): Map<String, List<String>> = upstream.responseHeaders
-  override fun close() = upstream.close()
-}
-
- data class NativePlaybackSnapshot(
+data class NativePlaybackSnapshot(
   val isPlaying: Boolean = false,
   val isReady: Boolean = false,
   val isBuffering: Boolean = false,
+  val isEnded: Boolean = false,
   val positionMs: Long = 0L,
   val durationMs: Long = 0L,
   val videoWidth: Int = 0,
   val videoHeight: Int = 0,
   val videoMimeType: String? = null,
   val videoCodec: String? = null,
+  val videoDecoder: String? = null,
+  val audioDecoder: String? = null,
+  val videoDynamicRange: String? = null,
+  val videoColorSpace: String? = null,
   val videoBitrate: Int = 0,
-  val videoBitrateEstimated: Boolean = false,
   val audioCodec: String? = null,
   val audioBitrate: Int = 0,
   val audioChannels: Int = 0,
@@ -134,6 +95,17 @@ data class NativeTrack(
   val label: String,
   val language: String?,
   val selected: Boolean,
+  val formatId: String? = null,
+  val external: Boolean = false,
+)
+
+private data class NativeSubtitleSelection(
+  val groupId: String?,
+  val formatId: String?,
+  val label: String?,
+  val language: String?,
+  val mimeType: String?,
+  val codecs: String?,
 )
 
 data class NativeChapter(
@@ -143,9 +115,8 @@ data class NativeChapter(
 
 /** A source-local Android Media3 playback engine. */
 class NativeMedia3Engine(context: Context) {
-  private val logTag = "Mpv∞-Media3"
   private val appContext = context.applicationContext
-  @Volatile private var sourceSizeBytes: Long = 0L
+  private val logTag = "Mpv∞-Media3"
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
     .setAllowCrossProtocolRedirects(true)
     .setConnectTimeoutMs(15_000)
@@ -158,27 +129,29 @@ class NativeMedia3Engine(context: Context) {
       CacheDataSource.FLAG_BLOCK_ON_CACHE or CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
     )
   private val dataSourceFactory = DefaultDataSource.Factory(context.applicationContext, cacheDataSourceFactory)
-  // HentaiStream proxy responses are cache-keyed upstream and may change between requests. A
-  // local Media3 cache can otherwise preserve a 5-second placeholder and replay it for a later
-  // episode or seek. Keep this path network-only; Torrentio and ordinary HTTP sources retain the
-  // existing cache behavior.
-  private val directNetworkDataSourceFactory =
-    DefaultDataSource.Factory(context.applicationContext, DataSource.Factory {
-      HentaiStreamLoggingDataSource(httpDataSourceFactory.createDataSource())
-    })
-  // Local files must not be routed through the network cache. Apart from adding an unnecessary
-  // cache lookup, the cache factory's upstream is HTTP-only and cannot provide a local file.
-  private val directLocalDataSourceFactory = DefaultDataSource.Factory(context.applicationContext)
-  // Match v1.0.7: let Media3 construct its standard extractor set and subtitle parser.
-  // Keep the custom data sources below for local/WebDAV transport; only the subtitle/extractor
-  // pipeline is restored to the known-working default implementation.
-  private val extractorsFactory: ExtractorsFactory = DefaultExtractorsFactory()
+  private val assHandler = AssHandler(renderType = AssRenderType.OVERLAY_CANVAS)
+  private val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
+  private val extractorsFactory: ExtractorsFactory =
+    androidx.media3.extractor.DefaultExtractorsFactory()
+      .withAssMkvSupport(assSubtitleParserFactory, assHandler)
   private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
-  private val directLocalMediaSourceFactory =
-    ProgressiveMediaSource.Factory(directLocalDataSourceFactory, extractorsFactory)
-  private val directNetworkMediaSourceFactory =
-    ProgressiveMediaSource.Factory(directNetworkDataSourceFactory, extractorsFactory)
-  private var player = ExoPlayer.Builder(context.applicationContext)
+    .setSubtitleParserFactory(assSubtitleParserFactory)
+  private val player = ExoPlayer.Builder(context.applicationContext)
+    .setLoadControl(
+      DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+          10_000,
+          120_000,
+          1_000,
+          3_000,
+        )
+        .setBackBuffer(10_000, false)
+        // Keep a bounded amount of compressed media buffered; the disk cache handles repeated
+        // network reads without forcing a large memory buffer on 4K HDR devices.
+        .setTargetBufferBytes(128 * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(true)
+        .build(),
+    )
     // Xiaomi's 4K HDR decoder can report no loading progress while the SurfaceView and codec are
     // being handed over from MPV. Disable this watchdog for Native; a real player/codec error is
     // still delivered through Player.Listener.onPlayerError.
@@ -190,28 +163,34 @@ class NativeMedia3Engine(context: Context) {
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
         // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
         // devices reject the first candidate even though a compatible Media3 decoder is available.
-        .setEnableDecoderFallback(true),
+        .setEnableDecoderFallback(true)
+        .withAssSupport(assHandler)
     )
     .build()
-  private var activePlayer: ExoPlayer = player
   private var attachedView: PlayerView? = null
+  private var subtitleOverlay: LibassSubtitleSurfaceView? = null
+  private var libassRenderer: LibassSubtitleRenderer? = null
+  private val externalAssEnabled = mutableMapOf<String, Boolean>()
   private var subtitleScale = 1f
   private var subtitlePosition = 100
   private var subtitleFontSize = 55
-  private var subtitleOverlayVisible = true
-  private var lastSelectedSubtitleTrack: NativeTrack? = null
+  private var subtitleFontFamily = "sans-serif"
+  private var subtitleBold = false
+  private var subtitleItalic = false
+  private var subtitleTextColor = android.graphics.Color.WHITE
+  private var subtitleBorderColor = android.graphics.Color.BLACK
+  private var subtitleBackgroundColor = android.graphics.Color.TRANSPARENT
+  private var subtitleBorderSize = 3
+  private var subtitlePresentationVisible = true
+  private val subtitleStyleRunnable = Runnable { applyAssStyle() }
+  private val subtitleViewRunnable = Runnable { configureSubtitleView() }
   private var loopASeconds: Double? = null
   private var loopBSeconds: Double? = null
   private val loopHandler = Handler(Looper.getMainLooper())
   private var pendingSeekPositionMs: Long? = null
   private var pendingSeekDisplayPositionMs: Long? = null
-  private val settleSeekRunnable = Runnable {
-    val target = pendingSeekDisplayPositionMs ?: return@Runnable
-    if (kotlin.math.abs(activePlayer.currentPosition - target) <= 1_500L) {
-      pendingSeekDisplayPositionMs = null
-      publishPlaybackSnapshot()
-    }
-  }
+  private var lastKnownDurationMs: Long = 0L
+  private var pendingExternalSelectionId: String? = null
   private val seekRunnable = Runnable {
     val positionMs = pendingSeekPositionMs ?: return@Runnable
     pendingSeekPositionMs = null
@@ -219,13 +198,16 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = targetMs
     // The source is prepared once with a seek-capable extractor. Seeking only moves the existing
     // extractor/decoder forward; it never rebuilds the MediaSource or flushes the surface.
-    activePlayer.seekTo(targetMs)
+    player.seekTo(targetMs)
     publishPlaybackSnapshot()
   }
   private val timelineRunnable = object : Runnable {
     override fun run() {
-      if (activePlayer.currentMediaItem == null || (!activePlayer.isPlaying && !activePlayer.playWhenReady)) return
-      publishPlaybackSnapshot()
+      // Keep the subtitle clock alive while paused, buffering, and immediately
+      // after a seek. MPV renders from its current clock in all of these states.
+      if (player.currentMediaItem == null) return
+      publishSnapshot()
+      subtitleOverlay?.setPositionUs(player.currentPosition.coerceAtLeast(0L) * 1000L)
       // Keep the seekbar responsive without forcing a 10 Hz Compose/native snapshot loop on a
       // 4K HDR decoder. Direct commands remain immediate; the UI only needs a quarter-second tick.
       loopHandler.postDelayed(this, 250L)
@@ -235,9 +217,9 @@ class NativeMedia3Engine(context: Context) {
     override fun run() {
       val a = loopASeconds
       val b = loopBSeconds
-      if (a != null && b != null && b > a && activePlayer.currentPosition >= (b * 1000.0).toLong()) {
-        activePlayer.seekTo((a * 1000.0).toLong())
-        if (!activePlayer.isPlaying) activePlayer.play()
+      if (a != null && b != null && b > a && player.currentPosition >= (b * 1000.0).toLong()) {
+        player.seekTo((a * 1000.0).toLong())
+        if (!player.isPlaying) player.play()
       }
       if (a != null && b != null) loopHandler.postDelayed(this, 150L)
     }
@@ -252,64 +234,88 @@ class NativeMedia3Engine(context: Context) {
   )
   private val _snapshot = MutableStateFlow(NativePlaybackSnapshot())
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
-  private val _hasRenderedFirstFrame = MutableStateFlow(false)
-  val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
   private val _subtitleCueText = MutableStateFlow("")
   val subtitleCueText: StateFlow<String> = _subtitleCueText.asStateFlow()
-  val currentPlayer: Player get() = activePlayer
+  private var selectedNativeSubtitleKey: Pair<Int, Int>? = null
+  private val _hasRenderedFirstFrame = MutableStateFlow(false)
+  val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
+  val currentPlayer: Player get() = player
   private var metadataChapters: List<NativeChapter> = emptyList()
   private var preparationStartedAtMs: Long = 0L
   private var preparationUri: Uri? = null
+  private var sourceSizeBytes: Long = 0L
+  private var videoDecoderName: String? = null
+  private var audioDecoderName: String? = null
+  private var selectedNativeSubtitleSelection: NativeSubtitleSelection? = null
+  private var restoringNativeSubtitleSelection = false
+
+  private val analyticsListener = object : AnalyticsListener {
+    override fun onVideoDecoderInitialized(
+      eventTime: AnalyticsListener.EventTime,
+      decoderName: String,
+      initializedTimestampMs: Long,
+      initializationDurationMs: Long,
+    ) {
+      videoDecoderName = decoderName
+      publishSnapshot()
+    }
+
+    override fun onAudioDecoderInitialized(
+      eventTime: AnalyticsListener.EventTime,
+      decoderName: String,
+      initializedTimestampMs: Long,
+      initializationDurationMs: Long,
+    ) {
+      audioDecoderName = decoderName
+      publishSnapshot()
+    }
+  }
 
   private val listener = object : Player.Listener {
     override fun onRenderedFirstFrame() {
-      val uri = activePlayer.currentMediaItem?.localConfiguration?.uri
+      val uri = player.currentMediaItem?.localConfiguration?.uri
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "first frame rendered uri=$uri prepareElapsedMs=$elapsed")
       _hasRenderedFirstFrame.value = true
-      attachedView?.post { configureSubtitleView() }
-    }
-    override fun onPlaybackStateChanged(playbackState: Int) {
-      Log.d(logTag, "playback state=$playbackState uri=${activePlayer.currentMediaItem?.localConfiguration?.uri}")
-    }
-    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
-      if (reason == Player.DISCONTINUITY_REASON_SEEK) {
-        val target = pendingSeekDisplayPositionMs
-        if (target != null && kotlin.math.abs(newPosition.positionMs - target) <= 1_500L) {
-          loopHandler.removeCallbacks(settleSeekRunnable)
-          loopHandler.postDelayed(settleSeekRunnable, 750L)
-        }
+      attachedView?.post {
+        ensureLibassRenderer()
+        configureSubtitleView()
       }
     }
+    override fun onPlaybackStateChanged(playbackState: Int) {
+      if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
+      Log.d(logTag, "playback state=$playbackState uri=${player.currentMediaItem?.localConfiguration?.uri}")
+    }
     override fun onPlayerError(error: PlaybackException) {
-      Log.e(logTag, "player error uri=${activePlayer.currentMediaItem?.localConfiguration?.uri}", error)
+      Log.e(logTag, "player error uri=${player.currentMediaItem?.localConfiguration?.uri}", error)
     }
 
     override fun onCues(cueGroup: CueGroup) {
+      // This is only a text bridge for embedded translation. Media3/ass-media still renders the
+      // original cue through PlayerView/libass; no cue is converted or re-rendered here.
       _subtitleCueText.value = cueGroup.cues
         .mapNotNull { it.text?.toString()?.trim()?.takeIf(String::isNotBlank) }
         .joinToString("\n")
-      // Keep delivering cues to the ViewModel for translation, but do not allow Media3's
-      // SubtitleView to draw the original cue underneath the translated Compose overlay.
-      if (!subtitleOverlayVisible) {
-        attachedView?.subtitleView?.post {
-          if (!subtitleOverlayVisible) attachedView?.subtitleView?.setCues(emptyList())
-        }
-      }
     }
-
     override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       Log.d(logTag, "timeline changed reason=$reason windowCount=${timeline.windowCount} prepareElapsedMs=$elapsed uri=$preparationUri")
-      publishSnapshot()
     }
 
     override fun onTracksChanged(tracks: Tracks) {
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
       val types = tracks.groups.joinToString(",") { it.type.toString() }
-      Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types prepareElapsedMs=$elapsed uri=$preparationUri")
-      ensureEmbeddedSubtitleSelected(tracks)
-      publishSnapshot()
+      val selectedText = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+        .sumOf { group -> (0 until group.length).count { group.isTrackSelected(it) } }
+      Log.d(logTag, "tracks changed groups=${tracks.groups.size} types=$types selectedText=$selectedText prepareElapsedMs=$elapsed uri=$preparationUri")
+      tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.forEach { group ->
+        (0 until group.length).forEach { index ->
+          val format = group.getTrackFormat(index)
+          Log.d(logTag, "text track group=${group.mediaTrackGroup.id} index=$index selected=${group.isTrackSelected(index)} mime=${format.sampleMimeType} codecs=${format.codecs} label=${format.label} language=${format.language}")
+        }
+      }
+      restoreSelectedNativeSubtitle(tracks)
+      applyPendingExternalSelection()
     }
 
     override fun onIsLoadingChanged(isLoading: Boolean) {
@@ -318,11 +324,8 @@ class NativeMedia3Engine(context: Context) {
     }
 
     override fun onMetadata(metadata: Metadata) {
-      Log.d(
-        logTag,
-        "metadata received entries=${metadata.length()} types=${(0 until metadata.length()).joinToString(",") { metadata[it].javaClass.simpleName }}",
-      )
-      // Do not erase the already-published chapter list when a transient callback has no chapters.
+      // Media3 emits transient metadata callbacks while the indexed source is replacing the fast
+      // source. Do not erase the already-published chapter list when that callback has no chapters.
       metadataEntriesToChapters(metadata).takeIf { it.isNotEmpty() }?.let { metadataChapters = it }
       publishSnapshot()
     }
@@ -330,7 +333,6 @@ class NativeMedia3Engine(context: Context) {
     override fun onEvents(player: Player, events: Player.Events) {
       if (events.contains(Player.EVENT_TRACKS_CHANGED)) configureSubtitleView()
       if (events.contains(Player.EVENT_TRACKS_CHANGED) ||
-        events.contains(Player.EVENT_METADATA) ||
         events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) ||
         events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED) ||
         events.contains(Player.EVENT_IS_PLAYING_CHANGED) ||
@@ -340,36 +342,39 @@ class NativeMedia3Engine(context: Context) {
       }
     }
   }
-
   init {
+    // Keep Native playback in Android's media-audio focus lifecycle. A reused Media3 player can
+    // otherwise continue buffering after a video item while the next music item has no focus.
+    player.setAudioAttributes(
+      AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build(),
+      true,
+    )
+    player.setHandleAudioBecomingNoisy(true)
+    assHandler.init(player)
     Log.i(logTag, "Native Media3 configured: stuckBufferingDetectionTimeoutMs=${Int.MAX_VALUE}")
     // Large UHD/Dolby Vision files can take a long time to decode an exact frame after a seek.
     // Start at the nearest keyframe so the decoder can resume immediately and refill forward.
-    activePlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
-    // Media3 can leave embedded text tracks unselected when a stream has no explicit
-    // default subtitle flag. The previous MPV path selected these tracks automatically.
-    // Keep text tracks enabled and allow undetermined-language subtitles to be selected;
-    // the existing subtitle preferences and track controls still govern visibility/choice.
-    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
-      .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .setSelectUndeterminedTextLanguage(true)
-      .build()
-    activePlayer.addListener(listener)
-  }
-
-  /** Select exact frame seeking or the faster nearest-keyframe seek mode. */
-  fun setPreciseSeeking(enabled: Boolean) {
-    activePlayer.setSeekParameters(if (enabled) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC)
+    player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
+    player.addListener(listener)
+    player.addAnalyticsListener(analyticsListener)
   }
 
   fun attach(view: PlayerView) {
     attachedView?.player = null
     attachedView = view
+    subtitleOverlay = view.rootView.findViewById(R.id.media3_subtitle_overlay)
+    view.subtitleView?.withAssSupport(assHandler)
+    ensureLibassRenderer()
+    // SurfaceView is composed in a separate layer and can cover normal sibling Views. Mark it as
+    // a media layer so the standalone libass bitmap remains visible above the video surface.
+    (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
     view.useController = false
     // Do not let a stale portrait measurement stretch native HDR video after rotation.
     view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-    view.player = activePlayer
+    view.player = player
     configureSubtitleView()
     view.post { if (attachedView === view) configureSubtitleView() }
     startTimelineUpdates()
@@ -409,44 +414,205 @@ class NativeMedia3Engine(context: Context) {
 
   fun setSubtitleScale(scale: Float) {
     subtitleScale = scale.coerceIn(0.1f, 5f)
+    loopHandler.removeCallbacks(subtitleViewRunnable)
     configureSubtitleView()
   }
 
   fun setSubtitlePosition(position: Int) {
     subtitlePosition = position.coerceIn(0, 150)
+    loopHandler.removeCallbacks(subtitleViewRunnable)
     configureSubtitleView()
   }
 
-  fun setSubtitleOverlayVisible(visible: Boolean) {
-    subtitleOverlayVisible = visible
-    attachedView?.subtitleView?.apply {
-      visibility = android.view.View.VISIBLE
-      alpha = if (visible) 1f else 0f
-    }
+  /** Hide/show subtitle presentation only; keep the selected Media3 text track active. */
+  fun setSubtitlePresentationVisible(visible: Boolean) {
+    subtitlePresentationVisible = visible
+    attachedView?.subtitleView?.visibility = if (visible) View.VISIBLE else View.GONE
+    subtitleOverlay?.visibility = if (visible) View.VISIBLE else View.GONE
   }
 
   fun addExternalSubtitle(uri: Uri, select: Boolean): Boolean {
-    val current = activePlayer.currentMediaItem?.localConfiguration ?: return false
-    val mimeType = when (uri.toString().substringAfterLast('.', "").lowercase()) {
+    val current = player.currentMediaItem ?: return false
+    val localConfiguration = current.localConfiguration ?: return false
+    val mimeType = when (subtitleExtension(uri)) {
       "srt" -> "application/x-subrip"
       "vtt" -> "text/vtt"
       "ass", "ssa" -> "text/x-ssa"
       else -> "text/plain"
     }
     val configuration = MediaItem.SubtitleConfiguration.Builder(uri)
+      .setId("external:$uri")
+      // Keep the identity available even when an ASS/SSA parser replaces the Format id.
+      // The snapshot code uses this marker to keep the track in the external section only.
+      .setLabel("external:$uri")
       .setMimeType(mimeType)
       .setSelectionFlags(if (select) C.SELECTION_FLAG_DEFAULT else 0)
       .build()
-    val wasPlaying = activePlayer.isPlaying
-    val positionMs = activePlayer.currentPosition.coerceAtLeast(0L)
-    val updated = MediaItem.Builder()
-      .setUri(current.uri)
-      .setSubtitleConfigurations(current.subtitleConfigurations + configuration)
+    if (localConfiguration.subtitleConfigurations.any { it.id == configuration.id }) {
+      if (select) {
+        pendingExternalSelectionId = configuration.id
+        loopHandler.post { applyPendingExternalSelection() }
+      }
+      return true
+    }
+    val wasPlaying = player.isPlaying
+    val positionMs = player.currentPosition.coerceAtLeast(0L)
+    // Keep the original MediaItem (headers, DRM, metadata and stream identity) intact. Rebuilding
+    // from only current.uri makes downloaded online subtitles fail on authenticated/network media.
+    val updated = current.buildUpon()
+      .setSubtitleConfigurations(localConfiguration.subtitleConfigurations + configuration)
       .build()
-    activePlayer.setMediaItem(updated, positionMs)
-    activePlayer.prepare()
-    activePlayer.playWhenReady = wasPlaying
+    player.setMediaItem(updated, positionMs)
+    player.prepare()
+    player.playWhenReady = wasPlaying
+    if (select) {
+      pendingExternalSelectionId = configuration.id
+      loopHandler.post { applyPendingExternalSelection() }
+    }
     return true
+  }
+
+  fun toggleExternalSubtitle(uri: Uri): Boolean? {
+    val id = "external:$uri"
+    val match = player.currentTracks.groups
+      .asSequence()
+      .filter { it.type == C.TRACK_TYPE_TEXT }
+      .flatMap { group ->
+        (0 until group.length).asSequence().map { index -> group to index }
+      }
+      .firstOrNull { (group, index) ->
+        val format = group.getTrackFormat(index)
+        format.id == id || format.label == id
+      }
+      ?: return null
+    val group = match.first
+    val trackIndex = match.second
+    val enabled = !group.isTrackSelected(trackIndex)
+    val builder = player.trackSelectionParameters.buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+    if (enabled) {
+      builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+    } else {
+      val fallback = player.currentTracks.groups
+        .asSequence()
+        .filter { it.type == C.TRACK_TYPE_TEXT }
+        .flatMap { candidate -> (0 until candidate.length).asSequence().map { candidate to it } }
+        .firstOrNull { (candidate, index) ->
+          candidate !== group && !candidate.getTrackFormat(index).id.orEmpty().startsWith("external:")
+        }
+      if (fallback != null) {
+        builder.addOverride(TrackSelectionOverride(fallback.first.mediaTrackGroup, fallback.second))
+      } else {
+        builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      }
+    }
+    player.trackSelectionParameters = builder.build()
+    return enabled
+  }
+
+  private fun applyPendingExternalSelection() {
+    val id = pendingExternalSelectionId ?: return
+    val match = player.currentTracks.groups
+      .asSequence()
+      .filter { it.type == C.TRACK_TYPE_TEXT }
+      .flatMap { group -> (0 until group.length).asSequence().map { group to it } }
+      .firstOrNull { (group, index) ->
+        val format = group.getTrackFormat(index)
+        format.id == id || format.label == id
+      }
+      ?: return
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .addOverride(TrackSelectionOverride(match.first.mediaTrackGroup, match.second))
+      .build()
+    pendingExternalSelectionId = null
+    publishSnapshot()
+  }
+
+  private fun subtitleSelectionFor(group: Tracks.Group, trackIndex: Int): NativeSubtitleSelection {
+    val format = group.getTrackFormat(trackIndex)
+    return NativeSubtitleSelection(
+      groupId = group.mediaTrackGroup.id,
+      formatId = format.id,
+      label = format.label,
+      language = format.language,
+      mimeType = format.sampleMimeType,
+      codecs = format.codecs,
+    )
+  }
+
+  /** Rebind an explicit user choice if Media3 replaces its TrackGroup after preparation. */
+  private fun restoreSelectedNativeSubtitle(tracks: Tracks) {
+    val wanted = selectedNativeSubtitleSelection ?: return
+    if (restoringNativeSubtitleSelection) return
+    val match = tracks.groups
+      .asSequence()
+      .filter { it.type == C.TRACK_TYPE_TEXT }
+      .flatMap { group -> (0 until group.length).asSequence().map { group to it } }
+      .firstOrNull { (group, index) ->
+        val candidate = subtitleSelectionFor(group, index)
+        val stableIdMatches = wanted.formatId != null && wanted.formatId == candidate.formatId
+        val descriptiveFieldsMatch =
+          wanted.label == candidate.label &&
+            wanted.language == candidate.language &&
+            wanted.mimeType == candidate.mimeType &&
+            wanted.codecs == candidate.codecs
+        (wanted.groupId == candidate.groupId && descriptiveFieldsMatch) ||
+          stableIdMatches || descriptiveFieldsMatch
+      }
+      ?: return
+    if (match.first.isTrackSelected(match.second)) {
+      selectedNativeSubtitleKey = tracks.groups.indexOf(match.first) to match.second
+      return
+    }
+    restoringNativeSubtitleSelection = true
+    try {
+      player.trackSelectionParameters = player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        .addOverride(TrackSelectionOverride(match.first.mediaTrackGroup, match.second))
+        .build()
+      selectedNativeSubtitleKey = tracks.groups.indexOf(match.first) to match.second
+      Log.d(logTag, "Restored selected native subtitle after track-group refresh index=${match.second}")
+    } finally {
+      restoringNativeSubtitleSelection = false
+    }
+  }
+
+  /** Content-provider URIs can hide the actual downloaded filename in their last path segment. */
+  private fun disableNativeTextTracks() {
+    player.trackSelectionParameters = player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .build()
+    publishSnapshot()
+  }
+
+  private fun subtitleExtension(uri: Uri): String {
+    val uriName = Uri.decode(uri.lastPathSegment.orEmpty())
+    val providerName =
+      if (uri.scheme == "content") {
+        runCatching {
+          appContext.contentResolver
+            .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+              val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+              if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+            }
+        }.getOrNull().orEmpty()
+      } else {
+        ""
+      }
+    return listOf(providerName, uriName)
+      .firstOrNull { it.substringAfterLast('.', "").lowercase() in setOf("srt", "vtt", "ass", "ssa", "sub") }
+      ?.substringAfterLast('.', "")
+      ?.lowercase()
+      .orEmpty()
   }
 
   fun setSubtitleStyle(
@@ -460,6 +626,13 @@ class NativeMedia3Engine(context: Context) {
     italic: Boolean = false,
   ) {
     subtitleFontSize = fontSize.coerceIn(8, 160)
+    subtitleFontFamily = fontFamily?.takeIf { it.isNotBlank() } ?: "sans-serif"
+    subtitleBold = bold
+    subtitleItalic = italic
+    subtitleTextColor = textColor
+    subtitleBorderColor = borderColor
+    subtitleBackgroundColor = backgroundColor
+    subtitleBorderSize = borderSize.coerceAtLeast(0)
     val typefaceStyle = when {
       bold && italic -> android.graphics.Typeface.BOLD_ITALIC
       bold -> android.graphics.Typeface.BOLD
@@ -474,21 +647,61 @@ class NativeMedia3Engine(context: Context) {
       borderColor,
       android.graphics.Typeface.create(fontFamily?.takeIf { it.isNotBlank() }, typefaceStyle),
     )
+    loopHandler.removeCallbacks(subtitleStyleRunnable)
+    applyAssStyle()
+    loopHandler.removeCallbacks(subtitleViewRunnable)
     configureSubtitleView()
   }
 
+  private fun applyAssStyle() {
+    libassRenderer?.setStyle(
+      subtitleFontFamily,
+      subtitleFontSize,
+      subtitleTextColor,
+      subtitleBorderColor,
+      subtitleBackgroundColor,
+      subtitleBorderSize,
+      subtitleBold,
+      subtitleItalic,
+    )
+  }
+
+  private fun scheduleSubtitleViewConfiguration() {
+    loopHandler.removeCallbacks(subtitleViewRunnable)
+    loopHandler.postDelayed(subtitleViewRunnable, 40L)
+  }
+
+
+  private fun ensureLibassRenderer(): LibassSubtitleRenderer? {
+    val view = subtitleOverlay ?: return null
+    val sourceWidth = snapshot.value.videoWidth.takeIf { it > 0 } ?: view.width.takeIf { it > 0 } ?: 1280
+    val sourceHeight = snapshot.value.videoHeight.takeIf { it > 0 } ?: view.height.takeIf { it > 0 } ?: 720
+    // libass uses the video's storage dimensions; the in-layout TextureView is transparent and
+    // follows the same FIT container as Media3 so ASS coordinates remain in video space.
+    val width = sourceWidth.coerceAtLeast(1)
+    val height = sourceHeight.coerceAtLeast(1)
+    if (width <= 0 || height <= 0) return null
+    libassRenderer?.let {
+      if (it.getWidth() != width || it.getHeight() != height) it.setSize(width, height)
+      return it
+    }
+    return runCatching {
+      LibassSubtitleRenderer(width, height, null).also {
+        libassRenderer = it
+        view.setRenderer(it)
+        applyAssStyle()
+        Log.i(logTag, "libass initialized size=${width}x${height} tracks=0")
+      }
+    }.onFailure { Log.e(logTag, "libass initialization failed", it) }.getOrNull()
+  }
 
   private fun configureSubtitleView() {
     val view = attachedView ?: return
     view.subtitleView?.apply {
-      // This is the known-working Media3 configuration: keep embedded ASS/SSA/Matroska
-      // font/style attributes, while retaining the app subtitle-size preference as the
-      // controlled fallback used by the previous native implementation.
-      setApplyEmbeddedStyles(true)
-      setApplyEmbeddedFontSizes(false)
+      // ass-media installs its ASS overlay inside this subtitle view. Keep the parent visible;
+      // normal SRT/WebVTT cues continue to use the same Media3 view.
+      visibility = if (subtitlePresentationVisible) View.VISIBLE else View.GONE
       setStyle(subtitleStyle)
-      visibility = android.view.View.VISIBLE
-      alpha = if (subtitleOverlayVisible) 1f else 0f
       setFractionalTextSize((subtitleFontSize / 1000f).coerceIn(0.01f, 0.16f))
       pivotX = width / 2f
       pivotY = height.toFloat()
@@ -498,6 +711,21 @@ class NativeMedia3Engine(context: Context) {
         .coerceIn(-height * 0.5f, height * 0.5f)
       setBottomPaddingFraction(0f)
     }
+    subtitleOverlay?.apply {
+      visibility = if (subtitlePresentationVisible) View.VISIBLE else View.GONE
+      pivotX = width / 2f
+      pivotY = height.toFloat()
+      scaleX = subtitleScale
+      scaleY = subtitleScale
+      translationY = ((subtitlePosition - 100) / 100f * height * 0.5f)
+        .coerceIn(-height * 0.5f, height * 0.5f)
+    }
+  }
+
+  private fun isAssFormat(format: androidx.media3.common.Format): Boolean {
+    val mime = format.sampleMimeType?.lowercase() ?: return false
+    val codecs = format.codecs?.lowercase() ?: ""
+    return mime.contains("ssa") || mime.contains("ass") || codecs.contains("ssa") || codecs.contains("ass")
   }
 
   fun play(
@@ -509,6 +737,19 @@ class NativeMedia3Engine(context: Context) {
     sourceUri: Uri? = null,
   ) {
     _hasRenderedFirstFrame.value = false
+    lastKnownDurationMs = 0L
+    videoDecoderName = null
+    audioDecoderName = null
+    // The player instance survives item changes; reset any ducked/zero output level before the
+    // first audio-only item after a video transition.
+    player.volume = 1f
+    setSubtitlePresentationVisible(true)
+    pendingExternalSelectionId = null
+    selectedNativeSubtitleSelection = null
+    externalAssEnabled.clear()
+    libassRenderer?.getTrackIds()?.keys?.toList()?.forEach { id ->
+      libassRenderer?.removeTrack(id)
+    }
     // Uri.parse("/storage/...") has no scheme. Make local paths explicit so Media3 selects
     // FileDataSource instead of treating the original MediaStore URI as the playable source.
     val mediaUri =
@@ -517,79 +758,64 @@ class NativeMedia3Engine(context: Context) {
       } else {
         uri
       }
-    val isLocalUri = mediaUri.scheme.equals("file", ignoreCase = true) ||
-      mediaUri.scheme.equals("content", ignoreCase = true)
-    // Engine-selection observers can deliver the same request more than once while the
-    // Activity is settling. Re-preparing the same URI resets Media3's extractor and clears
-    // embedded subtitle track/cue state before it can render. Treat an active identical source
-    // as idempotent and only update the requested play state.
-    val activeUri = activePlayer.currentMediaItem?.localConfiguration?.uri
-    if (activeUri == mediaUri && activePlayer.playbackState != Player.STATE_IDLE) {
-      activePlayer.playWhenReady = autoplay
-      if (autoplay && !activePlayer.isPlaying) activePlayer.play()
-      Log.d(logTag, "play ignored duplicate active uri=$mediaUri state=${activePlayer.playbackState}")
-      return
-    }
-    sourceSizeBytes = resolveLocalSize(mediaUri)
-    val isHentaiStreamUri = mediaUri.host?.contains("hentaistream-addon.", ignoreCase = true) == true &&
-      mediaUri.path?.contains("/video-proxy", ignoreCase = true) == true
-    Log.d(
-      logTag,
-      "play uri=$mediaUri scheme=${mediaUri.scheme} source=${when {
-        isLocalUri -> "direct-local"
-        isHentaiStreamUri -> "direct-network"
-        else -> "cached-network"
-      }} " +
-        "sourceUri=$sourceUri positionMs=$startPositionMs autoplay=$autoplay",
-    )
-    val requestHeaders = if (isHentaiStreamUri) {
-      headers.toMutableMap().apply {
-        put("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/151.0.7922.199 Mobile Safari/537.36")
-        put("Referer", "https://hentaistream-addon.keypop3750.workers.dev/")
-        put("Accept", "video/mp4,video/*;q=0.9,*/*;q=0.8")
-        put("Cache-Control", "no-cache")
-      }
-    } else headers
-    httpDataSourceFactory.setDefaultRequestProperties(requestHeaders)
+    Log.d(logTag, "play uri=$mediaUri source=$sourceUri positionMs=$startPositionMs autoplay=$autoplay")
+    httpDataSourceFactory.setDefaultRequestProperties(headers)
     val mediaItem =
       MediaItem.Builder()
         .setUri(mediaUri)
         .apply {
-          val declaredMime = mimeType?.takeUnless { it.equals("application/octet-stream", true) }
+          // Database/network metadata may contain broad values such as video/*; passing those
+          // to Media3 prevents extractor sniffing and makes otherwise valid MP4/WebM sources fail.
+          val declaredMime = mimeType
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && !it.equals("application/octet-stream", true) && !it.endsWith("/*") }
           (declaredMime ?: nativeContainerMimeType(mediaUri) ?: sourceUri?.let(::nativeContainerMimeType))
             ?.let(::setMimeType)
         }
         .build()
+    Log.i(logTag, "ass-media extractor enabled uri=$mediaUri")
     Log.d(logTag, "Media3 MediaItem uri=${mediaItem.localConfiguration?.uri} scheme=${mediaUri.scheme}")
     preparationStartedAtMs = SystemClock.elapsedRealtime()
     preparationUri = mediaItem.localConfiguration?.uri
-    if (sourceSizeBytes <= 0L && !isLocalUri && (mediaUri.scheme.equals("http", true) || mediaUri.scheme.equals("https", true))) {
+    sourceSizeBytes = resolveLocalSize(mediaUri)
+    if (sourceSizeBytes <= 0L && (mediaUri.scheme.equals("http", true) || mediaUri.scheme.equals("https", true))) {
       Thread {
-        val resolved = resolveHttpSize(mediaUri, requestHeaders)
+        val resolved = resolveHttpSize(mediaUri, headers)
         if (resolved > 0L && preparationUri == mediaUri) {
           sourceSizeBytes = resolved
-          Log.d(logTag, "resolved network media size=$resolved uri=$mediaUri")
           loopHandler.post { publishSnapshot() }
         }
       }.apply { name = "native-media-size"; isDaemon = true }.start()
     }
     metadataChapters = emptyList()
     Log.d(logTag, "prepare begin uri=$preparationUri")
-    val mediaSource = when {
-      isLocalUri -> directLocalMediaSourceFactory.createMediaSource(mediaItem)
-      isHentaiStreamUri -> directNetworkMediaSourceFactory.createMediaSource(mediaItem)
-      else -> mediaSourceFactory.createMediaSource(mediaItem)
-    }
-    activePlayer.setMediaSource(mediaSource, startPositionMs.coerceAtLeast(0L))
+    player.setMediaItem(mediaItem, startPositionMs.coerceAtLeast(0L))
     // The PlayerView is attached once during Activity creation. Preparing immediately here is
     // required for local HDR files; deferring this through View.post can leave Media3 in BUFFERING
     // without ever starting the local data pipeline on Xiaomi devices.
-    activePlayer.prepare()
+    player.prepare()
     Log.d(logTag, "prepare returned elapsedMs=${SystemClock.elapsedRealtime() - preparationStartedAtMs} uri=$preparationUri")
-    activePlayer.playWhenReady = autoplay
+    player.playWhenReady = autoplay
     publishSnapshot()
     startTimelineUpdates()
   }
+
+  private fun nativeContainerMimeType(uri: Uri): String? =
+    when (uri.getQueryParameter("format")?.lowercase() ?: uri.path?.substringAfterLast('.', "")?.lowercase()) {
+      "mkv", "mka" -> "video/x-matroska"
+      "ts", "m2ts", "mts" -> "video/mp2t"
+      "mp4", "m4v" -> "video/mp4"
+      "webm" -> "video/webm"
+      "mov", "qt" -> "video/quicktime"
+      "3gp", "3g2" -> "video/3gpp"
+      "avi" -> "video/avi"
+      "flv" -> "video/x-flv"
+      "mpeg", "mpg" -> "video/mpeg"
+      "ogv" -> "video/ogg"
+      "m3u8" -> "application/x-mpegURL"
+      "mpd" -> "application/dash+xml"
+      else -> null
+    }
 
   private fun resolveLocalSize(uri: Uri): Long {
     if (uri.scheme.equals("file", true)) return File(uri.path.orEmpty()).length()
@@ -629,56 +855,31 @@ class NativeMedia3Engine(context: Context) {
       }
     }.getOrDefault(-1L).coerceAtLeast(0L)
 
-  private fun nativeContainerMimeType(uri: Uri): String? =
-    when (uri.getQueryParameter("format")?.lowercase() ?: uri.path?.substringAfterLast('.', "")?.lowercase()) {
-      "mkv", "mka" -> "video/x-matroska"
-      "ts", "m2ts", "mts" -> "video/mp2t"
-      "mp4", "m4v" -> "video/mp4"
-      "webm" -> "video/webm"
-      else -> null
-    }
-
   fun setPlaying(playing: Boolean) {
-    if (playing) activePlayer.play() else activePlayer.pause()
+    if (playing) {
+      player.volume = 1f
+      player.play()
+    } else {
+      player.pause()
+    }
     publishSnapshot()
     startTimelineUpdates()
   }
 
   fun seekTo(positionMs: Long) {
-    activePlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     pendingSeekPositionMs = positionMs.coerceAtLeast(0L)
-    pendingSeekDisplayPositionMs = pendingSeekPositionMs
-    loopHandler.removeCallbacks(settleSeekRunnable)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 80L)
+    loopHandler.postDelayed(seekRunnable, 120L)
     // Seek controls must not enumerate every subtitle/audio metadata entry on the UI thread.
     publishPlaybackSnapshot()
     startTimelineUpdates()
   }
 
-  /** Seeks immediately for chapter navigation; drag/tap scrubbing keeps the coalescing path. */
-  fun seekToChapter(positionMs: Long) {
-    val targetMs = positionMs.coerceAtLeast(0L)
-    pendingSeekPositionMs = null
-    pendingSeekDisplayPositionMs = targetMs
-    loopHandler.removeCallbacks(settleSeekRunnable)
-    loopHandler.removeCallbacks(seekRunnable)
-    // Chapter boundaries must not resolve to the preceding sync frame, which makes the chapter
-    // indicator briefly report the previous chapter while Media3 catches up.
-    activePlayer.setSeekParameters(SeekParameters.EXACT)
-    activePlayer.seekTo(targetMs)
-    publishPlaybackSnapshot()
-    startTimelineUpdates()
-  }
-
   fun seekBy(offsetMs: Long) {
-    activePlayer.setSeekParameters(SeekParameters.CLOSEST_SYNC)
-    val basePositionMs = pendingSeekPositionMs ?: activePlayer.currentPosition
+    val basePositionMs = pendingSeekPositionMs ?: player.currentPosition
     pendingSeekPositionMs = (basePositionMs + offsetMs).coerceAtLeast(0L)
-    pendingSeekDisplayPositionMs = pendingSeekPositionMs
-    loopHandler.removeCallbacks(settleSeekRunnable)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.postDelayed(seekRunnable, 80L)
+    loopHandler.postDelayed(seekRunnable, 120L)
     // Keep repeated seek-bar updates lightweight; the track/metadata snapshot is unchanged.
     publishPlaybackSnapshot()
     startTimelineUpdates()
@@ -706,27 +907,79 @@ class NativeMedia3Engine(context: Context) {
   }
 
   fun setSpeed(speed: Float, pitchCorrection: Boolean = true) {
+    // Keep Native aligned with the shared speed sheet and ViewModel, both of which support up to
+    // 8x. The old 4x clamp made the 4x-8x presets appear selectable but silently ineffective.
     val clampedSpeed = speed.coerceIn(0.25f, 8f)
-    activePlayer.setPlaybackParameters(
+    player.setPlaybackParameters(
       PlaybackParameters(clampedSpeed, if (pitchCorrection) 1f else clampedSpeed),
     )
     publishSnapshot()
   }
 
   fun selectTrack(track: NativeTrack) {
-    val group = activePlayer.currentTracks.groups.getOrNull(track.groupIndex) ?: return
+    val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
     if (group.type != track.type || track.trackIndex !in 0 until group.length) return
-    if (track.type == C.TRACK_TYPE_TEXT) lastSelectedSubtitleTrack = track
-    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
+    if (track.type == C.TRACK_TYPE_TEXT) {
+      selectedNativeSubtitleSelection = subtitleSelectionFor(group, track.trackIndex)
+      val format = group.getTrackFormat(track.trackIndex)
+      if (isAssFormat(format.sampleMimeType, format.codecs)) {
+        selectedNativeSubtitleKey = track.groupIndex to track.trackIndex
+        player.trackSelectionParameters = player.trackSelectionParameters
+          .buildUpon()
+          .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+          .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+          .addOverride(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+          .build()
+        publishSnapshot()
+        return
+      }
+      selectedNativeSubtitleKey = track.groupIndex to track.trackIndex
+      val builder = player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      builder.addOverride(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
+      player.trackSelectionParameters = builder.build()
+      publishSnapshot()
+      return
+    }
+    val override = if (track.type == C.TRACK_TYPE_TEXT) {
+      val existing = player.trackSelectionParameters.overrides[group.mediaTrackGroup]?.trackIndices.orEmpty()
+      TrackSelectionOverride(group.mediaTrackGroup, (existing + track.trackIndex).distinct())
+    } else {
+      TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex)
+    }
+    val builder = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(track.type, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track.trackIndex))
-      .build()
+    if (track.type == C.TRACK_TYPE_TEXT) {
+      builder.addOverride(override)
+    } else {
+      builder.setOverrideForType(override)
+    }
+    player.trackSelectionParameters = builder.build()
     publishSnapshot()
   }
 
+  /**
+   * Toggle an embedded subtitle using the current Media3 track state.
+   *
+   * The UI snapshot is asynchronous and can still contain the previous selected flag when a
+   * track-change callback arrives. Making the enable/disable decision from currentTracks avoids
+   * turning subtitles off immediately after selecting another track.
+   */
+  fun toggleSubtitle(track: NativeTrack) {
+    val group = player.currentTracks.groups.getOrNull(track.groupIndex) ?: return
+    if (group.type != C.TRACK_TYPE_TEXT || track.trackIndex !in 0 until group.length) return
+    if (group.isTrackSelected(track.trackIndex)) {
+      disableSubtitles()
+    } else {
+      selectTrack(track)
+    }
+  }
+
   fun selectAudioTrack(group: Tracks.Group, trackIndex: Int) {
-    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
+    player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
       .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
@@ -734,50 +987,73 @@ class NativeMedia3Engine(context: Context) {
     publishSnapshot()
   }
 
-  fun selectSubtitleTrack(group: Tracks.Group, trackIndex: Int) {
+  fun selectSubtitleTrack(groupIndex: Int, trackIndex: Int) {
+    val group = player.currentTracks.groups.getOrNull(groupIndex) ?: return
+    if (group.type != C.TRACK_TYPE_TEXT) return
     if (trackIndex !in 0 until group.length) return
+    selectedNativeSubtitleSelection = subtitleSelectionFor(group, trackIndex)
     val format = group.getTrackFormat(trackIndex)
-    lastSelectedSubtitleTrack = NativeTrack(
-      groupIndex = activePlayer.currentTracks.groups.indexOf(group),
-      trackIndex = trackIndex,
-      type = C.TRACK_TYPE_TEXT,
-      label = format.label ?: "Subtitle ${trackIndex + 1}",
-      language = format.language,
-      selected = true,
-    )
-    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
+    if (isAssFormat(format.sampleMimeType, format.codecs)) {
+      selectedNativeSubtitleKey = groupIndex to trackIndex
+      player.trackSelectionParameters = player.trackSelectionParameters
+        .buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+        .build()
+      publishSnapshot()
+      return
+    }
+    player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+      .addOverride(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
       .build()
+    selectedNativeSubtitleKey = groupIndex to trackIndex
+    Log.i(logTag, "silent subtitle selection enabled group=${group.mediaTrackGroup.id} requested=$trackIndex")
     publishSnapshot()
   }
 
   fun disableSubtitles() {
-    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
+    disableAssTracks()
+    selectedNativeSubtitleKey = null
+    selectedNativeSubtitleSelection = null
+    player.trackSelectionParameters = player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+      .clearOverridesOfType(C.TRACK_TYPE_TEXT)
       .build()
     publishSnapshot()
   }
 
-  fun restoreSubtitles() {
-    lastSelectedSubtitleTrack?.let(::selectTrack)
+  private fun isAssFormat(mime: String?, codecs: String?): Boolean {
+    val value = "${mime.orEmpty()} ${codecs.orEmpty()}".lowercase()
+    return value.contains("ass") || value.contains("ssa")
   }
 
-  fun addListener(listener: Player.Listener) = activePlayer.addListener(listener)
-  fun removeListener(listener: Player.Listener) = activePlayer.removeListener(listener)
+  private fun disableAssTracks() {
+    libassRenderer?.getTrackIds()?.keys?.forEach { id -> libassRenderer?.setTrackEnabled(id, false) }
+  }
+
+  fun addListener(listener: Player.Listener) = player.addListener(listener)
+  fun removeListener(listener: Player.Listener) = player.removeListener(listener)
 
   fun stop() {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.removeCallbacks(settleSeekRunnable)
     pendingSeekPositionMs = null
     pendingSeekDisplayPositionMs = null
-    activePlayer.stop()
-    activePlayer.clearMediaItems()
+    player.stop()
+    player.clearMediaItems()
     _subtitleCueText.value = ""
+    selectedNativeSubtitleKey = null
+    selectedNativeSubtitleSelection = null
+    externalAssEnabled.clear()
+    libassRenderer?.let { renderer ->
+      renderer.getTrackIds().keys.toList().forEach { renderer.removeTrack(it) }
+    }
     _hasRenderedFirstFrame.value = false
     publishSnapshot()
   }
@@ -786,16 +1062,20 @@ class NativeMedia3Engine(context: Context) {
     clearLoop()
     loopHandler.removeCallbacks(timelineRunnable)
     loopHandler.removeCallbacks(seekRunnable)
-    loopHandler.removeCallbacks(settleSeekRunnable)
     pendingSeekPositionMs = null
-    activePlayer.removeListener(listener)
+    player.removeListener(listener)
     attachedView?.player = null
+    libassRenderer?.close()
+    libassRenderer = null
+    subtitleOverlay?.setRenderer(null)
+    subtitleOverlay = null
     attachedView = null
-    activePlayer.release()
+    assHandler.release()
+    player.release()
   }
 
   private fun publishSnapshot() {
-    val groups = activePlayer.currentTracks.groups
+    val groups = player.currentTracks.groups
     val trackChapters = groups.flatMap { group ->
       (0 until group.length).flatMap { index ->
         group.getTrackFormat(index).metadata?.let(::metadataEntriesToChapters).orEmpty()
@@ -809,13 +1089,28 @@ class NativeMedia3Engine(context: Context) {
         if (group.type != type) return@mapIndexedNotNull null
         (0 until group.length).mapNotNull { trackIndex ->
           val format = group.getTrackFormat(trackIndex)
+          val externalUri = format.id
+            ?.takeIf { it.startsWith("external:") }
+            ?.removePrefix("external:")
+            ?: format.label
+              ?.takeIf { it.startsWith("external:") }
+              ?.removePrefix("external:")
+          val isExternal = externalUri != null
           NativeTrack(
             groupIndex = groupIndex,
             trackIndex = trackIndex,
             type = group.type,
-            label = format.label ?: format.language ?: "$fallback ${trackIndex + 1}",
+            label = if (isExternal) {
+              externalUri.orEmpty().substringAfterLast('/').ifBlank { externalUri.orEmpty() }
+            } else {
+              format.label ?: format.language ?: "$fallback ${trackIndex + 1}"
+            },
             language = format.language,
-            selected = group.isTrackSelected(trackIndex),
+            formatId = externalUri?.let { "external:$it" } ?: format.id,
+            external = isExternal,
+            selected = if (type == C.TRACK_TYPE_TEXT && selectedNativeSubtitleKey == (groupIndex to trackIndex)) {
+              true
+            } else group.isTrackSelected(trackIndex),
           )
         }
       }.flatten()
@@ -825,31 +1120,57 @@ class NativeMedia3Engine(context: Context) {
       ?.getTrackFormat(0)
     val audio = groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
       ?.getTrackFormat(0)
-    val durationMs = activePlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+    val reportedDurationMs = player.duration
+      .takeIf { it != C.TIME_UNSET && it > 0L }
+      ?.also { lastKnownDurationMs = it }
+      ?: lastKnownDurationMs
+    val colorInfo = video?.colorInfo
+    val dynamicRange = video?.let {
+      val mime = it.sampleMimeType.orEmpty().lowercase()
+      val codecs = it.codecs.orEmpty().lowercase()
+      when {
+        mime.contains("dolby-vision") || codecs.startsWith("dvhe") || codecs.startsWith("dvh1") -> "Dolby Vision"
+        colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG -> "HLG"
+        colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 -> "HDR10"
+        else -> "SDR"
+      }
+    }
+    val colorSpace =
+      when (colorInfo?.colorSpace) {
+        C.COLOR_SPACE_BT2020 -> "BT.2020"
+        C.COLOR_SPACE_BT709 -> "BT.709"
+        else -> null
+      }
     val declaredVideoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0
     val estimatedVideoBitrate =
-      if (declaredVideoBitrate == 0 && sourceSizeBytes > 0L && durationMs > 0L) {
-        ((sourceSizeBytes * 8_000L) / durationMs).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+      if (declaredVideoBitrate == 0 && sourceSizeBytes > 0L && reportedDurationMs > 0L) {
+        ((sourceSizeBytes * 8_000L) / reportedDurationMs)
+          .coerceIn(1L, Int.MAX_VALUE.toLong())
+          .toInt()
       } else {
         0
       }
     _snapshot.value = NativePlaybackSnapshot(
-      isPlaying = activePlayer.isPlaying,
-      isReady = activePlayer.playbackState == Player.STATE_READY,
-      isBuffering = activePlayer.playbackState == Player.STATE_BUFFERING,
-      positionMs = (pendingSeekDisplayPositionMs ?: activePlayer.currentPosition).coerceAtLeast(0L),
-      durationMs = durationMs,
+      isPlaying = player.isPlaying,
+      isReady = player.playbackState == Player.STATE_READY,
+      isBuffering = player.playbackState == Player.STATE_BUFFERING,
+      isEnded = player.playbackState == Player.STATE_ENDED,
+      positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
+      durationMs = reportedDurationMs,
       videoWidth = video?.width ?: 0,
       videoHeight = video?.height ?: 0,
       videoMimeType = video?.sampleMimeType,
       videoCodec = video?.codecs,
+      videoDecoder = videoDecoderName,
+      audioDecoder = audioDecoderName,
+      videoDynamicRange = dynamicRange,
+      videoColorSpace = colorSpace,
       videoBitrate = declaredVideoBitrate.takeIf { it > 0 } ?: estimatedVideoBitrate,
-      videoBitrateEstimated = declaredVideoBitrate == 0 && estimatedVideoBitrate > 0,
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
       audioBitrate = audio?.bitrate?.takeIf { it > 0 } ?: 0,
       audioChannels = audio?.channelCount ?: 0,
       audioSampleRate = audio?.sampleRate ?: 0,
-      speed = activePlayer.playbackParameters.speed,
+      speed = player.playbackParameters.speed,
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
       chapters = chapters,
@@ -859,60 +1180,26 @@ class NativeMedia3Engine(context: Context) {
   /** Publishes only rapidly changing playback values; track/metadata enumeration is expensive. */
   private fun publishPlaybackSnapshot() {
     val previous = _snapshot.value
+    val reportedDurationMs = player.duration
+      .takeIf { it != C.TIME_UNSET && it > 0L }
+      ?.also { lastKnownDurationMs = it }
+      ?: lastKnownDurationMs
     _snapshot.value = previous.copy(
-      isPlaying = activePlayer.isPlaying,
-      isReady = activePlayer.playbackState == Player.STATE_READY,
-      isBuffering = activePlayer.playbackState == Player.STATE_BUFFERING,
-      positionMs = (pendingSeekDisplayPositionMs ?: activePlayer.currentPosition).coerceAtLeast(0L),
-      durationMs = activePlayer.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L,
-      speed = activePlayer.playbackParameters.speed,
+      isPlaying = player.isPlaying,
+      isReady = player.playbackState == Player.STATE_READY,
+      isBuffering = player.playbackState == Player.STATE_BUFFERING,
+      isEnded = player.playbackState == Player.STATE_ENDED,
+      positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
+      durationMs = reportedDurationMs,
+      speed = player.playbackParameters.speed,
     )
-  }
-
-  /**
-   * Some Matroska/MP4 files expose embedded subtitles without a default text-track flag.
-   * Media3 then reports the tracks but renders none. Match MPV's default behavior by selecting
-   * the first supported embedded text track when the user has not selected one yet.
-   */
-  private fun ensureEmbeddedSubtitleSelected(tracks: Tracks) {
-    if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT && (0 until it.length).any { i -> it.isTrackSelected(i) } }) return
-    val candidate = tracks.groups.firstOrNull { group ->
-      group.type == C.TRACK_TYPE_TEXT && (0 until group.length).any { i -> group.isTrackSupported(i) }
-    } ?: return
-    val index = (0 until candidate.length).firstOrNull { candidate.isTrackSupported(it) } ?: return
-    activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
-      .buildUpon()
-      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-      .setOverrideForType(TrackSelectionOverride(candidate.mediaTrackGroup, index))
-      .build()
-    lastSelectedSubtitleTrack = NativeTrack(
-      groupIndex = tracks.groups.indexOf(candidate),
-      trackIndex = index,
-      type = C.TRACK_TYPE_TEXT,
-      label = candidate.getTrackFormat(index).label ?: candidate.getTrackFormat(index).language ?: "Subtitle ${index + 1}",
-      language = candidate.getTrackFormat(index).language,
-      selected = true,
-    )
-    Log.d(logTag, "Auto-selected embedded subtitle group=${tracks.groups.indexOf(candidate)} track=$index")
   }
 
   private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =
     (0 until metadata.length()).mapNotNull { index ->
       val entry = metadata.get(index)
-      (entry as? Chapter)?.let { chapter ->
-        if (chapter.isHidden()) return@mapNotNull null
-        val startTimeMs = chapter.getStartTimeMs()
-        if (startTimeMs == C.TIME_UNSET || startTimeMs < 0L) return@mapNotNull null
-        val title = chapter.getTitle()?.value?.trim().orEmpty()
-        return@mapNotNull NativeChapter(
-          title.ifBlank { "Chapter ${index + 1}" },
-          startTimeMs / 1000f,
-        )
-      }
       val startTimeMs = runCatching {
-        entry.javaClass.methods.firstOrNull {
-          it.name == "getStartTimeMs" || it.name == "getChapterTimeStart"
-        }?.invoke(entry) as? Number
+        entry.javaClass.methods.firstOrNull { it.name == "getStartTimeMs" }?.invoke(entry) as? Number
       }.getOrNull()
       val startUs = startTimeMs?.toLong()?.times(1000L) ?: sequenceOf("getStartTimeUs", "getChapterTimeStart")
         .mapNotNull { method ->
@@ -950,6 +1237,6 @@ class NativeMedia3Engine(context: Context) {
 
   private fun startTimelineUpdates() {
     loopHandler.removeCallbacks(timelineRunnable)
-    if (activePlayer.currentMediaItem != null) loopHandler.post(timelineRunnable)
+    if (player.currentMediaItem != null) loopHandler.post(timelineRunnable)
   }
 }

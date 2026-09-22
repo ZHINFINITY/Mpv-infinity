@@ -39,6 +39,9 @@ interface PlayerHost {
   val hostContentResolver: ContentResolver
   var hostRequestedOrientation: Int
 
+  /** Prevent source-geometry callbacks from undoing a rotation explicitly chosen by the user. */
+  fun onManualOrientationOverride() {}
+
   fun requestAudioFocus(): Boolean
 
   fun abandonAudioFocus()
@@ -110,6 +113,10 @@ interface PlayerHost {
   fun nativeSetSubtitleScale(scale: Float) {}
 
   fun nativeSetSubtitlePosition(position: Int) {}
+
+  fun nativeSelectSubtitle(groupIndex: Int, trackIndex: Int) {}
+
+  fun nativeDisableSubtitles() {}
 
   fun nativeAddSubtitle(uri: android.net.Uri, select: Boolean): Boolean = false
 }

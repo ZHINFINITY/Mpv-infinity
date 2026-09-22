@@ -67,6 +67,22 @@ import app.infinity.mpvz.ui.theme.AppShapeScale
 import app.infinity.mpvz.ui.theme.spacing
 import org.koin.compose.koinInject
 
+private fun nativeCodecLabel(mimeType: String?, codecs: String?): String {
+  val value = "${mimeType.orEmpty()} ${codecs.orEmpty()}".lowercase()
+  return when {
+    value.contains("dolby-vision") || value.contains("dvhe") || value.contains("dvh1") -> "Dolby Vision"
+    value.contains("hevc") || value.contains("hvc1") || value.contains("hev1") -> "HEVC / H.265"
+    value.contains("avc") || value.contains("h264") -> "AVC / H.264"
+    value.contains("av01") || value.contains("av1") -> "AV1"
+    value.contains("vp9") -> "VP9"
+    value.contains("vp8") -> "VP8"
+    value.contains("mpeg4") || value.contains("mp4v") -> "MPEG-4"
+    else -> codecs?.takeIf { it.isNotBlank() }
+      ?: mimeType?.substringAfterLast('/')?.uppercase()
+      ?: "--"
+  }
+}
+
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun MoreSheet(
@@ -229,12 +245,18 @@ fun MoreSheet(
             } else {
               "Preparing output"
             }
+            val codec = nativeCodecLabel(nativeSnapshot.videoMimeType, nativeSnapshot.videoCodec)
+            val decoder = nativeSnapshot.videoDecoder ?: "Media3"
+            val range = nativeSnapshot.videoDynamicRange ?: "SDR"
+            val colorSpace = nativeSnapshot.videoColorSpace?.let { " · $it" }.orEmpty()
+            val audio = nativeSnapshot.audioCodec
+              ?: if (nativeSnapshot.audioTracks.isNotEmpty()) "Audio" else "--"
             Text(
-              "Output: $quality${nativeSnapshot.videoMimeType?.let { " · $it" } ?: ""}",
+              "Output: $quality · $range$colorSpace · $codec",
               style = MaterialTheme.typography.bodySmall,
             )
             Text(
-              "${if (nativeSnapshot.isPlaying) "Playing" else "Paused"} · Native statistics available",
+              "Decoder: $decoder · Audio: $audio · ${if (nativeSnapshot.isPlaying) "Playing" else "Paused"}",
               style = MaterialTheme.typography.bodySmall,
             )
           } else {

@@ -42,7 +42,15 @@ class AppearancePreferences(
   preferenceStore: PreferenceStore,
 ) {
   val darkMode = preferenceStore.getEnum("dark_mode", DarkMode.System)
-  val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Dynamic)
+  // Monochrome is the neutral first-install experience; a persisted user choice always wins.
+  val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Monochrome)
+  val customThemes = preferenceStore.getObject(
+    key = "custom_themes",
+    defaultValue = emptyList<CustomThemeData>(),
+    serializer = CustomThemeCodec::encode,
+    deserializer = CustomThemeCodec::decode,
+  )
+  val activeCustomThemeId = preferenceStore.getString("active_custom_theme_id", "")
   val amoledMode = preferenceStore.getBoolean("amoled_mode", false)
   val liquidGlassSurfaces = preferenceStore.getBoolean("liquid_glass_surfaces", false)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
@@ -63,6 +71,9 @@ class AppearancePreferences(
   val showPlaylistsTab = preferenceStore.getBoolean("show_playlists_tab", true)
   val showNetworkTab = preferenceStore.getBoolean("show_network_tab", false)
   val showJellyfinTab = preferenceStore.getBoolean("show_jellyfin_tab", false)
+  val showNavidromeTab = preferenceStore.getBoolean("show_navidrome_tab", false)
+  val showAudiobooksTab = preferenceStore.getBoolean("show_audiobooks_tab", false)
+  val autoShowJellyfinTab = preferenceStore.getBoolean("auto_show_jellyfin_tab", true)
   val showQuickPlayFab = preferenceStore.getBoolean("show_quick_play_fab", true)
   val quickPlayFabDirect = preferenceStore.getBoolean("quick_play_fab_direct", false)
 

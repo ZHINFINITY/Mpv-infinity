@@ -625,20 +625,27 @@ object MediaFileRepository : KoinComponent {
 
         val items = mutableListOf<FileSystemItem>()
 
-        // Get folders using TreeViewScanner (instant from cache)
+        // A leaf directory cannot contain child folders, so avoid rebuilding the complete
+        // recursive tree just to discover an empty folder list. This keeps video-only folders
+        // responsive even when the storage volume contains a large media tree.
         val scanOptions = currentScanOptions()
-        val (showNewLabels, thresholdDays, playedMediaTitles) = getTreeViewNewBadgeParams()
+        val hasDirectSubdirectories = directory.listFiles()?.any { it.isDirectory } == true
         val folders =
-          TreeViewScanner.getFoldersInDirectory(
-            context = context,
-            parentPath = path,
-            options = scanOptions,
-            forceFileSystemCheck = forceFileSystemCheck,
-            playedMediaTitles = playedMediaTitles,
-            showNewLabels = showNewLabels,
-            thresholdDays = thresholdDays,
-            maxAutoFlattenLevels = browserPreferences.treeFlattenDepth.get().maxLevels,
-          )
+          if (!hasDirectSubdirectories) {
+            emptyList()
+          } else {
+            val (showNewLabels, thresholdDays, playedMediaTitles) = getTreeViewNewBadgeParams()
+            TreeViewScanner.getFoldersInDirectory(
+              context = context,
+              parentPath = path,
+              options = scanOptions,
+              forceFileSystemCheck = forceFileSystemCheck,
+              playedMediaTitles = playedMediaTitles,
+              showNewLabels = showNewLabels,
+              thresholdDays = thresholdDays,
+              maxAutoFlattenLevels = browserPreferences.treeFlattenDepth.get().maxLevels,
+            )
+          }
         folders.forEach { folderData ->
           items.add(
             FileSystemItem.Folder(
@@ -803,14 +810,15 @@ object MediaFileRepository : KoinComponent {
 
     val label =
       when {
-        width >= 7680 || height >= 4320 -> "4320p"
-        width >= 3840 || height >= 2160 -> "2160p"
-        width >= 2560 || height >= 1440 -> "1440p"
-        width >= 1920 || height >= 1080 -> "1080p"
-        width >= 1280 || height >= 720 -> "720p"
-        width >= 854 || height >= 480 -> "480p"
-        width >= 640 || height >= 360 -> "360p"
-        width >= 426 || height >= 240 -> "240p"
+        height >= 4320 -> "4320p"
+        height >= 2160 -> "2160p"
+        height >= 1440 -> "1440p"
+        height >= 1080 -> "1080p"
+        height >= 720 -> "720p"
+        height >= 576 -> "576p"
+        height >= 480 -> "480p"
+        height >= 360 -> "360p"
+        height >= 240 -> "240p"
         else -> "${height}p"
       }
 

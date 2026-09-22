@@ -32,6 +32,7 @@ import app.infinity.mpvz.domain.jellyfin.JellyfinServer
 import app.infinity.mpvz.domain.jellyfin.JellyfinSortBy
 import app.infinity.mpvz.domain.jellyfin.JellyfinSortOrder
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.AudioPreferences
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.repository.JellyfinRepository
@@ -48,6 +49,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -138,6 +141,7 @@ class JellyfinViewModel(
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val subtitlesPreferences: SubtitlesPreferences by inject()
   private val audioPreferences: AudioPreferences by inject()
+  private val appearancePreferences: AppearancePreferences by inject()
   private val downloadManager: AppDownloadManager by inject()
 
   private var loadDashboardJob: Job? = null
@@ -216,6 +220,79 @@ class JellyfinViewModel(
   }
 
   fun loadLibraries(server: JellyfinServer) {
+    loadHomeDashboard(server)
+  }
+
+  fun enterMusicOnlyMode(server: JellyfinServer) {
+    loadDashboardJob?.cancel()
+    loadItemsJob?.cancel()
+    musicLoadJob?.cancel()
+    _uiState.update {
+      it.copy(
+        isLoading = true,
+        isMusicLoading = false,
+        openLibrary = null,
+        currentItems = emptyList(),
+        resumeItems = emptyList(),
+        heroItems = emptyList(),
+        latestMovies = emptyList(),
+        latestShows = emptyList(),
+        librarySections = emptyList(),
+        recommendations = emptyList(),
+        detailItem = null,
+      )
+    }
+    viewModelScope.launch {
+      _uiState.update { it.copy(error = null) }
+      val musicLibrary = jellyfinRepository.getLibraries(server).getOrDefault(emptyList())
+        .firstOrNull { isMusicLibrary(it) }
+      if (musicLibrary == null) {
+        _uiState.update {
+          it.copy(
+            isLoading = false,
+            isMusicLoading = false,
+            openLibrary = null,
+            currentItems = emptyList(),
+            libraries = emptyList(),
+            error = "No music library was found on this Jellyfin server",
+          )
+        }
+        return@launch
+      }
+      _uiState.update { it.copy(isLoading = false, libraries = listOf(musicLibrary)) }
+      openLibrary(
+        server,
+        JellyfinLibraryView(
+          id = musicLibrary.id,
+          title = musicLibrary.name,
+          itemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
+          collectionType = musicLibrary.collectionType,
+          isMusic = true,
+        ),
+      )
+    }
+  }
+
+  fun enterFullLibraryMode(server: JellyfinServer) {
+    loadDashboardJob?.cancel()
+    loadItemsJob?.cancel()
+    musicLoadJob?.cancel()
+    _uiState.update {
+      it.copy(
+        isLoading = true,
+        isMusicLoading = false,
+        openLibrary = null,
+        currentItems = emptyList(),
+        resumeItems = emptyList(),
+        heroItems = emptyList(),
+        latestMovies = emptyList(),
+        latestShows = emptyList(),
+        librarySections = emptyList(),
+        recommendations = emptyList(),
+        detailItem = null,
+        musicActiveTab = JellyfinMusicTab.HOME,
+      )
+    }
     loadHomeDashboard(server)
   }
 
@@ -447,6 +524,17 @@ class JellyfinViewModel(
     val name = item.name.lowercase().trim()
     return col == "music" || type == "music" || type == "audio" || (name.contains("music") && !name.contains("video"))
   }
+
+  fun getMusicLibraryView(): JellyfinLibraryView? =
+    _uiState.value.libraries.firstOrNull(::isMusicLibrary)?.let { library ->
+      JellyfinLibraryView(
+        id = library.id,
+        title = library.name,
+        itemTypes = "Audio,MusicAlbum,MusicArtist,Playlist",
+        collectionType = library.collectionType,
+        isMusic = true,
+      )
+    }
 
   private fun sortJellyfinLibraries(libs: List<JellyfinItem>): List<JellyfinItem> {
     fun libraryRank(item: JellyfinItem): Int {
@@ -1468,7 +1556,9 @@ class JellyfinViewModel(
         val serverToSave =
           if (authMode == JellyfinAuthMode.CREDENTIALS) {
             val authResult =
-              jellyfinRepository.authenticate(serverUrl, username, password).getOrThrow()
+              withTimeout(30_000L) {
+                jellyfinRepository.authenticate(serverUrl, username, password).getOrThrow()
+              }
 
             if (subtitlesPreferences.preferredLanguages.get().isBlank() && !authResult.subtitleLanguage.isNullOrBlank()) {
               subtitlesPreferences.preferredLanguages.set(authResult.subtitleLanguage)
@@ -1489,7 +1579,10 @@ class JellyfinViewModel(
               lastConnected = System.currentTimeMillis(),
             )
           } else {
-            val user = jellyfinRepository.validateToken(serverUrl, token).getOrThrow()
+            val user =
+              withTimeout(30_000L) {
+                jellyfinRepository.validateToken(serverUrl, token).getOrThrow()
+              }
 
             if (subtitlesPreferences.preferredLanguages.get().isBlank() && !user.subtitleLanguage.isNullOrBlank()) {
               subtitlesPreferences.preferredLanguages.set(user.subtitleLanguage)
@@ -1519,6 +1612,11 @@ class JellyfinViewModel(
             val id = jellyfinRepository.saveServer(serverToSave)
             serverToSave.copy(id = id)
           }
+        // A successful Jellyfin connection can enable the Jellyfin tab automatically, while
+        // still respecting the user's global preference for this behavior.
+        if (appearancePreferences.autoShowJellyfinTab.get()) {
+          appearancePreferences.showJellyfinTab.set(true)
+        }
         _uiState.update {
           it.copy(
             isAuthenticating = false,
@@ -1529,10 +1627,16 @@ class JellyfinViewModel(
         loadHomeDashboard(savedServer)
         onSuccess()
       } catch (e: Exception) {
+        val message =
+          if (e is TimeoutCancellationException) {
+            "Connection timed out. Check the server address and credentials."
+          } else {
+            e.localizedMessage ?: "Failed to connect to Jellyfin server"
+          }
         _uiState.update {
           it.copy(
             isAuthenticating = false,
-            authError = e.localizedMessage ?: "Failed to connect to Jellyfin server",
+            authError = message,
           )
         }
       }
@@ -1717,9 +1821,7 @@ class JellyfinViewModel(
                 limit = 500,
               ).getOrNull()?.items.orEmpty()
             } else if (item.type == "MusicAlbum" || item.type == "MusicArtist" || (item.isFolder && item.collectionType == "music") || item.type == "Playlist") {
-              jellyfinRepository.getItems(server = server, parentId = item.id, includeItemTypes = "Audio").getOrNull()?.items.orEmpty().ifEmpty {
-                jellyfinRepository.getItems(server = server, parentId = item.id).getOrNull()?.items.orEmpty()
-              }
+              jellyfinRepository.getItems(server = server, parentId = item.id, includeItemTypes = "Audio").getOrNull()?.items.orEmpty()
             } else {
               val potentialSources = listOf(
                 _uiState.value.detailEpisodes,
@@ -2054,4 +2156,3 @@ class JellyfinViewModel(
       }
   }
 }
-

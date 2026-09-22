@@ -448,6 +448,8 @@ private fun KindBadge(kind: HelpEntryKind) {
       fontWeight = FontWeight.Bold,
       color = fg,
       modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+      maxLines = 1,
+      softWrap = false,
     )
   }
 }

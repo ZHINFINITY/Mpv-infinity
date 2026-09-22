@@ -28,19 +28,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,6 +65,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -67,6 +77,8 @@ import app.infinity.mpvz.database.entities.PlaylistItemEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.BrowserPreferences
+import app.infinity.mpvz.preferences.MediaLayoutMode
 import app.infinity.mpvz.preferences.GesturePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
@@ -119,6 +131,11 @@ data class PlaylistDetailScreen(
     val context = LocalContext.current
     val backStack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
+    val browserPreferences = koinInject<BrowserPreferences>()
+    val playlistRepository = koinInject<PlaylistRepository>()
+    val iptvLayoutMode by browserPreferences.iptvLayoutMode.collectAsState()
+    val iptvManualGridColumns by browserPreferences.iptvManualGridColumnsEnabled.collectAsState()
+    val iptvGridColumnsPortrait by browserPreferences.iptvGridColumnsPortrait.collectAsState()
 
     // ViewModel
     val viewModel: PlaylistDetailViewModel =
@@ -149,6 +166,7 @@ data class PlaylistDetailScreen(
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var selectedM3UFilter by rememberSaveable { mutableStateOf(M3U_FILTER_ALL) }
+    val isM3UGrid = iptvLayoutMode == MediaLayoutMode.GRID
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
     val hasFavoriteStreams = remember(videoItems) { videoItems.any { it.playlistItem.isFavorite } }
@@ -229,6 +247,8 @@ data class PlaylistDetailScreen(
 
     // Reorder mode state
     var isReorderMode by rememberSaveable { mutableStateOf(false) }
+    var iptvSettingsOpen by rememberSaveable { mutableStateOf(false) }
+    var createChannelPlaylistOpen by rememberSaveable { mutableStateOf(false) }
 
     // Predictive back: Intercept when in selection mode, reorder mode, or searching
     BackHandler(enabled = selectionManager.isInSelectionMode || isReorderMode || isSearching) {
@@ -267,6 +287,9 @@ data class PlaylistDetailScreen(
         }
       context.startActivity(intent)
     }
+
+    val navigationBarHeight = app.infinity.mpvz.ui.browser.LocalNavigationBarHeight.current
+    val miniPlayerClearance = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance
 
     Scaffold(
       topBar = {
@@ -354,6 +377,12 @@ data class PlaylistDetailScreen(
               } else {
                 null
               },
+            onSettingsClick =
+              if (playlist?.isM3uPlaylist == true) {
+                { iptvSettingsOpen = true }
+              } else {
+                null
+              },
             onShareClick =
               if (playlist?.isM3uPlaylist != true) {
                 // Hide share button for M3U playlists
@@ -361,6 +390,12 @@ data class PlaylistDetailScreen(
                   val videosToShare = selectionManager.getSelectedItems().map { it.video }
                   MediaUtils.shareVideos(context, videosToShare)
                 }
+              } else {
+                null
+              },
+            onAddToPlaylistClick =
+              if (playlist?.isM3uPlaylist == true && selectionManager.selectedCount > 0) {
+                { createChannelPlaylistOpen = true }
               } else {
                 null
               },
@@ -478,11 +513,13 @@ data class PlaylistDetailScreen(
         }
       },
       floatingActionButton = {
-        if (!isSearching && !isReorderMode && !selectionManager.isInSelectionMode) {
+        if (!isSearching && !isReorderMode && !selectionManager.isInSelectionMode && playlist?.isM3uPlaylist != true) {
           val isAudioPlaylist = playlist?.isAudio == true || videoItems.any { it.video.isAudio }
           ExtendedFloatingActionButton(
             modifier =
-              Modifier.padding(bottom = app.infinity.mpvz.ui.browser.NavigationBarState.miniPlayerClearance),
+              Modifier.padding(
+                bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp) + miniPlayerClearance,
+              ),
             onClick = { backStack.add(PlaylistAddVideosScreen(playlistId, isAudio = isAudioPlaylist)) },
             icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
             text = { Text(if (isAudioPlaylist) "Add Songs" else stringResource(R.string.playlist_add_videos)) },
@@ -577,6 +614,7 @@ data class PlaylistDetailScreen(
               isLoading = isLoading && videoItems.isEmpty(),
               selectionManager = selectionManager,
               isM3uPlaylist = playlist?.isM3uPlaylist == true,
+              isGridMode = isM3UGrid,
               isAudio = playlist?.isAudio == true || videoItems.any { it.video.isAudio },
               isReorderMode = isReorderMode,
               onReorder = { fromIndex, toIndex ->
@@ -638,8 +676,124 @@ data class PlaylistDetailScreen(
           },
         )
       }
+      if (iptvSettingsOpen && playlist?.isM3uPlaylist == true) {
+        IptvSettingsDialog(
+          layoutMode = iptvLayoutMode,
+          manualGridColumns = iptvManualGridColumns,
+          gridColumns = iptvGridColumnsPortrait,
+          onLayoutModeChange = { browserPreferences.iptvLayoutMode.set(it) },
+          onManualGridColumnsChange = { browserPreferences.iptvManualGridColumnsEnabled.set(it) },
+          onGridColumnsChange = { browserPreferences.iptvGridColumnsPortrait.set(it) },
+          onDismiss = { iptvSettingsOpen = false },
+        )
+      }
+      if (createChannelPlaylistOpen && playlist?.isM3uPlaylist == true) {
+        CreateIptvPlaylistDialog(
+          selectedCount = selectionManager.selectedCount,
+          onDismiss = { createChannelPlaylistOpen = false },
+          onCreate = { name ->
+            coroutineScope.launch {
+              val selected = selectionManager.getSelectedItems()
+              val playlistId = playlistRepository.createPlaylist(name.trim())
+              playlistRepository.addItemsToPlaylist(
+                playlistId.toInt(),
+                selected.map { it.video.path to (it.playlistItem.fileName.ifBlank { it.video.displayName }) },
+              )
+              createChannelPlaylistOpen = false
+              selectionManager.clear()
+              Toast.makeText(context, "Playlist created", Toast.LENGTH_SHORT).show()
+            }
+          },
+        )
+      }
     }
   }
+}
+
+@Composable
+private fun IptvSettingsDialog(
+  layoutMode: MediaLayoutMode,
+  manualGridColumns: Boolean,
+  gridColumns: Int,
+  onLayoutModeChange: (MediaLayoutMode) -> Unit,
+  onManualGridColumnsChange: (Boolean) -> Unit,
+  onGridColumnsChange: (Int) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("IPTV list settings") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Layout", style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(
+            selected = layoutMode == MediaLayoutMode.LIST,
+            onClick = { onLayoutModeChange(MediaLayoutMode.LIST) },
+            label = { Text("List") },
+          )
+          FilterChip(
+            selected = layoutMode == MediaLayoutMode.GRID,
+            onClick = { onLayoutModeChange(MediaLayoutMode.GRID) },
+            label = { Text("Grid") },
+          )
+        }
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Text("Manual grid columns")
+          Switch(
+            checked = manualGridColumns,
+            onCheckedChange = onManualGridColumnsChange,
+          )
+        }
+        if (layoutMode == MediaLayoutMode.GRID && manualGridColumns) {
+          Text("Columns: $gridColumns", style = MaterialTheme.typography.bodyMedium)
+          Slider(
+            value = gridColumns.toFloat(),
+            onValueChange = { onGridColumnsChange(it.toInt().coerceIn(1, 4)) },
+            valueRange = 1f..4f,
+            steps = 2,
+          )
+        }
+      }
+    },
+    confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+  )
+}
+
+@Composable
+private fun CreateIptvPlaylistDialog(
+  selectedCount: Int,
+  onDismiss: () -> Unit,
+  onCreate: (String) -> Unit,
+) {
+  var name by rememberSaveable { mutableStateOf("My IPTV channels") }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Create channel playlist") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Save $selectedCount selected channels as a playlist.")
+        OutlinedTextField(
+          value = name,
+          onValueChange = { name = it },
+          label = { Text("Playlist name") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    confirmButton = {
+      TextButton(
+        enabled = name.isNotBlank(),
+        onClick = { onCreate(name) },
+      ) { Text("Create") }
+    },
+  )
 }
 
 @Composable
@@ -656,9 +810,13 @@ private fun PlaylistVideoListContent(
   modifier: Modifier = Modifier,
   isM3uPlaylist: Boolean = false,
   isAudio: Boolean = false,
+  isGridMode: Boolean = false,
 ) {
   val gesturePreferences = koinInject<GesturePreferences>()
   val browserPreferences = koinInject<app.infinity.mpvz.preferences.BrowserPreferences>()
+  val manualGridColumnsEnabled by browserPreferences.iptvManualGridColumnsEnabled.collectAsState()
+  val videoGridColumnsPortrait by browserPreferences.iptvGridColumnsPortrait.collectAsState()
+  val videoGridColumnsLandscape by browserPreferences.iptvGridColumnsLandscape.collectAsState()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val tapThumbnailToSelect by gesturePreferences.tapThumbnailToSelect.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
@@ -794,11 +952,50 @@ private fun PlaylistVideoListContent(
         }
 
       Box(modifier = modifier.fillMaxSize()) {
-        LazyColumn(
-          state = listState,
-          modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(start = 8.dp, end = 8.dp),
-        ) {
+          if (isM3uPlaylist && isGridMode) {
+            val gridState = rememberLazyGridState()
+            val configuration = LocalConfiguration.current
+            val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val gridColumns =
+              if (manualGridColumnsEnabled) {
+                if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
+              } else {
+                if (configuration.smallestScreenWidthDp >= 600 || isLandscape) 4 else 2
+              }
+            LazyVerticalGrid(
+            columns = GridCells.Fixed(gridColumns),
+            state = gridState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            gridItems(videoItems, key = { it.playlistItem.id }) { item ->
+              M3UVideoCard(
+                title = item.video.displayName,
+                url = item.video.path,
+                logoUrl = item.playlistItem.tvgLogo,
+                groupTitle = item.playlistItem.groupTitle,
+                hasDrm = !item.playlistItem.licenseType.isNullOrBlank() || !item.playlistItem.licenseKey.isNullOrBlank(),
+                hasCustomUserAgent = !item.playlistItem.userAgent.isNullOrBlank(),
+                onClick = { onVideoItemClick(item) },
+                onLongClick = { onVideoItemLongClick(item) },
+                onFavoriteClick = onToggleFavorite?.let { { it(item) } },
+                isSelected = selectionManager.isSelected(item),
+                isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
+                isFavorite = item.playlistItem.isFavorite,
+                video = item.video,
+                isGridMode = true,
+                modifier = Modifier.fillMaxWidth(),
+              )
+            }
+          }
+        } else {
+          LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 8.dp, end = 8.dp),
+          ) {
           items(
             count = videoItems.size,
             key = { index -> videoItems[index].playlistItem.id },
@@ -833,6 +1030,7 @@ private fun PlaylistVideoListContent(
                     isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
                     isFavorite = item.playlistItem.isFavorite,
                     video = item.video,
+                    isGridMode = false,
                     modifier = Modifier.weight(1f),
                   )
                 } else {
@@ -877,6 +1075,7 @@ private fun PlaylistVideoListContent(
                 }
               }
             }
+          }
           }
         }
 

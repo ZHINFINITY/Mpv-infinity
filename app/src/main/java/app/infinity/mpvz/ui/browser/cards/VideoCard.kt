@@ -340,7 +340,7 @@ fun VideoCard(
                     androidx.compose.ui.res
                       .stringResource(app.infinity.mpvz.R.string.ui_play),
                   modifier = Modifier.size(48.dp),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
               }
             } else {
@@ -350,7 +350,7 @@ fun VideoCard(
                   androidx.compose.ui.res
                     .stringResource(app.infinity.mpvz.R.string.ui_play),
                 modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.secondary,
+                tint = MaterialTheme.colorScheme.onSurface,
               )
             }
 
@@ -660,7 +660,7 @@ fun VideoCard(
                     androidx.compose.ui.res
                       .stringResource(app.infinity.mpvz.R.string.ui_play),
                   modifier = Modifier.size(48.dp),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
               }
             } else {
@@ -670,7 +670,7 @@ fun VideoCard(
                   androidx.compose.ui.res
                     .stringResource(app.infinity.mpvz.R.string.ui_play),
                 modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.secondary,
+                tint = MaterialTheme.colorScheme.onSurface,
               )
             }
 

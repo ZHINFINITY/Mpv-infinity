@@ -196,7 +196,6 @@ class TrackSelector(
   ) {
     try {
       val currentAid = getTrackSelectionId("aid")
-      if (hasState && currentAid > 0) return
 
       val preferredLangs =
         audioPreferences.preferredLanguages
@@ -207,6 +206,10 @@ class TrackSelector(
 
       val ignoreKeywords = listOf("commentary", "description", "adh", "comment", "extra")
       val audioTracks = tracks.filter { it.type == "audio" }
+      val currentAidIsValid = currentAid > 0 && audioTracks.any { it.id == currentAid }
+      // Track IDs are local to the current MPV file. A positive ID restored during a Native→MPV
+      // handoff may belong to the previous file; never treat that stale ID as a valid selection.
+      if (hasState && currentAidIsValid) return
 
       // Priority 1: Preferred clean audio
       if (preferredLangs.isNotEmpty()) {
@@ -228,7 +231,7 @@ class TrackSelector(
       }
 
       // Priority 2: Fallback MPV default
-      if (currentAid > 0) return
+      if (currentAidIsValid) return
 
       // Priority 3: First available clean audio track
       for (track in audioTracks) {
