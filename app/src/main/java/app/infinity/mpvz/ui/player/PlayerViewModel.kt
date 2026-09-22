@@ -6252,6 +6252,7 @@ class PlayerViewModel : ViewModel(),
     // Persist the repeat mode
     playerPreferences.repeatMode.set(_repeatMode.value)
     PlaybackSession.setRepeatMode(_repeatMode.value)
+    if (host.isNativeEngineActive()) host.nativeSetRepeatMode(_repeatMode.value)
 
     // Show overlay update instead of toast
     playerUpdate.value = PlayerUpdates.RepeatMode(_repeatMode.value)

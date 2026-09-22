@@ -101,6 +101,8 @@ interface PlayerHost {
 
   fun nativeSetSpeed(speed: Float) {}
 
+  fun nativeSetRepeatMode(repeatMode: RepeatMode) {}
+
   fun nativeSetVideoAspect(aspect: VideoAspect) {}
 
   /** Called after a user-facing aspect change, allowing the host to persist the current item's state. */
