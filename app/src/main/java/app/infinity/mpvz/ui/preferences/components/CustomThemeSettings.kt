@@ -250,7 +250,7 @@ private fun CustomThemeEditor(
       }
       Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedButton(onClick = ::resetVisualSettings) { Icon(Icons.RoundedFilled.Refresh, contentDescription = null); Text("Reset") }
+          OutlinedButton(onClick = { resetVisualSettings() }) { Icon(Icons.RoundedFilled.Refresh, contentDescription = null); Text("Reset") }
           OutlinedButton(onClick = onDismiss) { Text("Cancel") }
         }
         Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }) { Text("Save theme") }
