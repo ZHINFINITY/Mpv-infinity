@@ -825,7 +825,18 @@ fun AudioPlayerControls(
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val customThemes by appearancePreferences.customThemes.collectAsState()
+  val activeCustomThemeId by appearancePreferences.activeCustomThemeId.collectAsState()
   val colorScheme = MaterialTheme.colorScheme
+  val musicPlayerColorScheme =
+    if (customThemes.any { it.id == activeCustomThemeId }) {
+      colorScheme.copy(
+        onSurface = colorScheme.primary,
+        onSurfaceVariant = colorScheme.primary,
+      )
+    } else {
+      colorScheme
+    }
   val palette =
     remember(colorScheme) {
       VisualizerPalette(
@@ -2028,6 +2039,7 @@ fun AudioPlayerControls(
 
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
+    MaterialTheme(colorScheme = musicPlayerColorScheme) {
     if (isPortrait) {
       Column(
         modifier = Modifier
@@ -2232,6 +2244,7 @@ fun AudioPlayerControls(
         onSuccess = { addToPlaylistDialogOpen = false },
         isJellyfin = isJellyfinMedia,
       )
+    }
     }
   }
 }
