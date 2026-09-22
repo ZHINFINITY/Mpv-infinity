@@ -133,6 +133,7 @@ class MpvInfinitySubtitleHubRepository(
             .Builder()
             .url(resolved.url)
             .header("User-Agent", USER_AGENT)
+            .header("Accept", "text/plain, text/*, application/zip, application/octet-stream, */*")
             .apply {
               resolved.referer?.let { header("Referer", it) }
               apiSources.authenticateDownload(subtitle, this)
@@ -858,9 +859,6 @@ class MpvInfinitySubtitleHubRepository(
     const val TAG = "Mpv∞SubtitleHub"
     const val MAX_CONCURRENT_PROVIDER_REQUESTS = 4
     const val USER_AGENT =
-      // HTTP header values must be ISO-8859-1/ASCII compatible; the display name may contain ∞,
-      // but putting that character directly in OkHttp's User-Agent causes every provider request
-      // to fail before it reaches the network.
       "Mozilla/5.0 (Linux; Android 14; MpvInfinity) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36"
     const val SUBTITLECAT_BASE_URL = "https://www.subtitlecat.com/"
     const val MOVIESUBTITLES_ORG_BASE_URL = "https://www.moviesubtitles.org/"

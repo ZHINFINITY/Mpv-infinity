@@ -79,8 +79,8 @@ class OpenRouterSpeechClient(
                 .Builder()
                 .url(URL)
                 .header("Authorization", "Bearer $apiKey")
-                .header("HTTP-Referer", "https://Mpv∞.app")
-                .header("X-OpenRouter-Title", "Mpv∞")
+                .header("HTTP-Referer", "https://github.com/ZHINFINITY/Mpv-infinity")
+                .header("X-OpenRouter-Title", "MpvInfinity")
                 .post(payload.toString().toRequestBody(JSON_MEDIA_TYPE))
                 .build(),
             ).execute()

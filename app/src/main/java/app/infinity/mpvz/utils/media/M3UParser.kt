@@ -76,7 +76,9 @@ data class M3ULimits(
 /** Bounded parser/loader for simple and extended M3U playlists. */
 object M3UParser {
   private const val TIMEOUT_MS = 30_000L
-  private const val DEFAULT_USER_AGENT = "Mpv∞/2.0"
+  // HTTP header values must be ISO-8859-1/ASCII compatible. The Unicode infinity symbol
+  // caused OkHttp's Request.Builder to throw, which was surfaced as "Invalid playlist request".
+  private const val DEFAULT_USER_AGENT = "MpvInfinity/2.0"
   private const val EXTINF_PREFIX = "#EXTINF:"
   private const val KODIPROP_PREFIX = "#KODIPROP:"
   private const val EXTVLCOPT_PREFIX = "#EXTVLCOPT:"

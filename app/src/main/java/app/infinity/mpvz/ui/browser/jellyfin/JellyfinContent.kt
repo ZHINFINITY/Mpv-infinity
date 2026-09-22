@@ -97,6 +97,7 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.jellyfin.JellyfinItem
 import app.infinity.mpvz.domain.jellyfin.JellyfinSearchCategory
 import app.infinity.mpvz.domain.jellyfin.JellyfinServer
+import app.infinity.mpvz.repository.NavidromeRepository
 import app.infinity.mpvz.preferences.AppearancePreferences
 import kotlinx.coroutines.launch
 import app.infinity.mpvz.preferences.BrowserPreferences
@@ -109,6 +110,8 @@ import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
 import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.ui.browser.dialogs.JellyfinSortDialog
+import app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen
+import app.infinity.mpvz.ui.browser.music.MusicSourceChooser
 import app.infinity.mpvz.ui.browser.fab.FabScrollHelper
 import app.infinity.mpvz.ui.browser.selection.rememberSelectionManager
 import app.infinity.mpvz.ui.components.InlineSearchBar
@@ -122,12 +125,15 @@ import org.koin.compose.koinInject
 fun JellyfinContent(
   viewModel: JellyfinViewModel,
   modifier: Modifier = Modifier,
+  isMusicOnlyMode: Boolean = false,
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val context = LocalContext.current
   val backstack = LocalBackStack.current
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
+  val navidromeRepository = koinInject<NavidromeRepository>()
+  val navidromeServers by navidromeRepository.allServers.collectAsState(initial = emptyList())
   val layoutMode by browserPreferences.jellyfinLayoutMode.collectAsState()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
   val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
@@ -283,8 +289,18 @@ fun JellyfinContent(
     }
   }
 
+  LaunchedEffect(isMusicOnlyMode, uiState.activeServer?.id) {
+    val server = uiState.activeServer
+    server?.let {
+      if (isMusicOnlyMode) viewModel.enterMusicOnlyMode(it)
+      else viewModel.enterFullLibraryMode(it)
+    }
+  }
+
   val pageTitle =
-    when {
+    if (isMusicOnlyMode) {
+      stringResource(R.string.ui_music)
+    } else when {
       uiState.openLibrary != null -> uiState.openLibrary!!.title
       uiState.activeServer != null -> uiState.activeServer!!.name
       else -> stringResource(R.string.ui_jellyfin)
@@ -375,6 +391,7 @@ fun JellyfinContent(
       } else {
         BrowserTopBar(
           title = pageTitle,
+          showTitle = false,
           isInSelectionMode = selectionManager.isInSelectionMode,
           selectedCount = selectionManager.selectedCount,
           totalCount = uiState.currentItems.size,
@@ -384,7 +401,7 @@ fun JellyfinContent(
           onDeselectAll = { selectionManager.clear() },
           onPlayClick = { viewModel.playSelected(context, selectionManager.getSelectedItems()) },
           isSingleSelection = selectionManager.isSingleSelection,
-          onBackClick = if (uiState.openLibrary != null) { { viewModel.navigateBack() } } else null,
+          onBackClick = if (!isMusicOnlyMode && uiState.openLibrary != null) { { viewModel.navigateBack() } } else null,
           onSortClick = if (uiState.openLibrary != null && !(uiState.openLibrary?.isMusic == true && uiState.musicActiveTab == JellyfinMusicTab.HOME)) {
             { isSortDialogOpen = true }
           } else null,
@@ -398,11 +415,48 @@ fun JellyfinContent(
           onSettingsClick = {
             backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen)
           },
-          additionalActions = {
+          leadingActions = {
             if (!selectionManager.isInSelectionMode) {
-              IconButton(onClick = { isManageServersOpen = true }, modifier = Modifier.padding(horizontal = 2.dp)) {
-                Icon(imageVector = Icons.RoundedFilled.Language, contentDescription = "Manage Jellyfin servers", modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.secondary)
+              if (isMusicOnlyMode) {
+                Icon(
+                  imageVector = Icons.RoundedFilled.Audiotrack,
+                  contentDescription = stringResource(R.string.ui_music),
+                  modifier = Modifier.size(26.dp),
+                  tint = MaterialTheme.colorScheme.onSurface,
+                )
+                MusicSourceChooser(
+                  hasJellyfin = uiState.servers.isNotEmpty(),
+                  hasNavidrome = navidromeServers.isNotEmpty(),
+                  onManageServers = { backstack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
+                  modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                )
+              } else {
+                androidx.compose.material3.Icon(
+                  painter = painterResource(R.drawable.ic_jellyfin),
+                  contentDescription = stringResource(R.string.ui_jellyfin),
+                  modifier = Modifier.padding(start = 10.dp, end = 6.dp).size(34.dp),
+                  tint = MaterialTheme.colorScheme.onSurface,
+                )
               }
+            }
+          },
+          additionalActions = {
+            if (!selectionManager.isInSelectionMode && isMusicOnlyMode) {
+              if (isMusicOnlyMode) {
+                IconButton(
+                  onClick = { backstack.add(AudiobookLibraryScreen) },
+                  modifier = Modifier.padding(horizontal = 2.dp),
+                ) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.AudiobookWave,
+                    contentDescription = stringResource(R.string.audiobooks_title),
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                  )
+                }
+              }
+            }
+            if (!selectionManager.isInSelectionMode && !isMusicOnlyMode) {
               IconButton(
                 onClick = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
                 modifier = Modifier.padding(horizontal = 2.dp),
@@ -411,7 +465,7 @@ fun JellyfinContent(
                   imageVector = Icons.RoundedFilled.Download,
                   contentDescription = stringResource(R.string.downloads_open_downloads),
                   modifier = Modifier.size(24.dp),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
               }
             }
@@ -419,7 +473,7 @@ fun JellyfinContent(
         )
       }
 
-      if (uiState.openLibrary != null && uiState.openLibrary?.isMusic != true && !isSearching) {
+      if (uiState.openLibrary != null && uiState.openLibrary?.isMusic != true && !uiState.isLoading && !isSearching) {
         JellyfinGenreChipRow(
           genres = uiState.availableGenres,
           selectedGenre = uiState.selectedGenreFilter,
@@ -508,7 +562,7 @@ fun JellyfinContent(
             }
 
             // Root / Discovery Home View (Expressive UI)
-            uiState.openLibrary == null && uiState.searchQuery.isBlank() -> {
+            !isMusicOnlyMode && uiState.openLibrary == null && uiState.searchQuery.isBlank() -> {
               val server = uiState.activeServer
 
               if (server != null) {
@@ -702,8 +756,8 @@ fun JellyfinContent(
 
             // Level / Search View: Inside a Library / Folder / Season / Search results
             else -> {
-              val openLib = uiState.openLibrary
-              if (openLib?.isMusic == true && uiState.searchQuery.isBlank() && uiState.activeServer != null) {
+              val openLib = uiState.openLibrary ?: if (isMusicOnlyMode) viewModel.getMusicLibraryView() else null
+              if ((isMusicOnlyMode || openLib?.isMusic == true) && uiState.searchQuery.isBlank() && uiState.activeServer != null) {
                 JellyfinMusicView(
                   uiState = uiState,
                   server = uiState.activeServer!!,

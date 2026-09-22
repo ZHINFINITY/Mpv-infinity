@@ -79,7 +79,7 @@ internal object EmbeddedArtworkResolver {
               connectTimeout = 8000
               readTimeout = 8000
               instanceFollowRedirects = true
-              setRequestProperty("User-Agent", "Mozilla/5.0 (Android) Mpv∞")
+              setRequestProperty("User-Agent", "Mozilla/5.0 (Android) MpvInfinity")
             }
             connection.inputStream.use { input ->
               BitmapFactory.decodeStream(input)

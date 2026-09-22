@@ -78,6 +78,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -750,12 +751,13 @@ private fun PermissionSectionCard(
 
       Spacer(modifier = Modifier.width(14.dp))
 
-      // Middle Title & Description
+          // Middle Title & Description
       Column(
         modifier = Modifier.weight(1f),
       ) {
         Row(
           verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           Text(
             text = title,
@@ -766,10 +768,12 @@ private fun PermissionSectionCard(
             } else {
               MaterialTheme.colorScheme.onSurface
             },
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
           )
 
           if (isGranted) {
-            Spacer(modifier = Modifier.width(8.dp))
             PillBadge(text = stringResource(R.string.ui_permission_granted))
           }
         }
@@ -830,6 +834,8 @@ private fun PillBadge(text: String) {
       style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
       fontWeight = FontWeight.Bold,
       color = MaterialTheme.colorScheme.onPrimaryContainer,
+      maxLines = 1,
+      softWrap = false,
     )
   }
 }

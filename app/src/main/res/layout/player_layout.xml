@@ -37,6 +37,18 @@
         app:surface_type="surface_view"
         app:use_controller="false" />
 
+    <app.infinity.mpvz.ui.player.LibassSubtitleSurfaceView
+        android:id="@+id/media3_subtitle_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:visibility="visible"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/controls"
         android:layout_width="match_parent"

@@ -42,8 +42,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -72,6 +75,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -93,6 +97,8 @@ import androidx.compose.ui.util.lerp
 import kotlin.math.roundToInt
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.MediaServerPreferences
+import app.infinity.mpvz.preferences.MusicSourceProvider
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
@@ -119,6 +125,8 @@ object MainScreen : Screen {
     PLAYLISTS,
     NETWORK,
     JELLYFIN,
+    NAVIDROME,
+    AUDIOBOOKS,
   }
 
   // Use a companion object to store state more persistently
@@ -162,12 +170,16 @@ object MainScreen : Screen {
   @Composable
   override fun Content() {
     val appearancePreferences = koinInject<AppearancePreferences>()
+    val mediaServerPreferences = koinInject<MediaServerPreferences>()
     val showHomeTab by appearancePreferences.showHomeTab.collectAsState()
     val showMusicTab by appearancePreferences.showMusicTab.collectAsState()
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
     val showPlaylistsTab by appearancePreferences.showPlaylistsTab.collectAsState()
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
     val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
+    val showNavidromeTab by appearancePreferences.showNavidromeTab.collectAsState()
+    val showAudiobooksTab by appearancePreferences.showAudiobooksTab.collectAsState()
+    val musicSourceProvider by mediaServerPreferences.musicSourceProvider.collectAsState()
     val hideNavigationBar = NavigationBarState.shouldHideNavigationBar
     val isPermissionDenied = NavigationBarState.isPermissionDenied
     val isDualPaneFolderSelected = NavigationBarState.isDualPaneFolderSelected
@@ -181,6 +193,8 @@ object MainScreen : Screen {
         showPlaylistsTab,
         showNetworkTab,
         showJellyfinTab,
+        showNavidromeTab,
+        showAudiobooksTab,
       ) {
         buildList {
           if (showHomeTab) add(MainTab.HOME)
@@ -189,6 +203,8 @@ object MainScreen : Screen {
           if (showPlaylistsTab) add(MainTab.PLAYLISTS)
           if (showNetworkTab) add(MainTab.NETWORK)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
+          if (showNavidromeTab) add(MainTab.NAVIDROME)
+          if (showAudiobooksTab) add(MainTab.AUDIOBOOKS)
         }
       }
 
@@ -309,6 +325,8 @@ object MainScreen : Screen {
         MainTab.PLAYLISTS -> 52.dp
         MainTab.NETWORK -> 50.dp
         MainTab.JELLYFIN -> 44.dp
+        MainTab.NAVIDROME -> 56.dp
+        MainTab.AUDIOBOOKS -> 68.dp
       }
 
     val unselectedCount = (visibleTabs.size - 1).coerceAtLeast(0)
@@ -353,8 +371,24 @@ object MainScreen : Screen {
     val context = androidx.compose.ui.platform.LocalContext.current
     val jellyfinViewModel: app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel =
       androidx.lifecycle.viewmodel.compose.viewModel(
+        key = "main-jellyfin",
         factory =
           app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel.factory(
+            context.applicationContext as android.app.Application,
+          ),
+      )
+    val sharedMusicJellyfinViewModel: app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel =
+      androidx.lifecycle.viewmodel.compose.viewModel(
+        key = "shared-music-jellyfin",
+        factory =
+          app.infinity.mpvz.ui.browser.jellyfin.JellyfinViewModel.factory(
+            context.applicationContext as android.app.Application,
+          ),
+      )
+    val navidromeViewModel: app.infinity.mpvz.ui.browser.navidrome.NavidromeViewModel =
+      androidx.lifecycle.viewmodel.compose.viewModel(
+        factory =
+          app.infinity.mpvz.ui.browser.navidrome.NavidromeViewModel.factory(
             context.applicationContext as android.app.Application,
           ),
       )
@@ -386,11 +420,25 @@ object MainScreen : Screen {
               val tab = visibleTabs.getOrNull(page) ?: return@HorizontalPager
               when (tab) {
                 MainTab.HOME -> FolderListScreen.Content()
-                MainTab.MUSIC -> MusicLibraryContent()
+                MainTab.MUSIC -> when (musicSourceProvider) {
+                  MusicSourceProvider.LOCAL -> MusicLibraryContent()
+                  MusicSourceProvider.JELLYFIN ->
+                    app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(
+                      viewModel = sharedMusicJellyfinViewModel,
+                      isMusicOnlyMode = true,
+                    )
+                  MusicSourceProvider.NAVIDROME ->
+                    app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(
+                      viewModel = navidromeViewModel,
+                      isMusicOnlyMode = true,
+                    )
+                }
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
                 MainTab.JELLYFIN -> app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
+                MainTab.NAVIDROME -> app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(viewModel = navidromeViewModel)
+                MainTab.AUDIOBOOKS -> app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen.Content()
               }
             }
           }
@@ -486,12 +534,13 @@ object MainScreen : Screen {
                     }
                   ),
             ) {
-              ExpressivePillNavigationBar(
-                visibleTabs = visibleTabs,
-                selectedTab = selectedTab,
-                onTabSelected = onTabSelected,
-                pagerState = pagerState,
-                modifier =
+                ExpressivePillNavigationBar(
+                  visibleTabs = visibleTabs,
+                  selectedTab = selectedTab,
+                  onTabSelected = onTabSelected,
+                  pagerState = pagerState,
+                  maxWidth = (containerWidth - 32.dp).coerceAtLeast(180.dp),
+                  modifier =
                   Modifier.onGloballyPositioned { coords ->
                     val w = with(density) { coords.size.width.toDp() }
                     if (w > 0.dp && w != measuredWidthDp) {
@@ -514,8 +563,11 @@ private fun ExpressivePillNavigationBar(
   onTabSelected: (MainScreen.MainTab) -> Unit,
   modifier: Modifier = Modifier,
   pagerState: PagerState? = null,
+  maxWidth: androidx.compose.ui.unit.Dp? = null,
 ) {
   val haptics = LocalHapticFeedback.current
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
 
   val position =
     if (pagerState != null && visibleTabs.isNotEmpty()) {
@@ -534,7 +586,9 @@ private fun ExpressivePillNavigationBar(
       MainScreen.MainTab.RECENTS -> 104.dp
       MainScreen.MainTab.PLAYLISTS -> 108.dp
       MainScreen.MainTab.NETWORK -> 106.dp
-      MainScreen.MainTab.JELLYFIN -> 100.dp
+      MainScreen.MainTab.JELLYFIN -> 120.dp
+      MainScreen.MainTab.NAVIDROME -> 108.dp
+      MainScreen.MainTab.AUDIOBOOKS -> 144.dp
     }
 
   val inactiveTabWidth = 44.dp
@@ -576,21 +630,29 @@ private fun ExpressivePillNavigationBar(
     }
 
   Surface(
-    modifier = modifier,
+    modifier = modifier
+      .then(if (maxWidth != null) Modifier.widthIn(max = maxWidth) else Modifier)
+      .clip(CircleShape),
     shape = CircleShape,
-    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    tonalElevation = 6.dp,
-    shadowElevation = 8.dp,
+    color = if (liquidGlassSurfaces) {
+      MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f)
+    } else {
+      MaterialTheme.colorScheme.surfaceContainerHigh
+    },
+    tonalElevation = if (liquidGlassSurfaces) 3.dp else 6.dp,
+    shadowElevation = if (liquidGlassSurfaces) 12.dp else 8.dp,
     border =
       BorderStroke(
         width = 1.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (liquidGlassSurfaces) 0.55f else 0.25f),
       ),
   ) {
     Box(
       modifier =
         Modifier
           .wrapContentWidth()
+          .horizontalScroll(rememberScrollState())
+          .clipToBounds()
           .padding(horizontal = startPadding, vertical = 6.dp),
     ) {
       // Sliding background pill indicator
@@ -683,6 +745,20 @@ private fun ExpressivePillNavigationBar(
                     tint = contentColor,
                     modifier = Modifier.size(22.dp),
                   )
+                MainScreen.MainTab.NAVIDROME ->
+                  androidx.compose.material3.Icon(
+                    painter = painterResource(R.drawable.ic_navidrome),
+                    contentDescription = stringResource(R.string.pref_navidrome_title),
+                    tint = contentColor,
+                    modifier = Modifier.size(22.dp),
+                  )
+                MainScreen.MainTab.AUDIOBOOKS ->
+                  Icon(
+                    Icons.RoundedFilled.AudiobookWave,
+                    contentDescription = stringResource(R.string.audiobooks_title),
+                    tint = contentColor,
+                    modifier = Modifier.size(24.dp),
+                  )
               }
 
               if (tabFraction > 0.05f) {
@@ -696,6 +772,8 @@ private fun ExpressivePillNavigationBar(
                       MainScreen.MainTab.PLAYLISTS -> stringResource(R.string.ui_playlists)
                       MainScreen.MainTab.NETWORK -> stringResource(R.string.ui_network)
                       MainScreen.MainTab.JELLYFIN -> stringResource(R.string.ui_jellyfin)
+                      MainScreen.MainTab.NAVIDROME -> stringResource(R.string.pref_navidrome_title)
+                      MainScreen.MainTab.AUDIOBOOKS -> stringResource(R.string.audiobooks_title)
                     },
                   style = MaterialTheme.typography.labelMedium,
                   fontWeight = FontWeight.Bold,

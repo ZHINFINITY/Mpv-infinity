@@ -28,6 +28,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +51,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
@@ -68,6 +71,7 @@ import org.koin.compose.koinInject
 @Composable
 fun BrowserTopBar(
   title: String,
+  showTitle: Boolean = true,
   isInSelectionMode: Boolean,
   selectedCount: Int,
   totalCount: Int,
@@ -89,6 +93,8 @@ fun BrowserTopBar(
   onSelectAll: (() -> Unit)? = null,
   onInvertSelection: (() -> Unit)? = null,
   onDeselectAll: (() -> Unit)? = null,
+  leadingActions: @Composable RowScope.() -> Unit = { },
+  preSearchActions: @Composable RowScope.() -> Unit = { },
   additionalActions: @Composable RowScope.() -> Unit = { },
   onTitleLongPress: (() -> Unit)? = null,
   onTitleDoubleTap: (() -> Unit)? = null,
@@ -125,13 +131,16 @@ fun BrowserTopBar(
       additionalActions = additionalActions,
     )
   } else {
-    NormalTopBar(
-      title = title,
+            NormalTopBar(
+              title = title,
+              showTitle = showTitle,
       onBackClick = onBackClick,
       onSortClick = onSortClick,
       onSearchClick = onSearchClick,
       onRequestClick = onRequestClick,
       onSettingsClick = onSettingsClick,
+      leadingActions = leadingActions,
+      preSearchActions = preSearchActions,
       additionalActions = additionalActions,
       modifier = modifier,
       onTitleLongPress = onTitleLongPress,
@@ -150,11 +159,14 @@ fun BrowserTopBar(
 @Composable
 private fun NormalTopBar(
   title: String,
+  showTitle: Boolean = true,
   onBackClick: (() -> Unit)?,
   onSortClick: (() -> Unit)?,
   onSearchClick: (() -> Unit)?,
   onRequestClick: (() -> Unit)? = null,
   onSettingsClick: (() -> Unit)?,
+  leadingActions: @Composable RowScope.() -> Unit = { },
+  preSearchActions: @Composable RowScope.() -> Unit = { },
   additionalActions: @Composable RowScope.() -> Unit,
   modifier: Modifier = Modifier,
   onTitleLongPress: (() -> Unit)?,
@@ -207,6 +219,7 @@ private fun NormalTopBar(
           },
       ),
     title = {
+      if (showTitle) {
       val betaBadgeSuffix =
         if (showBetaBadge) {
           stringResource(R.string.ui_beta_badge_suffix)
@@ -273,7 +286,7 @@ private fun NormalTopBar(
             MaterialTheme.typography.headlineMedium
           },
         fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier =
@@ -285,23 +298,28 @@ private fun NormalTopBar(
             },
           ),
       )
+      }
     },
     navigationIcon = {
-      if (onBackClick != null) {
-        IconButton(
-          onClick = onBackClick,
-          modifier = Modifier.padding(horizontal = 2.dp),
-        ) {
-          Icon(
-            Icons.RoundedFilled.ArrowBack,
-            contentDescription = stringResource(R.string.back),
-            modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
-          )
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        if (onBackClick != null) {
+          IconButton(
+            onClick = onBackClick,
+            modifier = Modifier.padding(horizontal = 2.dp),
+          ) {
+            Icon(
+              Icons.RoundedFilled.ArrowBack,
+              contentDescription = stringResource(R.string.back),
+              modifier = Modifier.size(24.dp),
+              tint = MaterialTheme.colorScheme.onSurface,
+            )
+          }
         }
+        leadingActions()
       }
     },
     actions = {
+      preSearchActions()
       if (onSearchClick != null) {
         IconButton(
           onClick = onSearchClick,
@@ -314,7 +332,7 @@ private fun NormalTopBar(
                 app.infinity.mpvz.R.string.settings_search_title,
               ),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -330,7 +348,7 @@ private fun NormalTopBar(
                 app.infinity.mpvz.R.string.seerr_discover,
               ),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -343,7 +361,7 @@ private fun NormalTopBar(
             Icons.RoundedFilled.SortByAlpha,
             contentDescription = stringResource(R.string.sort),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -359,7 +377,7 @@ private fun NormalTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_settings),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -397,6 +415,15 @@ private fun SelectionTopBar(
   additionalActions: @Composable RowScope.() -> Unit = { },
 ) {
   var showDropdown by remember { mutableStateOf(false) }
+  val lifecycleOwner = LocalLifecycleOwner.current
+
+  DisposableEffect(lifecycleOwner) {
+    val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_STOP) showDropdown = false
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
 
   TopAppBar(
     colors =
@@ -416,7 +443,7 @@ private fun SelectionTopBar(
         Text(
           stringResource(R.string.selected_items, selectedCount, totalCount),
           style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.primary,
+          color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -424,7 +451,7 @@ private fun SelectionTopBar(
           Icons.RoundedFilled.ArrowDropDown,
           contentDescription = stringResource(R.string.selection_options),
           modifier = Modifier.size(24.dp),
-          tint = MaterialTheme.colorScheme.primary,
+          tint = MaterialTheme.colorScheme.onSurface,
         )
 
         DropdownMenu(
@@ -470,7 +497,7 @@ private fun SelectionTopBar(
           Icons.RoundedFilled.Close,
           contentDescription = stringResource(R.string.generic_cancel),
           modifier = Modifier.size(28.dp),
-          tint = MaterialTheme.colorScheme.secondary,
+          tint = MaterialTheme.colorScheme.onSurface,
         )
       }
     },
@@ -485,7 +512,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.Restore,
             contentDescription = stringResource(R.string.secure_folder_restore),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -501,7 +528,7 @@ private fun SelectionTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_play),
             modifier = Modifier.size(28.dp),
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -517,7 +544,7 @@ private fun SelectionTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_pin_folders),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -534,7 +561,7 @@ private fun SelectionTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_add_to_playlist),
             modifier = Modifier.size(28.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -552,7 +579,7 @@ private fun SelectionTopBar(
             modifier = Modifier.size(24.dp),
             tint =
               if (isSingleSelection) {
-                MaterialTheme.colorScheme.secondary
+                MaterialTheme.colorScheme.onSurface
               } else {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
               },
@@ -573,7 +600,7 @@ private fun SelectionTopBar(
             modifier = Modifier.size(24.dp),
             tint =
               if (isSingleSelection) {
-                MaterialTheme.colorScheme.secondary
+                MaterialTheme.colorScheme.onSurface
               } else {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
               },
@@ -591,7 +618,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.Share,
             contentDescription = stringResource(R.string.generic_share),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -607,7 +634,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.Lock,
             contentDescription = stringResource(R.string.secure_folder_move_to),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -622,7 +649,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.Block,
             contentDescription = stringResource(R.string.pref_folders_blacklist),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }

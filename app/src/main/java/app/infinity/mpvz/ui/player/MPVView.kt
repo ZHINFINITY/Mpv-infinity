@@ -505,7 +505,7 @@ class MPVView(
       PlaybackSession.setOptionString("secondary-sub-ass-override", "no")
     }
 
-    // Typography and styling for both primary and secondary
+    // Typography and styling for both primary and secondary MPV subtitle tracks.
     val fontSize = subtitlesPreferences.fontSize.get().toString()
     val bold = if (subtitlesPreferences.bold.get()) "yes" else "no"
     val italic = if (subtitlesPreferences.italic.get()) "yes" else "no"
@@ -518,12 +518,8 @@ class MPVView(
     val borderStyle = subtitlesPreferences.borderStyle.get().value
     val shadowOffset = subtitlesPreferences.shadowOffset.get().toString()
     val subPos = clampSubtitlePosition(subtitlesPreferences.subPos.get())
-    val w =
-      width.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.widthPixels
-        .toFloat()
-    val h =
-      height.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.heightPixels
-        .toFloat()
+    val w = width.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.widthPixels.toFloat()
+    val h = height.takeIf { it > 0 }?.toFloat() ?: context.resources.displayMetrics.heightPixels.toFloat()
     val secondarySubPos = calculateSecondarySubtitlePosition(subPos, w, h)
     val subScale = subtitlesPreferences.subScale.get().toString()
 

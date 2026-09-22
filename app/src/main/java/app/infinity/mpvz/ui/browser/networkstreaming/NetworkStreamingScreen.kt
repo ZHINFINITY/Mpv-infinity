@@ -232,8 +232,26 @@ object NetworkStreamingScreen : Screen {
       }
     }
 
+    fun isReadableContentUri(source: String): Boolean {
+      val uri = runCatching { android.net.Uri.parse(source) }.getOrNull() ?: return false
+      if (uri.scheme?.equals("content", ignoreCase = true) != true) return true
+      return runCatching {
+        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { descriptor ->
+          descriptor.fileDescriptor.valid()
+        } ?: false
+      }.getOrDefault(false)
+    }
+
     fun submitPastedLink(url: String) {
       val playableSource = normalizeTorrentSource(url) ?: url.trim()
+      if (!isReadableContentUri(playableSource)) {
+        Toast.makeText(
+          context,
+          "This local content link is unavailable on this device",
+          Toast.LENGTH_LONG,
+        ).show()
+        return
+      }
       if (
         ytdlPreferences.showDownloadQualityChooser.get() &&
           linkDownloadCoordinator.routeFor(playableSource) ==
@@ -419,7 +437,7 @@ object NetworkStreamingScreen : Screen {
                       imageVector = Icons.RoundedFilled.Download,
                       contentDescription = stringResource(R.string.downloads_open_downloads),
                       modifier = Modifier.size(24.dp),
-                      tint = MaterialTheme.colorScheme.secondary,
+                      tint = MaterialTheme.colorScheme.onSurface,
                     )
                   }
                 },
@@ -431,7 +449,7 @@ object NetworkStreamingScreen : Screen {
             selectedTabIndex = pagerState.currentPage.coerceIn(0, (NetworkTab.entries.size - 1).coerceAtLeast(0)),
             edgePadding = 8.dp,
             containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onSurface,
             divider = {},
           ) {
             NetworkTab.entries.forEachIndexed { index, tab ->
@@ -1522,7 +1540,7 @@ private fun StreamLinkSection(
                 Icon(
                   imageVector = Icons.RoundedFilled.Download,
                   contentDescription = stringResource(R.string.downloads_download),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                   modifier = Modifier.size(18.dp),
                 )
               }

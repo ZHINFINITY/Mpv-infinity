@@ -63,6 +63,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -71,6 +72,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -120,9 +122,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -158,6 +163,7 @@ import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
+import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.RepeatMode
@@ -399,7 +405,6 @@ private fun AudioVisualizerViewport(
   BoxWithConstraints(
     modifier =
       modifier
-        .clipToBounds()
         .combinedClickable(
           interactionSource = remember { MutableInteractionSource() },
           indication = null,
@@ -409,7 +414,23 @@ private fun AudioVisualizerViewport(
     contentAlignment = Alignment.Center,
   ) {
     val rendererModifier =
-      Modifier.fillMaxSize()
+      Modifier
+        .fillMaxSize()
+        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithCache {
+          val bottomFade =
+            Brush.verticalGradient(
+              0f to Color.White,
+              0.78f to Color.White,
+              1f to Color.Transparent,
+              startY = 0f,
+              endY = size.height,
+            )
+          onDrawWithContent {
+            drawContent()
+            drawRect(brush = bottomFade, blendMode = BlendMode.DstIn)
+          }
+        }
         .graphicsLayer {
           scaleX = 1.03f
           scaleY = 1.03f
@@ -450,7 +471,6 @@ private fun AudioVisualizerViewport(
           modifier = rendererModifier,
         )
     }
-
   }
 }
 
@@ -565,6 +585,15 @@ fun AudioPlayerControls(
   val playbackState by PlaybackSession.state.collectAsStateWithLifecycle()
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
   val currentItem = playbackState.currentItem ?: queueState.currentItem
+  val activeBook by AudiobookPlayback.book.collectAsStateWithLifecycle()
+  val audiobookChapters by AudiobookPlayback.chapters.collectAsStateWithLifecycle()
+  val audiobook = activeBook?.takeIf { it.book.id == currentItem?.audiobook?.bookId }
+  val isAudiobook = currentItem?.audiobook != null
+  fun isTransientTransportTitle(value: String?): Boolean {
+    val normalized = value?.trim()?.uppercase(Locale.ROOT).orEmpty()
+    return normalized.isBlank() || normalized.contains("/API/") || normalized.contains("/ITEMS/") ||
+      normalized.contains("/FILE/") || normalized.startsWith("DEV/") || normalized.contains("AUDIOBOOKSHELF") && normalized.contains("HTTP")
+  }
   LaunchedEffect(currentItem?.stableId, currentItem?.isDefinitelyAudioOnly()) {
     if (currentItem?.isDefinitelyAudioOnly() == true && advancedPreferences.enabledStatisticsPage.get() in 1..5) {
       PlaybackSession.command("script-binding", "stats/display-stats-toggle")
@@ -603,7 +632,31 @@ fun AudioPlayerControls(
   val audioFormat by PlaybackSession.propString["audio-params/format"].collectAsState()
   val bitsPerSample by PlaybackSession.propString["metadata/by-key/BITS_PER_SAMPLE"].collectAsState()
   val bitsPerSampleAlt by PlaybackSession.propString["metadata/by-key/bits_per_sample"].collectAsState()
+  val audioBitrateProp by PlaybackSession.propInt["audio-bitrate"].collectAsState()
+  val generalBitrateProp by PlaybackSession.propInt["bitrate"].collectAsState()
   val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
+
+  val cleanCodecName =
+    remember(audioCodec, mediaPath) {
+      val codec = audioCodec?.lowercase().orEmpty()
+      val ext = mediaPath?.fileExtension().orEmpty().uppercase()
+      when {
+        codec.contains("flac") -> "FLAC"
+        codec.contains("alac") -> "ALAC"
+        codec.contains("mp3") -> "MP3"
+        codec.contains("aac") -> "AAC"
+        codec.contains("opus") -> "OPUS"
+        codec.contains("vorbis") -> "VORBIS"
+        codec.contains("wavpack") -> "WAVPACK"
+        codec.contains("ape") -> "APE"
+        codec.contains("dsd") -> "DSD"
+        codec.contains("pcm") -> if (ext in setOf("WAV", "AIFF", "AIF")) ext else "PCM"
+        codec.contains("wma") -> "WMA"
+        codec.isNotBlank() && codec.length <= 10 && !codec.contains("/") && !codec.contains(":") -> codec.uppercase()
+        ext.isNotBlank() -> ext
+        else -> ""
+      }
+    }
 
   val isLosslessCodecOrExt =
     remember(audioCodec, mediaPath) {
@@ -631,7 +684,7 @@ fun AudioPlayerControls(
   }
 
   val fullLosslessDetailString =
-    remember(isHiRes, sampleRate, audioFormat, bitsPerSample, bitsPerSampleAlt, audioCodec, isLosslessCodecOrExt) {
+    remember(isHiRes, sampleRate, audioFormat, bitsPerSample, bitsPerSampleAlt, audioCodec, audioBitrateProp, generalBitrateProp, cleanCodecName, isLosslessCodecOrExt) {
       val baseLabel = if (isHiRes) "HI-RES LOSSLESS" else "LOSSLESS"
       val sr = sampleRate ?: 0
       val khzStr =
@@ -643,6 +696,8 @@ fun AudioPlayerControls(
         }
 
       val bps = bitsPerSample?.takeIf { it.isNotBlank() } ?: bitsPerSampleAlt?.takeIf { it.isNotBlank() }
+      val bitrate = audioBitrateProp?.takeIf { it > 0 } ?: generalBitrateProp?.takeIf { it > 0 }
+      val kbpsStr = bitrate?.let { "${it / 1000} kbps" }.orEmpty()
       val bitStr =
         when {
           !bps.isNullOrBlank() && bps.toIntOrNull() != null -> "${bps.toInt()}-bit"
@@ -664,24 +719,43 @@ fun AudioPlayerControls(
         }
 
       val codecName = audioCodec?.uppercase().orEmpty()
-      buildString {
-        append(baseLabel)
-        if (specsStr.isNotBlank()) {
-          append(" - ").append(specsStr)
+      if (isLosslessCodecOrExt) {
+        buildString {
+          append(baseLabel)
+          if (specsStr.isNotBlank()) append(" - ").append(specsStr)
+          if (codecName.isNotBlank()) append(" ").append(codecName)
         }
-        if (codecName.isNotBlank()) {
-          append(" ").append(codecName)
+      } else {
+        val baseLabel = cleanCodecName.ifBlank { "AUDIO" }
+        if (kbpsStr.isNotBlank() && khzStr.isNotBlank()) "$baseLabel - $kbpsStr/${khzStr}"
+        else if (kbpsStr.isNotBlank()) "$baseLabel - $kbpsStr"
+        else if (khzStr.isNotBlank()) "$baseLabel - $khzStr"
+        else baseLabel
+      }
+    }
+
+  val collapsedAudioBadgeLabel =
+    remember(isAudiobook, audiobook?.book?.id, isHiRes, isLosslessCodecOrExt, cleanCodecName) {
+      if (isAudiobook && audiobook == null) {
+        ""
+      } else {
+        when {
+          isHiRes -> "HI-RES LOSSLESS"
+          isLosslessCodecOrExt -> "LOSSLESS"
+          cleanCodecName.isNotBlank() && !isTransientTransportTitle(cleanCodecName) -> cleanCodecName
+          else -> ""
         }
       }
     }
 
   val currentArtworkUri =
-    currentItem?.artworkUri?.takeIf { it.isNotBlank() }
+    audiobook?.book?.coverUri?.takeIf { it.isNotBlank() }
+      ?: currentItem?.artworkUri?.takeIf { it.isNotBlank() }
       ?: filteredPlaylist.firstOrNull { it.isPlaying || it.path == mediaPath || it.uri.toString() == mediaPath }?.tvgLogo?.takeIf { it.isNotBlank() }
 
   val currentAudioPresentation =
     rememberAudioPresentationMetadata(
-      pathOrUri = mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
+      pathOrUri = currentMediaSource?.takeIf { isAudiobook } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
       artworkUri = currentArtworkUri,
     )
   val albumArtBitmap = currentAudioPresentation?.artwork
@@ -716,7 +790,12 @@ fun AudioPlayerControls(
     )
   }
   LaunchedEffect(currentItem?.stableId, currentItem?.title, mediaTitle) {
-    val updatedTitle = currentItem?.title?.takeIf { it.isNotBlank() } ?: mediaTitle
+    val updatedTitle = if (currentItem?.audiobook != null) {
+      currentItem.title?.takeUnless(::isTransientTransportTitle)
+    } else {
+      currentItem?.title?.takeUnless(::isTransientTransportTitle)
+        ?: mediaTitle?.takeUnless(::isTransientTransportTitle)
+    }
     if (!updatedTitle.isNullOrBlank()) {
       lastValidTitle = updatedTitle.stripAudioExtension()
     }
@@ -730,8 +809,8 @@ fun AudioPlayerControls(
   val retrievedArtist = currentAudioPresentation?.artist
 
   val displayArtist =
-    remember(currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
-      sequenceOf(currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
+    remember(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist) {
+      sequenceOf(audiobook?.book?.author, currentItem?.artist, rawArtist, rawArtistAlt, rawAlbumArtist, rawPerformer, retrievedArtist)
         .filterNotNull()
         .firstOrNull { it.isNotBlank() } ?: "Unknown Artist"
     }
@@ -740,6 +819,7 @@ fun AudioPlayerControls(
   val appearancePreferences = koinInject<AppearancePreferences>()
   val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
   val audioWavySeekbar by audioPreferences.audioWavySeekbar.collectAsState()
+  val audioPaletteBackground by audioPreferences.audioPaletteBackground.collectAsState()
   val audioStandbyMode by audioPreferences.audioStandbyMode.collectAsState()
   val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
@@ -772,7 +852,11 @@ fun AudioPlayerControls(
   }
 
    val isPlaying = optimisticIsPlaying ?: (paused == false)
-   val currentDurSec = if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
+   // An audiobook is one logical item. MPV still switches its source file at chapter
+   // boundaries, but the seekbar must represent the complete book rather than the active file.
+   val currentDurSec = if (isAudiobook && audiobook != null) {
+     (audiobook.durationMs / 1000f).takeIf { it > 0f } ?: preciseDuration.takeIf { it > 0f } ?: duration?.toFloat() ?: 0f
+   } else if (preciseDuration > 0f) preciseDuration else duration?.toFloat() ?: 0f
    val currentVolumePercent by viewModel.currentVolumePercent.collectAsState()
    val volumeScale = currentVolumePercent / 100f
    val visualizerFeatures = rememberAudioVisualizerFeatures(isPlaying, volumeScale)
@@ -898,11 +982,12 @@ fun AudioPlayerControls(
   val isTablet = configuration.smallestScreenWidthDp >= 600
   val isTabletLandscape = !isPortrait && isTablet
   val isTabletPortrait = isPortrait && isTablet
+  val audioStandbyDelaySeconds by audioPreferences.audioStandbyDelaySeconds.collectAsState()
 
-  LaunchedEffect(audioStandbyMode, isPlaying, isPortrait, lastUserInteractionTime) {
+  LaunchedEffect(audioStandbyMode, audioStandbyDelaySeconds, isPlaying, isPortrait, lastUserInteractionTime) {
     isStandbyActive = false
     if (audioStandbyMode && isPlaying) {
-      kotlinx.coroutines.delay(5000L)
+      kotlinx.coroutines.delay(audioStandbyDelaySeconds.coerceIn(1, 60) * 1000L)
       isStandbyActive = true
     }
   }
@@ -912,27 +997,31 @@ fun AudioPlayerControls(
   val ambientColors by produceState<Pair<Color, Color>?>(
     initialValue = null,
     key1 = albumArtBitmap,
-    key2 = ambientModeEnabled,
+    key2 = listOf(ambientModeEnabled, audioPaletteBackground, showVisualizer, showInPlaceLyrics),
   ) {
-    if (albumArtBitmap == null) {
+    if (!audioPaletteBackground || !ambientModeEnabled || albumArtBitmap == null) {
       value = null
       return@produceState
     }
     withContext(Dispatchers.Default) {
       runCatching {
         val palette = Palette.from(albumArtBitmap).maximumColorCount(16).generate()
-        val vibrant = palette.getVibrantColor(
-          palette.getDominantColor(
-            palette.getMutedColor(0)
-          )
-        )
-        val darkVibrant = palette.getDarkVibrantColor(
-          palette.getDarkMutedColor(vibrant)
-        )
-        if (vibrant == 0 && darkVibrant == 0) return@runCatching null
+        val dominant = palette.getDominantColor(0)
+        val muted = palette.getMutedColor(0)
+        val darkMuted = palette.getDarkMutedColor(0)
+        val vibrant = palette.getVibrantColor(0)
+        val darkVibrant = palette.getDarkVibrantColor(0)
+        val base = vibrant.takeIf { it != 0 } ?: dominant.takeIf { it != 0 } ?: muted
+        val accent = darkVibrant.takeIf { it != 0 }
+          ?: muted.takeIf { it != 0 }
+          ?: darkMuted.takeIf { it != 0 }
+          ?: base
+        if (base == 0 && accent == 0) return@runCatching null
 
-        val topColor = Color(if (vibrant != 0) vibrant else darkVibrant).copy(alpha = 0.20f)
-        val bottomColor = Color(if (darkVibrant != 0) darkVibrant else vibrant).copy(alpha = 0.12f)
+        // Keep the extracted colors visibly present over the surface while retaining enough
+        // transparency for foreground controls and artwork to remain readable.
+        val topColor = Color(if (base != 0) base else accent).copy(alpha = 0.62f)
+        val bottomColor = Color(if (accent != 0) accent else base).copy(alpha = 0.46f)
         Pair(topColor, bottomColor)
       }.onSuccess { colors ->
         value = colors
@@ -942,10 +1031,8 @@ fun AudioPlayerControls(
     }
   }
 
-  val targetTopColor =
-    ambientColors?.first ?: Color(visualizerPalette.primary).copy(alpha = 0.38f)
-  val targetBottomColor =
-    ambientColors?.second ?: Color(visualizerPalette.secondary).copy(alpha = 0.30f)
+  val targetTopColor = ambientColors?.first ?: Color.Transparent
+  val targetBottomColor = ambientColors?.second ?: Color.Transparent
 
   val animatedAmbientTop: Color by animateColorAsState(
     targetValue = targetTopColor,
@@ -958,12 +1045,18 @@ fun AudioPlayerControls(
     animationSpec = tween(durationMillis = 800),
     label = "ambient_bottom_color",
   )
+  val edgeToEdgeVisualizer = isPortrait && showVisualizer && !showInPlaceLyrics && !isStandbyActive
+  val standbyVisualizerBoundary = isStandbyActive && isPortrait && showVisualizer
+  val visualizerUsesFullTopAndSides = edgeToEdgeVisualizer || standbyVisualizerBoundary
+  val controlsSidePadding = if (edgeToEdgeVisualizer) 16.dp else 0.dp
   Box(
     modifier =
       modifier
         .fillMaxSize()
+        .background(MaterialTheme.colorScheme.surface)
         .drawWithCache {
-          if (albumArtBitmap != null && (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
+          if (audioPaletteBackground && ambientModeEnabled &&
+            (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)) {
             val topColor = animatedAmbientTop
             val bottomColor = animatedAmbientBottom
             val radialGradient = Brush.radialGradient(
@@ -977,8 +1070,8 @@ fun AudioPlayerControls(
             )
             val linearGradient = Brush.verticalGradient(
               colors = listOf(
-                topColor.copy(alpha = topColor.alpha * 0.65f),
-                bottomColor.copy(alpha = bottomColor.alpha * 0.35f),
+                topColor.copy(alpha = topColor.alpha * 0.82f),
+                bottomColor.copy(alpha = bottomColor.alpha * 0.62f),
                 Color.Transparent,
               ),
               startY = 0f,
@@ -992,8 +1085,15 @@ fun AudioPlayerControls(
             onDrawBehind {}
           }
         }
-        .windowInsetsPadding(WindowInsets.safeDrawing)
-        .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+        .windowInsetsPadding(
+          if (visualizerUsesFullTopAndSides) {
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)
+          } else {
+            WindowInsets.safeDrawing
+          },
+        )
+        .padding(horizontal = if (visualizerUsesFullTopAndSides) 0.dp else 16.dp)
+        .padding(top = if (visualizerUsesFullTopAndSides) 0.dp else 6.dp, bottom = 12.dp)
         .pointerInput(Unit) {
           var totalDrag = 0f
           detectVerticalDragGestures(
@@ -1044,7 +1144,7 @@ fun AudioPlayerControls(
     }
 
     val losslessBadge = @Composable {
-      if (isLosslessCodecOrExt) {
+      if (collapsedAudioBadgeLabel.isNotBlank()) {
         Surface(
           shape = RoundedCornerShape(4.dp),
           color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
@@ -1062,7 +1162,7 @@ fun AudioPlayerControls(
               if (showLosslessDetails && fullLosslessDetailString.isNotBlank()) {
                 fullLosslessDetailString
               } else {
-                if (isHiRes) "HI-RES LOSSLESS" else "LOSSLESS"
+                collapsedAudioBadgeLabel
               },
             style =
               MaterialTheme.typography.labelSmall.copy(
@@ -1112,7 +1212,7 @@ fun AudioPlayerControls(
       BoxWithConstraints(
         modifier =
           visualizerModifier
-            .clipToBounds()
+            .then(if (visualizerUsesFullTopAndSides) Modifier else Modifier.clipToBounds())
             .then(
               if (showVisualizer || showInPlaceLyrics) {
                 Modifier
@@ -1302,9 +1402,10 @@ fun AudioPlayerControls(
         horizontalAlignment = Alignment.Start,
       ) {
         val displayTitle =
-          remember(lastValidTitle, displayArtist) {
-            cleanSongTitle(lastValidTitle, displayArtist)
-          }
+          if (isAudiobook) audiobook?.book?.title?.takeUnless(::isTransientTransportTitle).orEmpty()
+          else cleanSongTitle(lastValidTitle, displayArtist).takeUnless { title ->
+            title.contains("/API/", ignoreCase = true) || title.contains("/ITEMS/", ignoreCase = true) || title.contains("/FILE/", ignoreCase = true)
+          }.orEmpty()
 
         // 1. Song Title Only
         Text(
@@ -1332,7 +1433,16 @@ fun AudioPlayerControls(
 
         // 3. Track Info | A-B Loop Control
         val playlistInfo = viewModel.getPlaylistInfo()
-        val trackText = if (playlistInfo != null) "Track $playlistInfo" else "Audio Media"
+        val audiobookChapter = if (isAudiobook) AudiobookPlayback.currentChapter() else null
+        val audiobookChapterNumber = audiobookChapter?.let { chapter ->
+          audiobookChapters.indexOf(chapter).takeIf { it >= 0 }?.plus(1)
+        }
+        val trackText = when {
+          audiobookChapterNumber != null -> "Chapter $audiobookChapterNumber/${audiobookChapters.size}"
+          isAudiobook -> "Audiobook"
+          playlistInfo != null -> "Track $playlistInfo"
+          else -> "Audio Media"
+        }
 
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -1349,6 +1459,10 @@ fun AudioPlayerControls(
               color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.clickable(
+                enabled = isAudiobook && audiobookChapterNumber != null,
+                onClick = { onOpenSheet(Sheets.Chapters) },
+              ),
             )
             Text(
               text = "|",
@@ -1549,7 +1663,24 @@ fun AudioPlayerControls(
       val position by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
       val remaining  by PlaybackSession.propFloat["playtime-remaining"].collectAsState()
       val precisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
-      val currentPosSec = if (precisePosition > 0f) precisePosition else position?.toFloat() ?: 0f
+      val chapterPositionSec = if (precisePosition > 0f) precisePosition else position?.toFloat() ?: 0f
+      val currentPosSec = if (isAudiobook && audiobook != null) {
+        currentItem?.audiobook?.trackId?.let { trackId ->
+          audiobook.positionInBook(trackId, (chapterPositionSec * 1000f).toLong()) / 1000f
+        } ?: chapterPositionSec
+      } else chapterPositionSec
+      val bookOffset = audiobook?.let { book ->
+        currentItem?.audiobook?.let { info -> book.positionInBook(info.trackId, 0) }
+      }?.div(1000f) ?: 0f
+      val timelinePosition = if (audiobook != null) {
+        (bookOffset + chapterPositionSec).coerceIn(0f, audiobook.durationMs / 1000f)
+      } else currentPosSec
+      val timelineDuration = audiobook?.durationMs?.div(1000f) ?: currentDurSec
+      val effectiveRemaining = if (audiobook != null) {
+        (timelineDuration - timelinePosition).coerceAtLeast(0f) / (playbackSpeed ?: 1f).coerceAtLeast(0.1f)
+      } else {
+        (remaining ?: 0f).takeIf { it > 0f } ?: (currentDurSec - currentPosSec).coerceAtLeast(0f)
+      }
       val isPaused = paused ?: false
 
       Box(
@@ -1557,12 +1688,12 @@ fun AudioPlayerControls(
         modifier = Modifier.fillMaxWidth(),
       ) {
       SeekbarWithTimers(
-        position = currentPosSec,
-        committedPosition = currentPosSec,
-        duration = currentDurSec.coerceAtLeast(1f),
-        remaining = remaining ?: 0f,
-        onValueChange = { value -> viewModel.seekPreviewTo(value) },
-        onValueChangeFinished = { targetPosition -> viewModel.seekTo(targetPosition.toInt(), fast = false) },
+        position = timelinePosition,
+        committedPosition = timelinePosition,
+        duration = timelineDuration.coerceAtLeast(1f),
+        remaining = effectiveRemaining,
+        onValueChange = { value -> if (!isAudiobook) viewModel.seekPreviewTo(value) },
+        onValueChangeFinished = viewModel::seekAudioTo,
         timersInverted = Pair(false, invertDuration),
         durationTimerOnCLick = { playerPreferences.invertDuration.set(!invertDuration) },
         positionTimerOnClick = {},
@@ -1590,7 +1721,10 @@ fun AudioPlayerControls(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        ReactiveIconButton(onClick = { viewModel.playPrevious() }, enabled = playlistModeEnabled) {
+        ReactiveIconButton(
+          onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(-1) else viewModel.playPrevious() },
+          enabled = if (isAudiobook) AudiobookPlayback.currentChapter() != null else playlistModeEnabled,
+        ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipPrevious,
             contentDescription = null,
@@ -1606,7 +1740,7 @@ fun AudioPlayerControls(
             modifier = Modifier.size(28.dp),
           )
         }
-        ReactiveIconButton(onClick = { viewModel.seekBy(-audioSeekDuration) }) {
+        ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) -30 else -audioSeekDuration) }) {
           Icon(
             imageVector = Icons.RoundedFilled.FastRewind,
             contentDescription = null,
@@ -1633,7 +1767,7 @@ fun AudioPlayerControls(
             )
           }
         }
-        ReactiveIconButton(onClick = { viewModel.seekBy(audioSeekDuration) }) {
+        ReactiveIconButton(onClick = { viewModel.seekBy(if (isAudiobook) 30 else audioSeekDuration) }) {
           Icon(
             imageVector = Icons.RoundedFilled.FastForward,
             contentDescription = null,
@@ -1641,12 +1775,15 @@ fun AudioPlayerControls(
             modifier = Modifier.size(34.dp),
           )
         }
-        ReactiveIconButton(onClick = { viewModel.playNext() }, enabled = playlistModeEnabled) {
+        ReactiveIconButton(
+          onClick = { if (isAudiobook) viewModel.stepPlaybackChapter(1) else viewModel.playNext() },
+          enabled = if (isAudiobook) true else playlistModeEnabled,
+        ) {
           Icon(
             imageVector = Icons.RoundedFilled.SkipNext,
             contentDescription = null,
             tint =
-              if (playlistModeEnabled) {
+              if (isAudiobook || playlistModeEnabled) {
                 MaterialTheme.colorScheme.onSurface
               } else {
                 MaterialTheme.colorScheme.onSurface
@@ -1657,6 +1794,29 @@ fun AudioPlayerControls(
             modifier = Modifier.size(28.dp),
           )
         }
+      }
+    }
+
+    val audiobookModeButtons = @Composable {
+      ReactiveIconButton(
+        onClick = { onOpenSheet(Sheets.AudiobookSleepTimer) },
+        modifier = Modifier.size(40.dp),
+      ) {
+        Icon(
+          imageVector = Icons.RoundedFilled.Timer,
+          contentDescription = stringResource(R.string.audiobook_sleep_timer),
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      ReactiveIconButton(
+        onClick = { onOpenSheet(Sheets.Chapters) },
+        modifier = Modifier.size(40.dp),
+      ) {
+        Icon(
+          imageVector = Icons.RoundedFilled.MenuBook,
+          contentDescription = stringResource(R.string.audiobook_chapters),
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
       }
     }
 
@@ -1701,38 +1861,32 @@ fun AudioPlayerControls(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-              ReactiveIconButton(
-                onClick = viewModel::toggleShuffle,
-                enabled = playlistModeEnabled,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Icon(
-                  imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
-                  contentDescription = null,
-                  tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              ReactiveIconButton(
-                onClick = viewModel::cycleRepeatMode,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Icon(
-                  imageVector =
-                    when (repeatMode) {
+              if (isAudiobook) audiobookModeButtons() else {
+                ReactiveIconButton(
+                  onClick = viewModel::toggleShuffle,
+                  enabled = playlistModeEnabled,
+                  modifier = Modifier.size(40.dp),
+                ) {
+                  Icon(
+                    imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
+                    contentDescription = null,
+                    tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+                ReactiveIconButton(
+                  onClick = viewModel::cycleRepeatMode,
+                  modifier = Modifier.size(40.dp),
+                ) {
+                  Icon(
+                    imageVector = when (repeatMode) {
                       RepeatMode.OFF -> Icons.RoundedFilled.Repeat
                       RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
                       RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
                     },
-                  contentDescription = null,
-                  tint =
-                    if (repeatMode !=
-                      RepeatMode.OFF
-                    ) {
-                      MaterialTheme.colorScheme.primary
-                    } else {
-                      MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                    contentDescription = null,
+                    tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
               }
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
@@ -1782,38 +1936,32 @@ fun AudioPlayerControls(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-              ReactiveIconButton(
-                onClick = viewModel::toggleShuffle,
-                enabled = playlistModeEnabled,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Icon(
-                  imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
-                  contentDescription = null,
-                  tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              ReactiveIconButton(
-                onClick = viewModel::cycleRepeatMode,
-                modifier = Modifier.size(40.dp),
-              ) {
-                Icon(
-                  imageVector =
-                    when (repeatMode) {
+              if (isAudiobook) audiobookModeButtons() else {
+                ReactiveIconButton(
+                  onClick = viewModel::toggleShuffle,
+                  enabled = playlistModeEnabled,
+                  modifier = Modifier.size(40.dp),
+                ) {
+                  Icon(
+                    imageVector = if (shuffleEnabled) Icons.RoundedFilled.ShuffleOn else Icons.RoundedFilled.Shuffle,
+                    contentDescription = null,
+                    tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+                ReactiveIconButton(
+                  onClick = viewModel::cycleRepeatMode,
+                  modifier = Modifier.size(40.dp),
+                ) {
+                  Icon(
+                    imageVector = when (repeatMode) {
                       RepeatMode.OFF -> Icons.RoundedFilled.Repeat
                       RepeatMode.ONE -> Icons.RoundedFilled.RepeatOne
                       RepeatMode.ALL -> Icons.RoundedFilled.RepeatOn
                     },
-                  contentDescription = null,
-                  tint =
-                    if (repeatMode !=
-                      RepeatMode.OFF
-                    ) {
-                      MaterialTheme.colorScheme.primary
-                    } else {
-                      MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                    contentDescription = null,
+                    tint = if (repeatMode != RepeatMode.OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
               }
               ReactiveIconButton(
                 onClick = { viewModel.toggleAudioVisualizer() },
@@ -1857,7 +2005,7 @@ fun AudioPlayerControls(
           }
           Spacer(modifier = Modifier.width(12.dp))
           ReactiveIconButton(
-            onClick = { onOpenSheet(Sheets.Playlist) },
+            onClick = { onOpenSheet(if (isAudiobook) Sheets.Chapters else Sheets.Playlist) },
             modifier =
               Modifier
                 .clip(
@@ -1868,7 +2016,7 @@ fun AudioPlayerControls(
             Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
               Icon(
                 imageVector = Icons.RoundedFilled.QueueMusic,
-                contentDescription = "Playlist",
+                contentDescription = if (isAudiobook) stringResource(R.string.audiobook_chapters) else "Playlist",
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(24.dp),
               )
@@ -1891,23 +2039,43 @@ fun AudioPlayerControls(
           ) { resetInactivityTimer() },
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
-        androidx.compose.animation.AnimatedVisibility(
-          visible = !isStandbyActive,
-          enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
-          exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
-        ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            headerBar()
-            losslessBadge()
-            Spacer(modifier = Modifier.height(16.dp))
+        if (edgeToEdgeVisualizer) {
+          Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            centerVisualizerView(
+              Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                  scaleY = 1.12f
+                  transformOrigin = TransformOrigin(0.5f, 0f)
+                },
+              false,
+            )
+            Column(
+              modifier =
+                Modifier
+                  .fillMaxWidth()
+                  .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                  .padding(horizontal = controlsSidePadding)
+                  .padding(top = 6.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              headerBar()
+              losslessBadge()
+            }
           }
-        }
-
-        if (showInPlaceLyrics && !isStandbyActive) {
-          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         } else {
-          val visualizerModifier = Modifier.weight(1f).fillMaxWidth()
-          centerVisualizerView(visualizerModifier, false)
+          androidx.compose.animation.AnimatedVisibility(
+            visible = !isStandbyActive,
+            enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
+            exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
+          ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              headerBar()
+              losslessBadge()
+              Spacer(modifier = Modifier.height(16.dp))
+            }
+          }
+          centerVisualizerView(Modifier.weight(1f).fillMaxWidth(), false)
         }
         if (isStandbyActive) {
           seekbarView()
@@ -1918,7 +2086,10 @@ fun AudioPlayerControls(
           enter = fadeIn(animationSpec = tween(300)) + androidx.compose.animation.expandVertically(animationSpec = tween(300)),
           exit = fadeOut(animationSpec = tween(300)) + androidx.compose.animation.shrinkVertically(animationSpec = tween(300)),
         ) {
-          Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          Column(
+            modifier = Modifier.padding(horizontal = controlsSidePadding),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
             Spacer(modifier = Modifier.height(16.dp))
             trackMetadataView()
             Spacer(modifier = Modifier.height(16.dp))
@@ -2004,7 +2175,7 @@ fun AudioPlayerControls(
               lyricsPanel(Modifier.weight(1f, fill = true).fillMaxWidth())
             } else {
               if (!isStandbyActive) headerBar()
-              if (!isStandbyActive) losslessBadge()
+              if (!isStandbyActive && !isAudiobook) losslessBadge()
               if (!isStandbyActive) trackMetadataView()
               Spacer(modifier = Modifier.weight(1f))
             }
