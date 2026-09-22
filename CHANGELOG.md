@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.1.1 - Bug Fixes
+
+### 🐛 Bug fixes
+
+- Fixed chapter lists and chapter indicators not appearing when movies were played with the Native engine.
+- Restored compatible Media3 chapter metadata parsing while retaining a guarded fallback for alternate metadata representations.
+- Fixed the Native chapter parser for the current Media3 API without changing the supported Native media formats or playback pipeline.
+
 ## 2.1.0 - Playback, Streaming, Libraries & Custom Themes
 
 Mpv∞ 2.1.0 brings the major playback, streaming, media-library, subtitle, and custom-theme work now available on the stable branch.
