@@ -129,7 +129,7 @@ private fun BookmarkQuickCard(
         imageVector = Icons.RoundedFilled.Folder,
         contentDescription = null,
         modifier = Modifier.size(38.dp),
-        tint = MaterialTheme.colorScheme.onSurface,
+        tint = MaterialTheme.colorScheme.secondary,
       )
       Text(
         text = bookmark.bookmark.folderName,
@@ -237,7 +237,7 @@ private fun BookmarkManageCard(
         imageVector = Icons.RoundedFilled.Folder,
         contentDescription = null,
         modifier = Modifier.size(40.dp),
-        tint = MaterialTheme.colorScheme.onSurface,
+        tint = MaterialTheme.colorScheme.secondary,
       )
       Spacer(modifier = Modifier.width(14.dp))
       Column(modifier = Modifier.weight(1f)) {

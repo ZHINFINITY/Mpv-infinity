@@ -210,7 +210,7 @@ fun NetworkVideoCard(
                 androidx.compose.ui.res
                   .stringResource(app.infinity.mpvz.R.string.ui_play),
               modifier = Modifier.size(48.dp),
-              tint = MaterialTheme.colorScheme.onSurface,
+              tint = MaterialTheme.colorScheme.secondary,
             )
           }
         }
@@ -299,7 +299,7 @@ fun NetworkVideoCard(
                 androidx.compose.ui.res
                   .stringResource(app.infinity.mpvz.R.string.ui_play),
               modifier = Modifier.size(48.dp),
-              tint = MaterialTheme.colorScheme.onSurface,
+              tint = MaterialTheme.colorScheme.secondary,
             )
           }
         }
