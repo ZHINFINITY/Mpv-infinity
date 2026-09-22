@@ -253,7 +253,7 @@ fun M3UVideoCard(
                 Icons.RoundedFilled.PlayArrow,
                 contentDescription = null,
                 modifier = Modifier.size(42.dp),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.65f),
               )
             }
           }
@@ -371,7 +371,7 @@ fun M3UVideoCard(
             Icons.RoundedFilled.PlayArrow,
             contentDescription = null,
             modifier = Modifier.size(42.dp),
-            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+            tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.65f),
           )
         }
       }

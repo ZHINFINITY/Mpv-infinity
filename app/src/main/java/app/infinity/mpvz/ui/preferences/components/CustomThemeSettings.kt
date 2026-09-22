@@ -171,20 +171,6 @@ private fun CustomThemeEditor(
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
   var showEditor by remember(initial.id) { mutableStateOf(false) }
   val edited = initial.copy(name = name, overlay = overlay, blur = blur, brightness = brightness, saturation = saturation, visibility = visibility, surfaceOpacity = surfaceOpacity, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
-  fun resetVisualSettings() {
-    overlay = initial.overlay.coerceIn(0f, 0.65f)
-    blur = initial.blur.coerceIn(0f, 24f)
-    brightness = initial.brightness
-    saturation = initial.saturation
-    visibility = initial.visibility
-    surfaceOpacity = initial.surfaceOpacity.coerceIn(0.55f, 1f)
-    scale = initial.scale
-    offsetX = initial.offsetX
-    offsetY = initial.offsetY
-    fitMode = initial.fitMode
-    aspectMode = initial.aspectMode
-    muted = initial.muted
-  }
   androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
@@ -248,13 +234,7 @@ private fun CustomThemeEditor(
         }
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Theme name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
       }
-      Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedButton(onClick = { resetVisualSettings() }) { Icon(Icons.RoundedFilled.Refresh, contentDescription = null); Text("Reset") }
-          OutlinedButton(onClick = onDismiss) { Text("Cancel") }
-        }
-        Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }) { Text("Save theme") }
-      }
+      Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.End) { OutlinedButton(onClick = onDismiss) { Text("Cancel") }; Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Save theme") } }
     }
   }
 }

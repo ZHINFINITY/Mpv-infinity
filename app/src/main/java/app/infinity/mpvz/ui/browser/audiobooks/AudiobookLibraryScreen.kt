@@ -296,7 +296,7 @@ object AudiobookLibraryScreen : Screen {
               Box {
                 Surface(
                   shape = RoundedCornerShape(16.dp),
-                  color = MaterialTheme.colorScheme.onSurfaceContainer.copy(alpha = 0.8f),
+                  color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f),
                     modifier = Modifier
                       .padding(horizontal = 2.dp, vertical = 4.dp)
                     .clickable { isSourceDropdownOpen = true },
@@ -399,7 +399,7 @@ object AudiobookLibraryScreen : Screen {
                         painter = painterResource(R.drawable.ic_audiobookshelf),
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurface,
+                        tint = MaterialTheme.colorScheme.primary,
                       )
                     },
                     onClick = {
@@ -517,7 +517,7 @@ object AudiobookLibraryScreen : Screen {
                   painter = painterResource(R.drawable.ic_audiobookshelf),
                   contentDescription = null,
                   modifier = Modifier.size(64.dp),
-                  tint = MaterialTheme.colorScheme.onSurface,
+                  tint = MaterialTheme.colorScheme.secondary,
                 )
                 Text(
                   stringResource(R.string.pref_audiobookshelf_no_server),
@@ -540,7 +540,7 @@ object AudiobookLibraryScreen : Screen {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
               ) {
-                Icon(Icons.RoundedFilled.MenuBook, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.RoundedFilled.MenuBook, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.secondary)
                 Text(
                   stringResource(R.string.audiobook_empty),
                   modifier = Modifier.padding(16.dp),
@@ -619,7 +619,7 @@ object AudiobookLibraryScreen : Screen {
             books == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             visibleLocalBooks.isEmpty() -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
               horizontalAlignment = Alignment.CenterHorizontally) {
-              Icon(Icons.RoundedFilled.MenuBook, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface)
+              Icon(Icons.RoundedFilled.MenuBook, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.secondary)
               Text(stringResource(R.string.audiobook_empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
               if (books.orEmpty().isEmpty()) {
                 Button(onClick = { files.launch(arrayOf("*/*")) }, enabled = importing == null) {
@@ -882,7 +882,7 @@ private fun AudiobookDetailsBottomSheet(
 
       details.forEach { (label, value) ->
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-          Text(stringResource(label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
+          Text(stringResource(label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
           Text(value, style = MaterialTheme.typography.bodyMedium)
         }
       }
@@ -1248,7 +1248,7 @@ internal fun AudiobookArtwork(uri: String?, modifier: Modifier = Modifier) {
   }
 
   Box(
-    modifier = modifier.background(MaterialTheme.colorScheme.onSurfaceContainer),
+    modifier = modifier.background(MaterialTheme.colorScheme.secondaryContainer),
     contentAlignment = Alignment.Center,
   ) {
     val loaded = image
@@ -1287,11 +1287,11 @@ internal fun AudiobookIconButton(
     state = rememberTooltipState(),
   ) {
     IconButton(onClick = onClick, enabled = enabled, modifier = modifier) {
-  Icon(
+      Icon(
         imageVector = icon,
         contentDescription = label,
         modifier = Modifier.size(24.dp),
-        tint = MaterialTheme.colorScheme.onSurface,
+        tint = MaterialTheme.colorScheme.secondary,
       )
     }
   }
@@ -1376,7 +1376,7 @@ private fun AudiobookGridCard(
           if (isFinished) stringResource(R.string.audiobook_finished)
           else stringResource(R.string.audiobook_remaining, bookTime(remainingMs)),
           style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurface,
+          color = MaterialTheme.colorScheme.secondary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.weight(1f, fill = false),
@@ -1427,11 +1427,11 @@ private fun AudiobookListRow(
         if (author.isNotBlank()) {
           Text(author, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-          Text(
+        Text(
           if (isFinished) stringResource(R.string.audiobook_finished)
           else stringResource(R.string.audiobook_remaining, bookTime(remainingMs)),
           style = MaterialTheme.typography.labelMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = MaterialTheme.colorScheme.secondary,
         )
         LinearProgressIndicator(progress = { progressPercent }, modifier = Modifier.fillMaxWidth().height(3.dp))
       }

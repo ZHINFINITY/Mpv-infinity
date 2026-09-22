@@ -437,7 +437,7 @@ object NetworkStreamingScreen : Screen {
                       imageVector = Icons.RoundedFilled.Download,
                       contentDescription = stringResource(R.string.downloads_open_downloads),
                       modifier = Modifier.size(24.dp),
-                      tint = MaterialTheme.colorScheme.onSurface,
+                      tint = MaterialTheme.colorScheme.secondary,
                     )
                   }
                 },
@@ -449,7 +449,7 @@ object NetworkStreamingScreen : Screen {
             selectedTabIndex = pagerState.currentPage.coerceIn(0, (NetworkTab.entries.size - 1).coerceAtLeast(0)),
             edgePadding = 8.dp,
             containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            contentColor = MaterialTheme.colorScheme.primary,
             divider = {},
           ) {
             NetworkTab.entries.forEachIndexed { index, tab ->
@@ -1540,7 +1540,7 @@ private fun StreamLinkSection(
                 Icon(
                   imageVector = Icons.RoundedFilled.Download,
                   contentDescription = stringResource(R.string.downloads_download),
-                  tint = MaterialTheme.colorScheme.onSurface,
+                  tint = MaterialTheme.colorScheme.secondary,
                   modifier = Modifier.size(18.dp),
                 )
               }
