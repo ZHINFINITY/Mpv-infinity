@@ -568,9 +568,11 @@ private fun LyricsSyncSheet(
         text = "Current: ${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
-      Row(
+      FlowRow(
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        horizontalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        maxItemsInEachRow = 3,
       ) {
         SyncOffsetButton(label = "-0.5s", onClick = { viewModel.adjustLyricsSyncOffset(-500) })
         SyncOffsetButton(label = "-0.1s", onClick = { viewModel.adjustLyricsSyncOffset(-100) })
