@@ -611,18 +611,24 @@ class PlayerViewModel : ViewModel(),
 
   // These MPV-backed state flows must be initialized before any init block collects them.
   private val nativeSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
+  private val nativeExternalSubtitleTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeAudioTracks = MutableStateFlow<List<TrackNode>>(emptyList())
   private val nativeEngineActive = MutableStateFlow(false)
   private val nativeChapters = MutableStateFlow<List<Segment>>(emptyList())
   private var nativeSubtitleToggleListener: ((Int) -> Unit)? = null
+  private var nativeExternalSubtitleToggleListener: ((Int) -> Unit)? = null
   private var nativeAudioToggleListener: ((Int) -> Unit)? = null
   fun setNativeEngineActive(active: Boolean) {
     nativeEngineActive.value = active
   }
 
   fun setNativeTracks(snapshot: NativePlaybackSnapshot) {
-    nativeSubtitleTracks.value = snapshot.subtitleTracks.mapIndexed { index, track ->
+    nativeSubtitleTracks.value = snapshot.subtitleTracks.mapIndexedNotNull { index, track ->
+      if (track.external) return@mapIndexedNotNull null
       TrackNode(
+        // Keep the ID based on the source snapshot index. PlayerActivity resolves the ID back
+        // through snapshot.subtitleTracks; using the filtered index selected the wrong track
+        // whenever an external subtitle appeared before an embedded one.
         id = -(index + 1),
         type = "sub",
         title = track.label,
@@ -630,6 +636,17 @@ class PlayerViewModel : ViewModel(),
         selected = track.selected,
         external = false,
       )
+    }
+    val externalSelection = snapshot.subtitleTracks
+      .filter { it.external }
+      .mapNotNull { track -> track.formatId?.removePrefix("external:")?.let { it to track.selected } }
+      .toMap()
+    if (externalSelection.isNotEmpty()) {
+      nativeExternalSubtitleTracks.value = nativeExternalSubtitleTracks.value.map { track ->
+        track.externalFilename?.let { rawUri ->
+          externalSelection[rawUri]?.let { selected -> track.copy(selected = selected) } ?: track
+        } ?: track
+      }
     }
     nativeAudioTracks.value = snapshot.audioTracks.mapIndexed { index, track ->
       TrackNode(
@@ -656,6 +673,40 @@ class PlayerViewModel : ViewModel(),
 
   fun setNativeSubtitleToggleListener(listener: ((Int) -> Unit)?) {
     nativeSubtitleToggleListener = listener
+  }
+
+  fun setNativeExternalSubtitleToggleListener(listener: ((Int) -> Unit)?) {
+    nativeExternalSubtitleToggleListener = listener
+  }
+
+  fun registerNativeExternalSubtitle(uri: Uri, fileName: String, selected: Boolean) {
+    val uriString = uri.toString()
+    if (nativeExternalSubtitleTracks.value.any { it.externalFilename == uriString }) {
+      setNativeExternalSubtitleSelected(
+        nativeExternalSubtitleTracks.value.first { it.externalFilename == uriString }.id,
+        selected,
+      )
+      return
+    }
+    val id = -10_000 - nativeExternalSubtitleTracks.value.size
+    nativeExternalSubtitleTracks.value = nativeExternalSubtitleTracks.value + TrackNode(
+      id = id,
+      type = "sub",
+      title = fileName,
+      selected = selected,
+      external = true,
+      externalFilename = uriString,
+    )
+  }
+
+  fun setNativeExternalSubtitleSelected(id: Int, selected: Boolean) {
+    nativeExternalSubtitleTracks.value = nativeExternalSubtitleTracks.value.map { track ->
+      if (track.id == id) track.copy(selected = selected) else track
+    }
+  }
+
+  fun clearNativeExternalSubtitles() {
+    nativeExternalSubtitleTracks.value = emptyList()
   }
 
   fun setNativeSubtitleVisibilityListener(listener: ((Boolean) -> Unit)?) {
@@ -689,8 +740,8 @@ class PlayerViewModel : ViewModel(),
       .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val subtitleTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, nativeSubtitleTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, nativeActive, engine ->
-      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks else tracks.filter { it.isSubtitle }
+    combine(allTracks, nativeSubtitleTracks, nativeExternalSubtitleTracks, nativeEngineActive, decoderPreferences.playbackEngine.changes()) { tracks, nativeTracks, externalTracks, nativeActive, engine ->
+      if (nativeActive || engine == PlaybackEngineMode.NATIVE) nativeTracks + externalTracks else tracks.filter { it.isSubtitle }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val audioTracks: StateFlow<List<TrackNode>> =
@@ -907,8 +958,15 @@ class PlayerViewModel : ViewModel(),
       }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val chapters: StateFlow<List<dev.vivvvek.seeker.Segment>> =
-    combine(mpvChapters, nativeChapters, nativeEngineActive) { mpv, native, nativeActive ->
-      if (nativeActive && native.isNotEmpty()) native else mpv
+    combine(mpvChapters, nativeChapters, nativeEngineActive, AudiobookPlayback.chapters) { mpv, native, nativeActive, audiobookChapters ->
+      when {
+        PlaybackSession.state.value.currentItem?.audiobook != null && audiobookChapters.isNotEmpty() ->
+          audiobookChapters.map { chapter ->
+            Segment(chapter.title, chapter.bookStartMs / 1000f)
+          }
+        nativeActive && native.isNotEmpty() -> native
+        else -> mpv
+      }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   // Audio player UI state
@@ -2726,8 +2784,13 @@ class PlayerViewModel : ViewModel(),
     silent: Boolean = false,
   ) {
     subtitleAddMutex.withLock {
+      // This method runs on Dispatchers.IO. Use the ViewModel state flow instead of asking the
+      // Media3 host, whose ExoPlayer instance is main-thread confined.
+      val nativeActive = nativeEngineActive.value
       val uriString = uri.toString()
-      if (_externalSubtitles.contains(uriString)) {
+      val nativeAlreadyRegistered =
+        nativeExternalSubtitleTracks.value.any { it.externalFilename == uriString }
+      if (_externalSubtitles.contains(uriString) && (!nativeActive || nativeAlreadyRegistered)) {
         android.util.Log.d("PlayerViewModel", "Subtitle already tracked, skipping: $uriString")
         return@withLock
       }
@@ -2760,10 +2823,11 @@ class PlayerViewModel : ViewModel(),
         val mpvPath = uri.resolveUri(appContext) ?: uri.toString()
         val mode = if (select) "select" else "auto"
 
-        if (host.isNativeEngineActive()) {
+        if (nativeActive) {
           val attached = withContext(Dispatchers.Main) { host.nativeAddSubtitle(uri, select) }
           if (!attached) throw Exception("Native subtitle renderer is not ready")
           if (!_externalSubtitles.contains(uriString)) _externalSubtitles.add(uriString)
+          registerNativeExternalSubtitle(uri, fileName, select)
           if (!silent) {
             withContext(Dispatchers.Main) { showToast("$fileName added") }
           }
@@ -2804,10 +2868,15 @@ class PlayerViewModel : ViewModel(),
             showToast("$displayName added")
           }
         }
-      }.onFailure {
+      }.onFailure { error ->
+        android.util.Log.e(
+          "PlayerViewModel",
+          "Failed to load subtitle uri=$uri native=$nativeActive",
+          error,
+        )
         if (!silent) {
           withContext(Dispatchers.Main) {
-            showToast("Failed to load subtitle")
+            showToast("Failed to load subtitle: ${error.message ?: "unknown error"}")
           }
         }
       }
@@ -3311,6 +3380,7 @@ class PlayerViewModel : ViewModel(),
       videoHashJob?.cancel()
       // Clear external subtitles when media changes
       _externalSubtitles.clear()
+      nativeExternalSubtitleTracks.value = emptyList()
       // Reset subtitle hash when media changes.
       _videoHash.value = null
       scanLocalSubtitles(mediaTitle)
@@ -3987,9 +4057,16 @@ class PlayerViewModel : ViewModel(),
   // --- Subtitle Search ---
   private var subtitleSearchJob: Job? = null
 
+  private fun subtitleSearchMediaTitle(): String {
+    currentMediaTitle.takeIf { it.isNotBlank() }?.let { return it }
+    val source = host.currentMediaLookupHint().orEmpty()
+    val uriName = runCatching { Uri.decode(Uri.parse(source).lastPathSegment.orEmpty()) }.getOrDefault("")
+    return uriName.substringAfterLast('/').takeIf { it.isNotBlank() } ?: source
+  }
+
   fun searchOnlineSubtitles(query: String) {
     val queryInfo = MediaInfoParser.parse(query)
-    val fileInfo = MediaInfoParser.parse(currentMediaTitle)
+    val fileInfo = MediaInfoParser.parse(subtitleSearchMediaTitle())
     val searchTitle = queryInfo.title.ifBlank { query.trim() }.ifBlank { fileInfo.title }
     if (searchTitle.isBlank()) return
 
@@ -4045,19 +4122,20 @@ class PlayerViewModel : ViewModel(),
   ) {
     subtitleSearchJob?.cancel()
     _onlineSubtitleSearchResults.value = emptyList()
+    val effectiveQuery = query.ifBlank { subtitleSearchMediaTitle() }
     subtitleSearchJob =
       viewModelScope.launch {
         _isSearchingSub.value = true
-        val cleanSubHubTitle = MediaInfoParser.parse(query).title.ifBlank { query.trim() }
+        val cleanSubHubTitle = MediaInfoParser.parse(effectiveQuery).title.ifBlank { effectiveQuery.trim() }
         val lookupHints = host.currentPlayerLookupHints()
-        val lookupTitle = lookupHints.canonicalTitle ?: currentMediaTitle
+        val lookupTitle = lookupHints.canonicalTitle ?: subtitleSearchMediaTitle()
         val cleanLookupTitle = MediaInfoParser.parse(lookupTitle).title.ifBlank { lookupTitle.trim() }
         val matchesCurrentLookup =
           cleanLookupTitle.equals(cleanSubHubTitle, ignoreCase = true) ||
             (tmdbId != null && tmdbId == lookupHints.tmdbId)
         val wyzieRequest =
           OnlineSubtitleSearchRequest(
-            query = query,
+            query = effectiveQuery,
             tmdbId = tmdbId,
             season = season,
             episode = episode,
@@ -4081,7 +4159,9 @@ class PlayerViewModel : ViewModel(),
             includeWyzie = includeWyzie,
             includeSubtitleHub = includeSubtitleHub,
             onResults = { results ->
-              _onlineSubtitleSearchResults.value = results
+              if (subtitleSearchJob?.isActive == true) {
+                _onlineSubtitleSearchResults.value = results
+              }
             },
           ).onSuccess { results ->
             _onlineSubtitleSearchResults.value = results
@@ -4164,6 +4244,10 @@ class PlayerViewModel : ViewModel(),
     // is updated. Route the click by the actual active engine, otherwise this would write MPV's
     // sid/sub-visibility properties while Media3 is the visible player.
     if (nativeEngineActive.value || decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE) {
+      if (id <= -10_000) {
+        nativeExternalSubtitleToggleListener?.invoke(id)
+        return
+      }
       nativeSubtitleToggleListener?.invoke(id)
       return
     }
@@ -4354,6 +4438,49 @@ class PlayerViewModel : ViewModel(),
       return
     }
     coalesceSeek(offset)
+  }
+
+  fun seekAudioTo(positionSeconds: Float) {
+    if (!positionSeconds.isFinite()) return
+    if (PlaybackSession.state.value.currentItem?.audiobook != null) {
+      AudiobookPlayback.seekInBook((positionSeconds * 1000f).toLong())
+    } else {
+      seekTo(positionSeconds.toInt(), fast = false)
+    }
+  }
+
+  fun seekToPlaybackChapter(chapter: Segment) {
+    if (PlaybackSession.state.value.currentItem?.audiobook != null) {
+      AudiobookPlayback.seekInBook((chapter.start * 1000f).toLong())
+    } else {
+      PlaybackSession.setPropertyInt("chapter", chapters.value.indexOf(chapter).coerceAtLeast(0))
+      unpause()
+    }
+  }
+
+  fun stepPlaybackChapter(offset: Int) {
+    if (offset !in setOf(-1, 1)) return
+    if (PlaybackSession.state.value.currentItem?.audiobook == null) {
+      if (offset < 0) playPrevious() else playNext()
+      return
+    }
+    val progress = PlaybackSession.audiobookProgress() ?: return
+    val audiobookChapters = chapters.value
+    val book = AudiobookPlayback.book.value?.takeIf { it.book.id == progress.item.bookId }
+    val positionInBook = book?.positionInBook(progress.item.trackId, progress.positionMs) ?: progress.positionMs
+    val current = audiobookChapters.lastOrNull { it.start * 1000f <= positionInBook } ?: return
+    val index = audiobookChapters.indexOf(current)
+    val target = if (offset < 0 && positionInBook - (current.start * 1000f).toLong() > 3000L) current
+      else audiobookChapters.getOrNull(index + offset)
+    target?.let { AudiobookPlayback.seekInBook((it.start * 1000f).toLong(), resumePlayback = true) }
+  }
+
+  fun sleepAtCurrentChapterEnd() {
+    val progress = PlaybackSession.audiobookProgress() ?: return
+    val chapter = AudiobookPlayback.currentChapter() ?: return
+    if (chapter.trackId == progress.item.trackId && chapter.endMs > progress.positionMs) {
+      AudiobookPlayback.setTimer(null, chapter.endMs)
+    }
   }
 
   fun nativePlaybackPositionSeconds(): Double = host.nativePlaybackPositionSeconds()
@@ -5166,23 +5293,27 @@ class PlayerViewModel : ViewModel(),
 
   fun cycleScreenRotations() {
     if (isAudioOnly.value) {
+      host.onManualOrientationOverride()
       host.hostRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
       return
     }
     // Temporarily cycle orientation WITHOUT modifying preferences
     // Preferences remain the single source of truth and will be reapplied on next video
-    host.hostRequestedOrientation =
-      when (host.hostRequestedOrientation) {
-        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
-        ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
-        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
-        -> {
-          ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        }
-        else -> {
-          ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
+    val nextOrientation = when (host.hostRequestedOrientation) {
+      ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+      ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+      ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+      -> {
+        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
       }
+      else -> {
+        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+      }
+    }
+    // Mark the tap before assigning requestedOrientation. On some devices the configuration
+    // callback is delivered synchronously and would otherwise reapply the video aspect first.
+    host.onManualOrientationOverride()
+    host.hostRequestedOrientation = nextOrientation
   }
 
   // ==================== Lua Invocation Handling ====================
@@ -5395,8 +5526,18 @@ class PlayerViewModel : ViewModel(),
       host.nativeSetPan(x, y)
       return
     }
+    val width = PlaybackSession.getPropertyInt("osd-width")?.takeIf { it > 0 }?.toFloat()
+      ?: PlaybackSession.getPropertyInt("width")?.takeIf { it > 0 }?.toFloat()
+      ?: 1f
+    val height = PlaybackSession.getPropertyInt("osd-height")?.takeIf { it > 0 }?.toFloat()
+      ?: PlaybackSession.getPropertyInt("height")?.takeIf { it > 0 }?.toFloat()
+      ?: 1f
+    val panX = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-x")) 0f else x / width
+    val panY = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-y")) 0f else y / height
     _videoPanX.value = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-x")) 0f else x
     _videoPanY.value = if (MpvConfigOverridePolicy.isOwnedByMpvConf("video-pan-y")) 0f else y
+    PlaybackSession.setPropertyDouble("video-pan-x", panX.toDouble())
+    PlaybackSession.setPropertyDouble("video-pan-y", panY.toDouble())
   }
 
   fun resetVideoPan() {
@@ -6076,6 +6217,13 @@ class PlayerViewModel : ViewModel(),
 
   fun playNext() {
     host.playNextQueueItem()
+  }
+
+  fun playNextAudiobook() {
+    val currentBookId = PlaybackSession.state.value.currentItem?.audiobook?.bookId ?: return
+    viewModelScope.launch {
+      AudiobookPlayback.launchNextBook(appContext, currentBookId)
+    }
   }
 
   fun playPrevious() {
@@ -6793,6 +6941,10 @@ class PlayerViewModel : ViewModel(),
   override fun onCleared() {
     // ViewModel normally cancels this scope after onCleared; cancel it first so dispatcher workers
     // cannot start another callback while the player resources below are being released.
+    subtitleSearchJob?.cancel()
+    subtitleSearchJob = null
+    mediaSearchJob?.cancel()
+    mediaSearchJob = null
     viewModelScope.cancel()
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)

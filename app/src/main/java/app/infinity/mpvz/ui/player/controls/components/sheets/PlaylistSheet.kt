@@ -33,8 +33,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.IconButton
@@ -268,25 +271,21 @@ fun PlaylistSheet(
   // Check portrait mode
   val isPortrait = configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
 
-  // Portrait mode => list mode
   val isListModePreference by playerPreferences.playlistViewMode.collectAsState()
-  var isListMode by remember { mutableStateOf(if (isPortrait) true else isListModePreference) }
+  var isListMode by remember { mutableStateOf(isListModePreference) }
 
-  LaunchedEffect(isPortrait) {
-    if (isPortrait && !isListMode) {
-      isListMode = true
-    }
-  }
-
-  // Update preference when view mode changes (only in landscape)
+  // Keep the playlist view mode consistent with the home-tree/browser settings in every
+  // orientation. Previously portrait taps changed only transient Compose state and were lost
+  // when the sheet recomposed.
   LaunchedEffect(isListMode) {
-    if (!isPortrait && isListMode != isListModePreference) {
+    if (isListMode != isListModePreference) {
       playerPreferences.playlistViewMode.set(isListMode)
     }
   }
 
   // Scroll state for the playlist
   val lazyListState = rememberLazyListState()
+  val lazyGridState = rememberLazyGridState()
 
   // Find the currently playing item index - tracks changes in playlist items
   val playingItemIndex by remember {
@@ -296,9 +295,10 @@ fun PlaylistSheet(
   }
 
   // Scroll to the currently playing item when the playing item changes or when sheet opens
-  LaunchedEffect(playingItemIndex) {
+  LaunchedEffect(playingItemIndex, isListMode) {
     if (playingItemIndex >= 0) {
-      lazyListState.animateScrollToItem(playingItemIndex)
+      if (isListMode) lazyListState.animateScrollToItem(playingItemIndex)
+      else lazyGridState.animateScrollToItem(playingItemIndex)
     }
   }
 
@@ -399,17 +399,12 @@ fun PlaylistSheet(
               )
             }
 
-            // Toggle button for list/grid view (only in landscape)
-            if (!isPortrait) {
-              IconButton(
-                onClick = { isListMode = !isListMode },
-              ) {
-                Icon(
-                  imageVector = if (isListMode) Icons.RoundedFilled.GridView else Icons.RoundedFilled.ViewList,
-                  contentDescription = if (isListMode) "Switch to Grid View" else "Switch to List View",
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
+            IconButton(onClick = { isListMode = !isListMode }) {
+              Icon(
+                imageVector = if (isListMode) Icons.RoundedFilled.GridView else Icons.RoundedFilled.ViewList,
+                contentDescription = if (isListMode) "Switch to Grid View" else "Switch to List View",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
             }
           }
         }
@@ -486,17 +481,20 @@ fun PlaylistSheet(
             }
           }
         } else {
-          // Horizontal grid mode
-          LazyRow(
-            state = lazyListState,
+          // Grid mode: use actual cells instead of a horizontal strip.
+          LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 160.dp),
+            state = lazyGridState,
+            modifier = Modifier.fillMaxWidth(),
             contentPadding =
               PaddingValues(
-                horizontal = if (isListMode) MaterialTheme.spacing.medium else 0.dp,
+                horizontal = MaterialTheme.spacing.medium,
                 vertical = MaterialTheme.spacing.small,
               ),
             horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
+            verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
           ) {
-              items(playlist, key = { it.index }) { item ->
+            items(playlist, key = { it.index }) { item ->
               PlaylistTrackGridItem(
                 item = item,
                 thumbnailRepository = thumbnailRepository,

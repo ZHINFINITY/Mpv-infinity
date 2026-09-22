@@ -12,7 +12,6 @@ package app.infinity.mpvz.ui.player.visualizer
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.opengl.GLSurfaceView
 import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -96,7 +95,7 @@ private fun <T> VisualizerOverlay(
   volumeScale: Float = 1f,
   features: AudioFeatures,
   factory: (android.content.Context, AudioFeatures, VisualizerPalette) -> T,
-) where T : GLSurfaceView, T : PaletteConsumer {
+) where T : VisualizerTextureView, T : PaletteConsumer {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val realAnalyzerActive = remember(features) { AtomicBoolean(false) }
@@ -155,15 +154,10 @@ private fun <T> VisualizerOverlay(
     modifier = modifier,
     update = { view ->
       view.updatePalette(palette)
-      view.setBackgroundColor(Color.TRANSPARENT)
-      view.holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
-      // Keep the transparent GL layer above the ambient background so its alpha clear is visible.
-      view.setZOrderOnTop(true)
       if (isSheetOpen) {
-        // A sheet fully covers the expensive GLSurfaceView. Keep the last frame but stop the
+        // A sheet fully covers the expensive renderer. Keep the last frame but stop the
         // continuous render loop (particle/galaxy renderers otherwise burn GPU underneath it).
         view.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
-        view.requestRender()
       } else {
         view.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
       }

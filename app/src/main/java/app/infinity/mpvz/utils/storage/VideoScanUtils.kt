@@ -60,7 +60,8 @@ object VideoScanUtils : KoinComponent {
         return@withContext emptyList()
       }
 
-      // Try MediaStore first (fast)
+      // Query only direct children so folders with large nested trees do not force a full
+      // descendant result set that is discarded by the parent-path check below.
       scanVideosFromMediaStore(context, normalizedFolderPath, videosMap, noMediaPathFilter)
       if (options.includeAudio) {
         scanAudioFromMediaStore(context, normalizedFolderPath, videosMap, noMediaPathFilter, options)
@@ -127,8 +128,10 @@ object VideoScanUtils : KoinComponent {
 
     val normalizedFolderPath = normalizeStoragePath(folderPath) ?: return
     val normalizedFolderKey = storagePathKey(normalizedFolderPath) ?: return
-    val selection = "LOWER(${MediaStore.Video.Media.DATA}) LIKE ?"
-    val selectionArgs = arrayOf("$normalizedFolderKey/%")
+    val selection =
+      "LOWER(${MediaStore.Video.Media.DATA}) LIKE ? AND " +
+        "LOWER(${MediaStore.Video.Media.DATA}) NOT LIKE ?"
+    val selectionArgs = arrayOf("$normalizedFolderKey/%", "$normalizedFolderKey/%/%")
 
     try {
       context.contentResolver
@@ -230,7 +233,9 @@ object VideoScanUtils : KoinComponent {
       )
     val normalizedFolderPath = normalizeStoragePath(folderPath) ?: return
     val normalizedFolderKey = storagePathKey(normalizedFolderPath) ?: return
-    val selection = "LOWER(${MediaStore.Audio.Media.DATA}) LIKE ?"
+    val selection =
+      "LOWER(${MediaStore.Audio.Media.DATA}) LIKE ? AND " +
+        "LOWER(${MediaStore.Audio.Media.DATA}) NOT LIKE ?"
 
     try {
       context.contentResolver
@@ -238,7 +243,7 @@ object VideoScanUtils : KoinComponent {
           MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
           projection,
           selection,
-          arrayOf("$normalizedFolderKey/%"),
+          arrayOf("$normalizedFolderKey/%", "$normalizedFolderKey/%/%"),
           "${MediaStore.Audio.Media.DISPLAY_NAME} ASC",
         )?.use { cursor ->
           val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
@@ -416,14 +421,15 @@ object VideoScanUtils : KoinComponent {
     if (width <= 0 || height <= 0) return "--"
 
     return when {
-      width >= 7680 || height >= 4320 -> "4320p"
-      width >= 3840 || height >= 2160 -> "2160p"
-      width >= 2560 || height >= 1440 -> "1440p"
-      width >= 1920 || height >= 1080 -> "1080p"
-      width >= 1280 || height >= 720 -> "720p"
-      width >= 854 || height >= 480 -> "480p"
-      width >= 640 || height >= 360 -> "360p"
-      width >= 426 || height >= 240 -> "240p"
+      height >= 4320 -> "4320p"
+      height >= 2160 -> "2160p"
+      height >= 1440 -> "1440p"
+      height >= 1080 -> "1080p"
+      height >= 720 -> "720p"
+      height >= 576 -> "576p"
+      height >= 480 -> "480p"
+      height >= 360 -> "360p"
+      height >= 240 -> "240p"
       else -> "${height}p"
     }
   }
@@ -465,8 +471,13 @@ object FileTypeUtils {
 
   val AUDIO_EXTENSIONS =
     setOf(
+      "aa",
+      "aax",
+      "aaxc",
       "mp3",
       "m4a",
+      "m4b",
+      "m4p",
       "aac",
       "flac",
       "ogg",
@@ -560,7 +571,8 @@ object FileTypeUtils {
       "3g2" -> "video/3gpp2"
       "mpg", "mpeg" -> "video/mpeg"
       "mp1", "mp2", "mp3", "mpa" -> "audio/mpeg"
-      "m4a", "aac" -> "audio/mp4"
+      "m4a", "m4b", "aac", "m4p" -> "audio/mp4"
+      "aa", "aax", "aaxc" -> "audio/audible"
       "flac" -> "audio/flac"
       "ogg", "oga", "opus", "spx" -> "audio/ogg"
       "wav", "wave" -> "audio/wav"

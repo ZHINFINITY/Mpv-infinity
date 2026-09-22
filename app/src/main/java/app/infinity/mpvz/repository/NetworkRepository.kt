@@ -169,7 +169,9 @@ class NetworkRepository(
           candidate = newClient
 
           activeClients.remove(connection.id)?.let { closeClient(it) }
-          newClient.connect().getOrThrow()
+          kotlinx.coroutines.withTimeout(30_000L) {
+            newClient.connect().getOrThrow()
+          }
 
           try {
             dao.updateLastConnected(connection.id, System.currentTimeMillis())

@@ -338,6 +338,21 @@ object AudioPreferencesScreen : Screen {
               )
 
               PreferenceDivider()
+              val audioPaletteBackground by preferences.audioPaletteBackground.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_palette_background_title),
+                value = audioPaletteBackground,
+                onValueChange = { preferences.audioPaletteBackground.set(it) },
+                title = { Text(stringResource(R.string.pref_audio_palette_background_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_audio_palette_background_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
               val audioAmbientMode by preferences.audioAmbientMode.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_audio_ambient_mode_title),
@@ -365,6 +380,17 @@ object AudioPreferencesScreen : Screen {
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
+              )
+              val audioStandbyDelaySeconds by preferences.audioStandbyDelaySeconds.collectAsState()
+              SliderPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_audio_standby_mode_title),
+                value = audioStandbyDelaySeconds.toFloat().coerceIn(1f, 60f),
+                onValueChange = { preferences.audioStandbyDelaySeconds.set(it.toInt().coerceIn(1, 60)) },
+                title = { Text("Standby delay") },
+                valueRange = 1f..60f,
+                summary = { Text("Enter standby after $audioStandbyDelaySeconds seconds of inactivity", color = MaterialTheme.colorScheme.outline) },
+                onSliderValueChange = { preferences.audioStandbyDelaySeconds.set(it.toInt().coerceIn(1, 60)) },
+                sliderValue = audioStandbyDelaySeconds.toFloat().coerceIn(1f, 60f),
               )
 
               PreferenceDivider()

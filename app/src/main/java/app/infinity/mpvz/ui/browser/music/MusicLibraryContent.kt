@@ -16,7 +16,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -108,6 +106,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.floor
 import kotlin.math.sqrt
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -115,15 +114,20 @@ import kotlinx.coroutines.flow.filter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
+import app.infinity.mpvz.ui.browser.components.ExpressiveScrollBar
+import app.infinity.mpvz.ui.browser.components.fastScrollGlyph
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.repository.JellyfinRepository
+import app.infinity.mpvz.repository.NavidromeRepository
 import app.infinity.mpvz.presentation.components.RemoteImage
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
+import app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen
 import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.browser.MainScreen
 import app.infinity.mpvz.ui.browser.NavigationBarState
@@ -152,6 +156,7 @@ import app.infinity.mpvz.utils.permission.PermissionUtils
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -210,6 +215,10 @@ fun MusicLibraryContent(
 
   val browserPreferences = koinInject<BrowserPreferences>()
   val foldersPreferences = koinInject<app.infinity.mpvz.preferences.FoldersPreferences>()
+  val jellyfinRepository = koinInject<JellyfinRepository>()
+  val navidromeRepository = koinInject<NavidromeRepository>()
+  val jellyfinServers by jellyfinRepository.allServers.collectAsState(initial = emptyList())
+  val navidromeServers by navidromeRepository.allServers.collectAsState(initial = emptyList())
   val folderSortType by browserPreferences.folderSortType.collectAsState()
   val folderSortOrder by browserPreferences.folderSortOrder.collectAsState()
   val coverArtSizeDp by browserPreferences.musicCoverArtSize.collectAsState()
@@ -487,6 +496,7 @@ fun MusicLibraryContent(
           Box {
             BrowserTopBar(
               title = stringResource(R.string.ui_music),
+              showTitle = false,
               isInSelectionMode = activeSelectionManager.isInSelectionMode,
               selectedCount = activeSelectionManager.selectedCount,
               totalCount = totalCount,
@@ -496,6 +506,37 @@ fun MusicLibraryContent(
               onSearchClick = { isSearchActive = true },
               onSettingsClick = {
                 backStack.add(PreferencesScreen)
+              },
+              leadingActions = {
+                if (!activeSelectionManager.isInSelectionMode) {
+                  Icon(
+                    imageVector = Icons.RoundedFilled.Audiotrack,
+                    contentDescription = stringResource(R.string.ui_music),
+                    modifier = Modifier.size(26.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                  )
+                  MusicSourceChooser(
+                    hasJellyfin = jellyfinServers.isNotEmpty(),
+                    hasNavidrome = navidromeServers.isNotEmpty(),
+                    onManageServers = { backStack.add(app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen) },
+                    modifier = Modifier.padding(start = 8.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                  )
+                }
+              },
+              additionalActions = {
+                if (!activeSelectionManager.isInSelectionMode) {
+                  IconButton(
+                    onClick = { backStack.add(AudiobookLibraryScreen) },
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                  ) {
+                    Icon(
+                      imageVector = Icons.RoundedFilled.AudiobookWave,
+                      contentDescription = stringResource(R.string.audiobooks_title),
+                      modifier = Modifier.size(22.dp),
+                      tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                  }
+                }
               },
               onSelectAll = { activeSelectionManager.selectAll() },
               onInvertSelection = { activeSelectionManager.invertSelection() },
@@ -581,7 +622,7 @@ fun MusicLibraryContent(
         PrimaryScrollableTabRow(
           selectedTabIndex = pagerState.currentPage.coerceIn(0, (visibleTabs.size - 1).coerceAtLeast(0)),
           containerColor = Color.Transparent,
-          contentColor = MaterialTheme.colorScheme.primary,
+          contentColor = MaterialTheme.colorScheme.onSurface,
           edgePadding = 8.dp,
           divider = {}
         ) {
@@ -603,7 +644,9 @@ fun MusicLibraryContent(
                   softWrap = false,
                   overflow = TextOverflow.Ellipsis
                 )
-              }
+              },
+              selectedContentColor = MaterialTheme.colorScheme.onSurface,
+              unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
             )
           }
         }
@@ -710,7 +753,7 @@ fun MusicLibraryContent(
     ) {
       PullRefreshBox(
         isRefreshing = isRefreshing,
-        onRefresh = { musicViewModel.refreshLibrary(context) },
+        onRefresh = { musicViewModel.scanLibrary(context) },
         modifier = Modifier.fillMaxSize()
       ) {
         if (isLoading && songs.isEmpty()) {
@@ -1390,25 +1433,50 @@ private fun SongsTabContent(
         }
       }
     } else {
-      LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
-      ) {
-        items(songs, key = { it.id }) { song ->
-          SongListItem(
-            song = song,
-            isSelected = selectionManager.isSelected(song),
-            isPlaying = song.isNowPlaying(),
-            coverArtSizeDp = coverArtSizeDp,
-            onClick = { onSongClick(song) },
-            onLongClick = { onSongLongClick(song) }
-          )
+      Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+          state = listState,
+          modifier = Modifier.fillMaxSize(),
+          contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+        ) {
+          items(songs, key = { it.id }) { song ->
+            SongListItem(
+              song = song,
+              isSelected = selectionManager.isSelected(song),
+              isPlaying = song.isNowPlaying(),
+              coverArtSizeDp = coverArtSizeDp,
+              onClick = { onSongClick(song) },
+              onLongClick = { onSongLongClick(song) }
+            )
+          }
         }
+        MusicTabFastScroller(
+          itemCount = songs.size,
+          listState = listState,
+          dragLabelProvider = { index -> fastScrollGlyph(songs.getOrNull(index)?.title) },
+          modifier = Modifier.align(Alignment.CenterEnd),
+        )
       }
     }
   }
 }
+
+@Composable
+private fun MusicTabFastScroller(
+  itemCount: Int,
+  listState: LazyListState,
+  dragLabelProvider: (Int) -> String?,
+  modifier: Modifier = Modifier,
+) {
+  if (itemCount >= 12) {
+    ExpressiveScrollBar(
+      listState = listState,
+      dragLabelProvider = dragLabelProvider,
+      modifier = modifier,
+    )
+  }
+}
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1581,20 +1649,28 @@ private fun AlbumsTabContent(
       }
     }
   } else {
-    LazyColumn(
-      state = listState,
-      modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
-    ) {
-      items(albums, key = { it.id }) { album ->
-        AlbumListCard(
-          album = album,
-          isSelected = selectionManager.isSelected(album),
-          coverArtSizeDp = coverArtSizeDp,
-          onClick = { onAlbumClick(album) },
-          onLongClick = { onAlbumLongClick(album) }
-        )
+    Box(modifier = Modifier.fillMaxSize()) {
+      LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+      ) {
+        items(albums, key = { it.id }) { album ->
+          AlbumListCard(
+            album = album,
+            isSelected = selectionManager.isSelected(album),
+            coverArtSizeDp = coverArtSizeDp,
+            onClick = { onAlbumClick(album) },
+            onLongClick = { onAlbumLongClick(album) }
+          )
+        }
       }
+      MusicTabFastScroller(
+        itemCount = albums.size,
+        listState = listState,
+        dragLabelProvider = { index -> fastScrollGlyph(albums.getOrNull(index)?.title) },
+        modifier = Modifier.align(Alignment.CenterEnd),
+      )
     }
   }
 }
@@ -1805,20 +1881,28 @@ private fun ArtistsTabContent(
       }
     }
   } else {
-    LazyColumn(
-      state = listState,
-      modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
-    ) {
-      items(artists, key = { it.id }) { artist ->
-        ArtistListCard(
-          artist = artist,
-          isSelected = selectionManager.isSelected(artist),
-          coverArtSizeDp = coverArtSizeDp,
-          onClick = { onArtistClick(artist) },
-          onLongClick = { onArtistLongClick(artist) }
-        )
+    Box(modifier = Modifier.fillMaxSize()) {
+      LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+      ) {
+        items(artists, key = { it.id }) { artist ->
+          ArtistListCard(
+            artist = artist,
+            isSelected = selectionManager.isSelected(artist),
+            coverArtSizeDp = coverArtSizeDp,
+            onClick = { onArtistClick(artist) },
+            onLongClick = { onArtistLongClick(artist) }
+          )
+        }
       }
+      MusicTabFastScroller(
+        itemCount = artists.size,
+        listState = listState,
+        dragLabelProvider = { index -> fastScrollGlyph(artists.getOrNull(index)?.name) },
+        modifier = Modifier.align(Alignment.CenterEnd),
+      )
     }
   }
 }
@@ -2341,26 +2425,34 @@ private fun PlaylistsTabContent(
           }
         }
       } else {
-        LazyColumn(
-          state = listState,
-          modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
-        ) {
-          items(playlists, key = { it.id }) { playlist ->
-            val details = playlistDetails[playlist.id]
-            val itemCount = details?.first ?: 0
-            val artUris = details?.second ?: emptyList()
-            MusicPlaylistCard(
-              playlist = playlist,
-              itemCount = itemCount,
-              artUris = artUris,
-              isSelected = selectionManager.isSelected(playlist),
-              isGridMode = false,
-              coverArtSizeDp = coverArtSizeDp,
-              onClick = { onPlaylistClick(playlist) },
-              onLongClick = { onPlaylistLongClick(playlist) }
-            )
+        Box(modifier = Modifier.fillMaxSize()) {
+          LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 32.dp, bottom = navBarHeight + 16.dp)
+          ) {
+            items(playlists, key = { it.id }) { playlist ->
+              val details = playlistDetails[playlist.id]
+              val itemCount = details?.first ?: 0
+              val artUris = details?.second ?: emptyList()
+              MusicPlaylistCard(
+                playlist = playlist,
+                itemCount = itemCount,
+                artUris = artUris,
+                isSelected = selectionManager.isSelected(playlist),
+                isGridMode = false,
+                coverArtSizeDp = coverArtSizeDp,
+                onClick = { onPlaylistClick(playlist) },
+                onLongClick = { onPlaylistLongClick(playlist) }
+              )
+            }
           }
+          MusicTabFastScroller(
+            itemCount = playlists.size,
+            listState = listState,
+            dragLabelProvider = { index -> fastScrollGlyph(playlists.getOrNull(index)?.name) },
+            modifier = Modifier.align(Alignment.CenterEnd),
+          )
         }
       }
     }

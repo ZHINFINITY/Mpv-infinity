@@ -82,6 +82,33 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
+          titleRes = R.string.pref_media_servers_title,
+          summaryRes = R.string.pref_media_servers_summary,
+          keywords = listOf("media server", "servers", "jellyfin", "navidrome", "audiobookshelf", "network"),
+          category = "Network",
+          screen = MediaServersPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_nav_navidrome_title,
+          summaryRes = R.string.pref_nav_navidrome_summary,
+          keywords = listOf("navidrome", "navigation", "tab", "appearance"),
+          category = "Appearance",
+          screen = AppearancePreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_nav_audiobooks_title,
+          summaryRes = R.string.pref_nav_audiobooks_summary,
+          keywords = listOf("audiobook", "audiobookshelf", "local audio", "navigation", "tab", "appearance"),
+          category = "Appearance",
+          screen = AppearancePreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
           titleRes = R.string.pref_appearance_amoled_mode_title,
           summaryRes = R.string.pref_appearance_amoled_mode_summary,
           keywords = listOf("amoled", "black", "dark", "oled", "pure black"),
@@ -929,7 +956,16 @@ object SearchablePreferences {
         SearchablePreference(
           titleRes = R.string.pref_audio_ambient_mode_title,
           summaryRes = R.string.pref_audio_ambient_mode_summary,
-          keywords = listOf("audio", "music", "ambient", "colors", "album", "art", "gradient"),
+          keywords = listOf("audio", "music", "ambient", "colors", "album", "art", "gradient", "youtube"),
+          category = "Audio",
+          screen = AudioPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_audio_palette_background_title,
+          summaryRes = R.string.pref_audio_palette_background_summary,
+          keywords = listOf("audio", "music", "album", "artwork", "palette", "background", "colors", "theme"),
           category = "Audio",
           screen = AudioPreferencesScreen,
         ),
@@ -1337,6 +1373,7 @@ object SearchablePreferences {
         SearchEntrySpec(R.string.pref_nav_playlists_title, listOf("playlist", "tab", "navigation")),
         SearchEntrySpec(R.string.pref_nav_network_title, listOf("network", "stream", "tab", "navigation")),
         SearchEntrySpec(R.string.pref_nav_jellyfin_title, listOf("jellyfin", "server", "tab", "navigation")),
+        SearchEntrySpec(R.string.pref_nav_jellyfin_auto_title, listOf("jellyfin", "server", "auto", "tab", "connect", "navigation")),
         SearchEntrySpec(R.string.pref_quick_play_fab_title, listOf("quick play", "fab", "floating button", "random")),
         SearchEntrySpec(R.string.pref_quick_play_fab_direct_title, listOf("quick play", "direct", "random", "chooser")),
       )

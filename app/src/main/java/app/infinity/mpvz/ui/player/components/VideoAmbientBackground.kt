@@ -154,7 +154,9 @@ fun rememberVideoAmbientFrame(
               isSurfaceReady = currentIsSurfaceReadyProvider,
               isPlaying = currentIsPlayingProvider,
               fallbackFrame = { currentFallbackFrameProvider(SAMPLE_WIDTH) },
-              onCaptureLost = { state = VideoAmbientFrame() },
+              // Seeking can briefly invalidate/reconnect the SurfaceView. Keep the last valid
+              // frame during that transient gap instead of exposing black ambient sides.
+              onCaptureLost = { /* retain the last frame until a new sample arrives */ },
               onUnsupported = {
                 unsupported = true
                 state = VideoAmbientFrame(supported = false)

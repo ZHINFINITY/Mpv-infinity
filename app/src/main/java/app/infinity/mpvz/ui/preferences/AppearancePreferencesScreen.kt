@@ -60,6 +60,7 @@ import app.infinity.mpvz.ui.player.ControlsAnimationStyle
 import app.infinity.mpvz.ui.player.NavigationAnimStyle
 import app.infinity.mpvz.ui.player.VideoOpenAnimation
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
+import app.infinity.mpvz.ui.preferences.components.CustomThemeSettings
 import app.infinity.mpvz.ui.preferences.components.ThemePicker
 import app.infinity.mpvz.ui.theme.DarkMode
 import app.infinity.mpvz.ui.theme.LocalThemeTransitionState
@@ -95,8 +96,10 @@ object AppearancePreferencesScreen : Screen {
     val systemDarkTheme = isSystemInDarkTheme()
     val themeTransition = LocalThemeTransitionState.current
 
-    val darkMode by preferences.darkMode.collectAsState()
-    val appTheme by preferences.appTheme.collectAsState()
+  val darkMode by preferences.darkMode.collectAsState()
+  val appTheme by preferences.appTheme.collectAsState()
+  val activeCustomThemeId by preferences.activeCustomThemeId.collectAsState()
+  val customThemes by preferences.customThemes.collectAsState()
     var pendingThumbnailMode by remember { mutableStateOf<ThumbnailMode?>(null) }
     var isThemeSectionExpanded by rememberSaveable { mutableStateOf(true) }
     val storedThumbnailMode by browserPreferences.thumbnailMode.collectAsState()
@@ -220,9 +223,7 @@ object AppearancePreferencesScreen : Screen {
                     fontWeight = FontWeight.SemiBold,
                   )
                   Text(
-                    text = "${stringResource(
-                      darkMode.titleRes,
-                    )} · ${stringResource(appTheme.titleRes)}",
+                    text = "${stringResource(darkMode.titleRes)} · ${customThemes.firstOrNull { it.id == activeCustomThemeId }?.name ?: stringResource(appTheme.titleRes)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline,
                   )
@@ -269,15 +270,34 @@ object AppearancePreferencesScreen : Screen {
                     currentTheme = appTheme,
                     isDarkMode = isDarkMode,
                     onThemeSelected = { theme, position ->
-                      if (theme != appTheme && themeTransition?.isAnimating != true) {
+                      if ((theme != appTheme || activeCustomThemeId.isNotEmpty()) && themeTransition?.isAnimating != true) {
                         themeTransition?.startTransition(position)
                         scope.launch {
                           delay(50)
                           preferences.appTheme.set(theme)
+                          preferences.activeCustomThemeId.set("")
+                        }
+                      }
+                    },
+                    customThemes = customThemes,
+                    activeCustomThemeId = activeCustomThemeId,
+                    onCustomThemeSelected = { theme, position ->
+                      if (activeCustomThemeId != theme.id && themeTransition?.isAnimating != true) {
+                        themeTransition?.startTransition(position)
+                        scope.launch {
+                          delay(50)
+                          preferences.activeCustomThemeId.set(theme.id)
                         }
                       }
                     },
                     modifier = Modifier.padding(vertical = 8.dp),
+                  )
+
+                  PreferenceDivider()
+
+                  CustomThemeSettings(
+                    preferences = preferences,
+                    modifier = Modifier.padding(horizontal = 16.dp),
                   )
 
                   PreferenceDivider()
@@ -756,6 +776,8 @@ object AppearancePreferencesScreen : Screen {
               val showPlaylistsTab by preferences.showPlaylistsTab.collectAsState()
               val showNetworkTab by preferences.showNetworkTab.collectAsState()
               val showJellyfinTab by preferences.showJellyfinTab.collectAsState()
+              val showNavidromeTab by preferences.showNavidromeTab.collectAsState()
+              val showAudiobooksTab by preferences.showAudiobooksTab.collectAsState()
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_nav_home_title),
@@ -840,6 +862,52 @@ object AppearancePreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = stringResource(id = R.string.pref_nav_jellyfin_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_navidrome_title),
+                value = showNavidromeTab,
+                onValueChange = preferences.showNavidromeTab::set,
+                title = { Text(text = stringResource(id = R.string.pref_nav_navidrome_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(id = R.string.pref_nav_navidrome_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_audiobooks_title),
+                value = showAudiobooksTab,
+                onValueChange = preferences.showAudiobooksTab::set,
+                title = { Text(text = stringResource(id = R.string.pref_nav_audiobooks_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(id = R.string.pref_nav_audiobooks_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              val autoShowJellyfinTab by preferences.autoShowJellyfinTab.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_jellyfin_auto_title),
+                value = autoShowJellyfinTab,
+                onValueChange = preferences.autoShowJellyfinTab::set,
+                title = { Text(text = stringResource(id = R.string.pref_nav_jellyfin_auto_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(id = R.string.pref_nav_jellyfin_auto_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
