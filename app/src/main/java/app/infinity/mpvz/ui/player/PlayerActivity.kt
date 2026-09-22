@@ -368,12 +368,14 @@ class PlayerActivity :
 
   private fun handleNativePlaybackEnded() {
     if (!isNativeEngineActive()) return
+    val autoplay = playerPreferences.autoplayNextVideo.get()
     when {
-      viewModel.shouldRepeatPlaylist() && viewModel.hasNext() -> playNextQueueItem()
       viewModel.shouldRepeatCurrentFile() -> {
         nativeEngine.seekTo(0L)
         nativeEngine.setPlaying(true)
       }
+      (autoplay || viewModel.shouldRepeatPlaylist()) && viewModel.hasNext() -> playNextQueueItem()
+      else -> finishAtEofIfRequested()
     }
   }
 
