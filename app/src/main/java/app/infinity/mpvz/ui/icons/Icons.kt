@@ -195,9 +195,7 @@ object Icons {
     val PlaylistPlay get() = PlayArrow
     val PushPin by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Push_pin) }
     val QueueMusic by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Queue_music) }
-    // ReadInfinity uses the standard filled Material refresh glyph (MdRefresh).
-    // Keep one shared vector so every MPV∞ tab renders the same refresh symbol.
-    val Refresh by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialRefreshVector) }
+    val Refresh by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Refresh) }
     val Remove by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Remove) }
     val RemoveCircle by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Do_not_disturb_on) }
     val Repeat by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Repeat) }
@@ -515,33 +513,6 @@ object Icons {
 
     @DrawableRes val Close = MaterialSymbolsR.drawable.materialsymbols_ic_close_rounded_filled
   }
-}
-
-private val MaterialRefreshVector: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-  ImageVector.Builder(
-    name = "MaterialRefresh",
-    defaultWidth = 24.dp,
-    defaultHeight = 24.dp,
-    viewportWidth = 24f,
-    viewportHeight = 24f,
-  ).apply {
-    path(fill = SolidColor(Color.Black)) {
-      moveTo(17.65f, 6.35f)
-      curveTo(16.2f, 4.9f, 14.21f, 4f, 12f, 4f)
-      curveTo(7.58f, 4f, 4.01f, 7.58f, 4.01f, 12f)
-      curveTo(4.01f, 16.42f, 7.58f, 20f, 12f, 20f)
-      curveTo(15.73f, 20f, 18.84f, 17.45f, 19.73f, 14f)
-      horizontalLineTo(17.65f)
-      curveTo(16.83f, 16.33f, 14.61f, 18f, 12f, 18f)
-      curveTo(8.69f, 18f, 6f, 15.31f, 6f, 12f)
-      curveTo(6f, 8.69f, 8.69f, 6f, 12f, 6f)
-      curveTo(13.66f, 6f, 15.14f, 6.69f, 16.22f, 7.78f)
-      lineTo(13f, 11f)
-      horizontalLineTo(20f)
-      verticalLineTo(4f)
-      close()
-    }
-  }.build()
 }
 
 private val FavoriteBorderVector: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
