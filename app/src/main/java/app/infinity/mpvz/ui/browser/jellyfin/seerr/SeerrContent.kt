@@ -218,7 +218,7 @@ fun SeerrContent(
                 Icon(
                   imageVector = Icons.RoundedFilled.Person,
                   contentDescription = stringResource(R.string.seerr_connect_server),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                   modifier = Modifier.size(24.dp),
                 )
               }
