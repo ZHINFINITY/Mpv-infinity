@@ -43,8 +43,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -70,6 +68,7 @@ import app.infinity.mpvz.preferences.sampleMediaAspectRatio
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.presentation.components.TintedSlider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -219,16 +218,16 @@ private fun CustomThemeEditor(
             if (aspectMode == "source") Button(onClick = { aspectMode = "source" }) { Text("Keep source") } else OutlinedButton(onClick = { aspectMode = "source" }) { Text("Keep source") }
           }
         }
-        ThemeAdjustmentSlider("Zoom / scale", scale, 0.5f..2.5f, { scale = it }) { "${it.asPercent(0)}%" }
-        ThemeAdjustmentSlider("Horizontal position", offsetX, -1f..1f, { offsetX = it }) { it.asSignedPercent() }
-        ThemeAdjustmentSlider("Vertical position", offsetY, -1f..1f, { offsetY = it }) { it.asSignedPercent() }
+        ThemeAdjustmentSlider("Zoom / scale", scale, 0.5f..2.5f, { scale = it })
+        ThemeAdjustmentSlider("Horizontal position", offsetX, -1f..1f, { offsetX = it })
+        ThemeAdjustmentSlider("Vertical position", offsetY, -1f..1f, { offsetY = it })
         Text("Media appearance", style = MaterialTheme.typography.titleMedium)
-        ThemeAdjustmentSlider("Background blur", blur, 0f..24f, { blur = it }) { "${it.toInt()} dp" }
-        ThemeAdjustmentSlider("Brightness", brightness, 0.25f..2f, { brightness = it }) { "${it.asPercent(0)}%" }
-        ThemeAdjustmentSlider("Saturation", saturation, 0f..2f, { saturation = it }) { "${it.asPercent(0)}%" }
-        ThemeAdjustmentSlider("Media transparency", visibility, 0.15f..1f, { visibility = it }) { "${(it * 100).toInt()}% visible" }
-        ThemeAdjustmentSlider("Dim overlay", overlay, 0f..0.65f, { overlay = it }) { "${(it * 100).toInt()}%" }
-        ThemeAdjustmentSlider("Panel opacity", surfaceOpacity, 0.55f..1f, { surfaceOpacity = it }) { "${(it * 100).toInt()}%" }
+        ThemeAdjustmentSlider("Background blur", blur, 0f..24f, { blur = it })
+        ThemeAdjustmentSlider("Brightness", brightness, 0.25f..2f, { brightness = it })
+        ThemeAdjustmentSlider("Saturation", saturation, 0f..2f, { saturation = it })
+        ThemeAdjustmentSlider("Media transparency", visibility, 0.15f..1f, { visibility = it })
+        ThemeAdjustmentSlider("Dim overlay", overlay, 0f..0.65f, { overlay = it })
+        ThemeAdjustmentSlider("Panel opacity", surfaceOpacity, 0.55f..1f, { surfaceOpacity = it })
         if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
           }
           }
@@ -246,37 +245,17 @@ private fun ThemeAdjustmentSlider(
   value: Float,
   range: ClosedFloatingPointRange<Float>,
   onValueChange: (Float) -> Unit,
-  valueLabel: (Float) -> String,
 ) {
   Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(label, style = MaterialTheme.typography.bodyMedium)
-      Text(valueLabel(value), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-    }
-    Slider(
+    Text(label, style = MaterialTheme.typography.bodyMedium)
+    TintedSlider(
       value = value,
       onValueChange = onValueChange,
       valueRange = range,
-      colors = SliderDefaults.colors(
-        thumbColor = MaterialTheme.colorScheme.primary,
-        activeTrackColor = MaterialTheme.colorScheme.primary,
-        inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
-        activeTickColor = MaterialTheme.colorScheme.onPrimary,
-        inactiveTickColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
-      ),
+      tint = MaterialTheme.colorScheme.primaryContainer,
     )
   }
 }
-
-private fun Float.asPercent(decimals: Int): String =
-  String.format(java.util.Locale.getDefault(), "%.${decimals}f", this * 100f)
-
-private fun Float.asSignedPercent(): String =
-  String.format(java.util.Locale.getDefault(), "%+.0f%%", this * 100f)
 
 @Composable
 private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modifier, onTransform: (Float, Float, Float, Float, Float) -> Unit = { _, _, _, _, _ -> }) {
