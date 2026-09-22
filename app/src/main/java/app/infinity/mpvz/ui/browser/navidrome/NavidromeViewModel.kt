@@ -29,6 +29,7 @@ import app.infinity.mpvz.domain.navidrome.NavidromeSong
 import app.infinity.mpvz.repository.NavidromeRepository
 import app.infinity.mpvz.utils.media.MediaUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.ui.browser.music.MusicSortField
 import app.infinity.mpvz.ui.browser.music.MusicSortOrder
@@ -491,7 +494,16 @@ class NavidromeViewModel(
           authMode = authMode,
           lastConnected = System.currentTimeMillis(),
         )
-        val pingResult = navidromeRepository.ping(testServer)
+        val pingResult =
+          try {
+            withTimeout(30_000L) { navidromeRepository.ping(testServer) }
+          } catch (timeout: TimeoutCancellationException) {
+            Result.failure(timeout)
+          } catch (cancellation: CancellationException) {
+            throw cancellation
+          } catch (error: Exception) {
+            Result.failure(error)
+          }
         if (pingResult.isSuccess) {
           successfulServer = testServer
           break

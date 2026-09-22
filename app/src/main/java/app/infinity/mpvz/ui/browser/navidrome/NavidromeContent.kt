@@ -197,7 +197,7 @@ fun NavidromeContent(
                 Icon(
                   Icons.RoundedFilled.ArrowBack,
                   contentDescription = stringResource(R.string.back),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
               }
             },
@@ -207,7 +207,7 @@ fun NavidromeContent(
                   Icon(
                     Icons.RoundedFilled.Close,
                     contentDescription = stringResource(R.string.pref_clear_content_desc),
-                    tint = MaterialTheme.colorScheme.secondary,
+                    tint = MaterialTheme.colorScheme.onSurface,
                   )
                 }
               }
@@ -246,7 +246,7 @@ fun NavidromeContent(
                 imageVector = Icons.RoundedFilled.Audiotrack,
                 contentDescription = stringResource(R.string.ui_music),
                 modifier = Modifier.size(26.dp),
-                tint = MaterialTheme.colorScheme.secondary,
+                tint = MaterialTheme.colorScheme.onSurface,
               )
               MusicSourceChooser(
                 hasJellyfin = jellyfinServers.isNotEmpty(),
@@ -266,7 +266,7 @@ fun NavidromeContent(
                   imageVector = Icons.RoundedFilled.AudiobookWave,
                   contentDescription = stringResource(R.string.audiobooks_title),
                   modifier = Modifier.size(22.dp),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
               }
             }
@@ -279,7 +279,7 @@ fun NavidromeContent(
                   imageVector = Icons.RoundedFilled.Language,
                   contentDescription = "Manage Navidrome servers",
                   modifier = Modifier.size(24.dp),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
               }
             }

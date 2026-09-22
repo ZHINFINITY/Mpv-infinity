@@ -422,7 +422,7 @@ fun JellyfinContent(
                   imageVector = Icons.RoundedFilled.Audiotrack,
                   contentDescription = stringResource(R.string.ui_music),
                   modifier = Modifier.size(26.dp),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
                 MusicSourceChooser(
                   hasJellyfin = uiState.servers.isNotEmpty(),
@@ -434,8 +434,8 @@ fun JellyfinContent(
                 androidx.compose.material3.Icon(
                   painter = painterResource(R.drawable.ic_jellyfin),
                   contentDescription = stringResource(R.string.ui_jellyfin),
-                  modifier = Modifier.padding(start = 8.dp).size(30.dp),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  modifier = Modifier.padding(start = 10.dp, end = 6.dp).size(34.dp),
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
               }
             }
@@ -451,7 +451,7 @@ fun JellyfinContent(
                     imageVector = Icons.RoundedFilled.AudiobookWave,
                     contentDescription = stringResource(R.string.audiobooks_title),
                     modifier = Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.secondary,
+                    tint = MaterialTheme.colorScheme.onSurface,
                   )
                 }
               }
@@ -465,7 +465,7 @@ fun JellyfinContent(
                   imageVector = Icons.RoundedFilled.Download,
                   contentDescription = stringResource(R.string.downloads_open_downloads),
                   modifier = Modifier.size(24.dp),
-                  tint = MaterialTheme.colorScheme.secondary,
+                  tint = MaterialTheme.colorScheme.onSurface,
                 )
               }
             }
