@@ -2,6 +2,50 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.1.0 - Playback, Streaming, Libraries & Custom Themes
+
+Mpv∞ 2.1.0 brings the major playback, streaming, media-library, subtitle, and custom-theme work now available on the stable branch.
+
+### 🎬 Playback engines
+
+- Added MPV, Media3/ExoPlayer, and Native playback with automatic and manual engine selection.
+- Improved engine handoff while preserving playback position, queue state, subtitles, audio tracks, rotation, and playback settings.
+- Improved HDR, Dolby Vision, 4K, large-file startup, buffering, seeking, decoder recovery, Picture-in-Picture, Cast, and background playback.
+
+### 🌐 Torrent and network streaming
+
+- Added direct torrent playback, magnet links, torrent metadata files, multi-file selection, buffering, piece prioritization, read-ahead, and transfer diagnostics.
+- Improved WebDAV, authenticated network streaming, range playback, remote media recovery, and large remote-file handling.
+
+### 🎵 Music, Jellyfin and audiobooks
+
+- Added local music browsing across Songs, Albums, Artists, Playlists, and Folders with search, sorting, artwork, queues, playlists, and background playback.
+- Added Navidrome and Jellyfin music libraries, server-aware navigation, Jellyfin auto-tab support, album-art palettes, ambient backgrounds, and the edge-to-edge music visualizer.
+- Added Audiobookshelf integration with audiobook browsing, chapters, artwork, chapter playback, timeline seeking, and player controls.
+
+### 💬 Subtitles
+
+- Added embedded and external subtitle support across MPV, Media3, and Native playback.
+- Improved multiple subtitles, dual subtitles, ASS/SSA rendering through libass, subtitle translation, styling, positioning, gestures, pinch-to-zoom, subtitle timing, and PGS/image-subtitle handling.
+
+### 🌈 Custom media themes
+
+- Added saved editable image/video themes, live preview, custom opacity, blur, focal zoom, aspect handling, media effects, and a scrollable theme editor.
+- Improved custom-theme visibility and readability across the home screen, cards, navigation, toolbars, dialogs, sliders, player controls, music tabs, network screens, and audiobook screens.
+
+### ✅ Final UI fix
+
+- Restored custom wallpaper and media-background visibility by removing the unwanted opaque black folder-card treatment.
+- Corrected toolbar icons, navigation icons, music sub-tabs, labels, and controls that were using the background theme color instead of the contrasting color.
+- Restored custom-theme editor controls and sliders, aligned Reset, Cancel, and Save, and renamed **“Save theme”** to **“Save”**.
+
+### 📦 APK variants
+
+- Standard Universal, ARM64-v8a, ARMv7, x86, and x86_64 APKs.
+- FongMi Universal and ARM64-v8a APKs.
+- Non-Vulkan Universal and ARM64-v8a APKs.
+- All release APKs use the in-app version **v2.1.0** and are published with architecture-specific names so the in-app updater can select the correct package.
+
 ## 2.0.0 - Native Streaming, Authenticated Downloads & Playback Expansion
 
 Mpv∞ 2.0.0 is a major release containing the complete feature, improvement, and reliability work added after v1.0.9.
