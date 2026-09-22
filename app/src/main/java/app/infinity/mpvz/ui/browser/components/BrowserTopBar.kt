@@ -286,7 +286,7 @@ private fun NormalTopBar(
             MaterialTheme.typography.headlineMedium
           },
         fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.primary,
+        color = MaterialTheme.colorScheme.onSurface,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier =
@@ -311,7 +311,7 @@ private fun NormalTopBar(
               Icons.RoundedFilled.ArrowBack,
               contentDescription = stringResource(R.string.back),
               modifier = Modifier.size(24.dp),
-              tint = MaterialTheme.colorScheme.secondary,
+              tint = MaterialTheme.colorScheme.onSurface,
             )
           }
         }
@@ -332,7 +332,7 @@ private fun NormalTopBar(
                 app.infinity.mpvz.R.string.settings_search_title,
               ),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -348,7 +348,7 @@ private fun NormalTopBar(
                 app.infinity.mpvz.R.string.seerr_discover,
               ),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -361,7 +361,7 @@ private fun NormalTopBar(
             Icons.RoundedFilled.SortByAlpha,
             contentDescription = stringResource(R.string.sort),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -377,7 +377,7 @@ private fun NormalTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_settings),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -443,7 +443,7 @@ private fun SelectionTopBar(
         Text(
           stringResource(R.string.selected_items, selectedCount, totalCount),
           style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.primary,
+          color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -451,7 +451,7 @@ private fun SelectionTopBar(
           Icons.RoundedFilled.ArrowDropDown,
           contentDescription = stringResource(R.string.selection_options),
           modifier = Modifier.size(24.dp),
-          tint = MaterialTheme.colorScheme.primary,
+          tint = MaterialTheme.colorScheme.onSurface,
         )
 
         DropdownMenu(
@@ -497,7 +497,7 @@ private fun SelectionTopBar(
           Icons.RoundedFilled.Close,
           contentDescription = stringResource(R.string.generic_cancel),
           modifier = Modifier.size(28.dp),
-          tint = MaterialTheme.colorScheme.secondary,
+          tint = MaterialTheme.colorScheme.onSurface,
         )
       }
     },
@@ -512,7 +512,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.Restore,
             contentDescription = stringResource(R.string.secure_folder_restore),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -528,7 +528,7 @@ private fun SelectionTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_play),
             modifier = Modifier.size(28.dp),
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -544,7 +544,7 @@ private fun SelectionTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_pin_folders),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -561,7 +561,7 @@ private fun SelectionTopBar(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_add_to_playlist),
             modifier = Modifier.size(28.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -579,7 +579,7 @@ private fun SelectionTopBar(
             modifier = Modifier.size(24.dp),
             tint =
               if (isSingleSelection) {
-                MaterialTheme.colorScheme.secondary
+                MaterialTheme.colorScheme.onSurface
               } else {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
               },
@@ -600,7 +600,7 @@ private fun SelectionTopBar(
             modifier = Modifier.size(24.dp),
             tint =
               if (isSingleSelection) {
-                MaterialTheme.colorScheme.secondary
+                MaterialTheme.colorScheme.onSurface
               } else {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
               },
@@ -618,7 +618,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.Share,
             contentDescription = stringResource(R.string.generic_share),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -634,7 +634,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.Lock,
             contentDescription = stringResource(R.string.secure_folder_move_to),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
@@ -649,7 +649,7 @@ private fun SelectionTopBar(
             Icons.RoundedFilled.Block,
             contentDescription = stringResource(R.string.pref_folders_blacklist),
             modifier = Modifier.size(24.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
       }
