@@ -513,7 +513,7 @@ fun MusicLibraryContent(
                     imageVector = Icons.RoundedFilled.Audiotrack,
                     contentDescription = stringResource(R.string.ui_music),
                     modifier = Modifier.size(26.dp),
-                    tint = MaterialTheme.colorScheme.secondary,
+                    tint = MaterialTheme.colorScheme.onSurface,
                   )
                   MusicSourceChooser(
                     hasJellyfin = jellyfinServers.isNotEmpty(),
@@ -533,7 +533,7 @@ fun MusicLibraryContent(
                       imageVector = Icons.RoundedFilled.AudiobookWave,
                       contentDescription = stringResource(R.string.audiobooks_title),
                       modifier = Modifier.size(22.dp),
-                      tint = MaterialTheme.colorScheme.secondary,
+                      tint = MaterialTheme.colorScheme.onSurface,
                     )
                   }
                 }
