@@ -63,6 +63,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
@@ -622,9 +624,17 @@ fun MusicLibraryContent(
         PrimaryScrollableTabRow(
           selectedTabIndex = pagerState.currentPage.coerceIn(0, (visibleTabs.size - 1).coerceAtLeast(0)),
           containerColor = Color.Transparent,
-          contentColor = MaterialTheme.colorScheme.primary,
+          contentColor = MaterialTheme.colorScheme.onSurface,
           edgePadding = 8.dp,
-          divider = {}
+          divider = {},
+          indicator = { tabPositions ->
+            if (tabPositions.isNotEmpty()) {
+              TabRowDefaults.SecondaryIndicator(
+                modifier = androidx.compose.ui.Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage.coerceIn(0, tabPositions.lastIndex)]),
+                color = MaterialTheme.colorScheme.onSurface,
+              )
+            }
+          },
         ) {
           visibleTabs.forEachIndexed { index, tab ->
             Tab(
@@ -644,7 +654,9 @@ fun MusicLibraryContent(
                   softWrap = false,
                   overflow = TextOverflow.Ellipsis
                 )
-              }
+              },
+              selectedContentColor = MaterialTheme.colorScheme.onSurface,
+              unselectedContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
             )
           }
         }
