@@ -189,7 +189,10 @@ fun PullRefreshBox(
         }) {
           drawPath(
             path = infinityPath,
-            color = MaterialTheme.colorScheme.primary,
+            // Match the readable text color for the current background. This
+            // keeps the loop white on black monochrome/AMOLED themes and
+            // automatically adapts to light, dark, and custom color schemes.
+            color = MaterialTheme.colorScheme.onBackground,
             style =
               Stroke(
                 width = 10f,
