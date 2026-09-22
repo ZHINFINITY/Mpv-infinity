@@ -35,12 +35,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -89,7 +92,7 @@ import app.infinity.mpvz.ui.player.controls.components.sheets.LyricsTranslateDia
 import app.infinity.mpvz.ui.theme.fontFamilyForText
 import org.koin.compose.koinInject
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LyricsView(
   viewModel: PlayerViewModel,
@@ -106,6 +109,7 @@ fun LyricsView(
   val density = LocalDensity.current
   var lyricsViewportPx by remember { mutableIntStateOf(0) }
   var showTranslateDialog by remember { mutableStateOf(false) }
+  var showSyncSheet by remember { mutableStateOf(false) }
 
   val currentPosMs = remember(precisePosition, state.syncOffsetMs) {
     (precisePosition * 1000).toLong() + state.syncOffsetMs
@@ -125,7 +129,7 @@ fun LyricsView(
         desiredOffset,
         (lyricsViewportPx / 2) - with(density) { 44.dp.roundToPx() },
       )
-      listState.animateScrollToItem(target, scrollOffset = centerOffset)
+      listState.animateScrollToItem(target, scrollOffset = -centerOffset)
     }
   }
 
@@ -508,44 +512,18 @@ fun LyricsView(
 
           Spacer(modifier = Modifier.height(8.dp))
 
-          // Sync offset pill: equal-weight buttons that always fit the available width, with the
-          // current offset shown (and reset) via the center segment.
           Surface(
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier.fillMaxWidth(),
+            onClick = { showSyncSheet = true },
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+            modifier = Modifier.size(40.dp),
           ) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              SyncOffsetButton(
-                label = "-0.5s",
-                modifier = Modifier.weight(1f),
-                onClick = { viewModel.adjustLyricsSyncOffset(-500) },
-              )
-              SyncOffsetButton(
-                label = "-0.1s",
-                modifier = Modifier.weight(1f),
-                onClick = { viewModel.adjustLyricsSyncOffset(-100) },
-              )
-              SyncOffsetButton(
-                label = "${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
-                modifier = Modifier.weight(1.2f),
-                emphasized = true,
-                onClick = { viewModel.resetLyricsSyncOffset() },
-              )
-              SyncOffsetButton(
-                label = "+0.1s",
-                modifier = Modifier.weight(1f),
-                onClick = { viewModel.adjustLyricsSyncOffset(100) },
-              )
-              SyncOffsetButton(
-                label = "+0.5s",
-                modifier = Modifier.weight(1f),
-                onClick = { viewModel.adjustLyricsSyncOffset(500) },
+            Box(contentAlignment = Alignment.Center) {
+              Icon(
+                imageVector = Icons.RoundedFilled.Tune,
+                contentDescription = "Lyrics delay",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
               )
             }
           }
@@ -559,6 +537,48 @@ fun LyricsView(
       viewModel = viewModel,
       onDismiss = { showTranslateDialog = false },
     )
+  }
+
+  if (showSyncSheet) {
+    LyricsSyncSheet(
+      viewModel = viewModel,
+      onDismiss = { showSyncSheet = false },
+    )
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LyricsSyncSheet(
+  viewModel: PlayerViewModel,
+  onDismiss: () -> Unit,
+) {
+  val state by viewModel.lyricsUiState.collectAsState()
+  ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+  ) {
+    Column(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+      Text("Lyrics delay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+      Spacer(modifier = Modifier.height(8.dp))
+      Text(
+        text = "Current: ${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+      ) {
+        SyncOffsetButton(label = "-0.5s", onClick = { viewModel.adjustLyricsSyncOffset(-500) })
+        SyncOffsetButton(label = "-0.1s", onClick = { viewModel.adjustLyricsSyncOffset(-100) })
+        SyncOffsetButton(label = "Reset", emphasized = true, onClick = { viewModel.resetLyricsSyncOffset() })
+        SyncOffsetButton(label = "+0.1s", onClick = { viewModel.adjustLyricsSyncOffset(100) })
+        SyncOffsetButton(label = "+0.5s", onClick = { viewModel.adjustLyricsSyncOffset(500) })
+      }
+    }
   }
 }
 
