@@ -11,6 +11,7 @@ Mpv∞ 2.1.0 brings the major playback, streaming, media-library, subtitle, and 
 - Added MPV, Media3/ExoPlayer, and Native playback with automatic and manual engine selection.
 - Improved engine handoff while preserving playback position, queue state, subtitles, audio tracks, rotation, and playback settings.
 - Improved HDR, Dolby Vision, 4K, large-file startup, buffering, seeking, decoder recovery, Picture-in-Picture, Cast, and background playback.
+- Added proper pan and zoom behavior in both MPV and Native playback engines, including reliable focal-point interaction and persistent per-video display geometry.
 
 ### 🌐 Torrent and network streaming
 
