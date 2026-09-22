@@ -627,7 +627,7 @@ fun MusicLibraryContent(
           contentColor = MaterialTheme.colorScheme.onSurface,
           edgePadding = 8.dp,
           divider = {},
-          indicator = { tabPositions ->
+          indicator = {
             if (tabPositions.isNotEmpty()) {
               TabRowDefaults.SecondaryIndicator(
                 modifier = androidx.compose.ui.Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage.coerceIn(0, tabPositions.lastIndex)]),
