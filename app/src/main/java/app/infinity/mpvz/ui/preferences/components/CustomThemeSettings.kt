@@ -251,7 +251,7 @@ private fun CustomThemeEditor(
       Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         OutlinedButton(onClick = { resetVisualSettings() }, modifier = Modifier.weight(1f)) { Icon(Icons.RoundedFilled.Refresh, contentDescription = null); Text("Reset") }
         OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-        Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.weight(1f)) { Text("Save theme") }
+        Button(enabled = name.isNotBlank(), onClick = { onSave(edited.copy(name = name.trim())) }, modifier = Modifier.weight(1f)) { Text("Save") }
       }
     }
   }
