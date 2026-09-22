@@ -564,21 +564,32 @@ private fun LyricsSyncSheet(
     ) {
       Text("Lyrics delay", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
       Spacer(modifier = Modifier.height(8.dp))
-      Text(
-        text = "Current: ${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      val delayControls = listOf(
+        "+0.5s" to { viewModel.adjustLyricsSyncOffset(500) },
+        "+0.1s" to { viewModel.adjustLyricsSyncOffset(100) },
+        "Reset" to { viewModel.resetLyricsSyncOffset() },
+        "-0.1s" to { viewModel.adjustLyricsSyncOffset(-100) },
+        "-0.5s" to { viewModel.adjustLyricsSyncOffset(-500) },
       )
-      FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 20.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        maxItemsInEachRow = 3,
+      val delayListState = rememberLazyListState(initialFirstVisibleItemIndex = 1)
+      LazyColumn(
+        state = delayListState,
+        modifier = Modifier.fillMaxWidth().height(176.dp).padding(bottom = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
       ) {
-        SyncOffsetButton(label = "-0.5s", onClick = { viewModel.adjustLyricsSyncOffset(-500) })
-        SyncOffsetButton(label = "-0.1s", onClick = { viewModel.adjustLyricsSyncOffset(-100) })
-        SyncOffsetButton(label = "Reset", emphasized = true, onClick = { viewModel.resetLyricsSyncOffset() })
-        SyncOffsetButton(label = "+0.1s", onClick = { viewModel.adjustLyricsSyncOffset(100) })
-        SyncOffsetButton(label = "+0.5s", onClick = { viewModel.adjustLyricsSyncOffset(500) })
+        itemsIndexed(delayControls) { index, (label, onClick) ->
+          if (index == 2) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+              Text(
+                text = "Current: ${if (state.syncOffsetMs >= 0) "+" else ""}${state.syncOffsetMs / 1000f}s",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              SyncOffsetButton(label = label, emphasized = true, onClick = onClick)
+            }
+          } else {
+            SyncOffsetButton(label = label, onClick = onClick)
+          }
+        }
       }
     }
   }
