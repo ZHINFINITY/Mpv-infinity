@@ -49,6 +49,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -1554,7 +1556,9 @@ class JellyfinViewModel(
         val serverToSave =
           if (authMode == JellyfinAuthMode.CREDENTIALS) {
             val authResult =
-              jellyfinRepository.authenticate(serverUrl, username, password).getOrThrow()
+              withTimeout(30_000L) {
+                jellyfinRepository.authenticate(serverUrl, username, password).getOrThrow()
+              }
 
             if (subtitlesPreferences.preferredLanguages.get().isBlank() && !authResult.subtitleLanguage.isNullOrBlank()) {
               subtitlesPreferences.preferredLanguages.set(authResult.subtitleLanguage)
@@ -1575,7 +1579,10 @@ class JellyfinViewModel(
               lastConnected = System.currentTimeMillis(),
             )
           } else {
-            val user = jellyfinRepository.validateToken(serverUrl, token).getOrThrow()
+            val user =
+              withTimeout(30_000L) {
+                jellyfinRepository.validateToken(serverUrl, token).getOrThrow()
+              }
 
             if (subtitlesPreferences.preferredLanguages.get().isBlank() && !user.subtitleLanguage.isNullOrBlank()) {
               subtitlesPreferences.preferredLanguages.set(user.subtitleLanguage)
@@ -1620,10 +1627,16 @@ class JellyfinViewModel(
         loadHomeDashboard(savedServer)
         onSuccess()
       } catch (e: Exception) {
+        val message =
+          if (e is TimeoutCancellationException) {
+            "Connection timed out. Check the server address and credentials."
+          } else {
+            e.localizedMessage ?: "Failed to connect to Jellyfin server"
+          }
         _uiState.update {
           it.copy(
             isAuthenticating = false,
-            authError = e.localizedMessage ?: "Failed to connect to Jellyfin server",
+            authError = message,
           )
         }
       }

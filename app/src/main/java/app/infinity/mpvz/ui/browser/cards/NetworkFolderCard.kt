@@ -108,7 +108,7 @@ fun NetworkFolderCard(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_folder),
             modifier = Modifier.size(56.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -144,7 +144,7 @@ fun NetworkFolderCard(
               androidx.compose.ui.res
                 .stringResource(app.infinity.mpvz.R.string.ui_folder),
             modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.secondary,
+            tint = MaterialTheme.colorScheme.onSurface,
           )
         }
         Spacer(modifier = Modifier.width(16.dp))

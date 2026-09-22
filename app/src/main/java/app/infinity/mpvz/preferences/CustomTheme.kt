@@ -24,6 +24,8 @@ data class CustomThemeData(
   val brightness: Float = 1f,
   val saturation: Float = 1f,
   val visibility: Float = 1f,
+  /** Opacity of app panels/surfaces drawn over the custom media backdrop. */
+  val surfaceOpacity: Float = 0.94f,
   val scale: Float = 1f,
   val offsetX: Float = 0f,
   val offsetY: Float = 0f,

@@ -102,7 +102,7 @@ fun AddNavidromeServerDialog(
       Icon(
         painter = painterResource(id = R.drawable.ic_navidrome),
         contentDescription = null,
-        tint = MaterialTheme.colorScheme.primary,
+        tint = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.size(28.dp),
       )
     },

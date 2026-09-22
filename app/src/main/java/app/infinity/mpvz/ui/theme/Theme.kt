@@ -408,9 +408,11 @@ private fun CustomThemeData.contentScale(): ContentScale = when (fitMode) {
 private fun customColorScheme(theme: CustomThemeData): ColorScheme {
   val primary = Color(tuneCustomColor(theme.primaryArgb, theme))
   val backgroundColor = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true))
+  val opacityScale = theme.surfaceOpacity.coerceIn(0.55f, 1f) / 0.94f
+  fun panelAlpha(defaultAlpha: Float): Float = (defaultAlpha * opacityScale).coerceIn(0.35f, 1f)
   // Keep the media visible, but make app surfaces opaque enough that labels
   // and controls do not disappear into a bright or busy background.
-  val background = backgroundColor.copy(alpha = 0.90f)
+  val background = backgroundColor.copy(alpha = panelAlpha(0.90f))
   val onBackground = if (backgroundColor.luminance() > 0.46f) Color.Black else Color.White
   val onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White
   return darkColorScheme(
@@ -434,16 +436,16 @@ private fun customColorScheme(theme: CustomThemeData): ColorScheme {
     surfaceBright = Color.Transparent,
     // Keep the media visible through the root, but make interactive content
     // surfaces sufficiently opaque for folder names, paths, badges, and icons.
-    surfaceVariant = background.copy(alpha = 0.86f),
-    surfaceContainerLowest = background.copy(alpha = 0.78f),
-    surfaceContainerLow = background.copy(alpha = 0.90f),
-    surfaceContainer = background.copy(alpha = 0.94f),
-    surfaceContainerHigh = background.copy(alpha = 0.97f),
-    surfaceContainerHighest = background.copy(alpha = 0.985f),
+    surfaceVariant = background.copy(alpha = panelAlpha(0.86f)),
+    surfaceContainerLowest = background.copy(alpha = panelAlpha(0.78f)),
+    surfaceContainerLow = background.copy(alpha = panelAlpha(0.90f)),
+    surfaceContainer = background.copy(alpha = panelAlpha(0.94f)),
+    surfaceContainerHigh = background.copy(alpha = panelAlpha(0.97f)),
+    surfaceContainerHighest = background.copy(alpha = panelAlpha(0.985f)),
     onBackground = onBackground,
     onSurface = onBackground,
     onSurfaceVariant = onBackground.copy(alpha = 0.92f),
-    inverseSurface = background.copy(alpha = 0.72f),
+    inverseSurface = background.copy(alpha = panelAlpha(0.72f)),
     inverseOnSurface = onBackground,
   )
 }

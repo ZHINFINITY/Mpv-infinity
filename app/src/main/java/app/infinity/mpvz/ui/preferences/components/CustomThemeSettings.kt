@@ -44,6 +44,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -162,6 +163,7 @@ private fun CustomThemeEditor(
   var brightness by remember(initial.id) { mutableStateOf(initial.brightness) }
   var saturation by remember(initial.id) { mutableStateOf(initial.saturation) }
   var visibility by remember(initial.id) { mutableStateOf(initial.visibility) }
+  var surfaceOpacity by remember(initial.id) { mutableStateOf(initial.surfaceOpacity.coerceIn(0.55f, 1f)) }
   var scale by remember(initial.id) { mutableStateOf(initial.scale) }
   var offsetX by remember(initial.id) { mutableStateOf(initial.offsetX) }
   var offsetY by remember(initial.id) { mutableStateOf(initial.offsetY) }
@@ -169,7 +171,7 @@ private fun CustomThemeEditor(
   var aspectMode by remember(initial.id) { mutableStateOf(initial.aspectMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
   var showEditor by remember(initial.id) { mutableStateOf(false) }
-  val edited = initial.copy(name = name, overlay = overlay, blur = blur, brightness = brightness, saturation = saturation, visibility = visibility, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
+  val edited = initial.copy(name = name, overlay = overlay, blur = blur, brightness = brightness, saturation = saturation, visibility = visibility, surfaceOpacity = surfaceOpacity, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
   androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
       Text(if (isNew) "Create custom theme" else "Edit custom theme", style = MaterialTheme.typography.titleLarge)
@@ -217,15 +219,16 @@ private fun CustomThemeEditor(
             if (aspectMode == "source") Button(onClick = { aspectMode = "source" }) { Text("Keep source") } else OutlinedButton(onClick = { aspectMode = "source" }) { Text("Keep source") }
           }
         }
-        Text("Zoom / scale"); Slider(value = scale, onValueChange = { scale = it }, valueRange = 0.5f..2.5f)
-        Text("Horizontal position"); Slider(value = offsetX, onValueChange = { offsetX = it }, valueRange = -1f..1f)
-        Text("Vertical position"); Slider(value = offsetY, onValueChange = { offsetY = it }, valueRange = -1f..1f)
+        ThemeAdjustmentSlider("Zoom / scale", scale, 0.5f..2.5f, { scale = it }) { "${it.asPercent(0)}%" }
+        ThemeAdjustmentSlider("Horizontal position", offsetX, -1f..1f, { offsetX = it }) { it.asSignedPercent() }
+        ThemeAdjustmentSlider("Vertical position", offsetY, -1f..1f, { offsetY = it }) { it.asSignedPercent() }
         Text("Media appearance", style = MaterialTheme.typography.titleMedium)
-        Text("Background blur"); Slider(value = blur, onValueChange = { blur = it }, valueRange = 0f..24f)
-        Text("Brightness"); Slider(value = brightness, onValueChange = { brightness = it }, valueRange = 0.25f..2f)
-        Text("Saturation"); Slider(value = saturation, onValueChange = { saturation = it }, valueRange = 0f..2f)
-        Text("Background visibility"); Slider(value = visibility, onValueChange = { visibility = it }, valueRange = 0.15f..1f)
-        Text("Dim overlay (lower shows more media)"); Slider(value = overlay, onValueChange = { overlay = it }, valueRange = 0f..0.65f)
+        ThemeAdjustmentSlider("Background blur", blur, 0f..24f, { blur = it }) { "${it.toInt()} dp" }
+        ThemeAdjustmentSlider("Brightness", brightness, 0.25f..2f, { brightness = it }) { "${it.asPercent(0)}%" }
+        ThemeAdjustmentSlider("Saturation", saturation, 0f..2f, { saturation = it }) { "${it.asPercent(0)}%" }
+        ThemeAdjustmentSlider("Media transparency", visibility, 0.15f..1f, { visibility = it }) { "${(it * 100).toInt()}% visible" }
+        ThemeAdjustmentSlider("Dim overlay", overlay, 0f..0.65f, { overlay = it }) { "${(it * 100).toInt()}%" }
+        ThemeAdjustmentSlider("Panel opacity", surfaceOpacity, 0.55f..1f, { surfaceOpacity = it }) { "${(it * 100).toInt()}%" }
         if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
           }
           }
@@ -236,6 +239,44 @@ private fun CustomThemeEditor(
     }
   }
 }
+
+@Composable
+private fun ThemeAdjustmentSlider(
+  label: String,
+  value: Float,
+  range: ClosedFloatingPointRange<Float>,
+  onValueChange: (Float) -> Unit,
+  valueLabel: (Float) -> String,
+) {
+  Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(label, style = MaterialTheme.typography.bodyMedium)
+      Text(valueLabel(value), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+    }
+    Slider(
+      value = value,
+      onValueChange = onValueChange,
+      valueRange = range,
+      colors = SliderDefaults.colors(
+        thumbColor = MaterialTheme.colorScheme.primary,
+        activeTrackColor = MaterialTheme.colorScheme.primary,
+        inactiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+        activeTickColor = MaterialTheme.colorScheme.onPrimary,
+        inactiveTickColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+      ),
+    )
+  }
+}
+
+private fun Float.asPercent(decimals: Int): String =
+  String.format(java.util.Locale.getDefault(), "%.${decimals}f", this * 100f)
+
+private fun Float.asSignedPercent(): String =
+  String.format(java.util.Locale.getDefault(), "%+.0f%%", this * 100f)
 
 @Composable
 private fun ThemeMediaPreview(theme: CustomThemeData, modifier: Modifier = Modifier, onTransform: (Float, Float, Float, Float, Float) -> Unit = { _, _, _, _, _ -> }) {
