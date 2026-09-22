@@ -42,7 +42,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.withTransform
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -136,6 +136,7 @@ fun PullRefreshBox(
 
   val indicatorSize = 56.dp
   val indicatorSizePx = remember(density) { with(density) { indicatorSize.toPx() } }
+  val indicatorColor = MaterialTheme.colorScheme.onBackground
 
   Box(
     modifier =
@@ -192,7 +193,7 @@ fun PullRefreshBox(
             // Match the readable text color for the current background. This
             // keeps the loop white on black monochrome/AMOLED themes and
             // automatically adapts to light, dark, and custom color schemes.
-            color = MaterialTheme.colorScheme.onBackground,
+            color = indicatorColor,
             style =
               Stroke(
                 width = 10f,
