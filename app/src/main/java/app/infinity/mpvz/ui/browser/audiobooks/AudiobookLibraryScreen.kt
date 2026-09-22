@@ -296,7 +296,7 @@ object AudiobookLibraryScreen : Screen {
               Box {
                 Surface(
                   shape = RoundedCornerShape(16.dp),
-                  color = MaterialTheme.colorScheme.onSurfaceContainer.copy(alpha = 0.8f),
+                  color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
                     modifier = Modifier
                       .padding(horizontal = 2.dp, vertical = 4.dp)
                     .clickable { isSourceDropdownOpen = true },
@@ -1248,7 +1248,7 @@ internal fun AudiobookArtwork(uri: String?, modifier: Modifier = Modifier) {
   }
 
   Box(
-    modifier = modifier.background(MaterialTheme.colorScheme.onSurfaceContainer),
+    modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainer),
     contentAlignment = Alignment.Center,
   ) {
     val loaded = image
