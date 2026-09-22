@@ -2,6 +2,16 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.1.2 - Bug Fixes
+
+### Bug fixes
+
+- Fixed the Native Media3 repeat/loop button.
+- Moved lyrics delay controls into a scrollable delay sheet while keeping positive and negative adjustments accessible around the current delay.
+- Fixed standby lyrics so the active/current line remains visible.
+- Fixed Navidrome search-bar top padding so it no longer hides behind the status bar.
+- Fixed custom theme video lifecycle handling so it stops when video playback takes focus or the app goes into the background or closes.
+
 ## 2.1.1 - Bug Fixes
 
 ### 🐛 Bug fixes

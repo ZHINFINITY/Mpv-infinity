@@ -9,11 +9,17 @@ import android.media.MediaPlayer
 import android.os.Build
 import android.view.Surface
 import android.view.TextureView
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.findViewTreeLifecycleOwner
 
 /** Video renderer that preserves source proportions while supporting theme effects. */
-class CustomThemeVideoView(context: Context) : TextureView(context), TextureView.SurfaceTextureListener {
+class CustomThemeVideoView(context: Context) : TextureView(context), TextureView.SurfaceTextureListener, DefaultLifecycleObserver {
   private var player: MediaPlayer? = null
   private var surface: Surface? = null
+  private var lifecycleOwner: LifecycleOwner? = null
+  private var lifecycleStarted = false
   private var path: String = ""
   private var loop = true
   private var muted = true
@@ -72,7 +78,7 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
   }
 
   private fun startIfReady() {
-    if (player != null || path.isBlank() || surface == null) return
+    if (!lifecycleStarted || player != null || path.isBlank() || surface == null) return
     val generation = retryGeneration
     player = MediaPlayer().apply {
       setSurface(surface)
@@ -148,6 +154,40 @@ class CustomThemeVideoView(context: Context) : TextureView(context), TextureView
     player?.runCatching { stop() }
     player?.release()
     player = null
+  }
+
+  private fun bindLifecycleOwner() {
+    val owner = findViewTreeLifecycleOwner() ?: return
+    if (lifecycleOwner === owner) return
+    lifecycleOwner?.lifecycle?.removeObserver(this)
+    lifecycleOwner = owner
+    owner.lifecycle.addObserver(this)
+    lifecycleStarted = owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+    if (lifecycleStarted) startIfReady()
+  }
+
+  override fun onResume(owner: LifecycleOwner) {
+    lifecycleStarted = true
+    startIfReady()
+  }
+
+  override fun onPause(owner: LifecycleOwner) {
+    lifecycleStarted = false
+    releasePlayer()
+  }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    bindLifecycleOwner()
+    if (lifecycleOwner == null) post { bindLifecycleOwner() }
+  }
+
+  override fun onDetachedFromWindow() {
+    lifecycleStarted = false
+    releasePlayer()
+    lifecycleOwner?.lifecycle?.removeObserver(this)
+    lifecycleOwner = null
+    super.onDetachedFromWindow()
   }
 
   override fun onSurfaceTextureAvailable(texture: android.graphics.SurfaceTexture, width: Int, height: Int) {
