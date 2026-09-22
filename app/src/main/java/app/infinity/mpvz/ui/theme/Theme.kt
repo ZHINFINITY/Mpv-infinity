@@ -409,24 +409,28 @@ private fun customColorScheme(theme: CustomThemeData): ColorScheme {
   val primary = Color(tuneCustomColor(theme.primaryArgb, theme))
   val backgroundColor = Color(tuneCustomColor(theme.backgroundArgb, theme, dim = true))
   val opacityScale = theme.surfaceOpacity.coerceIn(0.55f, 1f) / 0.94f
-  fun panelAlpha(defaultAlpha: Float): Float = (defaultAlpha * opacityScale).coerceIn(0.35f, 1f)
-  // Keep the media visible, but make app surfaces opaque enough that labels
-  // and controls do not disappear into a bright or busy background.
-  val background = backgroundColor.copy(alpha = panelAlpha(0.90f))
-  val onBackground = if (backgroundColor.luminance() > 0.46f) Color.Black else Color.White
+  fun panelAlpha(defaultAlpha: Float): Float = (defaultAlpha * opacityScale).coerceIn(0.12f, 1f)
+  // Custom media is the backdrop. Keep panels translucent instead of turning
+  // the whole browser into an opaque black card, while retaining enough fill
+  // for dialogs and text-heavy controls.
+  val background = backgroundColor.copy(alpha = panelAlpha(0.42f))
+  // Use the sampled opposite color as the source of truth. Deriving this from
+  // the dimmed background made bright artwork select dark text (and vice
+  // versa), which made tabs and toolbar icons effectively disappear.
+  val onBackground = Color(theme.onBackgroundArgb)
   val onPrimary = if (primary.luminance() > 0.5f) Color.Black else Color.White
   return darkColorScheme(
     primary = primary,
     onPrimary = onPrimary,
     primaryContainer = primary.copy(alpha = 0.48f),
     onPrimaryContainer = onBackground,
-    secondary = primary.copy(alpha = 0.86f),
-    onSecondary = onPrimary,
-    secondaryContainer = background.copy(alpha = 0.78f),
+    secondary = onBackground,
+    onSecondary = if (onBackground.luminance() > 0.5f) Color.Black else Color.White,
+    secondaryContainer = background.copy(alpha = panelAlpha(0.55f)),
     onSecondaryContainer = onBackground,
-    tertiary = primary.copy(alpha = 0.72f),
-    onTertiary = onPrimary,
-    tertiaryContainer = background.copy(alpha = 0.78f),
+    tertiary = onBackground,
+    onTertiary = if (onBackground.luminance() > 0.5f) Color.Black else Color.White,
+    tertiaryContainer = background.copy(alpha = panelAlpha(0.55f)),
     onTertiaryContainer = onBackground,
     // Keep the root background transparent, but route standard Material surfaces
     // through the same user-controlled opacity as the container surfaces. This
@@ -437,12 +441,12 @@ private fun customColorScheme(theme: CustomThemeData): ColorScheme {
     surfaceBright = Color.Transparent,
     // Keep the media visible through the root, but make interactive content
     // surfaces sufficiently opaque for folder names, paths, badges, and icons.
-    surfaceVariant = background.copy(alpha = panelAlpha(0.86f)),
-    surfaceContainerLowest = background.copy(alpha = panelAlpha(0.78f)),
-    surfaceContainerLow = background.copy(alpha = panelAlpha(0.90f)),
-    surfaceContainer = background.copy(alpha = panelAlpha(0.94f)),
-    surfaceContainerHigh = background.copy(alpha = panelAlpha(0.97f)),
-    surfaceContainerHighest = background.copy(alpha = panelAlpha(0.985f)),
+    surfaceVariant = background.copy(alpha = panelAlpha(0.46f)),
+    surfaceContainerLowest = background.copy(alpha = panelAlpha(0.30f)),
+    surfaceContainerLow = background.copy(alpha = panelAlpha(0.40f)),
+    surfaceContainer = background.copy(alpha = panelAlpha(0.50f)),
+    surfaceContainerHigh = background.copy(alpha = panelAlpha(0.60f)),
+    surfaceContainerHighest = background.copy(alpha = panelAlpha(0.70f)),
     onBackground = onBackground,
     onSurface = onBackground,
     onSurfaceVariant = onBackground.copy(alpha = 0.92f),
