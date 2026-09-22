@@ -17,6 +17,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -38,14 +39,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.withTransform
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.icons.Icons
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -84,16 +89,28 @@ fun PullRefreshBox(
 
   val activeJob = remember { mutableStateOf<Job?>(null) }
   val infiniteTransition = rememberInfiniteTransition(label = "refreshRotation")
-  val spinningRotation by
+  val infinityDashOffset by
     infiniteTransition.animateFloat(
       initialValue = 0f,
-      targetValue = 360f,
+      targetValue = 256.589f,
       animationSpec =
         infiniteRepeatable(
-          animation = tween(durationMillis = 900, easing = LinearEasing),
+          animation = tween(durationMillis = 2_000, easing = LinearEasing),
         ),
-      label = "refreshRotation",
+      label = "infinityDashOffset",
     )
+  val infinityPath = remember {
+    Path().apply {
+      moveTo(24.3f, 30f)
+      cubicTo(11.4f, 30f, 5f, 43.3f, 5f, 50f)
+      cubicTo(5f, 56.7f, 11.4f, 70f, 24.3f, 70f)
+      cubicTo(43.6f, 70f, 56.4f, 30f, 75.7f, 30f)
+      cubicTo(88.6f, 30f, 95f, 43.3f, 95f, 50f)
+      cubicTo(95f, 56.7f, 88.6f, 70f, 75.7f, 70f)
+      cubicTo(56.4f, 70f, 43.6f, 30f, 24.3f, 30f)
+      close()
+    }
+  }
 
   val targetTranslationY =
     if (isRefreshing.value) {
@@ -171,18 +188,30 @@ fun PullRefreshBox(
           .padding(6.dp),
       contentAlignment = Alignment.Center,
     ) {
-      Icon(
-        imageVector = Icons.RoundedFilled.Refresh,
-        contentDescription = "Refresh",
-        modifier =
-          Modifier
-            .fillMaxSize()
-            .rotate(
-              if (isRefreshing.value) spinningRotation
-              else state.distanceFraction.coerceIn(0f, 1f) * 360f,
-            ),
-        tint = MaterialTheme.colorScheme.primary,
-      )
+      Canvas(modifier = Modifier.fillMaxSize()) {
+        val pathScale = minOf(size.width, size.height) / 100f * 0.8f
+        withTransform({
+          translate(size.width / 2f, size.height / 2f)
+          scale(pathScale, pathScale, pivot = Offset.Zero)
+          translate(-50f, -50f)
+        }) {
+          drawPath(
+            path = infinityPath,
+            color = MaterialTheme.colorScheme.primary,
+            style =
+              Stroke(
+                width = 10f,
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round,
+                pathEffect =
+                  PathEffect.dashPathEffect(
+                    intervals = floatArrayOf(205.271f, 51.318f),
+                    phase = infinityDashOffset,
+                  ),
+              ),
+          )
+        }
+      }
     }
   }
 }
