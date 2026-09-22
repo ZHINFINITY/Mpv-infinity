@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.1.3 - Compatibility Fix
+
+### Custom-theme music player
+
+- Fixed music-player controls and text visibility when custom themes are active by applying the same theme-derived contrast logic used by the seekbar and pause button.
+
 ## 2.1.2 - Bug Fixes
 
 ### Bug fixes
