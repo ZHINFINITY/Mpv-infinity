@@ -428,12 +428,13 @@ private fun customColorScheme(theme: CustomThemeData): ColorScheme {
     onTertiary = onPrimary,
     tertiaryContainer = background.copy(alpha = 0.78f),
     onTertiaryContainer = onBackground,
-    // Keep root and generic surfaces transparent so they reveal the selected
-    // media instead of painting a purple/built-in canvas over it.
+    // Keep the root background transparent, but route standard Material surfaces
+    // through the same user-controlled opacity as the container surfaces. This
+    // makes Panel opacity work for top bars, scaffolds, dialogs, images, and video themes.
     background = Color.Transparent,
-    surface = Color.Transparent,
-    surfaceDim = Color.Transparent,
-    surfaceBright = Color.Transparent,
+    surface = background.copy(alpha = panelAlpha(0.94f)),
+    surfaceDim = background.copy(alpha = panelAlpha(0.78f)),
+    surfaceBright = background.copy(alpha = panelAlpha(0.985f)),
     // Keep the media visible through the root, but make interactive content
     // surfaces sufficiently opaque for folder names, paths, badges, and icons.
     surfaceVariant = background.copy(alpha = panelAlpha(0.86f)),
