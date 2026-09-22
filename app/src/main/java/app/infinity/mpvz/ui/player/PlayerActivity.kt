@@ -196,7 +196,11 @@ class PlayerActivity :
    * Binding for the player layout.
    */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
-  private val nativeEngine by lazy { NativeMedia3Engine(this) }
+  private val nativeEngine by lazy {
+    NativeMedia3Engine(this).also {
+      it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
+    }
+  }
   val nativePlaybackSnapshot get() = nativeEngine.snapshot
   private var activeEngineMode = PlaybackEngineMode.MPV
   private var engineHandoffJob: Job? = null
@@ -356,6 +360,23 @@ class PlayerActivity :
 
   override fun nativeSetSpeed(speed: Float) {
     nativeEngine.setSpeed(speed, audioPreferences.audioPitchCorrection.get())
+  }
+
+  override fun nativeSetRepeatMode(repeatMode: RepeatMode) {
+    nativeEngine.setRepeatMode(repeatMode)
+  }
+
+  private fun handleNativePlaybackEnded() {
+    if (!isNativeEngineActive()) return
+    val autoplay = playerPreferences.autoplayNextVideo.get()
+    when {
+      viewModel.shouldRepeatCurrentFile() -> {
+        nativeEngine.seekTo(0L)
+        nativeEngine.setPlaying(true)
+      }
+      (autoplay || viewModel.shouldRepeatPlaylist()) && viewModel.hasNext() -> playNextQueueItem()
+      else -> finishAtEofIfRequested()
+    }
   }
 
   override fun nativeSetZoom(zoom: Float) = nativeEngine.setZoom(zoom)
@@ -6295,6 +6316,7 @@ class PlayerActivity :
         setNativeVideoSurfaceVisible(true)
         viewModel.clearNativeExternalSubtitles()
         val nativePlayableUri = PlaybackSession.resolvePlayableUriForNative(nativeItem)
+        nativeEngine.setRepeatMode(viewModel.repeatMode.value)
         nativeEngine.play(
           nativePlayableUri.toUri(),
           startPositionMs = (initialPositionSeconds?.times(1000.0)?.toLong() ?: 0L),

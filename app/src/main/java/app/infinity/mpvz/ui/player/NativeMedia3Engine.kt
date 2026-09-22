@@ -241,6 +241,8 @@ class NativeMedia3Engine(context: Context) {
   private val _hasRenderedFirstFrame = MutableStateFlow(false)
   val hasRenderedFirstFrame: StateFlow<Boolean> = _hasRenderedFirstFrame.asStateFlow()
   val currentPlayer: Player get() = player
+  var onEnded: (() -> Unit)? = null
+  private var endedUri: Uri? = null
   private var metadataChapters: List<NativeChapter> = emptyList()
   private var preparationStartedAtMs: Long = 0L
   private var preparationUri: Uri? = null
@@ -286,6 +288,13 @@ class NativeMedia3Engine(context: Context) {
     override fun onPlaybackStateChanged(playbackState: Int) {
       if (playbackState == Player.STATE_READY) pendingSeekDisplayPositionMs = null
       Log.d(logTag, "playback state=$playbackState uri=${player.currentMediaItem?.localConfiguration?.uri}")
+      if (playbackState == Player.STATE_ENDED) {
+        val uri = player.currentMediaItem?.localConfiguration?.uri
+        if (uri != null && uri != endedUri) {
+          endedUri = uri
+          onEnded?.invoke()
+        }
+      }
     }
     override fun onPlayerError(error: PlaybackException) {
       Log.e(logTag, "player error uri=${player.currentMediaItem?.localConfiguration?.uri}", error)
@@ -738,6 +747,7 @@ class NativeMedia3Engine(context: Context) {
     sourceUri: Uri? = null,
   ) {
     _hasRenderedFirstFrame.value = false
+    endedUri = null
     lastKnownDurationMs = 0L
     videoDecoderName = null
     audioDecoderName = null
@@ -858,6 +868,7 @@ class NativeMedia3Engine(context: Context) {
 
   fun setPlaying(playing: Boolean) {
     if (playing) {
+      if (player.playbackState == Player.STATE_ENDED) endedUri = null
       player.volume = 1f
       player.play()
     } else {
@@ -865,6 +876,13 @@ class NativeMedia3Engine(context: Context) {
     }
     publishSnapshot()
     startTimelineUpdates()
+  }
+
+  /** The app queue owns repeat semantics because Native loads one queue item at a time. */
+  fun setRepeatMode(repeatMode: RepeatMode) {
+    // Do not let Media3 repeat its single MediaItem. PlayerActivity advances the app queue for ALL
+    // and restarts the current item for ONE, matching the libmpv queue behavior.
+    player.repeatMode = Player.REPEAT_MODE_OFF
   }
 
   fun seekTo(positionMs: Long) {
