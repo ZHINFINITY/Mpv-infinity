@@ -10,7 +10,11 @@
 package app.infinity.mpvz.domain.download
 
 import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.preferences.YtdlPreferences
@@ -27,6 +31,7 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -166,7 +171,8 @@ class YtdlpDownloadEngine(
     }
 
     val outputTemplate = "${job.directory}/${DownloadLocations.sanitizeName(job.title)}.%(ext)s"
-    val command = buildCommand(job.url, outputTemplate, job.qualityHeight)
+    val ffmpegDirectory = ensureFfmpeg()
+    val command = buildCommand(job.url, outputTemplate, job.qualityHeight, ffmpegDirectory)
 
     val result =
       withContext(Dispatchers.IO) {
@@ -204,14 +210,25 @@ class YtdlpDownloadEngine(
 
     result
       .onSuccess { (exitCode, destination, lastOutputLine) ->
+        // yt-dlp can download separate DASH video/audio files when ffmpeg is not available.
+        // Android's MediaMuxer can combine the common MP4-compatible outputs without requiring
+        // an additional native ffmpeg executable in the APK.
+        val nativeMuxed =
+          if (!cancelRequested && !pauseRequested) {
+            runCatching { muxSeparateStreams(job) }
+              .onFailure { error -> Log.w(TAG, "Native stream mux failed", error) }
+              .getOrNull()
+          } else {
+            null
+          }
         when {
           cancelRequested -> {
             deleteJobFiles(job)
             updateJob(id) { it.copy(state = JobState.CANCELLED, detail = "") }
           }
           pauseRequested -> updateJob(id) { it.copy(state = JobState.PAUSED, detail = "") }
-          exitCode == 0 -> {
-            val resolved = destination ?: findNewestOutput(job)
+          nativeMuxed != null || exitCode == 0 -> {
+            val resolved = nativeMuxed ?: destination ?: findNewestOutput(job)
             updateJob(id) {
               it.copy(state = JobState.SUCCESS, progressPercent = 100f, detail = "", outputFile = resolved)
             }
@@ -244,6 +261,7 @@ class YtdlpDownloadEngine(
     url: String,
     outputTemplate: String,
     qualityHeight: Int,
+    ffmpegDirectory: File?,
   ): List<String> =
     buildList {
       add(YtdlpManager.getExecutablePath(context))
@@ -282,6 +300,10 @@ class YtdlpDownloadEngine(
       }
       add("--merge-output-format")
       add("mp4")
+      ffmpegDirectory?.let {
+        add("--ffmpeg-location")
+        add(it.absolutePath)
+      }
       add("-o")
       add(outputTemplate)
 
@@ -340,6 +362,31 @@ class YtdlpDownloadEngine(
       add(url)
     }
 
+  /** Copies the ABI-matched executable out of the APK because Android cannot execute assets. */
+  private fun ensureFfmpeg(): File? {
+    val abi = Build.SUPPORTED_ABIS.firstOrNull { supportedAbi ->
+      supportedAbi == "arm64-v8a"
+    } ?: return null
+    val directory = File(context.filesDir, "ffmpeg").apply { mkdirs() }
+    val executable = File(directory, "ffmpeg")
+    if (!executable.isFile || executable.length() == 0L) {
+      val assetPath = "ffmpeg/$abi/ffmpeg"
+      runCatching {
+        context.assets.open(assetPath).use { input ->
+          executable.outputStream().use { output -> input.copyTo(output) }
+        }
+        check(executable.setExecutable(true, false)) { "Unable to make ffmpeg executable" }
+      }.onFailure { error ->
+        executable.delete()
+        Log.w(TAG, "Bundled ffmpeg is unavailable for $abi", error)
+        return null
+      }
+    } else {
+      executable.setExecutable(true, false)
+    }
+    return directory
+  }
+
   private fun startProcess(command: List<String>): Process {
     val processBuilder =
       ProcessBuilder(command)
@@ -364,6 +411,97 @@ class YtdlpDownloadEngine(
       ?.filter { it.isFile && it.name.startsWith(prefix) && !it.name.endsWith(".part") && !it.name.endsWith(".ytdl") }
       ?.maxByOrNull { it.lastModified() }
       ?.absolutePath
+  }
+
+  /**
+   * Muxes the newest video-only and audio-only files left by yt-dlp into one MP4.
+   * This is a fallback for devices/builds that do not ship the ffmpeg executable.
+   */
+  private fun muxSeparateStreams(job: Job): String? {
+    val prefix = DownloadLocations.sanitizeName(job.title)
+    val candidates =
+      File(job.directory)
+        .listFiles()
+        ?.filter {
+          it.isFile &&
+            it.name.startsWith(prefix) &&
+            !it.name.endsWith(".part") &&
+            !it.name.endsWith(".ytdl") &&
+            !it.name.endsWith(".muxing.mp4")
+        }
+        ?.sortedByDescending(File::lastModified)
+        .orEmpty()
+    if (candidates.size < 2) return null
+
+    var videoFile: File? = null
+    var audioFile: File? = null
+    for (file in candidates) {
+      val extractor = MediaExtractor()
+      try {
+        extractor.setDataSource(file.absolutePath)
+        for (trackIndex in 0 until extractor.trackCount) {
+          val mime = extractor.getTrackFormat(trackIndex).getString(MediaFormat.KEY_MIME).orEmpty()
+          if (videoFile == null && mime.startsWith("video/")) videoFile = file
+          if (audioFile == null && mime.startsWith("audio/")) audioFile = file
+        }
+      } finally {
+        extractor.release()
+      }
+      if (videoFile != null && audioFile != null) break
+    }
+    if (videoFile == null || audioFile == null || videoFile == audioFile) return null
+
+    val output = File(job.directory, "$prefix.muxing.mp4")
+    val finalOutput = File(job.directory, "$prefix.mp4")
+    output.delete()
+    var muxer: MediaMuxer? = null
+    val extractors = mutableListOf<MediaExtractor>()
+    return try {
+      muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+      val trackFiles = listOf(videoFile!!, audioFile!!)
+      val muxerTracks = trackFiles.map { file ->
+        val extractor = MediaExtractor()
+        extractors += extractor
+        extractor.setDataSource(file.absolutePath)
+        val trackIndex = (0 until extractor.trackCount).first { index ->
+          val mime = extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME).orEmpty()
+          if (file == videoFile) mime.startsWith("video/") else mime.startsWith("audio/")
+        }
+        extractor.selectTrack(trackIndex)
+        muxer!!.addTrack(extractor.getTrackFormat(trackIndex))
+      }
+      muxer!!.start()
+      val buffer = ByteBuffer.allocate(1024 * 1024)
+      val info = android.media.MediaCodec.BufferInfo()
+      extractors.forEachIndexed { index, extractor ->
+        while (true) {
+          val sampleSize = extractor.readSampleData(buffer, 0)
+          if (sampleSize < 0) break
+          info.offset = 0
+          info.size = sampleSize
+          info.presentationTimeUs = extractor.sampleTime.coerceAtLeast(0L)
+          info.flags = extractor.sampleFlags
+          muxer!!.writeSampleData(muxerTracks[index], buffer, info)
+          extractor.advance()
+          buffer.clear()
+        }
+      }
+      muxer!!.stop()
+      muxer!!.release()
+      muxer = null
+      if (!output.renameTo(finalOutput)) {
+        output.copyTo(finalOutput, overwrite = true)
+        output.delete()
+      }
+      videoFile!!.delete()
+      audioFile!!.delete()
+      finalOutput.absolutePath
+    } finally {
+      extractors.forEach { it.release() }
+      muxer?.runCatching { stop() }
+      muxer?.release()
+      if (output.exists()) output.delete()
+    }
   }
 
   private fun deleteJobFiles(job: Job) {
