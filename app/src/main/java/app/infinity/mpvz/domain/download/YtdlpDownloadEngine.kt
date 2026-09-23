@@ -369,16 +369,22 @@ class YtdlpDownloadEngine(
     } ?: return null
     val directory = File(context.filesDir, "ffmpeg").apply { mkdirs() }
     val executable = File(directory, "ffmpeg")
+    val executableBinary = File(directory, "ffmpeg.bin")
     val ffprobe = File(directory, "ffprobe")
+    val ffprobeBinary = File(directory, "ffprobe.bin")
     val sharedLibrary = File(directory, "libffmpeg.so")
     if (!executable.isFile || executable.length() == 0L ||
+      !executableBinary.isFile || executableBinary.length() == 0L ||
       !ffprobe.isFile || ffprobe.length() == 0L ||
+      !ffprobeBinary.isFile || ffprobeBinary.length() == 0L ||
       !sharedLibrary.isFile || sharedLibrary.length() == 0L
     ) {
       runCatching {
         listOf(
           "ffmpeg/$abi/ffmpeg" to executable,
+          "ffmpeg/$abi/ffmpeg.bin" to executableBinary,
           "ffmpeg/$abi/ffprobe" to ffprobe,
+          "ffmpeg/$abi/ffprobe.bin" to ffprobeBinary,
           "ffmpeg/$abi/libffmpeg.so" to sharedLibrary,
         ).forEach { (assetPath, destination) ->
           context.assets.open(assetPath).use { input ->
@@ -386,17 +392,23 @@ class YtdlpDownloadEngine(
           }
         }
         check(executable.setExecutable(true, false)) { "Unable to make ffmpeg executable" }
+        check(executableBinary.setExecutable(true, false)) { "Unable to make ffmpeg binary executable" }
         check(ffprobe.setExecutable(true, false)) { "Unable to make ffprobe executable" }
+        check(ffprobeBinary.setExecutable(true, false)) { "Unable to make ffprobe binary executable" }
       }.onFailure { error ->
         executable.delete()
+        executableBinary.delete()
         ffprobe.delete()
+        ffprobeBinary.delete()
         sharedLibrary.delete()
         Log.w(TAG, "Bundled ffmpeg is unavailable for $abi", error)
         return null
       }
     } else {
       executable.setExecutable(true, false)
+      executableBinary.setExecutable(true, false)
       ffprobe.setExecutable(true, false)
+      ffprobeBinary.setExecutable(true, false)
     }
     return directory
   }
