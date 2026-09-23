@@ -125,6 +125,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
@@ -825,7 +826,27 @@ fun AudioPlayerControls(
   val playerControlsTheme by appearancePreferences.playerControlsTheme.collectAsState()
   val showSeekbarOuterContainer by appearancePreferences.showSeekbarOuterContainer.collectAsState()
   val liquidGlassSurfaces by appearancePreferences.liquidGlassSurfaces.collectAsState()
+  val customThemes by appearancePreferences.customThemes.collectAsState()
+  val activeCustomThemeId by appearancePreferences.activeCustomThemeId.collectAsState()
   val colorScheme = MaterialTheme.colorScheme
+  val typography = MaterialTheme.typography
+  val shapes = MaterialTheme.shapes
+  fun contrastRatio(foreground: Color, background: Color): Float {
+    val lighter = maxOf(foreground.luminance(), background.luminance())
+    val darker = minOf(foreground.luminance(), background.luminance())
+    return (lighter + 0.05f) / (darker + 0.05f)
+  }
+  val musicPlayerColorScheme =
+    if (customThemes.any { it.id == activeCustomThemeId } &&
+      contrastRatio(colorScheme.primary, colorScheme.inverseSurface) >= 4.5f
+    ) {
+      colorScheme.copy(
+        onSurface = colorScheme.primary,
+        onSurfaceVariant = colorScheme.primary,
+      )
+    } else {
+      colorScheme
+    }
   val palette =
     remember(colorScheme) {
       VisualizerPalette(
@@ -2028,6 +2049,11 @@ fun AudioPlayerControls(
 
     val isTabletPortrait = isPortrait && (isTablet || configuration.screenWidthDp >= 600)
 
+    MaterialTheme(
+      colorScheme = musicPlayerColorScheme,
+      typography = typography,
+      shapes = shapes,
+    ) {
     if (isPortrait) {
       Column(
         modifier = Modifier
@@ -2232,6 +2258,7 @@ fun AudioPlayerControls(
         onSuccess = { addToPlaylistDialogOpen = false },
         isJellyfin = isJellyfinMedia,
       )
+    }
     }
   }
 }
