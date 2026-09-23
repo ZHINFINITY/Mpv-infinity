@@ -362,27 +362,41 @@ class YtdlpDownloadEngine(
       add(url)
     }
 
-  /** Copies the ABI-matched executable out of the APK because Android cannot execute assets. */
+  /** Copies the ABI-matched FFmpeg tools and shared library out of the APK. */
   private fun ensureFfmpeg(): File? {
     val abi = Build.SUPPORTED_ABIS.firstOrNull { supportedAbi ->
       supportedAbi == "arm64-v8a"
     } ?: return null
     val directory = File(context.filesDir, "ffmpeg").apply { mkdirs() }
     val executable = File(directory, "ffmpeg")
-    if (!executable.isFile || executable.length() == 0L) {
-      val assetPath = "ffmpeg/$abi/ffmpeg"
+    val ffprobe = File(directory, "ffprobe")
+    val sharedLibrary = File(directory, "libffmpeg.so")
+    if (!executable.isFile || executable.length() == 0L ||
+      !ffprobe.isFile || ffprobe.length() == 0L ||
+      !sharedLibrary.isFile || sharedLibrary.length() == 0L
+    ) {
       runCatching {
-        context.assets.open(assetPath).use { input ->
-          executable.outputStream().use { output -> input.copyTo(output) }
+        listOf(
+          "ffmpeg/$abi/ffmpeg" to executable,
+          "ffmpeg/$abi/ffprobe" to ffprobe,
+          "ffmpeg/$abi/libffmpeg.so" to sharedLibrary,
+        ).forEach { (assetPath, destination) ->
+          context.assets.open(assetPath).use { input ->
+            destination.outputStream().use { output -> input.copyTo(output) }
+          }
         }
         check(executable.setExecutable(true, false)) { "Unable to make ffmpeg executable" }
+        check(ffprobe.setExecutable(true, false)) { "Unable to make ffprobe executable" }
       }.onFailure { error ->
         executable.delete()
+        ffprobe.delete()
+        sharedLibrary.delete()
         Log.w(TAG, "Bundled ffmpeg is unavailable for $abi", error)
         return null
       }
     } else {
       executable.setExecutable(true, false)
+      ffprobe.setExecutable(true, false)
     }
     return directory
   }
@@ -400,7 +414,7 @@ class YtdlpDownloadEngine(
     env["PYTHONHOME"] = ytdlDir
     env["PYTHONPATH"] = "$ytdlDir/python313.zip"
     env["SSL_CERT_FILE"] = File(context.filesDir, "cacert.pem").absolutePath
-    env["LD_LIBRARY_PATH"] = nativeLibDir
+    env["LD_LIBRARY_PATH"] = "${File(context.filesDir, "ffmpeg").absolutePath}:$nativeLibDir"
     return processBuilder.start()
   }
 
