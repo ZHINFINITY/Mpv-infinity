@@ -171,13 +171,13 @@ class YtdlpDownloadEngine(
     }
 
     val outputTemplate = "${job.directory}/${DownloadLocations.sanitizeName(job.title)}.%(ext)s"
-    val ffmpegDirectory = ensureFfmpeg()
-    val command = buildCommand(job.url, outputTemplate, job.qualityHeight, ffmpegDirectory)
+    val ffmpegExecutable = ensureFfmpeg()
+    val command = buildCommand(job.url, outputTemplate, job.qualityHeight, ffmpegExecutable)
 
     val result =
       withContext(Dispatchers.IO) {
         runCatching {
-          val process = startProcess(command, ffmpegDirectory)
+          val process = startProcess(command, ffmpegExecutable?.parentFile)
           activeProcess = process
           var destination: String? = null
           var lastOutputLine = ""
@@ -215,7 +215,7 @@ class YtdlpDownloadEngine(
         // an additional native ffmpeg executable in the APK.
         val nativeMuxed =
           if (!cancelRequested && !pauseRequested) {
-            runCatching { muxSeparateStreams(job, ffmpegDirectory) }
+            runCatching { muxSeparateStreams(job, ffmpegExecutable) }
               .onFailure { error -> Log.w(TAG, "Native stream mux failed", error) }
               .getOrNull()
           } else {
@@ -261,7 +261,7 @@ class YtdlpDownloadEngine(
     url: String,
     outputTemplate: String,
     qualityHeight: Int,
-    ffmpegDirectory: File?,
+    ffmpegExecutable: File?,
   ): List<String> =
     buildList {
       add(YtdlpManager.getExecutablePath(context))
@@ -300,7 +300,7 @@ class YtdlpDownloadEngine(
       }
       add("--merge-output-format")
       add("mp4")
-      ffmpegDirectory?.let {
+      ffmpegExecutable?.let {
         add("--ffmpeg-location")
         add(it.absolutePath)
       }
@@ -362,57 +362,18 @@ class YtdlpDownloadEngine(
       add(url)
     }
 
-  /** Copies the ABI-matched FFmpeg tools and shared library out of the APK. */
+  /** Returns the ABI-matched FFmpeg executable from Android's executable native library directory. */
   private fun ensureFfmpeg(): File? {
     val abi = Build.SUPPORTED_ABIS.firstOrNull { supportedAbi ->
       supportedAbi == "arm64-v8a"
     } ?: return null
-    // Android app data filesystems may be mounted noexec. codeCacheDir is intended for
-    // runtime-generated code and is executable on supported Android versions.
-    val directory = File(context.codeCacheDir, "ffmpeg").apply { mkdirs() }
-    val executable = File(directory, "ffmpeg")
-    val executableBinary = File(directory, "ffmpeg.bin")
-    val ffprobe = File(directory, "ffprobe")
-    val ffprobeBinary = File(directory, "ffprobe.bin")
-    val sharedLibrary = File(directory, "libffmpeg.so")
-    if (!executable.isFile || executable.length() == 0L ||
-      !executableBinary.isFile || executableBinary.length() == 0L ||
-      !ffprobe.isFile || ffprobe.length() == 0L ||
-      !ffprobeBinary.isFile || ffprobeBinary.length() == 0L ||
-      !sharedLibrary.isFile || sharedLibrary.length() == 0L
-    ) {
-      runCatching {
-        listOf(
-          "ffmpeg/$abi/ffmpeg" to executable,
-          "ffmpeg/$abi/ffmpeg.bin" to executableBinary,
-          "ffmpeg/$abi/ffprobe" to ffprobe,
-          "ffmpeg/$abi/ffprobe.bin" to ffprobeBinary,
-          "ffmpeg/$abi/libffmpeg.so" to sharedLibrary,
-        ).forEach { (assetPath, destination) ->
-          context.assets.open(assetPath).use { input ->
-            destination.outputStream().use { output -> input.copyTo(output) }
-          }
-        }
-        check(executable.setExecutable(true, false)) { "Unable to make ffmpeg executable" }
-        check(executableBinary.setExecutable(true, false)) { "Unable to make ffmpeg binary executable" }
-        check(ffprobe.setExecutable(true, false)) { "Unable to make ffprobe executable" }
-        check(ffprobeBinary.setExecutable(true, false)) { "Unable to make ffprobe binary executable" }
-      }.onFailure { error ->
-        executable.delete()
-        executableBinary.delete()
-        ffprobe.delete()
-        ffprobeBinary.delete()
-        sharedLibrary.delete()
-        Log.w(TAG, "Bundled ffmpeg is unavailable for $abi", error)
-        return null
+    val nativeDirectory = File(context.applicationInfo.nativeLibraryDir)
+    val executable = File(nativeDirectory, "libffmpeg_exec.so")
+    return executable.takeIf { it.isFile && it.length() > 0L && it.canExecute() }
+      ?: run {
+        Log.w(TAG, "Bundled ffmpeg is unavailable for $abi at ${executable.absolutePath}")
+        null
       }
-    } else {
-      executable.setExecutable(true, false)
-      executableBinary.setExecutable(true, false)
-      ffprobe.setExecutable(true, false)
-      ffprobeBinary.setExecutable(true, false)
-    }
-    return directory
   }
 
   private fun startProcess(command: List<String>, ffmpegDirectory: File?): Process {
@@ -446,7 +407,7 @@ class YtdlpDownloadEngine(
    * Muxes the newest video-only and audio-only files left by yt-dlp into one MP4.
    * This is a fallback for devices/builds that do not ship the ffmpeg executable.
    */
-  private fun muxSeparateStreams(job: Job, ffmpegDirectory: File?): String? {
+  private fun muxSeparateStreams(job: Job, ffmpegExecutable: File?): String? {
     val prefix = DownloadLocations.sanitizeName(job.title)
     val candidates =
       File(job.directory)
@@ -485,8 +446,8 @@ class YtdlpDownloadEngine(
 
     // Prefer FFmpeg because Android MediaMuxer rejects WebM/VP9 and other tracks that
     // cannot be represented in an MP4 container. This also handles timestamp normalization.
-    ffmpegDirectory?.let { directory ->
-      val ffmpeg = File(directory, "ffmpeg")
+    ffmpegExecutable?.let { ffmpeg ->
+      val directory = ffmpeg.parentFile ?: return@let
       if (ffmpeg.isFile && ffmpeg.canExecute()) {
         val processBuilder =
           ProcessBuilder(
