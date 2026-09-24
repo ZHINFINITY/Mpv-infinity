@@ -2,6 +2,15 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.1.4 - Performance, Downloads & Smoothness
+
+### Faster and smoother everyday use
+
+- Improved overall app responsiveness during folder browsing, media-list refreshes, and UI scrolling by keeping filesystem refresh work off the UI thread.
+- Improved yt-dlp downloads across supported websites with unique per-video output identity and reliable audio/video merging into a single playable media file.
+- Improved download progress handling for smoother status updates while downloads continue in the background.
+- Preserved the existing playback engines, media formats, high-refresh UI behavior, animations, thumbnails, and supported app features.
+
 ## 2.1.3 - Compatibility Fix
 
 ### Custom-theme music player

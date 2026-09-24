@@ -221,16 +221,17 @@ class FileSystemBrowserViewModel(
 
     // Set loading state
     _isLoading.value = true
+    viewModelScope.launch(Dispatchers.IO) {
+      // Clear all caches to force fresh data from filesystem
+      MediaFileRepository.clearCache()
+      FolderViewScanner.clearCache()
+      TreeViewScanner.clearCache()
 
-    // Clear all caches to force fresh data from filesystem
-    MediaFileRepository.clearCache()
-    FolderViewScanner.clearCache()
-    TreeViewScanner.clearCache()
+      // Trigger media scan to ensure MediaStore is up-to-date
+      triggerMediaScan()
 
-    // Trigger media scan to ensure MediaStore is up-to-date
-    triggerMediaScan()
-
-    loadCurrentDirectory(forceFileSystemCheck = true)
+      loadCurrentDirectory(forceFileSystemCheck = true)
+    }
   }
 
   /**
