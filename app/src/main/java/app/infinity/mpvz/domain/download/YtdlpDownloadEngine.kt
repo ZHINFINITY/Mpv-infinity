@@ -10,7 +10,11 @@
 package app.infinity.mpvz.domain.download
 
 import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import app.infinity.mpvz.network.AndroidCookieJar
 import app.infinity.mpvz.preferences.YtdlPreferences
@@ -27,6 +31,7 @@ import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -165,16 +170,20 @@ class YtdlpDownloadEngine(
       return
     }
 
-    val outputTemplate = "${job.directory}/${DownloadLocations.sanitizeName(job.title)}.%(ext)s"
-    val command = buildCommand(job.url, outputTemplate, job.qualityHeight)
+    // Human titles and shared URL path segments are not unique (especially Instagram /share/
+    // and /reel/ links). Keep every job isolated, then include yt-dlp's extractor and video ID.
+    val outputTemplate = "${job.directory}/${jobFilePrefix(job)}%(extractor)s-%(id)s.%(ext)s"
+    val ffmpegExecutable = ensureFfmpeg()
+    val command = buildCommand(job.url, outputTemplate, job.qualityHeight, ffmpegExecutable)
 
     val result =
       withContext(Dispatchers.IO) {
         runCatching {
-          val process = startProcess(command)
+          val process = startProcess(command, ffmpegExecutable?.parentFile)
           activeProcess = process
           var destination: String? = null
           var lastOutputLine = ""
+          var lastProgressUpdateAt = 0L
           val diagnosticLines = ArrayDeque<String>()
           BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
@@ -188,7 +197,11 @@ class YtdlpDownloadEngine(
               }
               parseDestination(line)?.let { destination = it }
               val progress = parseProgressLine(line)
-              if (progress != null) {
+              val now = System.currentTimeMillis()
+              if (progress != null &&
+                (now - lastProgressUpdateAt >= PROGRESS_UPDATE_INTERVAL_MS || progress.first >= 100f)
+              ) {
+                lastProgressUpdateAt = now
                 updateJob(id) { it.copy(progressPercent = progress.first, detail = progress.second) }
                 currentJob(id)?.let(onJobUpdate)
               }
@@ -204,14 +217,25 @@ class YtdlpDownloadEngine(
 
     result
       .onSuccess { (exitCode, destination, lastOutputLine) ->
+        // yt-dlp can download separate DASH video/audio files when ffmpeg is not available.
+        // Android's MediaMuxer can combine the common MP4-compatible outputs without requiring
+        // an additional native ffmpeg executable in the APK.
+        val nativeMuxed =
+          if (!cancelRequested && !pauseRequested) {
+            runCatching { muxSeparateStreams(job, ffmpegExecutable) }
+              .onFailure { error -> Log.w(TAG, "Native stream mux failed", error) }
+              .getOrNull()
+          } else {
+            null
+          }
         when {
           cancelRequested -> {
             deleteJobFiles(job)
             updateJob(id) { it.copy(state = JobState.CANCELLED, detail = "") }
           }
           pauseRequested -> updateJob(id) { it.copy(state = JobState.PAUSED, detail = "") }
-          exitCode == 0 -> {
-            val resolved = destination ?: findNewestOutput(job)
+          nativeMuxed != null || exitCode == 0 -> {
+            val resolved = nativeMuxed ?: destination ?: findNewestOutput(job)
             updateJob(id) {
               it.copy(state = JobState.SUCCESS, progressPercent = 100f, detail = "", outputFile = resolved)
             }
@@ -244,6 +268,7 @@ class YtdlpDownloadEngine(
     url: String,
     outputTemplate: String,
     qualityHeight: Int,
+    ffmpegExecutable: File?,
   ): List<String> =
     buildList {
       add(YtdlpManager.getExecutablePath(context))
@@ -276,12 +301,16 @@ class YtdlpDownloadEngine(
           },
         )
       } else if (qualityHeight > 0) {
-        add("bv*[height<=?$qualityHeight]+ba/b[height<=?$qualityHeight]")
+        add("bv*[vcodec!=none][height<=?$qualityHeight]+ba[acodec!=none]/b[vcodec!=none][acodec!=none][height<=?$qualityHeight]")
       } else {
-        add("bv*+ba/b")
+        add("bv*[vcodec!=none]+ba[acodec!=none]/b[vcodec!=none][acodec!=none]")
       }
       add("--merge-output-format")
       add("mp4")
+      ffmpegExecutable?.let {
+        add("--ffmpeg-location")
+        add(it.absolutePath)
+      }
       add("-o")
       add(outputTemplate)
 
@@ -340,7 +369,21 @@ class YtdlpDownloadEngine(
       add(url)
     }
 
-  private fun startProcess(command: List<String>): Process {
+  /** Returns the ABI-matched FFmpeg executable from Android's executable native library directory. */
+  private fun ensureFfmpeg(): File? {
+    val abi = Build.SUPPORTED_ABIS.firstOrNull { supportedAbi ->
+      supportedAbi == "arm64-v8a"
+    } ?: return null
+    val nativeDirectory = File(context.applicationInfo.nativeLibraryDir)
+    val executable = File(nativeDirectory, "libffmpeg_exec.so")
+    return executable.takeIf { it.isFile && it.length() > 0L && it.canExecute() }
+      ?: run {
+        Log.w(TAG, "Bundled ffmpeg is unavailable for $abi at ${executable.absolutePath}")
+        null
+      }
+  }
+
+  private fun startProcess(command: List<String>, ffmpegDirectory: File?): Process {
     val processBuilder =
       ProcessBuilder(command)
         .directory(YtdlpManager.getYtdlDir(context))
@@ -353,12 +396,13 @@ class YtdlpDownloadEngine(
     env["PYTHONHOME"] = ytdlDir
     env["PYTHONPATH"] = "$ytdlDir/python313.zip"
     env["SSL_CERT_FILE"] = File(context.filesDir, "cacert.pem").absolutePath
-    env["LD_LIBRARY_PATH"] = nativeLibDir
+    env["LD_LIBRARY_PATH"] =
+      listOfNotNull(ffmpegDirectory?.absolutePath, nativeLibDir).joinToString(":")
     return processBuilder.start()
   }
 
   private fun findNewestOutput(job: Job): String? {
-    val prefix = DownloadLocations.sanitizeName(job.title)
+    val prefix = jobFilePrefix(job)
     return File(job.directory)
       .listFiles()
       ?.filter { it.isFile && it.name.startsWith(prefix) && !it.name.endsWith(".part") && !it.name.endsWith(".ytdl") }
@@ -366,14 +410,152 @@ class YtdlpDownloadEngine(
       ?.absolutePath
   }
 
+  /**
+   * Muxes the newest video-only and audio-only files left by yt-dlp into one MP4.
+   * This is a fallback for devices/builds that do not ship the ffmpeg executable.
+   */
+  private fun muxSeparateStreams(job: Job, ffmpegExecutable: File?): String? {
+    val prefix = jobFilePrefix(job)
+    val candidates =
+      File(job.directory)
+        .listFiles()
+        ?.filter {
+          it.isFile &&
+            it.name.startsWith(prefix) &&
+            !it.name.endsWith(".part") &&
+            !it.name.endsWith(".ytdl") &&
+            !it.name.endsWith(".muxing.mp4")
+        }
+        ?.sortedByDescending(File::lastModified)
+        .orEmpty()
+    if (candidates.size < 2) return null
+
+    var videoFile: File? = null
+    var audioFile: File? = null
+    for (file in candidates) {
+      val extractor = MediaExtractor()
+      try {
+        extractor.setDataSource(file.absolutePath)
+        for (trackIndex in 0 until extractor.trackCount) {
+          val mime = extractor.getTrackFormat(trackIndex).getString(MediaFormat.KEY_MIME).orEmpty()
+          if (videoFile == null && mime.startsWith("video/")) videoFile = file
+          if (audioFile == null && mime.startsWith("audio/")) audioFile = file
+        }
+      } finally {
+        extractor.release()
+      }
+      if (videoFile != null && audioFile != null) break
+    }
+    if (videoFile == null || audioFile == null || videoFile == audioFile) return null
+
+    val output = File(job.directory, "$prefix.muxing.mp4")
+    val finalOutput = File(job.directory, "$prefix.mp4")
+
+    // Prefer FFmpeg because Android MediaMuxer rejects WebM/VP9 and other tracks that
+    // cannot be represented in an MP4 container. This also handles timestamp normalization.
+    ffmpegExecutable?.let { ffmpeg ->
+      val directory = ffmpeg.parentFile ?: return@let
+      if (ffmpeg.isFile && ffmpeg.canExecute()) {
+        val processBuilder =
+          ProcessBuilder(
+            ffmpeg.absolutePath,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            videoFile!!.absolutePath,
+            "-i",
+            audioFile!!.absolutePath,
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            finalOutput.absolutePath,
+          )
+            .directory(directory)
+            .redirectErrorStream(true)
+        val environment = processBuilder.environment()
+        environment["LD_LIBRARY_PATH"] = "${directory.absolutePath}:${context.applicationInfo.nativeLibraryDir}"
+        val process = processBuilder.start()
+        val diagnostics = process.inputStream.bufferedReader().use { it.readText().trim() }
+        val exitCode = process.waitFor()
+        if (exitCode == 0 && finalOutput.isFile && finalOutput.length() > 0L) {
+          videoFile!!.delete()
+          audioFile!!.delete()
+          return finalOutput.absolutePath
+        }
+        Log.w(TAG, "FFmpeg stream mux failed with code $exitCode: $diagnostics")
+        finalOutput.delete()
+      }
+    }
+
+    output.delete()
+    var muxer: MediaMuxer? = null
+    val extractors = mutableListOf<MediaExtractor>()
+    return try {
+      muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+      val trackFiles = listOf(videoFile!!, audioFile!!)
+      val muxerTracks = trackFiles.map { file ->
+        val extractor = MediaExtractor()
+        extractors += extractor
+        extractor.setDataSource(file.absolutePath)
+        val trackIndex = (0 until extractor.trackCount).first { index ->
+          val mime = extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME).orEmpty()
+          if (file == videoFile) mime.startsWith("video/") else mime.startsWith("audio/")
+        }
+        extractor.selectTrack(trackIndex)
+        muxer!!.addTrack(extractor.getTrackFormat(trackIndex))
+      }
+      muxer!!.start()
+      val buffer = ByteBuffer.allocate(1024 * 1024)
+      val info = android.media.MediaCodec.BufferInfo()
+      extractors.forEachIndexed { index, extractor ->
+        while (true) {
+          val sampleSize = extractor.readSampleData(buffer, 0)
+          if (sampleSize < 0) break
+          info.offset = 0
+          info.size = sampleSize
+          info.presentationTimeUs = extractor.sampleTime.coerceAtLeast(0L)
+          info.flags = extractor.sampleFlags
+          muxer!!.writeSampleData(muxerTracks[index], buffer, info)
+          extractor.advance()
+          buffer.clear()
+        }
+      }
+      muxer!!.stop()
+      muxer!!.release()
+      muxer = null
+      if (!output.renameTo(finalOutput)) {
+        output.copyTo(finalOutput, overwrite = true)
+        output.delete()
+      }
+      videoFile!!.delete()
+      audioFile!!.delete()
+      finalOutput.absolutePath
+    } finally {
+      extractors.forEach { it.release() }
+      muxer?.runCatching { stop() }
+      muxer?.release()
+      if (output.exists()) output.delete()
+    }
+  }
+
   private fun deleteJobFiles(job: Job) {
-    val prefix = DownloadLocations.sanitizeName(job.title)
+    val prefix = jobFilePrefix(job)
     File(job.directory).listFiles()?.forEach { file ->
       if (file.isFile && file.name.startsWith(prefix)) {
         runCatching { file.delete() }
       }
     }
   }
+
+  private fun jobFilePrefix(job: Job): String =
+    "${DownloadLocations.sanitizeName(job.title)}-${job.id}-"
 
   private fun currentJob(id: Int): Job? = _jobs.value.firstOrNull { it.id == id }
 
@@ -386,6 +568,7 @@ class YtdlpDownloadEngine(
 
   companion object {
     private const val TAG = "YtdlpDownloadEngine"
+    private const val PROGRESS_UPDATE_INTERVAL_MS = 750L
 
     // Example: "[download]  42.3% of ~ 123.45MiB at 2.34MiB/s ETA 01:23"
     private val PROGRESS_REGEX = Regex("""(?i)\[download]\s+([0-9.]+)%(.*)""")

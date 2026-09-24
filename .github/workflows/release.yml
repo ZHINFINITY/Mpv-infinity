@@ -223,9 +223,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Mpv∞ ${{ github.ref_name }}
+          name: Mpv ∞ ${{ github.ref_name }}
           body_path: release-notes.md
-          generate_release_notes: true
+          generate_release_notes: false
           draft: false
           prerelease: false
           fail_on_unmatched_files: true

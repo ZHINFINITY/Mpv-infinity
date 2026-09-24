@@ -223,15 +223,16 @@ class VideoListViewModel(
 
     // Set loading state
     _isLoading.value = true
+    viewModelScope.launch(Dispatchers.IO) {
+      // Clear cache to force fresh data from filesystem
+      MediaFileRepository.clearCache()
+      FolderViewScanner.clearCache()
 
-    // Clear cache to force fresh data from filesystem
-    MediaFileRepository.clearCache()
-    FolderViewScanner.clearCache()
+      // Trigger media scan before loading to ensure MediaStore is up-to-date
+      triggerMediaScan()
 
-    // Trigger media scan before loading to ensure MediaStore is up-to-date
-    triggerMediaScan()
-
-    loadVideos(forceFileSystemCheck = true)
+      loadVideos(forceFileSystemCheck = true)
+    }
   }
 
   private fun loadVideos(forceFileSystemCheck: Boolean = false) {
