@@ -485,7 +485,7 @@ class YtdlpDownloadEngine(
     ffmpegDirectory?.let { directory ->
       val ffmpeg = File(directory, "ffmpeg")
       if (ffmpeg.isFile && ffmpeg.canExecute()) {
-        val process =
+        val processBuilder =
           ProcessBuilder(
             ffmpeg.absolutePath,
             "-hide_banner",
@@ -508,8 +508,9 @@ class YtdlpDownloadEngine(
           )
             .directory(directory)
             .redirectErrorStream(true)
-        val environment = process.environment()
+        val environment = processBuilder.environment()
         environment["LD_LIBRARY_PATH"] = "${directory.absolutePath}:${context.applicationInfo.nativeLibraryDir}"
+        val process = processBuilder.start()
         val diagnostics = process.inputStream.bufferedReader().use { it.readText().trim() }
         val exitCode = process.waitFor()
         if (exitCode == 0 && finalOutput.isFile && finalOutput.length() > 0L) {
