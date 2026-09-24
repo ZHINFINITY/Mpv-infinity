@@ -11,6 +11,7 @@ package app.infinity.mpvz.domain.download
 
 import android.net.Uri
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
+import java.security.MessageDigest
 
 /**
  * Routes a link download to the right engine: plain HTTP(S) files go through the
@@ -90,7 +91,14 @@ class LinkDownloadCoordinator(
           ?.takeIf { it.isNotBlank() }
           ?: "download"
       val sanitized = DownloadLocations.sanitizeName(Uri.decode(lastSegment))
-      return if (MEDIA_EXTENSION_REGEX.containsMatchIn(sanitized)) sanitized else "$sanitized.mp4"
+      val extension = MEDIA_EXTENSION_REGEX.find(sanitized)?.value ?: ".mp4"
+      val stem = if (extension == ".mp4") sanitized else sanitized.removeSuffix(extension)
+      val stableId =
+        MessageDigest.getInstance("SHA-256")
+          .digest(url.toByteArray(Charsets.UTF_8))
+          .take(8)
+          .joinToString("") { byte -> "%02x".format(byte) }
+      return "$stem-$stableId$extension"
     }
   }
 }
