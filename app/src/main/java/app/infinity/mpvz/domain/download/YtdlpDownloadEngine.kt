@@ -215,7 +215,7 @@ class YtdlpDownloadEngine(
         // an additional native ffmpeg executable in the APK.
         val nativeMuxed =
           if (!cancelRequested && !pauseRequested) {
-            runCatching { muxSeparateStreams(job) }
+            runCatching { muxSeparateStreams(job, ffmpegDirectory) }
               .onFailure { error -> Log.w(TAG, "Native stream mux failed", error) }
               .getOrNull()
           } else {
@@ -443,7 +443,7 @@ class YtdlpDownloadEngine(
    * Muxes the newest video-only and audio-only files left by yt-dlp into one MP4.
    * This is a fallback for devices/builds that do not ship the ffmpeg executable.
    */
-  private fun muxSeparateStreams(job: Job): String? {
+  private fun muxSeparateStreams(job: Job, ffmpegDirectory: File?): String? {
     val prefix = DownloadLocations.sanitizeName(job.title)
     val candidates =
       File(job.directory)
@@ -479,6 +479,49 @@ class YtdlpDownloadEngine(
 
     val output = File(job.directory, "$prefix.muxing.mp4")
     val finalOutput = File(job.directory, "$prefix.mp4")
+
+    // Prefer FFmpeg because Android MediaMuxer rejects WebM/VP9 and other tracks that
+    // cannot be represented in an MP4 container. This also handles timestamp normalization.
+    ffmpegDirectory?.let { directory ->
+      val ffmpeg = File(directory, "ffmpeg")
+      if (ffmpeg.isFile && ffmpeg.canExecute()) {
+        val process =
+          ProcessBuilder(
+            ffmpeg.absolutePath,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            videoFile!!.absolutePath,
+            "-i",
+            audioFile!!.absolutePath,
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            finalOutput.absolutePath,
+          )
+            .directory(directory)
+            .redirectErrorStream(true)
+        val environment = process.environment()
+        environment["LD_LIBRARY_PATH"] = "${directory.absolutePath}:${context.applicationInfo.nativeLibraryDir}"
+        val diagnostics = process.inputStream.bufferedReader().use { it.readText().trim() }
+        val exitCode = process.waitFor()
+        if (exitCode == 0 && finalOutput.isFile && finalOutput.length() > 0L) {
+          videoFile!!.delete()
+          audioFile!!.delete()
+          return finalOutput.absolutePath
+        }
+        Log.w(TAG, "FFmpeg stream mux failed with code $exitCode: $diagnostics")
+        finalOutput.delete()
+      }
+    }
+
     output.delete()
     var muxer: MediaMuxer? = null
     val extractors = mutableListOf<MediaExtractor>()
