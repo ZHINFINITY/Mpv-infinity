@@ -1,10 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.mpvrx" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar" />
+    <style name="Theme.mpvinfinity" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar" />
 
-    <style name="Theme.mpvrx.Player" parent="Theme.mpvrx">
+    <style name="Theme.mpvinfinity.Player" parent="Theme.mpvinfinity">
         <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <style name="Theme.mpvinfinity.QuickDownload" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.45</item>
     </style>
 
     <style name="leak_canary_LeakCanary.Base" parent="Theme.AppCompat.Light.DarkActionBar">

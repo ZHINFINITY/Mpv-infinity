@@ -9,46 +9,56 @@
 
 package app.infinity.mpvz.ui.preferences
 
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
+import android.webkit.CookieManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
+import android.util.Log
+import android.database.sqlite.SQLiteDatabase
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.infinity.mpvz.R
 import app.infinity.mpvz.preferences.YtdlPreferences
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.ytdlp.YtdlAudioPreference
-import app.infinity.mpvz.ui.player.ytdlp.YtdlAudioQuality
-import app.infinity.mpvz.ui.player.ytdlp.YtdlCodecPreference
-import app.infinity.mpvz.ui.player.ytdlp.YtdlContainerPreference
-import app.infinity.mpvz.ui.player.ytdlp.YtdlHdrPreference
 import app.infinity.mpvz.ui.player.ytdlp.YtdlPlaylistMode
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpInstallationStatus
 import app.infinity.mpvz.ui.player.ytdlp.YtdlpManager
-import app.infinity.mpvz.ui.player.ytdlp.YtdlpOptionSettings
-import app.infinity.mpvz.ui.player.ytdlp.YtdlpOptionsBuilder
+import app.infinity.mpvz.ui.player.ytdlp.YtdlpReleaseChannel
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.theme.spacing
 import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.currentMpvConfigOverrideOptions
 import app.infinity.mpvz.ui.utils.popSafely
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import java.io.File
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
-import java.io.File
+
+private const val COOKIE_WEBVIEW_TAG = "CookieWebView"
 
 @Serializable
 object YtdlpSettingsScreen : Screen {
@@ -62,88 +72,156 @@ object YtdlpSettingsScreen : Screen {
     val settingsHighlight =
       rememberSettingsSearchHighlight(YtdlpSettingsScreen, scrollState, MaterialTheme.colorScheme.primary)
     var isRunning by remember { mutableStateOf(false) }
+    var showCookieLogin by remember { mutableStateOf(false) }
+    var showCustomUserAgentSheet by remember { mutableStateOf(false) }
 
     val ytdlPreferences = koinInject<YtdlPreferences>()
-    val ytdlQuality by ytdlPreferences.ytdlQuality.collectAsState()
-    val preferH264 by ytdlPreferences.preferH264.collectAsState()
-    val codecPreference by ytdlPreferences.codecPreference.collectAsState()
-    val maxFps by ytdlPreferences.maxFps.collectAsState()
-    val hdrPreference by ytdlPreferences.hdrPreference.collectAsState()
-    val containerPreference by ytdlPreferences.containerPreference.collectAsState()
-    val audioPreference by ytdlPreferences.audioPreference.collectAsState()
-    val audioQuality by ytdlPreferences.audioQuality.collectAsState()
+    val configOwnedOptions = currentMpvConfigOverrideOptions()
+    val playbackOptionsEnabled = "ytdl-raw-options" !in configOwnedOptions
     val playlistMode by ytdlPreferences.playlistMode.collectAsState()
-    val geoBypass by ytdlPreferences.geoBypass.collectAsState()
-    val liveFromStart by ytdlPreferences.liveFromStart.collectAsState()
     val writeSubs by ytdlPreferences.writeSubs.collectAsState()
     val writeAutoSubs by ytdlPreferences.writeAutoSubs.collectAsState()
-
-    var showAdvancedNetworking by rememberSaveable { mutableStateOf(false) }
-
-    var userAgentText by remember { mutableStateOf(ytdlPreferences.customUserAgent.get()) }
-    var subtitleLanguagesText by remember { mutableStateOf(ytdlPreferences.subtitleLanguages.get()) }
-    var formatSortText by remember { mutableStateOf(ytdlPreferences.formatSort.get()) }
-    var mergeOutputFormatText by remember { mutableStateOf(ytdlPreferences.mergeOutputFormat.get()) }
-    var refererText by remember { mutableStateOf(ytdlPreferences.referer.get()) }
-    var cookiesFileText by remember { mutableStateOf(ytdlPreferences.cookiesFile.get()) }
-    var proxyText by remember { mutableStateOf(ytdlPreferences.proxy.get()) }
-    var extractorArgsText by remember { mutableStateOf(ytdlPreferences.extractorArgs.get()) }
-    var sponsorBlockMarkText by remember { mutableStateOf(ytdlPreferences.sponsorBlockMark.get()) }
-    var sponsorBlockRemoveText by remember { mutableStateOf(ytdlPreferences.sponsorBlockRemove.get()) }
-    var rawOptionsText by remember { mutableStateOf(ytdlPreferences.customRawOptions.get()) }
-
-    val ytdlDir = remember { YtdlpManager.getYtdlDir(context) }
-    var hasYtdlp by remember { mutableStateOf(File(ytdlDir, "yt-dlp").exists()) }
-
-    LaunchedEffect(isRunning) {
-      if (!isRunning) {
-        hasYtdlp = File(ytdlDir, "yt-dlp").exists()
+    val showDownloadQualityChooser by ytdlPreferences.showDownloadQualityChooser.collectAsState()
+    val cookiesFile by ytdlPreferences.cookiesFile.collectAsState()
+    val customUserAgent by ytdlPreferences.customUserAgent.collectAsState()
+    val installationInfo by YtdlpManager.installationInfo.collectAsState()
+    val cookieFilePicker = rememberLauncherForActivityResult(
+      ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+      uri ?: return@rememberLauncherForActivityResult
+      scope.launch {
+        val copied = withContext(Dispatchers.IO) {
+          runCatching {
+            val destination = File(context.filesDir, "ytdlp/instagram-cookies.txt")
+            destination.parentFile?.mkdirs()
+            context.contentResolver.openInputStream(uri)?.use { input ->
+              destination.outputStream().use { output -> input.copyTo(output) }
+            } ?: error("Unable to open selected cookie file")
+            destination
+          }.getOrNull()
+        }
+        copied?.takeIf { it.isFile && it.length() > 0L }?.let {
+          ytdlPreferences.cookiesFile.set(it.absolutePath)
+        }
       }
     }
 
-    val ytdlpInfo =
-      remember(hasYtdlp) {
-        if (hasYtdlp) {
-          val size =
-            try {
-              val f = File(ytdlDir, "yt-dlp")
-              if (f.exists()) " (${f.length() / 1024 / 1024} MB)" else ""
-            } catch (_: Exception) {
-              ""
-            }
-          "Installed$size"
-        } else {
-          "Not Configured"
+    LaunchedEffect(Unit) {
+      YtdlpManager.refreshInstallationInfo(context)
+    }
+
+    fun runOperation(operation: suspend () -> Unit) {
+      scope.launch {
+        isRunning = true
+        try {
+          operation()
+        } finally {
+          isRunning = false
         }
       }
+    }
+
+    val isInstalled = installationInfo?.isInstalled == true
+    val stableActionLabel =
+      when {
+        !isInstalled -> stringResource(R.string.ui_install_stable)
+        installationInfo?.channel == YtdlpReleaseChannel.STABLE -> stringResource(R.string.ui_update_stable)
+        else -> stringResource(R.string.ui_switch_to_stable)
+      }
+    val nightlyActionLabel =
+      if (installationInfo?.channel == YtdlpReleaseChannel.NIGHTLY) {
+        stringResource(R.string.ui_update_nightly)
+      } else {
+        stringResource(R.string.ui_switch_to_nightly)
+      }
+
+    if (showCookieLogin) {
+      WebsiteCookieLoginDialog(
+        onDismiss = { showCookieLogin = false },
+        customUserAgent = customUserAgent,
+        onUseSession = { websiteUrl, cookieHeader ->
+          scope.launch {
+            val destination = withContext(Dispatchers.IO) {
+              runCatching { writeWebsiteCookiesFile(context, websiteUrl, cookieHeader) }.getOrNull()
+            }
+            if (destination != null) {
+              // Keep the browser open so another website can be authenticated in the same session.
+              ytdlPreferences.cookiesFile.set(destination.absolutePath)
+            }
+          }
+        },
+      )
+    }
+
+    if (showCustomUserAgentSheet) {
+      var draftUserAgent by remember(showCustomUserAgentSheet) { mutableStateOf(customUserAgent) }
+      ModalBottomSheet(
+        onDismissRequest = { showCustomUserAgentSheet = false },
+      ) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Text(
+            text = stringResource(R.string.ytdlp_custom_user_agent_title),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+          )
+          Text(
+            text = stringResource(R.string.ytdlp_custom_user_agent_summary),
+            color = MaterialTheme.colorScheme.outline,
+            style = MaterialTheme.typography.bodyMedium,
+          )
+          OutlinedTextField(
+            value = draftUserAgent,
+            onValueChange = { draftUserAgent = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.ytdlp_custom_user_agent_title)) },
+            singleLine = true,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            OutlinedButton(
+              onClick = {
+                draftUserAgent = ""
+                ytdlPreferences.customUserAgent.set("")
+              },
+              modifier = Modifier.weight(1f),
+            ) {
+              Text(stringResource(R.string.ytdlp_custom_user_agent_reset))
+            }
+            Button(
+              onClick = {
+                ytdlPreferences.customUserAgent.set(draftUserAgent.trim())
+                showCustomUserAgentSheet = false
+              },
+              modifier = Modifier.weight(1f),
+            ) {
+              Text(stringResource(R.string.ytdlp_custom_user_agent_save))
+            }
+          }
+        }
+      }
+    }
 
     Scaffold(
       topBar = {
         TopAppBar(
           title = {
             Text(
-              text =
-                androidx.compose.ui.res
-                  .stringResource(app.infinity.mpvz.R.string.ui_yt_dlp_streaming),
+              text = stringResource(R.string.ui_yt_dlp_streaming),
               style = MaterialTheme.typography.titleLarge,
               fontWeight = FontWeight.Bold,
             )
           },
           navigationIcon = {
             IconButton(onClick = { backStack.popSafely() }) {
-              Icon(
-                Icons.RoundedFilled.ArrowBack,
-                contentDescription =
-                  androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.back,
-                  ),
-              )
+              Icon(Icons.RoundedFilled.ArrowBack, contentDescription = stringResource(R.string.back))
             }
           },
-          colors =
-            TopAppBarDefaults.topAppBarColors(
-              containerColor = MaterialTheme.colorScheme.surface,
-            ),
+          colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
         )
       },
     ) { padding ->
@@ -158,385 +236,53 @@ object YtdlpSettingsScreen : Screen {
               .padding(bottom = 32.dp),
           verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
         ) {
-          // Expressive Installation Status Card
-          PreferenceCard {
-            Row(
-              modifier =
-                Modifier
-                  .fillMaxWidth()
-                  .padding(16.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
-            ) {
-              Surface(
-                shape = RoundedCornerShape(16.dp),
-                color =
-                  if (hasYtdlp) {
-                    MaterialTheme.colorScheme.primaryContainer
-                  } else {
-                    MaterialTheme.colorScheme.errorContainer
-                  },
-                modifier = Modifier.size(56.dp),
-              ) {
-                Box(contentAlignment = Alignment.Center) {
-                  Icon(
-                    imageVector = if (hasYtdlp) Icons.RoundedFilled.Check else Icons.RoundedFilled.CloudDownload,
-                    contentDescription = null,
-                    tint =
-                      if (hasYtdlp) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                      } else {
-                        MaterialTheme.colorScheme.onErrorContainer
-                      },
-                    modifier = Modifier.size(28.dp),
-                  )
-                }
-              }
-
-              Column(modifier = Modifier.weight(1f)) {
-                Text(
-                  text =
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_yt_dlp_core_engine,
-                    ),
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                  text =
-                    if (hasYtdlp) {
-                      "Subprocess active and ready for streaming"
-                    } else {
-                      "Engine missing. Please run installation below."
-                    },
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-
-              Surface(
-                shape = RoundedCornerShape(12.dp),
-                color =
-                  if (hasYtdlp) {
-                    MaterialTheme.colorScheme.primary
-                  } else {
-                    MaterialTheme.colorScheme.error
-                  },
-                modifier = Modifier.padding(start = 4.dp),
-              ) {
-                Text(
-                  text = ytdlpInfo,
-                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                  style = MaterialTheme.typography.labelSmall,
-                  fontWeight = FontWeight.ExtraBold,
-                  color =
-                    if (hasYtdlp) {
-                      MaterialTheme.colorScheme.onPrimary
-                    } else {
-                      MaterialTheme.colorScheme.onError
-                    },
-                )
-              }
-            }
-          }
+          YtdlpInstallationStatus(
+            info = installationInfo,
+            isRunning = isRunning,
+            modifier = Modifier.padding(horizontal = 16.dp),
+          )
 
           PreferenceSectionHeader(
-            title = stringResource(R.string.ytdlp_engine_installer),
+            title = stringResource(R.string.ui_release_channel),
             modifier = Modifier.settingsSearchTarget(R.string.ui_yt_dlp_manager),
           )
 
           PreferenceCard {
             Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(12.dp),
+              modifier = Modifier.fillMaxWidth().padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-              Text(
-                text =
-                  androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.ui_manage_yt_dlp_environment,
-                  ),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-              )
-              Text(
-                text =
-                  androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.ui_download_the_latest_wrapper_modules_and_compile_python_friendly,
-                  ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-              ) {
-                Button(
-                  onClick = {
-                    scope.launch {
-                      isRunning = true
-                      YtdlpManager.runInstall(context) {}
-                      isRunning = false
-                    }
-                  },
-                  enabled = !isRunning,
-                  shape = RoundedCornerShape(16.dp),
-                  modifier = Modifier.weight(1f),
-                  colors =
-                    ButtonDefaults.buttonColors(
-                      containerColor = MaterialTheme.colorScheme.primary,
-                      contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                ) {
-                  Icon(Icons.RoundedFilled.Download, null, modifier = Modifier.size(18.dp))
-                  Spacer(Modifier.width(8.dp))
-                  Text(
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_install_core),
-                  )
-                }
-
-                OutlinedButton(
-                  onClick = {
-                    scope.launch {
-                      isRunning = true
+              Button(
+                onClick = {
+                  runOperation {
+                    if (installationInfo?.channel == YtdlpReleaseChannel.STABLE) {
                       YtdlpManager.runUpdate(context) {}
-                      isRunning = false
+                    } else {
+                      YtdlpManager.runInstall(context) {}
                     }
-                  },
-                  enabled = !isRunning && hasYtdlp,
-                  shape = RoundedCornerShape(16.dp),
-                  modifier = Modifier.weight(1f),
-                  colors =
-                    ButtonDefaults.outlinedButtonColors(
-                      contentColor = MaterialTheme.colorScheme.primary,
-                    ),
-                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                  Icon(Icons.RoundedFilled.Update, null, modifier = Modifier.size(18.dp))
-                  Spacer(Modifier.width(8.dp))
-                  Text(
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_update_core),
-                  )
-                }
+                  }
+                },
+                enabled = !isRunning,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+              ) {
+                Icon(Icons.RoundedFilled.Download, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stableActionLabel)
               }
-
-              Spacer(Modifier.height(4.dp))
 
               OutlinedButton(
                 onClick = {
-                  scope.launch {
-                    isRunning = true
-                    YtdlpManager.runUpdateToNightly(context) {}
-                    isRunning = false
-                  }
+                  runOperation { YtdlpManager.runUpdateToNightly(context) {} }
                 },
-                enabled = !isRunning && hasYtdlp,
-                shape = RoundedCornerShape(16.dp),
+                enabled = !isRunning && isInstalled,
                 modifier = Modifier.fillMaxWidth(),
-                colors =
-                  ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.secondary,
-                  ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
               ) {
                 Icon(Icons.RoundedFilled.Update, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(
-                  androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.ui_update_to_nightly_build,
-                  ),
-                )
-              }
-            }
-          }
-
-          PreferenceSectionHeader(title = stringResource(R.string.ytdlp_quality_format))
-
-          PreferenceCard {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
-            ) {
-              Text(
-                text =
-                  androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.ui_streaming_quality,
-                  ),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-              )
-
-              val qualityLevels = remember { arrayOf(-1, 2160, 1440, 1080, 720, 480, 360, 240, 144) }
-              val qualityLabels = remember { qualityLevels.map { if (it == -1) "Any" else "${it}p" } }
-
-              FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-              ) {
-                qualityLevels.forEachIndexed { index, level ->
-                  FilterChip(
-                    selected = ytdlQuality == level,
-                    onClick = {
-                      ytdlPreferences.ytdlQuality.set(level)
-                      updateFormatString(ytdlPreferences)
-                    },
-                    label = { Text(qualityLabels[index]) },
-                    leadingIcon =
-                      if (ytdlQuality == level) {
-                        { Icon(Icons.RoundedFilled.Check, null, modifier = Modifier.size(16.dp)) }
-                      } else {
-                        null
-                      },
-                    shape = RoundedCornerShape(12.dp),
-                  )
-                }
-              }
-
-              PreferenceDivider()
-
-              OptionDropdown(
-                title = stringResource(R.string.ytdlp_video_codec),
-                value = codecPreference,
-                values = YtdlCodecPreference.entries,
-                valueLabel = { it.title },
-                onValueChange = { selected ->
-                  ytdlPreferences.codecPreference.set(selected)
-                  ytdlPreferences.preferH264.set(selected == YtdlCodecPreference.H264)
-                  updateFormatString(ytdlPreferences)
-                },
-              )
-
-              FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-              ) {
-                listOf(0 to "Any FPS", 30 to "30 FPS", 60 to "60 FPS", 120 to "120 FPS").forEach { (fps, label) ->
-                  FilterChip(
-                    selected = maxFps == fps,
-                    onClick = {
-                      ytdlPreferences.maxFps.set(fps)
-                      updateFormatString(ytdlPreferences)
-                    },
-                    label = { Text(label) },
-                    leadingIcon =
-                      if (maxFps == fps) {
-                        { Icon(Icons.RoundedFilled.Check, null, modifier = Modifier.size(16.dp)) }
-                      } else {
-                        null
-                      },
-                    shape = RoundedCornerShape(12.dp),
-                  )
-                }
-              }
-
-              OptionDropdown(
-                title = stringResource(R.string.ytdlp_hdr_preference),
-                value = hdrPreference,
-                values = YtdlHdrPreference.entries,
-                valueLabel = { it.title },
-                onValueChange = {
-                  ytdlPreferences.hdrPreference.set(it)
-                  updateFormatString(ytdlPreferences)
-                },
-              )
-
-              OptionDropdown(
-                title = stringResource(R.string.ytdlp_container),
-                value = containerPreference,
-                values = YtdlContainerPreference.entries,
-                valueLabel = { it.title },
-                onValueChange = {
-                  ytdlPreferences.containerPreference.set(it)
-                  updateFormatString(ytdlPreferences)
-                },
-              )
-
-              OptionDropdown(
-                title = stringResource(R.string.ytdlp_audio_preference),
-                value = audioPreference,
-                values = YtdlAudioPreference.entries,
-                valueLabel = { it.title },
-                onValueChange = { selected ->
-                  ytdlPreferences.audioPreference.set(selected)
-                  updateFormatString(ytdlPreferences)
-                },
-              )
-
-              OptionDropdown(
-                title = stringResource(R.string.ytdlp_audio_quality),
-                value = audioQuality,
-                values = YtdlAudioQuality.entries,
-                valueLabel = { it.title },
-                onValueChange = { selected ->
-                  ytdlPreferences.audioQuality.set(selected)
-                  updateFormatString(ytdlPreferences)
-                },
-              )
-
-              Text(
-                text =
-                  androidx.compose.ui.res.stringResource(
-                    app.infinity.mpvz.R.string.ui_bitrate_caps_apply_when_yt_dlp_reports_audio_bitrate_metadata,
-                  ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-
-              PreferenceDivider()
-
-              val currentFormat =
-                remember(
-                  ytdlQuality,
-                  preferH264,
-                  codecPreference,
-                  maxFps,
-                  hdrPreference,
-                  containerPreference,
-                  audioPreference,
-                  audioQuality,
-                ) {
-                  YtdlpOptionsBuilder.buildFormat(YtdlpOptionSettings.fromYtdlPreferences(ytdlPreferences))
-                }
-
-              Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth(),
-              ) {
-                Column(
-                  modifier =
-                    Modifier
-                      .fillMaxWidth()
-                      .padding(16.dp),
-                ) {
-                  Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_generated_format_string,
-                      ),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                  )
-                  Spacer(Modifier.height(4.dp))
-                  Text(
-                    text = currentFormat.ifBlank { "(default)" },
-                    style =
-                      MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                      ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
+                Text(nightlyActionLabel)
               }
             }
           }
@@ -544,534 +290,430 @@ object YtdlpSettingsScreen : Screen {
           PreferenceSectionHeader(title = stringResource(R.string.ytdlp_subtitles_language))
 
           PreferenceCard {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
-            ) {
+            Column(modifier = Modifier.padding(vertical = 4.dp)) {
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_download_media_subtitles),
                 value = writeSubs,
+                enabled = playbackOptionsEnabled,
                 onValueChange = { ytdlPreferences.writeSubs.set(it) },
-                title = {
-                  Text(
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_download_media_subtitles,
-                    ),
-                    fontWeight = FontWeight.Medium,
-                  )
-                },
+                title = { Text(stringResource(R.string.ui_download_media_subtitles)) },
                 summary = {
-                  Text(
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_automatically_extract_and_load_physical_subtitle_tracks_from_sup,
-                    ),
-                  )
+                  Text(stringResource(R.string.ui_automatically_extract_and_load_physical_subtitle_tracks_from_sup))
                 },
               )
-
               PreferenceDivider()
-
               SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.ui_include_auto_generated_subtitles),
                 value = writeAutoSubs,
+                enabled = playbackOptionsEnabled,
                 onValueChange = { ytdlPreferences.writeAutoSubs.set(it) },
-                title = {
-                  Text(
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_include_auto_generated_subtitles,
-                    ),
-                    fontWeight = FontWeight.Medium,
-                  )
-                },
+                title = { Text(stringResource(R.string.ui_include_auto_generated_subtitles)) },
                 summary = {
-                  Text(
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_fetch_auto_caption_tracks_e_g_youtube_speech_to_text_when_regula,
-                    ),
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              OutlinedTextField(
-                value = subtitleLanguagesText,
-                onValueChange = {
-                  subtitleLanguagesText = it
-                  ytdlPreferences.subtitleLanguages.set(it)
-                },
-                label = {
-                  Text(
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.pref_subtitles_search_languages,
-                    ),
-                  )
-                },
-                placeholder = {
-                  Text(
-                    androidx.compose.ui.res
-                      .stringResource(app.infinity.mpvz.R.string.ui_all_or_en_ja),
-                  )
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth(),
-                supportingText = {
-                  Text(
-                    androidx.compose.ui.res.stringResource(
-                      app.infinity.mpvz.R.string.ui_overrides_app_subtitle_languages_only_for_yt_dlp_downloads,
-                    ),
-                  )
+                  Text(stringResource(R.string.ui_fetch_auto_caption_tracks_e_g_youtube_speech_to_text_when_regula))
                 },
               )
             }
           }
 
-          PreferenceSectionHeader(title = stringResource(R.string.ytdlp_advanced_networking))
+          PreferenceSectionHeader(
+            title = stringResource(R.string.ytdlp_playlist_behavior),
+            modifier = Modifier.settingsSearchTarget(R.string.ytdlp_playlist_behavior),
+          )
+
+          PreferenceCard {
+            FlowRow(
+              modifier = Modifier.fillMaxWidth().padding(16.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              YtdlPlaylistMode.entries.forEach { mode ->
+                FilterChip(
+                  selected = playlistMode == mode,
+                  enabled = playbackOptionsEnabled,
+                  onClick = { ytdlPreferences.playlistMode.set(mode) },
+                  label = { Text(mode.title) },
+                  leadingIcon =
+                    if (playlistMode == mode) {
+                      { Icon(Icons.RoundedFilled.Check, null, modifier = Modifier.size(16.dp)) }
+                    } else {
+                      null
+                    },
+                )
+              }
+            }
+          }
+
+          PreferenceSectionHeader(
+            title = stringResource(R.string.ytdlp_advanced_networking),
+            modifier = Modifier.settingsSearchTarget(R.string.ytdlp_download_quality_chooser_title),
+          )
 
           PreferenceCard {
             Column(
-              modifier = Modifier.fillMaxWidth().animateContentSize(),
-              verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+              modifier = Modifier.fillMaxWidth().padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-              Row(
-                modifier =
-                  Modifier
-                    .fillMaxWidth()
-                    .clickable { showAdvancedNetworking = !showAdvancedNetworking }
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-              ) {
-                Column(modifier = Modifier.weight(1f)) {
-                  Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_advanced_configurations,
-                      ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                  )
-                  Text(
-                    text =
-                      androidx.compose.ui.res.stringResource(
-                        app.infinity.mpvz.R.string.ui_custom_http_agent_proxy_extractor_args_sponsorblock_and_raw_opti,
-                      ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
+              Text(
+                text = stringResource(R.string.ytdlp_instagram_cookies_title),
+                style = MaterialTheme.typography.titleMedium,
+              )
+              Text(
+                text = stringResource(R.string.ytdlp_instagram_cookies_summary),
+                color = MaterialTheme.colorScheme.outline,
+                style = MaterialTheme.typography.bodyMedium,
+              )
+              Text(
+                text = cookiesFile.ifBlank { stringResource(R.string.ytdlp_instagram_cookies_not_configured) },
+                color = MaterialTheme.colorScheme.outline,
+                style = MaterialTheme.typography.bodySmall,
+              )
+              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { showCookieLogin = true }) {
+                  Text(stringResource(R.string.ytdlp_cookies_login))
                 }
-                Icon(
-                  imageVector = if (showAdvancedNetworking) Icons.RoundedFilled.KeyboardArrowUp else Icons.RoundedFilled.KeyboardArrowDown,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.primary,
-                )
+                OutlinedButton(onClick = { cookieFilePicker.launch(arrayOf("text/plain", "application/json", "*/*")) }) {
+                  Text(stringResource(R.string.ytdlp_cookies_choose))
+                }
               }
-
-              if (showAdvancedNetworking) {
-                Column(
-                  modifier =
-                    Modifier
-                      .fillMaxWidth()
-                      .padding(horizontal = 16.dp)
-                      .padding(bottom = 16.dp),
-                  verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.medium),
+              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { showCustomUserAgentSheet = true }) {
+                  Text(stringResource(R.string.ytdlp_custom_user_agent_title))
+                }
+                OutlinedButton(
+                  onClick = {
+                    File(context.filesDir, "ytdlp/cookies.txt").delete()
+                    File(context.filesDir, "ytdlp/instagram-cookies.txt").delete()
+                    ytdlPreferences.cookiesFile.set("")
+                  },
+                  enabled = cookiesFile.isNotBlank(),
                 ) {
-                  PreferenceDivider()
-
-                  OutlinedTextField(
-                    value = formatSortText,
-                    onValueChange = {
-                      formatSortText = it
-                      ytdlPreferences.formatSort.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.ui_format_sort),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_res_fps_hdr_12_vcodec_vp9_2,
-                        ),
-                      )
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_passed_to_yt_dlp_as_format_sort_for_advanced_ranking,
-                        ),
-                      )
-                    },
-                  )
-
-                  PreferenceDivider()
-
-                  OutlinedTextField(
-                    value = mergeOutputFormatText,
-                    onValueChange = {
-                      mergeOutputFormatText = it
-                      ytdlPreferences.mergeOutputFormat.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_merge_output_format,
-                        ),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.ui_mp4_mkv_webm),
-                      )
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-
-                  PreferenceDivider()
-
-                  OutlinedTextField(
-                    value = userAgentText,
-                    onValueChange = {
-                      userAgentText = it
-                      ytdlPreferences.customUserAgent.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_custom_user_agent_override,
-                        ),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.ui_mozilla_5_0),
-                      )
-                    },
-                    singleLine = false,
-                    maxLines = 3,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors =
-                      OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                      ),
-                    supportingText = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_leave_blank_to_use_default_browser_user_agent_helps_bypass_anti,
-                        ),
-                      )
-                    },
-                  )
-
-                  PreferenceDivider()
-
-                  OutlinedTextField(
-                    value = refererText,
-                    onValueChange = {
-                      refererText = it
-                      ytdlPreferences.referer.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.ui_referer),
-                      )
-                    },
-                    placeholder = { Text("https://www.youtube.com/") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-
-                  OutlinedTextField(
-                    value = cookiesFileText,
-                    onValueChange = {
-                      cookiesFileText = it
-                      ytdlPreferences.cookiesFile.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.ui_cookies_file),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_storage_emulated_0_download_cookies_txt,
-                        ),
-                      )
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-
-                  OutlinedTextField(
-                    value = proxyText,
-                    onValueChange = {
-                      proxyText = it
-                      ytdlPreferences.proxy.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.ui_proxy),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_socks5_127_0_0_1_1080,
-                        ),
-                      )
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-
-                  OutlinedTextField(
-                    value = extractorArgsText,
-                    onValueChange = {
-                      extractorArgsText = it
-                      ytdlPreferences.extractorArgs.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_extractor_args,
-                        ),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_youtube_player_client_android_web,
-                        ),
-                      )
-                    },
-                    singleLine = false,
-                    maxLines = 2,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-
-                  OptionDropdown(
-                    title = stringResource(R.string.ytdlp_playlist_behavior),
-                    value = playlistMode,
-                    values = YtdlPlaylistMode.entries,
-                    valueLabel = { it.title },
-                    onValueChange = { ytdlPreferences.playlistMode.set(it) },
-                  )
-
-                  SwitchPreference(
-                    value = geoBypass,
-                    onValueChange = { ytdlPreferences.geoBypass.set(it) },
-                    title = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_geo_bypass,
-                        ),
-                        fontWeight = FontWeight.Medium,
-                      )
-                    },
-                    summary = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_ask_yt_dlp_to_use_its_extractor_level_region_bypass_logic,
-                        ),
-                      )
-                    },
-                  )
-
-                  SwitchPreference(
-                    value = liveFromStart,
-                    onValueChange = { ytdlPreferences.liveFromStart.set(it) },
-                    title = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_live_from_start,
-                        ),
-                        fontWeight = FontWeight.Medium,
-                      )
-                    },
-                    summary = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_start_live_streams_from_the_beginning_when_the_extractor_support,
-                        ),
-                      )
-                    },
-                  )
-
-                  OutlinedTextField(
-                    value = sponsorBlockMarkText,
-                    onValueChange = {
-                      sponsorBlockMarkText = it
-                      ytdlPreferences.sponsorBlockMark.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_sponsorblock_mark,
-                        ),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_sponsor_selfpromo,
-                        ),
-                      )
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-
-                  OutlinedTextField(
-                    value = sponsorBlockRemoveText,
-                    onValueChange = {
-                      sponsorBlockRemoveText = it
-                      ytdlPreferences.sponsorBlockRemove.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_sponsorblock_remove,
-                        ),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res
-                          .stringResource(app.infinity.mpvz.R.string.ui_sponsor),
-                      )
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-
-                  PreferenceDivider()
-
-                  OutlinedTextField(
-                    value = rawOptionsText,
-                    onValueChange = {
-                      rawOptionsText = it
-                      ytdlPreferences.customRawOptions.set(it)
-                    },
-                    label = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_raw_yt_dlp_options,
-                        ),
-                      )
-                    },
-                    placeholder = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_extractor_args_2,
-                        ),
-                      )
-                    },
-                    singleLine = false,
-                    maxLines = 6,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors =
-                      OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                      ),
-                    supportingText = {
-                      Text(
-                        androidx.compose.ui.res.stringResource(
-                          app.infinity.mpvz.R.string.ui_anything_not_exposed_above_separate_options_with_new_lines_or_co,
-                        ),
-                      )
-                    },
-                  )
+                  Text(stringResource(R.string.ytdlp_cookies_clear))
                 }
               }
             }
           }
 
-          // Engine Installer moved to top
+          PreferenceCard {
+            SwitchPreference(
+              modifier = Modifier.settingsSearchTarget(R.string.ytdlp_download_quality_chooser_title),
+              value = showDownloadQualityChooser,
+              onValueChange = { ytdlPreferences.showDownloadQualityChooser.set(it) },
+              title = { Text(stringResource(R.string.ytdlp_download_quality_chooser_title)) },
+              summary = { Text(stringResource(R.string.ytdlp_download_quality_chooser_summary)) },
+            )
+          }
         }
       }
     }
   }
 
-  private fun updateFormatString(prefs: YtdlPreferences) {
-    prefs.ytdlFormat.set(YtdlpOptionsBuilder.buildFormat(YtdlpOptionSettings.fromYtdlPreferences(prefs)))
-  }
 }
 
-private fun YtdlpOptionSettings.Companion.fromYtdlPreferences(prefs: YtdlPreferences): YtdlpOptionSettings =
-  YtdlpOptionSettings(
-    codecPreference = prefs.codecPreference.get(),
-    legacyPreferH264 = prefs.preferH264.get(),
-    maxHeight = prefs.ytdlQuality.get(),
-    maxFps = prefs.maxFps.get(),
-    hdrPreference = prefs.hdrPreference.get(),
-    containerPreference = prefs.containerPreference.get(),
-    audioPreference = prefs.audioPreference.get(),
-    audioQuality = prefs.audioQuality.get(),
-  )
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun <T> OptionDropdown(
-  title: String,
-  value: T,
-  values: List<T>,
-  valueLabel: (T) -> String,
-  onValueChange: (T) -> Unit,
+private fun WebsiteCookieLoginDialog(
+  onDismiss: () -> Unit,
+  customUserAgent: String,
+  onUseSession: (String, String) -> Unit,
 ) {
-  var expanded by remember { mutableStateOf(false) }
-  ExposedDropdownMenuBox(
-    expanded = expanded,
-    onExpandedChange = { expanded = it },
-    modifier = Modifier.fillMaxWidth(),
-  ) {
-    OutlinedTextField(
-      value = valueLabel(value),
-      onValueChange = {},
-      readOnly = true,
-      label = { Text(title) },
-      trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-      shape = RoundedCornerShape(12.dp),
-      modifier =
-        Modifier
-          .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-          .fillMaxWidth(),
-    )
-    ExposedDropdownMenu(
-      expanded = expanded,
-      onDismissRequest = { expanded = false },
+  val context = LocalContext.current
+  var websiteUrl by rememberSaveable { mutableStateOf("https://www.instagram.com/") }
+  var savedSites by rememberSaveable { mutableStateOf(emptyList<String>()) }
+  var webView by remember { mutableStateOf<WebView?>(null) }
+  var loadError by remember { mutableStateOf<String?>(null) }
+  val desktopWebViewUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  val mobileWebViewUserAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Mobile Safari/537.36"
+
+  fun userAgentFor(url: String): String {
+    if (customUserAgent.isNotBlank()) return customUserAgent.trim()
+    val host = runCatching { java.net.URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
+    return if (host == "youtube.com" || host.endsWith(".youtube.com") || host == "google.com" || host.endsWith(".google.com")) {
+      mobileWebViewUserAgent
+    } else {
+      desktopWebViewUserAgent
+    }
+  }
+
+  fun normalizedUrl(): String {
+    val value = websiteUrl.trim()
+    val normalized = if (value.startsWith("http://") || value.startsWith("https://")) value else "https://$value"
+    return if (normalized.contains("instagram.com", ignoreCase = true) &&
+      normalized.trimEnd('/').equals("https://www.instagram.com", ignoreCase = true)
     ) {
-      values.forEach { item ->
-        DropdownMenuItem(
-          text = { Text(valueLabel(item)) },
-          onClick = {
-            expanded = false
-            onValueChange(item)
+      "https://www.instagram.com/accounts/login/"
+    } else {
+      normalized
+    }
+  }
+
+  fun openWebsite() {
+    val url = normalizedUrl()
+    websiteUrl = url
+    webView?.let { view ->
+      view.settings.userAgentString = userAgentFor(url)
+      view.loadUrl(url)
+    }
+  }
+
+  Dialog(
+    onDismissRequest = onDismiss,
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Surface(
+      modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+      color = MaterialTheme.colorScheme.surface,
+    ) {
+      Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Text(stringResource(R.string.ytdlp_cookie_login_title), style = MaterialTheme.typography.titleMedium)
+          TextButton(
+            onClick = {
+              val url = normalizedUrl()
+              val cookieManager = CookieManager.getInstance()
+              cookieManager.flush()
+              val cookies = cookieManager.getCookie(url)
+              Log.i(
+                COOKIE_WEBVIEW_TAG,
+                "export requested url=$url hasCookies=${!cookies.isNullOrBlank()} " +
+                  "cookieNames=${cookies.orEmpty().split(';').mapNotNull { it.substringBefore('=').trim().takeIf(String::isNotBlank) }}",
+              )
+              if (!cookies.isNullOrBlank()) {
+                val host = java.net.URI(url).host?.removePrefix("www.") ?: url
+                savedSites = (savedSites + host).distinct()
+                onUseSession(url, cookies)
+              }
+            },
+          ) {
+            Text(stringResource(R.string.ytdlp_cookie_login_use))
+          }
+        }
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+          TextField(
+            value = websiteUrl,
+            onValueChange = { websiteUrl = it },
+            modifier = Modifier.weight(1f),
+            label = { Text(stringResource(R.string.ytdlp_cookie_login_url)) },
+            singleLine = true,
+          )
+          Button(onClick = ::openWebsite) {
+            Text(stringResource(R.string.ytdlp_cookie_login_open))
+          }
+        }
+        if (savedSites.isNotEmpty()) {
+          Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            savedSites.forEach { host ->
+              FilterChip(
+                selected = websiteUrl.contains(host, ignoreCase = true),
+                onClick = {
+                  websiteUrl = "https://$host/"
+                  webView?.let { view ->
+                    view.settings.userAgentString = userAgentFor(websiteUrl)
+                    view.loadUrl(websiteUrl)
+                  }
+                },
+                label = { Text(host) },
+              )
+            }
+          }
+        }
+        loadError?.let { error ->
+          Text(
+            text = error,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+          )
+        }
+        AndroidView(
+          modifier = Modifier.fillMaxWidth().weight(1f).imePadding(),
+          factory = {
+            WebView(context).apply {
+              isFocusable = true
+              isFocusableInTouchMode = true
+              setOnTouchListener { view, _ ->
+                if (!view.hasFocus()) view.requestFocus()
+                false
+              }
+              settings.javaScriptEnabled = true
+              settings.domStorageEnabled = true
+              settings.databaseEnabled = true
+              settings.useWideViewPort = true
+              settings.loadWithOverviewMode = true
+              settings.setSupportMultipleWindows(false)
+              settings.javaScriptCanOpenWindowsAutomatically = true
+              // Instagram often serves a blank login response to the Android WebView UA.
+              // A current desktop Chrome UA keeps the login page usable while cookies remain in this WebView.
+              settings.userAgentString = userAgentFor(normalizedUrl())
+              settings.loadsImagesAutomatically = true
+              settings.allowContentAccess = true
+              settings.allowFileAccess = false
+              settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+              webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
+                  Log.d(
+                    COOKIE_WEBVIEW_TAG,
+                    "console level=${message?.messageLevel()} source=${message?.sourceId()} " +
+                      "line=${message?.lineNumber()} message=${message?.message()}",
+                  )
+                  return true
+                }
+                override fun onCreateWindow(
+                  view: WebView?,
+                  isDialog: Boolean,
+                  isUserGesture: Boolean,
+                  resultMsg: android.os.Message?,
+                ): Boolean {
+                  val transport = resultMsg?.obj as? WebView.WebViewTransport ?: return false
+                  transport.webView = view
+                  resultMsg.sendToTarget()
+                  return true
+                }
+              }
+              CookieManager.getInstance().setAcceptCookie(true)
+              CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+              webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean = false
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean = false
+                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                  Log.i(
+                    COOKIE_WEBVIEW_TAG,
+                    "page_started url=$url ua=${view?.settings?.userAgentString} " +
+                      "size=${view?.width}x${view?.height}",
+                  )
+                  loadError = null
+                }
+                override fun onPageFinished(view: WebView?, url: String?) {
+                  view?.post {
+                    view.requestFocus()
+                    val cookieManager = CookieManager.getInstance()
+                    cookieManager.flush()
+                    val cookieNames = cookieManager.getCookie(url.orEmpty()).orEmpty()
+                      .split(';')
+                      .mapNotNull { it.substringBefore('=').trim().takeIf(String::isNotBlank) }
+                    Log.d(
+                      COOKIE_WEBVIEW_TAG,
+                      "page_finished url=$url focus=${view.hasFocus()} " +
+                        "cookieNames=$cookieNames",
+                    )
+                  }
+                }
+                override fun onReceivedError(view: WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                  Log.e(
+                    COOKIE_WEBVIEW_TAG,
+                    "page_error url=${request?.url} mainFrame=${request?.isForMainFrame} " +
+                      "code=${error?.errorCode} description=${error?.description}",
+                  )
+                  if (request?.isForMainFrame != false) {
+                    loadError = error?.description?.toString() ?: "Unable to load login page"
+                  }
+                }
+                override fun onReceivedHttpError(
+                  view: WebView?,
+                  request: android.webkit.WebResourceRequest?,
+                  errorResponse: android.webkit.WebResourceResponse?,
+                ) {
+                  Log.w(
+                    COOKIE_WEBVIEW_TAG,
+                    "http_error url=${request?.url} mainFrame=${request?.isForMainFrame} " +
+                      "status=${errorResponse?.statusCode} reason=${errorResponse?.reasonPhrase}",
+                  )
+                }
+              }
+              webView = this
+              Log.i(
+                COOKIE_WEBVIEW_TAG,
+                "created ua=${settings.userAgentString} js=${settings.javaScriptEnabled} " +
+                  "domStorage=${settings.domStorageEnabled} thirdPartyCookies=true",
+              )
+              loadUrl(normalizedUrl())
+            }
           },
+          update = { view -> webView = view },
         )
       }
     }
   }
+}
+
+private fun writeWebsiteCookiesFile(
+  context: android.content.Context,
+  websiteUrl: String,
+  cookieHeader: String,
+): File {
+  val host = java.net.URI(websiteUrl).host?.removePrefix("www.")?.takeIf { it.isNotBlank() }
+    ?: error("Website URL has no host")
+  val domain = ".${host}"
+  val secure = websiteUrl.startsWith("https://")
+  val destination = File(context.filesDir, "ytdlp/cookies.txt")
+  destination.parentFile?.mkdirs()
+  CookieManager.getInstance().flush()
+  val databaseRows = runCatching {
+    val database = context.dataDir.resolve("app_webview/Default/Cookies")
+    if (!database.isFile) return@runCatching emptyList<String>()
+    SQLiteDatabase.openDatabase(database.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+      db.query(
+        "cookies",
+        arrayOf("host_key", "path", "name", "value", "expires_utc", "is_secure"),
+        null,
+        null,
+        null,
+        null,
+        null,
+      ).use { cursor ->
+        buildList {
+          val hostIndex = cursor.getColumnIndexOrThrow("host_key")
+          val pathIndex = cursor.getColumnIndexOrThrow("path")
+          val nameIndex = cursor.getColumnIndexOrThrow("name")
+          val valueIndex = cursor.getColumnIndexOrThrow("value")
+          val expiryIndex = cursor.getColumnIndexOrThrow("expires_utc")
+          val secureIndex = cursor.getColumnIndexOrThrow("is_secure")
+          while (cursor.moveToNext()) {
+            val rowHost = cursor.getString(hostIndex).let { if (it.startsWith('.')) it else ".${it}" }
+            val rowPath = cursor.getString(pathIndex).ifBlank { "/" }
+            val rowName = cursor.getString(nameIndex)
+            val rowValue = cursor.getString(valueIndex)
+            if (rowName.isNotBlank() && rowValue != null) {
+              val expiry = (cursor.getLong(expiryIndex) / 1_000_000L - 11_644_473_600L).coerceAtLeast(0L)
+              add("$rowHost\tTRUE\t$rowPath\t${(cursor.getLong(secureIndex) == 1L).toString().uppercase()}\t$expiry\t$rowName\t$rowValue")
+            }
+          }
+        }
+      }
+    }
+  }.getOrElse { error ->
+    Log.w(COOKIE_WEBVIEW_TAG, "database_export_failed type=${error.javaClass.simpleName}")
+    emptyList()
+  }
+  val fallbackRows = cookieHeader.split(';').mapNotNull { item ->
+    val separator = item.indexOf('=')
+    if (separator <= 0) return@mapNotNull null
+    val name = item.substring(0, separator).trim()
+    val value = item.substring(separator + 1).trim()
+    if (name.isBlank()) null else "$domain\tTRUE\t/\t${secure.toString().uppercase()}\t0\t$name\t$value"
+  }
+  val newRows = if (databaseRows.isNotEmpty()) databaseRows else fallbackRows
+  require(newRows.isNotEmpty()) { "Website did not provide cookies" }
+  val merged = linkedMapOf<String, String>()
+  if (destination.isFile) {
+    destination.readLines().filter { it.isNotBlank() && !it.startsWith("#") }.forEach { row ->
+      val fields = row.split('\t')
+      if (fields.size >= 7) merged["${fields[0]}\t${fields[2]}\t${fields[5]}"] = row
+    }
+  }
+  newRows.forEach { row ->
+    val fields = row.split('\t')
+    merged["${fields[0]}\t${fields[2]}\t${fields[5]}"] = row
+  }
+  destination.writeText("# Netscape HTTP Cookie File\n" + merged.values.joinToString("\n") + "\n")
+  Log.i(COOKIE_WEBVIEW_TAG, "cookie_file_written path=${destination.name} rows=${merged.size} source=${if (databaseRows.isNotEmpty()) "database" else "url_header"}")
+  return destination
 }

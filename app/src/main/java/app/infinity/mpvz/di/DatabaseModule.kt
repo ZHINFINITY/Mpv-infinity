@@ -662,6 +662,41 @@ val MIGRATION_13_14 =
     }
   }
 
+val MIGRATION_14_15 =
+  object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL(
+        """
+        CREATE TABLE IF NOT EXISTS `download_items` (
+          `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+          `systemDownloadId` INTEGER NOT NULL,
+          `url` TEXT NOT NULL,
+          `dirPath` TEXT NOT NULL,
+          `fileName` TEXT NOT NULL,
+          `stagingPath` TEXT,
+          `status` TEXT NOT NULL,
+          `progress` INTEGER NOT NULL,
+          `totalBytes` INTEGER NOT NULL,
+          `failureReason` TEXT,
+          `timeQueued` INTEGER NOT NULL,
+          `source` TEXT NOT NULL,
+          `title` TEXT NOT NULL,
+          `posterUrl` TEXT,
+          `sourceUrl` TEXT,
+          `jellyfinServerId` TEXT,
+          `jellyfinItemId` TEXT,
+          `jellyfinSeriesName` TEXT,
+          `seasonNumber` INTEGER,
+          `episodeNumber` INTEGER,
+          `isAudio` INTEGER NOT NULL
+        )
+        """.trimIndent(),
+      )
+      db.execSQL("CREATE INDEX IF NOT EXISTS `index_download_items_systemDownloadId` ON `download_items` (`systemDownloadId`)")
+      db.execSQL("CREATE INDEX IF NOT EXISTS `index_download_items_jellyfinItemId` ON `download_items` (`jellyfinItemId`)")
+    }
+  }
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -690,6 +725,7 @@ val DatabaseModule =
           MIGRATION_11_12,
           MIGRATION_12_13,
           MIGRATION_13_14,
+          MIGRATION_14_15,
         ).build()
     }
 

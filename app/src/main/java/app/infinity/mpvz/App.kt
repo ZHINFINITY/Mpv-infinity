@@ -20,6 +20,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
 import app.infinity.mpvz.di.DatabaseModule
+import app.infinity.mpvz.di.DownloadModule
 import app.infinity.mpvz.di.FileManagerModule
 import app.infinity.mpvz.di.PreferencesModule
 import app.infinity.mpvz.preferences.DecoderPreferences
@@ -75,6 +76,7 @@ class App :
       modules(
         PreferencesModule,
         DatabaseModule,
+        DownloadModule,
         FileManagerModule,
         app.infinity.mpvz.di.domainModule,
       )
