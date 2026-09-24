@@ -177,7 +177,7 @@ class YtdlpDownloadEngine(
     val result =
       withContext(Dispatchers.IO) {
         runCatching {
-          val process = startProcess(command)
+          val process = startProcess(command, ffmpegDirectory)
           activeProcess = process
           var destination: String? = null
           var lastOutputLine = ""
@@ -367,7 +367,9 @@ class YtdlpDownloadEngine(
     val abi = Build.SUPPORTED_ABIS.firstOrNull { supportedAbi ->
       supportedAbi == "arm64-v8a"
     } ?: return null
-    val directory = File(context.filesDir, "ffmpeg").apply { mkdirs() }
+    // Android app data filesystems may be mounted noexec. codeCacheDir is intended for
+    // runtime-generated code and is executable on supported Android versions.
+    val directory = File(context.codeCacheDir, "ffmpeg").apply { mkdirs() }
     val executable = File(directory, "ffmpeg")
     val executableBinary = File(directory, "ffmpeg.bin")
     val ffprobe = File(directory, "ffprobe")
@@ -413,7 +415,7 @@ class YtdlpDownloadEngine(
     return directory
   }
 
-  private fun startProcess(command: List<String>): Process {
+  private fun startProcess(command: List<String>, ffmpegDirectory: File?): Process {
     val processBuilder =
       ProcessBuilder(command)
         .directory(YtdlpManager.getYtdlDir(context))
@@ -426,7 +428,8 @@ class YtdlpDownloadEngine(
     env["PYTHONHOME"] = ytdlDir
     env["PYTHONPATH"] = "$ytdlDir/python313.zip"
     env["SSL_CERT_FILE"] = File(context.filesDir, "cacert.pem").absolutePath
-    env["LD_LIBRARY_PATH"] = "${File(context.filesDir, "ffmpeg").absolutePath}:$nativeLibDir"
+    env["LD_LIBRARY_PATH"] =
+      listOfNotNull(ffmpegDirectory?.absolutePath, nativeLibDir).joinToString(":")
     return processBuilder.start()
   }
 
