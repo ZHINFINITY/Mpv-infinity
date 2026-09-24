@@ -183,6 +183,7 @@ class YtdlpDownloadEngine(
           activeProcess = process
           var destination: String? = null
           var lastOutputLine = ""
+          var lastProgressUpdateAt = 0L
           val diagnosticLines = ArrayDeque<String>()
           BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
@@ -196,7 +197,11 @@ class YtdlpDownloadEngine(
               }
               parseDestination(line)?.let { destination = it }
               val progress = parseProgressLine(line)
-              if (progress != null) {
+              val now = System.currentTimeMillis()
+              if (progress != null &&
+                (now - lastProgressUpdateAt >= PROGRESS_UPDATE_INTERVAL_MS || progress.first >= 100f)
+              ) {
+                lastProgressUpdateAt = now
                 updateJob(id) { it.copy(progressPercent = progress.first, detail = progress.second) }
                 currentJob(id)?.let(onJobUpdate)
               }
@@ -563,6 +568,7 @@ class YtdlpDownloadEngine(
 
   companion object {
     private const val TAG = "YtdlpDownloadEngine"
+    private const val PROGRESS_UPDATE_INTERVAL_MS = 750L
 
     // Example: "[download]  42.3% of ~ 123.45MiB at 2.34MiB/s ETA 01:23"
     private val PROGRESS_REGEX = Regex("""(?i)\[download]\s+([0-9.]+)%(.*)""")
