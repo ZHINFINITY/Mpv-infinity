@@ -170,7 +170,9 @@ class YtdlpDownloadEngine(
       return
     }
 
-    val outputTemplate = "${job.directory}/${DownloadLocations.sanitizeName(job.title)}.%(ext)s"
+    // Human titles and shared URL path segments are not unique (especially Instagram /share/
+    // and /reel/ links). Keep every job isolated, then include yt-dlp's extractor and video ID.
+    val outputTemplate = "${job.directory}/${jobFilePrefix(job)}%(extractor)s-%(id)s.%(ext)s"
     val ffmpegExecutable = ensureFfmpeg()
     val command = buildCommand(job.url, outputTemplate, job.qualityHeight, ffmpegExecutable)
 
@@ -294,9 +296,9 @@ class YtdlpDownloadEngine(
           },
         )
       } else if (qualityHeight > 0) {
-        add("bv*[height<=?$qualityHeight]+ba/b[height<=?$qualityHeight]")
+        add("bv*[vcodec!=none][height<=?$qualityHeight]+ba[acodec!=none]/b[vcodec!=none][acodec!=none][height<=?$qualityHeight]")
       } else {
-        add("bv*+ba/b")
+        add("bv*[vcodec!=none]+ba[acodec!=none]/b[vcodec!=none][acodec!=none]")
       }
       add("--merge-output-format")
       add("mp4")
@@ -395,7 +397,7 @@ class YtdlpDownloadEngine(
   }
 
   private fun findNewestOutput(job: Job): String? {
-    val prefix = DownloadLocations.sanitizeName(job.title)
+    val prefix = jobFilePrefix(job)
     return File(job.directory)
       .listFiles()
       ?.filter { it.isFile && it.name.startsWith(prefix) && !it.name.endsWith(".part") && !it.name.endsWith(".ytdl") }
@@ -408,7 +410,7 @@ class YtdlpDownloadEngine(
    * This is a fallback for devices/builds that do not ship the ffmpeg executable.
    */
   private fun muxSeparateStreams(job: Job, ffmpegExecutable: File?): String? {
-    val prefix = DownloadLocations.sanitizeName(job.title)
+    val prefix = jobFilePrefix(job)
     val candidates =
       File(job.directory)
         .listFiles()
@@ -539,13 +541,16 @@ class YtdlpDownloadEngine(
   }
 
   private fun deleteJobFiles(job: Job) {
-    val prefix = DownloadLocations.sanitizeName(job.title)
+    val prefix = jobFilePrefix(job)
     File(job.directory).listFiles()?.forEach { file ->
       if (file.isFile && file.name.startsWith(prefix)) {
         runCatching { file.delete() }
       }
     }
   }
+
+  private fun jobFilePrefix(job: Job): String =
+    "${DownloadLocations.sanitizeName(job.title)}-${job.id}-"
 
   private fun currentJob(id: Int): Job? = _jobs.value.firstOrNull { it.id == id }
 
