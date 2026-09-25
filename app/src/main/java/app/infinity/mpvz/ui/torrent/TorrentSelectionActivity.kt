@@ -16,30 +16,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import app.infinity.mpvz.catalog.CloudStreamResolver
-import app.infinity.mpvz.catalog.CinemetaCatalogRepository
-import app.infinity.mpvz.catalog.Episode
-import app.infinity.mpvz.catalog.MediaItem
-import app.infinity.mpvz.catalog.MediaType
-import app.infinity.mpvz.catalog.CatalogProvider
-import app.infinity.mpvz.catalog.Season
-import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
-import app.infinity.mpvz.domain.download.LinkDownloadCoordinator
 import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
 import app.infinity.mpvz.utils.media.MediaUtils
-import kotlinx.serialization.json.Json
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Dispatchers
 import org.koin.android.ext.android.inject
 
 class TorrentSelectionActivity : AppCompatActivity() {
@@ -47,7 +29,6 @@ class TorrentSelectionActivity : AppCompatActivity() {
   private val torrentStreamingEngine: TorrentStreamingEngine by inject()
   private val streamEntryRepository: NetworkStreamEntryRepository by inject()
   private val wyzieSearchRepository: WyzieSearchRepository by inject()
-  private val linkDownloadCoordinator: LinkDownloadCoordinator by inject()
   private val viewModel: TorrentSelectionViewModel by viewModels {
     TorrentSelectionViewModel.factory(
       torrentStreamingEngine = torrentStreamingEngine,
@@ -70,7 +51,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
     super.onCreate(savedInstanceState)
 
     val source = extractTorrentSource(intent)
-    Log.i(DIAG_TAG, "selection entry sourceKind=${source?.let { if (it.startsWith("http")) "http" else if (it.startsWith("magnet")) "magnet" else "other" } ?: "none"} hasResolverItem=${source.isNullOrBlank() && intent.hasExtra("catalog_provider_id")}")
+    Log.i(DIAG_TAG, "torrent selection entry sourceKind=${source?.let { if (it.startsWith("http")) "http" else if (it.startsWith("magnet")) "magnet" else "other" } ?: "none"}")
     if (source.isDirectPlayableUrl()) {
       Log.i(DIAG_TAG, "direct playback dispatch urlHost=${runCatching { Uri.parse(source).host }.getOrNull()}")
       startActivity(Intent(this, PlayerActivity::class.java).apply {
@@ -83,8 +64,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
       finishWithoutAnimation()
       return
     }
-    val resolverItem = if (source.isNullOrBlank()) resolverMediaItem(intent) else null
-    if (source.isNullOrBlank() && resolverItem == null) {
+    if (source.isNullOrBlank()) {
       finishWithoutAnimation()
       return
     }
@@ -96,72 +76,18 @@ class TorrentSelectionActivity : AppCompatActivity() {
       },
     )
 
-    source?.let { viewModel.initialize(torrentInput(it, intent)) }
-    if (source.isNullOrBlank() && resolverItem?.type == MediaType.TV) {
-      viewModel.initializeResolverBrowser(torrentInput("", intent, resolverItem), resolverItem.seasons)
-    }
+    viewModel.initialize(torrentInput(source, intent))
 
     setContent {
       val state by viewModel.uiState.collectAsState()
       LaunchedEffect(viewModel) { viewModel.launches.collect(::openPlayer) }
       MpvInfinityTheme {
-        var selectedEpisodeRequest by remember { mutableStateOf<Pair<Int, Episode>?>(null) }
-        val resolver = remember { CloudStreamResolver(app.infinity.mpvz.catalog.CatalogSettings(applicationContext)) }
-        LaunchedEffect(resolverItem) {
-          if (resolverItem != null && source.isNullOrBlank()) {
-            if (resolverItem.type == MediaType.TV) {
-              // Enter the episode browser immediately. Metadata enrichment must not show the
-              // torrent preparation screen while the provider is being queried.
-              val completeSeasons = if (resolverItem.provider == app.infinity.mpvz.catalog.CatalogProvider.KITSU && !resolverItem.providerId.isNullOrBlank()) {
-                runCatching { app.infinity.mpvz.catalog.KitsuAnimeRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList())
-              } else if (!resolverItem.providerId.isNullOrBlank()) {
-                (resolverItem.seasons + runCatching { resolver.loadSeasons(resolverItem) }.getOrDefault(emptyList()) + runCatching { CinemetaCatalogRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList()))
-                  .groupBy { it.number }
-                  .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
-                  .sortedBy { it.number }
-              } else resolverItem.seasons
-              viewModel.updateResolverBrowserSeasons(completeSeasons)
-            } else {
-              val streams = runCatching { resolver.resolve(resolverItem, null, null) }.getOrDefault(emptyList())
-              viewModel.initializeResolver(torrentInput("", intent, resolverItem), streams)
-            }
-          }
-        }
-        LaunchedEffect(selectedEpisodeRequest) {
-          val request = selectedEpisodeRequest ?: return@LaunchedEffect
-          val item = resolverItem ?: return@LaunchedEffect
-          val (season, episode) = request
-          viewModel.setEpisodeResolving(season, episode)
-          val streams = runCatching { resolver.resolve(item, season, episode.number) }
-            .getOrDefault(emptyList())
-            .map { it.copy(season = it.season ?: season, episode = it.episode ?: episode.number) }
-            .distinctBy { "${it.url}|${it.season}|${it.episode}" }
-          if (streams.isEmpty()) viewModel.setEpisodeError("No links were returned for this episode.")
-          else viewModel.showEpisodeResults(
-            torrentInput("", intent, item, season = season, episode = episode.number).copy(
-              episodeTitle = episode.title,
-              episodeOverview = episode.overview,
-              episodeThumbnail = episode.stillUrl,
-            ),
-            streams,
-          )
-          selectedEpisodeRequest = null
-        }
-              TorrentSelectionScreen(
-                state = state,
-                onBack = ::closePicker,
-                onRetry = viewModel::retry,
-                onSelect = viewModel::select,
-                onSeasonSelect = { season -> viewModel.selectSeason(season) },
-                onEpisodeSelect = { season, episode -> selectedEpisodeRequest = season to episode },
-                isResolver = resolverItem != null && source.isNullOrBlank(),
-                isDownloadable = { index -> (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { !it.isExternal && (it.source.startsWith("http://") || it.source.startsWith("https://")) } == true },
-                onDownload = { index ->
-                  (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { input ->
-                    linkDownloadCoordinator.enqueue(input.source, input.title, headers = input.headers, posterUrl = input.posterUrl, season = input.season, episode = input.episode)
-                  }
-                },
-              )
+        TorrentSelectionScreen(
+          state = state,
+          onBack = ::closePicker,
+          onRetry = viewModel::retry,
+          onSelect = viewModel::select,
+        )
       }
     }
   }
@@ -169,52 +95,24 @@ class TorrentSelectionActivity : AppCompatActivity() {
   private fun torrentInput(
     source: String,
     intent: Intent,
-    item: MediaItem? = null,
-    stream: StreamOption? = null,
     season: Int? = intent.getIntExtra("episode_season", -1).takeIf { it >= 0 },
     episode: Int? = intent.getIntExtra("episode_number", -1).takeIf { it >= 0 },
   ): TorrentSelectionInput {
-    val title = item?.title ?: intent.getStringExtra(MediaUtils.EXTRA_MEDIA_TITLE)
-    val description = item?.overview ?: intent.getStringExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION)
+    val title = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_TITLE)
+    val description = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION)
     return TorrentSelectionInput(
       source = source,
       title = title ?: intent.getStringExtra("title") ?: intent.getStringExtra("introdb_title"),
       description = description ?: intent.getStringExtra("description") ?: intent.getStringExtra("overview"),
-      posterUrl = item?.posterUrl ?: intent.getStringExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL),
-      backdropUrl = item?.backdropUrl ?: intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL),
+      posterUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL),
+      backdropUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL),
       season = season,
       episode = episode,
       episodeTitle = intent.getStringExtra("episode_title"),
       episodeOverview = intent.getStringExtra("episode_overview"),
       episodeThumbnail = intent.getStringExtra("episode_thumbnail"),
-      seasonsJson = item?.seasons?.let { Json.encodeToString(it) } ?: intent.getStringExtra("seasons_json"),
-      fileIndex = stream?.torrentFileIndex ?: intent.getIntExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, -1).takeIf { it >= 0 },
-    )
-  }
-
-  private fun resolverMediaItem(intent: Intent): MediaItem? {
-    val title = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_TITLE)?.takeIf { it.isNotBlank() } ?: return null
-    val seasons = runCatching {
-      Json.decodeFromString<List<Season>>(intent.getStringExtra("seasons_json").orEmpty())
-    }.getOrDefault(emptyList())
-    return MediaItem(
-      id = intent.getIntExtra("catalog_id", 0),
-      type = intent.getStringExtra("catalog_type")?.let { runCatching { MediaType.valueOf(it) }.getOrNull() }
-        ?: if (intent.getBooleanExtra("is_series", false)) MediaType.TV else MediaType.MOVIE,
-      title = title,
-      overview = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION).orEmpty(),
-      posterUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL),
-      backdropUrl = intent.getStringExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL),
-      imdbId = intent.getStringExtra("catalog_imdb_id"),
-      providerId = intent.getStringExtra("catalog_provider_id"),
-      catalogSourceId = intent.getStringExtra("catalog_source_id"),
-      catalogType = intent.getStringExtra("catalog_type_name"),
-      provider = intent.getStringExtra("catalog_provider")?.let { raw -> runCatching { CatalogProvider.valueOf(raw) }.getOrNull() } ?: CatalogProvider.CINEMETA,
-      releaseYear = intent.getStringExtra("catalog_release_year"),
-      contentRating = intent.getStringExtra("catalog_rating"),
-      duration = intent.getStringExtra("catalog_duration"),
-      genres = intent.getStringExtra("catalog_genres")?.split(" • ").orEmpty(),
-      seasons = seasons,
+      seasonsJson = intent.getStringExtra("seasons_json"),
+      fileIndex = intent.getIntExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, -1).takeIf { it >= 0 },
     )
   }
 
@@ -249,20 +147,6 @@ class TorrentSelectionActivity : AppCompatActivity() {
   private fun closePicker() {
     if (!playerLaunched) viewModel.cancel()
     finishWithoutAnimation()
-  }
-
-  private suspend fun resolveEpisodeWithRetry(
-    resolver: CloudStreamResolver,
-    item: MediaItem,
-    season: Int,
-    episode: Int,
-  ): List<StreamOption> {
-    repeat(3) { attempt ->
-      val result = runCatching { resolver.resolve(item, season, episode) }.getOrDefault(emptyList())
-      if (result.isNotEmpty()) return result
-      if (attempt < 2) delay(300L * (attempt + 1))
-    }
-    return emptyList()
   }
 
   @Suppress("DEPRECATION")

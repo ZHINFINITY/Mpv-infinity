@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
+import app.infinity.mpvz.catalog.CatalogViewModel
 import app.infinity.mpvz.domain.audiobookshelf.AudiobookshelfServer
 import app.infinity.mpvz.domain.jellyfin.JellyfinServer
 import app.infinity.mpvz.domain.navidrome.NavidromeServer
@@ -100,6 +101,10 @@ object MediaServersPreferencesScreen : Screen {
     val audiobookshelfViewModel: AudiobookshelfViewModel =
       viewModel(factory = AudiobookshelfViewModel.factory(context.applicationContext as Application))
     val audiobookshelfUiState by audiobookshelfViewModel.uiState.collectAsStateWithLifecycle()
+
+    val catalogViewModel: CatalogViewModel =
+      viewModel(key = "nuvio-addons-global-settings", factory = CatalogViewModel.Factory(context.applicationContext as Application))
+    val catalogSources by catalogViewModel.catalogSources.collectAsStateWithLifecycle()
 
     var isAddServerOpen by remember { mutableStateOf(false) }
     var serverToReauth by remember { mutableStateOf<JellyfinServer?>(null) }
@@ -827,6 +832,20 @@ object MediaServersPreferencesScreen : Screen {
                 )
               }
             }
+          }
+
+          item {
+            PreferenceSectionHeader(
+              title = "Nuvio Add-ons",
+              modifier = Modifier.settingsSearchTarget(R.string.pref_media_servers_title),
+            )
+          }
+
+          item {
+            NuvioAddonsPreferenceCard(
+              sources = catalogSources,
+              onSourcesChanged = catalogViewModel::saveCatalogSources,
+            )
           }
         }
       }

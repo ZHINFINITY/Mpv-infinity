@@ -6,9 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -20,8 +18,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.lifecycle.ViewModelProvider
-
-data class TorrentLaunchRequest(val item: MediaItem, val stream: StreamOption, val streams: List<StreamOption> = listOf(stream), val season: Int? = null, val episode: Int? = null)
 
 class CatalogViewModel(application: Application) : AndroidViewModel(application) {
   companion object {
@@ -48,10 +44,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private var homeLoadJob: Job? = null
   // Keep the last successful home result so closing search does not refetch every addon rail.
   private var cachedHomeItems: List<MediaItem> = emptyList()
-  private val _resolvedUrl = MutableStateFlow<String?>(null)
-  val resolvedUrl: StateFlow<String?> = _resolvedUrl.asStateFlow()
-  private val _torrentLaunch = MutableSharedFlow<TorrentLaunchRequest>(extraBufferCapacity = 1)
-  val torrentLaunch: SharedFlow<TorrentLaunchRequest> = _torrentLaunch
+  private val _playbackStream = MutableStateFlow<StreamOption?>(null)
+  val playbackStream: StateFlow<StreamOption?> = _playbackStream.asStateFlow()
   val autoChooseBestTorrent: Boolean get() = settings.autoChooseBestTorrent
 
   init {
@@ -138,33 +132,43 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun openDetails(item: MediaItem) {
-    viewModelScope.launch {
-      _state.update { it.copy(resolvingId = item.id, selectedItem = null, error = null) }
-      _torrentLaunch.emit(TorrentLaunchRequest(item, StreamOption(url = "", title = "Loading"), emptyList()))
-      _state.update { it.copy(resolvingId = null) }
+    showDetails(item)
+  }
+
+  fun reloadAddonConfiguration() {
+    val sources = settings.catalogSources()
+    val changed = sources != _catalogSources.value
+    _catalogSources.value = sources
+    syncCatalogResolvers(sources)
+    if (changed) {
+      if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) }
     }
   }
 
   fun showDetails(item: MediaItem) {
     _state.update {
       it.copy(
-        resolvingId = null,
+        resolvingId = item.id,
         selectedItem = item,
         streamOptions = emptyList(),
         streamTitle = null,
-        selectedSeason = null,
+        selectedSeason = item.seasons.firstOrNull()?.number,
         selectedEpisode = null,
         error = null,
       )
     }
-    if (item.type == MediaType.TV && item.seasons.isEmpty()) {
-      viewModelScope.launch {
-        val seasons = resolver.loadSeasons(item)
-        if (seasons.isNotEmpty()) {
-          _state.update { current ->
-            if (current.selectedItem?.id == item.id) current.copy(selectedItem = current.selectedItem?.copy(seasons = seasons)) else current
-          }
-        }
+    viewModelScope.launch {
+      val metadata = runCatching { resolver.loadMetadata(item) }.getOrNull() ?: item
+      val completedItem = if (metadata.type == MediaType.TV && metadata.seasons.isEmpty()) {
+        val seasons = runCatching { resolver.loadSeasons(metadata) }.getOrDefault(emptyList())
+        if (seasons.isEmpty()) metadata else metadata.copy(seasons = seasons)
+      } else metadata
+      _state.update { current ->
+        if (current.selectedItem?.id == item.id) current.copy(
+          selectedItem = completedItem,
+          selectedSeason = current.selectedSeason ?: completedItem.seasons.firstOrNull()?.number,
+          resolvingId = null,
+        ) else current
       }
     }
   }
@@ -173,22 +177,39 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode) }
       runCatching { resolver.resolve(item, season, episode) }
-        .onSuccess { streams -> _state.update { it.copy(streamOptions = streams, streamTitle = item.title, error = if (streams.isEmpty()) "The resolver returned HTTP 200 but no streams for this type/ID. Check that its manifest supports ${item.type.name.lowercase()} and the selected provider ID." else null) } }
+        .onSuccess { streams ->
+          val directHttpsStreams = streams
+            .filter { it.isPlayable && it.url.startsWith("https://", ignoreCase = true) && !it.isExternal }
+            .distinctBy { it.url }
+          _state.update {
+            it.copy(
+              streamOptions = directHttpsStreams,
+              streamTitle = item.title,
+              error = if (directHttpsStreams.isEmpty()) "No direct HTTPS video links were returned by the enabled add-ons." else null,
+            )
+          }
+        }
         .onFailure { error -> _state.update { it.copy(error = error.message ?: "Unable to resolve stream") } }
       _state.update { it.copy(resolvingId = null) }
     }
   }
 
   fun playStream(stream: StreamOption) {
-    _resolvedUrl.value = stream.url
+    if (!stream.url.startsWith("https://", ignoreCase = true) || !stream.isPlayable || stream.isExternal) return
+    _playbackStream.value = stream
     _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) }
+  }
+
+  fun consumePlaybackStream() { _playbackStream.value = null }
+
+  fun selectSeason(season: Int) {
+    _state.update { it.copy(selectedSeason = season, streamOptions = emptyList(), error = null) }
   }
 
   fun dismissStreams() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) } }
   fun closeDetails() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, selectedItem = null, selectedSeason = null, selectedEpisode = null) } }
   fun setSourceFilter(filter: String) { _state.update { it.copy(sourceFilter = filter) } }
   fun setSourceSort(sort: String) { _state.update { it.copy(sourceSort = sort) } }
-  fun consumeResolvedUrl() { _resolvedUrl.value = null }
   fun saveSettings(resolvers: List<ResolverEndpoint>, resolverToken: String, resolverPath: String) {
     saveResolvers(resolvers)
     val existingSources = settings.catalogSources().filterNot { it.id.startsWith("resolver-") }
@@ -217,9 +238,16 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
   private fun syncCatalogResolvers(sources: List<CatalogSource>) {
     val catalogResolvers = sources
-      .filter { it.isEnabled && !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" && isHttpAddonEndpoint(it.manifestUrl) }
-      .map { source -> ResolverEndpoint(source.manifestUrl.removeSuffix("/manifest.json")) }
-    if (catalogResolvers.isNotEmpty()) saveResolvers((settings.resolvers() + catalogResolvers).distinctBy { it.baseUrl.trimEnd('/') })
+      .filterNot { it.id.startsWith("cinemeta-") || it.id == "kitsu-anime" }
+      .filter { isHttpAddonEndpoint(it.manifestUrl) }
+      .mapNotNull { source ->
+        val baseUrl = source.manifestUrl.substringBefore('?').removeSuffix("/manifest.json")
+        val query = source.manifestUrl.substringAfter('?', "")
+        val configuredUrl = if (query.isBlank()) baseUrl else "$baseUrl?$query"
+        configuredUrl.takeIf { isHttpAddonEndpoint(it) }?.let { ResolverEndpoint(it, source.isEnabled) }
+      }
+    val synchronized = catalogResolvers.distinctBy { it.baseUrl.lowercase() }
+    if (synchronized != settings.resolvers()) saveResolvers(synchronized)
   }
   fun addResolverEndpoint(value: String) {
     val endpoint = value.trim().removeSuffix("/manifest.json")

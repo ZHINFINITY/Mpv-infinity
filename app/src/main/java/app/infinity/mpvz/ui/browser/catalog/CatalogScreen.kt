@@ -66,8 +66,6 @@ import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.ui.player.PlayerActivity
-import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
-import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.player.components.expressive.ExpressiveElevatedCard
@@ -82,37 +80,7 @@ fun CatalogScreen() {
   val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
   val state by viewModel.state.collectAsState()
   val catalogSources by viewModel.catalogSources.collectAsState()
-  fun launchTorrent(request: app.infinity.mpvz.catalog.TorrentLaunchRequest) {
-    val item = request.item
-    val episode = request.season?.let { season -> request.episode?.let { number -> item.seasons.firstOrNull { it.number == season }?.episodes?.firstOrNull { it.number == number } } }
-    context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
-      action = Intent.ACTION_VIEW
-      data = Uri.parse(request.stream.url)
-      putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, request.stream.url)
-      putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
-      putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
-      putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
-      putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
-      putExtra("catalog_provider_id", item.providerId)
-      putExtra("catalog_imdb_id", item.imdbId)
-      putExtra("catalog_release_year", item.releaseYear)
-      putExtra("catalog_rating", item.contentRating)
-      putExtra("catalog_duration", item.duration)
-      putExtra("catalog_genres", item.genres.joinToString(" • "))
-      putExtra("is_series", item.type == app.infinity.mpvz.catalog.MediaType.TV)
-      putExtra("streams_json", kotlinx.serialization.json.Json.encodeToString(request.streams))
-      if (item.seasons.isNotEmpty()) putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
-      episode?.let {
-        putExtra("episode_season", request.season)
-        putExtra("episode_number", request.episode)
-        putExtra("episode_title", it.title)
-        putExtra("episode_overview", it.overview)
-        putExtra("episode_thumbnail", it.stillUrl)
-      }
-      request.stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
-    })
-  }
-  LaunchedEffect(Unit) { viewModel.torrentLaunch.collect { launchTorrent(it) } }
+  val playbackStream by viewModel.playbackStream.collectAsState()
   var showSettings by remember { mutableStateOf(false) }
   var searchOpen by remember { mutableStateOf(state.query.isNotBlank()) }
   var browseRail by remember { mutableStateOf<String?>(null) }
@@ -131,17 +99,18 @@ fun CatalogScreen() {
   }
   val railItems = rails.values.flatten().toSet()
 
-  LaunchedEffect(Unit) {
-    viewModel.resolvedUrl.collect { url ->
-      if (url != null) {
-        context.startActivity(Intent(context, PlayerActivity::class.java).apply {
-          action = Intent.ACTION_VIEW
-          data = Uri.parse(url)
-          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
-        viewModel.consumeResolvedUrl()
-      }
+  LaunchedEffect(playbackStream) {
+    val stream = playbackStream ?: return@LaunchedEffect
+    if (stream.url.startsWith("https://", true) && stream.isPlayable && !stream.isExternal) {
+      context.startActivity(Intent(context, PlayerActivity::class.java).apply {
+        action = Intent.ACTION_VIEW
+        data = Uri.parse(stream.url)
+        putExtra("headers", stream.headers.flatMap { (name, value) -> listOf(name, value) }.toTypedArray())
+        putExtra("title", state.selectedItem?.title ?: stream.title)
+      })
     }
+    viewModel.closeDetails()
+    viewModel.consumePlaybackStream()
   }
 
   Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp).padding(bottom = 96.dp)) {
@@ -192,7 +161,7 @@ fun CatalogScreen() {
           }
           LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
             items(items.take(12), key = { "rail-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
-              Box(Modifier.width(130.dp)) { CatalogGridItem(item, state.resolvingId == item.id) { viewModel.openDetails(item) } }
+      Box(Modifier.width(150.dp)) { CatalogGridItem(item, state.resolvingId == item.id) { viewModel.showDetails(item) } }
             }
           }
         }
@@ -216,12 +185,26 @@ fun CatalogScreen() {
       val visibleItems = if (browseRail != null && state.query.isBlank()) rails[browseRail ?: ""].orEmpty().filter { genreFilter == "All" || genreFilter in it.genres } else state.items.filterNot { it in railItems }
       itemsIndexed(visibleItems, key = { _, item -> "${item.catalogSourceId}-${item.catalogId}-${item.providerId ?: item.id}" }) { index, item ->
         if (browseRail == null && index >= visibleItems.size - 3) viewModel.loadMore()
-        CatalogGridItem(item, state.resolvingId == item.id) { viewModel.openDetails(item) }
+        CatalogGridItem(item, state.resolvingId == item.id) { viewModel.showDetails(item) }
       }
       if (state.isLoadingMore) item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
     }
   }
   if (showSettings) CatalogSettingsDialog(viewModel, catalogSources) { showSettings = false }
+  state.selectedItem?.let { item ->
+    CatalogDetailsSheet(
+      item = item,
+      selectedSeason = state.selectedSeason,
+      streams = state.streamOptions,
+      isLoading = state.resolvingId == item.id,
+      error = state.error,
+      onDismiss = viewModel::closeDetails,
+      onChooseSeason = viewModel::selectSeason,
+      onFindMovieStreams = { viewModel.resolve(item) },
+      onChooseEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
+      onPlay = viewModel::playStream,
+    )
+  }
 }
 
 @Composable
