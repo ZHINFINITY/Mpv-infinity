@@ -131,6 +131,12 @@ private fun buildAddonPathUrl(baseOrManifestUrl: String, path: String): String =
 private fun encodeAddonPathSegment(value: String): String =
   URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
+internal fun addonOriginForLog(value: String): String {
+  val scheme = value.substringBefore("://", "https").lowercase()
+  val authority = value.substringAfter("://", value).substringBefore('/').substringBefore('?')
+  return "$scheme://${authority.substringAfterLast('@')}"
+}
+
 class KitsuAnimeRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
@@ -193,7 +199,7 @@ class StremioCatalogRepository {
   }
 
   suspend fun load(source: CatalogSource, query: String?, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-    Log.i(DIAG_TAG, "catalog start source=${source.id} query=${query ?: "<home>"} manifest=${source.manifestUrl}")
+    Log.i(DIAG_TAG, "catalog start source=${source.id} query=${query ?: "<home>"} manifest=${addonOriginForLog(source.manifestUrl)}")
     runCatching {
       // Always refresh the manifest: addon providers can publish new catalogs/rails without
       // changing the manifest URL, so a permanent in-memory cache hides those rails.
@@ -218,7 +224,7 @@ class StremioCatalogRepository {
           val searchSuffix = if (!query.isNullOrBlank()) "/search=${encodePathSegment(query)}" else ""
           val suffix = skipSuffix + searchSuffix
           val catalogUrl = buildAddonPathUrl(source.manifestUrl, "catalog/$type/${encodePathSegment(id)}$suffix.json")
-          Log.i(DIAG_TAG, "catalog request source=${source.id} type=$type id=$id supportsSearch=$supportsSearch url=$catalogUrl")
+          Log.i(DIAG_TAG, "catalog request source=${source.id} type=$type id=$id supportsSearch=$supportsSearch addon=${addonOriginForLog(catalogUrl)}")
           val payload = getJson(catalogUrl).jsonObject
           payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
           val meta = element.jsonObject
@@ -285,7 +291,7 @@ class StremioCatalogRepository {
       }
       if (result != null) return result
       val waitMs = 500L shl attempt
-      Log.w(DIAG_TAG, "catalog rate limited url=$url retry=${attempt + 1} waitMs=$waitMs")
+      Log.w(DIAG_TAG, "catalog rate limited addon=${addonOriginForLog(url)} retry=${attempt + 1} waitMs=$waitMs")
       delay(waitMs)
       attempt++
     }
@@ -605,15 +611,15 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       .apply { if (settings.resolverToken.isNotBlank()) addHeader("Authorization", "Bearer ${settings.resolverToken}") }
       .get()
       .build()
-    Log.i(DIAG_TAG, "resolver request endpoint=${baseUrl.trimEnd('/')} path=$path type=$type identifier=$identifier season=$season episode=$episode")
+    Log.i(DIAG_TAG, "resolver request addon=${addonOriginForLog(baseUrl)} path=$path type=$type identifier=$identifier season=$season episode=$episode")
     return client.newCall(request).execute().use { response ->
-      Log.i(DIAG_TAG, "resolver response endpoint=${baseUrl.trimEnd('/')} path=$path status=${response.code}")
+      Log.i(DIAG_TAG, "resolver response addon=${addonOriginForLog(baseUrl)} path=$path status=${response.code}")
       if (!response.isSuccessful) {
-        Log.w("CloudStreamResolver", "Resolver ${request.url} returned HTTP ${response.code}")
+        Log.w("CloudStreamResolver", "Resolver ${addonOriginForLog(request.url.toString())} returned HTTP ${response.code}")
         error("Resolver request failed (${response.code})")
       }
       val parsed = parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
-      Log.i(DIAG_TAG, "resolver parsed endpoint=${baseUrl.trimEnd('/')} path=$path streams=${parsed.size}")
+      Log.i(DIAG_TAG, "resolver parsed addon=${addonOriginForLog(baseUrl)} path=$path streams=${parsed.size}")
       require(parsed.isNotEmpty()) {
         "Resolver returned HTTP ${response.code} with no streams for type=$type identifier=$identifier. Check the endpoint manifest and supported ID format."
       }
