@@ -38,6 +38,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import org.koin.android.ext.android.inject
 
 class TorrentSelectionActivity : AppCompatActivity() {
@@ -120,12 +122,15 @@ class TorrentSelectionActivity : AppCompatActivity() {
               // are not valid HentaiStream resource IDs, so per-episode probing can return 0.
               val metadataResults = runCatching { resolver.resolve(completeItem, null, null) }
                 .getOrDefault(emptyList())
+              // Addons commonly rate-limit or serialize stream generation. Fanning out every
+              // episode at once produces successful HTTP 200 responses with empty streams,
+              // which made multi-season shows appear randomly incomplete.
+              val episodeDispatcher = Dispatchers.IO.limitedParallelism(4)
               val episodeResults = coroutineScope {
                 completeItem.seasons.flatMap { season ->
                   season.episodes.map { episode ->
-                    async {
-                      runCatching { resolver.resolve(completeItem, season.number, episode.number) }
-                        .getOrDefault(emptyList())
+                    async(episodeDispatcher) {
+                      resolveEpisodeWithRetry(resolver, completeItem, season.number, episode.number)
                         .map { it.copy(season = it.season ?: season.number, episode = it.episode ?: episode.number) }
                     }
                   }
@@ -260,6 +265,20 @@ class TorrentSelectionActivity : AppCompatActivity() {
   private fun closePicker() {
     if (!playerLaunched) viewModel.cancel()
     finishWithoutAnimation()
+  }
+
+  private suspend fun resolveEpisodeWithRetry(
+    resolver: CloudStreamResolver,
+    item: MediaItem,
+    season: Int,
+    episode: Int,
+  ): List<StreamOption> {
+    repeat(3) { attempt ->
+      val result = runCatching { resolver.resolve(item, season, episode) }.getOrDefault(emptyList())
+      if (result.isNotEmpty()) return result
+      if (attempt < 2) delay(300L * (attempt + 1))
+    }
+    return emptyList()
   }
 
   @Suppress("DEPRECATION")
