@@ -74,14 +74,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.catalog.CatalogViewModel
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
-import app.infinity.mpvz.domain.download.LinkDownloadCoordinator
 import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.icons.Icon
@@ -92,7 +90,6 @@ import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import coil3.compose.AsyncImage
-import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @kotlinx.serialization.Serializable
@@ -103,27 +100,26 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
     val state by viewModel.state.collectAsState()
     val catalogSources by viewModel.catalogSources.collectAsState()
-    val downloadCoordinator = koinInject<LinkDownloadCoordinator>()
-    fun openTorrent(item: MediaItem, stream: app.infinity.mpvz.catalog.StreamOption, streams: List<app.infinity.mpvz.catalog.StreamOption> = listOf(stream), season: Int? = state.selectedSeason, episodeNumber: Int? = state.selectedEpisode) {
-      val selectedEpisode = season?.let { seasonNumber ->
-        episodeNumber?.let { number -> item.seasons.firstOrNull { it.number == seasonNumber }?.episodes?.firstOrNull { it.number == number } }
-      }
+    fun openChooser(item: MediaItem, season: Int? = null, episodeNumber: Int? = null) {
+      val selectedEpisode = season?.let { seasonNumber -> episodeNumber?.let { number -> item.seasons.firstOrNull { it.number == seasonNumber }?.episodes?.firstOrNull { it.number == number } } }
       context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
         action = Intent.ACTION_VIEW
-        data = Uri.parse(stream.url)
-        putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
         putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
         putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
         putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
         putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
         putExtra("catalog_provider_id", item.providerId)
+        putExtra("catalog_provider", item.provider.name)
+        putExtra("catalog_source_id", item.catalogSourceId)
+        putExtra("catalog_type_name", item.catalogType)
+        putExtra("catalog_type", item.type.name)
+        putExtra("catalog_id", item.id)
         putExtra("catalog_imdb_id", item.imdbId)
         putExtra("catalog_release_year", item.releaseYear)
         putExtra("catalog_rating", item.contentRating)
         putExtra("catalog_duration", item.duration)
         putExtra("catalog_genres", item.genres.joinToString(" • "))
         putExtra("is_series", item.type == app.infinity.mpvz.catalog.MediaType.TV)
-        putExtra("streams_json", kotlinx.serialization.json.Json.encodeToString(streams))
         if (item.seasons.isNotEmpty()) putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
         selectedEpisode?.let { episode ->
           putExtra("episode_season", season)
@@ -132,11 +128,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           putExtra("episode_overview", episode.overview)
           putExtra("episode_thumbnail", episode.stillUrl)
         }
-        stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
       })
-    }
-    LaunchedEffect(Unit) {
-      viewModel.torrentLaunch.collect { request -> openTorrent(request.item, request.stream, request.streams, request.season, request.episode) }
     }
     var heroItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     LaunchedEffect(state.items) { heroItems = state.items.shuffled().take(7) }
@@ -270,7 +262,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           }
         }
         if (state.isLoading && state.items.isEmpty()) item { StreamLoadingState(searching = searchActive) }
-        if (!searchActive && state.query.isBlank() && browseRail == null && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { viewModel.showDetails(it) } }
+        if (!searchActive && state.query.isBlank() && browseRail == null && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openChooser(it) } }
         val sourceNames = catalogSources.associate { it.id to it.name }
         val rails = state.items.groupBy { item ->
           val title = item.catalogName ?: when (item.catalogSourceId) {
@@ -282,7 +274,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
           "${item.catalogSourceId.orEmpty()}|${item.catalogId.orEmpty()}|$title"
         }.mapValues { (_, sourceItems) -> sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" } }
         if (!searchActive && state.query.isBlank() && browseRail == null) rails.forEach { (title, sourceItems) ->
-          StreamRail(title.substringAfterLast('|'), sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }, onNearEnd = { viewModel.loadMore() }) { viewModel.showDetails(it) }
+          StreamRail(title.substringAfterLast('|'), sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }, onNearEnd = { viewModel.loadMore() }) { openChooser(it) }
         }
         if (!searchActive && state.query.isBlank() && browseRail != null) {
           val browseItems = rails[browseRail].orEmpty()
@@ -296,7 +288,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             item {
               Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 rowItems.forEach { mediaItem ->
-                  androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { viewModel.showDetails(mediaItem) } }
+                  androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { openChooser(mediaItem) } }
                 }
                 if (rowItems.size == 1) Spacer(Modifier.weight(1f))
               }
@@ -319,7 +311,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
             item {
               Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 rowItems.forEach { mediaItem ->
-                  androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { viewModel.showDetails(mediaItem) } }
+                  androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { openChooser(mediaItem) } }
                 }
                 if (rowItems.size == 1) Spacer(Modifier.weight(1f))
               }
@@ -334,62 +326,10 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
       }
     }
     if (showSettings) StreamResolverSettingsDialog(viewModel) { showSettings = false }
-    state.selectedItem?.let { item ->
-      MediaDetailsSheet(
-        item = item,
-        streams = state.streamOptions,
-        sourceFilter = state.sourceFilter,
-        sourceSort = state.sourceSort,
-        isLoading = state.resolvingId == item.id,
-        onLoadSources = { if (item.type == MediaType.MOVIE) viewModel.resolve(item) },
-        onSeason = { season -> viewModel.resolve(item, season, null) },
-        onEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
-        onFilter = viewModel::setSourceFilter,
-        onSort = viewModel::setSourceSort,
-        onDownload = { stream ->
-          downloadCoordinator.enqueue(
-            url = stream.url,
-            title = listOfNotNull(item.title, state.selectedSeason?.let { "S%02d".format(it) }, state.selectedEpisode?.let { "E%02d".format(it) }).joinToString(" "),
-            headers = stream.headers,
-            posterUrl = item.posterUrl,
-            season = state.selectedSeason,
-            episode = state.selectedEpisode,
-          )
-        },
-        onSelect = { stream ->
-          if (stream.isPlayable) viewModel.playStream(stream)
-          else openTorrent(item, stream, state.streamOptions, state.selectedSeason, state.selectedEpisode)
-        },
-        onBack = viewModel::closeDetails,
-      )
-    }
 
   }
 }
 
-private fun openResolverChooser(context: android.content.Context, item: MediaItem) {
-  Log.i("MpvCatalogDiag", "item click title=\"${item.title}\" source=${item.catalogSourceId} catalog=${item.catalogId} type=${item.catalogType} providerId=${item.providerId}")
-  context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
-    action = Intent.ACTION_VIEW
-    putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
-    putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
-    putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
-    putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
-    putExtra("catalog_provider_id", item.providerId)
-    putExtra("catalog_imdb_id", item.imdbId)
-    putExtra("catalog_id", item.id)
-    putExtra("catalog_provider", item.provider.name)
-    putExtra("catalog_source_id", item.catalogSourceId)
-    putExtra("catalog_type_name", item.catalogType)
-    putExtra("catalog_type", item.type.name)
-    putExtra("catalog_release_year", item.releaseYear)
-    putExtra("catalog_rating", item.contentRating)
-    putExtra("catalog_duration", item.duration)
-    putExtra("catalog_genres", item.genres.joinToString(" • "))
-    putExtra("is_series", item.type == MediaType.TV)
-    putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
-  })
-}
 
 @Composable
 private fun StreamEmptySearchState(query: String) {

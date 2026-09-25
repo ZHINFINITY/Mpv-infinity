@@ -29,6 +29,7 @@ import app.infinity.mpvz.catalog.Season
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.database.repository.NetworkStreamEntryRepository
 import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
+import app.infinity.mpvz.domain.download.LinkDownloadCoordinator
 import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.theme.MpvInfinityTheme
@@ -44,6 +45,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
   private val torrentStreamingEngine: TorrentStreamingEngine by inject()
   private val streamEntryRepository: NetworkStreamEntryRepository by inject()
   private val wyzieSearchRepository: WyzieSearchRepository by inject()
+  private val linkDownloadCoordinator: LinkDownloadCoordinator by inject()
   private val viewModel: TorrentSelectionViewModel by viewModels {
     TorrentSelectionViewModel.factory(
       torrentStreamingEngine = torrentStreamingEngine,
@@ -102,7 +104,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
           if (resolverItem != null && source.isNullOrBlank()) {
             val resolver = CloudStreamResolver(app.infinity.mpvz.catalog.CatalogSettings(applicationContext))
             val completeSeasons = if (resolverItem.type == MediaType.TV && !resolverItem.providerId.isNullOrBlank()) {
-              (resolverItem.seasons + runCatching { CinemetaCatalogRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList()))
+              (resolverItem.seasons + runCatching { resolver.loadSeasons(resolverItem) }.getOrDefault(emptyList()) + runCatching { CinemetaCatalogRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList()))
                 .groupBy { it.number }
                 .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
                 .sortedBy { it.number }
@@ -149,12 +151,18 @@ class TorrentSelectionActivity : AppCompatActivity() {
             viewModel.initializeResolver(torrentInput("", intent, itemWithResolverSeasons), allStreams)
           }
         }
-        TorrentSelectionScreen(
-          state = state,
-          onBack = ::closePicker,
-          onRetry = viewModel::retry,
-          onSelect = viewModel::select,
-        )
+              TorrentSelectionScreen(
+                state = state,
+                onBack = ::closePicker,
+                onRetry = viewModel::retry,
+                onSelect = viewModel::select,
+                isDownloadable = { index -> (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.source?.let { it.startsWith("http://") || it.startsWith("https://") } == true },
+                onDownload = { index ->
+                  (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { input ->
+                    linkDownloadCoordinator.enqueue(input.source, input.title, headers = input.headers, posterUrl = input.posterUrl, season = input.season, episode = input.episode)
+                  }
+                },
+              )
       }
     }
   }
