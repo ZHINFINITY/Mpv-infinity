@@ -156,7 +156,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
                 onBack = ::closePicker,
                 onRetry = viewModel::retry,
                 onSelect = viewModel::select,
-                isDownloadable = { index -> (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.source?.let { it.startsWith("http://") || it.startsWith("https://") } == true },
+                isDownloadable = { index -> (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { !it.isExternal && (it.source.startsWith("http://") || it.source.startsWith("https://")) } == true },
                 onDownload = { index ->
                   (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { input ->
                     linkDownloadCoordinator.enqueue(input.source, input.title, headers = input.headers, posterUrl = input.posterUrl, season = input.season, episode = input.episode)
@@ -222,6 +222,11 @@ class TorrentSelectionActivity : AppCompatActivity() {
   private fun openPlayer(request: TorrentSelectionLaunch) {
     if (playerLaunched || isFinishing) return
     playerLaunched = true
+    if (request.isExternal) {
+      startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(request.source)))
+      finishWithoutAnimation()
+      return
+    }
     val playbackIntent = Intent(intent).apply {
       action = Intent.ACTION_VIEW
       data = Uri.parse(request.source)
@@ -233,6 +238,9 @@ class TorrentSelectionActivity : AppCompatActivity() {
       putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, request.file.index)
       putExtra(MediaUtils.EXTRA_TORRENT_PREPARATION_ID, request.preparationId)
       putExtra("is_audio", request.file.mimeType.startsWith("audio/"))
+      if (request.headers.isNotEmpty()) {
+        putExtra("headers", request.headers.entries.flatMap { listOf(it.key, it.value) }.toTypedArray())
+      }
     }
     startActivity(playbackIntent)
     // Keep this picker underneath the player so Back returns to the episode list instead of
