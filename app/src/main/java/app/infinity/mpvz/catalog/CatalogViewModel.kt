@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.lifecycle.ViewModelProvider
+import app.infinity.mpvz.catalog.nuvio.PluginRepository
 
 class CatalogViewModel(application: Application) : AndroidViewModel(application) {
   companion object {
@@ -38,6 +39,9 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private val cinemetaRepository = CinemetaCatalogRepository()
   private val stremioRepository = StremioCatalogRepository()
   private val resolver = CloudStreamResolver(settings)
+  private val nuvioPlugins = PluginRepository(application)
+  private val nuvioMetadata = app.infinity.mpvz.catalog.nuvio.TmdbMetadataRepository()
+  private val checkedNuvioMigrationUrls = mutableSetOf<String>()
   private val _state = MutableStateFlow(CatalogState())
   val state: StateFlow<CatalogState> = _state.asStateFlow()
   private var searchJob: Job? = null
@@ -52,16 +56,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     Log.i(TAG, "init sources=${_catalogSources.value.map { "${it.id}:${it.isEnabled}" }} resolvers=${_resolvers.value.map { "${it.baseUrl}:${it.enabled}" }}")
     syncCatalogResolvers(_catalogSources.value)
     loadTrending()
-    viewModelScope.launch {
-      val repository = stremioRepository
-      val named = _catalogSources.value.map { source ->
-        if (!source.id.startsWith("cinemeta-") && source.id != "kitsu-anime") source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
-      }
-      if (named != _catalogSources.value) {
-        settings.saveCatalogSources(named)
-        _catalogSources.value = named
-      }
-    }
+    viewModelScope.launch { migrateNuvioScraperRepositories() }
   }
 
   fun setQuery(query: String) {
@@ -143,6 +138,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     if (changed) {
       if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) }
     }
+    viewModelScope.launch { migrateNuvioScraperRepositories() }
   }
 
   fun showDetails(item: MediaItem) {
@@ -158,7 +154,9 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       )
     }
     viewModelScope.launch {
-      val metadata = runCatching { resolver.loadMetadata(item) }.getOrNull() ?: item
+      val metadata = runCatching { nuvioMetadata.load(item, nuvioPlugins.tmdbApiKey()) }.getOrNull()
+        ?: runCatching { resolver.loadMetadata(item) }.getOrNull()
+        ?: item
       val completedItem = if (metadata.type == MediaType.TV && metadata.seasons.isEmpty()) {
         val seasons = runCatching { resolver.loadSeasons(metadata) }.getOrDefault(emptyList())
         if (seasons.isEmpty()) metadata else metadata.copy(seasons = seasons)
@@ -176,7 +174,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null) {
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode) }
-      runCatching { resolver.resolve(item, season, episode) }
+      runCatching { nuvioPlugins.resolve(item, season, episode) }
         .onSuccess { streams ->
           val directHttpsStreams = streams
             .filter { it.isPlayable && it.url.startsWith("https://", ignoreCase = true) && !it.isExternal }
@@ -185,7 +183,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
             it.copy(
               streamOptions = directHttpsStreams,
               streamTitle = item.title,
-              error = if (directHttpsStreams.isEmpty()) "No direct HTTPS video links were returned by the enabled add-ons." else null,
+              error = if (directHttpsStreams.isEmpty()) "The enabled Nuvio providers returned no direct HTTPS video links for this title or episode." else null,
             )
           }
         }
@@ -280,6 +278,21 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
     loadTrending()
   }
+  private suspend fun migrateNuvioScraperRepositories() {
+    val candidates = settings.catalogSources()
+      .filterNot { it.id.startsWith("cinemeta-") || it.id == "kitsu-anime" }
+      .filter { checkedNuvioMigrationUrls.add(it.manifestUrl) }
+    if (candidates.isEmpty()) return
+    val migrated = candidates.filter { nuvioPlugins.importIfNuvioRepository(it.manifestUrl) }
+    if (migrated.isEmpty()) return
+    val remaining = settings.catalogSources().filterNot { source -> migrated.any { it.manifestUrl.equals(source.manifestUrl, true) } }
+    settings.saveCatalogSources(remaining)
+    _catalogSources.value = remaining
+    syncCatalogResolvers(remaining)
+    if (_state.value.query.isBlank()) loadTrending() else runSearch(_state.value.query)
+    Log.i(TAG, "Migrated ${migrated.size} Nuvio scraper repository URL(s) from Stremio catalogs")
+  }
+
   fun retry() { if (_state.value.query.isBlank()) loadTrending() else viewModelScope.launch { runSearch(_state.value.query) } }
   suspend fun refreshAll() {
     searchJob?.cancel()

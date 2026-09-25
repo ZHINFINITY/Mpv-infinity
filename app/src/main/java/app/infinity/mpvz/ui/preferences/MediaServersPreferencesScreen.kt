@@ -842,10 +842,7 @@ object MediaServersPreferencesScreen : Screen {
           }
 
           item {
-            NuvioAddonsPreferenceCard(
-              sources = catalogSources,
-              onSourcesChanged = catalogViewModel::saveCatalogSources,
-            )
+            NuvioAddonsPreferenceCard()
           }
         }
       }

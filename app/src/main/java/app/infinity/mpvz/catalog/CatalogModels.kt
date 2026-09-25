@@ -22,6 +22,7 @@ data class MediaItem(
   val overview: String,
   val posterUrl: String?,
   val backdropUrl: String?,
+  val tmdbId: Int? = null,
   val imdbId: String? = null,
   val seasons: List<Season> = emptyList(),
   val provider: CatalogProvider = CatalogProvider.CINEMETA,

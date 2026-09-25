@@ -279,6 +279,7 @@ dependencies {
   implementation(libs.kotlinx.immutable.collections)
   implementation(libs.kotlinx.serialization.json)
   implementation(libs.okhttp)
+  implementation(files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
   implementation(libs.retrofit)
   implementation(libs.retrofit.kotlinx.serialization)
   implementation(libs.coil.compose)

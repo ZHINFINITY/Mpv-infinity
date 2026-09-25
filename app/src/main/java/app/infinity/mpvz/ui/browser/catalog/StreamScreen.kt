@@ -42,6 +42,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -88,6 +90,9 @@ import app.infinity.mpvz.utils.media.MediaUtils
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import kotlinx.serialization.Serializable
 
 private const val HERO_AUTO_SCROLL_INTERVAL_MS = 8_000L
@@ -113,6 +118,7 @@ object StreamScreen : Screen {
     var genreFilter by rememberSaveable { mutableStateOf("All") }
     val streamListState = rememberLazyListState()
     val refreshScope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
     var isRefreshing by remember { mutableStateOf(false) }
     val searchActive = isSearching || state.query.isNotBlank()
 
@@ -196,31 +202,35 @@ object StreamScreen : Screen {
       topBar = {
         TopAppBar(
           title = {
-            if (searchActive) {
-              InlineSearchBar(
-                query = state.query,
-                onQueryChange = viewModel::setQuery,
-                onSearch = viewModel::setQuery,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                inputFieldModifier = Modifier.height(48.dp),
+            if (searchActive && state.selectedItem == null) {
+              OutlinedTextField(
+                value = state.query,
+                onValueChange = viewModel::setQuery,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
                 placeholder = { Text("Search movies and series") },
-                leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search", modifier = Modifier.size(20.dp)) },
-                tonalElevation = 0.dp,
-                windowInsets = androidx.compose.foundation.layout.WindowInsets(0.dp),
+                leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = "Search", modifier = Modifier.size(20.dp)) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) }),
               )
             } else {
               Column {
-                Text(if (browseRail == null) "Stream" else "Browse", fontWeight = FontWeight.Bold)
-                if (browseRail == null) Text("Movies, series and add-on catalogs", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(state.selectedItem?.title ?: if (browseRail == null) "Stream" else "Browse", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (state.selectedItem == null && browseRail == null) Text("Movies, series and provider catalogs", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
               }
             }
           },
           navigationIcon = {
             IconButton(onClick = {
-              if (browseRail != null) browseRail = null else backstack.popSafely()
+              when {
+                state.selectedItem != null -> viewModel.closeDetails()
+                browseRail != null -> browseRail = null
+                else -> backstack.popSafely()
+              }
             }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") }
           },
           actions = {
+            if (state.selectedItem == null) {
             IconButton(onClick = {
               if (searchActive) {
                 isSearching = false
@@ -232,13 +242,27 @@ object StreamScreen : Screen {
             IconButton(onClick = { backstack.add(MediaServersPreferencesScreen) }) {
               Icon(Icons.RoundedFilled.Settings, "Add-on settings")
             }
+            }
           },
           colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
         )
       },
     ) { padding ->
       Box(Modifier.fillMaxSize().padding(padding)) {
-        LazyColumn(
+        if (state.selectedItem != null) {
+          CatalogDetailsPage(
+            item = state.selectedItem!!,
+            selectedSeason = state.selectedSeason,
+            streams = state.streamOptions,
+            isLoading = state.resolvingId == state.selectedItem?.id,
+            error = state.error,
+            onBack = viewModel::closeDetails,
+            onChooseSeason = viewModel::selectSeason,
+            onFindMovieStreams = { viewModel.resolve(state.selectedItem!!) },
+            onChooseEpisode = { season, episode -> viewModel.resolve(state.selectedItem!!, season, episode) },
+            onPlay = viewModel::playStream,
+          )
+        } else LazyColumn(
           state = streamListState,
           modifier = Modifier.fillMaxSize(),
           contentPadding = PaddingValues(bottom = 104.dp),
@@ -357,20 +381,6 @@ object StreamScreen : Screen {
       }
     }
 
-    state.selectedItem?.let { item ->
-      CatalogDetailsSheet(
-        item = item,
-        selectedSeason = state.selectedSeason,
-        streams = state.streamOptions,
-        isLoading = state.resolvingId == item.id,
-        error = state.error,
-        onDismiss = viewModel::closeDetails,
-        onChooseSeason = viewModel::selectSeason,
-        onFindMovieStreams = { viewModel.resolve(item) },
-        onChooseEpisode = { season, episode -> viewModel.resolve(item, season, episode) },
-        onPlay = viewModel::playStream,
-      )
-    }
   }
 }
 
