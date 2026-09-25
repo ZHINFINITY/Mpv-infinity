@@ -150,6 +150,7 @@ class TorrentSelectionActivity : AppCompatActivity() {
                 onSeasonSelect = { season -> viewModel.selectSeason(season) },
                 onEpisodeSelect = { season, episode -> selectedEpisodeRequest = season to episode },
                 onShowEpisodeList = viewModel::showEpisodeList,
+                isResolver = resolverItem != null && source.isNullOrBlank(),
                 isDownloadable = { index -> (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { !it.isExternal && (it.source.startsWith("http://") || it.source.startsWith("https://")) } == true },
                 onDownload = { index ->
                   (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { input ->
