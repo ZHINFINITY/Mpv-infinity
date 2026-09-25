@@ -100,20 +100,6 @@ private fun TorrentReadyScreen(
   BackHandler { onBack() }
   val artwork = state.artwork
   val browser = state.episodeBrowser
-  if (browser != null && state.showEpisodeList) {
-    EpisodeBrowser(
-      state = state,
-      artwork = artwork,
-      browser = browser,
-      onSelect = onSelect,
-      onEpisodeSelect = onEpisodeSelect,
-      onSeasonSelect = onSeasonSelect,
-      isDownloadable = isDownloadable,
-      onDownload = onDownload,
-      onBack = onBack,
-    )
-    return
-  }
   val hasBackdrop = !artwork.backdropUrl.isNullOrBlank()
   val context = LocalContext.current
   val viewedPreferences =
@@ -182,9 +168,6 @@ private fun TorrentReadyScreen(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.weight(1f),
           )
-          if (browser != null) {
-            TextButton(onClick = onShowEpisodeList) { Text("Episodes") }
-          }
           if (state.launchingFileIndex != null) {
             CircularProgressIndicator(
               modifier =
@@ -196,6 +179,18 @@ private fun TorrentReadyScreen(
           }
         }
 
+        if (browser != null && state.showEpisodeList) {
+          EpisodeBrowser(
+            state = state,
+            artwork = artwork,
+            browser = browser,
+            onSelect = onSelect,
+            onEpisodeSelect = onEpisodeSelect,
+            onSeasonSelect = onSeasonSelect,
+            isDownloadable = isDownloadable,
+            onDownload = onDownload,
+          )
+        } else {
         // Hero banner + metadata
         if (hasBackdrop || artwork.title.isNotBlank()) {
           TorrentHeroBanner(artwork)
@@ -384,6 +379,7 @@ private fun TorrentReadyScreen(
             item { Spacer(modifier = Modifier.height(16.dp)) }
           }
         }
+        }
       }
     }
   }
@@ -399,19 +395,9 @@ private fun EpisodeBrowser(
   onSeasonSelect: (Int) -> Unit,
   isDownloadable: (Int) -> Boolean,
   onDownload: (Int) -> Unit,
-  onBack: () -> Unit,
 ) {
-  Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-    Column(modifier = Modifier.fillMaxSize()) {
-      Row(
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        IconButton(onClick = onBack) { Icon(Icons.RoundedFilled.ArrowBack, contentDescription = "Back") }
-        Text("Choose an episode", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        if (browser.isResolving) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-      }
-      ResolverEpisodeHeader(artwork)
+  Column(modifier = Modifier.fillMaxWidth()) {
+    ResolverEpisodeHeader(artwork)
       LazyRow(
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
