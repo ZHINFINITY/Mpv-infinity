@@ -80,6 +80,8 @@ data class StreamOption(
   val isExternal: Boolean = false,
   val season: Int? = null,
   val episode: Int? = null,
+  /** Used only by the Network torrent picker; direct Stream providers never populate it. */
+  val torrentFileIndex: Int? = null,
 )
 
 /** Removes private add-on configuration and credentials before text reaches logcat. */
