@@ -166,12 +166,18 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
           }
         }
       }
+    } else if (item.type != MediaType.TV) {
+      resolve(item)
     }
+  }
+
+  fun selectSeason(season: Int) {
+    _state.update { it.copy(selectedSeason = season, selectedEpisode = null, streamOptions = emptyList(), streamTitle = null, error = null) }
   }
 
   fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null) {
     viewModelScope.launch {
-      _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode) }
+      _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode, streamOptions = emptyList(), streamTitle = null) }
       runCatching { resolver.resolve(item, season, episode) }
         .onSuccess { streams -> _state.update { it.copy(streamOptions = streams, streamTitle = item.title, error = if (streams.isEmpty()) "The resolver returned HTTP 200 but no streams for this type/ID. Check that its manifest supports ${item.type.name.lowercase()} and the selected provider ID." else null) } }
         .onFailure { error -> _state.update { it.copy(error = error.message ?: "Unable to resolve stream") } }
