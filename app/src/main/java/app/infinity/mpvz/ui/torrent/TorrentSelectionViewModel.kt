@@ -27,6 +27,8 @@ import java.net.URI
 data class TorrentSelectionInput(
   val source: String,
   val headers: Map<String, String> = emptyMap(),
+  val filename: String? = null,
+  val isExternal: Boolean = false,
   val title: String? = null,
   val description: String? = null,
   val posterUrl: String? = null,
@@ -75,6 +77,8 @@ data class TorrentSelectionLaunch(
   val source: String,
   val file: TorrentFileItem,
   val preparationId: String,
+  val headers: Map<String, String> = emptyMap(),
+  val isExternal: Boolean = false,
 )
 
 class TorrentSelectionViewModel(
@@ -108,12 +112,15 @@ class TorrentSelectionViewModel(
     val files = streams.mapIndexed { index, stream ->
       val episodePrefix = stream.season?.let { season -> stream.episode?.let { episode -> "S%02dE%02d ".format(season, episode) } }.orEmpty()
       val providerPrefix = stream.source?.takeIf { it.isNotBlank() }?.let { "[$it] " }.orEmpty()
-      TorrentFileItem(index, "$episodePrefix$providerPrefix${stream.title}", "$episodePrefix$providerPrefix${stream.title}", parseResolverSize(stream.size), "video/x-matroska")
+      val displayName = stream.filename?.takeIf { it.isNotBlank() } ?: "$episodePrefix$providerPrefix${stream.title}"
+      TorrentFileItem(index, displayName, displayName, parseResolverSize(stream.size), stream.mimeType ?: "video/x-matroska")
     }
     val resolverInputs = streams.mapIndexed { index, stream ->
       index to value.copy(
         source = stream.url,
         headers = stream.headers,
+        filename = stream.filename,
+        isExternal = stream.isExternal,
         season = stream.season ?: value.season,
         episode = stream.episode ?: value.episode,
         fileIndex = stream.torrentFileIndex,
@@ -154,7 +161,7 @@ class TorrentSelectionViewModel(
     if (ready.launchingFileIndex != null) return
     val file = ready.catalog.playableFiles.firstOrNull { it.index == fileIndex } ?: return
     ready.resolverInputs[fileIndex]?.let { resolverInput ->
-      if (resolverInput.source.startsWith("http://") || resolverInput.source.startsWith("https://")) launchDirect(resolverInput, file)
+      if (resolverInput.isExternal || resolverInput.source.startsWith("http://") || resolverInput.source.startsWith("https://")) launchDirect(resolverInput, file)
       else open(resolverInput)
     } ?: launch(ready.catalog, file)
   }
@@ -165,7 +172,7 @@ class TorrentSelectionViewModel(
     _uiState.value = ready.copy(launchingFileIndex = file.index, isLookingUpArtwork = false)
     handedToPlayer = true
     activePreparationId = null
-    launchChannel.trySend(TorrentSelectionLaunch(source = input.source, file = file, preparationId = ""))
+    launchChannel.trySend(TorrentSelectionLaunch(source = input.source, file = file, preparationId = "", headers = input.headers, isExternal = input.isExternal))
   }
 
   fun cancel() {

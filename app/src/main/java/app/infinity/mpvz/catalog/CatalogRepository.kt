@@ -535,6 +535,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     return candidates.flatMap { candidate ->
       val clean = sanitizeUrl(candidate.url)
       when {
+        candidate.isExternal -> listOf(candidate.copy(url = clean, isPlayable = false))
         clean.startsWith("stremio://") -> resolveStremioResource(clean, candidate.title, depth)
         clean.startsWith("magnet:", ignoreCase = true) ||
           (clean.isNotBlank() && isPlayableRemoteStream(clean)) -> {
@@ -603,41 +604,45 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
 
   private fun parseCandidate(element: JsonElement): List<StreamOption> = when (element) {
     is JsonPrimitive -> listOf(StreamOption(element.content, "Stream", qualityRank = qualityRank(element.content)))
-    is JsonObject -> listOfNotNull(
-      (element["url"] ?: element["externalUrl"] ?: element["stream"] ?: element["magnet"])
-        ?.jsonPrimitive?.content?.let { url ->
-          val title = element["title"]?.jsonPrimitive?.content ?: element["name"]?.jsonPrimitive?.content ?: "Stream"
-          StreamOption(
-            url = url,
-            title = title,
-            qualityRank = qualityRank("$title $url"),
-            seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
-            size = element["size"]?.jsonPrimitive?.content,
-            source = (element["source"] ?: element["provider"] ?: element["addon"] ?: element["addonName"])?.jsonPrimitive?.contentOrNull,
-            audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
-            videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
-            torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
-            season = element["season"]?.jsonPrimitive?.intOrNull,
-            episode = element["episode"]?.jsonPrimitive?.intOrNull,
-          )
-        }
-        ?: element["infoHash"]?.jsonPrimitive?.content?.let { hash ->
-          val title = element["title"]?.jsonPrimitive?.content ?: element["name"]?.jsonPrimitive?.content ?: "Torrent"
-          StreamOption(
-            url = "magnet:?xt=urn:btih:${hash.trim()}",
-            title = title,
-            qualityRank = qualityRank("$title ${element["title"]?.jsonPrimitive?.content.orEmpty()}"),
-            seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
-            size = element["size"]?.jsonPrimitive?.content,
-            source = (element["source"] ?: element["provider"] ?: element["addon"] ?: element["addonName"])?.jsonPrimitive?.contentOrNull,
-            audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
-            videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
-            torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
-            season = element["season"]?.jsonPrimitive?.intOrNull,
-            episode = element["episode"]?.jsonPrimitive?.intOrNull,
-          )
-        },
-    )
+    is JsonObject -> {
+      val title = element["title"]?.jsonPrimitive?.content
+        ?: element["name"]?.jsonPrimitive?.content
+        ?: "Stream"
+      val hints = element["behaviorHints"] as? JsonObject
+      val requestHeaders = ((hints?.get("proxyHeaders") as? JsonObject)?.get("request") as? JsonObject)
+        ?.mapNotNull { (name, value) -> value.jsonPrimitive.contentOrNull?.let { name to it } }
+        ?.toMap()
+        .orEmpty()
+      val filename = hints?.get("filename")?.jsonPrimitive?.contentOrNull
+      val externalUrl = element["externalUrl"]?.jsonPrimitive?.contentOrNull
+      val directUrl = (element["url"] ?: element["stream"] ?: element["magnet"])?.jsonPrimitive?.contentOrNull
+      val common = { url: String, external: Boolean, playable: Boolean ->
+        StreamOption(
+          url = url,
+          title = title,
+          headers = requestHeaders,
+          filename = filename,
+          isPlayable = playable,
+          isExternal = external,
+          qualityRank = qualityRank("$title $url"),
+          seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
+          size = element["size"]?.jsonPrimitive?.content,
+          source = (element["source"] ?: element["provider"] ?: element["addon"] ?: element["addonName"])?.jsonPrimitive?.contentOrNull,
+          audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
+          videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
+          torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
+          season = element["season"]?.jsonPrimitive?.intOrNull,
+          episode = element["episode"]?.jsonPrimitive?.intOrNull,
+        )
+      }
+      listOfNotNull(
+        directUrl?.let { common(it, external = false, playable = it.startsWith("magnet:", true) || isPlayableRemoteStream(it)) }
+          ?: externalUrl?.let { common(it, external = true, playable = false) }
+          ?: element["infoHash"]?.jsonPrimitive?.contentOrNull?.let { hash ->
+            common("magnet:?xt=urn:btih:${hash.trim()}", external = false, playable = true)
+          },
+      )
+    }
     else -> emptyList()
   }
 
