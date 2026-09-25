@@ -63,7 +63,7 @@ data class TorrentArtwork(
   val seasons: List<app.infinity.mpvz.catalog.Season> = emptyList(),
 )
 
-data class EpisodeBrowserState(
+data class ResolverChooserState(
   val seasons: List<Season>,
   val selectedSeason: Int? = null,
   val selectedEpisode: Episode? = null,
@@ -80,8 +80,7 @@ sealed interface TorrentSelectionUiState {
     val isLookingUpArtwork: Boolean,
     val launchingFileIndex: Int? = null,
     val resolverInputs: Map<Int, TorrentSelectionInput> = emptyMap(),
-    val episodeBrowser: EpisodeBrowserState? = null,
-    val showEpisodeList: Boolean = false,
+    val resolverChooser: ResolverChooserState? = null,
   ) : TorrentSelectionUiState
 
   data class Error(
@@ -176,46 +175,44 @@ class TorrentSelectionViewModel(
         seasons = seasons,
       ),
       isLookingUpArtwork = false,
-      episodeBrowser = EpisodeBrowserState(seasons = seasons, selectedSeason = seasons.firstOrNull()?.number),
-      showEpisodeList = true,
+      resolverChooser = ResolverChooserState(seasons = seasons, selectedSeason = seasons.firstOrNull()?.number),
     )
   }
 
   fun updateResolverBrowserSeasons(seasons: List<Season>) {
     val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
-    val browser = ready.episodeBrowser ?: return
+    val browser = ready.resolverChooser ?: return
     if (seasons.isEmpty()) return
     val selected = browser.selectedSeason?.takeIf { number -> seasons.any { it.number == number } } ?: seasons.first().number
     _uiState.value = ready.copy(
       artwork = ready.artwork.copy(seasons = seasons),
-      episodeBrowser = browser.copy(seasons = seasons, selectedSeason = selected, error = null),
+      resolverChooser = browser.copy(seasons = seasons, selectedSeason = selected, error = null),
     )
   }
 
   fun setEpisodeResolving(season: Int, episode: Episode) {
     val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
-    val browser = ready.episodeBrowser ?: return
+    val browser = ready.resolverChooser ?: return
     _uiState.value = ready.copy(
-      episodeBrowser = browser.copy(selectedSeason = season, selectedEpisode = episode, isResolving = true, error = null),
-      showEpisodeList = true,
+      resolverChooser = browser.copy(selectedSeason = season, selectedEpisode = episode, isResolving = true, error = null),
     )
   }
 
   fun setEpisodeError(message: String) {
     val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
-    val browser = ready.episodeBrowser ?: return
-    _uiState.value = ready.copy(episodeBrowser = browser.copy(isResolving = false, error = message), showEpisodeList = true)
+    val browser = ready.resolverChooser ?: return
+    _uiState.value = ready.copy(resolverChooser = browser.copy(isResolving = false, error = message))
   }
 
   fun selectSeason(season: Int) {
     val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
-    val browser = ready.episodeBrowser ?: return
-    _uiState.value = ready.copy(episodeBrowser = browser.copy(selectedSeason = season, selectedEpisode = null, error = null), showEpisodeList = true)
+    val browser = ready.resolverChooser ?: return
+    _uiState.value = ready.copy(resolverChooser = browser.copy(selectedSeason = season, selectedEpisode = null, error = null))
   }
 
   fun showEpisodeResults(value: TorrentSelectionInput, streams: List<app.infinity.mpvz.catalog.StreamOption>) {
     val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
-    val browser = ready.episodeBrowser ?: return
+    val browser = ready.resolverChooser ?: return
     input = value
     if (streams.isEmpty()) {
       setEpisodeError("No links were returned for this episode.")
@@ -233,17 +230,8 @@ class TorrentSelectionViewModel(
       catalog = TorrentCatalog("resolver", "", "resolver", value.title ?: "Episode links", files),
       artwork = ready.artwork.copy(season = value.season, episode = value.episode, episodeTitle = value.episodeTitle, episodeOverview = value.episodeOverview, episodeThumbnail = value.episodeThumbnail),
       resolverInputs = resolverInputs,
-      episodeBrowser = browser.copy(isResolving = false, error = null),
-      // Keep the existing chooser visible: the selected episode and its links are shown
-      // together in the same scrollable screen.
-      showEpisodeList = true,
+      resolverChooser = browser.copy(isResolving = false, error = null),
     )
-  }
-
-  fun showEpisodeList() {
-    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
-    val browser = ready.episodeBrowser ?: return
-    _uiState.value = ready.copy(showEpisodeList = true, episodeBrowser = browser.copy(isResolving = false, error = null), catalog = ready.catalog.copy(playableFiles = emptyList()), resolverInputs = emptyMap())
   }
 
   /** Opens a new torrent in the same picker host, replacing any previous picker session. */
