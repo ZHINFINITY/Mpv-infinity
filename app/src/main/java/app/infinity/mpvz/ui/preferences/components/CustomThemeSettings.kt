@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.preferences.components
 
 import android.content.Context
+import android.graphics.Color as AndroidColor
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -169,8 +170,10 @@ private fun CustomThemeEditor(
   var fitMode by remember(initial.id) { mutableStateOf(initial.fitMode) }
   var aspectMode by remember(initial.id) { mutableStateOf(initial.aspectMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
+  var textColorHex by remember(initial.id) { mutableStateOf("#%08X".format(initial.onBackgroundArgb)) }
   var showEditor by remember(initial.id) { mutableStateOf(false) }
-  val edited = initial.copy(name = name, overlay = overlay, blur = blur, brightness = brightness, saturation = saturation, visibility = visibility, surfaceOpacity = surfaceOpacity, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
+  val textColorArgb = runCatching { AndroidColor.parseColor(textColorHex.trim().let { if (it.startsWith("#")) it else "#$it" }) }.getOrNull()
+  val edited = initial.copy(name = name, overlay = overlay, blur = blur, brightness = brightness, saturation = saturation, visibility = visibility, surfaceOpacity = surfaceOpacity, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted, onBackgroundArgb = textColorArgb ?: initial.onBackgroundArgb)
   fun resetVisualSettings() {
     overlay = initial.overlay.coerceIn(0f, 0.65f)
     blur = initial.blur.coerceIn(0f, 24f)
@@ -184,6 +187,7 @@ private fun CustomThemeEditor(
     fitMode = initial.fitMode
     aspectMode = initial.aspectMode
     muted = initial.muted
+    textColorHex = "#%08X".format(initial.onBackgroundArgb)
   }
   androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
@@ -242,6 +246,19 @@ private fun CustomThemeEditor(
         ThemeAdjustmentSlider("Media transparency", visibility, 0.15f..1f, { visibility = it })
         ThemeAdjustmentSlider("Dim overlay", overlay, 0f..0.65f, { overlay = it })
         ThemeAdjustmentSlider("Panel opacity", surfaceOpacity, 0.55f..1f, { surfaceOpacity = it })
+        Text("Custom text colour", style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+          Box(Modifier.size(34.dp).clip(MaterialTheme.shapes.small).background(androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb)))
+          OutlinedTextField(
+            value = textColorHex,
+            onValueChange = { textColorHex = it.take(9) },
+            label = { Text("ARGB hex") },
+            placeholder = { Text("#FFFFFFFF") },
+            singleLine = true,
+            isError = textColorArgb == null,
+            modifier = Modifier.weight(1f),
+          )
+        }
         if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
           }
           }

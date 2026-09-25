@@ -333,19 +333,38 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             !item.catalogType.isNullOrBlank() -> listOf(item.catalogType)
             else -> listOf(null)
           }
-          val identifiers = if (item.provider == CatalogProvider.KITSU) {
-            listOfNotNull(item.providerId, item.imdbId, item.id.toString()).distinct()
-          } else if (item.type == MediaType.TV) {
-            addonEpisodeIds(endpoint.baseUrl, item, season, episode).ifEmpty { listOf(null) }
-          } else listOf(null)
           types.flatMap { type ->
             // Addon episode IDs are independent requests. Running them concurrently makes the
             // episode picker responsive without dropping any real seasons or episodes.
+            val identifiers: List<Pair<String?, Boolean>> = if (item.provider == CatalogProvider.KITSU) {
+              val fallback = listOfNotNull(item.providerId, item.imdbId, item.id.toString()).distinct()
+              // Anime catalog IDs are not necessarily the IDs accepted by an addon's stream route.
+              // Stremio anime add-ons commonly expose concrete episode resource IDs in /meta/*;
+              // probe those IDs first, then retain Kitsu/IMDb fallbacks for direct resolvers.
+              if (item.type == MediaType.TV) {
+                val episodeIds = addonEpisodeIds(endpoint.baseUrl, item, season, episode, type)
+                if (episodeIds.isNotEmpty()) episodeIds.map { it to true }
+                else fallback.map { it to false }
+              } else {
+                fallback.map { it to false }
+              }
+            } else if (item.type == MediaType.TV) {
+              addonEpisodeIds(endpoint.baseUrl, item, season, episode, type).ifEmpty { listOf(null) }
+                .map { it to (it != null) }
+            } else listOf(null to false)
             coroutineScope {
-              identifiers.map { identifier ->
+              identifiers.map { (identifier, isEpisodeId) ->
                 async {
-                  val episodeRequest = item.provider != CatalogProvider.KITSU && identifier != null
-                  runCatching { resolveFromEndpoint(endpoint.baseUrl, item, if (episodeRequest) null else season, if (episodeRequest) null else episode, type, identifier) }
+                  runCatching {
+                    resolveFromEndpoint(
+                      endpoint.baseUrl,
+                      item,
+                      if (isEpisodeId) null else season,
+                      if (isEpisodeId) null else episode,
+                      type,
+                      identifier,
+                    )
+                  }
                     .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
                     .getOrDefault(emptyList())
                 }
@@ -361,9 +380,9 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     }
   }
 
-  private fun addonEpisodeIds(baseUrl: String, item: MediaItem, season: Int?, episode: Int?): List<String> {
+  private fun addonEpisodeIds(baseUrl: String, item: MediaItem, season: Int?, episode: Int?, typeOverride: String? = null): List<String> {
     val id = item.providerId?.takeIf { it.isNotBlank() } ?: return emptyList()
-    val type = item.catalogType ?: "series"
+    val type = typeOverride ?: item.catalogType ?: "series"
     val url = "${baseUrl.trimEnd('/').removeSuffix("/manifest.json")}/meta/$type/$id.json"
     return runCatching {
       client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
