@@ -337,10 +337,14 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
           val types = requestedTypes.filter { type ->
             type == null || capabilities == null || capabilities.types.isEmpty() || type in capabilities.types
           }
-          if (capabilities != null && types.isEmpty()) {
-            Log.w("CloudStreamResolver", "Skipping endpoint=${endpoint.baseUrl}: manifest types=${capabilities.types} does not support requested=${requestedTypes.filterNotNull()}")
+          val identifiersForManifest = listOfNotNull(item.imdbId, item.providerId, item.id.toString())
+          val idCompatible = capabilities == null || capabilities.idPrefixes.isEmpty() || identifiersForManifest.any { identifier ->
+            capabilities.idPrefixes.any { prefix -> identifier.startsWith(prefix, ignoreCase = true) }
           }
-          types.flatMap { type ->
+          if (capabilities != null && (types.isEmpty() || !idCompatible)) {
+            Log.w("CloudStreamResolver", "Skipping endpoint=${endpoint.baseUrl}: manifest types=${capabilities.types} idPrefixes=${capabilities.idPrefixes} requestedTypes=${requestedTypes.filterNotNull()} identifiers=${identifiersForManifest}")
+          }
+          if (!idCompatible) emptyList() else types.flatMap { type ->
             // Addon episode IDs are independent requests. Running them concurrently makes the
             // episode picker responsive without dropping any real seasons or episodes.
             val identifiers: List<Pair<String?, Boolean>> = if (item.provider == CatalogProvider.KITSU) {
@@ -370,7 +374,9 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
                       if (isEpisodeId) null else episode,
                       type,
                       identifier,
-                    )
+                    ).map { stream ->
+                      stream.copy(source = stream.source?.takeIf { it.isNotBlank() } ?: endpoint.baseUrl.substringAfter("://").substringBefore('/'))
+                    }
                   }
                     .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
                     .getOrDefault(emptyList())
@@ -388,25 +394,28 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   }
 
   suspend fun loadSeasons(item: MediaItem): List<Season> = withContext(Dispatchers.IO) {
-    val endpoint = settings.resolvers().firstOrNull { it.enabled } ?: return@withContext emptyList()
     val identifier = item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: return@withContext emptyList()
-    val types = if (item.provider == CatalogProvider.KITSU) listOf("anime", "series") else listOf(item.catalogType ?: if (item.type == MediaType.TV) "series" else "movie")
-    types.asSequence().mapNotNull { type ->
-      runCatching {
-        val root = endpoint.baseUrl.trimEnd('/').removeSuffix("/manifest.json")
-        val url = "$root/meta/$type/$identifier.json"
-        client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
-          if (!response.isSuccessful) return@use null
-          val videos = json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty()
-          videos.mapNotNull { video ->
-            val value = video.jsonObject
-            val season = value["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-            val episode = value["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-            Season(season, listOf(Episode(episode, value["name"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "Episode $episode" }, value["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), value["thumbnail"]?.jsonPrimitive?.contentOrNull, value["runtime"]?.jsonPrimitive?.contentOrNull)))
+    settings.resolvers().filter { it.enabled }.flatMap { endpoint ->
+      val capabilities = manifestCapabilities(endpoint.baseUrl)
+      if (capabilities != null && capabilities.idPrefixes.isNotEmpty() && capabilities.idPrefixes.none { identifier.startsWith(it, ignoreCase = true) }) return@flatMap emptyList()
+      val types = if (item.provider == CatalogProvider.KITSU) listOf("anime", "series") else listOf(item.catalogType ?: if (item.type == MediaType.TV) "series" else "movie")
+      types.filter { capabilities == null || capabilities.types.isEmpty() || it in capabilities.types }.flatMap { type ->
+        runCatching {
+          val root = endpoint.baseUrl.trimEnd('/').removeSuffix("/manifest.json")
+          val url = "$root/meta/$type/$identifier.json"
+          client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
+            if (!response.isSuccessful) return@use emptyList()
+            val videos = json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty()
+            videos.mapNotNull { video ->
+              val value = video.jsonObject
+              val season = value["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+              val episode = value["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+              Season(season, listOf(Episode(episode, value["name"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "Episode $episode" }, value["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), value["thumbnail"]?.jsonPrimitive?.contentOrNull, value["runtime"]?.jsonPrimitive?.contentOrNull)))
+            }
           }
-        }
-      }.getOrNull()
-    }.flatten().groupBy { it.number }.map { (number, seasons) ->
+        }.getOrDefault(emptyList())
+      }
+    }.groupBy { it.number }.map { (number, seasons) ->
       Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number })
     }.sortedBy { it.number }
   }
@@ -584,7 +593,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             qualityRank = qualityRank("$title $url"),
             seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
             size = element["size"]?.jsonPrimitive?.content,
-            source = element["source"]?.jsonPrimitive?.content,
+            source = (element["source"] ?: element["provider"] ?: element["addon"] ?: element["addonName"])?.jsonPrimitive?.contentOrNull,
             audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
             videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
             torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
@@ -600,7 +609,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             qualityRank = qualityRank("$title ${element["title"]?.jsonPrimitive?.content.orEmpty()}"),
             seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
             size = element["size"]?.jsonPrimitive?.content,
-            source = element["source"]?.jsonPrimitive?.content,
+            source = (element["source"] ?: element["provider"] ?: element["addon"] ?: element["addonName"])?.jsonPrimitive?.contentOrNull,
             audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
             videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
             torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
