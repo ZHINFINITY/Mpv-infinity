@@ -70,7 +70,7 @@ internal object PluginRuntime {
       "episode" to (episode?.let(::JsonPrimitive) ?: JsonNull),
     )).toString()
     val dom = DomBridge()
-    try {
+    return try {
       val host = HostApiRegistry().apply {
         addModule(HostFunctions(scraperId = scraperId, scraperSettingsJson = scraperSettingsJson, tmdbApiKey = tmdbApiKey, callArgsJson = args) { result.complete(it) })
         addModule(FetchBridge())

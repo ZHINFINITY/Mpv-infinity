@@ -215,7 +215,7 @@ class PluginRepository(context: Context) {
 
   private fun loadState(): PluginsUiState {
     val stored = runCatching { json.decodeFromString<StoredState>(prefs.getString(KEY_STATE, "") ?: "") }.getOrNull() ?: return PluginsUiState()
-    val repos = stored.repositories
+    val repos = stored.repositories.map { PluginRepositoryItem(it.manifestUrl, it.name, it.description, it.version, it.scraperCount, it.lastUpdated) }
     val scrapers = stored.scrapers.mapNotNull { entry ->
       val file = codeFile(entry.id)
       if (!file.exists()) return@mapNotNull null
