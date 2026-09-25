@@ -234,7 +234,9 @@ class TorrentSelectionViewModel(
       artwork = ready.artwork.copy(season = value.season, episode = value.episode, episodeTitle = value.episodeTitle, episodeOverview = value.episodeOverview, episodeThumbnail = value.episodeThumbnail),
       resolverInputs = resolverInputs,
       episodeBrowser = browser.copy(isResolving = false, error = null),
-      showEpisodeList = false,
+      // Keep the existing chooser visible: the selected episode and its links are shown
+      // together in the same scrollable screen.
+      showEpisodeList = true,
     )
   }
 
