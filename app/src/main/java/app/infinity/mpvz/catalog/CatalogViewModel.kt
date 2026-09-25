@@ -123,7 +123,17 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       val more = result.getOrDefault(emptyList())
       val merged = (current.items + more).distinctBy { item -> "${item.catalogSourceId ?: item.provider}:${item.catalogId ?: ""}:${item.providerId ?: item.id}" }
       val added = merged.size > current.items.size
-      _state.update { it.copy(items = merged, catalogPage = if (result.isSuccess) nextPage else current.catalogPage, canLoadMore = if (result.isSuccess) added && more.isNotEmpty() else true, isLoadingMore = false, error = result.exceptionOrNull()?.message) }
+      _state.update {
+        it.copy(
+          items = merged,
+          catalogPage = if (result.isSuccess) nextPage else current.catalogPage,
+          // An empty page or a failed page must stop the near-end observer from
+          // immediately starting the same request forever (and leaving its spinner visible).
+          canLoadMore = result.isSuccess && added && more.isNotEmpty(),
+          isLoadingMore = false,
+          error = result.exceptionOrNull()?.message,
+        )
+      }
     }
   }
 

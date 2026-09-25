@@ -290,7 +290,9 @@ class CinemetaCatalogRepository {
             backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
             provider = CatalogProvider.CINEMETA,
             providerId = providerId,
+            imdbId = providerId.takeIf { it.startsWith("tt") },
             catalogSourceId = if (type == "series") "cinemeta-series" else "cinemeta-movies",
+            catalogType = type,
             seasons = seasons,
             genres = meta["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
           )
@@ -330,7 +332,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
         async {
           val capabilities = manifestCapabilities(endpoint.baseUrl)
           val requestedTypes = when {
-            item.provider == CatalogProvider.KITSU -> listOf("anime", "series", "movie")
+            item.provider == CatalogProvider.KITSU && item.type == MediaType.TV -> listOf("anime", "series")
+            item.provider == CatalogProvider.KITSU -> listOf("anime", "movie")
             !item.catalogType.isNullOrBlank() -> listOf(item.catalogType)
             else -> listOf(null)
           }
@@ -348,19 +351,19 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
             // Addon episode IDs are independent requests. Running them concurrently makes the
             // episode picker responsive without dropping any real seasons or episodes.
             val identifiers: List<Pair<String?, Boolean>> = if (item.provider == CatalogProvider.KITSU) {
-              val fallback = listOfNotNull(item.providerId, item.imdbId, item.id.toString()).distinct()
+              val fallback = resolverIdentifiers(item, capabilities)
               // Anime catalog IDs are not necessarily the IDs accepted by an addon's stream route.
               // Stremio anime add-ons commonly expose concrete episode resource IDs in /meta/*;
               // probe those IDs first, then retain Kitsu/IMDb fallbacks for direct resolvers.
               if (item.type == MediaType.TV) {
-                val episodeIds = addonEpisodeIds(endpoint.baseUrl, item, season, episode, type)
+                val episodeIds = addonEpisodeIds(endpoint.baseUrl, item, season, episode, type, resolverIdentifiers(item, capabilities).firstOrNull())
                 if (episodeIds.isNotEmpty()) episodeIds.map { it to true }
                 else fallback.map { it to false }
               } else {
                 fallback.map { it to false }
               }
             } else if (item.type == MediaType.TV) {
-              addonEpisodeIds(endpoint.baseUrl, item, season, episode, type).ifEmpty { listOf(null) }
+              addonEpisodeIds(endpoint.baseUrl, item, season, episode, type, resolverIdentifiers(item, capabilities).firstOrNull()).ifEmpty { listOf(null) }
                 .map { it to (it != null) }
             } else listOf(null to false)
             coroutineScope {
@@ -422,6 +425,13 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
 
   private data class ResolverCapabilities(val types: Set<String>, val idPrefixes: Set<String>)
 
+  private fun resolverIdentifiers(item: MediaItem, capabilities: ResolverCapabilities?): List<String> {
+    val values = listOfNotNull(item.imdbId, item.providerId).distinct()
+    val prefixes = capabilities?.idPrefixes.orEmpty()
+    val compatible = if (prefixes.isEmpty()) values else values.filter { value -> prefixes.any { value.startsWith(it, ignoreCase = true) } }
+    return (compatible + if (prefixes.isEmpty()) listOf(item.id.toString()) else emptyList()).distinct()
+  }
+
   private suspend fun manifestCapabilities(baseUrl: String): ResolverCapabilities? = withContext(Dispatchers.IO) {
     val root = baseUrl.trimEnd('/').removeSuffix("/manifest.json")
     runCatching {
@@ -436,8 +446,8 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     }.getOrNull()
   }
 
-  private fun addonEpisodeIds(baseUrl: String, item: MediaItem, season: Int?, episode: Int?, typeOverride: String? = null): List<String> {
-    val id = item.providerId?.takeIf { it.isNotBlank() } ?: return emptyList()
+  private fun addonEpisodeIds(baseUrl: String, item: MediaItem, season: Int?, episode: Int?, typeOverride: String? = null, identifierOverride: String? = null): List<String> {
+    val id = identifierOverride ?: item.providerId?.takeIf { it.isNotBlank() } ?: return emptyList()
     val type = typeOverride ?: item.catalogType ?: "series"
     val url = "${baseUrl.trimEnd('/').removeSuffix("/manifest.json")}/meta/$type/$id.json"
     return runCatching {
@@ -512,7 +522,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
       is JsonObject -> parseCandidate(element)
       else -> parseCandidate(element)
     }
-    return candidates.mapNotNull { candidate ->
+    return candidates.flatMap { candidate ->
       val clean = sanitizeUrl(candidate.url)
       when {
         clean.startsWith("stremio://") -> resolveStremioResource(clean, candidate.title, depth)
@@ -524,10 +534,10 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
           val playableUrl = if (clean.contains("hentaistream-addon.") && clean.contains("/video-proxy?")) {
             validatedHentaiStreamUrl(clean)
           } else clean
-          if (playableUrl == null) return@mapNotNull null
-          candidate.copy(url = playableUrl, isPlayable = playableUrl.startsWith("magnet:", ignoreCase = true) || isPlayableRemoteStream(playableUrl))
+          if (playableUrl == null) emptyList()
+          else listOf(candidate.copy(url = playableUrl, isPlayable = playableUrl.startsWith("magnet:", ignoreCase = true) || isPlayableRemoteStream(playableUrl)))
         }
-        else -> null
+        else -> emptyList()
       }
     }.sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
   }
@@ -635,13 +645,13 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
 
   private fun sanitizeUrl(value: String): String = value.trim().removeSurrounding("[").removeSurrounding("]").trim('"', '\'', ' ', '\n', '\r', '\t')
 
-  private fun resolveStremioResource(url: String, title: String, depth: Int): StreamOption? {
+  private fun resolveStremioResource(url: String, title: String, depth: Int): List<StreamOption> {
     require(depth < 2) { "Stremio resolver returned too many nested resources." }
     val resourceUrl = url.replaceFirst("stremio://", "https://")
     val request = Request.Builder().url(resourceUrl).build()
     return client.newCall(request).execute().use { response ->
       if (!response.isSuccessful) error("Stremio resource request failed (${response.code})")
-      parseStreams(json.parseToJsonElement(response.body.string()), depth + 1).firstOrNull()?.copy(title = title)
+      parseStreams(json.parseToJsonElement(response.body.string()), depth + 1).map { it.copy(title = title) }
     }
   }
 }
