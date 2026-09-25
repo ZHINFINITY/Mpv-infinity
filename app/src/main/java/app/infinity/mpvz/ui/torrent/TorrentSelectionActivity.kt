@@ -102,9 +102,10 @@ class TorrentSelectionActivity : AppCompatActivity() {
       val state by viewModel.uiState.collectAsState()
       LaunchedEffect(viewModel) { viewModel.launches.collect(::openPlayer) }
       MpvInfinityTheme {
+        var selectedEpisodeRequest by remember { mutableStateOf<Pair<Int, Episode>?>(null) }
+        val resolver = remember { CloudStreamResolver(app.infinity.mpvz.catalog.CatalogSettings(applicationContext)) }
         LaunchedEffect(resolverItem) {
           if (resolverItem != null && source.isNullOrBlank()) {
-            val resolver = CloudStreamResolver(app.infinity.mpvz.catalog.CatalogSettings(applicationContext))
             val completeSeasons = if (resolverItem.type == MediaType.TV && !resolverItem.providerId.isNullOrBlank()) {
               (resolverItem.seasons + runCatching { resolver.loadSeasons(resolverItem) }.getOrDefault(emptyList()) + runCatching { CinemetaCatalogRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList()))
                 .groupBy { it.number }
@@ -113,64 +114,35 @@ class TorrentSelectionActivity : AppCompatActivity() {
             } else {
               resolverItem.seasons
             }
-            val completeItem = resolverItem.copy(seasons = completeSeasons)
-            val resolvedStreams = if (completeItem.type == MediaType.MOVIE) {
-              resolver.resolve(completeItem, null, null)
+            if (resolverItem.type == MediaType.TV) {
+              viewModel.initializeResolverBrowser(torrentInput("", intent, resolverItem), completeSeasons)
             } else {
-              // HentaiStream exposes its concrete episode IDs through the addon metadata
-              // request made by resolve(item, null, null). The catalog season numbers alone
-              // are not valid HentaiStream resource IDs, so per-episode probing can return 0.
-              val metadataResults = runCatching { resolver.resolve(completeItem, null, null) }
-                .getOrDefault(emptyList())
-              // Addons commonly rate-limit or serialize stream generation. Fanning out every
-              // episode at once produces successful HTTP 200 responses with empty streams,
-              // which made multi-season shows appear randomly incomplete.
-              val episodeDispatcher = Dispatchers.IO.limitedParallelism(4)
-              val episodeResults = coroutineScope {
-                completeItem.seasons.flatMap { season ->
-                  season.episodes.map { episode ->
-                    async(episodeDispatcher) {
-                      resolveEpisodeWithRetry(resolver, completeItem, season.number, episode.number)
-                        .map { it.copy(season = it.season ?: season.number, episode = it.episode ?: episode.number) }
-                    }
-                  }
-                }.awaitAll().flatten()
-              }
-              metadataResults + episodeResults
-            }.distinctBy { stream ->
-              // The same CDN URL can legitimately be returned for different episodes by an
-              // addon. Include episode identity so one response cannot hide another episode.
-              "${stream.url.substringBefore("&mpvinfinity=")}|${stream.season}|${stream.episode}"
+              val streams = runCatching { resolver.resolve(resolverItem, null, null) }.getOrDefault(emptyList())
+              viewModel.initializeResolver(torrentInput("", intent, resolverItem), streams)
             }
-            val allStreams = resolvedStreams.map { stream ->
-              if (stream.season != null && stream.episode != null) stream else {
-                val match = Regex("(?i)(?:^|[^a-z0-9])s(\\d{1,2})[ ._-]*e(\\d{1,3})(?:[^a-z0-9]|$)").find(stream.title)
-                stream.copy(season = stream.season ?: match?.groupValues?.getOrNull(1)?.toIntOrNull(), episode = stream.episode ?: match?.groupValues?.getOrNull(2)?.toIntOrNull())
-              }
-            }
-            val resolverSeasons = allStreams.mapNotNull { stream ->
-              val season = stream.season ?: return@mapNotNull null
-              season to (stream.episode ?: 0)
-            }.groupBy({ it.first }, { it.second }).map { (number, episodes) ->
-              Season(number, episodes.filter { it > 0 }.distinct().sorted().map { episode ->
-                Episode(episode, "Episode $episode", "", null)
-              })
-            }
-            val itemWithResolverSeasons = completeItem.copy(
-              seasons = (completeItem.seasons + resolverSeasons)
-                .groupBy { it.number }
-                .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
-                .sortedBy { it.number },
-            )
-            Log.i(DIAG_TAG, "resolver item title=\"${completeItem.title}\" type=${completeItem.catalogType ?: completeItem.type} streams=${allStreams.size} playable=${allStreams.count { it.isPlayable }}")
-            viewModel.initializeResolver(torrentInput("", intent, itemWithResolverSeasons), allStreams)
           }
+        }
+        LaunchedEffect(selectedEpisodeRequest) {
+          val request = selectedEpisodeRequest ?: return@LaunchedEffect
+          val item = resolverItem ?: return@LaunchedEffect
+          val (season, episode) = request
+          viewModel.setEpisodeResolving(season, episode)
+          val streams = runCatching { resolver.resolve(item, season, episode) }
+            .getOrDefault(emptyList())
+            .map { it.copy(season = it.season ?: season, episode = it.episode ?: episode) }
+            .distinctBy { "${it.url}|${it.season}|${it.episode}" }
+          if (streams.isEmpty()) viewModel.setEpisodeError("No links were returned for this episode.")
+          else viewModel.showEpisodeResults(torrentInput("", intent, item, season = season, episode = episode, episodeTitle = episode.title, episodeOverview = episode.overview, episodeThumbnail = episode.stillUrl), streams)
+          selectedEpisodeRequest = null
         }
               TorrentSelectionScreen(
                 state = state,
                 onBack = ::closePicker,
                 onRetry = viewModel::retry,
                 onSelect = viewModel::select,
+                onSeasonSelect = { season -> viewModel.selectSeason(season) },
+                onEpisodeSelect = { season, episode -> selectedEpisodeRequest = season to episode },
+                onShowEpisodeList = viewModel::showEpisodeList,
                 isDownloadable = { index -> (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { !it.isExternal && (it.source.startsWith("http://") || it.source.startsWith("https://")) } == true },
                 onDownload = { index ->
                   (state as? TorrentSelectionUiState.Ready)?.resolverInputs?.get(index)?.let { input ->

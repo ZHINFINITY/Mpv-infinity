@@ -14,6 +14,8 @@ import app.infinity.mpvz.domain.torrent.TorrentStreamingEngine
 import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
 import app.infinity.mpvz.repository.wyzie.WyzieTmdbResult
 import app.infinity.mpvz.utils.media.MediaInfoParser
+import app.infinity.mpvz.catalog.Episode
+import app.infinity.mpvz.catalog.Season
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -57,6 +59,14 @@ data class TorrentArtwork(
   val seasons: List<app.infinity.mpvz.catalog.Season> = emptyList(),
 )
 
+data class EpisodeBrowserState(
+  val seasons: List<Season>,
+  val selectedSeason: Int? = null,
+  val selectedEpisode: Episode? = null,
+  val isResolving: Boolean = false,
+  val error: String? = null,
+)
+
 sealed interface TorrentSelectionUiState {
   data object Loading : TorrentSelectionUiState
 
@@ -66,6 +76,8 @@ sealed interface TorrentSelectionUiState {
     val isLookingUpArtwork: Boolean,
     val launchingFileIndex: Int? = null,
     val resolverInputs: Map<Int, TorrentSelectionInput> = emptyMap(),
+    val episodeBrowser: EpisodeBrowserState? = null,
+    val showEpisodeList: Boolean = false,
   ) : TorrentSelectionUiState
 
   data class Error(
@@ -103,7 +115,6 @@ class TorrentSelectionViewModel(
   }
 
   fun initializeResolver(value: TorrentSelectionInput, streams: List<app.infinity.mpvz.catalog.StreamOption>) {
-    if (input != null) return
     input = value
     if (streams.isEmpty()) {
       _uiState.value = TorrentSelectionUiState.Error("No compatible resolver provider returned links. Anime providers must advertise anime/series support and accept the title's ID prefix; IMDb-only providers cannot resolve Kitsu IDs.")
@@ -143,6 +154,75 @@ class TorrentSelectionViewModel(
       isLookingUpArtwork = false,
       resolverInputs = resolverInputs,
     )
+  }
+
+  fun initializeResolverBrowser(value: TorrentSelectionInput, seasons: List<Season>) {
+    input = value
+    _uiState.value = TorrentSelectionUiState.Ready(
+      catalog = TorrentCatalog("resolver", "", "resolver", value.title ?: "Choose an episode", emptyList()),
+      artwork = TorrentArtwork(
+        title = value.title ?: "Choose an episode",
+        description = value.description,
+        posterUrl = value.posterUrl,
+        backdropUrl = value.backdropUrl,
+        seasons = seasons,
+      ),
+      isLookingUpArtwork = false,
+      episodeBrowser = EpisodeBrowserState(seasons = seasons, selectedSeason = seasons.firstOrNull()?.number),
+      showEpisodeList = true,
+    )
+  }
+
+  fun setEpisodeResolving(season: Int, episode: Episode) {
+    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
+    val browser = ready.episodeBrowser ?: return
+    _uiState.value = ready.copy(
+      episodeBrowser = browser.copy(selectedSeason = season, selectedEpisode = episode, isResolving = true, error = null),
+      showEpisodeList = true,
+    )
+  }
+
+  fun setEpisodeError(message: String) {
+    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
+    val browser = ready.episodeBrowser ?: return
+    _uiState.value = ready.copy(episodeBrowser = browser.copy(isResolving = false, error = message), showEpisodeList = true)
+  }
+
+  fun selectSeason(season: Int) {
+    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
+    val browser = ready.episodeBrowser ?: return
+    _uiState.value = ready.copy(episodeBrowser = browser.copy(selectedSeason = season, selectedEpisode = null, error = null), showEpisodeList = true)
+  }
+
+  fun showEpisodeResults(value: TorrentSelectionInput, streams: List<app.infinity.mpvz.catalog.StreamOption>) {
+    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
+    val browser = ready.episodeBrowser ?: return
+    input = value
+    if (streams.isEmpty()) {
+      setEpisodeError("No links were returned for this episode.")
+      return
+    }
+    val files = streams.mapIndexed { index, stream ->
+      val providerPrefix = stream.source?.takeIf { it.isNotBlank() }?.let { "[$it] " }.orEmpty()
+      val displayName = stream.filename?.takeIf { it.isNotBlank() } ?: "$providerPrefix${stream.title}"
+      TorrentFileItem(index, displayName, displayName, parseResolverSize(stream.size), stream.mimeType ?: "video/x-matroska")
+    }
+    val resolverInputs = streams.mapIndexed { index, stream ->
+      index to value.copy(source = stream.url, headers = stream.headers, filename = stream.filename, isExternal = stream.isExternal, fileIndex = stream.torrentFileIndex)
+    }.toMap()
+    _uiState.value = ready.copy(
+      catalog = TorrentCatalog("resolver", "", "resolver", value.title ?: "Episode links", files),
+      artwork = ready.artwork.copy(season = value.season, episode = value.episode, episodeTitle = value.episodeTitle, episodeOverview = value.episodeOverview, episodeThumbnail = value.episodeThumbnail),
+      resolverInputs = resolverInputs,
+      episodeBrowser = browser.copy(isResolving = false, error = null),
+      showEpisodeList = false,
+    )
+  }
+
+  fun showEpisodeList() {
+    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
+    val browser = ready.episodeBrowser ?: return
+    _uiState.value = ready.copy(showEpisodeList = true, episodeBrowser = browser.copy(isResolving = false, error = null), catalog = ready.catalog.copy(playableFiles = emptyList()), resolverInputs = emptyMap())
   }
 
   /** Opens a new torrent in the same picker host, replacing any previous picker session. */
