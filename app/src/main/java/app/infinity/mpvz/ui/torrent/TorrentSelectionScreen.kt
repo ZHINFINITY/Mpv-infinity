@@ -75,11 +75,12 @@ fun TorrentSelectionScreen(
   onEpisodeSelect: (Int, app.infinity.mpvz.catalog.Episode) -> Unit = { _, _ -> },
   onSeasonSelect: (Int) -> Unit = {},
   onShowEpisodeList: () -> Unit = {},
+  isResolver: Boolean = false,
   isDownloadable: (Int) -> Boolean = { false },
   onDownload: (Int) -> Unit = {},
 ) {
   when (state) {
-    TorrentSelectionUiState.Loading -> TorrentLoadingScreen(onBack)
+    TorrentSelectionUiState.Loading -> TorrentLoadingScreen(onBack, isResolver)
     is TorrentSelectionUiState.Error -> TorrentErrorScreen(state.message, onBack, onRetry)
     is TorrentSelectionUiState.Ready -> TorrentReadyScreen(state, onBack, onSelect, onEpisodeSelect, onSeasonSelect, onShowEpisodeList, isDownloadable, onDownload)
   }
@@ -106,6 +107,17 @@ private fun TorrentReadyScreen(
       onEpisodeSelect = onEpisodeSelect,
       onSeasonSelect = onSeasonSelect,
       onBack = onBack,
+    )
+    return
+  }
+  if (browser != null) {
+    ResolverResultsScreen(
+      state = state,
+      onBack = onBack,
+      onSelect = onSelect,
+      onShowEpisodeList = onShowEpisodeList,
+      isDownloadable = isDownloadable,
+      onDownload = onDownload,
     )
     return
   }
@@ -379,6 +391,71 @@ private fun TorrentReadyScreen(
             item { Spacer(modifier = Modifier.height(16.dp)) }
           }
         }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ResolverResultsScreen(
+  state: TorrentSelectionUiState.Ready,
+  onBack: () -> Unit,
+  onSelect: (Int) -> Unit,
+  onShowEpisodeList: () -> Unit,
+  isDownloadable: (Int) -> Boolean,
+  onDownload: (Int) -> Unit,
+) {
+  BackHandler { onBack() }
+  val artwork = state.artwork
+  Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+    Column(modifier = Modifier.fillMaxSize()) {
+      Row(
+        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        IconButton(onClick = onBack) { Icon(Icons.RoundedFilled.ArrowBack, contentDescription = "Back") }
+        Text("Choose what to play", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        TextButton(onClick = onShowEpisodeList) { Text("Episodes") }
+      }
+      Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+        Text(artwork.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        val episodeLabel = listOfNotNull(
+          artwork.season?.let { "Season $it" },
+          artwork.episode?.let { "Episode $it" },
+          artwork.episodeTitle?.takeIf { it.isNotBlank() },
+        ).joinToString("  ·  ")
+        if (episodeLabel.isNotBlank()) Text(episodeLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${state.catalog.playableFiles.size} available links", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+      }
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        items(state.catalog.playableFiles, key = { it.index }) { file ->
+          val link = state.resolverInputs[file.index]
+          Card(
+            modifier = Modifier.fillMaxWidth().clickable { onSelect(file.index) },
+            shape = RoundedCornerShape(14.dp),
+          ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(file.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val sourceLabel = link?.let { input ->
+                  listOfNotNull(
+                    input.source.substringAfter("://", input.source).substringBefore('/').takeIf { it.isNotBlank() },
+                    input.filename?.takeIf { it.isNotBlank() },
+                  ).distinct().joinToString("  ·  ")
+                }.orEmpty()
+                if (sourceLabel.isNotBlank()) Text(sourceLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+              }
+              if (isDownloadable(file.index)) {
+                IconButton(onClick = { onDownload(file.index) }) { Icon(Icons.RoundedFilled.Download, contentDescription = "Download") }
+              }
+              IconButton(onClick = { onSelect(file.index) }) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play") }
+            }
+          }
+        }
+        item { Spacer(modifier = Modifier.height(16.dp)) }
       }
     }
   }
@@ -735,7 +812,7 @@ private fun TorrentFileRow(
 }
 
 @Composable
-fun TorrentLoadingScreen(onBack: () -> Unit) {
+fun TorrentLoadingScreen(onBack: () -> Unit, isResolver: Boolean = false) {
   BackHandler { onBack() }
   Surface(
     modifier = Modifier.fillMaxSize(),
@@ -753,13 +830,13 @@ fun TorrentLoadingScreen(onBack: () -> Unit) {
       CircularProgressIndicator(modifier = Modifier.size(48.dp), strokeWidth = 3.dp)
       Spacer(modifier = Modifier.height(20.dp))
       Text(
-        text = stringResource(R.string.torrent_picker_preparing_title),
+        text = if (isResolver) "Preparing episode browser" else stringResource(R.string.torrent_picker_preparing_title),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
       )
       Spacer(modifier = Modifier.height(8.dp))
       Text(
-        text = stringResource(R.string.torrent_picker_preparing_description),
+        text = if (isResolver) "Loading seasons and episodes…" else stringResource(R.string.torrent_picker_preparing_description),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
