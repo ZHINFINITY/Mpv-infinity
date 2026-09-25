@@ -21,6 +21,7 @@ import android.net.Uri
 import android.util.LruCache
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -166,6 +167,7 @@ import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
 import app.infinity.mpvz.ui.player.PlayerViewModel
 import app.infinity.mpvz.ui.player.RepeatMode
 import app.infinity.mpvz.ui.player.Sheets
@@ -577,6 +579,10 @@ fun AudioPlayerControls(
   val gesturePreferences = koinInject<GesturePreferences>()
   val audioSeekDuration by gesturePreferences.doubleTapToSeekDuration.collectAsState()
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
+  val playerActivity = LocalActivity.current as? PlayerActivity
+  val nativePlaybackSnapshot by playerActivity?.nativePlaybackSnapshot?.collectAsState()
+    ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
+  val nativeEngineActive = playerActivity?.isNativeEngineActive() == true
   var optimisticIsPlaying by remember { mutableStateOf<Boolean?>(null) }
   LaunchedEffect(paused) {
     if (paused != null) optimisticIsPlaying = null
@@ -872,7 +878,9 @@ fun AudioPlayerControls(
       }
   }
 
-   val isPlaying = optimisticIsPlaying ?: (paused == false)
+   // MPV's pause property is not authoritative after a native Media3 handoff. Use the native
+   // snapshot while that engine owns the item, otherwise fall back to MPV's transport state.
+   val isPlaying = if (nativeEngineActive) nativePlaybackSnapshot.isPlaying else optimisticIsPlaying ?: (paused == false)
    // An audiobook is one logical item. MPV still switches its source file at chapter
    // boundaries, but the seekbar must represent the complete book rather than the active file.
    val currentDurSec = if (isAudiobook && audiobook != null) {
@@ -1203,7 +1211,7 @@ fun AudioPlayerControls(
     val haptic = LocalHapticFeedback.current
     var activeCoverOverride by remember { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(currentItem?.stableId, albumArtBitmap) {
+    LaunchedEffect(currentItem?.stableId, mediaPath, currentArtworkUri, albumArtBitmap) {
       activeCoverOverride = null
     }
 
