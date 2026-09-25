@@ -127,12 +127,19 @@ class TorrentSelectionActivity : AppCompatActivity() {
           val item = resolverItem ?: return@LaunchedEffect
           val (season, episode) = request
           viewModel.setEpisodeResolving(season, episode)
-          val streams = runCatching { resolver.resolve(item, season, episode) }
+          val streams = runCatching { resolver.resolve(item, season, episode.number) }
             .getOrDefault(emptyList())
-            .map { it.copy(season = it.season ?: season, episode = it.episode ?: episode) }
+            .map { it.copy(season = it.season ?: season, episode = it.episode ?: episode.number) }
             .distinctBy { "${it.url}|${it.season}|${it.episode}" }
           if (streams.isEmpty()) viewModel.setEpisodeError("No links were returned for this episode.")
-          else viewModel.showEpisodeResults(torrentInput("", intent, item, season = season, episode = episode, episodeTitle = episode.title, episodeOverview = episode.overview, episodeThumbnail = episode.stillUrl), streams)
+          else viewModel.showEpisodeResults(
+            torrentInput("", intent, item, season = season, episode = episode.number).copy(
+              episodeTitle = episode.title,
+              episodeOverview = episode.overview,
+              episodeThumbnail = episode.stillUrl,
+            ),
+            streams,
+          )
           selectedEpisodeRequest = null
         }
               TorrentSelectionScreen(

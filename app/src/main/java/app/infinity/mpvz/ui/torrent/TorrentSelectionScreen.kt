@@ -385,7 +385,6 @@ private fun TorrentReadyScreen(
 }
 
 @Composable
-@Composable
 private fun EpisodeBrowser(
   artwork: TorrentArtwork,
   browser: EpisodeBrowserState,
