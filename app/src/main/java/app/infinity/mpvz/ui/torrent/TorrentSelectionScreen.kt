@@ -102,22 +102,15 @@ private fun TorrentReadyScreen(
   val browser = state.episodeBrowser
   if (browser != null && state.showEpisodeList) {
     EpisodeBrowser(
+      state = state,
       artwork = artwork,
       browser = browser,
+      onSelect = onSelect,
       onEpisodeSelect = onEpisodeSelect,
       onSeasonSelect = onSeasonSelect,
-      onBack = onBack,
-    )
-    return
-  }
-  if (browser != null) {
-    ResolverResultsScreen(
-      state = state,
-      onBack = onBack,
-      onSelect = onSelect,
-      onShowEpisodeList = onShowEpisodeList,
       isDownloadable = isDownloadable,
       onDownload = onDownload,
+      onBack = onBack,
     )
     return
   }
@@ -397,84 +390,15 @@ private fun TorrentReadyScreen(
 }
 
 @Composable
-private fun ResolverResultsScreen(
-  state: TorrentSelectionUiState.Ready,
-  onBack: () -> Unit,
-  onSelect: (Int) -> Unit,
-  onShowEpisodeList: () -> Unit,
-  isDownloadable: (Int) -> Boolean,
-  onDownload: (Int) -> Unit,
-) {
-  BackHandler { onBack() }
-  val artwork = state.artwork
-  Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-    Column(modifier = Modifier.fillMaxSize()) {
-      Row(
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        IconButton(onClick = onBack) { Icon(Icons.RoundedFilled.ArrowBack, contentDescription = "Back") }
-        Text("Choose what to play", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-        TextButton(onClick = onShowEpisodeList) { Text("Episodes") }
-      }
-      Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Text(artwork.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        val episodeLabel = listOfNotNull(
-          artwork.season?.let { "Season $it" },
-          artwork.episode?.let { "Episode $it" },
-          artwork.episodeTitle?.takeIf { it.isNotBlank() },
-        ).joinToString("  ·  ")
-        if (episodeLabel.isNotBlank()) Text(episodeLabel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text("${state.catalog.playableFiles.size} available links", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-      }
-      LazyColumn(
-        modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        items(state.catalog.playableFiles, key = { it.index }) { file ->
-          val link = state.resolverInputs[file.index]
-          Card(
-            modifier = Modifier.fillMaxWidth().clickable { onSelect(file.index) },
-            shape = RoundedCornerShape(14.dp),
-          ) {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-              Column(modifier = Modifier.weight(1f)) {
-                Text(file.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                val sourceLabel = link?.let { input ->
-                  listOfNotNull(
-                    input.source.substringAfter("://", input.source).substringBefore('/').takeIf { it.isNotBlank() },
-                    input.filename?.takeIf { it.isNotBlank() },
-                  ).distinct().joinToString("  ·  ")
-                }.orEmpty()
-                val details = listOfNotNull(
-                  link?.let { streamType(it.source) },
-                  link?.let { streamQuality(it.qualityRank) },
-                  link?.size?.takeIf { it.isNotBlank() },
-                  link?.audioCodec?.takeIf { it.isNotBlank() },
-                  link?.videoCodec?.takeIf { it.isNotBlank() },
-                ).distinct().joinToString("  ·  ")
-                if (sourceLabel.isNotBlank()) Text(sourceLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
-                if (details.isNotBlank()) Text(details, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-              }
-              if (isDownloadable(file.index)) {
-                IconButton(onClick = { onDownload(file.index) }) { Icon(Icons.RoundedFilled.Download, contentDescription = "Download") }
-              }
-              IconButton(onClick = { onSelect(file.index) }) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play") }
-            }
-          }
-        }
-        item { Spacer(modifier = Modifier.height(16.dp)) }
-      }
-    }
-  }
-}
-
-@Composable
 private fun EpisodeBrowser(
+  state: TorrentSelectionUiState.Ready,
   artwork: TorrentArtwork,
   browser: EpisodeBrowserState,
+  onSelect: (Int) -> Unit,
   onEpisodeSelect: (Int, app.infinity.mpvz.catalog.Episode) -> Unit,
   onSeasonSelect: (Int) -> Unit,
+  isDownloadable: (Int) -> Boolean,
+  onDownload: (Int) -> Unit,
   onBack: () -> Unit,
 ) {
   Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
@@ -537,6 +461,26 @@ private fun EpisodeBrowser(
                 episode.runtime?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
               }
               Icon(Icons.RoundedFilled.ChevronRight, contentDescription = "Resolve episode", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        }
+        if (state.catalog.playableFiles.isNotEmpty()) {
+          item {
+            Text("Available links", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 2.dp))
+          }
+          items(state.catalog.playableFiles, key = { "link-${it.index}" }) { file ->
+            val link = state.resolverInputs[file.index]
+            Card(modifier = Modifier.fillMaxWidth().clickable { onSelect(file.index) }, shape = RoundedCornerShape(14.dp)) {
+              Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(file.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                  val host = link?.source?.let { it.substringAfter("://").substringBefore('/') }?.takeIf { it.isNotBlank() }
+                  val details = listOfNotNull(host, link?.let { streamType(it.source) }, link?.let { streamQuality(it.qualityRank) }, link?.size?.takeIf { it.isNotBlank() }, link?.audioCodec?.takeIf { it.isNotBlank() }, link?.videoCodec?.takeIf { it.isNotBlank() }).distinct().joinToString("  ·  ")
+                  if (details.isNotBlank()) Text(details, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                }
+                if (isDownloadable(file.index)) IconButton(onClick = { onDownload(file.index) }) { Icon(Icons.RoundedFilled.Download, contentDescription = "Download") }
+                IconButton(onClick = { onSelect(file.index) }) { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play") }
+              }
             }
           }
         }
