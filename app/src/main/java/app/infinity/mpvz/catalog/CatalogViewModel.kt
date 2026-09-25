@@ -118,10 +118,12 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       _state.update { it.copy(isLoadingMore = true) }
       val nextPage = current.catalogPage + 1
-      val more = runCatching { loadFromProviders(current.query.takeIf { it.isNotBlank() }, nextPage) }.getOrDefault(emptyList())
+      val result = runCatching { loadFromProviders(current.query.takeIf { it.isNotBlank() }, nextPage) }
+      result.exceptionOrNull()?.let { error -> Log.e(TAG, "loadMore failed page=$nextPage query=${current.query}", error) }
+      val more = result.getOrDefault(emptyList())
       val merged = (current.items + more).distinctBy { item -> "${item.catalogSourceId ?: item.provider}:${item.catalogId ?: ""}:${item.providerId ?: item.id}" }
       val added = merged.size > current.items.size
-      _state.update { it.copy(items = merged, catalogPage = nextPage, canLoadMore = added && more.isNotEmpty(), isLoadingMore = false) }
+      _state.update { it.copy(items = merged, catalogPage = if (result.isSuccess) nextPage else current.catalogPage, canLoadMore = if (result.isSuccess) added && more.isNotEmpty() else true, isLoadingMore = false, error = result.exceptionOrNull()?.message) }
     }
   }
 
@@ -145,13 +147,23 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         error = null,
       )
     }
+    if (item.type == MediaType.TV && item.seasons.isEmpty()) {
+      viewModelScope.launch {
+        val seasons = resolver.loadSeasons(item)
+        if (seasons.isNotEmpty()) {
+          _state.update { current ->
+            if (current.selectedItem?.id == item.id) current.copy(selectedItem = current.selectedItem?.copy(seasons = seasons)) else current
+          }
+        }
+      }
+    }
   }
 
   fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null) {
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode) }
       runCatching { resolver.resolve(item, season, episode) }
-        .onSuccess { streams -> _state.update { it.copy(streamOptions = streams, streamTitle = item.title, error = if (streams.isEmpty()) "Resolver returned no streams." else null) } }
+        .onSuccess { streams -> _state.update { it.copy(streamOptions = streams, streamTitle = item.title, error = if (streams.isEmpty()) "The resolver returned HTTP 200 but no streams for this type/ID. Check that its manifest supports ${item.type.name.lowercase()} and the selected provider ID." else null) } }
         .onFailure { error -> _state.update { it.copy(error = error.message ?: "Unable to resolve stream") } }
       _state.update { it.copy(resolvingId = null) }
     }

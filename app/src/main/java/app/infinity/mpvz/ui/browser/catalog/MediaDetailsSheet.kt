@@ -36,11 +36,15 @@ fun MediaDetailsSheet(
   onFilter: (String) -> Unit,
   onSort: (String) -> Unit,
   onSelect: (StreamOption) -> Unit,
+  onDownload: (StreamOption) -> Unit = {},
   onBack: () -> Unit,
 ) {
   var activeSeason by remember(item.id) { mutableStateOf(item.seasons.firstOrNull()?.number) }
   var expandedSynopsis by remember(item.id) { mutableStateOf(false) }
   LaunchedEffect(item.id) { onLoadSources() }
+  LaunchedEffect(item.id, item.seasons) {
+    if (activeSeason == null) activeSeason = item.seasons.firstOrNull()?.number
+  }
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   ModalBottomSheet(
     onDismissRequest = onBack,
@@ -88,6 +92,8 @@ fun MediaDetailsSheet(
             }
           }
         }
+      } else if (item.type == app.infinity.mpvz.catalog.MediaType.TV && !isLoading) {
+        Text("This provider did not return season metadata. Add a resolver with a meta endpoint that exposes videos.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
       }
       Text("Sources", style = MaterialTheme.typography.titleLarge)
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -110,7 +116,10 @@ fun MediaDetailsSheet(
         val metadata = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { if (it >= 2160) "4K" else "${it}p" }, stream.seeders.takeIf { it > 0 }?.let { "$it seeders" }, stream.size, stream.source).joinToString(" • ")
         Card(Modifier.fillMaxWidth().clickable { onSelect(stream) }) {
           Column(Modifier.padding(14.dp)) {
-            Text(stream.title, style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+              Text(stream.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+              if (stream.isPlayable) TextButton(onClick = { onDownload(stream) }) { Text("Download") }
+            }
             val technical = listOfNotNull(stream.audioCodec, stream.videoCodec).joinToString(" • ")
             if (metadata.isNotBlank() || technical.isNotBlank()) Text(listOf(metadata, technical).filter { it.isNotBlank() }.joinToString(" • "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             Text(if (stream.isPlayable) "Play source" else "Stream torrent", style = MaterialTheme.typography.labelLarge)
