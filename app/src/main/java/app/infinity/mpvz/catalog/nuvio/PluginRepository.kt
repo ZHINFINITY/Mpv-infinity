@@ -105,11 +105,11 @@ class PluginRepository(context: Context) {
   fun saveScraperSettings(scraperId: String, values: Map<String, String>) {
     prefs.edit().putString("settings_${stableHash(scraperId)}", json.encodeToString(values)).apply()
   }
-  suspend fun settingsLayout(scraperId: String) {
+  suspend fun settingsLayout(scraperId: String): List<PluginSettingField> {
     refreshFromDisk()
     val scraper = _uiState.value.scrapers.firstOrNull { it.id == scraperId } ?: error("Provider not found")
     require(scraper.hasSettings) { "This provider does not declare configurable settings." }
-    PluginRuntime.getSettingsLayout(scraper.code, scraper.id, tmdbApiKey(), json.encodeToString(scraperSettings(scraper.id)))
+    return PluginRuntime.getSettingsLayout(scraper.code, scraper.id, tmdbApiKey(), json.encodeToString(scraperSettings(scraper.id)))
   }
 
   suspend fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null): List<StreamOption> {
