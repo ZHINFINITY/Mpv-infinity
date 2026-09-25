@@ -1,6 +1,7 @@
 package app.infinity.mpvz.catalog.nuvio.runtime.host
 
 import android.util.Log
+import app.infinity.mpvz.catalog.redactAddonConfigurationFromLog
 import com.dokar.quickjs.QuickJs
 import com.dokar.quickjs.binding.define
 import com.dokar.quickjs.binding.function
@@ -13,12 +14,14 @@ internal class HostFunctions(
   private val onResult: (String) -> Unit,
 ) : HostModule {
   override fun register(runtime: QuickJs) {
+    val safeProviderLabel = "provider-${scraperId.hashCode().toUInt().toString(16)}"
+    fun safeConsoleText(text: String): String = redactAddonConfigurationFromLog(text).take(1200)
     runtime.define("console") {
-      function("log") { args -> Log.d(TAG, "Plugin:$scraperId ${args.joinToString(" ") { it?.toString().orEmpty() }.take(1200)}"); null }
-      function("info") { args -> Log.i(TAG, "Plugin:$scraperId ${args.joinToString(" ") { it?.toString().orEmpty() }.take(1200)}"); null }
-      function("warn") { args -> Log.w(TAG, "Plugin:$scraperId ${args.joinToString(" ") { it?.toString().orEmpty() }.take(1200)}"); null }
-      function("error") { args -> Log.e(TAG, "Plugin:$scraperId ${args.joinToString(" ") { it?.toString().orEmpty() }.take(1200)}"); null }
-      function("debug") { args -> Log.d(TAG, "Plugin:$scraperId ${args.joinToString(" ") { it?.toString().orEmpty() }.take(1200)}"); null }
+      function("log") { args -> Log.d(TAG, "Plugin:$safeProviderLabel ${safeConsoleText(args.joinToString(" ") { it?.toString().orEmpty() })}"); null }
+      function("info") { args -> Log.i(TAG, "Plugin:$safeProviderLabel ${safeConsoleText(args.joinToString(" ") { it?.toString().orEmpty() })}"); null }
+      function("warn") { args -> Log.w(TAG, "Plugin:$safeProviderLabel ${safeConsoleText(args.joinToString(" ") { it?.toString().orEmpty() })}"); null }
+      function("error") { args -> Log.e(TAG, "Plugin:$safeProviderLabel ${safeConsoleText(args.joinToString(" ") { it?.toString().orEmpty() })}"); null }
+      function("debug") { args -> Log.d(TAG, "Plugin:$safeProviderLabel ${safeConsoleText(args.joinToString(" ") { it?.toString().orEmpty() })}"); null }
     }
     runtime.function("__get_scraper_id") { scraperId }
     runtime.function("__get_scraper_settings") { scraperSettingsJson }

@@ -5,6 +5,7 @@ import android.util.Log
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.StreamOption
+import app.infinity.mpvz.catalog.redactAddonConfigurationFromLog
 import app.infinity.mpvz.repository.wyzie.WyzieTmdbResponse
 import app.infinity.mpvz.catalog.nuvio.runtime.PluginRuntime
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -122,7 +127,7 @@ class PluginRepository(context: Context) {
       coroutineScope {
         providers.map { provider -> async(Dispatchers.IO) {
           runCatching { PluginRuntime.executePlugin(provider.code, tmdbId.toString(), type, season, episode, provider.id, tmdbApiKey(), json.encodeToString(scraperSettings(provider.id))) }
-            .onFailure { Log.w(TAG, "Provider failed name=${provider.name} type=$type: ${it.message}") }
+            .onFailure { Log.w(TAG, "Provider failed name=${provider.name} type=$type: ${redactAddonConfigurationFromLog(it.message.orEmpty())}") }
             .getOrDefault(emptyList())
             .asSequence()
             .filter { stream -> stream.url.startsWith("https://", true) && stream.infoHash.isNullOrBlank() && !stream.type.orEmpty().contains("torrent", true) }
@@ -148,26 +153,52 @@ class PluginRepository(context: Context) {
     }
   }
 
-  private suspend fun resolveTmdbId(item: MediaItem, type: String): Int? {
-    item.tmdbId?.takeIf { it > 0 }?.let { return it }
-    val providerId = item.providerId.orEmpty()
-    Regex("(?:tmdb:|movie:|series:)?(\\d+)", RegexOption.IGNORE_CASE).matchEntire(providerId)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { return it }
+  private suspend fun resolveTmdbId(item: MediaItem, type: String): Int? = withContext(Dispatchers.IO) {
+    item.tmdbId?.takeIf { it > 0 }?.let { return@withContext it }
+    val providerId = item.providerId.orEmpty().trim()
+    val normalizedProviderId = providerId
+      .replace(Regex("^(?:tmdb[:/]|movie:|series:)", RegexOption.IGNORE_CASE), "")
+      .substringBefore(':')
+      .substringBefore('/')
+      .trim()
+    normalizedProviderId.toIntOrNull()?.takeIf { it > 0 }?.let { return@withContext it }
+
+    val imdbId = (item.imdbId ?: providerId.takeIf { it.startsWith("tt", ignoreCase = true) })
+      ?.trim()
+      ?.substringBefore(':')
+      ?.takeIf { it.startsWith("tt", ignoreCase = true) }
+    val apiKey = tmdbApiKey()
+    if (imdbId != null && apiKey.isNotBlank()) {
+      runCatching { findTmdbIdByImdb(imdbId, type, apiKey) }.getOrNull()?.let { return@withContext it }
+    }
+
     val query = buildString { append(item.title); item.releaseYear?.take(4)?.let { append(" ").append(it) } }
     val url = "https://sub.wyzie.io/api/tmdb/search?q=${URLEncoder.encode(query, "UTF-8")}"
     val response = client.newCall(Request.Builder().url(url).header("User-Agent", USER_AGENT).get().build()).execute().use { response ->
-      if (!response.isSuccessful) error("TMDB metadata lookup failed (${response.code})")
+      if (!response.isSuccessful) error("Metadata ID lookup failed (${response.code})")
       json.decodeFromString<WyzieTmdbResponse>(response.body.string()).results
     }
     val desiredYear = item.releaseYear?.take(4)
     val typeMatches = response.filter { it.mediaType.equals(if (type == "movie") "movie" else "tv", true) }
     val choices = typeMatches.ifEmpty { response }
-    return choices.maxWithOrNull(compareBy({ normalizedTitle(it.title) == normalizedTitle(item.title) }, { desiredYear != null && it.releaseYear?.startsWith(desiredYear) == true }, { commonPrefixScore(normalizedTitle(it.title), normalizedTitle(item.title)) }))?.id
+    choices.maxWithOrNull(compareBy({ normalizedTitle(it.title) == normalizedTitle(item.title) }, { desiredYear != null && it.releaseYear?.startsWith(desiredYear) == true }, { commonPrefixScore(normalizedTitle(it.title), normalizedTitle(item.title)) }))?.id
+  }
+
+  private fun findTmdbIdByImdb(imdbId: String, type: String, apiKey: String): Int? {
+    val url = "https://api.themoviedb.org/3/find/${URLEncoder.encode(imdbId, "UTF-8")}?api_key=${URLEncoder.encode(apiKey, "UTF-8")}&external_source=imdb_id"
+    val payload = client.newCall(Request.Builder().url(url).header("Accept", "application/json").header("User-Agent", USER_AGENT).get().build()).execute().use { response ->
+      if (!response.isSuccessful) return null
+      json.parseToJsonElement(response.body.string()).jsonObject
+    }
+    val resultsKey = if (type == "movie") "movie_results" else "tv_results"
+    return payload[resultsKey]?.jsonArray.orEmpty().firstNotNullOfOrNull { entry ->
+      entry.jsonObject["id"]?.jsonPrimitive?.intOrNull?.takeIf { it > 0 }
+    }
   }
 
   private suspend fun fetchRepositoryData(url: String, previous: Map<String, PluginScraper>): Pair<PluginRepositoryItem, List<PluginScraper>> = coroutineScope {
     val payload = httpGetText(url)
     val manifest = PluginManifestParser.parse(payload)
-    val base = url.substringBefore('?').removeSuffix("/manifest.json")
     val semaphore = Semaphore(6)
     val scrapers = manifest.scrapers
       .filter { info ->
@@ -177,7 +208,7 @@ class PluginRepository(context: Context) {
         (supported.isEmpty() || platform in supported) && platform !in disabled
       }
       .map { info -> async(Dispatchers.IO) { semaphore.withPermit { runCatching {
-        val codeUrl = if (info.filename.startsWith("http://", true) || info.filename.startsWith("https://", true)) info.filename else "$base/${info.filename.trimStart('/')}"
+        val codeUrl = resolvePluginCodeUrl(url, info.filename)
         val code = httpGetText(codeUrl)
         require(code.isNotBlank()) { "Provider code is empty: ${info.name}" }
         val id = "${url.lowercase()}:${info.id}"
@@ -189,7 +220,7 @@ class PluginRepository(context: Context) {
           manifestEnabled = info.enabled, hasSettings = info.hasSettings, logo = info.logo,
           contentLanguage = info.contentLanguage.orEmpty(), formats = info.formats ?: info.supportedFormats, code = code,
         )
-      }.onFailure { Log.w(TAG, "Could not load provider ${info.name}: ${it.message}") }.getOrNull() } } }.awaitAll().filterNotNull()
+      }.onFailure { Log.w(TAG, "Could not load provider ${info.name}: ${redactAddonConfigurationFromLog(it.message.orEmpty())}") }.getOrNull() } } }.awaitAll().filterNotNull()
     require(scrapers.isNotEmpty()) { "Manifest loaded, but none of its provider files could be downloaded. Check repository paths/permissions." }
     val repository = PluginRepositoryItem(url, manifest.name, manifest.description, manifest.version, scrapers.size, System.currentTimeMillis())
     repository to scrapers
@@ -241,6 +272,28 @@ class PluginRepository(context: Context) {
   private fun normalizedTitle(value: String) = value.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
   private fun commonPrefixScore(a: String, b: String): Int = a.zip(b).takeWhile { it.first == it.second }.size
   private fun safeUrl(value: String): String = runCatching { val u = java.net.URI(value); "${u.scheme}://${u.host}" }.getOrDefault("repository")
+
+  internal fun resolvePluginCodeUrl(manifestUrl: String, filename: String): String {
+    val manifest = java.net.URI(manifestUrl)
+    val candidate = java.net.URI(filename)
+    if (candidate.isAbsolute) return candidate.toString()
+    // Match NuvioMobile: filenames are repository-root relative, even when they begin with '/'.
+    val base = manifestUrl.substringBefore('?').substringBefore('#').removeSuffix("/manifest.json").trimEnd('/')
+    val relativePath = filename.trimStart('/')
+    val resolved = java.net.URI("$base/$relativePath")
+    val manifestQuery = manifest.rawQuery.orEmpty()
+    if (manifestQuery.isBlank() || resolved.rawAuthority != manifest.rawAuthority) return resolved.toString()
+    val combinedQuery = listOfNotNull(
+      resolved.rawQuery?.takeIf { it.isNotBlank() },
+      manifestQuery.takeIf { resolved.rawQuery?.contains(it) != true },
+    ).joinToString("&")
+    if (combinedQuery.isBlank()) return resolved.toString()
+    return buildString {
+      append(resolved.toString().substringBefore('?').substringBefore('#'))
+      append('?').append(combinedQuery)
+      resolved.rawFragment?.let { append('#').append(it) }
+    }
+  }
 
   @Serializable private data class StoredState(val repositories: List<StoredRepo> = emptyList(), val scrapers: List<StoredScraper> = emptyList())
   @Serializable private data class StoredRepo(val manifestUrl: String, val name: String, val description: String? = null, val version: String? = null, val scraperCount: Int = 0, val lastUpdated: Long = 0)

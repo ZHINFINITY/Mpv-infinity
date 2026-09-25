@@ -1,6 +1,7 @@
 package app.infinity.mpvz.catalog.nuvio.runtime
 
 import android.util.Log
+import app.infinity.mpvz.catalog.redactAddonConfigurationFromLog
 import app.infinity.mpvz.catalog.nuvio.PluginRuntimeResult
 import app.infinity.mpvz.catalog.nuvio.PluginSettingField
 import app.infinity.mpvz.catalog.nuvio.PluginSubtitleResult
@@ -87,7 +88,8 @@ internal object PluginRuntime {
         parseResults(result.await())
       }
     } catch (error: Throwable) {
-      Log.e("NuvioPlugin", "Provider execution failed id=$scraperId: ${error.message}", error)
+      val safeProviderLabel = "provider-${scraperId.hashCode().toUInt().toString(16)}"
+      Log.e("NuvioPlugin", "Provider execution failed id=$safeProviderLabel: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
       throw error
     } finally {
       dom.clear()
@@ -118,7 +120,7 @@ internal object PluginRuntime {
         infoHash = item.string("infoHash"), headers = headers, subtitles = subtitles,
       )
     }
-  }.onFailure { Log.w("NuvioPlugin", "Could not parse scraper response: ${it.message}") }.getOrDefault(emptyList())
+  }.onFailure { Log.w("NuvioPlugin", "Could not parse scraper response: ${redactAddonConfigurationFromLog(it.message.orEmpty())}") }.getOrDefault(emptyList())
 
   private fun stringMap(element: JsonElement): Map<String, String> =
     (element as? JsonObject)?.mapNotNull { (key, value) -> value.jsonPrimitive.contentOrNull?.let { key to it } }?.toMap().orEmpty()

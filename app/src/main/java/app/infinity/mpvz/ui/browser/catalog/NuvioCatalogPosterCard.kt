@@ -2,6 +2,7 @@ package app.infinity.mpvz.ui.browser.catalog
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
@@ -22,29 +23,38 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.catalog.MediaItem
 import coil3.compose.AsyncImage
 
+/** Nuvio HomePosterCard-style portrait poster with title and release information below. */
 @Composable
-fun CatalogGridItem(item: MediaItem, resolving: Boolean = false, onClick: () -> Unit) {
-  val posterShape = RoundedCornerShape(14.dp)
+fun NuvioCatalogPosterCard(item: MediaItem, resolving: Boolean = false, onClick: () -> Unit) {
+  val shape = RoundedCornerShape(12.dp)
   Column(
     modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
     Box(
       modifier = Modifier
         .fillMaxWidth()
         .aspectRatio(2f / 3f)
-        .clip(posterShape)
+        .clip(shape)
         .background(MaterialTheme.colorScheme.surfaceVariant),
+      contentAlignment = Alignment.Center,
     ) {
-      item.posterUrl?.let { poster ->
+      item.posterUrl?.let { image ->
         AsyncImage(
-          model = poster,
+          model = image,
           contentDescription = item.title,
           modifier = Modifier.fillMaxSize(),
           contentScale = ContentScale.Crop,
         )
-      }
-      if (resolving) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center).padding(8.dp), strokeWidth = 2.dp)
+      } ?: Text(
+        text = item.title,
+        modifier = Modifier.padding(12.dp),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+      )
+      if (resolving) CircularProgressIndicator(Modifier.align(Alignment.Center).padding(8.dp), strokeWidth = 2.dp)
     }
     Text(
       text = item.title,
@@ -53,9 +63,9 @@ fun CatalogGridItem(item: MediaItem, resolving: Boolean = false, onClick: () -> 
       maxLines = 1,
       overflow = TextOverflow.Ellipsis,
     )
-    item.releaseYear?.takeIf { it.isNotBlank() }?.let { year ->
+    item.releaseYear?.takeIf(String::isNotBlank)?.let { releaseInfo ->
       Text(
-        text = year,
+        text = releaseInfo.take(12),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,

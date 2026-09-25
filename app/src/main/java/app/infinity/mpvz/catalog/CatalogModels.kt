@@ -1,11 +1,10 @@
 package app.infinity.mpvz.catalog
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.net.URI
 
 @Serializable
 enum class MediaType { MOVIE, TV }
-enum class CatalogProvider { CINEMETA, KITSU }
 
 @Serializable
 data class CatalogSource(
@@ -25,7 +24,6 @@ data class MediaItem(
   val tmdbId: Int? = null,
   val imdbId: String? = null,
   val seasons: List<Season> = emptyList(),
-  val provider: CatalogProvider = CatalogProvider.CINEMETA,
   val providerId: String? = null,
   val catalogSourceId: String? = null,
   val catalogType: String? = null,
@@ -39,8 +37,15 @@ data class MediaItem(
 
 @Serializable
 data class Season(val number: Int, val episodes: List<Episode> = emptyList())
+
 @Serializable
-data class Episode(val number: Int, val title: String, val overview: String, val stillUrl: String?, val runtime: String? = null)
+data class Episode(
+  val number: Int,
+  val title: String,
+  val overview: String,
+  val stillUrl: String?,
+  val runtime: String? = null,
+)
 
 data class CatalogState(
   val query: String = "",
@@ -56,9 +61,6 @@ data class CatalogState(
   val selectedItem: MediaItem? = null,
   val selectedSeason: Int? = null,
   val selectedEpisode: Int? = null,
-  val sourceFilter: String = "All",
-  val sourceSort: String = "Best",
-  val enabledProviders: Set<CatalogProvider> = CatalogProvider.entries.toSet(),
 )
 
 @Serializable
@@ -76,32 +78,25 @@ data class StreamOption(
   val videoCodec: String? = null,
   val isPlayable: Boolean = url.startsWith("http://") || url.startsWith("https://"),
   val isExternal: Boolean = false,
-  val torrentFileIndex: Int? = null,
   val season: Int? = null,
   val episode: Int? = null,
 )
 
-@Serializable
-data class ResolverRequest(
-  val tmdbId: Int,
-  val imdbId: String? = null,
-  val title: String,
-  val type: MediaType,
-)
-
-@Serializable
-data class ResolverResponse(
-  val url: String,
-  val mimeType: String? = null,
-  val headers: Map<String, String> = emptyMap(),
-)
-
-@Serializable
-data class StremioStreamResponse(val streams: List<StremioStream> = emptyList())
-
-@Serializable
-data class StremioStream(
-  val url: String? = null,
-  val externalUrl: String? = null,
-  val behaviorHints: Map<String, String> = emptyMap(),
-)
+/** Removes private add-on configuration and credentials before text reaches logcat. */
+internal fun redactAddonConfigurationFromLog(value: String): String {
+  val urlsRedacted = Regex("(?i)https?://[^\\s\\\"'<>]+")
+    .replace(value) { match ->
+      val raw = match.value.trimEnd('.', ',', ')', ']', '}', ';')
+      val punctuation = match.value.substring(raw.length)
+      val safe = runCatching {
+        val uri = URI(raw)
+        val authority = uri.rawAuthority?.substringAfterLast('@').orEmpty()
+        if (authority.isBlank()) "[redacted-url]" else "${uri.scheme}://$authority/[redacted]${if (uri.rawQuery != null) "?[redacted]" else ""}"
+      }.getOrDefault("[redacted-url]")
+      safe + punctuation
+    }
+  val keyValuesRedacted = Regex("(?i)(\\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|authorization|auth|password|secret|signature|sig)\\b\\s*[:=]\\s*)([^&;,\\s\\\"'<>}]+)")
+    .replace(urlsRedacted) { "${it.groupValues[1]}[redacted]" }
+  return Regex("(?i)(\\bBearer\\s+)[A-Za-z0-9._~+/=-]+")
+    .replace(keyValuesRedacted) { "${it.groupValues[1]}[redacted]" }
+}

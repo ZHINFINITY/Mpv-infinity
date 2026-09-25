@@ -836,14 +836,21 @@ object MediaServersPreferencesScreen : Screen {
 
           item {
             PreferenceSectionHeader(
-              title = "Nuvio Add-ons",
+              title = "Stream Catalogs",
               modifier = Modifier.settingsSearchTarget(R.string.pref_media_servers_title),
             )
           }
 
+          item { CatalogAddonsPreferenceCard(catalogViewModel, catalogSources) }
+
           item {
-            NuvioAddonsPreferenceCard()
+            PreferenceSectionHeader(
+              title = "Nuvio JavaScript Providers",
+              modifier = Modifier.settingsSearchTarget(R.string.pref_media_servers_title),
+            )
           }
+
+          item { NuvioAddonsPreferenceCard() }
         }
       }
     }

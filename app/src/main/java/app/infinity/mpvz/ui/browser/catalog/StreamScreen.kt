@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -162,12 +163,7 @@ object StreamScreen : Screen {
     val sourceNames = remember(catalogSources) { catalogSources.associate { it.id to it.name } }
     val rails = remember(state.items, sourceNames) {
       state.items.groupBy { item ->
-        val title = item.catalogName ?: when (item.catalogSourceId) {
-          "cinemeta-movies" -> "Trending Movies"
-          "cinemeta-series" -> "Popular Series"
-          "kitsu-anime" -> "Top Anime"
-          else -> sourceNames[item.catalogSourceId] ?: "Discover"
-        }
+        val title = item.catalogName ?: sourceNames[item.catalogSourceId] ?: "Discover"
         "${item.catalogSourceId.orEmpty()}|${item.catalogId.orEmpty()}|$title"
       }.mapValues { (_, items) ->
         items.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" }
@@ -321,7 +317,7 @@ object StreamScreen : Screen {
               item(key = "stream_browse_${browseRail}_$index") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                   rowItems.forEach { mediaItem ->
-                    Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { viewModel.showDetails(mediaItem) } }
+                    Box(Modifier.weight(1f)) { NuvioCatalogPosterCard(mediaItem) { viewModel.showDetails(mediaItem) } }
                   }
                   if (rowItems.size == 1) Spacer(Modifier.weight(1f))
                 }
@@ -342,7 +338,7 @@ object StreamScreen : Screen {
               item(key = "stream_search_$index") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                   rowItems.forEach { mediaItem ->
-                    Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { viewModel.showDetails(mediaItem) } }
+                    Box(Modifier.weight(1f)) { NuvioCatalogPosterCard(mediaItem) { viewModel.showDetails(mediaItem) } }
                   }
                   if (rowItems.size == 1) Spacer(Modifier.weight(1f))
                 }
@@ -363,6 +359,7 @@ object StreamScreen : Screen {
           if (!state.isLoading && state.items.isEmpty() && state.error == null) {
             item(key = "stream_no_catalogs") {
               StreamNoCatalogsState(
+                hasCatalogAddons = catalogSources.any { it.isEnabled },
                 onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
                 onRefresh = {
                   if (!isRefreshing) refreshScope.launch {
@@ -405,8 +402,18 @@ private fun NuvioStyleHero(items: List<MediaItem>, onItemClick: (MediaItem) -> U
   BoxWithConstraints(
     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
   ) {
-    val heroHeight = (maxWidth.value * 1.12f).dp.coerceIn(370.dp, 620.dp)
     val isWide = maxWidth >= 600.dp
+    val width = maxWidth.value
+    val availableViewportHeight = (LocalConfiguration.current.screenHeightDp - 116).coerceAtLeast(0).toFloat()
+    val heroHeight = when {
+      width >= 1200f -> (width * .42f).dp.coerceIn(360.dp, 440.dp)
+      width >= 840f -> (width * .46f).dp.coerceIn(340.dp, 420.dp)
+      width >= 600f -> (width * .58f).dp.coerceIn(320.dp, 380.dp)
+      else -> {
+        val viewportBased = (availableViewportHeight * .82f).dp
+        minOf(viewportBased, (width * 1.16f).dp).coerceIn(360.dp, 760.dp)
+      }
+    }
     Box(Modifier.fillMaxWidth().height(heroHeight)) {
       HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
         val item = items[page % items.size]
@@ -536,7 +543,7 @@ private fun LazyListScope.streamCatalogRail(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         items(items, key = { "stream-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
-          Box(Modifier.width(150.dp)) { CatalogGridItem(item, false) { onItemClick(item) } }
+          Box(Modifier.width(150.dp)) { NuvioCatalogPosterCard(item) { onItemClick(item) } }
         }
       }
     }
@@ -570,16 +577,20 @@ private fun StreamEmptySearchState(query: String) {
 }
 
 @Composable
-private fun StreamNoCatalogsState(onOpenSettings: () -> Unit, onRefresh: () -> Unit) {
+private fun StreamNoCatalogsState(hasCatalogAddons: Boolean, onOpenSettings: () -> Unit, onRefresh: () -> Unit) {
   Column(
     Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 56.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     Icon(Icons.RoundedFilled.Movie, contentDescription = null, modifier = Modifier.size(60.dp), tint = MaterialTheme.colorScheme.primary)
-    Text("Your Stream home is ready", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    Text(if (hasCatalogAddons) "No catalog titles available" else "Your Stream home is ready", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
     Text(
-      "Add Stremio-compatible add-ons in Settings → Network → Media Servers to load Nuvio-style catalogs, metadata and direct HTTPS streams.",
+      if (hasCatalogAddons) {
+        "Installed catalog add-ons returned no titles. Check their availability or add another catalog source. Nuvio JavaScript providers are configured separately for direct HTTPS playback."
+      } else {
+        "Install catalog add-ons for Nuvio-style discovery, search and metadata in Settings → Network → Media Servers → Stream Catalogs. Add JavaScript providers in Nuvio JavaScript Providers to resolve direct HTTPS links."
+      },
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       textAlign = androidx.compose.ui.text.style.TextAlign.Center,

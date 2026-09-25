@@ -4,55 +4,37 @@ import android.content.Context
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.Response
-import retrofit2.http.GET
-import retrofit2.http.Path
-import retrofit2.http.Query
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.net.URLEncoder
 import java.io.IOException
-import java.util.concurrent.ConcurrentHashMap
+import java.net.URLEncoder
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 private const val PREFS = "catalog_secure_settings"
 private const val DIAG_TAG = "MpvCatalogDiag"
-private const val KITSU_CATALOG_URL = "https://anime-kitsu.strem.fun/catalog/anime/kitsu-anime-popular.json"
-private const val CINEMETA_BASE_URL = "https://v3-cinemeta.strem.io/catalog"
-private val DEFAULT_CATALOG_SOURCES = listOf(
-  CatalogSource("cinemeta-movies", "Cinemeta Movies", "https://v3-cinemeta.strem.io/manifest.json"),
-  CatalogSource("cinemeta-series", "Cinemeta Series", "https://v3-cinemeta.strem.io/manifest.json"),
-  CatalogSource("kitsu-anime", "Kitsu Anime", "https://anime-kitsu.strem.fun/manifest.json"),
-)
+private const val CATALOG_PAGE_SIZE = 100
 
+/** Catalog feeds are user-installed Nuvio-compatible/Stremio catalog add-ons; there are no bundled legacy catalogs. */
 class CatalogSettings(context: Context) {
   private val prefs = EncryptedSharedPreferences.create(
     context,
@@ -61,63 +43,44 @@ class CatalogSettings(context: Context) {
     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
   )
-  var resolverToken: String
-    get() = prefs.getString("resolver_token", "") ?: ""
-    set(value) = prefs.edit().putString("resolver_token", value.trim()).apply()
-  var resolverPath: String
-    get() = prefs.getString("resolver_path", "/stream/{type}/{imdbId}.json") ?: "/stream/{type}/{imdbId}.json"
-    set(value) = prefs.edit().putString("resolver_path", value.trim().ifBlank { "/stream/{type}/{imdbId}.json" }).apply()
-  var autoChooseBestTorrent: Boolean
-    get() = prefs.getBoolean("auto_choose_best_torrent", false)
-    set(value) = prefs.edit().putBoolean("auto_choose_best_torrent", value).apply()
-  fun resolvers(): List<ResolverEndpoint> = prefs.getStringSet("resolver_endpoints", emptySet()).orEmpty().mapNotNull { encoded ->
-    val parts = encoded.split("|", limit = 2)
-    parts.getOrNull(0)?.takeIf { isHttpAddonEndpoint(it) }?.let { ResolverEndpoint(sanitizeResolverBaseUrl(it), parts.getOrNull(1)?.toBooleanStrictOrNull() ?: true) }
-  }
-  fun saveResolvers(value: List<ResolverEndpoint>) {
-    prefs.edit().putStringSet("resolver_endpoints", value.mapNotNull { endpoint ->
-      sanitizeResolverBaseUrl(endpoint.baseUrl).takeIf { it.isNotBlank() }?.let { "$it|${endpoint.enabled}" }
-    }.toSet()).commit()
-  }
+
   fun catalogSources(): List<CatalogSource> {
-    prefs.getString("catalog_sources_json", null)?.let { encoded ->
-      runCatching { Json.decodeFromString<List<CatalogSource>>(encoded) }.getOrNull()?.filter { isHttpAddonEndpoint(it.manifestUrl) }?.let { return it }
+    val decoded = prefs.getString("catalog_sources_json", null)?.let { encoded ->
+      runCatching { Json.decodeFromString<List<CatalogSource>>(encoded) }.getOrNull()
     }
-    return prefs.getStringSet("catalog_sources", null)?.mapNotNull { encoded ->
+    val sources = decoded ?: prefs.getStringSet("catalog_sources", null)?.mapNotNull { encoded ->
       val parts = encoded.split("|", limit = 4)
-      if (parts.size >= 4 && isHttpAddonEndpoint(parts[2])) CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true) else null
-    } ?: DEFAULT_CATALOG_SOURCES
-  }
-  fun saveCatalogSources(value: List<CatalogSource>) {
-    val validSources = value
+      if (parts.size >= 4 && isHttpAddonEndpoint(parts[2])) {
+        CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true)
+      } else null
+    }.orEmpty()
+    val cleaned = sources
+      .filterNot(::isLegacyCatalogSource)
       .filter { isHttpAddonEndpoint(it.manifestUrl) }
       .distinctBy { it.manifestUrl.lowercase() }
-    val addonResolvers = validSources
-      .filterNot { it.id.startsWith("cinemeta-") || it.id == "kitsu-anime" }
-      .mapNotNull { source ->
-        sanitizeResolverBaseUrl(source.manifestUrl).takeIf { it.isNotBlank() }
-          ?.let { ResolverEndpoint(it, source.isEnabled) }
-      }
+    if (cleaned != sources) saveCatalogSources(cleaned)
+    return cleaned
+  }
+
+  fun saveCatalogSources(value: List<CatalogSource>) {
+    val validSources = value
+      .filterNot(::isLegacyCatalogSource)
+      .filter { isHttpAddonEndpoint(it.manifestUrl) }
+      .distinctBy { it.manifestUrl.lowercase() }
     prefs.edit()
       .putString("catalog_sources_json", Json.encodeToString(validSources))
       .remove("catalog_sources")
-      .putStringSet("resolver_endpoints", addonResolvers.map { "${it.baseUrl}|${it.enabled}" }.toSet())
       .apply()
   }
+
+  private fun isLegacyCatalogSource(source: CatalogSource): Boolean =
+    source.id.startsWith("cinemeta-") || source.id == "kitsu-anime" ||
+      source.manifestUrl.contains("v3-cinemeta.strem.io", ignoreCase = true) ||
+      source.manifestUrl.contains("anime-kitsu.strem.fun", ignoreCase = true)
 }
 
-internal fun isHttpAddonEndpoint(value: String): Boolean = value.trim().let { it.startsWith("https://", true) || it.startsWith("http://", true) }
-
-private fun sanitizeResolverBaseUrl(value: String): String {
-  val trimmed = value.trim().takeIf(::isHttpAddonEndpoint).orEmpty()
-  if (trimmed.isBlank()) return ""
-  val path = trimmed.substringBefore('?').trimEnd('/')
-    .removeSuffix("/manifest.json")
-    .removeSuffix("/stream")
-    .trimEnd('/')
-  val query = trimmed.substringAfter('?', "")
-  return if (query.isBlank()) path else "$path?$query"
-}
+internal fun isHttpAddonEndpoint(value: String): Boolean =
+  value.trim().startsWith("https://", true) || value.trim().startsWith("http://", true)
 
 private fun addonRootUrl(value: String): String =
   value.substringBefore('?').trimEnd('/').removeSuffix("/manifest.json")
@@ -137,135 +100,106 @@ internal fun addonOriginForLog(value: String): String {
   return "$scheme://${authority.substringAfterLast('@')}"
 }
 
-class KitsuAnimeRepository {
-  private val client = OkHttpClient()
-  private val json = Json { ignoreUnknownKeys = true }
-
-  suspend fun popular(query: String? = null, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-    val skip = if (page > 1) "/skip=${(page - 1) * 30}" else ""
-    val search = query?.takeIf { it.isNotBlank() }?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
-    val url = KITSU_CATALOG_URL.removeSuffix(".json") + skip + search + ".json"
-    client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
-      if (!response.isSuccessful) error("Kitsu catalog request failed (${response.code})")
-      val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
-      metas.mapNotNull { entry ->
-        val meta = entry.jsonObject
-        val id = meta["kitsu_id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-        MediaItem(
-          id = -id.hashCode(), provider = CatalogProvider.KITSU, providerId = id,
-          type = if (meta["type"]?.jsonPrimitive?.contentOrNull == "movie") MediaType.MOVIE else MediaType.TV,
-          title = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-          overview = meta["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-          posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
-          backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
-          imdbId = meta["imdb_id"]?.jsonPrimitive?.contentOrNull,
-          catalogSourceId = "kitsu-anime",
-          releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
-          contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
-          duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
-          genres = meta["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
-        )
-      }
-    }
-  }
-
-  suspend fun seasons(providerId: String): List<Season> = withContext(Dispatchers.IO) {
-    val url = "https://anime-kitsu.strem.fun/meta/anime/${URLEncoder.encode(providerId, "UTF-8")}.json"
-    runCatching {
-      client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
-        if (!response.isSuccessful) return@use emptyList()
-        json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty()
-          .mapNotNull { element ->
-            val video = element.jsonObject
-            val season = video["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-            val episode = video["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-            season to Episode(episode, video["title"]?.jsonPrimitive?.contentOrNull ?: "Episode $episode", video["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), video["thumbnail"]?.jsonPrimitive?.contentOrNull, video["runtime"]?.jsonPrimitive?.contentOrNull)
-          }
-          .groupBy({ it.first }, { it.second })
-          .map { (number, episodes) -> Season(number, episodes.distinctBy { it.number }.sortedBy { it.number }) }
-          .sortedBy { it.number }
-      }
-    }.getOrDefault(emptyList())
-  }
-}
-
+/** Loads catalog rails and search results from installed Nuvio-compatible catalog add-ons. */
 class StremioCatalogRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
-  private val manifestCache = ConcurrentHashMap<String, JsonObject>()
 
-  suspend fun manifestName(url: String): String? = withContext(Dispatchers.IO) {
-    runCatching { getJson(url).jsonObject["name"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+  suspend fun validateCatalogManifest(url: String): String = withContext(Dispatchers.IO) {
+    val manifest = getJson(url).jsonObject
+    val hasCatalogs = manifest["catalogs"]?.jsonArray.orEmpty().isNotEmpty()
+    val hasMetadata = manifest["resources"]?.jsonArray.orEmpty().any { resource ->
+      when (resource) {
+        is kotlinx.serialization.json.JsonPrimitive -> resource.contentOrNull.equals("meta", ignoreCase = true)
+        is kotlinx.serialization.json.JsonObject -> resource["name"]?.jsonPrimitive?.contentOrNull.equals("meta", ignoreCase = true) ||
+          resource["id"]?.jsonPrimitive?.contentOrNull.equals("meta", ignoreCase = true)
+        else -> false
+      }
+    }
+    require(hasCatalogs || hasMetadata) {
+      "This manifest exposes neither catalogs nor metadata. Install JavaScript scraper repositories under Nuvio JavaScript Providers instead."
+    }
+    manifest["name"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
+      ?: url.substringBefore('?').substringAfterLast('/').removeSuffix(".json").ifBlank { "Catalog add-on" }
+  }
+
+  suspend fun isNuvioScraperManifest(url: String): Boolean = withContext(Dispatchers.IO) {
+    runCatching { getJson(url).jsonObject["scrapers"]?.jsonArray.orEmpty().isNotEmpty() }.getOrDefault(false)
   }
 
   suspend fun load(source: CatalogSource, query: String?, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
-    Log.i(DIAG_TAG, "catalog start source=${source.id} query=${query ?: "<home>"} manifest=${addonOriginForLog(source.manifestUrl)}")
+    Log.i(DIAG_TAG, "catalog start source=${source.id} queryLength=${query?.length ?: 0} manifest=${addonOriginForLog(source.manifestUrl)}")
     runCatching {
-      // Always refresh the manifest: addon providers can publish new catalogs/rails without
-      // changing the manifest URL, so a permanent in-memory cache hides those rails.
       val manifest = getJson(source.manifestUrl).jsonObject
       val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
-          // Each advertised catalog is a distinct rail. Add-ons that expose only streams still
-          // contribute no catalog items and therefore do not affect the resolver path.
-          val catalogsToLoad = catalogs.filter { catalogElement ->
-            catalogElement.jsonObject["extra"]?.jsonArray.orEmpty().none { extra ->
-              extra.jsonObject["isRequired"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() == true
-            }
-          }
-          catalogsToLoad.flatMap { catalogElement ->
+      catalogs.filter { catalogElement ->
+        // Use the required `search` value during search, but do not guess required genre/year/etc.
+        catalogElement.jsonObject["extra"]?.jsonArray.orEmpty().none { extra ->
+          val property = extra.jsonObject
+          val required = property["isRequired"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() == true
+          val name = property["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+          required && !(name.equals("search", ignoreCase = true) && !query.isNullOrBlank()) &&
+            !name.equals("skip", ignoreCase = true)
+        }
+      }.flatMap { catalogElement ->
         runCatching {
           val catalog = catalogElement.jsonObject
           val type = catalog["type"]?.jsonPrimitive?.contentOrNull ?: return@runCatching emptyList()
           val id = catalog["id"]?.jsonPrimitive?.contentOrNull ?: return@runCatching emptyList()
-          val extras = catalog["extra"]?.jsonArray.orEmpty().mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.lowercase() }
+          val extras = catalog["extra"]?.jsonArray.orEmpty()
+            .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.lowercase() }
           val supportsSearch = "search" in extras
           if (!query.isNullOrBlank() && !supportsSearch) return@runCatching emptyList()
-          val skipSuffix = if (page > 1) "/skip=${(page - 1) * 30}" else ""
-          val searchSuffix = if (!query.isNullOrBlank()) "/search=${encodePathSegment(query)}" else ""
-          val suffix = skipSuffix + searchSuffix
-          val catalogUrl = buildAddonPathUrl(source.manifestUrl, "catalog/$type/${encodePathSegment(id)}$suffix.json")
-          Log.i(DIAG_TAG, "catalog request source=${source.id} type=$type id=$id supportsSearch=$supportsSearch addon=${addonOriginForLog(catalogUrl)}")
-          val payload = getJson(catalogUrl).jsonObject
-          payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
-          val meta = element.jsonObject
-          val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-          val metaType = meta["type"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: type
-          MediaItem(
-            id = providerId.hashCode(),
-            type = if (metaType == "movie") MediaType.MOVIE else MediaType.TV,
-            title = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            overview = meta["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
-            backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
-            imdbId = meta["imdb_id"]?.jsonPrimitive?.contentOrNull,
-            provider = CatalogProvider.CINEMETA,
-            providerId = providerId,
-            catalogSourceId = source.id,
-            catalogType = metaType,
-            catalogId = id,
-            catalogName = catalog["name"]?.jsonPrimitive?.contentOrNull ?: id,
-            releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
-            contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
-            duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
-            genres = meta["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
-              ?: meta["genre"]?.jsonPrimitive?.contentOrNull?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
-              ?: emptyList(),
+          val supportsPagination = "skip" in extras
+          if (page > 1 && !supportsPagination) return@runCatching emptyList()
+
+          val extraParts = buildList {
+            if (!query.isNullOrBlank()) add("search=${encodeAddonPathSegment(query)}")
+            if (page > 1) add("skip=${(page - 1) * CATALOG_PAGE_SIZE}")
+          }
+          val extrasPath = extraParts.joinToString("&").takeIf(String::isNotBlank)?.let { "/$it" }.orEmpty()
+          val requestUrl = buildAddonPathUrl(
+            source.manifestUrl,
+            "catalog/$type/${encodeAddonPathSegment(id)}$extrasPath.json",
           )
-          }.filter { query.isNullOrBlank() || supportsSearch || it.title.contains(query, ignoreCase = true) || it.overview.contains(query, ignoreCase = true) }
+          val payload = getJson(requestUrl).jsonObject
+          payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
+            val meta = element.jsonObject
+            val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val itemType = meta["type"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: type.lowercase()
+            MediaItem(
+              id = providerId.hashCode(),
+              type = if (itemType == "movie") MediaType.MOVIE else MediaType.TV,
+              title = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+              overview = meta["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+              posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
+              backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
+              imdbId = meta["imdb_id"]?.jsonPrimitive?.contentOrNull,
+              providerId = providerId,
+              catalogSourceId = source.id,
+              catalogType = itemType,
+              catalogId = id,
+              catalogName = catalog["name"]?.jsonPrimitive?.contentOrNull ?: id,
+              releaseYear = meta["releaseInfo"]?.jsonPrimitive?.contentOrNull,
+              contentRating = meta["imdbRating"]?.jsonPrimitive?.contentOrNull,
+              duration = meta["runtime"]?.jsonPrimitive?.contentOrNull,
+              genres = meta["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                ?: meta["genre"]?.jsonPrimitive?.contentOrNull?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() }
+                ?: emptyList(),
+            )
+          }
         }.onFailure { error ->
           if (error is CancellationException) throw error
-          Log.e(DIAG_TAG, "catalog failed source=${source.id} message=${error.message}", error)
+          Log.w(DIAG_TAG, "catalog request failed source=${source.id}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
         }.getOrDefault(emptyList())
       }
     }.onSuccess { items -> Log.i(DIAG_TAG, "catalog complete source=${source.id} items=${items.size}") }
       .onFailure { error ->
         if (error is CancellationException) throw error
-        Log.e(DIAG_TAG, "manifest failed source=${source.id} message=${error.message}", error)
+        Log.w(DIAG_TAG, "catalog manifest failed source=${source.id}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
       }
       .getOrDefault(emptyList())
   }
-
-  private fun encodePathSegment(value: String): String = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
   private suspend fun getJson(url: String): JsonElement {
     var attempt = 0
@@ -277,11 +211,12 @@ class StremioCatalogRepository {
           override fun onFailure(call: Call, error: IOException) {
             if (continuation.isActive) continuation.resumeWithException(error)
           }
+
           override fun onResponse(call: Call, response: Response) {
             response.use {
               runCatching {
                 if (it.code == 429 && attempt < 3) null
-                else if (!it.isSuccessful) error("Stremio catalog request failed (${it.code})")
+                else if (!it.isSuccessful) error("Catalog request returned HTTP ${it.code}")
                 else json.parseToJsonElement(it.body.string())
               }.onSuccess { value -> if (continuation.isActive) continuation.resume(value) }
                 .onFailure { error -> if (continuation.isActive) continuation.resumeWithException(error) }
@@ -298,247 +233,43 @@ class StremioCatalogRepository {
   }
 }
 
-class CinemetaCatalogRepository {
+/** Reads full title and episode metadata from the installed catalog add-ons, like NuvioMobile. */
+class StremioMetadataRepository {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
-  suspend fun popular(page: Int = 1): List<MediaItem> = request(null, page)
-  suspend fun search(value: String, page: Int = 1): List<MediaItem> = request(value, page)
 
-  suspend fun seasons(providerId: String): List<Season> = withContext(Dispatchers.IO) {
-    val request = Request.Builder().url("https://v3-cinemeta.strem.io/meta/series/${URLEncoder.encode(providerId, "UTF-8")}.json").get().build()
-    client.newCall(request).execute().use { response ->
-      if (!response.isSuccessful) return@withContext emptyList()
-      val videos = json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty()
-      videos.mapNotNull { element ->
-        val video = element.jsonObject
-        val season = video["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-        val episode = video["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-        season to Episode(episode, video["title"]?.jsonPrimitive?.contentOrNull ?: "Episode $episode", video["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), video["thumbnail"]?.jsonPrimitive?.contentOrNull, video["runtime"]?.jsonPrimitive?.contentOrNull)
-      }.groupBy({ it.first }, { it.second }).map { (number, episodes) -> Season(number, episodes.sortedBy { it.number }) }.sortedBy { it.number }
-    }
-  }
+  suspend fun loadMetadata(item: MediaItem, sources: List<CatalogSource>): MediaItem? = withContext(Dispatchers.IO) {
+    val orderedSources = sources.filter { it.isEnabled }.sortedByDescending { it.id == item.catalogSourceId }
+    val identifiers = listOfNotNull(item.providerId, item.imdbId).distinct()
+    if (identifiers.isEmpty()) return@withContext null
+    val defaultType = item.catalogType ?: if (item.type == MediaType.TV) "series" else "movie"
+    val types = (listOf(defaultType) + if (item.type == MediaType.TV) listOf("series", "anime") else listOf("movie"))
+      .distinct()
 
-  private suspend fun request(value: String?, page: Int): List<MediaItem> = withContext(Dispatchers.IO) {
-    listOf("movie", "series").flatMap { type ->
-      val skip = if (page > 1) "/skip=${(page - 1) * 30}" else ""
-      val search = value?.let { "/search=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
-      val suffix = skip + search
-      val request = Request.Builder().url("$CINEMETA_BASE_URL/$type/top$suffix.json").get().build()
-      client.newCall(request).execute().use { response ->
-        if (!response.isSuccessful) return@flatMap emptyList()
-        val metas = json.parseToJsonElement(response.body.string()).jsonObject["metas"]?.jsonArray.orEmpty()
-        metas.mapNotNull { entry ->
-          val meta = entry.jsonObject
-          val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-          val seasons = meta["videos"]?.jsonArray.orEmpty().mapNotNull { videoElement ->
-            val video = videoElement.jsonObject
-            val season = video["season"]?.jsonPrimitive?.intOrNull
-            val episode = video["episode"]?.jsonPrimitive?.intOrNull
-            if (season == null || episode == null) null else Season(season, listOf(Episode(
-              number = episode,
-              title = video["title"]?.jsonPrimitive?.contentOrNull ?: "Episode $episode",
-              overview = video["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-              stillUrl = video["thumbnail"]?.jsonPrimitive?.contentOrNull,
-              runtime = video["runtime"]?.jsonPrimitive?.contentOrNull,
-            )))
-          }.groupBy { it.number }.map { (number, grouped) -> Season(number, grouped.flatMap { it.episodes }.sortedBy { it.number }) }.sortedBy { it.number }
-          MediaItem(
-            id = providerId.hashCode(),
-            type = if (type == "series") MediaType.TV else MediaType.MOVIE,
-            title = meta["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            overview = meta["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            posterUrl = meta["poster"]?.jsonPrimitive?.contentOrNull,
-            backdropUrl = meta["background"]?.jsonPrimitive?.contentOrNull,
-            provider = CatalogProvider.CINEMETA,
-            providerId = providerId,
-            imdbId = providerId.takeIf { it.startsWith("tt") },
-            catalogSourceId = if (type == "series") "cinemeta-series" else "cinemeta-movies",
-            catalogType = type,
-            seasons = seasons,
-            genres = meta["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
-          )
-        }
-      }
-    }
-  }
-}
-
-data class ResolverEndpoint(val baseUrl: String, val enabled: Boolean = true)
-
-interface StreamResolver {
-  suspend fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null): List<StreamOption>
-}
-
-/**
- * Adapter for a user-controlled debrid/cloud resolver. The app deliberately does not scrape
- * public torrent indexes or embed provider credentials; deployments provide this HTTPS endpoint.
- * The endpoint receives stable TMDB metadata and returns a short-lived direct media URL.
- */
-class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolver {
-  private val client = OkHttpClient()
-  private val json = Json { ignoreUnknownKeys = true }
-  private data class AddonEpisodeResource(val id: String, val season: Int?, val episode: Int?)
-
-  override suspend fun resolve(item: MediaItem, season: Int?, episode: Int?): List<StreamOption> {
-    return withContext(Dispatchers.IO) {
-    val endpoints = settings.resolvers().filter { it.enabled }.ifEmpty {
-      listOfNotNull(settings.resolvers().firstOrNull(), null).filter { it.enabled }
-    }
-    if (endpoints.isEmpty()) {
-      Log.w("CloudStreamResolver", "No active stream resolver is configured")
-      return@withContext emptyList()
-    }
-    Log.i(DIAG_TAG, "resolve start title=\"${item.title}\" type=${item.catalogType ?: item.type} providerId=${item.providerId ?: "<none>"} endpoints=${endpoints.map { it.baseUrl }} season=$season episode=$episode")
-    coroutineScope {
-      endpoints.map { endpoint ->
-        async {
-          val capabilities = manifestCapabilities(endpoint.baseUrl)
-          val requestedTypes = when {
-            item.provider == CatalogProvider.KITSU && item.type == MediaType.TV -> listOf("anime", "series")
-            item.provider == CatalogProvider.KITSU -> listOf("anime", "movie")
-            !item.catalogType.isNullOrBlank() -> listOf(item.catalogType)
-            else -> listOf(null)
-          }
-          val types = requestedTypes.filter { type ->
-            type == null || capabilities == null || capabilities.types.isEmpty() || type in capabilities.types
-          }
-          val identifiersForManifest = listOfNotNull(item.imdbId, item.providerId, item.id.toString())
-          val idCompatible = capabilities == null || capabilities.idPrefixes.isEmpty() || identifiersForManifest.any { identifier ->
-            capabilities.idPrefixes.any { prefix -> identifier.startsWith(prefix, ignoreCase = true) }
-          }
-          if (capabilities != null && (types.isEmpty() || !idCompatible)) {
-            Log.w("CloudStreamResolver", "Skipping endpoint=${endpoint.baseUrl}: manifest types=${capabilities.types} idPrefixes=${capabilities.idPrefixes} requestedTypes=${requestedTypes.filterNotNull()} identifiers=${identifiersForManifest}")
-          }
-          if (!idCompatible) emptyList() else types.flatMap { type ->
-            // Addon episode IDs are independent requests. Running them concurrently makes the
-            // episode picker responsive without dropping any real seasons or episodes.
-            val identifiers: List<Pair<String?, AddonEpisodeResource?>> = if (item.provider == CatalogProvider.KITSU) {
-              val fallback = resolverIdentifiers(item, capabilities)
-              // Anime catalog IDs are not necessarily the IDs accepted by an addon's stream route.
-              // Stremio anime add-ons commonly expose concrete episode resource IDs in /meta/*;
-              // probe those IDs first, then retain Kitsu/IMDb fallbacks for direct resolvers.
-              if (item.type == MediaType.TV) {
-                val episodeResources = addonEpisodeResources(endpoint.baseUrl, item, season, episode, type, fallback)
-                if (episodeResources.isNotEmpty()) episodeResources.map { it.id to it }
-                else fallback.map { it to null }
-              } else {
-                fallback.map { it to null }
-              }
-            } else if (item.type == MediaType.TV) {
-              val episodeResources = addonEpisodeResources(endpoint.baseUrl, item, season, episode, type, resolverIdentifiers(item, capabilities))
-              if (episodeResources.isNotEmpty()) episodeResources.map { it.id to it } else listOf(null to null)
-            } else listOf(null to null)
-            coroutineScope {
-              identifiers.map { (identifier, episodeResource) ->
-                async {
-                  runCatching {
-                    resolveFromEndpoint(
-                      endpoint.baseUrl,
-                      item,
-                      if (episodeResource != null) null else season,
-                      if (episodeResource != null) null else episode,
-                      type,
-                      identifier,
-                    ).map { stream ->
-                      stream.copy(
-                        source = stream.source?.takeIf { it.isNotBlank() } ?: endpoint.baseUrl.substringAfter("://").substringBefore('/'),
-                        season = stream.season ?: episodeResource?.season,
-                        episode = stream.episode ?: episodeResource?.episode,
-                      )
-                    }
-                  }
-                    .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
-                    .getOrDefault(emptyList())
-                }
-              }.awaitAll().flatten()
-            }
-          }
-        }
-      }.awaitAll().flatten()
-        .distinctBy { it.url }
-        .sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
-        .also { Log.i(DIAG_TAG, "resolve complete title=\"${item.title}\" streams=${it.size} playable=${it.count { stream -> stream.isPlayable }}") }
-    }
-    }
-  }
-
-  suspend fun loadSeasons(item: MediaItem): List<Season> = withContext(Dispatchers.IO) {
-    settings.catalogSources().filter { it.isEnabled }.flatMap { source ->
-      val capabilities = manifestCapabilities(source.manifestUrl)
-      val identifiers = resolverIdentifiers(item, capabilities)
-      if (identifiers.isEmpty()) return@flatMap emptyList()
-      val types = if (item.provider == CatalogProvider.KITSU) listOf("anime", "series") else listOf(item.catalogType ?: if (item.type == MediaType.TV) "series" else "movie")
-      types.filter { capabilities == null || capabilities.types.isEmpty() || it in capabilities.types }.flatMap { type ->
-        identifiers.flatMap { identifier -> runCatching {
-          val url = buildAddonPathUrl(source.manifestUrl, "meta/$type/${encodeAddonPathSegment(identifier)}.json")
-          client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
-            if (!response.isSuccessful) return@use emptyList()
-            val videos = json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty()
-            videos.mapNotNull { video ->
-              val value = video.jsonObject
-              val season = value["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-              val episode = value["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-              Season(season, listOf(Episode(episode, value["name"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "Episode $episode" }, value["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), value["thumbnail"]?.jsonPrimitive?.contentOrNull, value["runtime"]?.jsonPrimitive?.contentOrNull)))
-            }
-          }
-        }.getOrDefault(emptyList()) }
-      }
-    }.groupBy { it.number }.map { (number, seasons) ->
-      Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number })
-    }.sortedBy { it.number }
-  }
-
-  suspend fun loadMetadata(item: MediaItem): MediaItem? = withContext(Dispatchers.IO) {
-    val sources = settings.catalogSources().filter { it.isEnabled }
-    for (source in sources) {
-      val capabilities = manifestCapabilities(source.manifestUrl)
-      val identifiers = resolverIdentifiers(item, capabilities)
-      if (identifiers.isEmpty()) continue
-      val types = if (item.provider == CatalogProvider.KITSU && item.type == MediaType.TV) {
-        listOf("anime", "series")
-      } else {
-        listOf(item.catalogType ?: if (item.type == MediaType.TV) "series" else "movie")
-      }
+    for (source in orderedSources) {
       for (type in types) {
-        if (capabilities != null && capabilities.types.isNotEmpty() && type !in capabilities.types) continue
         for (identifier in identifiers) {
           val metadata = runCatching {
             val url = buildAddonPathUrl(source.manifestUrl, "meta/$type/${encodeAddonPathSegment(identifier)}.json")
-            client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
+            client.newCall(Request.Builder().url(url).header("Accept", "application/json").header("User-Agent", "MpvInfinity/1.0").get().build()).execute().use { response ->
               if (!response.isSuccessful) return@use null
               json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject
             }
           }.getOrNull() ?: continue
-          val videos = metadata["videos"]?.jsonArray.orEmpty().mapNotNull { element ->
-            val video = element.jsonObject
-            val season = video["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-            val episode = video["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
-            Season(
-              season,
-              listOf(
-                Episode(
-                  episode,
-                  video["name"]?.jsonPrimitive?.contentOrNull ?: video["title"]?.jsonPrimitive?.contentOrNull ?: "Episode $episode",
-                  video["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                  video["thumbnail"]?.jsonPrimitive?.contentOrNull,
-                  video["runtime"]?.jsonPrimitive?.contentOrNull,
-                ),
-              ),
-            )
-          }.groupBy { it.number }
-            .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
-            .sortedBy { it.number }
+
+          val seasons = parseSeasons(metadata["videos"] as? JsonArray)
+          val releaseInfo = metadata["releaseInfo"]?.jsonPrimitive?.contentOrNull
           return@withContext item.copy(
             title = metadata["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: item.title,
             overview = metadata["description"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: item.overview,
             posterUrl = metadata["poster"]?.jsonPrimitive?.contentOrNull ?: item.posterUrl,
             backdropUrl = metadata["background"]?.jsonPrimitive?.contentOrNull ?: item.backdropUrl,
             imdbId = metadata["imdb_id"]?.jsonPrimitive?.contentOrNull ?: item.imdbId,
-            releaseYear = metadata["releaseInfo"]?.jsonPrimitive?.contentOrNull ?: item.releaseYear,
+            releaseYear = releaseInfo ?: item.releaseYear,
             contentRating = metadata["imdbRating"]?.jsonPrimitive?.contentOrNull ?: item.contentRating,
             duration = metadata["runtime"]?.jsonPrimitive?.contentOrNull ?: item.duration,
-            genres = metadata["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.takeIf { it.isNotEmpty() } ?: item.genres,
-            seasons = videos.ifEmpty { item.seasons },
+            genres = metadata["genres"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.ifEmpty { item.genres } ?: item.genres,
+            seasons = seasons.ifEmpty { item.seasons },
           )
         }
       }
@@ -546,226 +277,28 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     null
   }
 
-  private data class ResolverCapabilities(val types: Set<String>, val idPrefixes: Set<String>)
+  suspend fun loadSeasons(item: MediaItem, sources: List<CatalogSource>): List<Season> =
+    loadMetadata(item, sources)?.seasons.orEmpty()
 
-  private fun resolverIdentifiers(item: MediaItem, capabilities: ResolverCapabilities?): List<String> {
-    val values = listOfNotNull(item.imdbId, item.providerId).distinct()
-    val prefixes = capabilities?.idPrefixes.orEmpty()
-    val compatible = if (prefixes.isEmpty()) values else values.filter { value -> prefixes.any { value.startsWith(it, ignoreCase = true) } }
-    return (compatible + if (prefixes.isEmpty()) listOf(item.id.toString()) else emptyList()).distinct()
-  }
-
-  private suspend fun manifestCapabilities(baseUrl: String): ResolverCapabilities? = withContext(Dispatchers.IO) {
-    runCatching {
-      client.newCall(Request.Builder().url(buildAddonPathUrl(baseUrl, "manifest.json")).header("Accept", "application/json").get().build()).execute().use { response ->
-        if (!response.isSuccessful) return@use null
-        val manifest = json.parseToJsonElement(response.body.string()).jsonObject
-        ResolverCapabilities(
-          types = manifest["types"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull?.lowercase() }?.toSet().orEmpty(),
-          idPrefixes = manifest["idPrefixes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull?.lowercase() }?.toSet().orEmpty(),
-        )
-      }
-    }.getOrNull()
-  }
-
-  private fun addonEpisodeResources(baseUrl: String, item: MediaItem, season: Int?, episode: Int?, typeOverride: String? = null, identifiers: List<String>): List<AddonEpisodeResource> {
-    if (identifiers.isEmpty()) return emptyList()
-    val type = typeOverride ?: item.catalogType ?: "series"
-    return identifiers.flatMap { id -> runCatching {
-      val url = buildAddonPathUrl(baseUrl, "meta/$type/${encodeAddonPathSegment(id)}.json")
-      client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
-        if (!response.isSuccessful) return@use emptyList()
-        json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty().mapNotNull { video ->
-          val value = video.jsonObject
-          val s = value["season"]?.jsonPrimitive?.intOrNull
-          val e = value["episode"]?.jsonPrimitive?.intOrNull
-          val resourceId = value["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-          if ((season == null || s == season) && (episode == null || e == episode)) AddonEpisodeResource(resourceId, s, e) else null
-        }
-      }
-    }.getOrDefault(emptyList()) }.distinctBy { it.id }
-  }
-
-  private suspend fun resolveFromEndpoint(
-    baseUrl: String,
-    item: MediaItem,
-    season: Int?,
-    episode: Int?,
-    typeOverride: String? = null,
-    identifierOverride: String? = null,
-  ): List<StreamOption> {
-    val identifier = identifierOverride ?: item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: item.id.toString()
-    val type = typeOverride ?: item.catalogType ?: when {
-      item.provider == CatalogProvider.KITSU -> "anime"
-      item.type == MediaType.TV -> "series"
-      else -> "movie"
-    }
-    val resourceIdentifier = if (item.type == MediaType.TV && season != null) {
-      if (episode != null) "$identifier:$season:$episode" else "$identifier:$season"
-    } else identifier
-    val path = "stream/$type/${encodeAddonPathSegment(resourceIdentifier)}.json"
-    val request = Request.Builder()
-      .url(buildAddonPathUrl(baseUrl, path))
-      .header("User-Agent", "Mozilla/5.0 (Android) mpv-infinity/1.0")
-      .header("Accept", "application/json")
-      .apply { if (settings.resolverToken.isNotBlank()) addHeader("Authorization", "Bearer ${settings.resolverToken}") }
-      .get()
-      .build()
-    Log.i(DIAG_TAG, "resolver request addon=${addonOriginForLog(baseUrl)} path=$path type=$type identifier=$identifier season=$season episode=$episode")
-    return client.newCall(request).execute().use { response ->
-      Log.i(DIAG_TAG, "resolver response addon=${addonOriginForLog(baseUrl)} path=$path status=${response.code}")
-      if (!response.isSuccessful) {
-        Log.w("CloudStreamResolver", "Resolver ${addonOriginForLog(request.url.toString())} returned HTTP ${response.code}")
-        error("Resolver request failed (${response.code})")
-      }
-      val parsed = parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
-      Log.i(DIAG_TAG, "resolver parsed addon=${addonOriginForLog(baseUrl)} path=$path streams=${parsed.size}")
-      require(parsed.isNotEmpty()) {
-        "Resolver returned HTTP ${response.code} with no streams for type=$type identifier=$identifier. Check the endpoint manifest and supported ID format."
-      }
-      parsed
-    }
-  }
-
-  private fun parseStreams(element: JsonElement, depth: Int): List<StreamOption> {
-    if (element is JsonObject) {
-      element["streams"]?.let { return parseStreams(it, depth) }
-    }
-    val candidates = when (element) {
-      is JsonArray -> element.flatMap { parseCandidate(it) }
-      is JsonObject -> parseCandidate(element)
-      else -> parseCandidate(element)
-    }
-    return candidates.flatMap { candidate ->
-      val clean = sanitizeUrl(candidate.url)
-      when {
-        clean.startsWith("https://", ignoreCase = true) && isPlayableRemoteStream(clean) -> {
-          // HentaiStream's video proxy is cached by the full query string. The bare URL can
-          // resolve to a cached 5-second ad MP4, while the same source with a harmless client
-          // marker returns the actual episode file (the behavior observed by Stremio clients).
-          val playableUrl = if (clean.contains("hentaistream-addon.") && clean.contains("/video-proxy?")) {
-            validatedHentaiStreamUrl(clean)
-          } else clean
-          if (playableUrl == null || !playableUrl.startsWith("https://", ignoreCase = true)) emptyList()
-          else listOf(candidate.copy(url = playableUrl, isPlayable = isPlayableRemoteStream(playableUrl)))
-        }
-        else -> emptyList()
-      }
-    }.sortedWith(compareByDescending<StreamOption> { it.isPlayable }.thenByDescending { it.qualityRank }.thenByDescending { it.seeders })
-  }
-
-  private fun isPlayableRemoteStream(url: String): Boolean {
-    val normalized = url.substringBefore('?').substringBefore('#').lowercase()
-    if (normalized.endsWith("/configure") || normalized.endsWith("/configure/")) return false
-    if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg") || normalized.endsWith(".png") ||
-      normalized.endsWith(".gif") || normalized.endsWith(".webp") || normalized.endsWith(".avif")) return false
-    // HentaiStream's addon also returns HentaiMama snapshot images in its streams array.
-    // Only its video-proxy endpoint is a playable HentaiSea stream.
-    if (url.contains("hentaistream-addon.", ignoreCase = true)) {
-      return url.contains("/video-proxy?", ignoreCase = true)
-    }
-    return url.startsWith("https://", ignoreCase = true)
-  }
-
-  private fun validatedHentaiStreamUrl(original: String): String? {
-    var candidate = original
-    repeat(6) { attempt ->
-      val token = "${System.currentTimeMillis()}-${attempt}-${kotlin.random.Random.nextInt(1_000_000)}"
-      candidate = if (candidate.contains("&mpvinfinity=")) {
-        candidate.replace(Regex("&mpvinfinity=[^&]*"), "&mpvinfinity=$token")
-      } else {
-        "$candidate&stremio=1&mpvinfinity=$token"
-      }
-      val fullSize = runCatching {
-        client.newCall(
-          Request.Builder()
-            .url(candidate)
-            // The addon selects its CDN variant from browser-like request headers. Do not seed
-            // the cache key with the app-specific mpv-infinity UA; Stremio uses a browser UA.
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/151.0.7922.199 Mobile Safari/537.36")
-            .header("Referer", "https://hentaistream-addon.keypop3750.workers.dev/")
-            .header("Cache-Control", "no-cache")
-            // MPV's first demuxer request is typically a 1 MiB range. A 2-byte probe can
-            // report the full file while the subsequent MPV range still receives the cached
-            // 233 KB HentaiSea placeholder.
-            .header("Range", "bytes=0-1048575")
-            .get()
-            .build(),
-        ).execute().use { response ->
-          response.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
-            ?: response.header("Content-Length")?.toLongOrNull()
-            ?: 0L
-        }
-      }.getOrDefault(0L)
-      if (fullSize > 1_000_000L) return candidate
-    }
-    // Never expose the known 5-second placeholder as a playable stream. It is better to show no
-    // stale link than to launch a valid MP4 that is only the addon’s access-warning clip.
-    return null
-  }
-
-  private fun parseCandidate(element: JsonElement): List<StreamOption> = when (element) {
-    is JsonPrimitive -> listOf(StreamOption(element.content, "Stream", qualityRank = qualityRank(element.content)))
-    is JsonObject -> {
-      val title = element["title"]?.jsonPrimitive?.content
-        ?: element["name"]?.jsonPrimitive?.content
-        ?: "Stream"
-      val hints = element["behaviorHints"] as? JsonObject
-      val requestHeaders = ((hints?.get("proxyHeaders") as? JsonObject)?.get("request") as? JsonObject)
-        ?.mapNotNull { (name, value) -> value.jsonPrimitive.contentOrNull?.let { name to it } }
-        ?.toMap()
-        .orEmpty()
-      val filename = hints?.get("filename")?.jsonPrimitive?.contentOrNull
-      val externalUrl = element["externalUrl"]?.jsonPrimitive?.contentOrNull
-      val directUrl = element["url"]?.jsonPrimitive?.contentOrNull
-      val common = { url: String, external: Boolean, playable: Boolean ->
-        StreamOption(
-          url = url,
-          title = title,
-          headers = requestHeaders,
-          filename = filename,
-          isPlayable = playable,
-          isExternal = external,
-          qualityRank = qualityRank("$title $url"),
-          seeders = element["seeders"]?.jsonPrimitive?.intOrNull ?: element["peers"]?.jsonPrimitive?.intOrNull ?: 0,
-          size = element["size"]?.jsonPrimitive?.content,
-          source = (element["source"] ?: element["provider"] ?: element["addon"] ?: element["addonName"])?.jsonPrimitive?.contentOrNull,
-          audioCodec = element["audioCodec"]?.jsonPrimitive?.contentOrNull,
-          videoCodec = element["videoCodec"]?.jsonPrimitive?.contentOrNull,
-          torrentFileIndex = element["fileIdx"]?.jsonPrimitive?.intOrNull,
-          season = element["season"]?.jsonPrimitive?.intOrNull,
-          episode = element["episode"]?.jsonPrimitive?.intOrNull,
-        )
-      }
-      listOfNotNull(
-        directUrl?.takeIf { it.startsWith("https://", ignoreCase = true) && isPlayableRemoteStream(it) }
-          ?.let { common(it, false, true) },
-      )
-    }
-    else -> emptyList()
-  }
-
-  private fun qualityRank(value: String): Int {
-    val normalized = value.lowercase()
-    return when {
-      "2160p" in normalized || "4k" in normalized -> 2160
-      "1440p" in normalized -> 1440
-      "1080p" in normalized -> 1080
-      "720p" in normalized -> 720
-      "480p" in normalized -> 480
-      else -> 0
-    }
-  }
-
-  private fun sanitizeUrl(value: String): String = value.trim().removeSurrounding("[").removeSurrounding("]").trim('"', '\'', ' ', '\n', '\r', '\t')
-
-  private fun resolveStremioResource(url: String, title: String, depth: Int): List<StreamOption> {
-    require(depth < 2) { "Stremio resolver returned too many nested resources." }
-    val resourceUrl = url.replaceFirst("stremio://", "https://")
-    val request = Request.Builder().url(resourceUrl).build()
-    return client.newCall(request).execute().use { response ->
-      if (!response.isSuccessful) error("Stremio resource request failed (${response.code})")
-      parseStreams(json.parseToJsonElement(response.body.string()), depth + 1).map { it.copy(title = title) }
-    }
-  }
+  private fun parseSeasons(videos: JsonArray?): List<Season> = videos.orEmpty().mapNotNull { element ->
+    val video = element.jsonObject
+    val season = video["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+    val episode = video["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+    Season(
+      season,
+      listOf(
+        Episode(
+          number = episode,
+          title = video["name"]?.jsonPrimitive?.contentOrNull
+            ?: video["title"]?.jsonPrimitive?.contentOrNull
+            ?: "Episode $episode",
+          overview = video["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+          stillUrl = video["thumbnail"]?.jsonPrimitive?.contentOrNull,
+          runtime = video["runtime"]?.jsonPrimitive?.contentOrNull,
+        ),
+      ),
+    )
+  }.groupBy { it.number }
+    .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
+    .sortedBy { it.number }
 }

@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -95,18 +94,18 @@ fun CatalogDetailsPage(
           val activeSeason = seasons.firstOrNull { it.number == selectedSeason } ?: seasons.first()
           Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 22.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             activeSeason.episodes.sortedBy { it.number }.forEach { episode ->
-              Column(Modifier.width(238.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable(enabled = !isLoading) { onChooseEpisode(activeSeason.number, episode.number) }) {
+              Box(Modifier.width(296.dp).height(184.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable(enabled = !isLoading) { onChooseEpisode(activeSeason.number, episode.number) }) {
                   AsyncImage(episode.stillUrl ?: item.backdropUrl ?: item.posterUrl, contentDescription = episode.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                  Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .85f)))).padding(horizontal = 11.dp, vertical = 8.dp)) {
-                    Text("S${activeSeason.number} · E${episode.number}", style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                  Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .88f)))).padding(start = 12.dp, end = 12.dp, top = 38.dp, bottom = 11.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                      Text("S${activeSeason.number} · E${episode.number}", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = .85f), fontWeight = FontWeight.SemiBold)
+                      Text(episode.title, style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                      if (episode.overview.isNotBlank()) Text(episode.overview, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .86f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                   }
                   Surface(Modifier.align(Alignment.Center), shape = RoundedCornerShape(50), color = Color.Black.copy(alpha = .58f)) {
                     Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Find episode streams", tint = Color.White, modifier = Modifier.padding(11.dp).size(25.dp))
                   }
-                }
-                Text(episode.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (episode.overview.isNotBlank()) Text(episode.overview, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
               }
             }
           }
@@ -155,21 +154,6 @@ fun CatalogDetailsPage(
     }
   }
 }
-
-@Deprecated("StreamScreen now presents this content as a full-page destination")
-@Composable
-fun CatalogDetailsSheet(
-  item: MediaItem,
-  selectedSeason: Int?,
-  streams: List<StreamOption>,
-  isLoading: Boolean,
-  error: String?,
-  onDismiss: () -> Unit,
-  onChooseSeason: (Int) -> Unit,
-  onFindMovieStreams: () -> Unit,
-  onChooseEpisode: (Int, Int) -> Unit,
-  onPlay: (StreamOption) -> Unit,
-) = CatalogDetailsPage(item, selectedSeason, streams, isLoading, error, onDismiss, onChooseSeason, onFindMovieStreams, onChooseEpisode, onPlay)
 
 @Composable
 private fun MetaPill(text: String) {
