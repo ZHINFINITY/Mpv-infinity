@@ -102,7 +102,7 @@ class TorrentSelectionViewModel(
     if (input != null) return
     input = value
     if (streams.isEmpty()) {
-      _uiState.value = TorrentSelectionUiState.Error("Resolver returned no torrents for this title.")
+      _uiState.value = TorrentSelectionUiState.Error("No compatible resolver provider returned links. Anime providers must advertise anime/series support and accept the title's ID prefix; IMDb-only providers cannot resolve Kitsu IDs.")
       return
     }
     val files = streams.mapIndexed { index, stream ->

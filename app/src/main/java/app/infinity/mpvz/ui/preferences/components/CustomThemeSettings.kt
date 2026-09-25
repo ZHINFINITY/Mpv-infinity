@@ -44,7 +44,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -287,13 +286,13 @@ private fun CustomThemeEditor(
         }
         Text("Colour sliders", style = MaterialTheme.typography.labelLarge)
         Text("Hue: ${textHue.toInt()}°", style = MaterialTheme.typography.bodySmall)
-        Slider(value = textHue, onValueChange = { textHue = it; updateTextColorFromSliders() }, valueRange = 0f..359f, steps = 359)
+        TintedSlider(value = textHue, onValueChange = { textHue = it; updateTextColorFromSliders() }, valueRange = 0f..360f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
         Text("Saturation: ${(textSaturation * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
-        Slider(value = textSaturation, onValueChange = { textSaturation = it; updateTextColorFromSliders() }, valueRange = 0f..1f)
+        TintedSlider(value = textSaturation, onValueChange = { textSaturation = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
         Text("Brightness: ${(textValue * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
-        Slider(value = textValue, onValueChange = { textValue = it; updateTextColorFromSliders() }, valueRange = 0f..1f)
+        TintedSlider(value = textValue, onValueChange = { textValue = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
         Text("Opacity: ${(textAlpha * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
-        Slider(value = textAlpha, onValueChange = { textAlpha = it; updateTextColorFromSliders() }, valueRange = 0f..1f)
+        TintedSlider(value = textAlpha, onValueChange = { textAlpha = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
         if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
           }
           }
