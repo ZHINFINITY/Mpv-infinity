@@ -636,10 +636,10 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
         )
       }
       listOfNotNull(
-        directUrl?.let { common(it, external = false, playable = it.startsWith("magnet:", true) || isPlayableRemoteStream(it)) }
-          ?: externalUrl?.let { common(it, external = true, playable = false) }
+        directUrl?.let { common(it, false, it.startsWith("magnet:", true) || isPlayableRemoteStream(it)) }
+          ?: externalUrl?.let { common(it, true, false) }
           ?: element["infoHash"]?.jsonPrimitive?.contentOrNull?.let { hash ->
-            common("magnet:?xt=urn:btih:${hash.trim()}", external = false, playable = true)
+            common("magnet:?xt=urn:btih:${hash.trim()}", false, true)
           },
       )
     }
