@@ -95,10 +95,9 @@ class CatalogSettings(context: Context) {
 }
 
 private fun sanitizeResolverBaseUrl(value: String): String = value.trim().trimEnd('/')
-  // Some resolver UIs paste a JSON cookie after the host. Treat that as credential data,
-  // not as part of the addon base URL; otherwise every manifest/stream request targets
-  // https://host/{cookie}/stream/... and the addon returns HTTP 200 with no links.
-  .let { raw -> raw.substringBefore("/%7B").substringBefore("/{") }
+  // Stremio addons may put their configuration (for example Showbox's encoded cookie JSON)
+  // in the URL path. That path is part of the addon identity and must be retained for every
+  // manifest, metadata, catalog, and stream request.
   .removeSuffix("/manifest.json")
   .removeSuffix("/stream")
   .trimEnd('/')
@@ -555,6 +554,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
 
   private fun isPlayableRemoteStream(url: String): Boolean {
     val normalized = url.substringBefore('?').substringBefore('#').lowercase()
+    if (normalized.endsWith("/configure") || normalized.endsWith("/configure/")) return false
     if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg") || normalized.endsWith(".png") ||
       normalized.endsWith(".gif") || normalized.endsWith(".webp") || normalized.endsWith(".avif")) return false
     // HentaiStream's addon also returns HentaiMama snapshot images in its streams array.
