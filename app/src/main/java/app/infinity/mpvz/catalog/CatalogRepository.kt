@@ -95,6 +95,10 @@ class CatalogSettings(context: Context) {
 }
 
 private fun sanitizeResolverBaseUrl(value: String): String = value.trim().trimEnd('/')
+  // Some resolver UIs paste a JSON cookie after the host. Treat that as credential data,
+  // not as part of the addon base URL; otherwise every manifest/stream request targets
+  // https://host/{cookie}/stream/... and the addon returns HTTP 200 with no links.
+  .let { raw -> raw.substringBefore("/%7B").substringBefore("/{") }
   .removeSuffix("/manifest.json")
   .removeSuffix("/stream")
   .trimEnd('/')
@@ -316,6 +320,7 @@ interface StreamResolver {
 class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolver {
   private val client = OkHttpClient()
   private val json = Json { ignoreUnknownKeys = true }
+  private data class AddonEpisodeResource(val id: String, val season: Int?, val episode: Int?)
 
   override suspend fun resolve(item: MediaItem, season: Int?, episode: Int?): List<StreamOption> {
     return withContext(Dispatchers.IO) {
@@ -350,35 +355,39 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
           if (!idCompatible) emptyList() else types.flatMap { type ->
             // Addon episode IDs are independent requests. Running them concurrently makes the
             // episode picker responsive without dropping any real seasons or episodes.
-            val identifiers: List<Pair<String?, Boolean>> = if (item.provider == CatalogProvider.KITSU) {
+            val identifiers: List<Pair<String?, AddonEpisodeResource?>> = if (item.provider == CatalogProvider.KITSU) {
               val fallback = resolverIdentifiers(item, capabilities)
               // Anime catalog IDs are not necessarily the IDs accepted by an addon's stream route.
               // Stremio anime add-ons commonly expose concrete episode resource IDs in /meta/*;
               // probe those IDs first, then retain Kitsu/IMDb fallbacks for direct resolvers.
               if (item.type == MediaType.TV) {
-                val episodeIds = addonEpisodeIds(endpoint.baseUrl, item, season, episode, type, resolverIdentifiers(item, capabilities).firstOrNull())
-                if (episodeIds.isNotEmpty()) episodeIds.map { it to true }
-                else fallback.map { it to false }
+                val episodeResources = addonEpisodeResources(endpoint.baseUrl, item, season, episode, type, fallback)
+                if (episodeResources.isNotEmpty()) episodeResources.map { it.id to it }
+                else fallback.map { it to null }
               } else {
-                fallback.map { it to false }
+                fallback.map { it to null }
               }
             } else if (item.type == MediaType.TV) {
-              addonEpisodeIds(endpoint.baseUrl, item, season, episode, type, resolverIdentifiers(item, capabilities).firstOrNull()).ifEmpty { listOf(null) }
-                .map { it to (it != null) }
-            } else listOf(null to false)
+              val episodeResources = addonEpisodeResources(endpoint.baseUrl, item, season, episode, type, resolverIdentifiers(item, capabilities))
+              if (episodeResources.isNotEmpty()) episodeResources.map { it.id to it } else listOf(null to null)
+            } else listOf(null to null)
             coroutineScope {
-              identifiers.map { (identifier, isEpisodeId) ->
+              identifiers.map { (identifier, episodeResource) ->
                 async {
                   runCatching {
                     resolveFromEndpoint(
                       endpoint.baseUrl,
                       item,
-                      if (isEpisodeId) null else season,
-                      if (isEpisodeId) null else episode,
+                      if (episodeResource != null) null else season,
+                      if (episodeResource != null) null else episode,
                       type,
                       identifier,
                     ).map { stream ->
-                      stream.copy(source = stream.source?.takeIf { it.isNotBlank() } ?: endpoint.baseUrl.substringAfter("://").substringBefore('/'))
+                      stream.copy(
+                        source = stream.source?.takeIf { it.isNotBlank() } ?: endpoint.baseUrl.substringAfter("://").substringBefore('/'),
+                        season = stream.season ?: episodeResource?.season,
+                        episode = stream.episode ?: episodeResource?.episode,
+                      )
                     }
                   }
                     .onFailure { error -> Log.w("CloudStreamResolver", "Resolver ${endpoint.baseUrl} failed: ${error.message}") }
@@ -397,13 +406,13 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
   }
 
   suspend fun loadSeasons(item: MediaItem): List<Season> = withContext(Dispatchers.IO) {
-    val identifier = item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: return@withContext emptyList()
     settings.resolvers().filter { it.enabled }.flatMap { endpoint ->
       val capabilities = manifestCapabilities(endpoint.baseUrl)
-      if (capabilities != null && capabilities.idPrefixes.isNotEmpty() && capabilities.idPrefixes.none { identifier.startsWith(it, ignoreCase = true) }) return@flatMap emptyList()
+      val identifiers = resolverIdentifiers(item, capabilities)
+      if (identifiers.isEmpty()) return@flatMap emptyList()
       val types = if (item.provider == CatalogProvider.KITSU) listOf("anime", "series") else listOf(item.catalogType ?: if (item.type == MediaType.TV) "series" else "movie")
       types.filter { capabilities == null || capabilities.types.isEmpty() || it in capabilities.types }.flatMap { type ->
-        runCatching {
+        identifiers.flatMap { identifier -> runCatching {
           val root = endpoint.baseUrl.trimEnd('/').removeSuffix("/manifest.json")
           val url = "$root/meta/$type/$identifier.json"
           client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
@@ -416,7 +425,7 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
               Season(season, listOf(Episode(episode, value["name"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "Episode $episode" }, value["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), value["thumbnail"]?.jsonPrimitive?.contentOrNull, value["runtime"]?.jsonPrimitive?.contentOrNull)))
             }
           }
-        }.getOrDefault(emptyList())
+        }.getOrDefault(emptyList()) }
       }
     }.groupBy { it.number }.map { (number, seasons) ->
       Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number })
@@ -446,21 +455,22 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     }.getOrNull()
   }
 
-  private fun addonEpisodeIds(baseUrl: String, item: MediaItem, season: Int?, episode: Int?, typeOverride: String? = null, identifierOverride: String? = null): List<String> {
-    val id = identifierOverride ?: item.providerId?.takeIf { it.isNotBlank() } ?: return emptyList()
+  private fun addonEpisodeResources(baseUrl: String, item: MediaItem, season: Int?, episode: Int?, typeOverride: String? = null, identifiers: List<String>): List<AddonEpisodeResource> {
+    if (identifiers.isEmpty()) return emptyList()
     val type = typeOverride ?: item.catalogType ?: "series"
-    val url = "${baseUrl.trimEnd('/').removeSuffix("/manifest.json")}/meta/$type/$id.json"
-    return runCatching {
+    return identifiers.flatMap { id -> runCatching {
+      val url = "${baseUrl.trimEnd('/').removeSuffix("/manifest.json")}/meta/$type/$id.json"
       client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
         if (!response.isSuccessful) return@use emptyList()
         json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty().mapNotNull { video ->
           val value = video.jsonObject
           val s = value["season"]?.jsonPrimitive?.intOrNull
           val e = value["episode"]?.jsonPrimitive?.intOrNull
-          if ((season == null || s == season) && (episode == null || e == episode)) value["id"]?.jsonPrimitive?.contentOrNull else null
+          val resourceId = value["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+          if ((season == null || s == season) && (episode == null || e == episode)) AddonEpisodeResource(resourceId, s, e) else null
         }
       }
-    }.getOrDefault(emptyList())
+    }.getOrDefault(emptyList()) }.distinctBy { it.id }
   }
 
   private suspend fun resolveFromEndpoint(
