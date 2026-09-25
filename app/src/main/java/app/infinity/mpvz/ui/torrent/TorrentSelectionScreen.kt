@@ -473,7 +473,6 @@ private fun EpisodeBrowser(
         item { Spacer(modifier = Modifier.height(16.dp)) }
       }
     }
-  }
 }
 
 @Composable
