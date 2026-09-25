@@ -1,6 +1,5 @@
 package app.infinity.mpvz.ui.browser.catalog
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -45,9 +44,7 @@ fun CatalogGridItem(item: MediaItem, resolving: Boolean = false, onClick: () -> 
           contentScale = ContentScale.Crop,
         )
       }
-      AnimatedVisibility(visible = resolving, modifier = Modifier.align(Alignment.Center)) {
-        CircularProgressIndicator(modifier = Modifier.padding(8.dp), strokeWidth = 2.dp)
-      }
+      if (resolving) CircularProgressIndicator(modifier = Modifier.align(Alignment.Center).padding(8.dp), strokeWidth = 2.dp)
     }
     Text(
       text = item.title,

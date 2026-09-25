@@ -25,8 +25,8 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.catalog.CatalogSource
 import app.infinity.mpvz.catalog.isHttpAddonEndpoint
 import me.zhanghai.compose.preference.Preference
-import me.zhanghai.compose.preference.PreferenceCard
-import me.zhanghai.compose.preference.PreferenceDivider
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
 
 @Composable
 fun NuvioAddonsPreferenceCard(
@@ -71,8 +71,8 @@ fun NuvioAddonsPreferenceCard(
       title = { Text("Add add-on") },
       summary = { Text("Add a manifest URL; catalogs and metadata will be loaded automatically.", color = MaterialTheme.colorScheme.onSurfaceVariant) },
       icon = {
-        androidx.compose.material3.Icon(
-          imageVector = app.infinity.mpvz.ui.icons.Icons.RoundedFilled.Add,
+        Icon(
+          Icons.RoundedFilled.Add,
           contentDescription = null,
           tint = MaterialTheme.colorScheme.primary,
         )
