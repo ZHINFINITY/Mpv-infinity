@@ -13,12 +13,14 @@ NuvioMobile uses **two separate kinds of extensions**:
 1. **Catalog/metadata add-ons** expose the Stremio manifest/catalog/meta protocol and populate discovery shelves, search results, and TV episode metadata.
 2. **Nuvio scraper/plugin repositories** expose a `manifest.json` containing individual JavaScript scraper providers. Each provider's `getStreams(tmdbId, mediaType, season, episode)` function fetches candidate sources. This is what `yoruix/nuvio-providers` is. It is **not** a Stremio `/stream/...` endpoint.
 
+The official Nuvio client does **not** ship with a default content catalogue. Its public site describes Nuvio as bring-your-own-sources, and its home rails are produced by installed catalog add-ons (or user-created collections). A TMDB API key supplies metadata/discovery API access for features that use TMDB; it is not itself a catalog add-on. Therefore, installing only a JavaScript scraper repository such as Yoru will correctly leave Stream discovery empty until a separate Stremio-compatible catalog add-on is installed. The Stream empty state and Media Servers settings now explain this distinction instead of silently restoring the removed Cinemeta/Kitsu defaults.
+
 Mpv-infinity keeps those paths separate. Catalog/metadata add-ons are installed in **Settings → Network → Media Servers → Stream Catalogs** and populate discovery rails, search, and metadata. JavaScript provider repositories are installed in **Nuvio JavaScript Providers** on the same settings page; that screen shows each individual provider, supported media types, enabled state, version, and (where declared) its `onSettings()` controls. Previously saved bundled Cinemeta and Kitsu sources are ignored; no legacy catalog defaults are loaded. A repository mistakenly entered under the former catalog-source mechanism is migrated to JavaScript provider storage when it is a valid Nuvio manifest.
 
 ## Stream workflow
 
-- Home uses Nuvio-responsive hero sizing and artwork-led horizontal catalog shelves; search is an editable native field, debounced and submitted to add-on catalogs advertising search support.
-- Selecting a title replaces the home content with a full-page details view. Metadata and episodes are hydrated from installed add-ons; episodes use Nuvio-style landscape cards and season selection.
+- Home uses an immersive Nuvio-style hero, floating search/settings controls, artwork-led horizontal catalog shelves and a clear empty/setup state; search is an editable native field, debounced and submitted to add-on catalogs advertising search support.
+- Selecting a title replaces the home content with a full-page details view. Metadata and episodes are hydrated from installed add-ons/TMDB; seasons use artwork cards and episodes use a landscape rail with per-episode direct-source resolution.
 - Opening a movie or a specific episode calls enabled JavaScript providers with a numeric TMDB ID. IMDb IDs are mapped through TMDB `/find` when the user's key is configured; otherwise the ID is resolved through Wyzie search using title/year/type. Lookup runs off the Android main thread.
 - Each configured provider's JavaScript is executed by the Nuvio QuickJS runtime, including Nuvio's JS shims and host bridges for fetch, URL, DOM/HTML selection, crypto and WASM. Provider-specific `onSettings()` values and the TMDB API key are stored encrypted and supplied to the runtime.
 - Only direct `https://` media URLs are displayed as playable. `magnet:`, `infoHash`, torrent sources, external-player links, non-HTTPS links, and other non-direct results are excluded from Stream. Request headers returned by a provider are forwarded to the player.
@@ -26,7 +28,7 @@ Mpv-infinity keeps those paths separate. Catalog/metadata add-ons are installed 
 
 ## Limitations to surface to users
 
-- **Some provider scripts require a TMDB API key** when they make their own TMDB API requests. The Nuvio provider settings card now has an encrypted, device-local key field; without a key, those specific providers may fail while other providers continue to work. No third-party API key is bundled by this port.
+- **Some provider scripts require a TMDB API key** when they make their own TMDB API requests. The Nuvio provider settings card stores the key encrypted, confirms the durable save, and supplies it to scrapers; without a key, those specific providers may fail while other providers continue to work. No third-party API key is bundled by this port.
 - Provider compatibility depends on each remote JS scraper's current site/API behavior. The runtime reports provider failures individually; a repository installing successfully does not guarantee that every source site is currently reachable.
 - Nuvio JS scraper repositories provide stream sources, not home catalog rails or episode metadata. Those come from separately installed catalog/metadata add-ons, by design.
 - Stream results are deliberately direct HTTPS-only; torrent-only providers will not appear as playable sources in Stream.

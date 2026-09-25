@@ -36,7 +36,11 @@ data class MediaItem(
 )
 
 @Serializable
-data class Season(val number: Int, val episodes: List<Episode> = emptyList())
+data class Season(
+  val number: Int,
+  val episodes: List<Episode> = emptyList(),
+  val posterUrl: String? = null,
+)
 
 @Serializable
 data class Episode(

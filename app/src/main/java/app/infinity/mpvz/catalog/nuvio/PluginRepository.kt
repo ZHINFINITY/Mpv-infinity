@@ -103,7 +103,11 @@ class PluginRepository(context: Context) {
 
   fun refreshFromDisk() { _uiState.value = loadState() }
   fun tmdbApiKey(): String = prefs.getString(KEY_TMDB_API_KEY, "").orEmpty()
-  fun setTmdbApiKey(value: String) { prefs.edit().putString(KEY_TMDB_API_KEY, value.trim()).apply() }
+  suspend fun setTmdbApiKey(value: String): Boolean = withContext(Dispatchers.IO) {
+    val normalized = value.trim()
+    val committed = prefs.edit().putString(KEY_TMDB_API_KEY, normalized).commit()
+    committed && tmdbApiKey() == normalized
+  }
   fun scraperSettings(scraperId: String): Map<String, String> = runCatching {
     json.decodeFromString<Map<String, String>>(prefs.getString("settings_${stableHash(scraperId)}", "{}") ?: "{}")
   }.getOrDefault(emptyMap())

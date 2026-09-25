@@ -94,7 +94,8 @@ internal class TmdbMetadataRepository {
         runtime = ep["runtime"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()?.let { "$it min" },
       )
     }.orEmpty().sortedBy { it.number }
-    return Season(seasonNumber, episodes)
+    val posterUrl = body.string("poster_path")?.let { "https://image.tmdb.org/t/p/w500$it" }
+    return Season(seasonNumber, episodes, posterUrl)
   }
 
   private fun get(url: String): JsonObject {

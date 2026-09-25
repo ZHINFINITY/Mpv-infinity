@@ -1,5 +1,8 @@
 package app.infinity.mpvz.ui.preferences
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +54,9 @@ fun NuvioAddonsPreferenceCard() {
   var showAddDialog by remember { mutableStateOf(false) }
   var isRefreshing by remember { mutableStateOf(false) }
   var tmdbApiKey by remember(repository) { mutableStateOf(repository.tmdbApiKey()) }
+  var isSavingTmdbKey by remember { mutableStateOf(false) }
+  var tmdbSaveMessage by remember { mutableStateOf<String?>(null) }
+  var tmdbSaveFailed by remember { mutableStateOf(false) }
   var configuringProvider by remember { mutableStateOf<PluginScraper?>(null) }
   var providerSettingsLayout by remember { mutableStateOf<List<PluginSettingField>>(emptyList()) }
   var providerSettingsError by remember { mutableStateOf<String?>(null) }
@@ -63,24 +70,47 @@ fun NuvioAddonsPreferenceCard() {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
       Text("TMDB API key", style = MaterialTheme.typography.titleSmall)
       Text("Some Nuvio providers call TMDB directly for title details. Add your TMDB API key if those providers return no sources; it is stored encrypted on this device.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      OutlinedTextField(value = tmdbApiKey, onValueChange = { tmdbApiKey = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("API key") }, visualTransformation = PasswordVisualTransformation())
-      TextButton(onClick = { repository.setTmdbApiKey(tmdbApiKey) }) { Text("Save API key") }
+      OutlinedTextField(value = tmdbApiKey, onValueChange = { tmdbApiKey = it; tmdbSaveMessage = null }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("API key") }, visualTransformation = PasswordVisualTransformation())
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(enabled = !isSavingTmdbKey, onClick = {
+          isSavingTmdbKey = true
+          tmdbSaveMessage = null
+          scope.launch {
+            val saved = runCatching { repository.setTmdbApiKey(tmdbApiKey) }.getOrDefault(false)
+            isSavingTmdbKey = false
+            tmdbSaveFailed = !saved
+            tmdbSaveMessage = if (saved) "Saved securely on this device." else "Could not save the key. Try again."
+          }
+        }) {
+          if (isSavingTmdbKey) CircularProgressIndicator(Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
+          Text(if (isSavingTmdbKey) "Saving…" else "Save API key")
+        }
+        tmdbSaveMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = if (tmdbSaveFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary) }
+      }
     }
     PreferenceDivider()
     state.repositories.forEachIndexed { index, repo ->
       PreferenceDivider()
-      Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+      var expanded by rememberSaveable(repo.manifestUrl) { mutableStateOf(false) }
+      Column(Modifier.fillMaxWidth().animateContentSize().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(repo.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${repo.scraperCount} providers${repo.version?.let { " · v$it" }.orEmpty()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(repo.manifestUrl, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val repoHost = runCatching { java.net.URI(repo.manifestUrl).host }.getOrNull()
+            if (!repoHost.isNullOrBlank()) Text(repoHost, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
           }
           if (repo.isRefreshing || isRefreshing) CircularProgressIndicator(Modifier.padding(6.dp), strokeWidth = 2.dp)
+          Icon(if (expanded) Icons.RoundedFilled.ExpandLess else Icons.RoundedFilled.ExpandMore, contentDescription = if (expanded) "Collapse providers" else "Expand providers")
         }
-        repo.description?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        val providers = state.scrapers.filter { it.repositoryUrl == repo.manifestUrl }
-        providers.forEach { provider ->
+        AnimatedVisibility(visible = expanded) {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            repo.description?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            val providers = state.scrapers.filter { it.repositoryUrl == repo.manifestUrl }
+            if (providers.isEmpty() && repo.scraperCount > 0) {
+              Text("Provider scripts have not loaded yet. Refresh this repository to retry.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            providers.forEach { provider ->
           Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Switch(checked = provider.enabled, enabled = provider.manifestEnabled, onCheckedChange = { repository.toggleScraper(provider.id, it) })
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -105,10 +135,12 @@ fun NuvioAddonsPreferenceCard() {
             }) { Text("Settings") }
           }
         }
-        repo.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          TextButton(enabled = !repo.isRefreshing, onClick = { scope.launch { repository.refreshRepository(repo.manifestUrl) } }) { Text("Refresh providers") }
-          TextButton(onClick = { repository.removeRepository(repo.manifestUrl) }) { Text("Remove repository", color = MaterialTheme.colorScheme.error) }
+            repo.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              TextButton(enabled = !repo.isRefreshing, onClick = { scope.launch { repository.refreshRepository(repo.manifestUrl) } }) { Text("Refresh providers") }
+              TextButton(onClick = { repository.removeRepository(repo.manifestUrl) }) { Text("Remove repository", color = MaterialTheme.colorScheme.error) }
+            }
+          }
         }
       }
     }

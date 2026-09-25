@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.browser.catalog
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -15,13 +16,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -39,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
+import app.infinity.mpvz.catalog.Season
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -57,95 +63,172 @@ fun CatalogDetailsPage(
   onChooseEpisode: (Int, Int) -> Unit,
   onPlay: (StreamOption) -> Unit,
 ) {
-  Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 36.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-    Box(Modifier.fillMaxWidth().height(360.dp).clip(RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp))) {
-      AsyncImage(item.backdropUrl ?: item.posterUrl, contentDescription = item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-      Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .08f), Color.Black.copy(alpha = .24f), MaterialTheme.colorScheme.background.copy(alpha = .98f)))))
-      Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 22.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+  val seasons = item.seasons.sortedBy { it.number }
+  val activeSeason = seasons.firstOrNull { it.number == selectedSeason } ?: seasons.firstOrNull()
+  Column(
+    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 40.dp),
+    verticalArrangement = Arrangement.spacedBy(22.dp),
+  ) {
+    Box(Modifier.fillMaxWidth().height(430.dp).clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))) {
+      AsyncImage(
+        model = item.backdropUrl ?: item.posterUrl,
+        contentDescription = item.title,
+        modifier = Modifier.fillMaxSize(),
+        contentScale = ContentScale.Crop,
+      )
+      Box(
+        Modifier.fillMaxSize().background(
+          Brush.verticalGradient(
+            listOf(Color.Black.copy(alpha = .18f), Color.Black.copy(alpha = .08f), Color.Black.copy(alpha = .55f), MaterialTheme.colorScheme.background),
+          ),
+        ),
+      )
+      Surface(
+        modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start = 14.dp, top = 8.dp),
+        color = Color.Black.copy(alpha = .42f),
+        shape = CircleShape,
+      ) {
+        IconButton(onClick = onBack) { Icon(Icons.RoundedFilled.ArrowBack, contentDescription = "Back", tint = Color.White) }
+      }
+      Column(
+        Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 24.dp, vertical = 26.dp),
+        verticalArrangement = Arrangement.spacedBy(11.dp),
+      ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
           MetaPill(if (item.type == MediaType.TV) "SERIES" else "MOVIE")
-          item.releaseYear?.let { MetaPill(it.take(12)) }
-          item.contentRating?.takeIf { it.isNotBlank() }?.let { MetaPill("★ $it") }
-          item.duration?.takeIf { it.isNotBlank() }?.let { MetaPill(it) }
+          item.releaseYear?.takeIf(String::isNotBlank)?.let { MetaPill(it.take(12)) }
+          item.contentRating?.takeIf(String::isNotBlank)?.let { MetaPill("★ $it") }
+          item.duration?.takeIf(String::isNotBlank)?.let { MetaPill(it) }
         }
-        Text(item.title, style = MaterialTheme.typography.displaySmall, color = Color.White, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (item.genres.isNotEmpty()) Text(item.genres.take(4).joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = .88f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+          item.title,
+          style = MaterialTheme.typography.displaySmall,
+          color = Color.White,
+          fontWeight = FontWeight.Black,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+        if (item.genres.isNotEmpty()) {
+          Text(item.genres.take(4).joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = .9f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (item.type == MediaType.MOVIE) {
+          Button(
+            onClick = onFindMovieStreams,
+            enabled = !isLoading,
+            shape = RoundedCornerShape(28.dp),
+            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 12.dp),
+          ) {
+            if (isLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isLoading) "Finding sources" else "Find direct streams", fontWeight = FontWeight.Bold)
+          }
+        }
       }
     }
 
-    if (item.overview.isNotBlank()) Text(item.overview, Modifier.fillMaxWidth().padding(horizontal = 22.dp), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-    if (item.type == MediaType.MOVIE) {
-      Button(onClick = onFindMovieStreams, enabled = !isLoading, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp), shape = RoundedCornerShape(18.dp), contentPadding = PaddingValues(vertical = 15.dp)) {
-        if (isLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null)
-        Spacer(Modifier.width(9.dp))
-        Text(if (isLoading) "Finding direct streams…" else "Find direct streams", fontWeight = FontWeight.Bold)
+    if (item.overview.isNotBlank()) {
+      Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text("Overview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(item.overview, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
       }
-    } else {
-      val seasons = item.seasons.sortedBy { it.number }
+    }
+
+    if (item.type == MediaType.TV) {
       if (seasons.isNotEmpty()) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-          Text("Episodes", Modifier.padding(horizontal = 22.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-          Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 22.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            seasons.forEach { season ->
-              FilterChip(selected = selectedSeason == season.number, onClick = { onChooseSeason(season.number) }, label = { Text("Season ${season.number}") })
+          Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+              Text("Seasons", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+              Text("Choose a season to browse episodes", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            activeSeason?.let { Text("${seasons.size} seasons", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+          }
+          LazyRow(
+            contentPadding = PaddingValues(horizontal = 22.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            items(seasons, key = { it.number }) { season ->
+              SeasonPosterCard(
+                season = season,
+                selected = season.number == activeSeason?.number,
+                onClick = { onChooseSeason(season.number) },
+              )
             }
           }
-          val activeSeason = seasons.firstOrNull { it.number == selectedSeason } ?: seasons.first()
-          Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 22.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            activeSeason.episodes.sortedBy { it.number }.forEach { episode ->
-              Box(Modifier.width(296.dp).height(184.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable(enabled = !isLoading) { onChooseEpisode(activeSeason.number, episode.number) }) {
-                  AsyncImage(episode.stillUrl ?: item.backdropUrl ?: item.posterUrl, contentDescription = episode.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                  Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .88f)))).padding(start = 12.dp, end = 12.dp, top = 38.dp, bottom = 11.dp)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                      Text("S${activeSeason.number} · E${episode.number}", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = .85f), fontWeight = FontWeight.SemiBold)
-                      Text(episode.title, style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                      if (episode.overview.isNotBlank()) Text(episode.overview, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .86f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                  }
-                  Surface(Modifier.align(Alignment.Center), shape = RoundedCornerShape(50), color = Color.Black.copy(alpha = .58f)) {
-                    Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Find episode streams", tint = Color.White, modifier = Modifier.padding(11.dp).size(25.dp))
-                  }
+          activeSeason?.let { season ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+              Text("Season ${season.number}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+              Text("${season.episodes.size} episodes", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (season.episodes.isEmpty()) {
+              Text("No episode metadata is available for this season.", Modifier.padding(horizontal = 22.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+              LazyRow(
+                contentPadding = PaddingValues(horizontal = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+              ) {
+                items(season.episodes.sortedBy { it.number }, key = { "${season.number}:${it.number}" }) { episode ->
+                  EpisodeLandscapeCard(
+                    item = item,
+                    season = season.number,
+                    episode = episode,
+                    enabled = !isLoading,
+                    onClick = { onChooseEpisode(season.number, episode.number) },
+                  )
+                }
               }
             }
           }
-          if (activeSeason.episodes.isEmpty()) Text("No episode metadata is available for this season.", Modifier.padding(horizontal = 22.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
       } else {
         Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text("Episode metadata", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-          Text(if (isLoading) "Loading episodes from the configured catalog metadata providers…" else "This title's catalog provider did not return episode metadata." , color = MaterialTheme.colorScheme.onSurfaceVariant)
-          if (isLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+          Text("Episodes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+          if (isLoading) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Text("Loading season and episode details…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+          } else {
+            Text("No season data was returned by this title's catalog metadata provider.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
         }
       }
     }
 
-    if (isLoading && streams.isEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-      CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-      Text(if (item.type == MediaType.TV) "Searching providers for this episode…" else "Searching providers…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (isLoading && streams.isEmpty()) {
+      Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        Text(if (item.type == MediaType.TV) "Searching providers for Season ${selectedSeason ?: 1}, Episode ${item.seasons.firstOrNull { it.number == selectedSeason }?.episodes?.firstOrNull()?.number ?: "…"}…" else "Searching enabled providers…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
     }
-    error?.let {
-      Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = onBack) { Text("Back to Stream") }
+    error?.let { message ->
+      Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        TextButton(onClick = onBack) { Text("Back to titles") }
       }
     }
     val playable = streams.filter { it.url.startsWith("https://", true) && it.isPlayable && !it.isExternal }
     if (playable.isNotEmpty()) {
-      Text("Direct streams", Modifier.padding(horizontal = 22.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-      playable.groupBy { it.source ?: "Nuvio provider" }.forEach { (source, rows) ->
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text(source, Modifier.padding(horizontal = 22.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-          rows.forEach { stream ->
-            OutlinedButton(onClick = { onPlay(stream) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp), shape = RoundedCornerShape(15.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
-              Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                  Text(stream.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                  val extra = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.size, stream.filename).joinToString(" · ")
-                  if (extra.isNotBlank()) Text(extra, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  if (stream.headers.isNotEmpty()) Text("Requires request headers", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Direct HTTPS streams", Modifier.padding(horizontal = 22.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        playable.groupBy { it.source ?: "Nuvio provider" }.forEach { (source, rows) ->
+          Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(source, Modifier.padding(horizontal = 22.dp), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            rows.forEach { stream ->
+              OutlinedButton(
+                onClick = { onPlay(stream) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+              ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                  Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(stream.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    val extra = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.size, stream.filename).joinToString(" · ")
+                    if (extra.isNotBlank()) Text(extra, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (stream.headers.isNotEmpty()) Text("Source requires request headers", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                  }
+                  Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play direct HTTPS stream", tint = MaterialTheme.colorScheme.primary)
                 }
-                Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play direct HTTPS stream", tint = MaterialTheme.colorScheme.primary)
               }
             }
           }
@@ -156,8 +239,64 @@ fun CatalogDetailsPage(
 }
 
 @Composable
+private fun SeasonPosterCard(season: Season, selected: Boolean, onClick: () -> Unit) {
+  val shape = RoundedCornerShape(14.dp)
+  Column(Modifier.width(116.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Box(
+      Modifier.fillMaxWidth().height(150.dp).clip(shape)
+        .background(MaterialTheme.colorScheme.surfaceVariant)
+        .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = .12f), shape),
+    ) {
+      season.posterUrl?.let { image ->
+        AsyncImage(image, contentDescription = "Season ${season.number}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+      }
+      Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .78f)))))
+      Column(Modifier.align(Alignment.BottomStart).padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("SEASON ${season.number}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = .85f), fontWeight = FontWeight.Bold)
+        Text("${season.episodes.size} episodes", style = MaterialTheme.typography.labelMedium, color = Color.White)
+      }
+    }
+    Text("Season ${season.number}", Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyMedium, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+  }
+}
+
+@Composable
+private fun EpisodeLandscapeCard(
+  item: MediaItem,
+  season: Int,
+  episode: app.infinity.mpvz.catalog.Episode,
+  enabled: Boolean,
+  onClick: () -> Unit,
+) {
+  val shape = RoundedCornerShape(15.dp)
+  Box(
+    Modifier.width(296.dp).height(184.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(enabled = enabled, onClick = onClick),
+  ) {
+    AsyncImage(
+      model = episode.stillUrl ?: item.backdropUrl ?: item.posterUrl,
+      contentDescription = episode.title,
+      modifier = Modifier.fillMaxSize(),
+      contentScale = ContentScale.Crop,
+    )
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .88f)))))
+    Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 13.dp, end = 54.dp, top = 36.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      Text("S${season.toString().padStart(2, '0')} · E${episode.number.toString().padStart(2, '0')}", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = .86f), fontWeight = FontWeight.SemiBold)
+      Text(episode.title, style = MaterialTheme.typography.titleSmall, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      if (episode.overview.isNotBlank()) Text(episode.overview, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .88f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+      episode.runtime?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = .72f)) }
+    }
+    Surface(Modifier.align(Alignment.Center), shape = CircleShape, color = Color.Black.copy(alpha = .56f)) {
+      Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Find episode streams", tint = Color.White, modifier = Modifier.padding(10.dp).size(25.dp))
+    }
+    if (!enabled) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .24f)), contentAlignment = Alignment.Center) {
+      CircularProgressIndicator(Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+    }
+  }
+}
+
+@Composable
 private fun MetaPill(text: String) {
-  Surface(color = Color.Black.copy(alpha = .56f), shape = RoundedCornerShape(8.dp)) {
-    Text(text, Modifier.padding(horizontal = 9.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.SemiBold)
+  Surface(color = Color.Black.copy(alpha = .54f), shape = RoundedCornerShape(9.dp)) {
+    Text(text, Modifier.padding(horizontal = 9.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1)
   }
 }

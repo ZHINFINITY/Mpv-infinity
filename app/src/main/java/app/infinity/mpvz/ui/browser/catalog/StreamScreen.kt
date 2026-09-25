@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -36,6 +37,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -46,8 +49,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -194,57 +195,7 @@ object StreamScreen : Screen {
       }
     }
 
-    Scaffold(
-      topBar = {
-        TopAppBar(
-          title = {
-            if (searchActive && state.selectedItem == null) {
-              OutlinedTextField(
-                value = state.query,
-                onValueChange = viewModel::setQuery,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                placeholder = { Text("Search movies and series") },
-                leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = "Search", modifier = Modifier.size(20.dp)) },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) }),
-              )
-            } else {
-              Column {
-                Text(state.selectedItem?.title ?: if (browseRail == null) "Stream" else "Browse", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (state.selectedItem == null && browseRail == null) Text("Movies, series and provider catalogs", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-              }
-            }
-          },
-          navigationIcon = {
-            IconButton(onClick = {
-              when {
-                state.selectedItem != null -> viewModel.closeDetails()
-                browseRail != null -> browseRail = null
-                else -> backstack.popSafely()
-              }
-            }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") }
-          },
-          actions = {
-            if (state.selectedItem == null) {
-            IconButton(onClick = {
-              if (searchActive) {
-                isSearching = false
-                viewModel.setQuery("")
-              } else isSearching = true
-            }) {
-              Icon(if (searchActive) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, if (searchActive) "Close search" else "Search")
-            }
-            IconButton(onClick = { backstack.add(MediaServersPreferencesScreen) }) {
-              Icon(Icons.RoundedFilled.Settings, "Add-on settings")
-            }
-            }
-          },
-          colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-        )
-      },
-    ) { padding ->
-      Box(Modifier.fillMaxSize().padding(padding)) {
+    Box(Modifier.fillMaxSize()) {
         if (state.selectedItem != null) {
           CatalogDetailsPage(
             item = state.selectedItem!!,
@@ -261,7 +212,7 @@ object StreamScreen : Screen {
         } else LazyColumn(
           state = streamListState,
           modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(bottom = 104.dp),
+          contentPadding = PaddingValues(top = if (!searchActive && browseRail == null && heroItems.isNotEmpty()) 0.dp else 76.dp, bottom = 104.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           if (searchActive) item {
@@ -375,9 +326,93 @@ object StreamScreen : Screen {
         if (isRefreshing) {
           CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(top = 10.dp).size(24.dp), strokeWidth = 2.dp)
         }
-      }
+        if (state.selectedItem == null) {
+          NuvioStreamTopOverlay(
+            modifier = Modifier.align(Alignment.TopCenter),
+            query = state.query,
+            isSearching = searchActive,
+            hasHero = !searchActive && browseRail == null && heroItems.isNotEmpty(),
+            title = if (browseRail == null) "Discover" else rails[browseRail]?.firstOrNull()?.catalogName ?: "Browse catalog",
+            onQueryChange = viewModel::setQuery,
+            onSearch = { isSearching = true },
+            onCloseSearch = {
+              keyboardController?.hide()
+              isSearching = false
+              viewModel.setQuery("")
+            },
+            onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
+            onSubmitSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) },
+          )
+        }
     }
 
+  }
+}
+
+@Composable
+private fun NuvioStreamTopOverlay(
+  modifier: Modifier = Modifier,
+  title: String,
+  query: String,
+  isSearching: Boolean,
+  hasHero: Boolean,
+  onQueryChange: (String) -> Unit,
+  onSearch: () -> Unit,
+  onCloseSearch: () -> Unit,
+  onOpenSettings: () -> Unit,
+  onSubmitSearch: () -> Unit,
+) {
+  val keyboardController = LocalSoftwareKeyboardController.current
+  val focusRequester = remember { FocusRequester() }
+  LaunchedEffect(isSearching) {
+    if (isSearching) {
+      delay(100)
+      runCatching { focusRequester.requestFocus() }
+      keyboardController?.show()
+    }
+  }
+  Row(
+    modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    if (isSearching) {
+      OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.weight(1f).focusRequester(focusRequester),
+        singleLine = true,
+        placeholder = { Text("Search movies and series") },
+        leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSubmitSearch() }),
+      )
+      IconButton(onClick = onCloseSearch) {
+        Icon(Icons.RoundedFilled.Close, contentDescription = "Close search", tint = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface)
+      }
+    } else {
+      Surface(
+        modifier = Modifier.weight(1f),
+        color = if (hasHero) Color.Black.copy(alpha = .16f) else MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+        shape = RoundedCornerShape(24.dp),
+      ) {
+        Text(
+          title,
+          Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+          style = MaterialTheme.typography.titleLarge,
+          color = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+      Surface(color = if (hasHero) Color.Black.copy(alpha = .2f) else MaterialTheme.colorScheme.surface.copy(alpha = .94f), shape = CircleShape) {
+        IconButton(onClick = onSearch) { Icon(Icons.RoundedFilled.Search, contentDescription = "Search", tint = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface) }
+      }
+      Surface(color = if (hasHero) Color.Black.copy(alpha = .2f) else MaterialTheme.colorScheme.surface.copy(alpha = .94f), shape = CircleShape) {
+        IconButton(onClick = onOpenSettings) { Icon(Icons.RoundedFilled.Settings, contentDescription = "Catalog and provider settings", tint = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface) }
+      }
+    }
   }
 }
 
@@ -526,7 +561,13 @@ private fun LazyListScope.streamCatalogRail(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        TextButton(onClick = onSeeAll) { Text("View all") }
+        Surface(
+          modifier = Modifier.clickable(onClick = onSeeAll),
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f),
+        ) {
+          Text("View all", Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        }
       }
     }
   }
@@ -578,24 +619,31 @@ private fun StreamEmptySearchState(query: String) {
 
 @Composable
 private fun StreamNoCatalogsState(hasCatalogAddons: Boolean, onOpenSettings: () -> Unit, onRefresh: () -> Unit) {
-  Column(
-    Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 56.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(14.dp),
+  Surface(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 38.dp),
+    shape = RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
   ) {
-    Icon(Icons.RoundedFilled.Movie, contentDescription = null, modifier = Modifier.size(60.dp), tint = MaterialTheme.colorScheme.primary)
-    Text(if (hasCatalogAddons) "No catalog titles available" else "Your Stream home is ready", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-    Text(
-      if (hasCatalogAddons) {
-        "Installed catalog add-ons returned no titles. Check their availability or add another catalog source. Nuvio JavaScript providers are configured separately for direct HTTPS playback."
-      } else {
-        "Install catalog add-ons for Nuvio-style discovery, search and metadata in Settings → Network → Media Servers → Stream Catalogs. Add JavaScript providers in Nuvio JavaScript Providers to resolve direct HTTPS links."
-      },
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-    )
-    Button(onClick = onOpenSettings) { Text("Configure add-ons") }
-    TextButton(onClick = onRefresh) { Text("Refresh catalogs") }
+    Column(
+      Modifier.fillMaxWidth().padding(horizontal = 26.dp, vertical = 30.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(13.dp),
+    ) {
+      Icon(Icons.RoundedFilled.Movie, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+      Text(if (hasCatalogAddons) "Catalogs are not responding" else "Connect a discovery catalog", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+      Text(
+        if (hasCatalogAddons) {
+          "Your installed catalog add-ons returned no titles. Check the add-on's catalog resources or try another catalog source."
+        } else {
+          "Nuvio separates discovery catalogs from video providers. A JavaScript repository such as Yoru installs stream scrapers; it does not create home rails. Add a Stremio-compatible catalog add-on under Global Settings → Network → Media Servers → Stream Catalogs. A TMDB key is optional metadata enrichment, not a catalog source."
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+      )
+      Button(onClick = onOpenSettings) { Text("Add or manage catalog add-ons") }
+      TextButton(onClick = onOpenSettings) { Text("Manage Nuvio video providers") }
+      TextButton(onClick = onRefresh) { Text("Refresh catalogs") }
+    }
   }
 }
