@@ -72,13 +72,16 @@ fun TorrentSelectionScreen(
   onBack: () -> Unit,
   onRetry: () -> Unit,
   onSelect: (Int) -> Unit,
+  onEpisodeSelect: (Int, app.infinity.mpvz.catalog.Episode) -> Unit = { _, _ -> },
+  onSeasonSelect: (Int) -> Unit = {},
+  onShowEpisodeList: () -> Unit = {},
   isDownloadable: (Int) -> Boolean = { false },
   onDownload: (Int) -> Unit = {},
 ) {
   when (state) {
     TorrentSelectionUiState.Loading -> TorrentLoadingScreen(onBack)
     is TorrentSelectionUiState.Error -> TorrentErrorScreen(state.message, onBack, onRetry)
-    is TorrentSelectionUiState.Ready -> TorrentReadyScreen(state, onBack, onSelect, isDownloadable, onDownload)
+    is TorrentSelectionUiState.Ready -> TorrentReadyScreen(state, onBack, onSelect, onEpisodeSelect, onSeasonSelect, onShowEpisodeList, isDownloadable, onDownload)
   }
 }
 
@@ -87,11 +90,25 @@ private fun TorrentReadyScreen(
   state: TorrentSelectionUiState.Ready,
   onBack: () -> Unit,
   onSelect: (Int) -> Unit,
+  onEpisodeSelect: (Int, app.infinity.mpvz.catalog.Episode) -> Unit,
+  onSeasonSelect: (Int) -> Unit,
+  onShowEpisodeList: () -> Unit,
   isDownloadable: (Int) -> Boolean,
   onDownload: (Int) -> Unit,
 ) {
   BackHandler { onBack() }
   val artwork = state.artwork
+  val browser = state.episodeBrowser
+  if (browser != null && state.showEpisodeList) {
+    EpisodeBrowser(
+      artwork = artwork,
+      browser = browser,
+      onEpisodeSelect = onEpisodeSelect,
+      onSeasonSelect = onSeasonSelect,
+      onBack = onBack,
+    )
+    return
+  }
   val hasBackdrop = !artwork.backdropUrl.isNullOrBlank()
   val context = LocalContext.current
   val viewedPreferences =
@@ -160,6 +177,9 @@ private fun TorrentReadyScreen(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.weight(1f),
           )
+          if (browser != null) {
+            TextButton(onClick = onShowEpisodeList) { Text("Episodes") }
+          }
           if (state.launchingFileIndex != null) {
             CircularProgressIndicator(
               modifier =
@@ -359,6 +379,75 @@ private fun TorrentReadyScreen(
             item { Spacer(modifier = Modifier.height(16.dp)) }
           }
         }
+      }
+    }
+  }
+}
+
+@Composable
+@Composable
+private fun EpisodeBrowser(
+  artwork: TorrentArtwork,
+  browser: EpisodeBrowserState,
+  onEpisodeSelect: (Int, app.infinity.mpvz.catalog.Episode) -> Unit,
+  onSeasonSelect: (Int) -> Unit,
+  onBack: () -> Unit,
+) {
+  Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+    Column(modifier = Modifier.fillMaxSize()) {
+      Row(
+        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        IconButton(onClick = onBack) { Icon(Icons.RoundedFilled.ArrowBack, contentDescription = "Back") }
+        Text("Choose an episode", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        if (browser.isResolving) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+      }
+      TorrentHeroBanner(artwork)
+      LazyRow(
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        items(browser.seasons, key = { it.number }) { season ->
+          FilterChip(
+            selected = browser.selectedSeason == season.number,
+            onClick = { onSeasonSelect(season.number) },
+            label = { Text("Season ${season.number}") },
+          )
+        }
+      }
+      val selected = browser.seasons.firstOrNull { it.number == browser.selectedSeason } ?: browser.seasons.firstOrNull()
+      Text(
+        text = selected?.let { "Season ${it.number}  ·  ${it.episodes.size} episodes" } ?: "Episodes",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+      )
+      if (browser.error != null) {
+        Text(browser.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+      }
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        items(selected?.episodes.orEmpty(), key = { it.number }) { episode ->
+          Card(
+            modifier = Modifier.fillMaxWidth().clickable(enabled = !browser.isResolving) {
+              onEpisodeSelect(selected?.number ?: 1, episode)
+            },
+            shape = RoundedCornerShape(14.dp),
+          ) {
+            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text("E${episode.number.toString().padStart(2, '0')}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                Text(episode.title.ifBlank { "Episode ${episode.number}" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (episode.overview.isNotBlank()) Text(episode.overview, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              Icon(Icons.RoundedFilled.ChevronRight, contentDescription = "Resolve episode", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        }
+        item { Spacer(modifier = Modifier.height(16.dp)) }
       }
     }
   }
