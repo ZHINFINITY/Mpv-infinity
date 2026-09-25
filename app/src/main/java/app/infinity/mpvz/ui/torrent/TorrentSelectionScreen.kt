@@ -383,6 +383,8 @@ private fun TorrentReadyScreen(
   }
 }
 
+}
+
 @Composable
 private fun ResolverChooserScreen(
   state: TorrentSelectionUiState.Ready,
