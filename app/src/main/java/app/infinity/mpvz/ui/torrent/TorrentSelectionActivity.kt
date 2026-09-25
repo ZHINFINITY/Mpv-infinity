@@ -120,18 +120,23 @@ class TorrentSelectionActivity : AppCompatActivity() {
               // are not valid HentaiStream resource IDs, so per-episode probing can return 0.
               val metadataResults = runCatching { resolver.resolve(completeItem, null, null) }
                 .getOrDefault(emptyList())
-              if (metadataResults.isNotEmpty()) metadataResults else coroutineScope {
+              val episodeResults = coroutineScope {
                 completeItem.seasons.flatMap { season ->
                   season.episodes.map { episode ->
                     async {
                       runCatching { resolver.resolve(completeItem, season.number, episode.number) }
                         .getOrDefault(emptyList())
-                        .map { it.copy(season = season.number, episode = episode.number) }
+                        .map { it.copy(season = it.season ?: season.number, episode = it.episode ?: episode.number) }
                     }
                   }
                 }.awaitAll().flatten()
               }
-            }.distinctBy { stream -> stream.url.substringBefore("&mpvinfinity=") }
+              metadataResults + episodeResults
+            }.distinctBy { stream ->
+              // The same CDN URL can legitimately be returned for different episodes by an
+              // addon. Include episode identity so one response cannot hide another episode.
+              "${stream.url.substringBefore("&mpvinfinity=")}|${stream.season}|${stream.episode}"
+            }
             val allStreams = resolvedStreams.map { stream ->
               if (stream.season != null && stream.episode != null) stream else {
                 val match = Regex("(?i)(?:^|[^a-z0-9])s(\\d{1,2})[ ._-]*e(\\d{1,3})(?:[^a-z0-9]|$)").find(stream.title)
@@ -146,7 +151,12 @@ class TorrentSelectionActivity : AppCompatActivity() {
                 Episode(episode, "Episode $episode", "", null)
               })
             }
-            val itemWithResolverSeasons = completeItem.copy(seasons = (completeItem.seasons + resolverSeasons).distinctBy(Season::number).sortedBy(Season::number))
+            val itemWithResolverSeasons = completeItem.copy(
+              seasons = (completeItem.seasons + resolverSeasons)
+                .groupBy { it.number }
+                .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
+                .sortedBy { it.number },
+            )
             Log.i(DIAG_TAG, "resolver item title=\"${completeItem.title}\" type=${completeItem.catalogType ?: completeItem.type} streams=${allStreams.size} playable=${allStreams.count { it.isPlayable }}")
             viewModel.initializeResolver(torrentInput("", intent, itemWithResolverSeasons), allStreams)
           }
