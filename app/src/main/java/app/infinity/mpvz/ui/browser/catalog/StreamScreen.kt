@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.catalog.CatalogProvider
@@ -86,8 +87,6 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
 import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
-import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import coil3.compose.AsyncImage
 
@@ -100,36 +99,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
     val state by viewModel.state.collectAsState()
     val catalogSources by viewModel.catalogSources.collectAsState()
-    fun openChooser(item: MediaItem, season: Int? = null, episodeNumber: Int? = null) {
-      val selectedEpisode = season?.let { seasonNumber -> episodeNumber?.let { number -> item.seasons.firstOrNull { it.number == seasonNumber }?.episodes?.firstOrNull { it.number == number } } }
-      context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
-        action = Intent.ACTION_VIEW
-        putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
-        putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
-        putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
-        putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
-        putExtra("catalog_provider_id", item.providerId)
-        putExtra("catalog_provider", item.provider.name)
-        putExtra("catalog_source_id", item.catalogSourceId)
-        putExtra("catalog_type_name", item.catalogType)
-        putExtra("catalog_type", item.type.name)
-        putExtra("catalog_id", item.id)
-        putExtra("catalog_imdb_id", item.imdbId)
-        putExtra("catalog_release_year", item.releaseYear)
-        putExtra("catalog_rating", item.contentRating)
-        putExtra("catalog_duration", item.duration)
-        putExtra("catalog_genres", item.genres.joinToString(" • "))
-        putExtra("is_series", item.type == app.infinity.mpvz.catalog.MediaType.TV)
-        if (item.seasons.isNotEmpty()) putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
-        selectedEpisode?.let { episode ->
-          putExtra("episode_season", season)
-          putExtra("episode_number", episodeNumber)
-          putExtra("episode_title", episode.title)
-          putExtra("episode_overview", episode.overview)
-          putExtra("episode_thumbnail", episode.stillUrl)
-        }
-      })
-    }
+    fun openChooser(item: MediaItem) = viewModel.showDetails(item)
     var heroItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     LaunchedEffect(state.items) { heroItems = state.items.shuffled().take(7) }
     val heroInitialPage = remember(heroItems) {
@@ -157,6 +127,30 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     val refreshScope = rememberCoroutineScope()
     val streamListState = rememberLazyListState()
     val searchActive = isSearching || state.query.isNotBlank()
+    state.selectedItem?.let { selectedItem ->
+      StreamDetailsScreen(
+        item = selectedItem,
+        state = state,
+        onBack = viewModel::closeDetails,
+        onSeasonSelected = viewModel::selectSeason,
+        onEpisodeSelected = { season, episode -> viewModel.resolve(selectedItem, season, episode) },
+        onStreamSelected = { stream ->
+          if (stream.isExternal) {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(stream.url)))
+          } else {
+            context.startActivity(Intent(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java).apply {
+              action = Intent.ACTION_VIEW
+              data = Uri.parse(stream.url)
+              putExtra("title", stream.title)
+              putExtra(app.infinity.mpvz.utils.media.MediaUtils.EXTRA_MEDIA_TITLE, stream.title)
+              putExtra(app.infinity.mpvz.utils.media.MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
+              if (stream.headers.isNotEmpty()) putExtra("headers", stream.headers.entries.flatMap { listOf(it.key, it.value) }.toTypedArray())
+            })
+          }
+        },
+      )
+      return
+    }
     LaunchedEffect(browseRail, state.items.size) {
       androidx.compose.runtime.snapshotFlow {
         streamListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -353,6 +347,86 @@ private fun StreamEmptySearchState(query: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
       )
+    }
+  }
+}
+
+@Composable
+private fun StreamDetailsScreen(
+  item: MediaItem,
+  state: app.infinity.mpvz.catalog.CatalogState,
+  onBack: () -> Unit,
+  onSeasonSelected: (Int) -> Unit,
+  onEpisodeSelected: (Int, Int) -> Unit,
+  onStreamSelected: (StreamOption) -> Unit,
+) {
+  val selectedSeason = item.seasons.firstOrNull { it.number == state.selectedSeason } ?: item.seasons.firstOrNull()
+  Scaffold(
+    topBar = {
+      TopAppBar(
+        title = { Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+      )
+    },
+  ) { padding ->
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      item {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.Top) {
+          AsyncImage(model = item.posterUrl, contentDescription = item.title, modifier = Modifier.size(width = 112.dp, height = 166.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+          Column(Modifier.padding(start = 14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(item.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(item.overview, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 5, overflow = TextOverflow.Ellipsis)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              item.releaseYear?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+              item.contentRating?.let { Text(it, style = MaterialTheme.typography.labelMedium) }
+              Text(item.provider.name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+          }
+        }
+      }
+      if (item.type == MediaType.TV && item.seasons.isNotEmpty()) {
+        item {
+          LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(item.seasons, key = { it.number }) { season ->
+              FilterChip(selected = selectedSeason?.number == season.number, onClick = { onSeasonSelected(season.number) }, label = { Text("Season ${season.number}") }, shape = RoundedCornerShape(12.dp))
+            }
+          }
+        }
+        item { Text("Season ${selectedSeason?.number ?: 1} · ${selectedSeason?.episodes?.size ?: 0} episodes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+        items(selectedSeason?.episodes.orEmpty(), key = { "episode-${selectedSeason?.number}-${it.number}" }) { episode ->
+          Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onEpisodeSelected(selectedSeason?.number ?: 1, episode.number) }, shape = RoundedCornerShape(22.dp)) {
+            Row(Modifier.padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+              AsyncImage(model = episode.stillUrl, contentDescription = episode.title, modifier = Modifier.size(width = 150.dp, height = 96.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+              Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text("S${(selectedSeason?.number ?: 1).toString().padStart(2, '0')}E${episode.number.toString().padStart(2, '0')}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text(episode.title.ifBlank { "Episode ${episode.number}" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(episode.overview, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+              }
+              Icon(Icons.RoundedFilled.ChevronRight, "Resolve episode")
+            }
+          }
+        }
+      }
+      if (state.resolvingId == item.id) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() } }
+      state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) } }
+      if (state.streamOptions.isNotEmpty()) {
+        item { Text("Links${state.selectedEpisode?.let { " for S${state.selectedSeason}E$it" }.orEmpty()}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+        items(state.streamOptions, key = { "stream-${it.url}" }) { stream ->
+          Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable { onStreamSelected(stream) }, shape = RoundedCornerShape(16.dp)) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+              Column(Modifier.weight(1f)) {
+                Text(stream.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                val host = stream.source?.takeIf { it.isNotBlank() } ?: runCatching { Uri.parse(stream.url).host }.getOrNull()
+                val type = when { stream.url.startsWith("magnet:", true) -> "Torrent"; stream.isExternal -> "External"; else -> "HTTPS" }
+                val details = listOfNotNull(host, type, stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.size, stream.audioCodec, stream.videoCodec).distinct().joinToString("  ·  ")
+                if (details.isNotBlank()) Text(details, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+              }
+              Icon(Icons.RoundedFilled.PlayArrow, "Play")
+            }
+          }
+        }
+      }
     }
   }
 }
