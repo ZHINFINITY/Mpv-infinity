@@ -26,6 +26,7 @@ import java.net.URI
 
 data class TorrentSelectionInput(
   val source: String,
+  val headers: Map<String, String> = emptyMap(),
   val title: String? = null,
   val description: String? = null,
   val posterUrl: String? = null,
@@ -106,11 +107,13 @@ class TorrentSelectionViewModel(
     }
     val files = streams.mapIndexed { index, stream ->
       val episodePrefix = stream.season?.let { season -> stream.episode?.let { episode -> "S%02dE%02d ".format(season, episode) } }.orEmpty()
-      TorrentFileItem(index, "$episodePrefix${stream.title}", "$episodePrefix${stream.title}", parseResolverSize(stream.size), "video/x-matroska")
+      val providerPrefix = stream.source?.takeIf { it.isNotBlank() }?.let { "[$it] " }.orEmpty()
+      TorrentFileItem(index, "$episodePrefix$providerPrefix${stream.title}", "$episodePrefix$providerPrefix${stream.title}", parseResolverSize(stream.size), "video/x-matroska")
     }
     val resolverInputs = streams.mapIndexed { index, stream ->
       index to value.copy(
         source = stream.url,
+        headers = stream.headers,
         season = stream.season ?: value.season,
         episode = stream.episode ?: value.episode,
         fileIndex = stream.torrentFileIndex,

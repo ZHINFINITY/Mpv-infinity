@@ -287,7 +287,7 @@ private fun CustomThemeEditor(
         }
         Text("Colour sliders", style = MaterialTheme.typography.labelLarge)
         Text("Hue: ${textHue.toInt()}°", style = MaterialTheme.typography.bodySmall)
-        Slider(value = textHue, onValueChange = { textHue = it; updateTextColorFromSliders() }, valueRange = 0f..360f)
+        Slider(value = textHue, onValueChange = { textHue = it; updateTextColorFromSliders() }, valueRange = 0f..359f, steps = 359)
         Text("Saturation: ${(textSaturation * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
         Slider(value = textSaturation, onValueChange = { textSaturation = it; updateTextColorFromSliders() }, valueRange = 0f..1f)
         Text("Brightness: ${(textValue * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)

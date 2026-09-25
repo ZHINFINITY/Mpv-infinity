@@ -72,11 +72,13 @@ fun TorrentSelectionScreen(
   onBack: () -> Unit,
   onRetry: () -> Unit,
   onSelect: (Int) -> Unit,
+  isDownloadable: (Int) -> Boolean = { false },
+  onDownload: (Int) -> Unit = {},
 ) {
   when (state) {
     TorrentSelectionUiState.Loading -> TorrentLoadingScreen(onBack)
     is TorrentSelectionUiState.Error -> TorrentErrorScreen(state.message, onBack, onRetry)
-    is TorrentSelectionUiState.Ready -> TorrentReadyScreen(state, onBack, onSelect)
+    is TorrentSelectionUiState.Ready -> TorrentReadyScreen(state, onBack, onSelect, isDownloadable, onDownload)
   }
 }
 
@@ -85,6 +87,8 @@ private fun TorrentReadyScreen(
   state: TorrentSelectionUiState.Ready,
   onBack: () -> Unit,
   onSelect: (Int) -> Unit,
+  isDownloadable: (Int) -> Boolean,
+  onDownload: (Int) -> Unit,
 ) {
   BackHandler { onBack() }
   val artwork = state.artwork
@@ -342,6 +346,8 @@ private fun TorrentReadyScreen(
                 enabled = state.launchingFileIndex == null,
                 launching = state.launchingFileIndex == file.index,
                 viewed = file.index in viewedFileIndices,
+                downloadable = isDownloadable(file.index),
+                onDownload = { onDownload(file.index) },
                 onClick = {
                   val updatedViewedFiles = viewedFileIndices + file.index
                   viewedFileIndices = updatedViewedFiles
@@ -531,6 +537,8 @@ private fun TorrentFileRow(
   enabled: Boolean,
   launching: Boolean,
   viewed: Boolean,
+  downloadable: Boolean,
+  onDownload: () -> Unit,
   onClick: () -> Unit,
 ) {
   val episode = parseEpisode(file.name) ?: parseEpisode(file.path)
@@ -613,6 +621,11 @@ private fun TorrentFileRow(
         )
       }
 
+      if (downloadable && !launching) {
+        IconButton(onClick = onDownload, modifier = Modifier.size(34.dp)) {
+          Icon(imageVector = Icons.RoundedFilled.Download, contentDescription = "Download", modifier = Modifier.size(20.dp))
+        }
+      }
       when {
         launching -> {
           CircularProgressIndicator(
