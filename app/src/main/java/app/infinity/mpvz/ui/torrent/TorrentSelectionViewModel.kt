@@ -40,6 +40,10 @@ data class TorrentSelectionInput(
   val episodeTitle: String? = null,
   val episodeOverview: String? = null,
   val episodeThumbnail: String? = null,
+  val qualityRank: Int = 0,
+  val size: String? = null,
+  val audioCodec: String? = null,
+  val videoCodec: String? = null,
   val seasonsJson: String? = null,
   val fileIndex: Int? = null,
 )
@@ -132,6 +136,10 @@ class TorrentSelectionViewModel(
         headers = stream.headers,
         filename = stream.filename,
         isExternal = stream.isExternal,
+        qualityRank = stream.qualityRank,
+        size = stream.size,
+        audioCodec = stream.audioCodec,
+        videoCodec = stream.videoCodec,
         season = stream.season ?: value.season,
         episode = stream.episode ?: value.episode,
         fileIndex = stream.torrentFileIndex,
@@ -173,6 +181,17 @@ class TorrentSelectionViewModel(
     )
   }
 
+  fun updateResolverBrowserSeasons(seasons: List<Season>) {
+    val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
+    val browser = ready.episodeBrowser ?: return
+    if (seasons.isEmpty()) return
+    val selected = browser.selectedSeason?.takeIf { number -> seasons.any { it.number == number } } ?: seasons.first().number
+    _uiState.value = ready.copy(
+      artwork = ready.artwork.copy(seasons = seasons),
+      episodeBrowser = browser.copy(seasons = seasons, selectedSeason = selected, error = null),
+    )
+  }
+
   fun setEpisodeResolving(season: Int, episode: Episode) {
     val ready = _uiState.value as? TorrentSelectionUiState.Ready ?: return
     val browser = ready.episodeBrowser ?: return
@@ -208,7 +227,7 @@ class TorrentSelectionViewModel(
       TorrentFileItem(index, displayName, displayName, parseResolverSize(stream.size), stream.mimeType ?: "video/x-matroska")
     }
     val resolverInputs = streams.mapIndexed { index, stream ->
-      index to value.copy(source = stream.url, headers = stream.headers, filename = stream.filename, isExternal = stream.isExternal, fileIndex = stream.torrentFileIndex)
+      index to value.copy(source = stream.url, headers = stream.headers, filename = stream.filename, isExternal = stream.isExternal, qualityRank = stream.qualityRank, size = stream.size, audioCodec = stream.audioCodec, videoCodec = stream.videoCodec, fileIndex = stream.torrentFileIndex)
     }.toMap()
     _uiState.value = ready.copy(
       catalog = TorrentCatalog("resolver", "", "resolver", value.title ?: "Episode links", files),

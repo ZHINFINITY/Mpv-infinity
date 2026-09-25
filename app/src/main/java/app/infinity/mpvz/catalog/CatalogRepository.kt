@@ -73,7 +73,7 @@ class CatalogSettings(context: Context) {
     set(value) = prefs.edit().putBoolean("auto_choose_best_torrent", value).apply()
   fun resolvers(): List<ResolverEndpoint> = prefs.getStringSet("resolver_endpoints", emptySet()).orEmpty().mapNotNull { encoded ->
     val parts = encoded.split("|", limit = 2)
-    parts.getOrNull(0)?.takeIf { it.isNotBlank() }?.let { ResolverEndpoint(sanitizeResolverBaseUrl(it), parts.getOrNull(1)?.toBooleanStrictOrNull() ?: true) }
+    parts.getOrNull(0)?.takeIf { isHttpAddonEndpoint(it) }?.let { ResolverEndpoint(sanitizeResolverBaseUrl(it), parts.getOrNull(1)?.toBooleanStrictOrNull() ?: true) }
   }
   fun saveResolvers(value: List<ResolverEndpoint>) {
     prefs.edit().putStringSet("resolver_endpoints", value.mapNotNull { endpoint ->
@@ -82,19 +82,21 @@ class CatalogSettings(context: Context) {
   }
   fun catalogSources(): List<CatalogSource> {
     prefs.getString("catalog_sources_json", null)?.let { encoded ->
-      runCatching { Json.decodeFromString<List<CatalogSource>>(encoded) }.getOrNull()?.let { return it }
+      runCatching { Json.decodeFromString<List<CatalogSource>>(encoded) }.getOrNull()?.filter { isHttpAddonEndpoint(it.manifestUrl) }?.let { return it }
     }
     return prefs.getStringSet("catalog_sources", null)?.mapNotNull { encoded ->
       val parts = encoded.split("|", limit = 4)
-      if (parts.size >= 4) CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true) else null
+      if (parts.size >= 4 && isHttpAddonEndpoint(parts[2])) CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true) else null
     } ?: DEFAULT_CATALOG_SOURCES
   }
   fun saveCatalogSources(value: List<CatalogSource>) {
-    prefs.edit().putString("catalog_sources_json", Json.encodeToString(value)).remove("catalog_sources").apply()
+    prefs.edit().putString("catalog_sources_json", Json.encodeToString(value.filter { isHttpAddonEndpoint(it.manifestUrl) })).remove("catalog_sources").apply()
   }
 }
 
-private fun sanitizeResolverBaseUrl(value: String): String = value.trim().trimEnd('/')
+internal fun isHttpAddonEndpoint(value: String): Boolean = value.trim().let { it.startsWith("https://", true) || it.startsWith("http://", true) }
+
+private fun sanitizeResolverBaseUrl(value: String): String = value.trim().takeIf(::isHttpAddonEndpoint).orEmpty().trimEnd('/')
   // Stremio addons may put their configuration (for example Showbox's encoded cookie JSON)
   // in the URL path. That path is part of the addon identity and must be retained for every
   // manifest, metadata, catalog, and stream request.
@@ -132,6 +134,25 @@ class KitsuAnimeRepository {
         )
       }
     }
+  }
+
+  suspend fun seasons(providerId: String): List<Season> = withContext(Dispatchers.IO) {
+    val url = "https://anime-kitsu.strem.fun/meta/anime/${URLEncoder.encode(providerId, "UTF-8")}.json"
+    runCatching {
+      client.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+        if (!response.isSuccessful) return@use emptyList()
+        json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty()
+          .mapNotNull { element ->
+            val video = element.jsonObject
+            val season = video["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val episode = video["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            season to Episode(episode, video["title"]?.jsonPrimitive?.contentOrNull ?: "Episode $episode", video["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), video["thumbnail"]?.jsonPrimitive?.contentOrNull, video["runtime"]?.jsonPrimitive?.contentOrNull)
+          }
+          .groupBy({ it.first }, { it.second })
+          .map { (number, episodes) -> Season(number, episodes.distinctBy { it.number }.sortedBy { it.number }) }
+          .sortedBy { it.number }
+      }
+    }.getOrDefault(emptyList())
   }
 }
 

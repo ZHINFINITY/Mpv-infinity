@@ -97,6 +97,9 @@ class TorrentSelectionActivity : AppCompatActivity() {
     )
 
     source?.let { viewModel.initialize(torrentInput(it, intent)) }
+    if (source.isNullOrBlank() && resolverItem?.type == MediaType.TV) {
+      viewModel.initializeResolverBrowser(torrentInput("", intent, resolverItem), resolverItem.seasons)
+    }
 
     setContent {
       val state by viewModel.uiState.collectAsState()
@@ -106,16 +109,18 @@ class TorrentSelectionActivity : AppCompatActivity() {
         val resolver = remember { CloudStreamResolver(app.infinity.mpvz.catalog.CatalogSettings(applicationContext)) }
         LaunchedEffect(resolverItem) {
           if (resolverItem != null && source.isNullOrBlank()) {
-            val completeSeasons = if (resolverItem.type == MediaType.TV && !resolverItem.providerId.isNullOrBlank()) {
-              (resolverItem.seasons + runCatching { resolver.loadSeasons(resolverItem) }.getOrDefault(emptyList()) + runCatching { CinemetaCatalogRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList()))
-                .groupBy { it.number }
-                .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
-                .sortedBy { it.number }
-            } else {
-              resolverItem.seasons
-            }
             if (resolverItem.type == MediaType.TV) {
-              viewModel.initializeResolverBrowser(torrentInput("", intent, resolverItem), completeSeasons)
+              // Enter the episode browser immediately. Metadata enrichment must not show the
+              // torrent preparation screen while the provider is being queried.
+              val completeSeasons = if (resolverItem.provider == app.infinity.mpvz.catalog.CatalogProvider.KITSU && !resolverItem.providerId.isNullOrBlank()) {
+                runCatching { app.infinity.mpvz.catalog.KitsuAnimeRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList())
+              } else if (!resolverItem.providerId.isNullOrBlank()) {
+                (resolverItem.seasons + runCatching { resolver.loadSeasons(resolverItem) }.getOrDefault(emptyList()) + runCatching { CinemetaCatalogRepository().seasons(resolverItem.providerId) }.getOrDefault(emptyList()))
+                  .groupBy { it.number }
+                  .map { (number, seasons) -> Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number }) }
+                  .sortedBy { it.number }
+              } else resolverItem.seasons
+              viewModel.updateResolverBrowserSeasons(completeSeasons)
             } else {
               val streams = runCatching { resolver.resolve(resolverItem, null, null) }.getOrDefault(emptyList())
               viewModel.initializeResolver(torrentInput("", intent, resolverItem), streams)

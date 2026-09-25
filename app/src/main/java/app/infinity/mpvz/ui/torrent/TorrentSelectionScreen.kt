@@ -446,7 +446,15 @@ private fun ResolverResultsScreen(
                     input.filename?.takeIf { it.isNotBlank() },
                   ).distinct().joinToString("  ·  ")
                 }.orEmpty()
+                val details = listOfNotNull(
+                  link?.let { streamType(it.source) },
+                  link?.let { streamQuality(it.qualityRank) },
+                  link?.size?.takeIf { it.isNotBlank() },
+                  link?.audioCodec?.takeIf { it.isNotBlank() },
+                  link?.videoCodec?.takeIf { it.isNotBlank() },
+                ).distinct().joinToString("  ·  ")
                 if (sourceLabel.isNotBlank()) Text(sourceLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+                if (details.isNotBlank()) Text(details, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
               }
               if (isDownloadable(file.index)) {
                 IconButton(onClick = { onDownload(file.index) }) { Icon(Icons.RoundedFilled.Download, contentDescription = "Download") }
@@ -479,7 +487,7 @@ private fun EpisodeBrowser(
         Text("Choose an episode", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         if (browser.isResolving) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
       }
-      TorrentHeroBanner(artwork)
+      ResolverEpisodeHeader(artwork)
       LazyRow(
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -511,13 +519,22 @@ private fun EpisodeBrowser(
             modifier = Modifier.fillMaxWidth().clickable(enabled = !browser.isResolving) {
               onEpisodeSelect(selected?.number ?: 1, episode)
             },
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(18.dp),
           ) {
-            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+              if (!episode.stillUrl.isNullOrBlank()) {
+                RemoteImage(url = episode.stillUrl, contentDescription = episode.title, modifier = Modifier.size(width = 132.dp, height = 82.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+              } else {
+                Box(modifier = Modifier.size(width = 132.dp, height = 82.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                  Text("E${episode.number.toString().padStart(2, '0')}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                }
+              }
+              Spacer(modifier = Modifier.width(12.dp))
               Column(modifier = Modifier.weight(1f)) {
-                Text("E${episode.number.toString().padStart(2, '0')}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
-                Text(episode.title.ifBlank { "Episode ${episode.number}" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                if (episode.overview.isNotBlank()) Text(episode.overview, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("S${selected?.number?.toString()?.padStart(2, '0')}E${episode.number.toString().padStart(2, '0')}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(episode.title.ifBlank { "Episode ${episode.number}" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (episode.overview.isNotBlank()) Text(episode.overview, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+                episode.runtime?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
               }
               Icon(Icons.RoundedFilled.ChevronRight, contentDescription = "Resolve episode", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -528,6 +545,29 @@ private fun EpisodeBrowser(
     }
   }
 }
+
+@Composable
+private fun ResolverEpisodeHeader(artwork: TorrentArtwork) {
+  Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      if (!artwork.posterUrl.isNullOrBlank()) {
+        RemoteImage(url = artwork.posterUrl, contentDescription = artwork.title, modifier = Modifier.size(width = 72.dp, height = 104.dp).clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.Crop)
+      }
+      Column(modifier = Modifier.padding(start = 14.dp).weight(1f)) {
+        Text(artwork.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        artwork.description?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp)) }
+      }
+    }
+  }
+}
+
+private fun streamType(url: String): String = when {
+  url.startsWith("magnet:", true) -> "Torrent"
+  url.startsWith("http://", true) || url.startsWith("https://", true) -> "Direct"
+  else -> "External"
+}
+
+private fun streamQuality(rank: Int): String = if (rank > 0) "${rank}p" else "Quality unknown"
 
 @Composable
 private fun TorrentHeroBanner(artwork: TorrentArtwork) {

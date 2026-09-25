@@ -192,7 +192,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun saveSettings(resolvers: List<ResolverEndpoint>, resolverToken: String, resolverPath: String) {
     saveResolvers(resolvers)
     val existingSources = settings.catalogSources().filterNot { it.id.startsWith("resolver-") }
-    val resolverSources = resolvers.map { endpoint ->
+    val resolverSources = resolvers.filter { isHttpAddonEndpoint(it.baseUrl) }.map { endpoint ->
       val baseUrl = endpoint.baseUrl.trimEnd('/')
       val manifestUrl = "$baseUrl/manifest.json"
       val name = baseUrl.substringAfter("://").substringBefore('/').ifBlank { "Addon catalog" }
@@ -217,13 +217,13 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
   private fun syncCatalogResolvers(sources: List<CatalogSource>) {
     val catalogResolvers = sources
-      .filter { it.isEnabled && !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" }
+      .filter { it.isEnabled && !it.id.startsWith("cinemeta-") && it.id != "kitsu-anime" && isHttpAddonEndpoint(it.manifestUrl) }
       .map { source -> ResolverEndpoint(source.manifestUrl.removeSuffix("/manifest.json")) }
     if (catalogResolvers.isNotEmpty()) saveResolvers((settings.resolvers() + catalogResolvers).distinctBy { it.baseUrl.trimEnd('/') })
   }
   fun addResolverEndpoint(value: String) {
     val endpoint = value.trim().removeSuffix("/manifest.json")
-    if (endpoint.isBlank()) return
+    if (!isHttpAddonEndpoint(endpoint)) return
     val updatedResolvers = (settings.resolvers() + ResolverEndpoint(endpoint)).distinctBy { it.baseUrl.trimEnd('/') }
     saveResolvers(updatedResolvers)
     val manifestUrl = endpoint.let { url ->
@@ -236,12 +236,13 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun currentSettings(): ResolverSettings = ResolverSettings(settings.resolvers(), settings.resolverToken, settings.resolverPath)
   fun currentCatalogSources(): List<CatalogSource> = settings.catalogSources()
   fun saveCatalogSources(sources: List<CatalogSource>) {
-    settings.saveCatalogSources(sources)
-    _catalogSources.value = sources
-    syncCatalogResolvers(sources)
+    val validSources = sources.filter { isHttpAddonEndpoint(it.manifestUrl) }
+    settings.saveCatalogSources(validSources)
+    _catalogSources.value = validSources
+    syncCatalogResolvers(validSources)
     viewModelScope.launch {
       val repository = stremioRepository
-      val named = sources.map { source ->
+      val named = validSources.map { source ->
         if (!source.id.startsWith("cinemeta-") && source.id != "kitsu-anime") source.copy(name = repository.manifestName(source.manifestUrl) ?: source.name) else source
       }
       if (named != _catalogSources.value) {
