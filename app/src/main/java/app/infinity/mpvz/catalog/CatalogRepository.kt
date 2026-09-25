@@ -328,10 +328,17 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
     coroutineScope {
       endpoints.map { endpoint ->
         async {
-          val types = when {
+          val capabilities = manifestCapabilities(endpoint.baseUrl)
+          val requestedTypes = when {
             item.provider == CatalogProvider.KITSU -> listOf("anime", "series", "movie")
             !item.catalogType.isNullOrBlank() -> listOf(item.catalogType)
             else -> listOf(null)
+          }
+          val types = requestedTypes.filter { type ->
+            type == null || capabilities == null || capabilities.types.isEmpty() || type in capabilities.types
+          }
+          if (capabilities != null && types.isEmpty()) {
+            Log.w("CloudStreamResolver", "Skipping endpoint=${endpoint.baseUrl}: manifest types=${capabilities.types} does not support requested=${requestedTypes.filterNotNull()}")
           }
           types.flatMap { type ->
             // Addon episode IDs are independent requests. Running them concurrently makes the
@@ -378,6 +385,46 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
         .also { Log.i(DIAG_TAG, "resolve complete title=\"${item.title}\" streams=${it.size} playable=${it.count { stream -> stream.isPlayable }}") }
     }
     }
+  }
+
+  suspend fun loadSeasons(item: MediaItem): List<Season> = withContext(Dispatchers.IO) {
+    val endpoint = settings.resolvers().firstOrNull { it.enabled } ?: return@withContext emptyList()
+    val identifier = item.providerId?.takeIf { it.isNotBlank() } ?: item.imdbId?.takeIf { it.isNotBlank() } ?: return@withContext emptyList()
+    val types = if (item.provider == CatalogProvider.KITSU) listOf("anime", "series") else listOf(item.catalogType ?: if (item.type == MediaType.TV) "series" else "movie")
+    types.asSequence().mapNotNull { type ->
+      runCatching {
+        val root = endpoint.baseUrl.trimEnd('/').removeSuffix("/manifest.json")
+        val url = "$root/meta/$type/$identifier.json"
+        client.newCall(Request.Builder().url(url).header("Accept", "application/json").get().build()).execute().use { response ->
+          if (!response.isSuccessful) return@use null
+          val videos = json.parseToJsonElement(response.body.string()).jsonObject["meta"]?.jsonObject?.get("videos")?.jsonArray.orEmpty()
+          videos.mapNotNull { video ->
+            val value = video.jsonObject
+            val season = value["season"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val episode = value["episode"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            Season(season, listOf(Episode(episode, value["name"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "Episode $episode" }, value["overview"]?.jsonPrimitive?.contentOrNull.orEmpty(), value["thumbnail"]?.jsonPrimitive?.contentOrNull, value["runtime"]?.jsonPrimitive?.contentOrNull)))
+          }
+        }
+      }.getOrNull()
+    }.flatten().groupBy { it.number }.map { (number, seasons) ->
+      Season(number, seasons.flatMap { it.episodes }.distinctBy { it.number }.sortedBy { it.number })
+    }.sortedBy { it.number }
+  }
+
+  private data class ResolverCapabilities(val types: Set<String>, val idPrefixes: Set<String>)
+
+  private suspend fun manifestCapabilities(baseUrl: String): ResolverCapabilities? = withContext(Dispatchers.IO) {
+    val root = baseUrl.trimEnd('/').removeSuffix("/manifest.json")
+    runCatching {
+      client.newCall(Request.Builder().url("$root/manifest.json").header("Accept", "application/json").get().build()).execute().use { response ->
+        if (!response.isSuccessful) return@use null
+        val manifest = json.parseToJsonElement(response.body.string()).jsonObject
+        ResolverCapabilities(
+          types = manifest["types"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull?.lowercase() }?.toSet().orEmpty(),
+          idPrefixes = manifest["idPrefixes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull?.lowercase() }?.toSet().orEmpty(),
+        )
+      }
+    }.getOrNull()
   }
 
   private fun addonEpisodeIds(baseUrl: String, item: MediaItem, season: Int?, episode: Int?, typeOverride: String? = null): List<String> {
@@ -439,8 +486,9 @@ class CloudStreamResolver(private val settings: CatalogSettings) : StreamResolve
         error("Resolver request failed (${response.code})")
       }
       val parsed = parseStreams(json.parseToJsonElement(response.body.string()), depth = 0)
+      Log.i(DIAG_TAG, "resolver parsed endpoint=${baseUrl.trimEnd('/')} path=$path streams=${parsed.size}")
       require(parsed.isNotEmpty()) {
-        "Resolver returned no streams. Expected a streams array with url, magnet, or infoHash entries."
+        "Resolver returned HTTP ${response.code} with no streams for type=$type identifier=$identifier. Check the endpoint manifest and supported ID format."
       }
       parsed
     }

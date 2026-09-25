@@ -578,9 +578,10 @@ fun PlayerSheets(
     }
 
     Sheets.AudioProperties -> {
-      val properties = remember { viewModel.getAudioPropertiesData() }
+      val properties = remember(activeEngine, nativeSnapshot) { viewModel.getAudioPropertiesData() }
       app.infinity.mpvz.ui.player.controls.components.sheets.AudioPropertiesSheet(
         properties = properties,
+        engineLabel = if (activeEngine == PlaybackEngineMode.NATIVE) "Native (Media3)" else "MPV",
         onDismissRequest = onDismissRequest,
       )
     }

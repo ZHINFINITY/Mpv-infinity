@@ -49,6 +49,10 @@ class LinkDownloadCoordinator(
     url: String,
     title: String?,
     qualityHeight: Int = -1,
+    headers: Map<String, String> = emptyMap(),
+    posterUrl: String? = null,
+    season: Int? = null,
+    episode: Int? = null,
   ): Route {
     val route = routeFor(url)
     val directory = downloadManager.locations.linksDir()
@@ -66,7 +70,11 @@ class LinkDownloadCoordinator(
               source = DownloadSources.LINK,
               title = displayTitle,
               sourceUrl = url,
+              posterUrl = posterUrl,
+              seasonNumber = season,
+              episodeNumber = episode,
             ),
+          headers = headers,
         )
       }
       Route.YTDLP ->
