@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.Season
+import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import coil3.compose.AsyncImage
@@ -62,10 +63,10 @@ fun CatalogDetailsPage(
   val seasons = item.seasons.sortedBy { it.number }
   val activeSeason = seasons.firstOrNull { it.number == selectedSeason } ?: seasons.firstOrNull()
   Column(
-    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 40.dp),
+    Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = LocalNavigationBarHeight.current + 36.dp),
     verticalArrangement = Arrangement.spacedBy(22.dp),
   ) {
-    Box(Modifier.fillMaxWidth().height(430.dp).clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))) {
+    Box(Modifier.fillMaxWidth().heightIn(min = 320.dp, max = 360.dp).clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))) {
       AsyncImage(
         model = item.backdropUrl ?: item.posterUrl,
         contentDescription = item.title,
@@ -80,7 +81,7 @@ fun CatalogDetailsPage(
         ),
       )
       Surface(
-        modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(start = 14.dp, top = 8.dp),
+        modifier = Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 8.dp),
         color = Color.Black.copy(alpha = .42f),
         shape = CircleShape,
       ) {
@@ -208,9 +209,9 @@ fun CatalogDetailsPage(
 @Composable
 private fun SeasonPosterCard(season: Season, selected: Boolean, onClick: () -> Unit) {
   val shape = RoundedCornerShape(14.dp)
-  Column(Modifier.width(116.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+  Column(Modifier.width(104.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(7.dp)) {
     Box(
-      Modifier.fillMaxWidth().height(150.dp).clip(shape)
+      Modifier.fillMaxWidth().height(136.dp).clip(shape)
         .background(MaterialTheme.colorScheme.surfaceVariant)
         .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = .12f), shape),
     ) {
@@ -237,7 +238,7 @@ private fun EpisodeLandscapeCard(
 ) {
   val shape = RoundedCornerShape(15.dp)
   Box(
-    Modifier.width(296.dp).height(184.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(enabled = enabled, onClick = onClick),
+    Modifier.width(246.dp).height(148.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(enabled = enabled, onClick = onClick),
   ) {
     AsyncImage(
       model = episode.stillUrl ?: item.backdropUrl ?: item.posterUrl,

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -390,15 +391,23 @@ private fun StreamLinksBottomSheet(
   onDismiss: () -> Unit,
   onPlay: (StreamOption) -> Unit,
 ) {
+  val listState = rememberLazyListState()
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     containerColor = MaterialTheme.colorScheme.surface,
     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
   ) {
-    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text("Streams", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-      Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-      streams.forEach { stream ->
+    LazyColumn(
+      state = listState,
+      modifier = Modifier.fillMaxWidth().navigationBarsPadding().heightIn(max = 620.dp),
+      contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      item {
+        Text("Streams", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+      }
+      items(streams, key = { "stream-sheet-${it.url}" }) { stream ->
         Surface(Modifier.fillMaxWidth().clickable { onPlay(stream) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
           Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -410,7 +419,7 @@ private fun StreamLinksBottomSheet(
           }
         }
       }
-      Spacer(Modifier.height(8.dp))
+      item { Spacer(Modifier.height(8.dp)) }
     }
   }
 }

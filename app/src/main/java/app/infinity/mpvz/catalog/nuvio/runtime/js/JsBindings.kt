@@ -13,6 +13,27 @@ internal object JsBindings {
             if (typeof globalThis.process === 'undefined') globalThis.process = { env: {}, platform: 'android', browser: false, versions: {} };
             if (!globalThis.process.env) globalThis.process.env = {};
 
+            // QuickJS does not provide browser timers. A number of Nuvio providers
+            // use setTimeout only to yield after fetches or to guard optional work;
+            // schedule the callback on the microtask queue instead of crashing the
+            // whole provider with "setTimeout is not defined".
+            if (typeof globalThis.setTimeout !== 'function') {
+                var __timerId = 0;
+                var __timerCancelled = {};
+                globalThis.setTimeout = function(callback, delay) {
+                    var id = ++__timerId;
+                    Promise.resolve().then(function() {
+                        if (!__timerCancelled[id] && typeof callback === 'function') callback();
+                    });
+                    return id;
+                };
+                globalThis.clearTimeout = function(id) { __timerCancelled[id] = true; };
+            }
+            if (typeof globalThis.setInterval !== 'function') {
+                globalThis.setInterval = globalThis.setTimeout;
+                globalThis.clearInterval = globalThis.clearTimeout;
+            }
+
             ${fetchPolyfill()}
             ${abortControllerPolyfill()}
             ${base64Polyfill()}
