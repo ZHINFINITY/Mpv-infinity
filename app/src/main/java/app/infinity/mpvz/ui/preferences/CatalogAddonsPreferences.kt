@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.catalog.CatalogSource
+import app.infinity.mpvz.catalog.CatalogSettings
 import app.infinity.mpvz.catalog.CatalogViewModel
 import kotlinx.coroutines.launch
 
@@ -43,13 +44,14 @@ fun CatalogAddonsPreferenceCard(
     ) {
       Text("Catalog add-ons", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
       Text(
-        "These Nuvio-compatible catalog sources power Stream home rails, search and metadata. JavaScript video providers are managed separately below.",
+        "Stream includes keyless movie and TV discovery by default. Add optional Nuvio-compatible catalog sources here; JavaScript video providers are managed separately below.",
         style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
         color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
       )
     }
     sources.forEachIndexed { index, source ->
       if (index > 0) PreferenceDivider()
+      val isBuiltIn = source.id == CatalogSettings.BUILTIN_SOURCE_ID
       Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -57,9 +59,17 @@ fun CatalogAddonsPreferenceCard(
       ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
           Text(source.name, style = androidx.compose.material3.MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-          Text(source.manifestUrl, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = androidx.compose.material3.MaterialTheme.colorScheme.outline, maxLines = 2, overflow = TextOverflow.Ellipsis)
-          TextButton(onClick = { viewModel.removeCatalogSource(source.id) }) {
-            Text("Remove", color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+          Text(
+            if (isBuiltIn) "Built-in keyless movie and TV discovery, search, and home rails" else source.manifestUrl,
+            style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.outline,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          if (!isBuiltIn) {
+            TextButton(onClick = { viewModel.removeCatalogSource(source.id) }) {
+              Text("Remove", color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+            }
           }
         }
         Switch(checked = source.isEnabled, onCheckedChange = { viewModel.setCatalogSourceEnabled(source.id, it) })

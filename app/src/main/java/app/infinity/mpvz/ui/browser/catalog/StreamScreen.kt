@@ -165,7 +165,7 @@ object StreamScreen : Screen {
     val rails = remember(state.items, sourceNames) {
       state.items.groupBy { item ->
         val title = item.catalogName ?: sourceNames[item.catalogSourceId] ?: "Discover"
-        "${item.catalogSourceId.orEmpty()}|${item.catalogId.orEmpty()}|$title"
+        "${item.catalogSourceId.orEmpty()}|${item.catalogType.orEmpty()}|${item.catalogId.orEmpty()}|$title"
       }.mapValues { (_, items) ->
         items.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" }
       }
@@ -212,7 +212,14 @@ object StreamScreen : Screen {
         } else LazyColumn(
           state = streamListState,
           modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(top = if (!searchActive && browseRail == null && heroItems.isNotEmpty()) 0.dp else 76.dp, bottom = 104.dp),
+          contentPadding = PaddingValues(
+            top = when {
+              !searchActive && browseRail == null && heroItems.isNotEmpty() -> 0.dp
+              searchActive -> 128.dp
+              else -> 76.dp
+            },
+            bottom = 104.dp,
+          ),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           if (searchActive) item {
@@ -240,7 +247,13 @@ object StreamScreen : Screen {
 
           if (!searchActive && browseRail == null) {
             rails.forEach { (railKey, items) ->
-              val railTitle = railKey.substringAfterLast('|')
+              val catalogType = railKey.split('|').getOrNull(1).orEmpty()
+              val suffix = when (catalogType) {
+                "movie" -> " Movies"
+                "series", "tv" -> " TV Shows"
+                else -> ""
+              }
+              val railTitle = railKey.substringAfterLast('|') + suffix
               streamCatalogRail(
                 title = railTitle,
                 items = items,
@@ -284,7 +297,7 @@ object StreamScreen : Screen {
                 else -> true
               }
             }
-            if (searchItems.isEmpty() && !state.isLoading) item { StreamEmptySearchState(state.query) }
+            if (searchItems.isEmpty() && !state.isLoading && state.error == null) item { StreamEmptySearchState(state.query) }
             searchItems.chunked(2).forEachIndexed { index, rowItems ->
               item(key = "stream_search_$index") {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -307,7 +320,7 @@ object StreamScreen : Screen {
               }
             }
           }
-          if (!state.isLoading && state.items.isEmpty() && state.error == null) {
+          if (!searchActive && browseRail == null && !state.isLoading && state.items.isEmpty() && state.error == null) {
             item(key = "stream_no_catalogs") {
               StreamNoCatalogsState(
                 hasCatalogAddons = catalogSources.any { it.isEnabled },

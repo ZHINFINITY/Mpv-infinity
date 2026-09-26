@@ -34,8 +34,17 @@ private const val PREFS = "catalog_secure_settings"
 private const val DIAG_TAG = "MpvCatalogDiag"
 private const val CATALOG_PAGE_SIZE = 100
 
-/** Catalog feeds are user-installed Nuvio-compatible/Stremio catalog add-ons; there are no bundled legacy catalogs. */
+/** Catalog settings keep optional sources and a built-in, keyless discovery fallback separate from JS providers. */
 class CatalogSettings(context: Context) {
+  companion object {
+    const val BUILTIN_SOURCE_ID = "builtin-nuvio-discover"
+    private val BUILTIN_SOURCE = CatalogSource(
+      id = BUILTIN_SOURCE_ID,
+      name = "Nuvio Discover (built-in)",
+      manifestUrl = "https://v3-cinemeta.strem.io/manifest.json",
+    )
+  }
+
   private val prefs = EncryptedSharedPreferences.create(
     context,
     PREFS,
@@ -58,15 +67,17 @@ class CatalogSettings(context: Context) {
       .filterNot(::isLegacyCatalogSource)
       .filter { isHttpAddonEndpoint(it.manifestUrl) }
       .distinctBy { it.manifestUrl.lowercase() }
-    if (cleaned != sources) saveCatalogSources(cleaned)
-    return cleaned
+    val withBuiltIn = if (cleaned.any { it.id == BUILTIN_SOURCE_ID }) cleaned else cleaned + BUILTIN_SOURCE
+    if (withBuiltIn != sources) saveCatalogSources(withBuiltIn)
+    return withBuiltIn
   }
 
   fun saveCatalogSources(value: List<CatalogSource>) {
-    val validSources = value
+    val cleanedSources = value
       .filterNot(::isLegacyCatalogSource)
       .filter { isHttpAddonEndpoint(it.manifestUrl) }
       .distinctBy { it.manifestUrl.lowercase() }
+    val validSources = if (cleanedSources.any { it.id == BUILTIN_SOURCE_ID }) cleanedSources else cleanedSources + BUILTIN_SOURCE
     prefs.edit()
       .putString("catalog_sources_json", Json.encodeToString(validSources))
       .remove("catalog_sources")
@@ -74,9 +85,12 @@ class CatalogSettings(context: Context) {
   }
 
   private fun isLegacyCatalogSource(source: CatalogSource): Boolean =
-    source.id.startsWith("cinemeta-") || source.id == "kitsu-anime" ||
-      source.manifestUrl.contains("v3-cinemeta.strem.io", ignoreCase = true) ||
-      source.manifestUrl.contains("anime-kitsu.strem.fun", ignoreCase = true)
+    source.id != BUILTIN_SOURCE_ID && (
+      source.id.startsWith("cinemeta-") || source.id == "kitsu-anime" ||
+        source.manifestUrl.contains("v3-cinemeta.strem.io", ignoreCase = true) ||
+        source.manifestUrl.contains("anime-kitsu.strem.fun", ignoreCase = true) ||
+        source.manifestUrl.contains("cinemeta.ratingposterdb.com", ignoreCase = true)
+      )
 }
 
 internal fun isHttpAddonEndpoint(value: String): Boolean =
@@ -129,10 +143,13 @@ class StremioCatalogRepository {
 
   suspend fun load(source: CatalogSource, query: String?, page: Int = 1): List<MediaItem> = withContext(Dispatchers.IO) {
     Log.i(DIAG_TAG, "catalog start source=${source.id} queryLength=${query?.length ?: 0} manifest=${addonOriginForLog(source.manifestUrl)}")
-    runCatching {
+    val request = runCatching {
       val manifest = getJson(source.manifestUrl).jsonObject
       val catalogs = manifest["catalogs"]?.jsonArray.orEmpty()
-      catalogs.filter { catalogElement ->
+      var attemptedCatalogs = 0
+      val failedCatalogs = mutableListOf<String>()
+      var successfulCatalogs = 0
+      val results = catalogs.filter { catalogElement ->
         // Use the required `search` value during search, but do not guess required genre/year/etc.
         catalogElement.jsonObject["extra"]?.jsonArray.orEmpty().none { extra ->
           val property = extra.jsonObject
@@ -162,7 +179,9 @@ class StremioCatalogRepository {
             source.manifestUrl,
             "catalog/$type/${encodeAddonPathSegment(id)}$extrasPath.json",
           )
+          attemptedCatalogs++
           val payload = getJson(requestUrl).jsonObject
+          successfulCatalogs++
           payload["metas"]?.jsonArray.orEmpty().mapNotNull { element ->
             val meta = element.jsonObject
             val providerId = meta["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -190,15 +209,24 @@ class StremioCatalogRepository {
           }
         }.onFailure { error ->
           if (error is CancellationException) throw error
+          failedCatalogs += "${catalogElement.jsonObject["name"]?.jsonPrimitive?.contentOrNull ?: catalogElement.jsonObject["id"]?.jsonPrimitive?.contentOrNull ?: "catalog"}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}"
           Log.w(DIAG_TAG, "catalog request failed source=${source.id}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
         }.getOrDefault(emptyList())
       }
-    }.onSuccess { items -> Log.i(DIAG_TAG, "catalog complete source=${source.id} items=${items.size}") }
+      if (attemptedCatalogs == 0 && !query.isNullOrBlank()) {
+        error("This catalog add-on does not expose a compatible search catalog.")
+      }
+      if (attemptedCatalogs > 0 && successfulCatalogs == 0 && failedCatalogs.isNotEmpty()) {
+        error("All compatible catalog requests failed: ${failedCatalogs.distinct().joinToString("; ")}")
+      }
+      results
+    }
+    request.onSuccess { items -> Log.i(DIAG_TAG, "catalog complete source=${source.id} items=${items.size}") }
       .onFailure { error ->
         if (error is CancellationException) throw error
         Log.w(DIAG_TAG, "catalog manifest failed source=${source.id}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
       }
-      .getOrDefault(emptyList())
+    return@withContext request.getOrThrow()
   }
 
   private suspend fun getJson(url: String): JsonElement {

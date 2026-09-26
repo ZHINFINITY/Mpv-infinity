@@ -219,9 +219,16 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     searchJob?.cancel()
     homeLoadJob?.cancel()
     if (_state.value.query.isBlank()) {
-      val items = loadFromAddons(null)
-      cachedHomeItems = items
-      _state.update { it.copy(items = items, isLoading = false, isLoadingMore = false, catalogPage = 1, canLoadMore = items.isNotEmpty(), error = null) }
+      _state.update { it.copy(isLoading = true, isLoadingMore = false, error = null) }
+      runCatching { loadFromAddons(null) }
+        .onSuccess { items ->
+          cachedHomeItems = items
+          _state.update { it.copy(items = items, isLoading = false, isLoadingMore = false, catalogPage = 1, canLoadMore = items.isNotEmpty(), error = null) }
+        }
+        .onFailure { error ->
+          if (error is CancellationException) throw error
+          _state.update { it.copy(isLoading = false, isLoadingMore = false, error = redactAddonConfigurationFromLog(error.message.orEmpty())) }
+        }
     } else {
       runSearch(_state.value.query.trim())
     }
@@ -281,18 +288,28 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     Log.i(TAG, "load queryLength=${query?.length ?: 0} catalogAddons=${sources.size} page=$page")
     val results = sources.map { source ->
       async {
-        withTimeoutOrNull(45_000L) {
+        source to withTimeoutOrNull(45_000L) {
           runCatching { catalogRepository.load(source, query, page) }
-            .onFailure { error ->
-              if (error is CancellationException) throw error
-              Log.w(TAG, "catalog source failed id=${source.id}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
-            }
-            .getOrDefault(emptyList())
-        }.orEmpty()
+        }
       }
-    }.awaitAll().flatten().distinctBy(::stableCatalogKey)
-    Log.i(TAG, "load complete queryLength=${query?.length ?: 0} items=${results.size}")
-    results
+    }.awaitAll()
+    val failures = results.mapNotNull { (source, result) ->
+      val message = when {
+        result == null -> "${source.name}: catalog request timed out"
+        result.isFailure -> "${source.name}: ${redactAddonConfigurationFromLog(result.exceptionOrNull()?.message.orEmpty())}"
+        else -> null
+      }
+      if (message != null) Log.w(TAG, "catalog source failed id=${source.id}: ${redactAddonConfigurationFromLog(message)}")
+      message
+    }
+    val items = results.flatMap { (_, result) -> result?.getOrDefault(emptyList()).orEmpty() }
+      .distinctBy(::stableCatalogKey)
+    if (items.isEmpty() && failures.isNotEmpty()) {
+      throw IllegalStateException(failures.distinct().joinToString("\n"))
+    }
+    val distinctItems = items
+    Log.i(TAG, "load complete queryLength=${query?.length ?: 0} items=${distinctItems.size}")
+    distinctItems
   }
 
   private suspend fun migrateNuvioScraperRepositories() {
