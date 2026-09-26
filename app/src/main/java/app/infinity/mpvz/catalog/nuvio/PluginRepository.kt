@@ -134,7 +134,11 @@ class PluginRepository(context: Context) {
             .onFailure { Log.w(TAG, "Provider failed name=${provider.name} type=$type: ${redactAddonConfigurationFromLog(it.message.orEmpty())}") }
             .getOrDefault(emptyList())
             .asSequence()
-            .filter { stream -> stream.url.startsWith("https://", true) && stream.infoHash.isNullOrBlank() && !stream.type.orEmpty().contains("torrent", true) }
+            .filter { stream ->
+              (stream.url.startsWith("http://", true) || stream.url.startsWith("https://", true)) &&
+                stream.infoHash.isNullOrBlank() &&
+                !stream.type.orEmpty().contains("torrent", true)
+            }
             .map { stream ->
               val providerLabel = stream.provider?.takeIf(String::isNotBlank) ?: provider.name
               StreamOption(

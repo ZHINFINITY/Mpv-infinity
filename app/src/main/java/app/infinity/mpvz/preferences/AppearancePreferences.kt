@@ -70,6 +70,7 @@ class AppearancePreferences(
   val showRecentsTab = preferenceStore.getBoolean("show_recents_tab", true)
   val showPlaylistsTab = preferenceStore.getBoolean("show_playlists_tab", true)
   val showNetworkTab = preferenceStore.getBoolean("show_network_tab", false)
+  val showStreamsTab = preferenceStore.getBoolean("show_streams_tab", false)
   val showJellyfinTab = preferenceStore.getBoolean("show_jellyfin_tab", false)
   val showNavidromeTab = preferenceStore.getBoolean("show_navidrome_tab", false)
   val showAudiobooksTab = preferenceStore.getBoolean("show_audiobooks_tab", false)

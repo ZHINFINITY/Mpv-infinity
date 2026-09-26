@@ -58,6 +58,8 @@
   <string name="pref_nav_playlists_summary">Show or hide Playlists in the bottom navigation bar</string>
   <string name="pref_nav_network_title">Show Network tab</string>
   <string name="pref_nav_network_summary">Show or hide Network in the bottom navigation bar</string>
+  <string name="pref_nav_streams_title">Show Streams tab</string>
+  <string name="pref_nav_streams_summary">Show or hide Streams in the bottom navigation bar</string>
   <string name="pref_nav_jellyfin_title">Show Jellyfin tab</string>
   <string name="pref_nav_jellyfin_summary">Show or hide Jellyfin in the bottom navigation bar</string>
   <string name="pref_nav_jellyfin_auto_title">Automatically show Jellyfin tab after connecting</string>
@@ -1350,6 +1352,7 @@
   <string name="ui_recents">Recents</string>
   <string name="ui_playlists">Playlists</string>
   <string name="ui_network">Network</string>
+  <string name="ui_streams">Streams</string>
   <string name="ui_pinned_folder">Pinned folder</string>
   <string name="ui_folder">Folder</string>
   <string name="ui_connect_automatically_on_app_launch">Connect automatically on app launch</string>
