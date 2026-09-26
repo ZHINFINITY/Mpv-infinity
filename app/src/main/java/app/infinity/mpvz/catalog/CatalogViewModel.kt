@@ -179,15 +179,15 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         (pluginStreams + addonStreams).distinctBy { it.url }
       }
         .onSuccess { streams ->
-          val directHttpsStreams = streams
-            .filter { it.isPlayable && it.url.startsWith("https://", ignoreCase = true) && !it.isExternal }
+          val availableStreams = streams
+            .filter { it.url.startsWith("http://", ignoreCase = true) || it.url.startsWith("https://", ignoreCase = true) }
             .distinctBy { it.url }
           _state.update { current ->
             current.copy(
-              streamOptions = directHttpsStreams,
+              streamOptions = availableStreams,
               streamTitle = item.title,
-              error = if (directHttpsStreams.isEmpty()) {
-                "The enabled Nuvio providers returned no direct HTTPS links. Check provider settings and confirm this title or episode is supported."
+              error = if (availableStreams.isEmpty()) {
+                "The enabled providers returned no stream links for this title or episode."
               } else null,
             )
           }
@@ -201,7 +201,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun playStream(stream: StreamOption) {
-    if (!stream.url.startsWith("https://", ignoreCase = true) || !stream.isPlayable || stream.isExternal) return
+    if (!(stream.url.startsWith("http://", ignoreCase = true) || stream.url.startsWith("https://", ignoreCase = true))) return
     _playbackStream.value = stream
     _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) }
   }

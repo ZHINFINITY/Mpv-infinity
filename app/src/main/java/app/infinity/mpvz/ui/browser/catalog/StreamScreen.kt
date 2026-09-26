@@ -83,6 +83,7 @@ import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
 import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -141,7 +142,9 @@ object StreamScreen : Screen {
 
     LaunchedEffect(playbackStream) {
       val stream = playbackStream ?: return@LaunchedEffect
-      if (stream.url.startsWith("https://", ignoreCase = true) && stream.isPlayable && !stream.isExternal) {
+      if (stream.isExternal) {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(stream.url)))
+      } else if ((stream.url.startsWith("http://", ignoreCase = true) || stream.url.startsWith("https://", ignoreCase = true)) && stream.isPlayable) {
         context.startActivity(Intent(context, PlayerActivity::class.java).apply {
           action = Intent.ACTION_VIEW
           data = Uri.parse(stream.url)
@@ -429,49 +432,41 @@ private fun NuvioStreamTopOverlay(
       keyboardController?.show()
     }
   }
-  Row(
-    modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
-    horizontalArrangement = Arrangement.spacedBy(10.dp),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    if (isSearching) {
+  if (isSearching) {
+    Row(
+      modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
       InlineSearchBar(
         query = query,
         onQueryChange = onQueryChange,
         onSearch = { onSubmitSearch() },
         modifier = Modifier.weight(1f),
         inputFieldModifier = Modifier.focusRequester(focusRequester),
-        placeholder = { Text("Search movies and series") },
+        placeholder = { Text("Search movies, shows, episodes...") },
         leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+        trailingIcon = {
+          IconButton(onClick = onCloseSearch) {
+            Icon(Icons.RoundedFilled.Close, contentDescription = "Close search")
+          }
+        },
         shape = RoundedCornerShape(28.dp),
         tonalElevation = 6.dp,
       )
-      IconButton(onClick = onCloseSearch) {
-        Icon(Icons.RoundedFilled.Close, contentDescription = "Close search", tint = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface)
-      }
-    } else {
-      Surface(
-        modifier = Modifier.weight(1f),
-      color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(24.dp),
-      ) {
-        Text(
-          title,
-          Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-          style = MaterialTheme.typography.titleLarge,
-          color = MaterialTheme.colorScheme.onSurface,
-          fontWeight = FontWeight.Bold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-      Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = CircleShape) {
-        IconButton(onClick = onSearch) { Icon(Icons.RoundedFilled.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurface) }
-      }
-      Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = CircleShape) {
-        IconButton(onClick = onOpenSettings) { Icon(Icons.RoundedFilled.Settings, contentDescription = "Catalog and provider settings", tint = MaterialTheme.colorScheme.onSurface) }
-      }
     }
+  } else {
+    BrowserTopBar(
+      title = title,
+      showTitle = true,
+      isInSelectionMode = false,
+      selectedCount = 0,
+      totalCount = 0,
+      onCancelSelection = {},
+      onSearchClick = onSearch,
+      onSettingsClick = onOpenSettings,
+      modifier = modifier.fillMaxWidth().statusBarsPadding(),
+    )
   }
 }
 
