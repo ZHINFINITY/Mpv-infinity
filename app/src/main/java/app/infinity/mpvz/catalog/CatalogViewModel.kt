@@ -176,6 +176,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
       runCatching {
         val pluginStreams = runCatching { nuvioPlugins.resolve(item, season, episode) }.getOrDefault(emptyList())
         val addonStreams = streamRepository.resolve(item, season, episode, settings.catalogSources())
+        Log.i(TAG, "stream resolve title=${item.title} season=$season episode=$episode nuvio=${pluginStreams.size} stremio=${addonStreams.size}")
         (pluginStreams + addonStreams).distinctBy { it.url }
       }
         .onSuccess { streams ->

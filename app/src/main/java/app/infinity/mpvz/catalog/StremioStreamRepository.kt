@@ -1,5 +1,6 @@
 package app.infinity.mpvz.catalog
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -16,6 +17,9 @@ import java.util.concurrent.TimeUnit
 
 /** Resolves standard Stremio HTTP stream resources without requiring TMDB credentials. */
 class StremioStreamRepository {
+  companion object {
+    private const val TAG = "MpvCatalogDiag"
+  }
   private val client = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
     .readTimeout(45, TimeUnit.SECONDS)
@@ -28,7 +32,11 @@ class StremioStreamRepository {
     episode: Int?,
     sources: List<CatalogSource>,
   ): List<StreamOption> = withContext(Dispatchers.IO) {
-    val identifier = stremioId(item, season, episode) ?: return@withContext emptyList()
+    val identifier = stremioId(item, season, episode)
+    if (identifier == null) {
+      Log.w(TAG, "stream skipped: no IMDb-compatible id title=${item.title} type=${item.type} provider=${item.providerId.orEmpty()}")
+      return@withContext emptyList()
+    }
     val type = if (item.type == MediaType.MOVIE) "movie" else "series"
     sources.filter { it.isEnabled }.map { source ->
       kotlinx.coroutines.coroutineScope {
@@ -36,9 +44,13 @@ class StremioStreamRepository {
           runCatching {
             val url = "${source.manifestUrl.substringBefore('?').trimEnd('/').removeSuffix("/manifest.json")}" +
               "/stream/$type/${encodeAddonPathSegment(identifier)}.json"
+            Log.i(TAG, "stream request source=${source.id} type=$type id=$identifier origin=${addonOriginForLog(source.manifestUrl)}")
             val payload = client.newCall(Request.Builder().url(url).header("Accept", "application/json").build()).execute().use { response ->
-              if (!response.isSuccessful) return@use emptyList<StreamOption>()
-              json.parseToJsonElement(response.body.string()).jsonObject["streams"]?.jsonArray.orEmpty().mapNotNull { element ->
+              if (!response.isSuccessful) {
+                Log.w(TAG, "stream response source=${source.id} http=${response.code}")
+                return@use emptyList<StreamOption>()
+              }
+              val streams = json.parseToJsonElement(response.body.string()).jsonObject["streams"]?.jsonArray.orEmpty().mapNotNull { element ->
                 val stream = element.jsonObject
                 val externalUrl = stream["externalUrl"]?.jsonPrimitive?.contentOrNull
                 val streamUrl = stream["url"]?.jsonPrimitive?.contentOrNull
@@ -66,8 +78,12 @@ class StremioStreamRepository {
                   episode = episode,
                 )
               }
+              Log.i(TAG, "stream response source=${source.id} links=${streams.size}")
+              streams
             }
             payload
+          }.onFailure { error ->
+            Log.w(TAG, "stream request failed source=${source.id}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
           }.getOrDefault(emptyList())
         }
       }

@@ -368,15 +368,15 @@ object StreamScreen : Screen {
             )
           }
         }
-        if (state.selectedItem != null && state.streamOptions.isNotEmpty()) {
-          StreamLinksBottomSheet(
-            title = state.streamTitle ?: state.selectedItem!!.title,
-            streams = state.streamOptions,
-            onDismiss = viewModel::closeStreams,
-            onPlay = viewModel::playStream,
-          )
-        }
       }
+    }
+    if (state.selectedItem != null && state.streamOptions.isNotEmpty()) {
+      StreamLinksBottomSheet(
+        title = state.streamTitle ?: state.selectedItem!!.title,
+        streams = state.streamOptions,
+        onDismiss = viewModel::closeStreams,
+        onPlay = viewModel::playStream,
+      )
     }
 
   }
