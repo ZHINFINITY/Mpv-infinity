@@ -188,7 +188,11 @@ class PluginRepository(context: Context) {
       runCatching { findTmdbIdByImdb(imdbId, type, apiKey) }.getOrNull()?.let { return@withContext it }
     }
 
-    val query = buildString { append(item.title); item.releaseYear?.take(4)?.let { append(" ").append(it) } }
+    // Wyzie's keyless search endpoint treats a year appended to the query as a
+    // literal title token and returns no results for titles such as
+    // "The Gentlemen 2024". Search by title only; use releaseYear below to rank
+    // otherwise matching movie/TV results.
+    val query = item.title.trim()
     val url = "https://sub.wyzie.io/api/tmdb/search?q=${URLEncoder.encode(query, "UTF-8")}"
     val response = client.newCall(Request.Builder().url(url).header("User-Agent", USER_AGENT).get().build()).execute().use { response ->
       if (!response.isSuccessful) error("Metadata ID lookup failed (${response.code})")

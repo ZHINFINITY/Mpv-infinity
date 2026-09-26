@@ -204,33 +204,39 @@ object StreamScreen : Screen {
     Column(
       modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
     ) {
+      // Keep the tab shell mounted while a title is open. Jellyfin does not
+      // replace its fixed BrowserTopBar with the detail content; it renders the
+      // detail surface below that header and supplies a back action in the bar.
+      NuvioStreamTopOverlay(
+        query = state.query,
+        isSearching = if (state.selectedItem == null) searchActive else false,
+        hasHero = false,
+        title = "Discover",
+        onQueryChange = viewModel::setQuery,
+        onSearch = { isSearching = true },
+        onCloseSearch = {
+          keyboardController?.hide()
+          isSearching = false
+          viewModel.setQuery("")
+        },
+        onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
+        onSubmitSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) },
+        onBack = if (state.selectedItem != null) viewModel::closeDetails else null,
+      )
       if (state.selectedItem != null) {
-        CatalogDetailsPage(
-          item = state.selectedItem!!,
-          selectedSeason = state.selectedSeason,
-          isLoading = state.resolvingId == state.selectedItem?.id,
-          error = state.error,
-          onBack = viewModel::closeDetails,
-          onChooseSeason = viewModel::selectSeason,
-          onFindMovieStreams = { viewModel.resolve(state.selectedItem!!) },
-          onChooseEpisode = { season, episode -> viewModel.resolve(state.selectedItem!!, season, episode) },
-        )
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+          CatalogDetailsPage(
+            item = state.selectedItem!!,
+            selectedSeason = state.selectedSeason,
+            isLoading = state.resolvingId == state.selectedItem?.id,
+            error = state.error,
+            onBack = viewModel::closeDetails,
+            onChooseSeason = viewModel::selectSeason,
+            onFindMovieStreams = { viewModel.resolve(state.selectedItem!!) },
+            onChooseEpisode = { season, episode -> viewModel.resolve(state.selectedItem!!, season, episode) },
+          )
+        }
       } else {
-        NuvioStreamTopOverlay(
-          query = state.query,
-          isSearching = searchActive,
-          hasHero = false,
-          title = if (browseRail == null) "Discover" else rails[browseRail]?.firstOrNull()?.catalogName ?: "Browse catalog",
-          onQueryChange = viewModel::setQuery,
-          onSearch = { isSearching = true },
-          onCloseSearch = {
-            keyboardController?.hide()
-            isSearching = false
-            viewModel.setQuery("")
-          },
-          onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
-          onSubmitSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) },
-        )
         Box(Modifier.fillMaxWidth().weight(1f)) {
           PullRefreshBox(
             isRefreshing = isRefreshing,
@@ -436,6 +442,7 @@ private fun NuvioStreamTopOverlay(
   onCloseSearch: () -> Unit,
   onOpenSettings: () -> Unit,
   onSubmitSearch: () -> Unit,
+  onBack: (() -> Unit)? = null,
 ) {
   val keyboardController = LocalSoftwareKeyboardController.current
   val focusRequester = remember { FocusRequester() }
@@ -470,17 +477,18 @@ private fun NuvioStreamTopOverlay(
       )
     }
   } else {
-    BrowserTopBar(
-      title = title,
-      showTitle = true,
+      BrowserTopBar(
+        title = title,
+        showTitle = true,
       isInSelectionMode = false,
       selectedCount = 0,
       totalCount = 0,
       onCancelSelection = {},
       onSearchClick = onSearch,
-      onSettingsClick = onOpenSettings,
-      modifier = modifier.fillMaxWidth(),
-    )
+        onSettingsClick = onOpenSettings,
+        onBackClick = onBack,
+        modifier = modifier.fillMaxWidth(),
+      )
   }
 }
 
