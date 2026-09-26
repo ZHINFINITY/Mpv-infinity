@@ -65,7 +65,7 @@ fun CatalogDetailsPage(
     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = LocalNavigationBarHeight.current + 36.dp),
     verticalArrangement = Arrangement.spacedBy(22.dp),
   ) {
-    Box(Modifier.fillMaxWidth().heightIn(min = 320.dp, max = 360.dp).clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))) {
+    Box(Modifier.fillMaxWidth().heightIn(min = 270.dp, max = 300.dp).clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))) {
       AsyncImage(
         model = item.backdropUrl ?: item.posterUrl,
         contentDescription = item.title,
@@ -79,16 +79,9 @@ fun CatalogDetailsPage(
           ),
         ),
       )
-      Surface(
-        modifier = Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 8.dp),
-        color = Color.Black.copy(alpha = .42f),
-        shape = CircleShape,
-      ) {
-        IconButton(onClick = onBack) { Icon(Icons.RoundedFilled.ArrowBack, contentDescription = "Back", tint = Color.White) }
-      }
       Column(
-        Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 24.dp, vertical = 26.dp),
-        verticalArrangement = Arrangement.spacedBy(11.dp),
+        Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 22.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
           MetaPill(if (item.type == MediaType.TV) "SERIES" else "MOVIE")
@@ -98,7 +91,7 @@ fun CatalogDetailsPage(
         }
         Text(
           item.title,
-          style = MaterialTheme.typography.displaySmall,
+          style = MaterialTheme.typography.headlineLarge,
           color = Color.White,
           fontWeight = FontWeight.Black,
           maxLines = 2,
@@ -190,12 +183,6 @@ fun CatalogDetailsPage(
       }
     }
 
-    if (isLoading) {
-      Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-        Text(if (item.type == MediaType.TV) "Searching providers for Season ${selectedSeason ?: 1}, Episode ${item.seasons.firstOrNull { it.number == selectedSeason }?.episodes?.firstOrNull()?.number ?: "…"}…" else "Searching enabled providers…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-      }
-    }
     error?.let { message ->
       Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
@@ -208,9 +195,9 @@ fun CatalogDetailsPage(
 @Composable
 private fun SeasonPosterCard(season: Season, selected: Boolean, onClick: () -> Unit) {
   val shape = RoundedCornerShape(14.dp)
-  Column(Modifier.width(104.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+  Column(Modifier.width(88.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(5.dp)) {
     Box(
-      Modifier.fillMaxWidth().height(136.dp).clip(shape)
+      Modifier.fillMaxWidth().height(96.dp).clip(shape)
         .background(MaterialTheme.colorScheme.surfaceVariant)
         .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = .12f), shape),
     ) {
@@ -237,7 +224,7 @@ private fun EpisodeLandscapeCard(
 ) {
   val shape = RoundedCornerShape(15.dp)
   Box(
-    Modifier.width(246.dp).height(148.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(enabled = enabled, onClick = onClick),
+    Modifier.width(280.dp).height(124.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceVariant).clickable(enabled = enabled, onClick = onClick),
   ) {
     AsyncImage(
       model = episode.stillUrl ?: item.backdropUrl ?: item.posterUrl,

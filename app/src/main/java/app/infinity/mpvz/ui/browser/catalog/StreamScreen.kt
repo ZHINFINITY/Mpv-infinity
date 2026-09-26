@@ -377,10 +377,11 @@ object StreamScreen : Screen {
         }
       }
     }
-    if (state.selectedItem != null && state.streamOptions.isNotEmpty()) {
+    if (state.selectedItem != null && (state.streamOptions.isNotEmpty() || state.resolvingId == state.selectedItem?.id)) {
       StreamLinksBottomSheet(
         title = state.streamTitle ?: state.selectedItem!!.title,
         streams = state.streamOptions,
+        isLoading = state.resolvingId == state.selectedItem?.id,
         onDismiss = viewModel::closeStreams,
         onPlay = viewModel::playStream,
       )
@@ -394,6 +395,7 @@ object StreamScreen : Screen {
 private fun StreamLinksBottomSheet(
   title: String,
   streams: List<StreamOption>,
+  isLoading: Boolean,
   onDismiss: () -> Unit,
   onPlay: (StreamOption) -> Unit,
 ) {
@@ -412,6 +414,12 @@ private fun StreamLinksBottomSheet(
       item {
         Text("Streams", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (isLoading) {
+          Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text(if (streams.isEmpty()) "Loading links…" else "Loading more links…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        }
       }
       items(streams, key = { "stream-sheet-${it.url}" }) { stream ->
         Surface(Modifier.fillMaxWidth().clickable { onPlay(stream) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {

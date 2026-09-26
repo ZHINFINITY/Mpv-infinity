@@ -172,36 +172,43 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null) {
     viewModelScope.launch {
-      _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode, streamOptions = emptyList()) }
-      runCatching {
-        val pluginStreams = runCatching { nuvioPlugins.resolve(item, season, episode) }
-          .onFailure { error -> Log.w(TAG, "Nuvio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}") }
-          .getOrDefault(emptyList())
-        val addonStreams = streamRepository.resolve(item, season, episode, settings.catalogSources())
-        Log.i(TAG, "stream resolve title=${item.title} season=$season episode=$episode nuvio=${pluginStreams.size} stremio=${addonStreams.size}")
-        (pluginStreams + addonStreams).distinctBy { it.url }
+      _state.update {
+        it.copy(
+          resolvingId = item.id,
+          streamTitle = item.title,
+          error = null,
+          selectedSeason = season,
+          selectedEpisode = episode,
+          streamOptions = emptyList(),
+        )
       }
-        .onSuccess { streams ->
-          val availableStreams = streams
-            .filter { it.url.startsWith("http://", ignoreCase = true) || it.url.startsWith("https://", ignoreCase = true) }
-            .distinctBy { it.url }
-          _state.update { current ->
-            current.copy(
-              streamOptions = availableStreams,
-              streamTitle = item.title,
-              error = if (availableStreams.isEmpty()) {
-                "The enabled providers returned no stream links for this title or episode."
-              } else null,
-            )
-          }
-        }
-        .onFailure { error ->
-          if (error is CancellationException) throw error
-          _state.update { it.copy(error = redactAddonConfigurationFromLog(error.message ?: "Unable to resolve direct HTTPS streams")) }
-        }
+
+      // Resolve provider families in sequence, but publish each completed batch
+      // immediately. The sheet is already visible while the slower family runs.
+      val pluginStreams = runCatching { nuvioPlugins.resolve(item, season, episode) }
+        .onFailure { error -> Log.w(TAG, "Nuvio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}") }
+        .getOrDefault(emptyList())
+      _state.update { current ->
+        current.copy(streamOptions = current.streamOptions + pluginStreams.filterHttpStreams().distinctBy { it.url })
+      }
+
+      val addonStreams = runCatching { streamRepository.resolve(item, season, episode, settings.catalogSources()) }
+        .onFailure { error -> Log.w(TAG, "Stremio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}") }
+        .getOrDefault(emptyList())
+      _state.update { current ->
+        val all = (current.streamOptions + addonStreams).filterHttpStreams().distinctBy { it.url }
+        current.copy(
+          streamOptions = all,
+          error = if (all.isEmpty()) "The enabled providers returned no stream links for this title or episode." else null,
+        )
+      }
+      Log.i(TAG, "stream resolve title=${item.title} season=$season episode=$episode nuvio=${pluginStreams.size} stremio=${addonStreams.size}")
       _state.update { it.copy(resolvingId = null) }
     }
   }
+
+  private fun List<StreamOption>.filterHttpStreams(): List<StreamOption> =
+    filter { it.url.startsWith("http://", ignoreCase = true) || it.url.startsWith("https://", ignoreCase = true) }
 
   fun playStream(stream: StreamOption) {
     if (!(stream.url.startsWith("http://", ignoreCase = true) || stream.url.startsWith("https://", ignoreCase = true))) return
