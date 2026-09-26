@@ -138,8 +138,9 @@ fun CatalogDetailsPage(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
           ) {
             items(seasons, key = { it.number }) { season ->
-              SeasonPosterCard(
-                season = season,
+                SeasonPosterCard(
+                  fallbackPoster = season.posterUrl ?: season.episodes.firstOrNull()?.stillUrl ?: item.posterUrl ?: item.backdropUrl,
+                  season = season,
                 selected = season.number == activeSeason?.number,
                 onClick = { onChooseSeason(season.number) },
               )
@@ -193,15 +194,15 @@ fun CatalogDetailsPage(
 }
 
 @Composable
-private fun SeasonPosterCard(season: Season, selected: Boolean, onClick: () -> Unit) {
+private fun SeasonPosterCard(fallbackPoster: String?, season: Season, selected: Boolean, onClick: () -> Unit) {
   val shape = RoundedCornerShape(14.dp)
-  Column(Modifier.width(88.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+  Column(Modifier.width(112.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(5.dp)) {
     Box(
-      Modifier.fillMaxWidth().height(96.dp).clip(shape)
+              Modifier.fillMaxWidth().height(96.dp).clip(shape)
         .background(MaterialTheme.colorScheme.surfaceVariant)
         .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = .12f), shape),
     ) {
-      season.posterUrl?.let { image ->
+      (season.posterUrl ?: fallbackPoster)?.let { image ->
         AsyncImage(image, contentDescription = "Season ${season.number}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
       }
       Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .78f)))))

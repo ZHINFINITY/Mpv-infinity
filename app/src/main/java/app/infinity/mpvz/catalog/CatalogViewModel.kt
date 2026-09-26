@@ -185,7 +185,13 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
       // Resolve provider families in sequence, but publish each completed batch
       // immediately. The sheet is already visible while the slower family runs.
-      val pluginStreams = runCatching { nuvioPlugins.resolve(item, season, episode) }
+      val pluginStreams = runCatching {
+        nuvioPlugins.resolve(item, season, episode) { batch ->
+          _state.update { current ->
+            current.copy(streamOptions = (current.streamOptions + batch).filterHttpStreams().distinctBy { it.url })
+          }
+        }
+      }
         .onFailure { error -> Log.w(TAG, "Nuvio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}") }
         .getOrDefault(emptyList())
       _state.update { current ->

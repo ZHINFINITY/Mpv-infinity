@@ -73,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -100,6 +101,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import kotlinx.serialization.Serializable
+import org.koin.compose.koinInject
 
 private const val HERO_AUTO_SCROLL_INTERVAL_MS = 8_000L
 
@@ -117,11 +119,13 @@ object StreamScreen : Screen {
     val state by viewModel.state.collectAsState()
     val catalogSources by viewModel.catalogSources.collectAsState()
     val playbackStream by viewModel.playbackStream.collectAsState()
+    val linkDownloadCoordinator = koinInject<app.infinity.mpvz.domain.download.LinkDownloadCoordinator>()
 
     var isSearching by rememberSaveable { mutableStateOf(false) }
     var searchFilter by rememberSaveable { mutableStateOf("All") }
     var browseRail by rememberSaveable { mutableStateOf<String?>(null) }
     var genreFilter by rememberSaveable { mutableStateOf("All") }
+    var streamSheetDismissed by rememberSaveable { mutableStateOf(false) }
     val streamListState = rememberLazyListState()
     val refreshScope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -232,8 +236,8 @@ object StreamScreen : Screen {
             error = state.error,
             onBack = viewModel::closeDetails,
             onChooseSeason = viewModel::selectSeason,
-            onFindMovieStreams = { viewModel.resolve(state.selectedItem!!) },
-            onChooseEpisode = { season, episode -> viewModel.resolve(state.selectedItem!!, season, episode) },
+            onFindMovieStreams = { streamSheetDismissed = false; viewModel.resolve(state.selectedItem!!) },
+            onChooseEpisode = { season, episode -> streamSheetDismissed = false; viewModel.resolve(state.selectedItem!!, season, episode) },
           )
         }
       } else {
@@ -248,7 +252,7 @@ object StreamScreen : Screen {
           modifier = Modifier.fillMaxSize(),
           contentPadding = PaddingValues(
             // Match Jellyfin's top shell: content always starts beneath the header layer.
-            top = 12.dp,
+            top = 0.dp,
             bottom = 104.dp,
           ),
           verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -341,7 +345,7 @@ object StreamScreen : Screen {
             }
           }
 
-          if (state.isLoading && state.items.isNotEmpty()) item { StreamLoadingState(compact = true) }
+          if (state.isLoading && state.items.isNotEmpty() && !isRefreshing.value) item { StreamLoadingState(compact = true) }
           if (state.isLoadingMore) item { StreamLoadingState(compact = true) }
           state.error?.takeIf { state.selectedItem == null }?.let { error ->
             item {
@@ -368,22 +372,29 @@ object StreamScreen : Screen {
         }
 
           }
-          if (isRefreshing.value) {
-            CircularProgressIndicator(
-              Modifier.align(Alignment.TopCenter).padding(top = 12.dp).size(22.dp),
-              strokeWidth = 2.dp,
-            )
-          }
         }
       }
     }
-    if (state.selectedItem != null && (state.streamOptions.isNotEmpty() || state.resolvingId == state.selectedItem?.id)) {
+    if (!streamSheetDismissed && state.selectedItem != null && (state.streamOptions.isNotEmpty() || state.resolvingId == state.selectedItem?.id)) {
       StreamLinksBottomSheet(
         title = state.streamTitle ?: state.selectedItem!!.title,
         streams = state.streamOptions,
         isLoading = state.resolvingId == state.selectedItem?.id,
-        onDismiss = viewModel::closeStreams,
+        onDismiss = { streamSheetDismissed = true; viewModel.closeStreams() },
         onPlay = viewModel::playStream,
+        onDownload = { stream ->
+          val route = linkDownloadCoordinator.enqueue(
+            url = stream.url,
+            title = stream.title,
+            headers = stream.headers,
+            posterUrl = state.selectedItem?.posterUrl,
+            season = stream.season,
+            episode = stream.episode,
+          )
+          if (route != app.infinity.mpvz.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED) {
+            Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+          }
+        },
       )
     }
 
@@ -398,6 +409,7 @@ private fun StreamLinksBottomSheet(
   isLoading: Boolean,
   onDismiss: () -> Unit,
   onPlay: (StreamOption) -> Unit,
+  onDownload: (StreamOption) -> Unit,
 ) {
   val listState = rememberLazyListState()
   ModalBottomSheet(
@@ -422,12 +434,15 @@ private fun StreamLinksBottomSheet(
         }
       }
       items(streams, key = { "stream-sheet-${it.url}" }) { stream ->
-        Surface(Modifier.fillMaxWidth().clickable { onPlay(stream) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+          Surface(Modifier.fillMaxWidth().clickable { onPlay(stream) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
           Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
               Text(stream.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
               val extra = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.size, stream.source).joinToString(" · ")
               if (extra.isNotBlank()) Text(extra, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = { onDownload(stream) }) {
+              Icon(Icons.RoundedFilled.Download, contentDescription = "Download stream", tint = MaterialTheme.colorScheme.primary)
             }
             Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play stream", tint = MaterialTheme.colorScheme.primary)
           }

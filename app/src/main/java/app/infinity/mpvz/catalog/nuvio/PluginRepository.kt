@@ -121,7 +121,12 @@ class PluginRepository(context: Context) {
     return PluginRuntime.getSettingsLayout(scraper.code, scraper.id, tmdbApiKey(), json.encodeToString(scraperSettings(scraper.id)))
   }
 
-  suspend fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null): List<StreamOption> {
+  suspend fun resolve(
+    item: MediaItem,
+    season: Int? = null,
+    episode: Int? = null,
+    onBatch: suspend (List<StreamOption>) -> Unit = {},
+  ): List<StreamOption> {
     refreshFromDisk()
     val type = if (item.type == MediaType.MOVIE) "movie" else "tv"
     val tmdbId = resolveTmdbId(item, type) ?: throw IllegalStateException("Could not map '${item.title}' to a TMDB ID. Check the title/year metadata and try again.")
@@ -135,13 +140,17 @@ class PluginRepository(context: Context) {
     if (providers.isEmpty()) throw IllegalStateException("No enabled Nuvio providers support $type. Open Settings → Network → Media Servers → Nuvio Providers.")
     if (enabledProviders.isEmpty()) Log.w(TAG, "No provider switches enabled; using ${providers.size} manifest-enabled $type providers")
     return withTimeout(PROVIDER_GROUP_TIMEOUT_MS) {
-      coroutineScope {
-        providers.map { provider -> async(Dispatchers.IO) {
-          runCatching { PluginRuntime.executePlugin(provider.code, tmdbId.toString(), type, season, episode, provider.id, tmdbApiKey(), json.encodeToString(scraperSettings(provider.id))) }
-            .onFailure { Log.w(TAG, "Provider failed name=${provider.name} type=$type: ${redactAddonConfigurationFromLog(it.message.orEmpty())}") }
-            .onSuccess { Log.i(TAG, "Provider returned name=${provider.name} type=$type raw=${it.size}") }
-            .getOrDefault(emptyList())
-            .asSequence()
+      val allStreams = mutableListOf<StreamOption>()
+      for (provider in providers) {
+        val rawStreams = runCatching {
+          withContext(Dispatchers.IO) {
+            PluginRuntime.executePlugin(provider.code, tmdbId.toString(), type, season, episode, provider.id, tmdbApiKey(), json.encodeToString(scraperSettings(provider.id)))
+          }
+        }
+          .onFailure { Log.w(TAG, "Provider failed name=${provider.name} type=$type: ${redactAddonConfigurationFromLog(it.message.orEmpty())}") }
+          .onSuccess { Log.i(TAG, "Provider returned name=${provider.name} type=$type raw=${it.size}") }
+          .getOrDefault(emptyList())
+        val providerStreams = rawStreams.asSequence()
             .filter { stream ->
               (stream.url.startsWith("http://", true) || stream.url.startsWith("https://", true)) &&
                 stream.infoHash.isNullOrBlank() &&
@@ -164,8 +173,10 @@ class PluginRepository(context: Context) {
                 episode = episode,
               )
             }.toList()
-        } }.awaitAll().flatten().distinctBy { it.url }.sortedWith(compareByDescending<StreamOption> { it.qualityRank }.thenBy { it.source.orEmpty() })
+        allStreams += providerStreams
+        if (providerStreams.isNotEmpty()) onBatch(providerStreams.distinctBy { it.url })
       }
+      allStreams.distinctBy { it.url }.sortedWith(compareByDescending<StreamOption> { it.qualityRank }.thenBy { it.source.orEmpty() })
     }
   }
 
