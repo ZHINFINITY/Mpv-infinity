@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -139,7 +140,7 @@ fun CatalogDetailsPage(
           ) {
             items(seasons, key = { it.number }) { season ->
                 SeasonPosterCard(
-                  fallbackPoster = season.posterUrl ?: item.posterUrl ?: item.backdropUrl,
+                  fallbackPoster = season.posterUrl,
                   season = season,
                 selected = season.number == activeSeason?.number,
                 onClick = { onChooseSeason(season.number) },
@@ -196,14 +197,16 @@ fun CatalogDetailsPage(
 @Composable
 private fun SeasonPosterCard(fallbackPoster: String?, season: Season, selected: Boolean, onClick: () -> Unit) {
   val shape = RoundedCornerShape(14.dp)
-  Column(Modifier.width(112.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+  Column(Modifier.width(168.dp).animateContentSize().clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(5.dp)) {
     Box(
-              Modifier.fillMaxWidth().height(96.dp).clip(shape)
+              Modifier.fillMaxWidth().height(112.dp).clip(shape)
         .background(MaterialTheme.colorScheme.surfaceVariant)
         .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = .12f), shape),
     ) {
       (season.posterUrl ?: fallbackPoster)?.let { image ->
         AsyncImage(image, contentDescription = "Season ${season.number}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+      } ?: Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant)))) {
+        Text("S${season.number}", Modifier.align(Alignment.Center), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Black)
       }
       Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .78f)))))
       Column(Modifier.align(Alignment.BottomStart).padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {

@@ -142,6 +142,14 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   fun currentCatalogSources(): List<CatalogSource> = settings.catalogSources()
 
+  fun refreshSelectedDetails() {
+    _state.value.selectedItem?.let(::showDetails)
+  }
+
+  fun refresh() {
+    viewModelScope.launch { refreshAll() }
+  }
+
   fun showDetails(item: MediaItem) {
     metadataJob?.cancel()
     streamResolveJob?.cancel()

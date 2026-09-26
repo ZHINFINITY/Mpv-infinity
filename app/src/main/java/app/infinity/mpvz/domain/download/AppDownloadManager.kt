@@ -23,6 +23,7 @@ import app.infinity.mpvz.utils.media.PlaybackSubtitleTrack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -157,6 +158,12 @@ class AppDownloadManager(
           .filter { it.status == AppDownloadStatus.QUEUED.name }
           .minByOrNull { it.timeQueued } ?: break
       runDownload(next, onUpdate)
+    }
+    // An enqueue can complete while the service is finishing its final query. Give the
+    // database writer and a second service start a short hand-off window before stopping.
+    delay(250L)
+    if (dao.getAll().any { it.status == AppDownloadStatus.QUEUED.name }) {
+      drainQueue(onUpdate)
     }
     _activeSnapshot.value = null
   }

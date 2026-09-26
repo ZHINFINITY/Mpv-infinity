@@ -8,6 +8,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -185,15 +188,6 @@ object StreamScreen : Screen {
       else state.items.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" }.take(7)
     }
 
-    LaunchedEffect(browseRail, state.items.size, state.query) {
-      if (state.query.isNotBlank() || browseRail != null) return@LaunchedEffect
-      androidx.compose.runtime.snapshotFlow { streamListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-        .collect { lastVisibleIndex ->
-          val total = streamListState.layoutInfo.totalItemsCount
-          if (total > 0 && lastVisibleIndex >= total - 4) viewModel.loadMore()
-        }
-    }
-
     BackHandler(enabled = searchActive || browseRail != null || state.selectedItem != null) {
       when {
         state.selectedItem != null -> viewModel.closeDetails()
@@ -224,6 +218,8 @@ object StreamScreen : Screen {
           viewModel.setQuery("")
         },
         onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
+        onOpenDownloads = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
+        onRefresh = if (state.selectedItem != null) viewModel::refreshSelectedDetails else viewModel::refresh,
         onSubmitSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) },
         onBack = if (state.selectedItem != null) viewModel::closeDetails else null,
       )
@@ -293,7 +289,6 @@ object StreamScreen : Screen {
                 title = railTitle,
                 items = items,
                 onSeeAll = { browseRail = railKey; genreFilter = "All" },
-                onNearEnd = viewModel::loadMore,
                 onItemClick = viewModel::showDetails,
               )
             }
@@ -464,6 +459,8 @@ private fun NuvioStreamTopOverlay(
   onSearch: () -> Unit,
   onCloseSearch: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenDownloads: () -> Unit,
+  onRefresh: () -> Unit,
   onSubmitSearch: () -> Unit,
   onBack: (() -> Unit)? = null,
 ) {
@@ -509,6 +506,14 @@ private fun NuvioStreamTopOverlay(
       onCancelSelection = {},
       onSearchClick = onSearch,
         onSettingsClick = onOpenSettings,
+        additionalActions = {
+          IconButton(onClick = onOpenDownloads) {
+            Icon(Icons.RoundedFilled.Download, contentDescription = "Downloads", modifier = Modifier.size(24.dp))
+          }
+          IconButton(onClick = onRefresh) {
+            Icon(Icons.RoundedFilled.Refresh, contentDescription = "Refresh", modifier = Modifier.size(24.dp))
+          }
+        },
         onBackClick = onBack,
         modifier = modifier.fillMaxWidth(),
       )
@@ -547,7 +552,7 @@ private fun NuvioStyleHero(items: List<MediaItem>, onItemClick: (MediaItem) -> U
     Box(Modifier.fillMaxWidth().height(heroHeight)) {
       HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
         val item = items[page % items.size]
-        Box(Modifier.fillMaxSize()) {
+          Box(Modifier.fillMaxSize()) {
           AsyncImage(
             model = item.backdropUrl ?: item.posterUrl,
             contentDescription = item.title,
@@ -555,6 +560,25 @@ private fun NuvioStyleHero(items: List<MediaItem>, onItemClick: (MediaItem) -> U
             alignment = if (isWide) Alignment.TopCenter else Alignment.Center,
             contentScale = ContentScale.Crop,
           )
+          if (items.size > 1) {
+            Row(
+              Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 18.dp)
+                .background(Color.Black.copy(alpha = .28f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+              horizontalArrangement = Arrangement.spacedBy(5.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              items.forEachIndexed { index, _ ->
+                val active = index == pagerState.currentPage % items.size
+                val dotWidth by animateDpAsState(if (active) 18.dp else 6.dp, tween(280), label = "hero-dot-width")
+                val dotAlpha by animateFloatAsState(if (active) .96f else .42f, tween(280), label = "hero-dot-alpha")
+                Box(
+                  Modifier.size(width = dotWidth, height = 6.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onBackground.copy(alpha = dotAlpha)),
+                )
+              }
+            }
+          }
           Box(
             Modifier.fillMaxSize().background(
               Brush.verticalGradient(
@@ -568,7 +592,7 @@ private fun NuvioStyleHero(items: List<MediaItem>, onItemClick: (MediaItem) -> U
             ),
           )
           Column(
-            modifier = Modifier
+              modifier = Modifier
               .align(if (isWide) Alignment.BottomStart else Alignment.BottomCenter)
               .fillMaxWidth(if (isWide) .76f else 1f)
               .padding(horizontal = if (isWide) 42.dp else 24.dp, vertical = 22.dp),
@@ -645,7 +669,6 @@ private fun LazyListScope.streamCatalogRail(
   title: String,
   items: List<MediaItem>,
   onSeeAll: () -> Unit,
-  onNearEnd: () -> Unit,
   onItemClick: (MediaItem) -> Unit,
 ) {
   if (items.isEmpty()) return
@@ -664,14 +687,8 @@ private fun LazyListScope.streamCatalogRail(
     }
   }
   item(key = "rail-row-$title") {
-    val rowState = rememberLazyListState()
-    LaunchedEffect(rowState, items.size) {
-      androidx.compose.runtime.snapshotFlow { rowState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-        .collect { lastVisible -> if (items.isNotEmpty() && lastVisible >= items.lastIndex - 4) onNearEnd() }
-    }
     AnimatedVisibility(visible = true, enter = fadeIn() + slideInVertically { it / 10 }) {
       LazyRow(
-        state = rowState,
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
