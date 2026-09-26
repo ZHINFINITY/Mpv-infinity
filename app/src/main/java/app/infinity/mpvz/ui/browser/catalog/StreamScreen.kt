@@ -200,29 +200,48 @@ object StreamScreen : Screen {
       }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        if (state.selectedItem != null) {
-          CatalogDetailsPage(
-            item = state.selectedItem!!,
-            selectedSeason = state.selectedSeason,
-            isLoading = state.resolvingId == state.selectedItem?.id,
-            error = state.error,
-            onBack = viewModel::closeDetails,
-            onChooseSeason = viewModel::selectSeason,
-            onFindMovieStreams = { viewModel.resolve(state.selectedItem!!) },
-            onChooseEpisode = { season, episode -> viewModel.resolve(state.selectedItem!!, season, episode) },
-          )
-        } else PullRefreshBox(
-          isRefreshing = isRefreshing,
-          onRefresh = { viewModel.refreshAll() },
-          modifier = Modifier.fillMaxSize(),
-        ) {
+    Column(
+      modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+    ) {
+      if (state.selectedItem != null) {
+        CatalogDetailsPage(
+          item = state.selectedItem!!,
+          selectedSeason = state.selectedSeason,
+          isLoading = state.resolvingId == state.selectedItem?.id,
+          error = state.error,
+          onBack = viewModel::closeDetails,
+          onChooseSeason = viewModel::selectSeason,
+          onFindMovieStreams = { viewModel.resolve(state.selectedItem!!) },
+          onChooseEpisode = { season, episode -> viewModel.resolve(state.selectedItem!!, season, episode) },
+        )
+      } else {
+        NuvioStreamTopOverlay(
+          query = state.query,
+          isSearching = searchActive,
+          hasHero = false,
+          title = if (browseRail == null) "Discover" else rails[browseRail]?.firstOrNull()?.catalogName ?: "Browse catalog",
+          onQueryChange = viewModel::setQuery,
+          onSearch = { isSearching = true },
+          onCloseSearch = {
+            keyboardController?.hide()
+            isSearching = false
+            viewModel.setQuery("")
+          },
+          onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
+          onSubmitSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) },
+        )
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+          PullRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refreshAll() },
+            modifier = Modifier.fillMaxSize(),
+          ) {
           LazyColumn(
           state = streamListState,
           modifier = Modifier.fillMaxSize(),
           contentPadding = PaddingValues(
             // Match Jellyfin's top shell: content always starts beneath the header layer.
-            top = if (searchActive) 128.dp else 88.dp,
+            top = 12.dp,
             bottom = 104.dp,
           ),
           verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -341,27 +360,13 @@ object StreamScreen : Screen {
           }
         }
 
-        if (isRefreshing.value) {
-          CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(top = 92.dp).size(22.dp), strokeWidth = 2.dp)
-        }
-        if (state.selectedItem == null) {
-          NuvioStreamTopOverlay(
-            modifier = Modifier.align(Alignment.TopCenter),
-            query = state.query,
-            isSearching = searchActive,
-            // Jellyfin keeps the browser top bar in a solid surface layer above content.
-            hasHero = false,
-            title = if (browseRail == null) "Discover" else rails[browseRail]?.firstOrNull()?.catalogName ?: "Browse catalog",
-            onQueryChange = viewModel::setQuery,
-            onSearch = { isSearching = true },
-            onCloseSearch = {
-              keyboardController?.hide()
-              isSearching = false
-              viewModel.setQuery("")
-            },
-            onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
-            onSubmitSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) },
-          )
+          }
+          if (isRefreshing.value) {
+            CircularProgressIndicator(
+              Modifier.align(Alignment.TopCenter).padding(top = 12.dp).size(22.dp),
+              strokeWidth = 2.dp,
+            )
+          }
         }
         if (state.selectedItem != null && state.streamOptions.isNotEmpty()) {
           StreamLinksBottomSheet(
@@ -371,7 +376,7 @@ object StreamScreen : Screen {
             onPlay = viewModel::playStream,
           )
         }
-        }
+      }
     }
 
   }
@@ -434,7 +439,7 @@ private fun NuvioStreamTopOverlay(
   }
   if (isSearching) {
     Row(
-      modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp),
+      modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
       horizontalArrangement = Arrangement.spacedBy(8.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -465,7 +470,7 @@ private fun NuvioStreamTopOverlay(
       onCancelSelection = {},
       onSearchClick = onSearch,
       onSettingsClick = onOpenSettings,
-      modifier = modifier.fillMaxWidth().statusBarsPadding(),
+      modifier = modifier.fillMaxWidth(),
     )
   }
 }
