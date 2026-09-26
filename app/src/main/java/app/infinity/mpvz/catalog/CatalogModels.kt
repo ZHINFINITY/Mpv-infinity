@@ -58,6 +58,7 @@ data class CatalogState(
   val isLoadingMore: Boolean = false,
   val catalogPage: Int = 1,
   val canLoadMore: Boolean = true,
+  val metadataLoadingId: Int? = null,
   val resolvingId: Int? = null,
   val error: String? = null,
   val streamOptions: List<StreamOption> = emptyList(),

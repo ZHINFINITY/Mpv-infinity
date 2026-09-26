@@ -232,7 +232,7 @@ object StreamScreen : Screen {
           CatalogDetailsPage(
             item = state.selectedItem!!,
             selectedSeason = state.selectedSeason,
-            isLoading = state.resolvingId == state.selectedItem?.id,
+            isLoading = state.metadataLoadingId == state.selectedItem?.id,
             error = state.error,
             onBack = viewModel::closeDetails,
             onChooseSeason = viewModel::selectSeason,

@@ -139,18 +139,24 @@ class PluginRepository(context: Context) {
     val providers = enabledProviders.ifEmpty { matchingProviders }
     if (providers.isEmpty()) throw IllegalStateException("No enabled Nuvio providers support $type. Open Settings → Network → Media Servers → Nuvio Providers.")
     if (enabledProviders.isEmpty()) Log.w(TAG, "No provider switches enabled; using ${providers.size} manifest-enabled $type providers")
-    return withTimeout(PROVIDER_GROUP_TIMEOUT_MS) {
-      val allStreams = mutableListOf<StreamOption>()
-      for (provider in providers) {
-        val rawStreams = runCatching {
-          withContext(Dispatchers.IO) {
-            PluginRuntime.executePlugin(provider.code, tmdbId.toString(), type, season, episode, provider.id, tmdbApiKey(), json.encodeToString(scraperSettings(provider.id)))
+    return coroutineScope {
+      providers.map { provider ->
+        async(Dispatchers.Default) {
+          val rawStreams = runCatching {
+            withTimeout(PROVIDER_TIMEOUT_MS) {
+              withContext(Dispatchers.IO) {
+                PluginRuntime.executePlugin(provider.code, tmdbId.toString(), type, season, episode, provider.id, tmdbApiKey(), json.encodeToString(scraperSettings(provider.id)))
+              }
+            }
           }
-        }
-          .onFailure { Log.w(TAG, "Provider failed name=${provider.name} type=$type: ${redactAddonConfigurationFromLog(it.message.orEmpty())}") }
-          .onSuccess { Log.i(TAG, "Provider returned name=${provider.name} type=$type raw=${it.size}") }
-          .getOrDefault(emptyList())
-        val providerStreams = rawStreams.asSequence()
+            .onFailure {
+              if (it !is kotlinx.coroutines.CancellationException) {
+                Log.w(TAG, "Provider failed name=${provider.name} type=$type: ${redactAddonConfigurationFromLog(it.message.orEmpty())}")
+              }
+            }
+            .onSuccess { Log.i(TAG, "Provider returned name=${provider.name} type=$type raw=${it.size}") }
+            .getOrDefault(emptyList())
+          val providerStreams = rawStreams.asSequence()
             .filter { stream ->
               (stream.url.startsWith("http://", true) || stream.url.startsWith("https://", true)) &&
                 stream.infoHash.isNullOrBlank() &&
@@ -172,11 +178,12 @@ class PluginRepository(context: Context) {
                 season = season,
                 episode = episode,
               )
-            }.toList()
-        allStreams += providerStreams
-        if (providerStreams.isNotEmpty()) onBatch(providerStreams.distinctBy { it.url })
-      }
-      allStreams.distinctBy { it.url }.sortedWith(compareByDescending<StreamOption> { it.qualityRank }.thenBy { it.source.orEmpty() })
+            }.toList().distinctBy { it.url }
+          if (providerStreams.isNotEmpty()) onBatch(providerStreams)
+          providerStreams
+        }
+      }.awaitAll().flatten().distinctBy { it.url }
+        .sortedWith(compareByDescending<StreamOption> { it.qualityRank }.thenBy { it.source.orEmpty() })
     }
   }
 
@@ -336,6 +343,6 @@ class PluginRepository(context: Context) {
     const val KEY_TMDB_API_KEY = "tmdb_api_key"
     const val TAG = "NuvioPlugin"
     const val USER_AGENT = "Mpv-infinity/1.0 (Android; Nuvio provider runtime)"
-    const val PROVIDER_GROUP_TIMEOUT_MS = 90_000L
+    const val PROVIDER_TIMEOUT_MS = 25_000L
   }
 }

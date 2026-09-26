@@ -49,6 +49,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
   private var searchJob: Job? = null
   private var homeLoadJob: Job? = null
+  private var metadataJob: Job? = null
+  private var streamResolveJob: Job? = null
   private var cachedHomeItems: List<MediaItem> = emptyList()
 
   init {
@@ -141,9 +143,12 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun currentCatalogSources(): List<CatalogSource> = settings.catalogSources()
 
   fun showDetails(item: MediaItem) {
+    metadataJob?.cancel()
+    streamResolveJob?.cancel()
     _state.update {
       it.copy(
-        resolvingId = item.id,
+        metadataLoadingId = item.id,
+        resolvingId = null,
         selectedItem = item,
         streamOptions = emptyList(),
         streamTitle = null,
@@ -152,7 +157,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         error = null,
       )
     }
-    viewModelScope.launch {
+    metadataJob = viewModelScope.launch {
       val sources = settings.catalogSources()
       val addonMetadata = runCatching { metadataRepository.loadMetadata(item, sources) }.getOrNull() ?: item
       val metadata = runCatching { nuvioMetadata.load(addonMetadata, nuvioPlugins.tmdbApiKey()) }.getOrNull() ?: addonMetadata
@@ -164,14 +169,15 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         if (current.selectedItem?.id == item.id) current.copy(
           selectedItem = completedItem,
           selectedSeason = current.selectedSeason ?: completedItem.seasons.firstOrNull()?.number,
-          resolvingId = null,
+          metadataLoadingId = null,
         ) else current
       }
     }
   }
 
   fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null) {
-    viewModelScope.launch {
+    streamResolveJob?.cancel()
+    streamResolveJob = viewModelScope.launch {
       _state.update {
         it.copy(
           resolvingId = item.id,
@@ -183,8 +189,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         )
       }
 
-      // Resolve provider families in sequence, but publish each completed batch
-      // immediately. The sheet is already visible while the slower family runs.
+      // Resolve provider families progressively and publish each completed batch
+      // immediately. The sheet remains usable while slower providers finish.
       val pluginStreams = runCatching {
         nuvioPlugins.resolve(item, season, episode) { batch ->
           _state.update { current ->
@@ -192,14 +198,20 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
           }
         }
       }
-        .onFailure { error -> Log.w(TAG, "Nuvio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}") }
+        .onFailure { error ->
+          if (error is CancellationException) throw error
+          Log.w(TAG, "Nuvio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
+        }
         .getOrDefault(emptyList())
       _state.update { current ->
         current.copy(streamOptions = current.streamOptions + pluginStreams.filterHttpStreams().distinctBy { it.url })
       }
 
       val addonStreams = runCatching { streamRepository.resolve(item, season, episode, settings.catalogSources()) }
-        .onFailure { error -> Log.w(TAG, "Stremio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}") }
+        .onFailure { error ->
+          if (error is CancellationException) throw error
+          Log.w(TAG, "Stremio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}")
+        }
         .getOrDefault(emptyList())
       _state.update { current ->
         val all = (current.streamOptions + addonStreams).filterHttpStreams().distinctBy { it.url }
@@ -209,7 +221,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         )
       }
       Log.i(TAG, "stream resolve title=${item.title} season=$season episode=$episode nuvio=${pluginStreams.size} stremio=${addonStreams.size}")
-      _state.update { it.copy(resolvingId = null) }
+      _state.update { current ->
+        if (current.selectedItem?.id == item.id && current.selectedSeason == season && current.selectedEpisode == episode) {
+          current.copy(resolvingId = null)
+        } else current
+      }
     }
   }
 
@@ -225,14 +241,21 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun consumePlaybackStream() { _playbackStream.value = null }
 
   fun selectSeason(season: Int) {
-    _state.update { it.copy(selectedSeason = season, streamOptions = emptyList(), selectedEpisode = null, error = null) }
+    streamResolveJob?.cancel()
+    _state.update { it.copy(selectedSeason = season, streamOptions = emptyList(), streamTitle = null, resolvingId = null, selectedEpisode = null, error = null) }
   }
 
   fun closeStreams() {
-    _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, error = null) }
+    streamResolveJob?.cancel()
+    streamResolveJob = null
+    _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, resolvingId = null, selectedEpisode = null, error = null) }
   }
   fun closeDetails() {
-    _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, selectedItem = null, selectedSeason = null, selectedEpisode = null, error = null) }
+    metadataJob?.cancel()
+    streamResolveJob?.cancel()
+    metadataJob = null
+    streamResolveJob = null
+    _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, metadataLoadingId = null, resolvingId = null, selectedItem = null, selectedSeason = null, selectedEpisode = null, error = null) }
   }
 
   fun retry() {

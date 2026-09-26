@@ -139,7 +139,7 @@ fun CatalogDetailsPage(
           ) {
             items(seasons, key = { it.number }) { season ->
                 SeasonPosterCard(
-                  fallbackPoster = season.posterUrl ?: season.episodes.firstOrNull()?.stillUrl ?: item.posterUrl ?: item.backdropUrl,
+                  fallbackPoster = season.posterUrl ?: item.posterUrl ?: item.backdropUrl,
                   season = season,
                 selected = season.number == activeSeason?.number,
                 onClick = { onChooseSeason(season.number) },
