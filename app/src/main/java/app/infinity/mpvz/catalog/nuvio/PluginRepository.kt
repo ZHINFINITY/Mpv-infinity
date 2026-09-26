@@ -125,13 +125,21 @@ class PluginRepository(context: Context) {
     refreshFromDisk()
     val type = if (item.type == MediaType.MOVIE) "movie" else "tv"
     val tmdbId = resolveTmdbId(item, type) ?: throw IllegalStateException("Could not map '${item.title}' to a TMDB ID. Check the title/year metadata and try again.")
-    val providers = _uiState.value.scrapers.filter { it.enabled && it.supportsType(type) }
+    val matchingProviders = _uiState.value.scrapers.filter { it.manifestEnabled && it.supportsType(type) }
+    val enabledProviders = matchingProviders.filter { it.enabled }
+    Log.i(TAG, "resolve title=${item.title} tmdb=$tmdbId type=$type repositories=${_uiState.value.repositories.size} providers=${matchingProviders.size} enabled=${enabledProviders.size}")
+    // A previous build could persist every provider switch as disabled while the
+    // manifest itself declared the providers enabled. Nuvio treats a newly installed
+    // manifest as active, so retain that behavior when no provider is enabled.
+    val providers = enabledProviders.ifEmpty { matchingProviders }
     if (providers.isEmpty()) throw IllegalStateException("No enabled Nuvio providers support $type. Open Settings → Network → Media Servers → Nuvio Providers.")
+    if (enabledProviders.isEmpty()) Log.w(TAG, "No provider switches enabled; using ${providers.size} manifest-enabled $type providers")
     return withTimeout(PROVIDER_GROUP_TIMEOUT_MS) {
       coroutineScope {
         providers.map { provider -> async(Dispatchers.IO) {
           runCatching { PluginRuntime.executePlugin(provider.code, tmdbId.toString(), type, season, episode, provider.id, tmdbApiKey(), json.encodeToString(scraperSettings(provider.id))) }
             .onFailure { Log.w(TAG, "Provider failed name=${provider.name} type=$type: ${redactAddonConfigurationFromLog(it.message.orEmpty())}") }
+            .onSuccess { Log.i(TAG, "Provider returned name=${provider.name} type=$type raw=${it.size}") }
             .getOrDefault(emptyList())
             .asSequence()
             .filter { stream ->

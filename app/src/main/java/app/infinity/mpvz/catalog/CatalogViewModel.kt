@@ -174,7 +174,9 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode, streamOptions = emptyList()) }
       runCatching {
-        val pluginStreams = runCatching { nuvioPlugins.resolve(item, season, episode) }.getOrDefault(emptyList())
+        val pluginStreams = runCatching { nuvioPlugins.resolve(item, season, episode) }
+          .onFailure { error -> Log.w(TAG, "Nuvio resolve failed title=${item.title}: ${redactAddonConfigurationFromLog(error.message.orEmpty())}") }
+          .getOrDefault(emptyList())
         val addonStreams = streamRepository.resolve(item, season, episode, settings.catalogSources())
         Log.i(TAG, "stream resolve title=${item.title} season=$season episode=$episode nuvio=${pluginStreams.size} stremio=${addonStreams.size}")
         (pluginStreams + addonStreams).distinctBy { it.url }
