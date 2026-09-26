@@ -44,6 +44,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -81,6 +82,7 @@ import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
 import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
@@ -121,7 +123,7 @@ object StreamScreen : Screen {
     val streamListState = rememberLazyListState()
     val refreshScope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
-    var isRefreshing by remember { mutableStateOf(false) }
+    val isRefreshing = remember { mutableStateOf(false) }
     val searchActive = isSearching || state.query.isNotBlank()
 
     LaunchedEffect(lifecycleOwner, viewModel) {
@@ -200,24 +202,24 @@ object StreamScreen : Screen {
           CatalogDetailsPage(
             item = state.selectedItem!!,
             selectedSeason = state.selectedSeason,
-            streams = state.streamOptions,
             isLoading = state.resolvingId == state.selectedItem?.id,
             error = state.error,
             onBack = viewModel::closeDetails,
             onChooseSeason = viewModel::selectSeason,
             onFindMovieStreams = { viewModel.resolve(state.selectedItem!!) },
             onChooseEpisode = { season, episode -> viewModel.resolve(state.selectedItem!!, season, episode) },
-            onPlay = viewModel::playStream,
           )
-        } else LazyColumn(
+        } else PullRefreshBox(
+          isRefreshing = isRefreshing,
+          onRefresh = { viewModel.refreshAll() },
+          modifier = Modifier.fillMaxSize(),
+        ) {
+          LazyColumn(
           state = streamListState,
           modifier = Modifier.fillMaxSize(),
           contentPadding = PaddingValues(
-            top = when {
-              !searchActive && browseRail == null && heroItems.isNotEmpty() -> 0.dp
-              searchActive -> 128.dp
-              else -> 76.dp
-            },
+            // Match Jellyfin's top shell: content always starts beneath the header layer.
+            top = if (searchActive) 128.dp else 88.dp,
             bottom = 104.dp,
           ),
           verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -326,9 +328,9 @@ object StreamScreen : Screen {
                 hasCatalogAddons = catalogSources.any { it.isEnabled },
                 onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
                 onRefresh = {
-                  if (!isRefreshing) refreshScope.launch {
-                    isRefreshing = true
-                    try { viewModel.refreshAll() } finally { isRefreshing = false }
+                  if (!isRefreshing.value) refreshScope.launch {
+                    isRefreshing.value = true
+                    try { viewModel.refreshAll() } finally { isRefreshing.value = false }
                   }
                 },
               )
@@ -336,15 +338,16 @@ object StreamScreen : Screen {
           }
         }
 
-        if (isRefreshing) {
-          CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(top = 10.dp).size(24.dp), strokeWidth = 2.dp)
+        if (isRefreshing.value) {
+          CircularProgressIndicator(Modifier.align(Alignment.TopCenter).padding(top = 92.dp).size(22.dp), strokeWidth = 2.dp)
         }
         if (state.selectedItem == null) {
           NuvioStreamTopOverlay(
             modifier = Modifier.align(Alignment.TopCenter),
             query = state.query,
             isSearching = searchActive,
-            hasHero = !searchActive && browseRail == null && heroItems.isNotEmpty(),
+            // Jellyfin keeps the browser top bar in a solid surface layer above content.
+            hasHero = false,
             title = if (browseRail == null) "Discover" else rails[browseRail]?.firstOrNull()?.catalogName ?: "Browse catalog",
             onQueryChange = viewModel::setQuery,
             onSearch = { isSearching = true },
@@ -357,8 +360,50 @@ object StreamScreen : Screen {
             onSubmitSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) },
           )
         }
+        if (state.selectedItem != null && state.streamOptions.isNotEmpty()) {
+          StreamLinksBottomSheet(
+            title = state.streamTitle ?: state.selectedItem!!.title,
+            streams = state.streamOptions,
+            onDismiss = viewModel::closeStreams,
+            onPlay = viewModel::playStream,
+          )
+        }
+        }
     }
 
+  }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun StreamLinksBottomSheet(
+  title: String,
+  streams: List<StreamOption>,
+  onDismiss: () -> Unit,
+  onPlay: (StreamOption) -> Unit,
+) {
+  ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    containerColor = MaterialTheme.colorScheme.surface,
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+  ) {
+    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Text("Streams", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+      Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+      streams.forEach { stream ->
+        Surface(Modifier.fillMaxWidth().clickable { onPlay(stream) }, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+          Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+              Text(stream.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+              val extra = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.size, stream.source).joinToString(" · ")
+              if (extra.isNotBlank()) Text(extra, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play stream", tint = MaterialTheme.colorScheme.primary)
+          }
+        }
+      }
+      Spacer(Modifier.height(8.dp))
+    }
   }
 }
 
@@ -390,15 +435,16 @@ private fun NuvioStreamTopOverlay(
     verticalAlignment = Alignment.CenterVertically,
   ) {
     if (isSearching) {
-      OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = Modifier.weight(1f).focusRequester(focusRequester),
-        singleLine = true,
+      InlineSearchBar(
+        query = query,
+        onQueryChange = onQueryChange,
+        onSearch = { onSubmitSearch() },
+        modifier = Modifier.weight(1f),
+        inputFieldModifier = Modifier.focusRequester(focusRequester),
         placeholder = { Text("Search movies and series") },
         leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSubmitSearch() }),
+        shape = RoundedCornerShape(28.dp),
+        tonalElevation = 6.dp,
       )
       IconButton(onClick = onCloseSearch) {
         Icon(Icons.RoundedFilled.Close, contentDescription = "Close search", tint = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface)
@@ -406,24 +452,24 @@ private fun NuvioStreamTopOverlay(
     } else {
       Surface(
         modifier = Modifier.weight(1f),
-        color = if (hasHero) Color.Black.copy(alpha = .16f) else MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+      color = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(24.dp),
       ) {
         Text(
           title,
           Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
           style = MaterialTheme.typography.titleLarge,
-          color = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface,
+          color = MaterialTheme.colorScheme.onSurface,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
       }
-      Surface(color = if (hasHero) Color.Black.copy(alpha = .2f) else MaterialTheme.colorScheme.surface.copy(alpha = .94f), shape = CircleShape) {
-        IconButton(onClick = onSearch) { Icon(Icons.RoundedFilled.Search, contentDescription = "Search", tint = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface) }
+      Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = CircleShape) {
+        IconButton(onClick = onSearch) { Icon(Icons.RoundedFilled.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurface) }
       }
-      Surface(color = if (hasHero) Color.Black.copy(alpha = .2f) else MaterialTheme.colorScheme.surface.copy(alpha = .94f), shape = CircleShape) {
-        IconButton(onClick = onOpenSettings) { Icon(Icons.RoundedFilled.Settings, contentDescription = "Catalog and provider settings", tint = if (hasHero) Color.White else MaterialTheme.colorScheme.onSurface) }
+      Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = CircleShape) {
+        IconButton(onClick = onOpenSettings) { Icon(Icons.RoundedFilled.Settings, contentDescription = "Catalog and provider settings", tint = MaterialTheme.colorScheme.onSurface) }
       }
     }
   }
@@ -452,15 +498,11 @@ private fun NuvioStyleHero(items: List<MediaItem>, onItemClick: (MediaItem) -> U
   ) {
     val isWide = maxWidth >= 600.dp
     val width = maxWidth.value
-    val availableViewportHeight = (LocalConfiguration.current.screenHeightDp - 116).coerceAtLeast(0).toFloat()
     val heroHeight = when {
       width >= 1200f -> (width * .42f).dp.coerceIn(360.dp, 440.dp)
       width >= 840f -> (width * .46f).dp.coerceIn(340.dp, 420.dp)
       width >= 600f -> (width * .58f).dp.coerceIn(320.dp, 380.dp)
-      else -> {
-        val viewportBased = (availableViewportHeight * .82f).dp
-        minOf(viewportBased, (width * 1.16f).dp).coerceIn(360.dp, 760.dp)
-      }
+      else -> 360.dp
     }
     Box(Modifier.fillMaxWidth().height(heroHeight)) {
       HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
@@ -570,16 +612,13 @@ private fun LazyListScope.streamCatalogRail(
   item(key = "rail-header-$title") {
     AnimatedVisibility(visible = true, enter = fadeIn() + expandVertically()) {
       Row(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Surface(
-          modifier = Modifier.clickable(onClick = onSeeAll),
-          shape = CircleShape,
-          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f),
-        ) {
-          Text("View all", Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        TextButton(onClick = onSeeAll, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+          Text("See All", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+          Icon(Icons.RoundedFilled.ChevronRight, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
         }
       }
     }
@@ -593,11 +632,11 @@ private fun LazyListScope.streamCatalogRail(
     AnimatedVisibility(visible = true, enter = fadeIn() + slideInVertically { it / 10 }) {
       LazyRow(
         state = rowState,
-        contentPadding = PaddingValues(horizontal = 20.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         items(items, key = { "stream-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
-          Box(Modifier.width(150.dp)) { NuvioCatalogPosterCard(item) { onItemClick(item) } }
+          Box(Modifier.width(136.dp)) { NuvioCatalogPosterCard(item) { onItemClick(item) } }
         }
       }
     }

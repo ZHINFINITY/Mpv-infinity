@@ -122,6 +122,14 @@ class StremioCatalogRepository {
   suspend fun validateCatalogManifest(url: String): String = withContext(Dispatchers.IO) {
     val manifest = getJson(url).jsonObject
     val hasCatalogs = manifest["catalogs"]?.jsonArray.orEmpty().isNotEmpty()
+    val hasStreams = manifest["resources"]?.jsonArray.orEmpty().any { resource ->
+      when (resource) {
+        is kotlinx.serialization.json.JsonPrimitive -> resource.contentOrNull.equals("stream", ignoreCase = true)
+        is kotlinx.serialization.json.JsonObject -> resource["name"]?.jsonPrimitive?.contentOrNull.equals("stream", ignoreCase = true) ||
+          resource["id"]?.jsonPrimitive?.contentOrNull.equals("stream", ignoreCase = true)
+        else -> false
+      }
+    }
     val hasMetadata = manifest["resources"]?.jsonArray.orEmpty().any { resource ->
       when (resource) {
         is kotlinx.serialization.json.JsonPrimitive -> resource.contentOrNull.equals("meta", ignoreCase = true)
@@ -130,8 +138,8 @@ class StremioCatalogRepository {
         else -> false
       }
     }
-    require(hasCatalogs || hasMetadata) {
-      "This manifest exposes neither catalogs nor metadata. Install JavaScript scraper repositories under Nuvio JavaScript Providers instead."
+    require(hasCatalogs || hasMetadata || hasStreams) {
+      "This manifest exposes no compatible catalogs, metadata, or streams."
     }
     manifest["name"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
       ?: url.substringBefore('?').substringAfterLast('/').removeSuffix(".json").ifBlank { "Catalog add-on" }

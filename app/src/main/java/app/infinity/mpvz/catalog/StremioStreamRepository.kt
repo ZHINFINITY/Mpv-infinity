@@ -1,0 +1,81 @@
+package app.infinity.mpvz.catalog
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
+
+/** Resolves standard Stremio HTTP stream resources without requiring TMDB credentials. */
+class StremioStreamRepository {
+  private val client = OkHttpClient.Builder()
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(45, TimeUnit.SECONDS)
+    .build()
+  private val json = Json { ignoreUnknownKeys = true }
+
+  suspend fun resolve(
+    item: MediaItem,
+    season: Int?,
+    episode: Int?,
+    sources: List<CatalogSource>,
+  ): List<StreamOption> = withContext(Dispatchers.IO) {
+    val identifier = stremioId(item, season, episode) ?: return@withContext emptyList()
+    val type = if (item.type == MediaType.MOVIE) "movie" else "series"
+    sources.filter { it.isEnabled }.map { source ->
+      kotlinx.coroutines.coroutineScope {
+        async {
+          runCatching {
+            val url = "${source.manifestUrl.substringBefore('?').trimEnd('/').removeSuffix("/manifest.json")}" +
+              "/stream/$type/${URLEncoder.encode(identifier, "UTF-8")}.json"
+            val payload = client.newCall(Request.Builder().url(url).header("Accept", "application/json").build()).execute().use { response ->
+              if (!response.isSuccessful) return@use emptyList<StreamOption>()
+              json.parseToJsonElement(response.body.string()).jsonObject["streams"]?.jsonArray.orEmpty().mapNotNull { element ->
+                val stream = element.jsonObject
+                val streamUrl = stream["url"]?.jsonPrimitive?.contentOrNull
+                  ?: stream["externalUrl"]?.jsonPrimitive?.contentOrNull
+                  ?: return@mapNotNull null
+                if (!streamUrl.startsWith("http://", true) && !streamUrl.startsWith("https://", true)) return@mapNotNull null
+                val title = stream["title"]?.jsonPrimitive?.contentOrNull
+                  ?: stream["name"]?.jsonPrimitive?.contentOrNull
+                  ?: source.name
+                val behavior = stream["behaviorHints"]?.jsonObject
+                StreamOption(
+                  url = streamUrl,
+                  title = title,
+                  headers = stream["behaviorHints"]?.jsonObject?.get("proxyHeaders")?.jsonObject?.mapNotNull { (key, value) ->
+                    value.jsonPrimitive.contentOrNull?.let { key to it }
+                  }?.toMap().orEmpty(),
+                  qualityRank = Regex("(\\d{3,4})\\s*p?", RegexOption.IGNORE_CASE).find(title)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0,
+                  source = source.name,
+                  isPlayable = stream["externalUrl"] == null,
+                  isExternal = stream["externalUrl"] != null,
+                  season = season,
+                  episode = episode,
+                )
+              }
+            }
+            payload
+          }.getOrDefault(emptyList())
+        }
+      }
+    }.awaitAll().flatten().filter { it.isPlayable && !it.isExternal }.distinctBy { it.url }
+      .sortedWith(compareByDescending<StreamOption> { it.qualityRank }.thenBy { it.source.orEmpty() })
+  }
+
+  private fun stremioId(item: MediaItem, season: Int?, episode: Int?): String? {
+    val raw = listOfNotNull(item.imdbId, item.providerId).firstOrNull { it.startsWith("tt", true) }
+      ?: return null
+    val id = raw.substringBefore(':').substringBefore('/')
+    return if (item.type == MediaType.TV && season != null && episode != null) "$id:$season:$episode" else id
+  }
+}

@@ -26,7 +26,8 @@ import coil3.compose.AsyncImage
 /** Nuvio HomePosterCard-style portrait poster with title and release information below. */
 @Composable
 fun NuvioCatalogPosterCard(item: MediaItem, resolving: Boolean = false, onClick: () -> Unit) {
-  val shape = RoundedCornerShape(12.dp)
+  // Match Jellyfin's compact poster-card shape.
+  val shape = RoundedCornerShape(8.dp)
   Column(
     modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -58,7 +59,7 @@ fun NuvioCatalogPosterCard(item: MediaItem, resolving: Boolean = false, onClick:
     }
     Text(
       text = item.title,
-      style = MaterialTheme.typography.bodyMedium,
+      style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface,
       maxLines = 1,
       overflow = TextOverflow.Ellipsis,

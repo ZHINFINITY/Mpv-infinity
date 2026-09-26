@@ -37,6 +37,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private val _catalogSources = MutableStateFlow(settings.catalogSources())
   val catalogSources: StateFlow<List<CatalogSource>> = _catalogSources.asStateFlow()
   private val catalogRepository = StremioCatalogRepository()
+  private val streamRepository = StremioStreamRepository()
   private val metadataRepository = StremioMetadataRepository()
   private val nuvioPlugins = PluginRepository(application)
   private val nuvioMetadata = app.infinity.mpvz.catalog.nuvio.TmdbMetadataRepository()
@@ -172,7 +173,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun resolve(item: MediaItem, season: Int? = null, episode: Int? = null) {
     viewModelScope.launch {
       _state.update { it.copy(resolvingId = item.id, error = null, selectedSeason = season, selectedEpisode = episode, streamOptions = emptyList()) }
-      runCatching { nuvioPlugins.resolve(item, season, episode) }
+      runCatching {
+        val pluginStreams = runCatching { nuvioPlugins.resolve(item, season, episode) }.getOrDefault(emptyList())
+        val addonStreams = streamRepository.resolve(item, season, episode, settings.catalogSources())
+        (pluginStreams + addonStreams).distinctBy { it.url }
+      }
         .onSuccess { streams ->
           val directHttpsStreams = streams
             .filter { it.isPlayable && it.url.startsWith("https://", ignoreCase = true) && !it.isExternal }
@@ -207,6 +212,9 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     _state.update { it.copy(selectedSeason = season, streamOptions = emptyList(), selectedEpisode = null, error = null) }
   }
 
+  fun closeStreams() {
+    _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, error = null) }
+  }
   fun closeDetails() {
     _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, selectedItem = null, selectedSeason = null, selectedEpisode = null, error = null) }
   }

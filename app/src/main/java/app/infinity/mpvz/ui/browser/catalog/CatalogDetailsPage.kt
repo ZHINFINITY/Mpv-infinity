@@ -28,7 +28,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.catalog.Season
-import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import coil3.compose.AsyncImage
@@ -54,14 +52,12 @@ import coil3.compose.AsyncImage
 fun CatalogDetailsPage(
   item: MediaItem,
   selectedSeason: Int?,
-  streams: List<StreamOption>,
   isLoading: Boolean,
   error: String?,
   onBack: () -> Unit,
   onChooseSeason: (Int) -> Unit,
   onFindMovieStreams: () -> Unit,
   onChooseEpisode: (Int, Int) -> Unit,
-  onPlay: (StreamOption) -> Unit,
 ) {
   val seasons = item.seasons.sortedBy { it.number }
   val activeSeason = seasons.firstOrNull { it.number == selectedSeason } ?: seasons.firstOrNull()
@@ -194,7 +190,7 @@ fun CatalogDetailsPage(
       }
     }
 
-    if (isLoading && streams.isEmpty()) {
+    if (isLoading) {
       Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
         Text(if (item.type == MediaType.TV) "Searching providers for Season ${selectedSeason ?: 1}, Episode ${item.seasons.firstOrNull { it.number == selectedSeason }?.episodes?.firstOrNull()?.number ?: "…"}…" else "Searching enabled providers…", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -204,35 +200,6 @@ fun CatalogDetailsPage(
       Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
         TextButton(onClick = onBack) { Text("Back to titles") }
-      }
-    }
-    val playable = streams.filter { it.url.startsWith("https://", true) && it.isPlayable && !it.isExternal }
-    if (playable.isNotEmpty()) {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Direct HTTPS streams", Modifier.padding(horizontal = 22.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        playable.groupBy { it.source ?: "Nuvio provider" }.forEach { (source, rows) ->
-          Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Text(source, Modifier.padding(horizontal = 22.dp), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            rows.forEach { stream ->
-              OutlinedButton(
-                onClick = { onPlay(stream) },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-              ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                  Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(stream.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    val extra = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.size, stream.filename).joinToString(" · ")
-                    if (extra.isNotBlank()) Text(extra, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (stream.headers.isNotEmpty()) Text("Source requires request headers", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                  }
-                  Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play direct HTTPS stream", tint = MaterialTheme.colorScheme.primary)
-                }
-              }
-            }
-          }
-        }
       }
     }
   }
