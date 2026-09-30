@@ -192,6 +192,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun removeCatalogSource(sourceId: String) {
+    if (sourceId == BUILTIN_CATALOG_SOURCE_ID) return
     updateCatalogSources { sources -> sources.filterNot { it.id == sourceId } }
   }
 
@@ -422,10 +423,20 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     homeLoadJob?.cancel()
     resetPosterEnrichment("")
     homeLoadJob = viewModelScope.launch {
-      val sources = settings.catalogSources().filter { it.isEnabled }
+      val sources = requestableCatalogSources(settings.catalogSources())
       if (sources.isEmpty()) {
         cachedHomeItems = emptyList()
-        _state.update { it.copy(items = emptyList(), isLoading = false, isLoadingMore = false, canLoadMore = false, error = null) }
+        _state.update {
+          it.copy(
+            items = emptyList(),
+            recentItems = emptyList(),
+            isLoading = false,
+            isLoadingMore = false,
+            catalogPage = 1,
+            canLoadMore = false,
+            error = BUILT_IN_CATALOG_UNAVAILABLE_MESSAGE,
+          )
+        }
         return@launch
       }
       _state.update { it.copy(isLoading = true, isLoadingMore = false, error = null) }
@@ -448,9 +459,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     if (query.isBlank()) return
     resetPosterEnrichment(query.trim())
     _state.update { it.copy(isLoading = true, isLoadingMore = false, error = null, items = emptyList(), catalogPage = 1, canLoadMore = true) }
-    val sources = settings.catalogSources().filter { it.isEnabled }
+    val sources = requestableCatalogSources(settings.catalogSources())
     if (sources.isEmpty()) {
-      _state.update { it.copy(isLoading = false, canLoadMore = false) }
+      _state.update {
+        it.copy(isLoading = false, canLoadMore = false, error = BUILT_IN_CATALOG_UNAVAILABLE_MESSAGE)
+      }
       return
     }
     val result = runCatching { loadFromAddons(query) }
@@ -467,26 +480,23 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     )
   }
 
-  private suspend fun loadFromAddons(query: String?, page: Int = 1): List<MediaItem> = coroutineScope {
-    val sources = settings.catalogSources().filter { it.isEnabled }
+  private suspend fun loadFromAddons(query: String?, page: Int = 1): List<MediaItem> {
+    val sources = requestableCatalogSources(settings.catalogSources())
+    if (sources.isEmpty()) throw IllegalStateException(BUILT_IN_CATALOG_UNAVAILABLE_MESSAGE)
     Log.i(TAG, "load queryLength=${query?.length ?: 0} catalogAddons=${sources.size} page=$page")
-    val results = sources.map { source ->
-      async {
-        source to withTimeoutOrNull(45_000L) {
-          runCatching { catalogRepository.load(source, query, page) }
-        }
-      }
-    }.awaitAll()
+    val results = loadCatalogSourcesIndependently(sources) { source ->
+      withTimeoutOrNull(45_000L) { catalogRepository.load(source, query, page) }
+    }
     val failures = results.mapNotNull { (source, result) ->
       val message = when {
-        result == null -> "${source.name}: catalog request timed out"
         result.isFailure -> "${source.name}: ${redactAddonConfigurationFromLog(result.exceptionOrNull()?.message.orEmpty())}"
+        result.getOrNull() == null -> "${source.name}: catalog request timed out"
         else -> null
       }
       if (message != null) Log.w(TAG, "catalog source failed id=${source.id}: ${redactAddonConfigurationFromLog(message)}")
       message
     }
-    val items = results.flatMap { (_, result) -> result?.getOrDefault(emptyList()).orEmpty() }
+    val items = results.flatMap { (_, result) -> result.getOrNull().orEmpty() }
       .distinctBy(::catalogItemIdentityKey)
     if (items.isEmpty() && failures.isNotEmpty()) {
       throw IllegalStateException(failures.distinct().joinToString("\n"))

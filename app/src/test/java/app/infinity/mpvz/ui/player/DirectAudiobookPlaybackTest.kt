@@ -71,4 +71,21 @@ class DirectAudiobookPlaybackTest {
     assertEquals(0, directAudiobookResumeIndex(tracks, "no-longer-present"))
     assertEquals(0, directAudiobookResumeIndex(tracks, null))
   }
+
+  @Test
+  fun directFolderRestartResetsTrackPositionWithoutChangingTheUriQueue() {
+    val queueIdentity = directAudiobookFolderIdentity("content://storage/tree/book")
+    val trackUri = "content://storage/tree/book/chapter-01.m4b"
+    val item = createDirectAudiobookTrackPlaybackItem(
+      queueIdentity,
+      AudiobookFolderTrack(trackUri, "chapter-01.m4b", "audio/mpeg", 10L),
+    )
+
+    val resume = AudiobookPlayback.resolveDirectPositionForLoad(item, 125)
+    val restart = AudiobookPlayback.resolveDirectPositionForLoad(item, 125, fromBeginning = true)
+
+    assertEquals(trackUri, item.originalUri)
+    assertEquals(125.0, resume?.positionSeconds ?: -1.0, 0.0)
+    assertEquals(0.0, restart?.positionSeconds ?: -1.0, 0.0)
+  }
 }
