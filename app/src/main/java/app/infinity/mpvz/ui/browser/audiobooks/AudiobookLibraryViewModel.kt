@@ -46,7 +46,7 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
   val selectedFolderName = _selectedFolderName.asStateFlow()
   private val folderPreferences = application.getSharedPreferences(FOLDER_PREFERENCES_NAME, Context.MODE_PRIVATE)
   private val _folderTree = MutableStateFlow<AudiobookFolderTree?>(null)
-  val folderTree = _folderTree.asStateFlow()
+  internal val folderTree = _folderTree.asStateFlow()
   private val _folderError = MutableStateFlow<String?>(null)
   val folderError = _folderError.asStateFlow()
   private val _folderLoading = MutableStateFlow(false)
@@ -126,7 +126,7 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
     }
   }
 
-  suspend fun resolveDirectAudioFiles(uris: List<Uri>): List<AudiobookFolderTrack> = withContext(Dispatchers.IO) {
+  internal suspend fun resolveDirectAudioFiles(uris: List<Uri>): List<AudiobookFolderTrack> = withContext(Dispatchers.IO) {
     val context = getApplication<Application>()
     val tracks = uris.distinct().mapNotNull { uri ->
       runCatching { ensurePersistedReadPermission(context, uri) }
