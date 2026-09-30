@@ -39,7 +39,8 @@ data class NetworkPlaybackSource(
 )
 
 internal fun resolvePlaybackMimeType(intentMimeType: String?, mimeTypeExtra: String?): String? =
-  intentMimeType?.takeIf { it.isNotBlank() } ?: mimeTypeExtra?.takeIf { it.isNotBlank() }
+  intentMimeType?.trim()?.takeIf { it.isNotEmpty() }
+    ?: mimeTypeExtra?.trim()?.takeIf { it.isNotEmpty() }
 
 data class AudiobookPlaybackInfo(
   val bookId: Long,
