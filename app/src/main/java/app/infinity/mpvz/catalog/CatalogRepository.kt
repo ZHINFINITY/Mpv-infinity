@@ -33,6 +33,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 private const val PREFS = "catalog_secure_settings"
+private const val BUILTIN_CATALOG_REMOVED_PREF = "builtin_cinemeta_removed"
 private const val DIAG_TAG = "MpvCatalogDiag"
 private const val CATALOG_PAGE_SIZE = 100
 
@@ -63,7 +64,8 @@ class CatalogSettings(context: Context) {
       .filterNot(::isLegacyCatalogSource)
       .filter { isHttpAddonEndpoint(it.manifestUrl) }
       .distinctBy { it.manifestUrl.trim().lowercase(java.util.Locale.ROOT) }
-    val normalized = includeDefaultBuiltinCatalogSource(listOfNotNull(savedBuiltin) + configured)
+    val builtinRemoved = prefs.getBoolean(BUILTIN_CATALOG_REMOVED_PREF, false)
+    val normalized = normalizeCatalogSources(listOfNotNull(savedBuiltin) + configured, builtinRemoved)
     if (normalized != sources) saveCatalogSources(normalized)
     return normalized
   }
@@ -76,9 +78,11 @@ class CatalogSettings(context: Context) {
       .filterNot(::isLegacyCatalogSource)
       .filter { isHttpAddonEndpoint(it.manifestUrl) }
       .distinctBy { it.manifestUrl.trim().lowercase(java.util.Locale.ROOT) }
-    val normalized = includeDefaultBuiltinCatalogSource(listOfNotNull(savedBuiltin) + configured)
+    val builtinRemoved = value.none(::isDefaultBuiltinCatalogSource)
+    val normalized = normalizeCatalogSources(listOfNotNull(savedBuiltin) + configured, builtinRemoved)
     prefs.edit()
       .putString("catalog_sources_json", Json.encodeToString(normalized))
+      .putBoolean(BUILTIN_CATALOG_REMOVED_PREF, builtinRemoved)
       .remove("catalog_sources")
       .apply()
   }

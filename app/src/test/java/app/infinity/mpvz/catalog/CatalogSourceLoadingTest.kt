@@ -26,6 +26,19 @@ class CatalogSourceLoadingTest {
   }
 
   @Test
+  fun removedBuiltinStaysAbsentAfterReloadWhileUserAddonsRemainRequestable() {
+    val userOne = CatalogSource("user-one", "One", "https://catalog-one.invalid")
+    val userTwo = CatalogSource("user-two", "Two", "https://catalog-two.invalid")
+    val installed = includeDefaultBuiltinCatalogSource(listOf(userOne, userTwo))
+    val savedAfterRemoval = installed.filterNot { it.id == BUILTIN_CATALOG_SOURCE_ID }
+
+    val reloaded = normalizeCatalogSources(savedAfterRemoval, builtinRemoved = true)
+
+    assertEquals(listOf(userOne, userTwo), reloaded)
+    assertEquals(listOf(userOne, userTwo), requestableCatalogSources(reloaded))
+  }
+
+  @Test
   fun invalidBuiltInPlaceholdersAndDisabledAddonsAreNotRequestable() {
     val placeholder = CatalogSource("builtin-placeholder", "Built-in", "")
     val spoofedBuiltin = CatalogSource("builtin-other", "Other", "https://unapproved.invalid/manifest.json")
