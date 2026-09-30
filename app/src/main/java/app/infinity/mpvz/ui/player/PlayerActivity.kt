@@ -5404,7 +5404,11 @@ class PlayerActivity :
     val directAudiobook = PlaybackSession.queue.value.items
       .firstOrNull { item -> item.stableId == snapshot.mediaIdentifier }
       ?.directAudiobook
-    val streamHistoryKey = currentStreamHistoryAliases(snapshot.mediaIdentifier).firstOrNull()
+    val streamHistoryKey =
+      intent.takeIf { it.getBooleanExtra("stream_tab_playback", false) }
+        ?.getStringExtra("stream_history_key")
+        ?.takeIf { it.isNotBlank() }
+        ?: currentStreamHistoryAliases(snapshot.mediaIdentifier).firstOrNull()
 
     // Cancel any previous pending save operation
     savePlaybackStateJob?.cancel()
@@ -5414,11 +5418,6 @@ class PlayerActivity :
     val saveRepository = playbackStateRepository
     val savePositionOnQuit = playerPreferences.savePositionOnQuit.get()
     val watchedThreshold = browserPreferences.watchedThreshold.get()
-    val appContext = applicationContext
-    val streamHistoryKey =
-      intent.takeIf { it.getBooleanExtra("stream_tab_playback", false) }
-        ?.getStringExtra("stream_history_key")
-        ?.takeIf { it.isNotBlank() }
 
     val saveBlock: suspend kotlinx.coroutines.CoroutineScope.() -> Unit = {
       runCatching {
@@ -5438,6 +5437,7 @@ class PlayerActivity :
           )
         saveRepository.upsert(playbackState)
         PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
+        directAudiobook?.let { DirectAudiobookResumeStore.recordPlaying(appContext, it) }
         persistStreamHistoryProgress(appContext, snapshot, streamHistoryKey)
       }.onFailure { e ->
         Log.e(TAG, "Error saving playback state", e)
