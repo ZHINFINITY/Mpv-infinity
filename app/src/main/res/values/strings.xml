@@ -2169,6 +2169,7 @@
   <string name="audiobook_choose_folder_hint">Choose a folder to browse and play its tracks directly. Nothing is copied or imported.</string>
   <string name="audiobook_back_to_library">Back to audiobook library</string>
   <string name="audiobook_change_folder">Choose another folder</string>
+  <string name="audiobook_folders">Audiobook folders</string>
   <string name="audiobook_folder_unavailable">The selected folder is unavailable. Choose it again to restore access.</string>
   <string name="audiobook_folder_empty">No audio tracks or subfolders were found here.</string>
   <string name="audiobook_play_folder">Play folder</string>
