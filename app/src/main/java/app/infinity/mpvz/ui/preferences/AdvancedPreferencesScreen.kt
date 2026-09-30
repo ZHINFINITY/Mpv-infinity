@@ -72,6 +72,7 @@ import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.history.clearWatchHistory
+import app.infinity.mpvz.utils.media.PlaybackStateEvents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -129,6 +130,7 @@ object AdvancedPreferencesScreen : Screen {
     val context = LocalContext.current
     val backStack = LocalBackStack.current
     val preferences = koinInject<AdvancedPreferences>()
+    val playbackStateRepository = koinInject<PlaybackStateRepository>()
     val settingsManager = koinInject<SettingsManager>()
     val foldersPreferences = koinInject<FoldersPreferences>()
     val subtitlesPreferences = koinInject<SubtitlesPreferences>()

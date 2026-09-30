@@ -29,8 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.core.context.GlobalContext
 import java.io.IOException
-
-private val AUDIO_EXTENSIONS = setOf("mp3", "m4b", "m4a", "aac", "flac", "ogg", "oga", "opus", "wav", "wma", "ape", "mka", "aax", "aaxc")
+import java.util.concurrent.atomic.AtomicLong
 
 class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(application) {
   private val dao = GlobalContext.get().get<AudiobookDao>()
@@ -45,7 +44,15 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
   val error = _error.asStateFlow()
   private val _selectedFolderName = MutableStateFlow("")
   val selectedFolderName = _selectedFolderName.asStateFlow()
-  private var importJob: Job? = null
+  private val folderPreferences = application.getSharedPreferences(FOLDER_PREFERENCES_NAME, Context.MODE_PRIVATE)
+  private val _folderTree = MutableStateFlow<AudiobookFolderTree?>(null)
+  val folderTree = _folderTree.asStateFlow()
+  private val _folderError = MutableStateFlow<String?>(null)
+  val folderError = _folderError.asStateFlow()
+  private val _folderLoading = MutableStateFlow(false)
+  val folderLoading = _folderLoading.asStateFlow()
+  private var folderScanJob: Job? = null
+  private val folderScanGeneration = AtomicLong()
 
   init {
     _selectedFolderName.value = selectedFolderPreference.get().takeIf(String::isNotBlank)?.let { uri ->
@@ -55,23 +62,31 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
     viewModelScope.launch(Dispatchers.IO) {
       app.infinity.mpvz.domain.audiobook.AudiobookMarkerUtils.syncKnownAudiobooks(application, dao)
     }
-    folderPreferences.getString(FOLDER_TREE_URI_KEY, null)?.let { savedUri ->
+    val savedFolderUri = folderPreferences.getString(FOLDER_TREE_URI_KEY, null)
+      ?: selectedFolderPreference.get().takeIf(String::isNotBlank)
+    savedFolderUri?.let { savedUri ->
       loadFolderTree(Uri.parse(savedUri), persistPermission = false, saveSelection = false)
     }
   }
 
   fun selectFolder(uri: Uri) {
+    val context = getApplication<Application>()
+    selectedFolderPreference.set(uri.toString())
+    _selectedFolderName.value = DocumentFile.fromTreeUri(context, uri)?.name.orEmpty()
+    _selectedFolderPath.value = safPath(uri)
     loadFolderTree(uri, persistPermission = true, saveSelection = true)
   }
 
   fun refreshFolder() {
-    val savedUri = folderPreferences.getString(FOLDER_TREE_URI_KEY, null) ?: return
+    val savedUri = folderPreferences.getString(FOLDER_TREE_URI_KEY, null)
+      ?: selectedFolderPreference.get().takeIf(String::isNotBlank)
+      ?: return
     loadFolderTree(Uri.parse(savedUri), persistPermission = false, saveSelection = false)
   }
 
   private fun loadFolderTree(uri: Uri, persistPermission: Boolean, saveSelection: Boolean) {
     folderScanJob?.cancel()
-    val generation = ++folderScanGeneration
+    val generation = folderScanGeneration.incrementAndGet()
     _folderError.value = null
     _folderLoading.value = true
     if (saveSelection) _folderTree.value = null
@@ -80,29 +95,22 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
       try {
         if (persistPermission) ensurePersistedReadPermission(context, uri)
         val tree = AudiobookFolderScanner.scan(context, uri.toString())
-        if (generation != folderScanGeneration) return@launch
+        if (generation != folderScanGeneration.get()) return@launch
         if (saveSelection) folderPreferences.edit().putString(FOLDER_TREE_URI_KEY, uri.toString()).apply()
         _folderTree.value = tree
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (failure: Exception) {
-        if (generation == folderScanGeneration) {
+        if (generation == folderScanGeneration.get()) {
           _folderError.value = failure.localizedMessage ?: context.getString(R.string.audiobook_folder_unavailable)
         }
       } finally {
-        if (generation == folderScanGeneration) _folderLoading.value = false
+        if (generation == folderScanGeneration.get()) _folderLoading.value = false
       }
     }
   }
 
-  fun chooseFolder(uri: Uri) {
-    val context = getApplication<Application>()
-    runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-    selectedFolderPreference.set(uri.toString())
-    _selectedFolderName.value = DocumentFile.fromTreeUri(context, uri)?.name.orEmpty()
-    _selectedFolderPath.value = safPath(uri)
-    importFiles(emptyList(), uri)
-  }
+  fun chooseFolder(uri: Uri) = selectFolder(uri)
 
   private fun safPath(uri: Uri): String? {
     if (uri.authority != "com.android.externalstorage.documents") return null
@@ -118,51 +126,29 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
     }
   }
 
-  fun importFiles(uris: List<Uri>, folder: Uri? = null) {
-    if (importJob?.isActive == true || uris.isEmpty() && folder == null) return
-    _error.value = null
-    _progress.value = 0 to 0
-    importJob = viewModelScope.launch(Dispatchers.IO) {
-      val context = getApplication<Application>()
-      try {
-        (listOfNotNull(folder) + uris).distinct().forEach { uri ->
-          ensurePersistedReadPermission(context, uri)
-        }
-        if (folder != null) {
-          AudiobookImporter(context, dao).importFolderAsBooks(folder) { current, total -> _progress.value = current to total }
-        } else {
-          AudiobookImporter(context, dao).importBook(uris) { current, total -> _progress.value = current to total }
-        }
-        if (folder != null) {
-          AudiobookImporter(context, dao).importFolderAsBooks(folder) { current, total -> _progress.value = current to total }
-        } else {
-          AudiobookImporter(context, dao).importBook(uris) { current, total -> _progress.value = current to total }
-        }
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (failure: Exception) {
-        _error.value = context.getString(R.string.audiobook_import_failed, failure.localizedMessage.orEmpty())
-      } finally {
-        _progress.value = null
-      }
+  suspend fun resolveDirectAudioFiles(uris: List<Uri>): List<AudiobookFolderTrack> = withContext(Dispatchers.IO) {
+    val context = getApplication<Application>()
+    val tracks = uris.distinct().mapNotNull { uri ->
+      runCatching { ensurePersistedReadPermission(context, uri) }
+      val document = DocumentFile.fromSingleUri(context, uri) ?: return@mapNotNull null
+      if (!document.isFile || !AudiobookFolderScanner.isSupportedAudio(document.name, document.type)) return@mapNotNull null
+      AudiobookFolderTrack(
+        uri = uri.toString(),
+        name = document.name?.takeIf(String::isNotBlank) ?: context.getString(R.string.audiobook_audio_file),
+        mimeType = document.type?.takeIf(String::isNotBlank),
+        sizeBytes = document.length().coerceAtLeast(0L),
+      )
     }
+    if (tracks.isEmpty()) throw IOException(context.getString(R.string.audiobook_no_audio))
+    tracks
   }
 
-  fun scanLocalStorage() {
-    if (importJob?.isActive == true) return
-    _error.value = null
-    _progress.value = 0 to 0
-    importJob = viewModelScope.launch(Dispatchers.IO) {
-      val context = getApplication<Application>()
-      try {
-        AudiobookImporter(context, dao).scanLocalStorage { current, total -> _progress.value = current to total }
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (failure: Exception) {
-        _error.value = context.getString(R.string.audiobook_import_failed, failure.localizedMessage.orEmpty())
-      } finally {
-        _progress.value = null
-      }
+  private fun ensurePersistedReadPermission(context: Context, uri: Uri) {
+    val alreadyGranted = context.contentResolver.persistedUriPermissions.any {
+      it.uri == uri && it.isReadPermission
+    }
+    if (!alreadyGranted) {
+      context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
   }
 
@@ -217,5 +203,10 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
     } catch (failure: Exception) {
       _error.value = failure.localizedMessage.orEmpty()
     }
+  }
+
+  private companion object {
+    const val FOLDER_PREFERENCES_NAME = "audiobook_folder_browser"
+    const val FOLDER_TREE_URI_KEY = "folder_tree_uri"
   }
 }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="audiobook_back_to_library">Back to library</string>
+  <string name="audiobook_change_folder">Change folder</string>
+  <string name="audiobook_folder_empty">No supported audio files in this folder.</string>
+  <string name="audiobook_folder_unavailable">This folder is unavailable. Choose it again and allow access.</string>
+  <string name="audiobook_play_folder">Play folder</string>
+  <string name="audiobook_play_track">Play track</string>
+  <string name="audiobook_play_files">Play audio files</string>
+  <string name="audiobook_unreadable">Unable to read audio file: %1$s</string>
+</resources>
