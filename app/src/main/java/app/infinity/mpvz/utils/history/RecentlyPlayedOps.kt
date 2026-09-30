@@ -81,6 +81,32 @@ object RecentlyPlayedOps {
     }
   }
 
+  suspend fun backfillWatchStatistics(context: Context) {
+    if (!shouldTrackWatchStatistics(preferences.enableRecentlyPlayed.get(), preferences.enableWatchStatistics.get())) return
+    withContext(Dispatchers.IO) {
+      val history = repository.getRecentlyPlayed(limit = WatchStatisticsState.MAX_ITEMS)
+      val streamPreferences = context.applicationContext.getSharedPreferences(
+        StreamWatchHistory.PREFERENCES_NAME,
+        Context.MODE_PRIVATE,
+      )
+      val streamHistoryKeys = StreamWatchHistory.keysForDisplay(
+        enabled = true,
+        order = streamPreferences.getString(StreamWatchHistory.ORDER_KEY, "").orEmpty(),
+        fallbackKeys = streamPreferences.getStringSet(StreamWatchHistory.KEYS_KEY, emptySet()).orEmpty(),
+      )
+      WatchStatisticsStore.backfillIfNeeded(context, history, streamHistoryKeys = streamHistoryKeys)
+    }
+  }
+
+  private suspend fun recordWatchStatistics(context: Context, itemKey: String, aliases: List<String>) {
+    if (!shouldTrackWatchStatistics(preferences.enableRecentlyPlayed.get(), preferences.enableWatchStatistics.get())) return
+    if (!WatchStatisticsStore.isInitialized(context)) backfillWatchStatistics(context)
+    if (!WatchStatisticsStore.isInitialized(context)) return
+    withContext(Dispatchers.IO) {
+      WatchStatisticsStore.record(context, itemKey, aliases)
+    }
+  }
+
   suspend fun clearAll() {
     repository.clearAll()
   }
