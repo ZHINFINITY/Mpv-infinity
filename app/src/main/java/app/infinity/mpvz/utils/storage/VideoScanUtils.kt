@@ -20,6 +20,7 @@ import android.provider.MediaStore
 import android.util.Log
 import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
 import app.infinity.mpvz.domain.media.model.Video
+import app.infinity.mpvz.utils.media.VideoResolutionFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
@@ -201,7 +202,7 @@ object VideoScanUtils : KoinComponent {
                 width = width,
                 height = height,
                 fps = 0f,
-                resolution = formatResolution(width, height),
+                resolution = VideoResolutionFormatter.format(width, height),
                 hasEmbeddedSubtitles = false,
                 subtitleCodec = "",
               )
@@ -371,7 +372,11 @@ object VideoScanUtils : KoinComponent {
               width = cachedMetadata?.width ?: 0,
               height = cachedMetadata?.height ?: 0,
               fps = cachedMetadata?.fps ?: 0f,
-              resolution = formatResolution(cachedMetadata?.width ?: 0, cachedMetadata?.height ?: 0),
+              resolution =
+                VideoResolutionFormatter.format(
+                  cachedMetadata?.width ?: 0,
+                  cachedMetadata?.height ?: 0,
+                ),
               hasEmbeddedSubtitles = cachedMetadata?.hasEmbeddedSubtitles ?: false,
               subtitleCodec = cachedMetadata?.subtitleCodec ?: "",
               isAudio = isAudio,
@@ -412,26 +417,6 @@ object VideoScanUtils : KoinComponent {
       bytes / 1024.0.pow(digitGroups.toDouble()),
       units[digitGroups],
     )
-  }
-
-  private fun formatResolution(
-    width: Int,
-    height: Int,
-  ): String {
-    if (width <= 0 || height <= 0) return "--"
-
-    return when {
-      height >= 4320 -> "4320p"
-      height >= 2160 -> "2160p"
-      height >= 1440 -> "1440p"
-      height >= 1080 -> "1080p"
-      height >= 720 -> "720p"
-      height >= 576 -> "576p"
-      height >= 480 -> "480p"
-      height >= 360 -> "360p"
-      height >= 240 -> "240p"
-      else -> "${height}p"
-    }
   }
 }
 
