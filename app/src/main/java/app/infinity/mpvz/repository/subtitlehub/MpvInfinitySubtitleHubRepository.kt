@@ -17,6 +17,7 @@ import app.infinity.mpvz.repository.subtitle.OnlineSubtitleFileStore
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleProvider
 import app.infinity.mpvz.repository.subtitle.OnlineSubtitleSearchRequest
 import app.infinity.mpvz.repository.subtitle.SubtitleProvider
+import app.infinity.mpvz.repository.subtitle.readBoundedSubtitleResponse
 import app.infinity.mpvz.repository.wyzie.WyzieLanguages
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -140,7 +141,7 @@ class MpvInfinitySubtitleHubRepository(
             }.build()
         apiSources.clientForDownload(subtitle).newCall(request).execute().use { response ->
           if (!response.isSuccessful) return@withContext Result.failure(Exception("Download failed: ${response.code}"))
-          Result.success(fileStore.save(response.body.bytes(), subtitle, mediaTitle))
+          Result.success(fileStore.save(readBoundedSubtitleResponse(response.body), subtitle, mediaTitle))
         }
       } catch (e: Exception) {
         Log.e(TAG, "Mpv∞ SubtitleHub download failed", e)

@@ -109,6 +109,7 @@ import app.infinity.mpvz.ui.browser.states.EmptyState
 import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.securefolder.SecureConfirmDialog
 import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
 import app.infinity.mpvz.ui.securefolder.SecureFolderProgressDialog
@@ -138,6 +139,10 @@ data class VideoListScreen(
   @kotlinx.serialization.Transient val onBack: (() -> Unit)? = null,
   val isDualPane: Boolean = false,
   val isAudio: Boolean = false,
+  val isAudiobook: Boolean = false,
+  val searchQuery: String = "",
+  val externalViewOptionsOpen: Boolean = false,
+  @kotlinx.serialization.Transient val onExternalViewOptionsDismiss: (() -> Unit)? = null,
 ) : Screen {
   @OptIn(ExperimentalMaterial3ExpressiveApi::class)
   @Composable
@@ -188,13 +193,15 @@ data class VideoListScreen(
     var internalIsSearching by rememberSaveable { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val displayedVideosWithInfo =
-      remember(sortedVideosWithInfo, internalSearchQuery, internalIsSearching) {
-        if (!internalIsSearching || internalSearchQuery.isBlank()) {
+      remember(sortedVideosWithInfo, internalSearchQuery, internalIsSearching, searchQuery, isAudiobook) {
+        val effectiveQuery = if (isAudiobook) searchQuery else internalSearchQuery
+        val shouldSearch = if (isAudiobook) searchQuery.isNotBlank() else internalIsSearching && internalSearchQuery.isNotBlank()
+        if (!shouldSearch) {
           sortedVideosWithInfo
         } else {
           val matchingVideoIds =
             MediaSearchEngine.searchVideos(
-              query = internalSearchQuery,
+              query = effectiveQuery,
               videos = sortedVideosWithInfo.map { it.video },
             ).mapTo(hashSetOf()) { it.id }
           sortedVideosWithInfo.filter { it.video.id in matchingVideoIds }
@@ -218,6 +225,11 @@ data class VideoListScreen(
     // UI State
     val isRefreshing = remember { mutableStateOf(false) }
     val sortDialogOpen = rememberSaveable { mutableStateOf(false) }
+    val isSortDialogOpen = sortDialogOpen.value || (isAudiobook && externalViewOptionsOpen)
+    val dismissSortDialog = {
+      sortDialogOpen.value = false
+      if (isAudiobook && externalViewOptionsOpen) onExternalViewOptionsDismiss?.invoke()
+    }
     val deleteDialogOpen = rememberSaveable { mutableStateOf(false) }
     val renameDialogOpen = rememberSaveable { mutableStateOf(false) }
     val addToPlaylistDialogOpen = rememberSaveable { mutableStateOf(false) }
@@ -351,8 +363,13 @@ data class VideoListScreen(
     }
 
     Scaffold(
+      contentWindowInsets = if (isAudiobook) {
+        WindowInsets(0, 0, 0, 0)
+      } else {
+        androidx.compose.material3.ScaffoldDefaults.contentWindowInsets
+      },
       topBar = {
-        if (internalIsSearching) {
+        if (internalIsSearching && !isAudiobook) {
           InlineSearchBar(
             query = internalSearchQuery,
             onQueryChange = { internalSearchQuery = it },
@@ -394,10 +411,11 @@ data class VideoListScreen(
             }
           },
           onCancelSelection = { selectionManager.clear() },
-          onSortClick = { sortDialogOpen.value = true },
-          onSearchClick = { internalIsSearching = true },
+          windowInsets = if (isAudiobook) WindowInsets(0, 0, 0, 0) else null,
+          onSortClick = if (isAudiobook) null else ({ sortDialogOpen.value = true }),
+          onSearchClick = if (isAudiobook) null else ({ internalIsSearching = true }),
           onSettingsClick =
-            if (isDualPane) {
+            if (isDualPane || isAudiobook) {
               null
             } else {
               { backstack.add(app.infinity.mpvz.ui.preferences.PreferencesScreen) }
@@ -518,7 +536,13 @@ data class VideoListScreen(
               // Always use MediaUtils.playFile which lets PlayerActivity auto-generate playlist
               // This avoids TransactionTooLargeException from passing large playlists
               // PlayerActivity will auto-generate playlist from folder if playlistMode is enabled
-              MediaUtils.playFile(video, context, "video_list")
+              if (isAudiobook) {
+                coroutineScope.launch {
+                  AudiobookPlayback.launchForFile(context, video.path, video.uri.toString())
+                }
+              } else {
+                MediaUtils.playFile(video, context, "video_list")
+              }
             }
           },
           onVideoLongClick = { video -> selectionManager.handleLongClick(video) },
@@ -571,8 +595,8 @@ data class VideoListScreen(
       // Sort Dialog
       if (isAudio) {
         app.infinity.mpvz.ui.browser.dialogs.MusicSortDialog(
-          isOpen = sortDialogOpen.value,
-          onDismiss = { sortDialogOpen.value = false },
+          isOpen = isSortDialogOpen,
+          onDismiss = dismissSortDialog,
           sortField =
             when (videoSortType) {
               app.infinity.mpvz.preferences.VideoSortType.Duration -> app.infinity.mpvz.ui.browser.music.MusicSortField.DURATION
@@ -616,8 +640,8 @@ data class VideoListScreen(
         )
       } else {
         VideoSortDialog(
-          isOpen = sortDialogOpen.value,
-          onDismiss = { sortDialogOpen.value = false },
+          isOpen = isSortDialogOpen,
+          onDismiss = dismissSortDialog,
           sortType = videoSortType,
           sortOrder = videoSortOrder,
           onSortTypeChange = { browserPreferences.videoSortType.set(it) },

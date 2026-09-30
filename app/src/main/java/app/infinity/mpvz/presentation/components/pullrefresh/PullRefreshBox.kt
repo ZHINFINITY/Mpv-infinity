@@ -211,3 +211,46 @@ fun PullRefreshBox(
     }
   }
 }
+
+@Composable
+fun InfinityLoadingIndicator(modifier: Modifier = Modifier, size: Dp = 56.dp) {
+  val transition = rememberInfiniteTransition(label = "catalogInfinityLoading")
+  val dashOffset by transition.animateFloat(
+    initialValue = 0f,
+    targetValue = 256.589f,
+    animationSpec = infiniteRepeatable(tween(durationMillis = 2_000, easing = LinearEasing)),
+    label = "catalogInfinityDashOffset",
+  )
+  val path = remember {
+    Path().apply {
+      moveTo(24.3f, 30f)
+      cubicTo(11.4f, 30f, 5f, 43.3f, 5f, 50f)
+      cubicTo(5f, 56.7f, 11.4f, 70f, 24.3f, 70f)
+      cubicTo(43.6f, 70f, 56.4f, 30f, 75.7f, 30f)
+      cubicTo(88.6f, 30f, 95f, 43.3f, 95f, 50f)
+      cubicTo(95f, 56.7f, 88.6f, 70f, 75.7f, 70f)
+      cubicTo(56.4f, 70f, 43.6f, 30f, 24.3f, 30f)
+      close()
+    }
+  }
+  val indicatorColor = MaterialTheme.colorScheme.onBackground
+  Canvas(modifier.size(size)) {
+    val scale = minOf(this.size.width, this.size.height) / 100f * 0.8f
+    withTransform({
+      translate(this.size.width / 2f, this.size.height / 2f)
+      scale(scale, scale, pivot = Offset.Zero)
+      translate(-50f, -50f)
+    }) {
+      drawPath(
+        path = path,
+        color = indicatorColor,
+        style = Stroke(
+          width = 10f,
+          cap = StrokeCap.Round,
+          join = StrokeJoin.Round,
+          pathEffect = PathEffect.dashPathEffect(floatArrayOf(205.271f, 51.318f), dashOffset),
+        ),
+      )
+    }
+  }
+}

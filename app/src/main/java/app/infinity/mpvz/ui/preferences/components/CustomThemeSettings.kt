@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.preferences.components
 
 import android.content.Context
+import android.graphics.Color as AndroidColor
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -169,8 +170,19 @@ private fun CustomThemeEditor(
   var fitMode by remember(initial.id) { mutableStateOf(initial.fitMode) }
   var aspectMode by remember(initial.id) { mutableStateOf(initial.aspectMode) }
   var muted by remember(initial.id) { mutableStateOf(initial.muted) }
+  var textColorHex by remember(initial.id) { mutableStateOf("#%08X".format(initial.onBackgroundArgb)) }
+  var textHue by remember(initial.id) { mutableStateOf(0f) }
+  var textSaturation by remember(initial.id) { mutableStateOf(1f) }
+  var textValue by remember(initial.id) { mutableStateOf(1f) }
+  var textAlpha by remember(initial.id) { mutableStateOf(AndroidColor.alpha(initial.onBackgroundArgb) / 255f) }
   var showEditor by remember(initial.id) { mutableStateOf(false) }
-  val edited = initial.copy(name = name, overlay = overlay, blur = blur, brightness = brightness, saturation = saturation, visibility = visibility, surfaceOpacity = surfaceOpacity, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted)
+  val textColorArgb = runCatching { AndroidColor.parseColor(textColorHex.trim().let { if (it.startsWith("#")) it else "#$it" }) }.getOrNull()
+  fun updateTextColorFromSliders() {
+    val hsv = floatArrayOf(textHue, textSaturation, textValue)
+    val argb = AndroidColor.HSVToColor((textAlpha * 255f).toInt().coerceIn(0, 255), hsv)
+    textColorHex = "#%08X".format(argb)
+  }
+  val edited = initial.copy(name = name, overlay = overlay, blur = blur, brightness = brightness, saturation = saturation, visibility = visibility, surfaceOpacity = surfaceOpacity, scale = scale, offsetX = offsetX, offsetY = offsetY, fitMode = fitMode, aspectMode = aspectMode, muted = muted, onBackgroundArgb = textColorArgb ?: initial.onBackgroundArgb)
   fun resetVisualSettings() {
     overlay = initial.overlay.coerceIn(0f, 0.65f)
     blur = initial.blur.coerceIn(0f, 24f)
@@ -184,6 +196,13 @@ private fun CustomThemeEditor(
     fitMode = initial.fitMode
     aspectMode = initial.aspectMode
     muted = initial.muted
+    textColorHex = "#%08X".format(initial.onBackgroundArgb)
+    val hsv = FloatArray(3)
+    AndroidColor.colorToHSV(initial.onBackgroundArgb, hsv)
+    textHue = hsv[0]
+    textSaturation = hsv[1]
+    textValue = hsv[2]
+    textAlpha = AndroidColor.alpha(initial.onBackgroundArgb) / 255f
   }
   androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = { androidx.compose.material3.BottomSheetDefaults.DragHandle() }) {
     Column(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.94f).padding(horizontal = 20.dp, vertical = 8.dp)) {
@@ -242,6 +261,38 @@ private fun CustomThemeEditor(
         ThemeAdjustmentSlider("Media transparency", visibility, 0.15f..1f, { visibility = it })
         ThemeAdjustmentSlider("Dim overlay", overlay, 0f..0.65f, { overlay = it })
         ThemeAdjustmentSlider("Panel opacity", surfaceOpacity, 0.55f..1f, { surfaceOpacity = it })
+        Text("Custom text colour", style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+          Box(Modifier.size(34.dp).clip(MaterialTheme.shapes.small).background(androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb)))
+          OutlinedTextField(
+            value = textColorHex,
+            onValueChange = {
+              textColorHex = it.take(9)
+              runCatching { AndroidColor.parseColor(textColorHex.trim().let { value -> if (value.startsWith("#")) value else "#$value" }) }.onSuccess { argb ->
+                val hsv = FloatArray(3)
+                AndroidColor.colorToHSV(argb, hsv)
+                textHue = hsv[0]
+                textSaturation = hsv[1]
+                textValue = hsv[2]
+                textAlpha = AndroidColor.alpha(argb) / 255f
+              }
+            },
+            label = { Text("ARGB hex") },
+            placeholder = { Text("#FFFFFFFF") },
+            singleLine = true,
+            isError = textColorArgb == null,
+            modifier = Modifier.weight(1f),
+          )
+        }
+        Text("Colour sliders", style = MaterialTheme.typography.labelLarge)
+        Text("Hue: ${textHue.toInt()}°", style = MaterialTheme.typography.bodySmall)
+        TintedSlider(value = textHue, onValueChange = { textHue = it; updateTextColorFromSliders() }, valueRange = 0f..360f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        Text("Saturation: ${(textSaturation * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+        TintedSlider(value = textSaturation, onValueChange = { textSaturation = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        Text("Brightness: ${(textValue * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+        TintedSlider(value = textValue, onValueChange = { textValue = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
+        Text("Opacity: ${(textAlpha * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+        TintedSlider(value = textAlpha, onValueChange = { textAlpha = it; updateTextColorFromSliders() }, valueRange = 0f..1f, tint = androidx.compose.ui.graphics.Color(textColorArgb ?: initial.onBackgroundArgb))
         if (initial.isVideo) Row { Checkbox(checked = muted, onCheckedChange = { muted = it }); Text("Mute video theme") }
           }
           }

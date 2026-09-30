@@ -58,6 +58,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.Tab
 import app.infinity.mpvz.domain.audiobook.AudiobookOnlineMetadata
 import kotlinx.coroutines.launch
 import androidx.compose.material3.PlainTooltip
@@ -97,6 +99,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.entities.Audiobook
 import app.infinity.mpvz.database.entities.AudiobookEntity
+import app.infinity.mpvz.domain.audiobook.AudiobookSourceIdentity
 import app.infinity.mpvz.domain.audiobookshelf.AudiobookshelfBook
 import app.infinity.mpvz.domain.audiobookshelf.AudiobookshelfLibrary
 import app.infinity.mpvz.preferences.AudiobookSortType
@@ -115,6 +118,8 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.launchDirectAudiobookFiles
+import app.infinity.mpvz.ui.player.launchDirectAudiobookFolder
 import app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen
 import app.infinity.mpvz.ui.preferences.PreferencesScreen
 import app.infinity.mpvz.ui.utils.LocalBackStack
@@ -134,8 +139,10 @@ object AudiobookLibraryScreen : Screen {
   override fun Content() {
     val model: AudiobookLibraryViewModel = viewModel()
     val books by model.library.collectAsStateWithLifecycle()
-    val importing by model.progress.collectAsStateWithLifecycle()
     val error by model.error.collectAsStateWithLifecycle()
+    val folderTree by model.folderTree.collectAsStateWithLifecycle()
+    val folderLoading by model.folderLoading.collectAsStateWithLifecycle()
+    val folderError by model.folderError.collectAsStateWithLifecycle()
     val backStack = LocalBackStack.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -155,8 +162,11 @@ object AudiobookLibraryScreen : Screen {
     var isSortMenuExpanded by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(0) }
+    var audiobookSubTab by rememberSaveable { mutableStateOf(0) }
+    var folderViewOptionsOpen by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf(false) }
-    var importMenu by remember { mutableStateOf(false) }
+    var isFolderBrowser by rememberSaveable { mutableStateOf(false) }
+    var sourceMenu by remember { mutableStateOf(false) }
     var detailsId by rememberSaveable { mutableStateOf<Long?>(null) }
     var absDetailsBook by remember { mutableStateOf<AudiobookshelfBook?>(null) }
     var absSearchOnlineBook by remember { mutableStateOf<AudiobookshelfBook?>(null) }
@@ -172,7 +182,7 @@ object AudiobookLibraryScreen : Screen {
       val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
         if (event == Lifecycle.Event.ON_STOP) {
           isSortMenuExpanded = false
-          importMenu = false
+          sourceMenu = false
           isLibDropdownOpen = false
           isSourceDropdownOpen = false
         }
@@ -181,13 +191,38 @@ object AudiobookLibraryScreen : Screen {
       onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { model.importFiles(it) }
+    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+      if (uris.isNotEmpty()) scope.launch {
+        opening = true
+        try {
+          val tracks = model.resolveDirectAudioFiles(uris)
+          launchDirectAudiobookFiles(context, tracks)
+        } catch (cancelled: CancellationException) {
+          throw cancelled
+        } catch (_: Exception) {
+          playbackError = context.getString(R.string.audiobook_play_failed)
+        } finally {
+          opening = false
+        }
+      }
+    }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-      if (uri != null) model.importFiles(emptyList(), uri)
+      if (uri != null) model.chooseFolder(uri)
     }
 
     val visibleLocalBooks = remember(books, query, filter, sortType, sortOrder) {
-      val filtered = books.orEmpty().filter { !it.book.sourceKey.startsWith("abs:") }.filter { book ->
+      val uniqueLocalBooks = books.orEmpty()
+        .filterNot { it.book.sourceKey.startsWith("abs:") }
+        .groupBy { book ->
+          val identities = book.orderedTracks.map { AudiobookSourceIdentity.key(Uri.parse(it.uri)) }.sorted()
+          if (identities.isEmpty()) "source:${AudiobookSourceIdentity.key(book.book.sourceKey)}"
+          else "tracks:${identities.joinToString("\n")}"
+        }
+        .values
+        .mapNotNull { duplicates ->
+          duplicates.maxWithOrNull(compareBy<Audiobook> { it.book.lastPlayedAt }.thenBy { it.book.addedAt })
+        }
+      val filtered = uniqueLocalBooks.filter { book ->
         val matches = when (filter) {
           1 -> book.book.progressMs > 0 && !book.book.finished
           2 -> book.book.finished
@@ -239,7 +274,11 @@ object AudiobookLibraryScreen : Screen {
     }
 
     val isAbsSource = currentSource == AudiobookSourceProvider.AUDIOBOOKSHELF
-    val totalCount = if (isAbsSource) visibleAbsBooks.size else visibleLocalBooks.size
+    val totalCount = when {
+      isFolderBrowser && !isAbsSource -> folderTree?.listings?.values?.sumOf { it.tracks.size } ?: 0
+      isAbsSource -> visibleAbsBooks.size
+      else -> visibleLocalBooks.size
+    }
 
     fun playLocal(book: Audiobook, restart: Boolean = false) {
       if (opening) return
@@ -275,20 +314,41 @@ object AudiobookLibraryScreen : Screen {
       }
     }
 
+    fun playDirectFolder(folderUri: String, selectedTrackUri: String?) {
+      if (opening) return
+      val tracks = folderTree?.tracksUnder(folderUri).orEmpty()
+      if (tracks.isEmpty()) return
+      opening = true
+      try {
+        launchDirectAudiobookFolder(context, folderUri, tracks, selectedTrackUri)
+      } catch (failure: Exception) {
+        playbackError = context.getString(R.string.audiobook_play_failed)
+      } finally {
+        opening = false
+      }
+    }
+
     BackHandler(search) { search = false; query = "" }
+    LaunchedEffect(audiobookSubTab) {
+      if (audiobookSubTab != 1) folderViewOptionsOpen = false
+    }
     val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
 
     Scaffold(
       containerColor = MaterialTheme.colorScheme.surfaceContainer,
       topBar = {
         BrowserTopBar(
-          title = if (isAbsSource) "" else stringResource(R.string.audiobooks_title),
+          title = when {
+            isAbsSource -> ""
+            isFolderBrowser -> stringResource(R.string.audiobook_choose_folder)
+            else -> stringResource(R.string.audiobooks_title)
+          },
           isInSelectionMode = false,
           selectedCount = 0,
           totalCount = totalCount,
           onBackClick = null,
           onCancelSelection = { },
-          onSortClick = { isSortMenuExpanded = true },
+          onSortClick = if (audiobookSubTab == 0) ({ isSortMenuExpanded = true }) else null,
           onSearchClick = { search = !search },
           onSettingsClick = { backStack.add(PreferencesScreen) },
           preSearchActions = {
@@ -404,6 +464,7 @@ object AudiobookLibraryScreen : Screen {
                     },
                     onClick = {
                       mediaServerPreferences.audiobookSourceProvider.set(AudiobookSourceProvider.AUDIOBOOKSHELF)
+                      isFolderBrowser = false
                       isSourceDropdownOpen = false
                     },
                   )
@@ -427,17 +488,17 @@ object AudiobookLibraryScreen : Screen {
           additionalActions = {
             if (!isAbsSource) {
               Box {
-                AudiobookIconButton(Icons.RoundedFilled.Add, stringResource(R.string.audiobook_import_files), importing == null) { importMenu = true }
-                DropdownMenu(importMenu, onDismissRequest = { importMenu = false }) {
+                AudiobookIconButton(Icons.RoundedFilled.Add, stringResource(R.string.audiobook_play_files), !opening) { sourceMenu = true }
+                DropdownMenu(sourceMenu, onDismissRequest = { sourceMenu = false }) {
                   DropdownMenuItem(
-                    text = { Text(stringResource(R.string.audiobook_import_files)) },
-                    leadingIcon = { Icon(Icons.RoundedFilled.Add, null) },
-                    onClick = { importMenu = false; files.launch(arrayOf("*/*")) }
+                    text = { Text(stringResource(R.string.audiobook_play_files)) },
+                    leadingIcon = { Icon(Icons.RoundedFilled.PlayCircle, null) },
+                    onClick = { sourceMenu = false; files.launch(arrayOf("audio/*")) }
                   )
                   DropdownMenuItem(
-                    text = { Text(stringResource(R.string.audiobook_import_folder)) },
+                    text = { Text(stringResource(R.string.audiobook_choose_folder)) },
                     leadingIcon = { Icon(Icons.RoundedFilled.FolderOpen, null) },
-                    onClick = { importMenu = false; folder.launch(null) }
+                    onClick = { sourceMenu = false; isFolderBrowser = true; folder.launch(null) }
                   )
                 }
               }
@@ -470,7 +531,7 @@ object AudiobookLibraryScreen : Screen {
       },
     ) { padding ->
       Column(Modifier.fillMaxSize().padding(padding)) {
-        if (search) {
+        if (!isFolderBrowser && search) {
           OutlinedTextField(
             value = query,
             onValueChange = { query = it },
@@ -482,6 +543,43 @@ object AudiobookLibraryScreen : Screen {
           )
         }
 
+        PrimaryScrollableTabRow(
+          selectedTabIndex = audiobookSubTab,
+          containerColor = MaterialTheme.colorScheme.surfaceContainer,
+          divider = {},
+        ) {
+          listOf(R.string.audiobook_all, R.string.audiobook_folders).forEachIndexed { index, label ->
+            Tab(
+              selected = audiobookSubTab == index,
+              onClick = {
+                audiobookSubTab = index
+                haptics.selection(true)
+              },
+              text = { Text(stringResource(label)) },
+            )
+          }
+          if (audiobookSubTab == 1 && !isAbsSource) {
+            IconButton(onClick = { folderViewOptionsOpen = true }) {
+              Icon(
+                Icons.RoundedFilled.SortByAlpha,
+                contentDescription = stringResource(R.string.sort),
+                modifier = Modifier.size(24.dp),
+              )
+            }
+          }
+        }
+
+        if (audiobookSubTab == 1) {
+          val selectedFolderPath by model.selectedFolderPath.collectAsStateWithLifecycle()
+          app.infinity.mpvz.ui.browser.folderlist.FolderListScreen.MediaStoreFolderListContent(
+            audioOnly = true,
+            embedded = true,
+            searchQuery = query,
+            rootPath = selectedFolderPath,
+            externalViewOptionsOpen = folderViewOptionsOpen,
+            onExternalViewOptionsDismiss = { folderViewOptionsOpen = false },
+          )
+        } else {
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -504,7 +602,19 @@ object AudiobookLibraryScreen : Screen {
             }
         }
 
-        if (isAbsSource) {
+        if (isFolderBrowser && !isAbsSource) {
+          AudiobookFolderBrowserContent(
+            tree = folderTree,
+            isLoading = folderLoading,
+            error = folderError,
+            opening = opening,
+            bottomPadding = navBarHeight + 16.dp,
+            onChooseFolder = { folder.launch(null) },
+            onRetry = model::refreshFolder,
+            onExit = { isFolderBrowser = false },
+            onPlay = ::playDirectFolder,
+          )
+        } else if (isAbsSource) {
           // --- AUDIOBOOKSHELF VIEW ---
           when {
             absState.servers.isEmpty() -> {
@@ -604,17 +714,6 @@ object AudiobookLibraryScreen : Screen {
           }
         } else {
           // --- LOCAL AUDIOBOOKS VIEW ---
-          importing?.let { progress ->
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-              if (progress.second > 0) LinearProgressIndicator(progress = { progress.first.toFloat() / progress.second }, modifier = Modifier.fillMaxWidth())
-              else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                if (progress.second > 0) Text(stringResource(R.string.audiobook_importing, progress.first, progress.second), Modifier.weight(1f),
-                  style = MaterialTheme.typography.bodySmall) else Spacer(Modifier.weight(1f))
-                TextButton(onClick = model::cancelImport) { Text(stringResource(R.string.generic_cancel)) }
-              }
-            }
-          }
           when {
             books == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             visibleLocalBooks.isEmpty() -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
@@ -622,10 +721,12 @@ object AudiobookLibraryScreen : Screen {
               Icon(Icons.RoundedFilled.MenuBook, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface)
               Text(stringResource(R.string.audiobook_empty), modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleMedium)
               if (books.orEmpty().isEmpty()) {
-                Button(onClick = { files.launch(arrayOf("*/*")) }, enabled = importing == null) {
-                  Text(stringResource(R.string.audiobook_import_files))
+                Button(onClick = { files.launch(arrayOf("audio/*")) }, enabled = !opening) {
+                  Text(stringResource(R.string.audiobook_play_files))
                 }
-                TextButton(onClick = { folder.launch(null) }, enabled = importing == null) { Text(stringResource(R.string.audiobook_import_folder)) }
+                TextButton(onClick = { isFolderBrowser = true; folder.launch(null) }, enabled = !opening) {
+                  Text(stringResource(R.string.audiobook_choose_folder))
+                }
               }
             }
             layoutMode == MediaLayoutMode.GRID -> LazyVerticalGrid(
@@ -669,6 +770,7 @@ object AudiobookLibraryScreen : Screen {
               }
             }
           }
+        }
         }
       }
     }

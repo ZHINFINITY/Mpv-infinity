@@ -10,6 +10,7 @@
 package app.infinity.mpvz.ui.browser.sheets
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -40,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -104,6 +107,7 @@ fun PlayLinkSheet(
           if (!isTorrentSource(selectedSource)) {
             try {
               RecentlyPlayedOps.addRecentlyPlayed(
+                context = context,
                 filePath = selectedSource,
                 fileName = selectedName,
                 launchSource = "play_link",
@@ -159,7 +163,13 @@ fun PlayLinkSheet(
   ModalBottomSheet(
     onDismissRequest = handleDismiss,
     sheetState = sheetState,
-    dragHandle = { BottomSheetDefaults.DragHandle() },
+    dragHandle = {
+      Box(
+        Modifier.padding(top = 8.dp).width(32.dp).height(4.dp)
+          .clip(androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+          .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f)),
+      )
+    },
     modifier = modifier,
   ) {
     Column(

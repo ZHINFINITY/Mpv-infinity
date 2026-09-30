@@ -31,8 +31,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.*
+import java.util.concurrent.TimeUnit
 
 data class YtdlpPlaylistEntry(
   val id: String?,
@@ -59,7 +62,18 @@ object YtdlpManager {
   private const val MAX_IMPORTED_PLAYLIST_ENTRIES = 5_000
   private const val MAX_PLAYLIST_OUTPUT_CHARS = 32L * 1024 * 1024
   private const val PLAYLIST_EXTRACTION_TIMEOUT_MS = 180_000L
+  private const val PAGE_RESOLVE_TIMEOUT_MS = 20_000L
+  private const val MAX_PAGE_RESOLVE_DEPTH = 5
+  private const val MAX_PAGE_BODY_CHARS = 4 * 1024 * 1024
   private val installMutex = Mutex()
+  private val pageResolverClient =
+    OkHttpClient.Builder()
+      .followRedirects(false)
+      .followSslRedirects(false)
+      .connectTimeout(PAGE_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+      .readTimeout(PAGE_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+      .callTimeout(PAGE_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+      .build()
 
   private val _installationInfo = MutableStateFlow<YtdlpInstallationInfo?>(null)
   val installationInfo: StateFlow<YtdlpInstallationInfo?> = _installationInfo.asStateFlow()
@@ -117,6 +131,7 @@ object YtdlpManager {
       return false
     }
     if (uri.host?.lowercase() in setOf("127.0.0.1", "localhost", "0.0.0.0")) return false
+    if (uri.host?.lowercase() == "video-downloads.googleusercontent.com") return false
 
     // HentaiStream's /video-proxy endpoint is already a direct MP4 stream. Sending it through
     // yt-dlp causes an extra URL rewrite and makes mpv reopen the CDN with a different range
@@ -424,7 +439,118 @@ object YtdlpManager {
         .map(String::trim)
         .firstOrNull { it.startsWith("http://") || it.startsWith("https://") }
         ?.also { onLog("Resolved direct native media URL") }
+        ?: unwrapProviderMediaUrl(source, onLog)
+        ?: resolveKnownPageMediaUrl(source, onLog)
     }
+
+  /** Unwraps common provider proxy forms such as /bulk?u=<direct-file-url>. */
+  private fun unwrapProviderMediaUrl(source: String, onLog: (String) -> Unit): String? {
+    val uri = Uri.parse(source)
+    val nested = sequenceOf("u", "url", "src", "source")
+      .mapNotNull(uri::getQueryParameter)
+      .firstOrNull { it.startsWith("http://") || it.startsWith("https://") }
+      ?: return null
+    val nestedUri = Uri.parse(nested)
+    if (!HttpUtils.isDirectMediaUrl(nestedUri)) return null
+    onLog("Unwrapped provider proxy URL to direct media URL")
+    return nested
+  }
+
+  /**
+   * Some Nuvio providers return a file-host page instead of a media URL. Resolve the small set of
+   * known page-style hosts without handing HTML to MPV. This is intentionally bounded: it follows
+   * only a few redirects/pages and accepts only a response that identifies itself as media.
+   */
+  private fun resolveKnownPageMediaUrl(source: String, onLog: (String) -> Unit): String? {
+    val host = Uri.parse(source).host?.lowercase().orEmpty()
+    if (host != "gdflix.dev" && !host.endsWith(".gdflix.dev") && host != "gdflix.io" && !host.endsWith(".gdflix.io")) return null
+    val resolved = resolvePageUrl(source, source, 0, linkedSetOf())
+    if (resolved != null) onLog("Resolved GDFlix page to direct media URL")
+    else onLog("GDFlix page did not expose a playable media URL")
+    return resolved
+  }
+
+  private fun resolvePageUrl(
+    source: String,
+    referer: String,
+    depth: Int,
+    visited: MutableSet<String>,
+  ): String? {
+    if (depth > MAX_PAGE_RESOLVE_DEPTH) return null
+    val url = decodeHtmlEntities(source).trim()
+    if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+    if (!visited.add(url)) return null
+
+    Uri.parse(url).getQueryParameter("url")?.takeIf { it.startsWith("http://") || it.startsWith("https://") }?.let { nested ->
+      resolvePageUrl(nested, url, depth + 1, visited)?.let { return it }
+    }
+
+    val request =
+      Request.Builder()
+        .url(url)
+        .header("User-Agent", YtdlpOptionsBuilder.DEFAULT_USER_AGENT)
+        .header("Referer", referer)
+        .get()
+        .build()
+    val response = runCatching { pageResolverClient.newCall(request).execute() }.getOrNull() ?: return null
+    response.use { current ->
+      if (current.code in 300..399) {
+        val location = current.header("Location") ?: return null
+        val next = current.request.url.resolve(location)?.toString() ?: return null
+        return resolvePageUrl(next, url, depth + 1, visited)
+      }
+      if (!current.isSuccessful) return null
+
+      val contentType = current.header("Content-Type").orEmpty().lowercase()
+      val finalUrl = current.request.url.toString()
+      if (isMediaContentType(contentType) || HttpUtils.isDirectMediaUrl(Uri.parse(finalUrl))) return finalUrl
+      if (contentType.isNotBlank() && !contentType.contains("html") && !contentType.contains("text")) return null
+
+      val body = current.body.string().take(MAX_PAGE_BODY_CHARS)
+      val candidates = extractPageCandidates(body, finalUrl)
+        .sortedByDescending(::pageCandidateScore)
+      for (candidate in candidates) {
+        resolvePageUrl(candidate, finalUrl, depth + 1, visited)?.let { return it }
+      }
+      return null
+    }
+  }
+
+  private fun extractPageCandidates(body: String, baseUrl: String): List<String> {
+    val raw = Regex("https?://[^\\s\\\"'<>]+", RegexOption.IGNORE_CASE).findAll(body).map { it.value }
+      .toMutableList()
+    Regex("(?:href|src|data-url|data-download-url)\\s*=\\s*[\\\"']([^\\\"']+)", RegexOption.IGNORE_CASE)
+      .findAll(body)
+      .forEach { raw += it.groupValues[1] }
+    val base = Uri.parse(baseUrl)
+    return raw.mapNotNull { value ->
+      val decoded = decodeHtmlEntities(value).replace("\\/", "/")
+      base.buildUpon().encodedPath(decoded).build().toString().takeIf { decoded.startsWith("/") }
+        ?: base.buildUpon().encodedPath(decoded).build().toString().takeIf { decoded.startsWith("?") }
+        ?: decoded.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+    }.filterNot { it.contains("fonts.googleapis") || it.contains("cloudflare.com") }.distinct()
+  }
+
+  private fun pageCandidateScore(url: String): Int {
+    val lower = url.lowercase()
+    return when {
+      HttpUtils.isDirectMediaUrl(Uri.parse(url)) -> 100
+      "video-downloads.googleusercontent.com" in lower -> 95
+      "busycdn" in lower -> 80
+      ".m3u8" in lower || ".mpd" in lower -> 90
+      else -> 10
+    }
+  }
+
+  private fun isMediaContentType(contentType: String): Boolean =
+    contentType.startsWith("video/") ||
+      contentType.contains("mpegurl") ||
+      contentType.contains("dash+xml") ||
+      contentType.contains("octet-stream")
+
+  private fun decodeHtmlEntities(value: String): String =
+    value.replace("&amp;", "&").replace("&quot;", "\"").replace("&#x2F;", "/").replace("&#x3D;", "=")
+      .replace("&#39;", "'")
 
   /** Ensures the yt-dlp runtime is installed regardless of URL shape (used by the downloader). */
   suspend fun ensureRuntimeInstalled(
