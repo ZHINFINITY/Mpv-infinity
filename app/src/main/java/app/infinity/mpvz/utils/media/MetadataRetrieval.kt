@@ -253,7 +253,7 @@ object MetadataRetrieval {
           video.subtitleCodec.isNotEmpty() &&
           (!needsVideoCodec || video.videoCodec.isNotBlank())
         ) {
-          emit(video)
+          emit(video.copy(resolution = formatResolutionWithFps(video.width, video.height, video.fps)))
           continue
         }
 
@@ -456,20 +456,5 @@ object MetadataRetrieval {
   private fun formatResolution(
     width: Int,
     height: Int,
-  ): String {
-    if (width <= 0 || height <= 0) return "--"
-
-    return when {
-      height >= 4320 -> "4320p"
-      height >= 2160 -> "2160p"
-      height >= 1440 -> "1440p"
-      height >= 1080 -> "1080p"
-      height >= 720 -> "720p"
-      height >= 576 -> "576p"
-      height >= 480 -> "480p"
-      height >= 360 -> "360p"
-      height >= 240 -> "240p"
-      else -> "${height}p"
-    }
-  }
+  ): String = VideoResolutionFormatter.format(width, height)
 }
