@@ -71,6 +71,7 @@ import app.infinity.mpvz.ui.browser.dialogs.VideoSortDialog
 import app.infinity.mpvz.ui.browser.states.EmptyState
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.utils.media.VideoResolutionFormatter
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.media.MediaInfoOps
@@ -651,21 +652,7 @@ private fun formatDuration(durationMs: Long): String {
 private fun formatResolution(
   width: Int,
   height: Int,
-): String {
-  if (width <= 0 || height <= 0) return "--"
-
-  return when {
-    width >= 7680 || height >= 4320 -> "4320p"
-    width >= 3840 || height >= 2160 -> "2160p"
-    width >= 2560 || height >= 1440 -> "1440p"
-    width >= 1920 || height >= 1080 -> "1080p"
-    width >= 1280 || height >= 720 -> "720p"
-    width >= 854 || height >= 480 -> "480p"
-    width >= 640 || height >= 360 -> "360p"
-    width >= 426 || height >= 240 -> "240p"
-    else -> "${height}p"
-  }
-}
+): String = VideoResolutionFormatter.format(width, height)
 
 private fun formatResolutionWithFps(
   width: Int,
@@ -677,7 +664,5 @@ private fun formatResolutionWithFps(
 
   return "$baseResolution@${fps.toInt()}"
 }
-
-
 
 

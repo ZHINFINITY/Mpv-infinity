@@ -23,6 +23,7 @@ import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
+import app.infinity.mpvz.utils.media.VideoResolutionFormatter
 import app.infinity.mpvz.utils.permission.PermissionUtils
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import kotlinx.coroutines.Dispatchers
@@ -476,22 +477,7 @@ class RecentlyPlayedViewModel(
   private fun formatResolution(
     width: Int,
     height: Int,
-  ): String {
-    if (width <= 0 || height <= 0) return "--"
-
-    return when {
-      width >= 7680 || height >= 4320 -> "4320p"
-      width >= 3840 || height >= 2160 -> "2160p"
-      width >= 2560 || height >= 1440 -> "1440p"
-      width >= 1920 || height >= 1080 -> "1080p"
-      width >= 1280 || height >= 720 -> "720p"
-      width >= 854 || height >= 480 -> "480p"
-      width >= 640 || height >= 360 -> "360p"
-      width >= 426 || height >= 240 -> "240p"
-      width >= 256 || height >= 144 -> "144p"
-      else -> "${height}p"
-    }
-  }
+  ): String = VideoResolutionFormatter.format(width, height)
 
   private fun isNetworkUri(path: String): Boolean =
     path.startsWith("http://", ignoreCase = true) ||

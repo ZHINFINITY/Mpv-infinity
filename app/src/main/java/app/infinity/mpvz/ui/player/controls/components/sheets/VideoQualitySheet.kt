@@ -27,6 +27,7 @@ import app.infinity.mpvz.presentation.components.PlayerSheet
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.TrackNode
+import app.infinity.mpvz.utils.media.VideoResolutionFormatter
 
 @Composable
 fun VideoQualitySheet(
@@ -105,16 +106,15 @@ fun VideoQualitySheet(
 private fun qualityLabel(track: TrackNode): String {
   val height = track.demuxH?.takeIf { it > 0 }
   val width = track.demuxW?.takeIf { it > 0 }
-  val qualityDimension =
-    when {
-      width != null && height != null -> minOf(width, height)
-      height != null -> height
-      width != null -> width
-      else -> QUALITY_HEIGHT_REGEX.find(track.effectiveTitle.orEmpty())?.groupValues?.getOrNull(1)?.toLongOrNull()
-    }
   val resolution =
     when {
-      qualityDimension != null -> "${qualityDimension}p"
+      width != null && height != null ->
+        VideoResolutionFormatter.format(
+          width.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+          height.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        )
+      height != null -> "${height}p"
+      width != null -> "${width}p"
       !track.effectiveTitle.isNullOrBlank() -> track.effectiveTitle.orEmpty()
       !track.codecDesc.isNullOrBlank() -> track.codecDesc.orEmpty()
       else -> "#${track.id}"
