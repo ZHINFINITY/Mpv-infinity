@@ -17,12 +17,17 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import app.infinity.mpvz.catalog.StreamWatchHistory
 import app.infinity.mpvz.database.MpvInfinityDatabase
 import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
 import app.infinity.mpvz.database.repository.VideoMetadataCacheRepository
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
+import app.infinity.mpvz.preferences.AdvancedPreferences
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.history.clearWatchHistory
+import app.infinity.mpvz.utils.history.visibleRecentlyPlayedItems
 import app.infinity.mpvz.utils.media.VideoResolutionFormatter
 import app.infinity.mpvz.utils.permission.PermissionUtils
 import app.infinity.mpvz.utils.storage.FileTypeUtils
@@ -40,6 +45,7 @@ class RecentlyPlayedViewModel(
   application: Application,
 ) : AndroidViewModel(application) {
   private val recentlyPlayedRepository by inject<RecentlyPlayedRepository>(RecentlyPlayedRepository::class.java)
+  private val advancedPreferences by inject<AdvancedPreferences>(AdvancedPreferences::class.java)
   private val playlistRepository by inject<PlaylistRepository>(PlaylistRepository::class.java)
   private val metadataCache by inject<VideoMetadataCacheRepository>(VideoMetadataCacheRepository::class.java)
 
@@ -56,15 +62,21 @@ class RecentlyPlayedViewModel(
         org.koin.java.KoinJavaComponent
           .get<MpvInfinityDatabase>(MpvInfinityDatabase::class.java)
 
-      // Combine both flows - entities and playlists
+      // Combine history and playlist sources with the global history toggle.
       kotlinx.coroutines.flow
         .combine(
-          recentlyPlayedRepository.observeRecentlyPlayed(limit = 50),
+          RecentlyPlayedOps.observeRecentlyPlayed(limit = 50),
           db.recentlyPlayedDao().observeRecentlyPlayedPlaylists(limit = 50),
-        ) { entities, playlists ->
-          Pair(entities, playlists)
-        }.collect { (entities, playlists) ->
-          loadRecentVideosFromEntities(entities, playlists)
+          advancedPreferences.enableRecentlyPlayed.changes(),
+        ) { entities, playlists, enabled ->
+          Triple(visibleRecentlyPlayedItems(enabled, entities), playlists, enabled)
+        }.collect { (entities, playlists, enabled) ->
+          if (enabled) {
+            loadRecentVideosFromEntities(entities, playlists)
+          } else {
+            _recentItems.value = emptyList()
+            _isLoading.value = false
+          }
         }
     }
   }
@@ -341,8 +353,14 @@ class RecentlyPlayedViewModel(
 
   suspend fun clearAllRecentlyPlayed() {
     try {
-      recentlyPlayedRepository.clearAll()
-      // The observe flow will automatically update the UI
+      val context = getApplication<Application>()
+      withContext(Dispatchers.IO) {
+        clearWatchHistory(
+          backfillWatchStatistics = { RecentlyPlayedOps.backfillWatchStatistics(context) },
+          clearMediaHistory = { RecentlyPlayedOps.clearAll() },
+          clearStreamHistory = { StreamWatchHistory.clear(context) },
+        )
+      }
     } catch (e: Exception) {
       Log.e("RecentlyPlayedViewModel", "Error clearing recent videos", e)
     }

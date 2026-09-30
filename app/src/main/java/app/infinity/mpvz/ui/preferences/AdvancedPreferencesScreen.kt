@@ -52,7 +52,7 @@ import androidx.core.net.toUri
 import androidx.core.os.LocaleListCompat
 import androidx.documentfile.provider.DocumentFile
 import app.infinity.mpvz.R
-import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
+import app.infinity.mpvz.catalog.StreamWatchHistory
 import app.infinity.mpvz.domain.thumbnail.ThumbnailRepository
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.FoldersPreferences
@@ -70,7 +70,7 @@ import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
 import app.infinity.mpvz.utils.clipboard.SafeClipboard
 import app.infinity.mpvz.utils.history.RecentlyPlayedOps
-import app.infinity.mpvz.utils.media.PlaybackStateEvents
+import app.infinity.mpvz.utils.history.clearWatchHistory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -737,7 +737,6 @@ object AdvancedPreferencesScreen : Screen {
           item {
             PreferenceCard {
               var isConfirmDialogShown by remember { mutableStateOf(false) }
-              val playbackStateRepository = koinInject<PlaybackStateRepository>()
               val enableRecentlyPlayed by preferences.enableRecentlyPlayed.collectAsState()
               var recentlyPlayedCount by remember { mutableStateOf(0) }
 
@@ -800,11 +799,14 @@ object AdvancedPreferencesScreen : Screen {
                   onConfirm = {
                     scope.launch(Dispatchers.IO) {
                       runCatching {
-                        playbackStateRepository.clearAllPlaybackStates()
-                        RecentlyPlayedOps.clearAll()
-                        PlaybackStateEvents.notifyChanged("")
+                        clearWatchHistory(
+                          backfillWatchStatistics = { RecentlyPlayedOps.backfillWatchStatistics(context) },
+                          clearMediaHistory = { RecentlyPlayedOps.clearAll() },
+                          clearStreamHistory = { StreamWatchHistory.clear(context) },
+                        )
                       }.onSuccess {
                         withContext(Dispatchers.Main) {
+                          recentlyPlayedCount = 0
                           isConfirmDialogShown = false
                           Toast
                             .makeText(

@@ -38,6 +38,10 @@ data class NetworkPlaybackSource(
   val relativePath: String,
 )
 
+internal fun resolvePlaybackMimeType(intentType: String?, metadataType: String?): String? =
+  intentType?.trim()?.takeIf(String::isNotEmpty)
+    ?: metadataType?.trim()?.takeIf(String::isNotEmpty)
+
 data class AudiobookPlaybackInfo(
   val bookId: Long,
   val trackId: Long,

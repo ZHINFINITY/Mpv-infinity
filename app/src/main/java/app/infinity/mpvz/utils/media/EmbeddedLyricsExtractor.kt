@@ -15,6 +15,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
+internal fun isRemoteHttpMediaPath(mediaPath: String): Boolean {
+  val schemeSeparator = mediaPath.indexOf(':')
+  if (schemeSeparator <= 0) return false
+
+  val scheme = mediaPath.substring(0, schemeSeparator)
+  return scheme.equals("http", ignoreCase = true) || scheme.equals("https", ignoreCase = true)
+}
+
 object EmbeddedLyricsExtractor {
   private const val TAG = "EmbeddedLyricsExtractor"
 
@@ -39,6 +47,12 @@ object EmbeddedLyricsExtractor {
         Log.d(TAG, "Extracted embedded lyrics via MPV metadata tags")
         return@withContext parsed
       }
+    }
+
+    // MPV metadata has already been checked. Avoid opening remote media again during playback.
+    if (isRemoteHttpMediaPath(mediaPath)) {
+      Log.d(TAG, "Skipping embedded file probing for remote media")
+      return@withContext null
     }
 
     // 3. Fallback: Direct ID3v2 parser from media file / content stream

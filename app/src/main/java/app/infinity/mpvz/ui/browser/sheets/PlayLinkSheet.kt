@@ -104,6 +104,7 @@ fun PlayLinkSheet(
           if (!isTorrentSource(selectedSource)) {
             try {
               RecentlyPlayedOps.addRecentlyPlayed(
+                context = context,
                 filePath = selectedSource,
                 fileName = selectedName,
                 launchSource = "play_link",

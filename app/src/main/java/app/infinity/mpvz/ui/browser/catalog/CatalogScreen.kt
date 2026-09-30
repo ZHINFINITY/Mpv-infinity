@@ -66,6 +66,7 @@ import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.StreamOption
 import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.player.PlaybackIdentity
 import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
 import app.infinity.mpvz.utils.media.MediaUtils
 import app.infinity.mpvz.ui.icons.Icons
@@ -132,14 +133,17 @@ fun CatalogScreen() {
   val railItems = rails.values.flatten().toSet()
 
   LaunchedEffect(Unit) {
-    viewModel.resolvedUrl.collect { url ->
-      if (url != null) {
+    viewModel.resolvedStream.collect { stream ->
+      if (stream != null) {
         context.startActivity(Intent(context, PlayerActivity::class.java).apply {
           action = Intent.ACTION_VIEW
-          data = Uri.parse(url)
+          data = Uri.parse(stream.url)
+          stream.mimeType?.takeIf(String::isNotBlank)?.let { putExtra("mime_type", it) }
+          putExtra("stream_tab_playback", true)
+          putExtra("stream_history_key", PlaybackIdentity.forUri(stream.url))
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         })
-        viewModel.consumeResolvedUrl()
+        viewModel.consumeResolvedStream()
       }
     }
   }

@@ -29,10 +29,41 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
   private data class Source(val document: DocumentFile, val path: String)
   private data class Scanned(val source: Source, val track: AudiobookTrackEntity, val tags: Map<String, String>, val disc: Int, val number: Int)
 
-  suspend fun importBook(uris: List<Uri>, folder: Uri? = null, onProgress: (Int, Int) -> Unit): Long = withContext(Dispatchers.IO) {
-    val root = folder?.let { openPersistedTreeDocument(context, it.toString()) ?: throw IOException(it.toString()) }
-    AudiobookMarkerUtils.ensureMarker(context, folder, root)
-    val sources = if (root != null) collectFiles(root) else uris.distinct().map { uri ->
+  suspend fun importFolderAsBooks(folder: Uri, onProgress: (Int, Int) -> Unit) = withContext(Dispatchers.IO) {
+    val root = openPersistedTreeDocument(context, folder.toString())
+      ?: DocumentFile.fromTreeUri(context, folder)
+      ?: throw IOException(folder.toString())
+    val books = discoverBookFolders(root)
+    if (books.isEmpty()) throw IOException(context.getString(R.string.audiobook_no_audio))
+    val bookUris = books.mapTo(mutableSetOf()) { it.uri.toString() }
+    books.forEachIndexed { index, bookFolder ->
+      currentCoroutineContext().ensureActive()
+      onProgress(index + 1, books.size)
+      importBook(
+        uris = emptyList(),
+        folder = bookFolder.uri,
+        folderDocument = bookFolder,
+        stopAtDirectories = bookUris - bookFolder.uri.toString(),
+      ) { _, _ -> }
+    }
+  }
+
+  suspend fun importBook(
+    uris: List<Uri>,
+    folder: Uri? = null,
+    folderDocument: DocumentFile? = null,
+    stopAtDirectories: Set<String> = emptySet(),
+    onProgress: (Int, Int) -> Unit,
+  ): Long = withContext(Dispatchers.IO) {
+    val root = folderDocument ?: folder?.let { uri ->
+      openPersistedTreeDocument(context, uri.toString())
+        ?: DocumentFile.fromTreeUri(context, uri)
+        ?: DocumentFile.fromSingleUri(context, uri)
+        ?: uri.path?.let { path -> DocumentFile.fromFile(File(path)) }
+        ?: throw IOException(uri.toString())
+    }
+    if (folder == null) AudiobookMarkerUtils.ensureMarker(context, folder, root)
+    val sources = if (root != null) collectFiles(root, stopAtDirectories) else uris.distinct().map { uri ->
       val file = DocumentFile.fromSingleUri(context, uri) ?: throw IOException(uri.toString())
       AudiobookMarkerUtils.ensureMarker(context, uri, file)
       Source(file, file.name.orEmpty())
@@ -42,12 +73,8 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
       extension in FileTypeUtils.AUDIO_EXTENSIONS || source.document.type?.startsWith("audio/") == true
     }
     if (audio.isEmpty()) throw IOException(context.getString(R.string.audiobook_no_audio))
-    val sourceKey = folder?.toString() ?: digest(audio.map { it.document.uri.toString() }.sorted().joinToString("\n"))
-    dao.findBySource(sourceKey)?.let {
-      AudiobookMarkerUtils.clearCache()
-      app.infinity.mpvz.utils.media.MediaLibraryEvents.notifyChanged()
-      return@withContext it
-    }
+    val sourceKey = folder?.let(AudiobookSourceIdentity::key)
+      ?: digest(audio.map { AudiobookSourceIdentity.key(it.document.uri) }.sorted().joinToString("\n"))
     val metadata = readMetadata(sources)
     var coverUri = sources.firstOrNull {
       it.document.name?.lowercase() in setOf("cover.jpg", "cover.png", "folder.jpg", "folder.png")
@@ -65,7 +92,7 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
         Scanned(
           source,
           AudiobookTrackEntity(
-            bookId = 0, uri = source.document.uri.toString(), fileName = source.document.name.orEmpty(),
+            bookId = 0, uri = source.document.uri.toString(), fileName = source.path,
             title = tag(MediaMetadataRetriever.METADATA_KEY_TITLE).ifBlank { source.document.name.orEmpty().substringBeforeLast('.') },
             position = index, durationMs = duration, size = source.document.length(),
           ),
@@ -146,7 +173,7 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
     id
   }
 
-  private suspend fun collectFiles(root: DocumentFile): List<Source> {
+  private suspend fun collectFiles(root: DocumentFile, stopAtDirectories: Set<String> = emptySet()): List<Source> {
     val result = mutableListOf<Source>()
     val pending = ArrayDeque<Source>().apply { add(Source(root, "")) }
     val visited = mutableSetOf<String>()
@@ -157,10 +184,73 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
       if (!parent.document.canRead()) throw IOException(parent.path)
       parent.document.listFiles().forEach { child ->
         val entry = Source(child, "${parent.path}/${child.name.orEmpty()}")
-        if (child.isDirectory) pending.add(entry) else if (child.isFile) result.add(entry)
+        if (child.isDirectory) {
+          if (child.uri.toString() !in stopAtDirectories) pending.add(entry)
+        } else if (child.isFile) {
+          result.add(entry)
+        }
       }
     }
     return result
+  }
+
+  private fun discoverBookFolders(root: DocumentFile): List<DocumentFile> {
+    data class Directory(
+      val document: DocumentFile,
+      val parentUri: String?,
+      val childUris: List<String>,
+      val hasAudio: Boolean,
+      val hasMetadata: Boolean,
+    )
+
+    val directories = linkedMapOf<String, Directory>()
+    val visits = walkAudiobookTree(
+      root = root,
+      identity = { it.uri.toString() },
+      children = { it.listFiles().toList() },
+      shouldVisitChild = { it.isDirectory && !it.name.orEmpty().startsWith(".") },
+    )
+    visits.forEach { visit ->
+      val directory = visit.node
+      val uri = directory.uri.toString()
+      val children = visit.children
+      val childDirectories = children.filter { it.isDirectory && !it.name.orEmpty().startsWith(".") }
+      val hasAudio = children.any { child ->
+        child.isFile && (child.type?.startsWith("audio/") == true ||
+          child.name?.substringAfterLast('.', "")?.lowercase() in FileTypeUtils.AUDIO_EXTENSIONS)
+      }
+      val hasMetadata = children.any { child ->
+        child.isFile && (child.name?.equals("metadata.json", true) == true || child.name?.endsWith(".opf", true) == true)
+      }
+      directories[uri] = Directory(directory, visit.parent?.uri?.toString(), childDirectories.map { it.uri.toString() }, hasAudio, hasMetadata)
+    }
+
+    fun hasMetadataAncestor(directory: Directory): Boolean {
+      var parent = directory.parentUri?.let(directories::get)
+      while (parent != null) {
+        if (parent.hasMetadata) return true
+        parent = parent.parentUri?.let(directories::get)
+      }
+      return false
+    }
+
+    val candidates = directories.values.filter { it.hasMetadata || it.hasAudio && !hasMetadataAncestor(it) }
+    val candidateUris = candidates.mapTo(mutableSetOf()) { it.document.uri.toString() }
+    fun containsAudioOutsideNestedBooks(rootDirectory: Directory): Boolean {
+      val search = ArrayDeque<Directory>().apply { add(rootDirectory) }
+      val visited = mutableSetOf<String>()
+      while (search.isNotEmpty()) {
+        val current = search.removeFirst()
+        val currentUri = current.document.uri.toString()
+        if (!visited.add(currentUri)) continue
+        if (current.hasAudio) return true
+        current.childUris.forEach { childUri ->
+          if (childUri !in candidateUris) directories[childUri]?.let(search::addLast)
+        }
+      }
+      return false
+    }
+    return candidates.filter(::containsAudioOutsideNestedBooks).map { it.document }.ifEmpty { listOf(root) }
   }
 
   private fun readMetadata(files: List<Source>): JSONObject {

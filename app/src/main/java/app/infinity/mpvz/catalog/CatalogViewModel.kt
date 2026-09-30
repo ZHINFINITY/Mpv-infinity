@@ -48,8 +48,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   private var homeLoadJob: Job? = null
   // Keep the last successful home result so closing search does not refetch every addon rail.
   private var cachedHomeItems: List<MediaItem> = emptyList()
-  private val _resolvedUrl = MutableStateFlow<String?>(null)
-  val resolvedUrl: StateFlow<String?> = _resolvedUrl.asStateFlow()
+  private val _resolvedStream = MutableStateFlow<StreamOption?>(null)
+  val resolvedStream: StateFlow<StreamOption?> = _resolvedStream.asStateFlow()
   private val _torrentLaunch = MutableSharedFlow<TorrentLaunchRequest>(extraBufferCapacity = 1)
   val torrentLaunch: SharedFlow<TorrentLaunchRequest> = _torrentLaunch
   val autoChooseBestTorrent: Boolean get() = settings.autoChooseBestTorrent
@@ -158,7 +158,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun playStream(stream: StreamOption) {
-    _resolvedUrl.value = stream.url
+    _resolvedStream.value = stream
     _state.update { it.copy(streamOptions = emptyList(), streamTitle = null) }
   }
 
@@ -166,7 +166,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   fun closeDetails() { _state.update { it.copy(streamOptions = emptyList(), streamTitle = null, selectedItem = null, selectedSeason = null, selectedEpisode = null) } }
   fun setSourceFilter(filter: String) { _state.update { it.copy(sourceFilter = filter) } }
   fun setSourceSort(sort: String) { _state.update { it.copy(sourceSort = sort) } }
-  fun consumeResolvedUrl() { _resolvedUrl.value = null }
+  fun consumeResolvedStream() { _resolvedStream.value = null }
   fun saveSettings(resolvers: List<ResolverEndpoint>, resolverToken: String, resolverPath: String) {
     saveResolvers(resolvers)
     val existingSources = settings.catalogSources().filterNot { it.id.startsWith("resolver-") }

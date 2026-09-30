@@ -8,6 +8,8 @@ import android.os.SystemClock
 import android.util.Log
 import app.infinity.mpvz.database.dao.AudiobookDao
 import app.infinity.mpvz.database.entities.Audiobook
+import app.infinity.mpvz.database.entities.AudiobookEntity
+import app.infinity.mpvz.database.entities.AudiobookTrackEntity
 import app.infinity.mpvz.database.entities.AudiobookChapter
 import app.infinity.mpvz.database.entities.AudiobookChapterEntity
 import java.util.concurrent.atomic.AtomicBoolean
@@ -39,6 +41,20 @@ internal data class AudiobookProgress(
   val capturedAtNanos: Long,
   val playedAt: Long = System.currentTimeMillis(),
 )
+
+internal fun createAudiobookTrackPlaybackItem(
+  bookId: Long,
+  book: AudiobookEntity,
+  track: AudiobookTrackEntity,
+): PlaybackItem =
+  PlaybackItem.fromUri(
+    track.uri,
+    title = book.title,
+    artist = book.author,
+    mimeType = "audio/*",
+    artworkUri = book.coverUri,
+    durationSeconds = (track.durationMs / 1000).toInt(),
+  ).copy(audiobook = AudiobookPlaybackInfo(bookId, track.id))
 
 internal object AudiobookPlayback {
   const val EXTRA_BOOK_ID = "app.infinity.mpvz.AUDIOBOOK_ID"
@@ -331,11 +347,7 @@ internal object AudiobookPlayback {
     require(ordered.isNotEmpty())
     val selected = trackId ?: book.book.currentTrackId?.takeUnless { book.book.finished }
     val index = ordered.indexOfFirst { it.id == selected }.coerceAtLeast(0)
-    val items = ordered.map { track ->
-      PlaybackItem.fromUri(track.uri, title = book.book.title, artist = book.book.author,
-        mimeType = "audio/*", artworkUri = book.book.coverUri, durationSeconds = (track.durationMs / 1000).toInt())
-        .copy(audiobook = AudiobookPlaybackInfo(bookId, track.id))
-    }
+    val items = ordered.map { track -> createAudiobookTrackPlaybackItem(bookId, book.book, track) }
     return PreparedPlaybackLaunch(token = 0, items = items, currentIndex = index, isExplicitQueue = true, isM3u = false)
   }
 
@@ -372,13 +384,31 @@ internal object AudiobookPlayback {
   suspend fun positionForLoad(item: PlaybackItem, intent: Intent): PlaybackPositionRestoreOverride? {
     val info = item.audiobook ?: return null
     val stored = dao.getBook(info.bookId) ?: return PlaybackPositionRestoreOverride(0.0, false)
-    val book = stored.book
-    val explicit = intent.getLongExtra(EXTRA_POSITION_MS, -1L).takeIf {
-      it >= 0 && intent.getLongExtra(EXTRA_BOOK_ID, -1L) == info.bookId && intent.getLongExtra(EXTRA_TRACK_ID, -1L) == info.trackId
+    return resolvePositionForLoad(
+      info = info,
+      book = stored.book,
+      trackDurationMs = stored.tracks.firstOrNull { it.id == info.trackId }?.durationMs,
+      explicitBookId = intent.getLongExtra(EXTRA_BOOK_ID, -1L),
+      explicitTrackId = intent.getLongExtra(EXTRA_TRACK_ID, -1L),
+      explicitPositionMs = intent.getLongExtra(EXTRA_POSITION_MS, -1L),
+    )
+  }
+
+  internal fun resolvePositionForLoad(
+    info: AudiobookPlaybackInfo,
+    book: AudiobookEntity,
+    trackDurationMs: Long?,
+    explicitBookId: Long?,
+    explicitTrackId: Long?,
+    explicitPositionMs: Long?,
+    nowMs: Long = System.currentTimeMillis(),
+  ): PlaybackPositionRestoreOverride {
+    val explicit = explicitPositionMs?.takeIf {
+      it >= 0 && explicitBookId == info.bookId && explicitTrackId == info.trackId
     }
     val saved = if (book.currentTrackId == info.trackId && !book.finished) book.positionMs else 0L
-    val rewind = if (explicit == null && System.currentTimeMillis() - book.lastPlayedAt >= 5000) book.rewindSeconds * 1000L else 0L
-    val maximum = stored.tracks.firstOrNull { it.id == info.trackId }?.durationMs?.minus(1)?.coerceAtLeast(0) ?: Long.MAX_VALUE
+    val rewind = if (explicit == null && nowMs - book.lastPlayedAt >= 5000) book.rewindSeconds * 1000L else 0L
+    val maximum = trackDurationMs?.minus(1)?.coerceAtLeast(0) ?: Long.MAX_VALUE
     return PlaybackPositionRestoreOverride(((explicit ?: saved) - rewind).coerceIn(0, maximum) / 1000.0, false)
   }
 

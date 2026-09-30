@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.infinity.mpvz.R
@@ -30,6 +31,8 @@ import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
 import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
+import app.infinity.mpvz.utils.history.WatchStatisticsStore
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,6 +48,7 @@ object ExtraFeaturesScreen : Screen {
     val preferences = koinInject<AdvancedPreferences>()
     val recentlyPlayedRepository = koinInject<RecentlyPlayedRepository>()
     val backStack = LocalBackStack.current
+    val context = LocalContext.current
     val smartCollections by preferences.enableSmartCollections.collectAsState()
     val watchStatistics by preferences.enableWatchStatistics.collectAsState()
     val playbackDiagnostics by preferences.enablePlaybackDiagnostics.collectAsState()
@@ -61,6 +65,17 @@ object ExtraFeaturesScreen : Screen {
         }
     }
     val recentlyPlayedCount = recentEntries.size
+    val watchStatisticsCount by produceState(0, recentEntries, watchStatistics) {
+      value =
+        withContext(Dispatchers.IO) {
+          if (watchStatistics) {
+            runCatching { RecentlyPlayedOps.backfillWatchStatistics(context) }
+            if (WatchStatisticsStore.isInitialized(context)) WatchStatisticsStore.count(context) else recentEntries.size.coerceAtMost(200)
+          } else {
+            0
+          }
+        }
+    }
     val partiallyWatchedCount = recentEntries.count { it.duration > 0L }
     val missingFileCount by produceState(0, recentEntries, libraryHealth) {
       value =
@@ -125,7 +140,7 @@ object ExtraFeaturesScreen : Screen {
             )
           }
           if (watchStatistics) {
-            item { ExtraFeatureStatus(stringResource(R.string.extra_features_watch_statistics_count, recentlyPlayedCount)) }
+            item { ExtraFeatureStatus(stringResource(R.string.extra_features_watch_statistics_count, watchStatisticsCount)) }
           }
           item {
             SwitchPreference(

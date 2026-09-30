@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.browser.audiobooks
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -22,6 +23,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 
+internal fun hasDurableAudiobookReadAccess(
+  uriScheme: String?,
+  persistedReadPermission: Boolean,
+): Boolean = !uriScheme.equals("content", ignoreCase = true) || persistedReadPermission
+
 class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(application) {
   private val dao = GlobalContext.get().get<AudiobookDao>()
   val library = dao.observeLibrary()
@@ -39,6 +45,23 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
     }
   }
 
+  private fun ensurePersistedReadPermission(context: Context, uri: Uri) {
+    fun hasPersistedReadPermission(): Boolean =
+      context.contentResolver.persistedUriPermissions.any { permission ->
+        permission.uri == uri && permission.isReadPermission
+      }
+
+    if (hasDurableAudiobookReadAccess(uri.scheme, hasPersistedReadPermission())) return
+    runCatching {
+      context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }.getOrElse { failure ->
+      if (!hasPersistedReadPermission()) throw failure
+    }
+    if (!hasDurableAudiobookReadAccess(uri.scheme, hasPersistedReadPermission())) {
+      throw SecurityException("Persistent read access is unavailable for the selected audiobook source")
+    }
+  }
+
   fun importFiles(uris: List<Uri>, folder: Uri? = null) {
     if (importJob?.isActive == true || uris.isEmpty() && folder == null) return
     _error.value = null
@@ -46,20 +69,14 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
     importJob = viewModelScope.launch(Dispatchers.IO) {
       val context = getApplication<Application>()
       try {
-        (listOfNotNull(folder) + uris).forEach { uri ->
-          runCatching {
-            context.contentResolver.takePersistableUriPermission(
-              uri,
-              Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            )
-          }.recoverCatching {
-            context.contentResolver.takePersistableUriPermission(
-              uri,
-              Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-          }
+        (listOfNotNull(folder) + uris).distinct().forEach { uri ->
+          ensurePersistedReadPermission(context, uri)
         }
-        AudiobookImporter(context, dao).importBook(uris, folder) { current, total -> _progress.value = current to total }
+        if (folder != null) {
+          AudiobookImporter(context, dao).importFolderAsBooks(folder) { current, total -> _progress.value = current to total }
+        } else {
+          AudiobookImporter(context, dao).importBook(uris) { current, total -> _progress.value = current to total }
+        }
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (failure: Exception) {

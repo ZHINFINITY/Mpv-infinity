@@ -79,6 +79,7 @@ import android.util.Log
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.catalog.CatalogViewModel
+import app.infinity.mpvz.ui.player.PlaybackIdentity
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.ui.components.InlineSearchBar
@@ -181,10 +182,16 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
       }
     }
     LaunchedEffect(Unit) {
-      viewModel.resolvedUrl.collect { url ->
-        if (url != null) {
-          context.startActivity(android.content.Intent(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java).apply { action = android.content.Intent.ACTION_VIEW; data = android.net.Uri.parse(url) })
-          viewModel.consumeResolvedUrl()
+      viewModel.resolvedStream.collect { stream ->
+        if (stream != null) {
+          context.startActivity(android.content.Intent(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java).apply {
+            action = android.content.Intent.ACTION_VIEW
+            data = android.net.Uri.parse(stream.url)
+            stream.mimeType?.takeIf(String::isNotBlank)?.let { putExtra("mime_type", it) }
+            putExtra("stream_tab_playback", true)
+            putExtra("stream_history_key", PlaybackIdentity.forUri(stream.url))
+          })
+          viewModel.consumeResolvedStream()
         }
       }
     }
