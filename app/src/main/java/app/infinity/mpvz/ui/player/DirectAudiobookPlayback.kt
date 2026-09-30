@@ -66,8 +66,9 @@ internal fun launchDirectAudiobookFolder(
   folderUri: String,
   tracks: List<AudiobookFolderTrack>,
   selectedTrackUri: String? = null,
+  restart: Boolean = false,
 ) {
-  launchDirectAudiobookQueue(context, directAudiobookFolderIdentity(folderUri), tracks, selectedTrackUri)
+  launchDirectAudiobookQueue(context, directAudiobookFolderIdentity(folderUri), tracks, selectedTrackUri, restart)
 }
 
 internal fun launchDirectAudiobookFiles(
@@ -83,10 +84,11 @@ private fun launchDirectAudiobookQueue(
   queueIdentity: String,
   tracks: List<AudiobookFolderTrack>,
   selectedTrackUri: String? = null,
+  restart: Boolean = false,
 ) {
   if (tracks.isEmpty()) return
   val items = buildDirectAudiobookQueue(queueIdentity, tracks)
-  val requestedIndex =
+  val requestedIndex = if (restart) 0 else
     selectedTrackUri?.let { uri -> items.indexOfFirst { it.originalUri == uri }.takeIf { it >= 0 } }
       ?: directAudiobookResumeIndex(items, DirectAudiobookResumeStore.lastTrackIdentity(context, queueIdentity))
   val selectedIndex = requestedIndex.coerceIn(items.indices)
@@ -109,6 +111,7 @@ private fun launchDirectAudiobookQueue(
       putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
       putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_TOKEN, token)
       putExtra("playlist_index", selectedIndex)
+      putExtra(AudiobookPlayback.EXTRA_DIRECT_RESTART, restart)
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     },
   )

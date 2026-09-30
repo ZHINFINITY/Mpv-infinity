@@ -1247,10 +1247,8 @@ fun AudiobookSortDialog(
   onDismiss: () -> Unit,
   sortType: AudiobookSortType,
   sortOrder: SortOrder,
-  layoutMode: MediaLayoutMode,
   onSortTypeChange: (AudiobookSortType) -> Unit,
   onSortOrderChange: (SortOrder) -> Unit,
-  onLayoutModeChange: (MediaLayoutMode) -> Unit,
 ) {
   SortDialog(
     isOpen = isOpen,
@@ -1284,17 +1282,7 @@ fun AudiobookSortDialog(
         else -> Pair("Asc", "Desc")
       }
     },
-    layoutModeSelector = ViewModeSelector(
-      label = "Layout",
-      firstOptionLabel = "List",
-      secondOptionLabel = "Grid",
-      firstOptionIcon = Icons.RoundedFilled.ViewList,
-      secondOptionIcon = Icons.RoundedFilled.GridView,
-      isFirstOptionSelected = layoutMode == MediaLayoutMode.LIST,
-      onViewModeChange = { isList ->
-        onLayoutModeChange(if (isList) MediaLayoutMode.LIST else MediaLayoutMode.GRID)
-      },
-    ),
+    layoutModeSelector = null,
     showSortOptions = true,
   )
 }

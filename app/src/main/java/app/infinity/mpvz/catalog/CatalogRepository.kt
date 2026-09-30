@@ -36,17 +36,8 @@ private const val PREFS = "catalog_secure_settings"
 private const val DIAG_TAG = "MpvCatalogDiag"
 private const val CATALOG_PAGE_SIZE = 100
 
-/** Catalog settings keep optional sources and a built-in, keyless discovery fallback separate from JS providers. */
+/** Catalog settings store the built-in default and independently configured HTTP(S) add-ons. */
 class CatalogSettings(context: Context) {
-  companion object {
-    const val BUILTIN_SOURCE_ID = "builtin-nuvio-discover"
-    private val BUILTIN_SOURCE = CatalogSource(
-      id = BUILTIN_SOURCE_ID,
-      name = "Nuvio Discover (built-in)",
-      manifestUrl = "",
-    )
-  }
-
   private val prefs = EncryptedSharedPreferences.create(
     context,
     PREFS,
@@ -65,29 +56,35 @@ class CatalogSettings(context: Context) {
         CatalogSource(parts[0], parts[1], parts[2], parts[3].toBooleanStrictOrNull() ?: true)
       } else null
     }.orEmpty()
-    val cleaned = sources
+    val savedBuiltin = sources.firstOrNull(::isDefaultBuiltinCatalogSource)
+    val configured = sources
+      .filterNot { it.id.startsWith("builtin-", ignoreCase = true) }
+      .filterNot { it.manifestUrl.trim().equals(BUILTIN_CATALOG_MANIFEST_URL, ignoreCase = true) }
       .filterNot(::isLegacyCatalogSource)
       .filter { isHttpAddonEndpoint(it.manifestUrl) }
-      .distinctBy { it.manifestUrl.lowercase() }
-    val withBuiltIn = if (cleaned.any { it.id == BUILTIN_SOURCE_ID }) cleaned else cleaned + BUILTIN_SOURCE
-    if (withBuiltIn != sources) saveCatalogSources(withBuiltIn)
-    return withBuiltIn
+      .distinctBy { it.manifestUrl.trim().lowercase(java.util.Locale.ROOT) }
+    val normalized = includeDefaultBuiltinCatalogSource(listOfNotNull(savedBuiltin) + configured)
+    if (normalized != sources) saveCatalogSources(normalized)
+    return normalized
   }
 
   fun saveCatalogSources(value: List<CatalogSource>) {
-    val cleanedSources = value
+    val savedBuiltin = value.firstOrNull(::isDefaultBuiltinCatalogSource)
+    val configured = value
+      .filterNot { it.id.startsWith("builtin-", ignoreCase = true) }
+      .filterNot { it.manifestUrl.trim().equals(BUILTIN_CATALOG_MANIFEST_URL, ignoreCase = true) }
       .filterNot(::isLegacyCatalogSource)
       .filter { isHttpAddonEndpoint(it.manifestUrl) }
-      .distinctBy { it.manifestUrl.lowercase() }
-    val validSources = if (cleanedSources.any { it.id == BUILTIN_SOURCE_ID }) cleanedSources else cleanedSources + BUILTIN_SOURCE
+      .distinctBy { it.manifestUrl.trim().lowercase(java.util.Locale.ROOT) }
+    val normalized = includeDefaultBuiltinCatalogSource(listOfNotNull(savedBuiltin) + configured)
     prefs.edit()
-      .putString("catalog_sources_json", Json.encodeToString(validSources))
+      .putString("catalog_sources_json", Json.encodeToString(normalized))
       .remove("catalog_sources")
       .apply()
   }
 
   private fun isLegacyCatalogSource(source: CatalogSource): Boolean =
-    source.id != BUILTIN_SOURCE_ID && (
+    source.id != BUILTIN_CATALOG_SOURCE_ID && (
       source.id.startsWith("cinemeta-") || source.id == "kitsu-anime" ||
         source.manifestUrl.contains("v3-cinemeta.strem.io", ignoreCase = true) ||
         source.manifestUrl.contains("anime-kitsu.strem.fun", ignoreCase = true) ||
@@ -95,8 +92,11 @@ class CatalogSettings(context: Context) {
       )
 }
 
-internal fun isHttpAddonEndpoint(value: String): Boolean =
-  value.trim().startsWith("https://", true) || value.trim().startsWith("http://", true)
+internal fun isHttpAddonEndpoint(value: String): Boolean {
+  val uri = runCatching { java.net.URI(value.trim()) }.getOrNull() ?: return false
+  return (uri.scheme.equals("https", ignoreCase = true) || uri.scheme.equals("http", ignoreCase = true)) &&
+    !uri.host.isNullOrBlank()
+}
 
 private fun addonRootUrl(value: String): String =
   value.substringBefore('?').trimEnd('/').removeSuffix("/manifest.json")
@@ -262,6 +262,7 @@ class StremioCatalogRepository {
   }
 
   private suspend fun getJson(url: String): JsonElement {
+    require(isHttpAddonEndpoint(url)) { "Catalog add-on endpoint must be a valid HTTP(S) URL." }
     var attempt = 0
     while (true) {
       val call = client.newCall(Request.Builder().url(url).header("User-Agent", "MpvInfinity/1.0").get().build())
@@ -299,7 +300,7 @@ class StremioMetadataRepository {
   private val json = Json { ignoreUnknownKeys = true }
 
   suspend fun loadMetadata(item: MediaItem, sources: List<CatalogSource>): MediaItem? = withContext(Dispatchers.IO) {
-    val orderedSources = sources.filter { it.isEnabled }.sortedByDescending { it.id == item.catalogSourceId }
+    val orderedSources = requestableCatalogSources(sources).sortedByDescending { it.id == item.catalogSourceId }
     val identifiers = listOfNotNull(item.providerId, item.imdbId).distinct()
     if (identifiers.isEmpty()) return@withContext null
     val defaultType = item.catalogType ?: if (item.type == MediaType.TV) "series" else "movie"

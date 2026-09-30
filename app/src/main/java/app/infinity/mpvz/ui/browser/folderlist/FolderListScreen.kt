@@ -90,6 +90,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.audiobook.AudiobookFolderTrack
 import app.infinity.mpvz.domain.browser.FileSystemItem
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.media.model.VideoFolder
@@ -102,6 +103,7 @@ import app.infinity.mpvz.preferences.MediaLayoutMode
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.browser.cards.FolderCard
 import app.infinity.mpvz.ui.browser.cards.SwipeableFolderActions
@@ -128,6 +130,7 @@ import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.AudiobookPlayback
+import app.infinity.mpvz.ui.player.launchDirectAudiobookFiles
 import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.calculateResponsiveGridSpans
@@ -172,9 +175,10 @@ object FolderListScreen : Screen {
     rootPath: String? = null,
     externalViewOptionsOpen: Boolean = false,
     onExternalViewOptionsDismiss: () -> Unit = {},
+    audiobookTab: Boolean = false,
   ) {
     val context = LocalContext.current
-    val audiobookMode = audioOnly && !rootPath.isNullOrBlank()
+    val audiobookMode = audiobookTab || audioOnly && !rootPath.isNullOrBlank()
     val backstack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -962,6 +966,28 @@ object FolderListScreen : Screen {
                   selectedFolderBucketId = selectedFolderBucketId,
                   audioOnly = audioOnly,
                   audiobookMode = audiobookMode,
+                  onQuickPlayFolder = if (audiobookMode) {
+                    { folder ->
+                      coroutineScope.launch {
+                        val tracks = MediaFileRepository.getVideosInFolder(
+                          context,
+                          folder.bucketId,
+                          includeAudioOverride = true,
+                        ).asSequence()
+                          .filter { it.isAudio || it.mimeType.startsWith("audio/", ignoreCase = true) }
+                          .map { video ->
+                            AudiobookFolderTrack(
+                              uri = video.uri.toString(),
+                              name = video.displayName,
+                              mimeType = video.mimeType,
+                              sizeBytes = video.size,
+                              durationMs = video.duration,
+                            )
+                          }.toList()
+                        if (tracks.isNotEmpty()) launchDirectAudiobookFiles(context, tracks)
+                      }
+                    }
+                  } else null,
                 )
               }
           } else if (isPermissionSetupCompleted) {
@@ -1292,6 +1318,7 @@ private fun FolderListContent(
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
   audiobookMode: Boolean = false,
+  onQuickPlayFolder: ((VideoFolder) -> Unit)? = null,
 ) {
   val isGridMode = mediaLayoutMode == MediaLayoutMode.GRID
   val showLoading = isLoading && !hasCompletedInitialLoad
@@ -1351,6 +1378,7 @@ private fun FolderListContent(
           onToggleFolderWatched = onToggleFolderWatched,
           selectedFolderBucketId = selectedFolderBucketId,
           audioOnly = audioOnly,
+          onQuickPlayFolder = onQuickPlayFolder,
         )
       } else {
         ListContent(
@@ -1369,6 +1397,7 @@ private fun FolderListContent(
           onToggleFolderWatched = onToggleFolderWatched,
           selectedFolderBucketId = selectedFolderBucketId,
           audioOnly = audioOnly,
+          onQuickPlayFolder = onQuickPlayFolder,
         )
       }
     }
@@ -1392,6 +1421,7 @@ private fun GridContent(
   onToggleFolderWatched: (VideoFolder, Boolean) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
+  onQuickPlayFolder: ((VideoFolder) -> Unit)? = null,
 ) {
   val newCountByBucketId =
     remember(foldersWithNewCount) {
@@ -1475,6 +1505,7 @@ private fun GridContent(
           isDualPane = isDualPane,
           isActive = isActive,
           isAudioOnly = audioOnly,
+          onQuickPlay = if (audioOnly && onQuickPlayFolder != null) ({ onQuickPlayFolder(folder) }) else null,
         )
         }
       }
@@ -1514,6 +1545,7 @@ private fun ListContent(
   onToggleFolderWatched: (VideoFolder, Boolean) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
+  onQuickPlayFolder: ((VideoFolder) -> Unit)? = null,
 ) {
   val configuration = androidx.compose.ui.platform.LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -1592,6 +1624,7 @@ private fun ListContent(
           isDualPane = isDualPaneActive && selectedFolderBucketId != null,
           isActive = isActive,
           isAudioOnly = audioOnly,
+          onQuickPlay = if (audioOnly && onQuickPlayFolder != null) ({ onQuickPlayFolder(folder) }) else null,
         )
       }
     }

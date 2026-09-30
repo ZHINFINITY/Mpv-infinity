@@ -11,6 +11,7 @@ package app.infinity.mpvz.ui.browser.audiobooks
 
 import android.app.Application
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
@@ -180,11 +181,15 @@ object AudiobookLibraryScreen : Screen {
 
     DisposableEffect(lifecycleOwner) {
       val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-        if (event == Lifecycle.Event.ON_STOP) {
-          isSortMenuExpanded = false
-          sourceMenu = false
-          isLibDropdownOpen = false
-          isSourceDropdownOpen = false
+        when (event) {
+          Lifecycle.Event.ON_STOP -> {
+            isSortMenuExpanded = false
+            sourceMenu = false
+            isLibDropdownOpen = false
+            isSourceDropdownOpen = false
+          }
+          Lifecycle.Event.ON_RESUME -> model.refreshVirtualProgress()
+          else -> Unit
         }
       }
       lifecycleOwner.lifecycle.addObserver(observer)
@@ -222,14 +227,13 @@ object AudiobookLibraryScreen : Screen {
         .mapNotNull { duplicates ->
           duplicates.maxWithOrNull(compareBy<Audiobook> { it.book.lastPlayedAt }.thenBy { it.book.addedAt })
         }
-      val filtered = uniqueLocalBooks.filter { book ->
-        val matches = when (filter) {
-          1 -> book.book.progressMs > 0 && !book.book.finished
-          2 -> book.book.finished
-          3 -> book.book.progressMs == 0L && !book.book.finished
-          else -> true
-        }
-        matches && listOf(book.book.title, book.book.author, book.book.narrator, book.book.series)
+      val filtered = filterAudiobooksByProgress(
+        uniqueLocalBooks,
+        filter,
+        progressMs = { it.book.progressMs },
+        isFinished = { it.book.finished },
+      ).filter { book ->
+        listOf(book.book.title, book.book.author, book.book.narrator, book.book.series)
           .any { it.contains(query, ignoreCase = true) }
       }
       val comparator = when (sortType) {
@@ -248,14 +252,13 @@ object AudiobookLibraryScreen : Screen {
     }
 
     val visibleAbsBooks = remember(absState.books, query, filter, sortType, sortOrder) {
-      val filtered = absState.books.filter { book ->
-        val matches = when (filter) {
-          1 -> book.progressMs > 0 && !book.isFinished
-          2 -> book.isFinished
-          3 -> book.progressMs == 0L && !book.isFinished
-          else -> true
-        }
-        matches && listOf(book.title, book.author, book.narrator, book.series, book.description)
+      val filtered = filterAudiobooksByProgress(
+        absState.books,
+        filter,
+        progressMs = { it.progressMs },
+        isFinished = { it.isFinished },
+      ).filter { book ->
+        listOf(book.title, book.author, book.narrator, book.series, book.description)
           .any { it.contains(query, ignoreCase = true) }
       }
       val comparator = when (sortType) {
@@ -285,7 +288,12 @@ object AudiobookLibraryScreen : Screen {
       opening = true
       scope.launch {
         try {
-          AudiobookPlayback.launch(context, book.book.id, fromBeginning = restart)
+          val directSource = model.directBookSource(book.book.sourceKey)
+          if (directSource != null) {
+            launchDirectAudiobookFolder(context, directSource.folderUri, directSource.tracks, restart = restart)
+          } else {
+            AudiobookPlayback.launch(context, book.book.id, fromBeginning = restart)
+          }
           detailsId = null
         } catch (cancelled: CancellationException) {
           throw cancelled
@@ -573,6 +581,7 @@ object AudiobookLibraryScreen : Screen {
           val selectedFolderPath by model.selectedFolderPath.collectAsStateWithLifecycle()
           app.infinity.mpvz.ui.browser.folderlist.FolderListScreen.MediaStoreFolderListContent(
             audioOnly = true,
+            audiobookTab = true,
             embedded = true,
             searchQuery = query,
             rootPath = selectedFolderPath,
@@ -580,6 +589,10 @@ object AudiobookLibraryScreen : Screen {
             onExternalViewOptionsDismiss = { folderViewOptionsOpen = false },
           )
         } else {
+        if (shouldShowAudiobookProgressFilters(
+            isFoldersTab = audiobookSubTab == 1,
+            isFolderTreeBrowser = isFolderBrowser && !isAbsSource,
+          )) {
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -600,6 +613,7 @@ object AudiobookLibraryScreen : Screen {
                 label = { Text(stringResource(label)) }
               )
             }
+        }
         }
 
         if (isFolderBrowser && !isAbsSource) {
@@ -663,7 +677,7 @@ object AudiobookLibraryScreen : Screen {
             }
             layoutMode == MediaLayoutMode.GRID -> {
               LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 145.dp),
+                columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = navBarHeight + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -715,7 +729,7 @@ object AudiobookLibraryScreen : Screen {
         } else {
           // --- LOCAL AUDIOBOOKS VIEW ---
           when {
-            books == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            books == null || folderLoading && visibleLocalBooks.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             visibleLocalBooks.isEmpty() -> Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
               horizontalAlignment = Alignment.CenterHorizontally) {
               Icon(Icons.RoundedFilled.MenuBook, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.onSurface)
@@ -729,8 +743,8 @@ object AudiobookLibraryScreen : Screen {
                 }
               }
             }
-            layoutMode == MediaLayoutMode.GRID -> LazyVerticalGrid(
-              columns = GridCells.Adaptive(minSize = 145.dp),
+            else -> LazyVerticalGrid(
+              columns = GridCells.Fixed(2),
               modifier = Modifier.fillMaxSize(),
               contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = navBarHeight + 16.dp),
               verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -741,25 +755,7 @@ object AudiobookLibraryScreen : Screen {
                   title = book.book.title,
                   author = book.book.author,
                   coverUri = book.book.coverUri,
-                  progressPercent = book.progress,
-                  isFinished = book.book.finished,
-                  remainingMs = (((book.durationMs - book.book.progressMs).coerceAtLeast(0) / book.book.playbackSpeed).toLong()),
-                  opening = opening,
-                  onClick = { detailsId = book.book.id },
-                  onPlay = { playLocal(book) },
-                )
-              }
-            }
-            else -> LazyColumn(
-              modifier = Modifier.fillMaxSize(),
-              contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = navBarHeight + 16.dp),
-              verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-              items(visibleLocalBooks, key = { it.book.id }) { book ->
-                AudiobookListRow(
-                  title = book.book.title,
-                  author = book.book.author,
-                  coverUri = book.book.coverUri,
+                  embeddedTrackUri = book.orderedTracks.firstOrNull()?.uri,
                   progressPercent = book.progress,
                   isFinished = book.book.finished,
                   remainingMs = (((book.durationMs - book.book.progressMs).coerceAtLeast(0) / book.book.playbackSpeed).toLong()),
@@ -781,17 +777,17 @@ object AudiobookLibraryScreen : Screen {
         onDismiss = { isSortMenuExpanded = false },
         sortType = sortType,
         sortOrder = sortOrder,
-        layoutMode = layoutMode,
         onSortTypeChange = { browserPreferences.audiobookSortType.set(it) },
         onSortOrderChange = { browserPreferences.audiobookSortOrder.set(it) },
-        onLayoutModeChange = { browserPreferences.audiobookLayoutMode.set(it) },
       )
     }
 
     // Local Book Details Bottom Sheet
     books?.firstOrNull { it.book.id == detailsId }?.let { book ->
+      val directSource = model.directBookSource(book.book.sourceKey)
       AudiobookDetailsBottomSheet(
         coverUri = book.book.coverUri,
+        fallbackTrackUri = book.orderedTracks.firstOrNull()?.uri,
         title = book.book.title,
         author = book.book.author,
         durationMs = book.durationMs,
@@ -818,16 +814,19 @@ object AudiobookLibraryScreen : Screen {
         itemsTitleRes = R.string.audiobook_files,
         items = book.orderedTracks.map { track -> "${track.position + 1}. ${track.fileName}" to bookTime(track.durationMs) },
         onToggleFinished = {
-          model.setFinished(book.book.id, !book.book.finished)
+          if (directSource != null) model.setDirectBookFinished(book.book.sourceKey, !book.book.finished)
+          else model.setFinished(book.book.id, !book.book.finished)
           detailsId = null
         },
-        toggleFinishedEnabled = PlaybackSession.state.value.currentItem?.audiobook?.bookId != book.book.id,
-        extraActions = {
-          TextButton(onClick = { editing = book.book; detailsId = null }) { Text(stringResource(R.string.audiobook_edit)) }
-          TextButton(onClick = { removeId = book.book.id; detailsId = null }) {
-            Text(stringResource(R.string.audiobook_remove), color = MaterialTheme.colorScheme.error)
+        toggleFinishedEnabled = directSource != null || PlaybackSession.state.value.currentItem?.audiobook?.bookId != book.book.id,
+        extraActions = if (directSource == null) {
+          {
+            TextButton(onClick = { editing = book.book; detailsId = null }) { Text(stringResource(R.string.audiobook_edit)) }
+            TextButton(onClick = { removeId = book.book.id; detailsId = null }) {
+              Text(stringResource(R.string.audiobook_remove), color = MaterialTheme.colorScheme.error)
+            }
           }
-        },
+        } else null,
       )
     }
 
@@ -937,6 +936,7 @@ object AudiobookLibraryScreen : Screen {
 @Composable
 private fun AudiobookDetailsBottomSheet(
   coverUri: String?,
+  fallbackTrackUri: String? = null,
   title: String,
   author: String,
   durationMs: Long,
@@ -963,7 +963,7 @@ private fun AudiobookDetailsBottomSheet(
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        AudiobookArtwork(uri = coverUri, modifier = Modifier.size(92.dp).clip(RoundedCornerShape(6.dp)))
+        AudiobookArtwork(uri = coverUri, modifier = Modifier.size(92.dp).clip(RoundedCornerShape(6.dp)), fallbackTrackUri = fallbackTrackUri)
         Column(Modifier.weight(1f)) {
           Text(title, style = MaterialTheme.typography.titleLarge)
           if (author.isNotBlank() && author != "null") {
@@ -1313,37 +1313,54 @@ private fun AudiobookOnlineSearchDialog(
 }
 
 @Composable
-internal fun AudiobookArtwork(uri: String?, modifier: Modifier = Modifier) {
+internal fun AudiobookArtwork(uri: String?, modifier: Modifier = Modifier, fallbackTrackUri: String? = null) {
   val context = LocalContext.current
   val client = org.koin.compose.koinInject<okhttp3.OkHttpClient>()
-  var image by remember(uri) {
+  val sources = remember(uri, fallbackTrackUri) { audiobookArtworkSources(uri, fallbackTrackUri) }
+  var image by remember(sources) {
     mutableStateOf<ImageBitmap?>(
-      uri?.let { app.infinity.mpvz.presentation.components.RemoteImageLoader.getFromMemory(it)?.asImageBitmap() }
+      sources.firstOrNull { it.kind == AudiobookArtworkSourceKind.COVER_URI }
+        ?.uri?.let { app.infinity.mpvz.presentation.components.RemoteImageLoader.getFromMemory(it)?.asImageBitmap() }
     )
   }
 
-  LaunchedEffect(uri) {
-    if (uri == null) {
+  LaunchedEffect(sources) {
+    if (sources.isEmpty()) {
       image = null
       return@LaunchedEffect
     }
     val loadedBitmap = withContext(Dispatchers.IO) {
-      val isRemote = uri.startsWith("http://", ignoreCase = true) || uri.startsWith("https://", ignoreCase = true)
-      if (isRemote) {
-        app.infinity.mpvz.presentation.components.RemoteImageLoader.load(context, client, uri)
-          ?: EmbeddedArtworkResolver.decodeArtworkUri(context, uri)
-      } else {
-        EmbeddedArtworkResolver.decodeArtworkUri(context, uri)
-          ?: runCatching {
-            fun stream() = context.contentResolver.openInputStream(Uri.parse(uri))
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            stream()?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            val options = BitmapFactory.Options().apply {
-              inSampleSize = 1
-              while (maxOf(bounds.outWidth, bounds.outHeight) / inSampleSize > 800) inSampleSize *= 2
+      sources.firstNotNullOfOrNull { source ->
+        when (source.kind) {
+          AudiobookArtworkSourceKind.COVER_URI -> {
+            val isRemote = source.uri.startsWith("http://", ignoreCase = true) || source.uri.startsWith("https://", ignoreCase = true)
+            if (isRemote) {
+              app.infinity.mpvz.presentation.components.RemoteImageLoader.load(context, client, source.uri)
+                ?: EmbeddedArtworkResolver.decodeArtworkUri(context, source.uri)
+            } else {
+              EmbeddedArtworkResolver.decodeArtworkUri(context, source.uri)
+                ?: runCatching {
+                  fun stream() = context.contentResolver.openInputStream(Uri.parse(source.uri))
+                  val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                  stream()?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                  val options = BitmapFactory.Options().apply {
+                    inSampleSize = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight) / inSampleSize > 800) inSampleSize *= 2
+                  }
+                  stream()?.use { BitmapFactory.decodeStream(it, null, options) }
+                }.getOrNull()
             }
-            stream()?.use { BitmapFactory.decodeStream(it, null, options) }
+          }
+          AudiobookArtworkSourceKind.EMBEDDED_AUDIO -> runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+              retriever.setDataSource(context, Uri.parse(source.uri))
+              EmbeddedArtworkResolver.decodeRetrieverArtwork(retriever)
+            } finally {
+              retriever.release()
+            }
           }.getOrNull()
+        }
       }
     }
     image = loadedBitmap?.asImageBitmap()
@@ -1420,6 +1437,7 @@ private fun AudiobookGridCard(
   title: String,
   author: String,
   coverUri: String?,
+  embeddedTrackUri: String? = null,
   progressPercent: Float,
   isFinished: Boolean,
   remainingMs: Long,
@@ -1440,7 +1458,7 @@ private fun AudiobookGridCard(
           .aspectRatio(1f)
           .clip(RoundedCornerShape(8.dp)),
       ) {
-        AudiobookArtwork(coverUri, Modifier.fillMaxSize())
+        AudiobookArtwork(coverUri, Modifier.fillMaxSize(), embeddedTrackUri)
         if (progressPercent > 0f) {
           LinearProgressIndicator(
             progress = { progressPercent },
@@ -1505,6 +1523,7 @@ private fun AudiobookListRow(
   title: String,
   author: String,
   coverUri: String?,
+  embeddedTrackUri: String? = null,
   progressPercent: Float,
   isFinished: Boolean,
   remainingMs: Long,
@@ -1523,7 +1542,7 @@ private fun AudiobookListRow(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-      AudiobookArtwork(coverUri, Modifier.size(76.dp).clip(RoundedCornerShape(6.dp)))
+      AudiobookArtwork(coverUri, Modifier.size(76.dp).clip(RoundedCornerShape(6.dp)), embeddedTrackUri)
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (author.isNotBlank()) {

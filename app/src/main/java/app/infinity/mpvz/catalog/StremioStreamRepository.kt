@@ -48,7 +48,7 @@ class StremioStreamRepository {
     resolveImdbId: suspend (MediaItem) -> String? = { null },
     onBatch: suspend (List<StreamOption>) -> Unit = {},
   ): List<StreamOption> = withContext(Dispatchers.IO) {
-    val enabledSources = sources.filter { it.isEnabled }
+    val enabledSources = requestableCatalogSources(sources)
     if (enabledSources.isEmpty()) return@withContext emptyList()
 
     val directIdentifier = stremioImdbIdentifier(item, season, episode, episodeVideoId)

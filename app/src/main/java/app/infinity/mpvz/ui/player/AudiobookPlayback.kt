@@ -61,6 +61,7 @@ internal object AudiobookPlayback {
   const val EXTRA_BOOK_ID = "app.infinity.mpvz.AUDIOBOOK_ID"
   const val EXTRA_TRACK_ID = "app.infinity.mpvz.AUDIOBOOK_TRACK_ID"
   const val EXTRA_POSITION_MS = "app.infinity.mpvz.AUDIOBOOK_POSITION_MS"
+  const val EXTRA_DIRECT_RESTART = "app.infinity.mpvz.DIRECT_AUDIOBOOK_RESTART"
 
   private val dao by lazy { GlobalContext.get().get<AudiobookDao>() }
   private val json by lazy { GlobalContext.get().get<Json>() }
@@ -402,10 +403,11 @@ internal object AudiobookPlayback {
   internal fun resolveDirectPositionForLoad(
     item: PlaybackItem,
     savedPositionSeconds: Int?,
+    fromBeginning: Boolean = false,
   ): PlaybackPositionRestoreOverride? {
     if (item.directAudiobook == null) return null
     return PlaybackPositionRestoreOverride(
-      positionSeconds = savedPositionSeconds?.coerceAtLeast(0)?.toDouble() ?: 0.0,
+      positionSeconds = if (fromBeginning) 0.0 else savedPositionSeconds?.coerceAtLeast(0)?.toDouble() ?: 0.0,
       paused = false,
     )
   }
@@ -413,7 +415,7 @@ internal object AudiobookPlayback {
   suspend fun positionForLoad(item: PlaybackItem, intent: Intent): PlaybackPositionRestoreOverride? {
     if (item.directAudiobook != null) {
       val savedPosition = GlobalContext.get().get<PlaybackStateRepository>().getVideoDataByTitle(item.stableId)?.lastPosition
-      return resolveDirectPositionForLoad(item, savedPosition)
+      return resolveDirectPositionForLoad(item, savedPosition, intent.getBooleanExtra(EXTRA_DIRECT_RESTART, false))
     }
     val info = item.audiobook ?: return null
     val stored = dao.getBook(info.bookId) ?: return PlaybackPositionRestoreOverride(0.0, false)

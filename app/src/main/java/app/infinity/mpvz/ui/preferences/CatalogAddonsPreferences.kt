@@ -32,7 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.infinity.mpvz.catalog.CatalogSettings
+import app.infinity.mpvz.catalog.isDefaultBuiltinCatalogSource
 import app.infinity.mpvz.catalog.CatalogSource
 import app.infinity.mpvz.catalog.CatalogViewModel
 import app.infinity.mpvz.ui.icons.Icon
@@ -64,15 +64,16 @@ fun CatalogAddonsPreferenceCard(viewModel: CatalogViewModel, sources: List<Catal
       }
       AnimatedVisibility(visible = expanded) {
         Column(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text("Keyless movie and TV discovery. JavaScript video providers are managed separately below.", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Text("Cinemeta is included by default, and enabled user add-ons load independently alongside it. Streaming providers are managed separately.", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
           sources.forEachIndexed { index, source ->
             if (index > 0) PreferenceDivider()
-            val isBuiltIn = source.id == CatalogSettings.BUILTIN_SOURCE_ID
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
               Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(source.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (isBuiltIn) "Built-in keyless discovery" else source.manifestUrl, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (!isBuiltIn) TextButton(onClick = { viewModel.removeCatalogSource(source.id) }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                Text(if (isDefaultBuiltinCatalogSource(source)) "Built-in catalog" else source.manifestUrl, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (!isDefaultBuiltinCatalogSource(source)) {
+                  TextButton(onClick = { viewModel.removeCatalogSource(source.id) }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                }
               }
               Switch(checked = source.isEnabled, onCheckedChange = { viewModel.setCatalogSourceEnabled(source.id, it) })
             }
