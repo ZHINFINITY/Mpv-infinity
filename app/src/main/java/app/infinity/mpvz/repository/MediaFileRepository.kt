@@ -24,6 +24,7 @@ import app.infinity.mpvz.preferences.AppearancePreferences
 import app.infinity.mpvz.preferences.BrowserPreferences
 import app.infinity.mpvz.preferences.FoldersPreferences
 import app.infinity.mpvz.utils.media.MediaInfoOps
+import app.infinity.mpvz.utils.media.VideoResolutionFormatter
 import app.infinity.mpvz.utils.storage.FileTypeUtils
 import app.infinity.mpvz.utils.storage.FolderViewScanner
 import app.infinity.mpvz.utils.storage.MediaScanOptions
@@ -805,25 +806,7 @@ object MediaFileRepository : KoinComponent {
   private fun formatResolution(
     width: Int,
     height: Int,
-  ): String {
-    if (width <= 0 || height <= 0) return "--"
-
-    val label =
-      when {
-        height >= 4320 -> "4320p"
-        height >= 2160 -> "2160p"
-        height >= 1440 -> "1440p"
-        height >= 1080 -> "1080p"
-        height >= 720 -> "720p"
-        height >= 576 -> "576p"
-        height >= 480 -> "480p"
-        height >= 360 -> "360p"
-        height >= 240 -> "240p"
-        else -> "${height}p"
-      }
-
-    return label
-  }
+  ): String = VideoResolutionFormatter.format(width, height)
 
   private fun formatResolutionWithFps(
     width: Int,

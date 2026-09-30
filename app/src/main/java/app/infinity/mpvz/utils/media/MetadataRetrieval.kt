@@ -253,7 +253,7 @@ object MetadataRetrieval {
           video.subtitleCodec.isNotEmpty() &&
           (!needsVideoCodec || video.videoCodec.isNotBlank())
         ) {
-          emit(video)
+          emit(video.copy(resolution = formatResolutionWithFps(video.width, video.height, video.fps)))
           continue
         }
 
