@@ -45,7 +45,8 @@ internal object StreamWatchHistory {
       .edit()
       .remove(KEYS_KEY)
       .remove(ORDER_KEY)
-      .apply()
+      .commit()
+      .also { check(it) { "Unable to clear stream history" } }
   }
 
   fun statisticsEntries(context: Context): List<String> {

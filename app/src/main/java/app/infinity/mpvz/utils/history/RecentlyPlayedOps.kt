@@ -71,7 +71,13 @@ object RecentlyPlayedOps {
       launchSource,
       playlistId,
     )
-    recordWatchStatistics(context, filePath)
+    try {
+      recordWatchStatistics(context, filePath)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+      throw cancelled
+    } catch (failure: Exception) {
+      android.util.Log.w("RecentlyPlayedOps", "Watch statistics update failed", failure)
+    }
   }
 
   suspend fun clearAll() {

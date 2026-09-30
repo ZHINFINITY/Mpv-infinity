@@ -39,17 +39,18 @@ abstract class AudiobookDao {
   @Transaction
   open suspend fun importBook(book: AudiobookEntity, tracks: List<AudiobookTrackEntity>): Long {
     require(tracks.isNotEmpty())
+    val uniqueTracks = tracks.distinctBy { AudiobookSourceIdentity.key(Uri.parse(it.uri)) }
     findBySource(book.sourceKey)?.let { existingId ->
-      reconcileTracks(existingId, tracks)
+      reconcileTracks(existingId, uniqueTracks)
       return existingId
     }
     val id = insertBook(book)
     if (id == -1L) {
       val existingId = requireNotNull(findBySource(book.sourceKey))
-      reconcileTracks(existingId, tracks)
+      reconcileTracks(existingId, uniqueTracks)
       return existingId
     }
-    val trackIds = insertTracks(tracks.mapIndexed { index, track -> track.copy(id = 0, bookId = id, position = index) })
+    val trackIds = insertTracks(uniqueTracks.mapIndexed { index, track -> track.copy(id = 0, bookId = id, position = index) })
     setInitialTrack(id, trackIds.first())
     return id
   }
@@ -63,14 +64,15 @@ abstract class AudiobookDao {
   }
 
   private suspend fun reconcileTracks(bookId: Long, tracks: List<AudiobookTrackEntity>) {
+    val uniqueTracks = tracks.distinctBy { AudiobookSourceIdentity.key(Uri.parse(it.uri)) }
     val existingByIdentity = getTracksForBook(bookId).associateBy {
       AudiobookSourceIdentity.key(Uri.parse(it.uri))
     }
-    val incomingUris = tracks.map { it.uri }
+    val incomingUris = uniqueTracks.map { it.uri }
 
     val idsByUri = mutableMapOf<String, Long>()
     val newTracks = mutableListOf<Pair<Int, AudiobookTrackEntity>>()
-    tracks.forEachIndexed { position, track ->
+    uniqueTracks.forEachIndexed { position, track ->
       val identity = AudiobookSourceIdentity.key(Uri.parse(track.uri))
       val existing = existingByIdentity[identity]
       if (existing == null) {
@@ -88,7 +90,7 @@ abstract class AudiobookDao {
 
     val currentTrackId = getCurrentTrackId(bookId)
     if (currentTrackId == null || idsByUri.values.none { it == currentTrackId }) {
-      resetPlaybackToTrack(bookId, requireNotNull(idsByUri[tracks.first().uri]))
+      resetPlaybackToTrack(bookId, requireNotNull(idsByUri[uniqueTracks.first().uri]))
     } else {
       recalculateBookProgress(bookId, currentTrackId)
     }

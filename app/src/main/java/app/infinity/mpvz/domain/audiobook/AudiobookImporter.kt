@@ -151,7 +151,14 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
       abridged = if (metadata.has("abridged") && !metadata.isNull("abridged")) metadata.optBoolean("abridged") else null,
       coverUri = coverUri,
     )
-    val id = dao.importBook(book, ordered.map { it.track })
+    val orderedTracks = ordered.map { it.track }
+    val legacyBookId = folder?.let { dao.findBySource(it.toString()) }
+    val id =
+      if (legacyBookId != null) {
+        dao.reconcileImportedBook(legacyBookId, sourceKey, orderedTracks)
+      } else {
+        dao.importBook(book, orderedTracks)
+      }
     metadata.optJSONArray("chapters")?.let { chapterData ->
       var offset = 0L
       dao.getBook(id)?.orderedTracks?.forEach { track ->
