@@ -15,24 +15,34 @@ internal val DEFAULT_BUILTIN_CATALOG_SOURCE = CatalogSource(
 )
 
 internal const val BUILT_IN_CATALOG_UNAVAILABLE_MESSAGE =
-  "No enabled catalog source. Enable the built-in Cinemeta catalog or add an enabled catalog add-on in Stream settings."
+  "No enabled catalog source. Enable a configured catalog add-on or add one in Stream settings."
 
 internal fun isDefaultBuiltinCatalogSource(source: CatalogSource): Boolean =
   source.id == BUILTIN_CATALOG_SOURCE_ID &&
     source.manifestUrl.trim().equals(BUILTIN_CATALOG_MANIFEST_URL, ignoreCase = true)
 
-/** Add the default once while leaving every separately configured add-on in the list. */
-internal fun includeDefaultBuiltinCatalogSource(sources: List<CatalogSource>): List<CatalogSource> {
+/** Add the default on first use while leaving every separately configured add-on in the list. */
+internal fun includeDefaultBuiltinCatalogSource(sources: List<CatalogSource>): List<CatalogSource> =
+  normalizeCatalogSources(sources, builtinRemoved = false)
+
+/** Normalize saved sources without recreating Cinemeta after the user has removed it. */
+internal fun normalizeCatalogSources(
+  sources: List<CatalogSource>,
+  builtinRemoved: Boolean,
+): List<CatalogSource> {
   val builtin = sources.firstOrNull(::isDefaultBuiltinCatalogSource)
-    ?.copy(name = DEFAULT_BUILTIN_CATALOG_SOURCE.name, manifestUrl = BUILTIN_CATALOG_MANIFEST_URL)
-    ?: DEFAULT_BUILTIN_CATALOG_SOURCE
+  val normalizedBuiltin = when {
+    builtinRemoved -> null
+    builtin != null -> builtin.copy(name = DEFAULT_BUILTIN_CATALOG_SOURCE.name, manifestUrl = BUILTIN_CATALOG_MANIFEST_URL)
+    else -> DEFAULT_BUILTIN_CATALOG_SOURCE
+  }
   val configured = sources.asSequence()
     .filterNot { it.id.startsWith("builtin-", ignoreCase = true) }
     .filterNot { it.manifestUrl.trim().equals(BUILTIN_CATALOG_MANIFEST_URL, ignoreCase = true) }
     .filter { isHttpAddonEndpoint(it.manifestUrl) }
     .distinctBy { it.manifestUrl.trim().lowercase(Locale.ROOT) }
     .toList()
-  return listOf(builtin) + configured
+  return listOfNotNull(normalizedBuiltin) + configured
 }
 
 /** Keep invalid legacy placeholders out of every catalog, metadata, and stream request path. */

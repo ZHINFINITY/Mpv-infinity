@@ -174,11 +174,15 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         "This catalog add-on is already installed."
       }
       val name = catalogRepository.validateCatalogManifest(manifestUrl)
-      val source = CatalogSource(
-        id = "catalog-${manifestUrl.hashCode().toUInt().toString(16)}",
-        name = name,
-        manifestUrl = manifestUrl,
-      )
+      val source = if (manifestUrl.equals(BUILTIN_CATALOG_MANIFEST_URL, ignoreCase = true)) {
+        DEFAULT_BUILTIN_CATALOG_SOURCE
+      } else {
+        CatalogSource(
+          id = "catalog-${manifestUrl.hashCode().toUInt().toString(16)}",
+          name = name,
+          manifestUrl = manifestUrl,
+        )
+      }
       val updated = (_catalogSources.value + source).distinctBy { it.manifestUrl.lowercase() }
       settings.saveCatalogSources(updated)
       _catalogSources.value = updated
@@ -192,7 +196,6 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun removeCatalogSource(sourceId: String) {
-    if (sourceId == BUILTIN_CATALOG_SOURCE_ID) return
     updateCatalogSources { sources -> sources.filterNot { it.id == sourceId } }
   }
 
@@ -503,7 +506,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
     val distinctItems = items
     Log.i(TAG, "load complete queryLength=${query?.length ?: 0} items=${distinctItems.size}")
-    distinctItems
+    return distinctItems
   }
 
   private fun resetPosterEnrichment(query: String) {
