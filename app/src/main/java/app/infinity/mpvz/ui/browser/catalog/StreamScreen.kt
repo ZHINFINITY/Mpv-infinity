@@ -103,7 +103,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     Content(showBackButton = true)
   }
 
-  @Composable fun Content(showBackButton: Boolean) {
+  @Composable fun Content(showBackButton: Boolean, isActivePage: Boolean = true) {
     val backstack = LocalBackStack.current
     val context = LocalContext.current
     val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
@@ -181,7 +181,7 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     LaunchedEffect(searchActive, state.query, state.items.size, catalogSources) {
       Log.i("MpvCatalogDiag", "screen searchActive=$searchActive query=\"${state.query}\" items=${state.items.size} sources=${catalogSources.map { "${it.id}:${it.isEnabled}" }} browseRail=${browseRail ?: "<home>"}")
     }
-    BackHandler(enabled = searchActive || browseRail != null) {
+    BackHandler(enabled = isActivePage && (searchActive || browseRail != null)) {
       if (browseRail != null) browseRail = null
       else {
         isSearching = false

@@ -12,6 +12,7 @@ import app.infinity.mpvz.database.entities.AudiobookEntity
 import app.infinity.mpvz.database.entities.AudiobookTrackEntity
 import app.infinity.mpvz.database.entities.AudiobookChapter
 import app.infinity.mpvz.database.entities.AudiobookChapterEntity
+import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -381,7 +382,22 @@ internal object AudiobookPlayback {
     launch(context, nextBook.id, fromBeginning = true)
   }
 
+  internal fun resolveDirectPositionForLoad(
+    item: PlaybackItem,
+    savedPositionSeconds: Int?,
+  ): PlaybackPositionRestoreOverride? {
+    if (item.directAudiobook == null) return null
+    return PlaybackPositionRestoreOverride(
+      positionSeconds = savedPositionSeconds?.coerceAtLeast(0)?.toDouble() ?: 0.0,
+      paused = false,
+    )
+  }
+
   suspend fun positionForLoad(item: PlaybackItem, intent: Intent): PlaybackPositionRestoreOverride? {
+    if (item.directAudiobook != null) {
+      val savedPosition = GlobalContext.get().get<PlaybackStateRepository>().getVideoDataByTitle(item.stableId)?.lastPosition
+      return resolveDirectPositionForLoad(item, savedPosition)
+    }
     val info = item.audiobook ?: return null
     val stored = dao.getBook(info.bookId) ?: return PlaybackPositionRestoreOverride(0.0, false)
     return resolvePositionForLoad(

@@ -2,6 +2,7 @@ package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.database.entities.AudiobookEntity
 import app.infinity.mpvz.database.entities.AudiobookTrackEntity
+import app.infinity.mpvz.domain.audiobook.AudiobookFolderTrack
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -65,5 +66,24 @@ class AudiobookPlaybackTest {
     assertEquals(trackUri, item.originalUri)
     assertEquals(trackUri, item.playableUri)
     assertEquals(AudiobookPlaybackInfo(book.id, track.id), item.audiobook)
+  }
+
+  @Test
+  fun directAudiobookRestoresSavedPositionFromItsUriPlaybackState() {
+    val item = createDirectAudiobookTrackPlaybackItem(
+      queueIdentity = "selection-id",
+      track = AudiobookFolderTrack(
+        uri = "content://root/chapter.mp3",
+        name = "chapter.mp3",
+        mimeType = "audio/mpeg",
+        sizeBytes = 1024L,
+      ),
+    )
+
+    val restored = AudiobookPlayback.resolveDirectPositionForLoad(item, savedPositionSeconds = 73)
+
+    assertEquals(73.0, restored!!.positionSeconds!!, 0.0)
+    assertEquals(false, restored.paused)
+    assertEquals(null, item.audiobook)
   }
 }

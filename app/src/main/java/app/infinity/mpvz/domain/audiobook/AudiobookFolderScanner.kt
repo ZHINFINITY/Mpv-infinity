@@ -11,7 +11,6 @@ import java.util.Locale
 internal data class AudiobookFolderEntry(
   val uri: String,
   val name: String,
-  val document: DocumentFile,
 )
 
 internal data class AudiobookFolderTrack(
@@ -43,9 +42,9 @@ internal data class AudiobookFolderTree(
       if (!visited.add(currentUri)) continue
       val current = listing(currentUri) ?: continue
       tracks += current.tracks
-      current.folders.forEach { pending.addLast(it.uri) }
+      current.folders.asReversed().forEach { pending.addFirst(it.uri) }
     }
-    return tracks.sortedWith(compareBy<AudiobookFolderTrack> { it.name.lowercase(Locale.ROOT) }.thenBy { it.uri })
+    return tracks
   }
 }
 
@@ -101,7 +100,6 @@ internal object AudiobookFolderScanner {
   private fun DocumentFile.asFolderEntry(): AudiobookFolderEntry = AudiobookFolderEntry(
     uri = uri.toString(),
     name = name?.takeIf(String::isNotBlank) ?: "Audiobooks",
-    document = this,
   )
 }
 

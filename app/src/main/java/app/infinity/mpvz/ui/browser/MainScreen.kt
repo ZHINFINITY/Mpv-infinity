@@ -442,7 +442,7 @@ object MainScreen : Screen {
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
-                MainTab.STREAMS -> StreamScreen.Content(showBackButton = false)
+                MainTab.STREAMS -> StreamScreen.Content(showBackButton = false, isActivePage = pagerState.currentPage == page)
                 MainTab.JELLYFIN -> app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
                 MainTab.NAVIDROME -> app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(viewModel = navidromeViewModel)
                 MainTab.AUDIOBOOKS -> app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen.Content()
