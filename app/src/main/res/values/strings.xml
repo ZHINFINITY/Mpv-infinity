@@ -58,6 +58,8 @@
   <string name="pref_nav_playlists_summary">Show or hide Playlists in the bottom navigation bar</string>
   <string name="pref_nav_network_title">Show Network tab</string>
   <string name="pref_nav_network_summary">Show or hide Network in the bottom navigation bar</string>
+  <string name="pref_nav_streams_title">Show Streams tab</string>
+  <string name="pref_nav_streams_summary">Show or hide Streams in the bottom navigation bar</string>
   <string name="pref_nav_jellyfin_title">Show Jellyfin tab</string>
   <string name="pref_nav_jellyfin_summary">Show or hide Jellyfin in the bottom navigation bar</string>
   <string name="pref_nav_jellyfin_auto_title">Automatically show Jellyfin tab after connecting</string>
@@ -66,6 +68,7 @@
   <string name="pref_nav_navidrome_summary">Show or hide Navidrome in the bottom navigation bar</string>
   <string name="pref_nav_audiobooks_title">Show Audiobooks tab</string>
   <string name="pref_nav_audiobooks_summary">Show or hide local and Audiobookshelf audiobooks in the bottom navigation bar</string>
+  <string name="ui_streams">Streams</string>
   <string name="pref_section_network">Network</string>
   <string name="pref_media_servers_title">Media Servers</string>
   <string name="pref_media_servers_summary">Manage Jellyfin, Navidrome, and Audiobookshelf connections</string>
@@ -425,7 +428,7 @@
   <string name="pref_advanced_verbose_logging_summary">Helps in debugging but may hinder performance</string>
   <string name="pref_advanced_clear_playback_history">Clear playback history</string>
   <string name="pref_advanced_clear_playback_history_confirm_title">Are you sure you want to clear your playback history?</string>
-  <string name="pref_advanced_clear_playback_history_confirm_subtitle">This will clear all your previous media\'s playback saved settings</string>
+  <string name="pref_advanced_clear_playback_history_confirm_subtitle">This clears the Recently Played and Stream history lists only. Saved playback positions, player settings, audiobook progress, and bookmarks are kept.</string>
   <string name="pref_advanced_cleared_playback_history">Cleared playback history</string>
   <string name="pref_advanced_clear_fonts_cache">Clear cached fonts</string>
   <string name="pref_advanced_cleared_fonts_cache">Cleared cached fonts</string>
@@ -1350,6 +1353,7 @@
   <string name="ui_recents">Recents</string>
   <string name="ui_playlists">Playlists</string>
   <string name="ui_network">Network</string>
+  <string name="ui_streams">Streams</string>
   <string name="ui_pinned_folder">Pinned folder</string>
   <string name="ui_folder">Folder</string>
   <string name="ui_connect_automatically_on_app_launch">Connect automatically on app launch</string>
@@ -2162,11 +2166,17 @@
 
   <string name="audiobooks_title">Audiobooks</string>
   <string name="audiobook_import_files">Import book files</string>
-  <string name="audiobook_import_folder">Import book folder</string>
+  <string name="audiobook_import_folder">Choose audiobook folder</string>
+  <string name="audiobook_folder_source">Folder source</string>
+  <string name="audiobook_choose_folder">Choose audiobook folder</string>
+  <string name="audiobook_choose_folder_hint">Choose the folder that contains your audiobooks. Nothing will be copied or imported.</string>
+  <string name="audiobook_back">Back</string>
+  <string name="audiobook_root">Root</string>
+  <string name="audiobook_folder">Folder</string>
+  <string name="audiobook_audio_file">Audio file</string>
   <string name="audiobook_importing">Importing %1$d of %2$d</string>
   <string name="audiobook_import_failed">Could not import book: %1$s</string>
   <string name="audiobook_no_audio">No supported audio files found.</string>
-  <string name="audiobook_unreadable">Cannot read audio: %1$s</string>
   <string name="audiobook_empty">No audiobooks</string>
   <string name="audiobook_title">Book title</string>
   <string name="audiobook_subtitle">Subtitle</string>
@@ -2199,6 +2209,7 @@
   <string name="audiobook_mark_finished">Mark as finished</string>
   <string name="audiobook_mark_unfinished">Mark as unfinished</string>
   <string name="audiobook_all">All books</string>
+  <string name="audiobook_folders">Folders</string>
   <string name="audiobook_not_started">Not started</string>
   <string name="audiobook_in_progress">In progress</string>
   <string name="audiobook_finished">Finished</string>
@@ -2207,6 +2218,7 @@
   <string name="audiobook_chapters">Chapters</string>
   <string name="audiobook_previous_chapter">Previous chapter</string>
   <string name="audiobook_next_chapter">Next chapter</string>
+  <string name="stream_link_unsupported">This stream link is not a supported direct HTTP or HTTPS address.</string>
   <string name="audiobook_chapter_number">Chapter %1$d</string>
   <string name="audiobook_files">Files</string>
   <string name="audiobook_bookmarks">Bookmarks</string>

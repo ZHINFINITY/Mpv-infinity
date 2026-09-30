@@ -72,7 +72,9 @@ fun AddConnectionSheet(
   var path by remember { mutableStateOf("/") }
   var isAnonymous by remember { mutableStateOf(false) }
   var useHttps by remember { mutableStateOf(false) }
+  var sftpHostKeyFingerprint by remember { mutableStateOf("") }
   var protocolMenuExpanded by remember { mutableStateOf(false) }
+  val validSftpFingerprint = sftpHostKeyFingerprint.trim().matches(Regex("""SHA256:[A-Za-z0-9+/]{43}"""))
 
   val handleDismiss = {
     onDismiss()
@@ -90,6 +92,7 @@ fun AddConnectionSheet(
         path = path.ifBlank { "/" },
         isAnonymous = isAnonymous,
         useHttps = useHttps,
+        sftpHostKeyFingerprint = sftpHostKeyFingerprint.trim(),
       )
     onSave(connection)
   }
@@ -247,6 +250,18 @@ fun AddConnectionSheet(
           )
         }
 
+        if (protocol == NetworkProtocol.SFTP) {
+          OutlinedTextField(
+            value = sftpHostKeyFingerprint,
+            onValueChange = { sftpHostKeyFingerprint = it.trim() },
+            label = { Text("SFTP host-key SHA-256 fingerprint") },
+            placeholder = { Text("SHA256:...") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            supportingText = { Text("Verify this fingerprint with the server administrator before saving.") },
+          )
+        }
+
         // Anonymous and HTTPS checkboxes
         Row(
           verticalAlignment = Alignment.CenterVertically,
@@ -347,7 +362,10 @@ fun AddConnectionSheet(
           Spacer(modifier = Modifier.width(8.dp))
           Button(
             onClick = handleSave,
-            enabled = host.isNotBlank() && (isAnonymous || username.isNotBlank()),
+            enabled =
+              host.isNotBlank() &&
+                (isAnonymous || username.isNotBlank()) &&
+                (protocol != NetworkProtocol.SFTP || validSftpFingerprint),
           ) {
             Text(
               text =

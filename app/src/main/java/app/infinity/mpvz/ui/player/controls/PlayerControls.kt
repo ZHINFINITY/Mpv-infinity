@@ -325,6 +325,7 @@ fun PlayerControls(
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsState()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
   val activity = LocalActivity.current as? PlayerActivity
+  val streamPlaybackHidesQuality = activity?.isStreamTabPlayback == true
   val nativeSnapshot by activity?.nativePlaybackSnapshot?.collectAsState()
     ?: remember { mutableStateOf(NativePlaybackSnapshot()) }
   val nativeEngineActive = activity?.isNativeEngineActive() == true
@@ -2363,6 +2364,12 @@ private fun NativeStatsPageOverlay(
           Text("Video bitrate: $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Audio bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Playback: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          val state = if (snapshot.isBuffering) "Buffering" else if (snapshot.isPlaying) "Playing" else "Paused"
+          Text(
+            "State: $state · ahead: ${String.format("%.1f", snapshot.totalBufferedDurationMs / 1000.0)}s · loading: ${snapshot.isLoading}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
         }
       }
     }
@@ -2393,6 +2400,8 @@ private data class CustomStatsSnapshot(
   val cpuPercent: Float,
   val processMemoryText: String,
   val playbackCacheText: String,
+  val cacheActivityText: String,
+  val cacheOptionsText: String,
   val batteryPercentText: String,
   val batteryRateText: String,
   val batteryWattsText: String,
@@ -2431,6 +2440,8 @@ private fun CustomStatsPageSixOverlay(
         cpuPercent = 0f,
         processMemoryText = "--",
         playbackCacheText = "--",
+        cacheActivityText = "--",
+        cacheOptionsText = "--",
         batteryPercentText = "--%",
         batteryRateText = "Unknown",
         batteryWattsText = "-- W",
@@ -2521,6 +2532,47 @@ private fun CustomStatsPageSixOverlay(
           ?.takeIf { it.isFinite() && it >= 0.0 }
           ?.toLong()
           ?: 0L
+      val isPaused = runCatching { PlaybackSession.getPropertyBoolean("pause") }.getOrDefault(false) == true
+      val pausedForCache = runCatching { PlaybackSession.getPropertyBoolean("paused-for-cache") }.getOrNull()
+      val cacheIdle = runCatching { PlaybackSession.getPropertyBoolean("demuxer-cache-idle") }.getOrNull()
+      val cacheReadBytesPerSecond =
+        runCatching { PlaybackSession.getPropertyInt("cache-speed") }
+          .getOrNull()
+          ?.takeIf { it >= 0 }
+      val cacheMode = runCatching { PlaybackSession.getPropertyString("cache") }.getOrNull() ?: "?"
+      val cachePause = runCatching { PlaybackSession.getPropertyBoolean("cache-pause") }.getOrNull()
+      val cachePauseWait = runCatching { PlaybackSession.getPropertyInt("cache-pause-wait") }.getOrNull()
+      val cacheMaxBytes =
+        runCatching { PlaybackSession.getPropertyInt("demuxer-max-bytes") }
+          .getOrNull()
+          ?.takeIf { it >= 0 }
+          ?.toLong()
+      val cacheSecondsLimit =
+        runCatching { PlaybackSession.getPropertyDouble("cache-secs") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it >= 0.0 }
+          ?.let { String.format("%.1f", it) }
+          ?: "?"
+      val demuxerReadaheadSeconds =
+        runCatching { PlaybackSession.getPropertyDouble("demuxer-readahead-secs") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it >= 0.0 }
+          ?.let { String.format("%.1f", it) }
+          ?: "?"
+      val cachePauseState = when {
+        pausedForCache == true -> "cache-paused"
+        isPaused -> "paused"
+        else -> "playing"
+      }
+      val cacheActivity = when (cacheIdle) {
+        true -> "idle"
+        false -> "reading"
+        null -> "unknown"
+      }
+      val cacheReadRateText =
+        cacheReadBytesPerSecond?.let { "${formatTorrentBytes(it.toLong())}/s" } ?: "?"
+      val cacheMaxText = cacheMaxBytes?.let(::formatTorrentBytes) ?: "?"
+      val hlsBitrate = runCatching { PlaybackSession.getPropertyString("hls-bitrate") }.getOrNull() ?: "?"
       val playbackCacheText =
         String.format(
           playbackCacheFormat,
@@ -2528,9 +2580,13 @@ private fun CustomStatsPageSixOverlay(
           formatTorrentBytes(packetCacheBytes),
           formatTorrentBytes(fileCacheBytes),
         )
+      val cacheActivityText = "$cachePauseState · $cacheActivity · in $cacheReadRateText"
+      val cacheOptionsText =
+        "cache=$cacheMode · pause=${cachePause?.toString() ?: "?"} · wait=${cachePauseWait?.toString() ?: "?"} · " +
+          "max=$cacheMaxText · " +
+          "secs=$cacheSecondsLimit · readahead=$demuxerReadaheadSeconds · hls=$hlsBitrate"
 
       val battery = readBatterySnapshot(context)
-      val isPaused = runCatching { PlaybackSession.getPropertyBoolean("pause") }.getOrDefault(false) == true
 
       if (!isPaused) {
         totalActivePlayTimeMs += timeDelta
@@ -2596,6 +2652,8 @@ private fun CustomStatsPageSixOverlay(
           cpuPercent = smoothedCpuPercent,
           processMemoryText = processMemoryText,
           playbackCacheText = playbackCacheText,
+          cacheActivityText = cacheActivityText,
+          cacheOptionsText = cacheOptionsText,
           batteryPercentText = battery.percentageText,
           batteryRateText = battery.rateText,
           batteryWattsText = battery.wattsText,
@@ -2817,6 +2875,8 @@ private fun CustomStatsPageSixOverlay(
       labelStyle,
       valueStyle,
     )
+    OutlinedLabeled("Cache activity", stats.cacheActivityText, labelStyle, valueStyle)
+    OutlinedLabeled("Cache options", stats.cacheOptionsText, labelStyle, valueStyle)
   }
 }
 

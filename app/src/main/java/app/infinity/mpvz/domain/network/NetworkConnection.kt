@@ -32,6 +32,7 @@ data class NetworkConnection(
   val lastConnected: Long = 0,
   val autoConnect: Boolean = false,
   val useHttps: Boolean = false, // For WebDAV: use HTTPS instead of HTTP
+  val sftpHostKeyFingerprint: String = "",
 ) {
   override fun toString(): String =
     "NetworkConnection(id=$id, name=$name, protocol=$protocol, credentials=<redacted>)"

@@ -1751,31 +1751,39 @@ class MediaPlaybackService :
   }
 
   private fun schedulePlaybackStateSave(force: Boolean = false) {
-    val identifier = mediaIdentifier
+    val queueState = PlaybackSession.queue.value
+    val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
 
     val now = SystemClock.elapsedRealtime()
     if (!force && now - lastPlaybackStateSaveTime < PLAYBACK_STATE_SAVE_INTERVAL_MS) return
     lastPlaybackStateSaveTime = now
-    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null) ?: return
+    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
+    val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
+    val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
 
     playbackStateSaveJob?.cancel()
     playbackStateSaveJob =
       serviceScope.launch(Dispatchers.IO) {
-        persistPlaybackState(identifier, snapshot)
+        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
+        snapshot?.let { persistPlaybackState(identifier, it) }
       }
   }
 
   private fun savePlaybackStateNow() {
-    val identifier = mediaIdentifier
+    val queueState = PlaybackSession.queue.value
+    val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
     // Every libmpv read happens here, so the database write can safely outlive the service.
-    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null) ?: return
+    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
+    val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
+    val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
 
     playbackStateSaveJob?.cancel()
     persistenceScope.launch {
       runCatching {
-        persistPlaybackState(identifier, snapshot)
+        AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
+        snapshot?.let { persistPlaybackState(identifier, it) }
       }.onFailure { error ->
         Log.e(TAG, "Error force-saving playback state", error)
       }
@@ -1783,14 +1791,18 @@ class MediaPlaybackService :
   }
 
   private fun savePlaybackStateBeforeTaskRemoval() {
-    val identifier = mediaIdentifier
+    val queueState = PlaybackSession.queue.value
+    val identifier = mediaIdentifier.ifBlank { queueState.currentItem?.stableId.orEmpty() }
     if (identifier.isBlank()) return
-    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null) ?: return
+    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null)
+    val resumePositionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: currentPositionSeconds
+    val resumePaused = PlaybackSession.getPropertyBoolean("pause") ?: paused
 
     val pendingSave = playbackStateSaveJob
     runBlocking(Dispatchers.IO) {
       pendingSave?.cancelAndJoin()
-      persistPlaybackState(identifier, snapshot)
+      AudioPlaybackResumeStore.save(applicationContext, queueState, resumePositionSeconds, resumePaused)
+      snapshot?.let { persistPlaybackState(identifier, it) }
     }
   }
 

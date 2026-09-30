@@ -252,7 +252,7 @@ object CopyPasteOps {
 
             // Update history for moved files
             historyUpdates.forEach { (oldPath, newPath) ->
-              RecentlyPlayedOps.onVideoRenamed(oldPath, newPath)
+              RecentlyPlayedOps.onVideoRenamed(context, oldPath, newPath)
               PlaybackStateOps.onVideoRenamed(oldPath, newPath)
             }
             movedPaths
@@ -334,7 +334,7 @@ object CopyPasteOps {
         }
 
         historyUpdates.forEach { (oldPath, newPath) ->
-          RecentlyPlayedOps.onVideoRenamed(oldPath, newPath)
+          RecentlyPlayedOps.onVideoRenamed(context, oldPath, newPath)
           PlaybackStateOps.onVideoRenamed(oldPath, newPath)
         }
 
@@ -676,7 +676,7 @@ object CopyPasteOps {
 
       val newPath = movedPaths.getOrNull(index)
       if (newPath != null) {
-        RecentlyPlayedOps.onVideoRenamed(video.path, newPath)
+        RecentlyPlayedOps.onVideoRenamed(context, video.path, newPath)
         PlaybackStateOps.onVideoRenamed(video.path, newPath)
       }
     }

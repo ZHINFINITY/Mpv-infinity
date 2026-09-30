@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Environment
 import androidx.documentfile.provider.DocumentFile
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.dao.AudiobookDao
@@ -17,6 +18,7 @@ import app.infinity.mpvz.utils.storage.FileTypeUtils
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -28,26 +30,110 @@ import org.w3c.dom.Element
 internal class AudiobookImporter(private val context: Context, private val dao: AudiobookDao) {
   private data class Source(val document: DocumentFile, val path: String)
   private data class Scanned(val source: Source, val track: AudiobookTrackEntity, val tags: Map<String, String>, val disc: Int, val number: Int)
+  private data class AudioBookGroup(val key: String, val title: String, val sources: List<Source>)
+  private data class FolderImportPlan(
+    val folder: DocumentFile,
+    val stopAtDirectories: Set<String>,
+    val audioUriFilter: Set<String>? = null,
+    val sourceKeyOverride: String? = null,
+    val titleOverride: String? = null,
+  )
 
-  suspend fun importBook(uris: List<Uri>, folder: Uri? = null, onProgress: (Int, Int) -> Unit): Long = withContext(Dispatchers.IO) {
-    val root = folder?.let { openPersistedTreeDocument(context, it.toString()) ?: throw IOException(it.toString()) }
-    AudiobookMarkerUtils.ensureMarker(context, folder, root)
-    val sources = if (root != null) collectFiles(root) else uris.distinct().map { uri ->
+  suspend fun scanLocalStorage(onProgress: (Int, Int) -> Unit) = withContext(Dispatchers.IO) {
+    val candidates = discoverBookRoots(Environment.getExternalStorageDirectory())
+    candidates.forEachIndexed { index, directory ->
+      currentCoroutineContext().ensureActive()
+      onProgress(index + 1, candidates.size)
+      importBook(emptyList(), Uri.fromFile(directory)) { _, _ -> }
+    }
+  }
+
+  suspend fun importFolderAsBooks(folder: Uri, onProgress: (Int, Int) -> Unit) = withContext(Dispatchers.IO) {
+    val root = openPersistedTreeDocument(context, folder.toString()) ?: throw IOException(folder.toString())
+    val books = discoverBookFolders(root)
+    if (books.isEmpty()) throw IOException(context.getString(R.string.audiobook_no_audio))
+    val bookUris = books.mapTo(mutableSetOf()) { it.uri.toString() }
+    val plans = mutableListOf<FolderImportPlan>()
+    books.forEach { bookFolder ->
+      val folderUri = bookFolder.uri.toString()
+      val stopAtDirectories = bookUris - folderUri
+      val children = bookFolder.listFiles().toList()
+      val hasBookMetadata = children.any(::isBookMetadata)
+      val directAudio = children.filter(::isAudio)
+      if (!hasBookMetadata && directAudio.size > 1) {
+        val groups = groupAudioFiles(directAudio.map { Source(it, it.name.orEmpty()) })
+        val canonicalFolderKey = AudiobookSourceIdentity.key(Uri.parse(folderUri))
+        val oldBookId = dao.findBySource(canonicalFolderKey) ?: dao.findBySource(folderUri)
+        val oldBook = oldBookId?.let { dao.getBook(it) }
+        val previousFirstTrackIdentity = oldBook?.orderedTracks?.firstOrNull()?.uri
+          ?.let { AudiobookSourceIdentity.key(Uri.parse(it)) }
+        val primaryGroup = groups.indexOfFirst { group ->
+          group.sources.any { AudiobookSourceIdentity.key(it.document.uri) == previousFirstTrackIdentity }
+        }
+          .takeIf { it >= 0 } ?: 0
+        groups.forEachIndexed { groupIndex, group ->
+          val groupIdentity = group.sources.map { AudiobookSourceIdentity.key(it.document.uri) }.sorted().joinToString("\n")
+          val sourceKey = if (groupIndex == primaryGroup) canonicalFolderKey else "$canonicalFolderKey#audiobook-${digest(groupIdentity)}"
+          plans += FolderImportPlan(
+            folder = bookFolder,
+            stopAtDirectories = stopAtDirectories,
+            audioUriFilter = group.sources.mapTo(mutableSetOf()) { it.document.uri.toString() },
+            sourceKeyOverride = sourceKey,
+            titleOverride = group.title,
+          )
+        }
+      } else {
+        plans += FolderImportPlan(bookFolder, stopAtDirectories)
+      }
+    }
+
+    plans.forEachIndexed { index, plan ->
+      currentCoroutineContext().ensureActive()
+      onProgress(index + 1, plans.size)
+      // The child is reachable through the persisted permission on the chosen
+      // root, even when the child URI itself is not persisted.
+      importBook(
+        emptyList(), plan.folder.uri, folderDocument = plan.folder,
+        stopAtDirectories = plan.stopAtDirectories,
+        audioUriFilter = plan.audioUriFilter,
+        sourceKeyOverride = plan.sourceKeyOverride,
+        titleOverride = plan.titleOverride,
+      ) { _, _ -> }
+    }
+  }
+
+  suspend fun importBook(
+    uris: List<Uri>,
+    folder: Uri? = null,
+    folderDocument: DocumentFile? = null,
+    stopAtDirectories: Set<String> = emptySet(),
+    audioUriFilter: Set<String>? = null,
+    sourceKeyOverride: String? = null,
+    titleOverride: String? = null,
+    onProgress: (Int, Int) -> Unit,
+  ): Long = withContext(Dispatchers.IO) {
+    val root = folderDocument ?: folder?.let { uri ->
+      openPersistedTreeDocument(context, uri.toString())
+        ?: DocumentFile.fromTreeUri(context, uri)
+        ?: DocumentFile.fromSingleUri(context, uri)
+        ?: uri.path?.let { path -> DocumentFile.fromFile(File(path)) }
+        ?: throw IOException(uri.toString())
+    }
+    // A chosen folder is a read-only library source. Never create marker files or alter its hierarchy.
+    if (folder == null) AudiobookMarkerUtils.ensureMarker(context, folder, root)
+    val sources = if (root != null) collectFiles(root, stopAtDirectories) else uris.distinct().map { uri ->
       val file = DocumentFile.fromSingleUri(context, uri) ?: throw IOException(uri.toString())
       AudiobookMarkerUtils.ensureMarker(context, uri, file)
       Source(file, file.name.orEmpty())
     }
     val audio = sources.filter { source ->
       val extension = source.document.name?.substringAfterLast('.', "")?.lowercase()
-      extension in FileTypeUtils.AUDIO_EXTENSIONS || source.document.type?.startsWith("audio/") == true
+      (extension in FileTypeUtils.AUDIO_EXTENSIONS || source.document.type?.startsWith("audio/") == true) &&
+        (audioUriFilter == null || source.document.uri.toString() in audioUriFilter)
     }
     if (audio.isEmpty()) throw IOException(context.getString(R.string.audiobook_no_audio))
-    val sourceKey = folder?.toString() ?: digest(audio.map { it.document.uri.toString() }.sorted().joinToString("\n"))
-    dao.findBySource(sourceKey)?.let {
-      AudiobookMarkerUtils.clearCache()
-      app.infinity.mpvz.utils.media.MediaLibraryEvents.notifyChanged()
-      return@withContext it
-    }
+    val sourceKey = sourceKeyOverride ?: folder?.let(AudiobookSourceIdentity::key)
+      ?: digest(audio.map { AudiobookSourceIdentity.key(it.document.uri) }.sorted().joinToString("\n"))
     val metadata = readMetadata(sources)
     var coverUri = sources.firstOrNull {
       it.document.name?.lowercase() in setOf("cover.jpg", "cover.png", "folder.jpg", "folder.png")
@@ -65,7 +151,7 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
         Scanned(
           source,
           AudiobookTrackEntity(
-            bookId = 0, uri = source.document.uri.toString(), fileName = source.document.name.orEmpty(),
+            bookId = 0, uri = source.document.uri.toString(), fileName = source.path,
             title = tag(MediaMetadataRetriever.METADATA_KEY_TITLE).ifBlank { source.document.name.orEmpty().substringBeforeLast('.') },
             position = index, durationMs = duration, size = source.document.length(),
           ),
@@ -98,7 +184,7 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
     fun field(key: String): String = metadata.text(key).ifBlank { ordered.firstNotNullOfOrNull { it.tags[key]?.takeIf(String::isNotBlank) }.orEmpty() }
     val seriesValue = metadata.optJSONArray("series")?.opt(0)
     val series = seriesValue as? JSONObject
-    val parsedTitle = field("title").ifBlank { root?.name ?: ordered.first().track.title }
+    val parsedTitle = field("title").ifBlank { titleOverride?.takeIf(String::isNotBlank) ?: root?.name ?: ordered.first().track.title }
     val parsedAuthor = metadata.names("authors").ifBlank { field("author") }
 
     if (coverUri == null && parsedTitle.isNotBlank()) {
@@ -124,7 +210,7 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
       abridged = if (metadata.has("abridged") && !metadata.isNull("abridged")) metadata.optBoolean("abridged") else null,
       coverUri = coverUri,
     )
-    val id = dao.importBook(book, ordered.map { it.track })
+    val id = importOrReconcileDuplicate(book, ordered.map { it.track })
     metadata.optJSONArray("chapters")?.let { chapterData ->
       var offset = 0L
       dao.getBook(id)?.orderedTracks?.forEach { track ->
@@ -146,7 +232,40 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
     id
   }
 
-  private suspend fun collectFiles(root: DocumentFile): List<Source> {
+  private suspend fun importOrReconcileDuplicate(book: AudiobookEntity, tracks: List<AudiobookTrackEntity>): Long {
+    if (dao.findBySource(book.sourceKey) != null) return dao.importBook(book, tracks)
+
+    val incomingIdentities = tracks.map { AudiobookSourceIdentity.key(Uri.parse(it.uri)) }.sorted()
+    val localBooks = dao.getAllBooks()
+      .asSequence()
+      .filterNot { it.sourceKey.startsWith("abs:") }
+      .toList()
+    val localBookIds = localBooks
+      .asSequence()
+      .map { it.id }
+      .toSet()
+    val matchingIds = dao.getAllTracks()
+      .asSequence()
+      .filter { it.bookId in localBookIds }
+      .groupBy { it.bookId }
+      .filterValues { existing ->
+        existing.size == incomingIdentities.size &&
+          existing.map { AudiobookSourceIdentity.key(Uri.parse(it.uri)) }.sorted() == incomingIdentities
+      }
+      .keys
+    val existingBook = localBooks
+      .asSequence()
+      .filter { it.id in matchingIds }
+      .maxWithOrNull(compareBy<AudiobookEntity> { it.lastPlayedAt }.thenBy { it.progressMs }.thenBy { it.addedAt })
+
+    return if (existingBook != null) {
+      dao.reconcileImportedBook(existingBook.id, book.sourceKey, tracks)
+    } else {
+      dao.importBook(book, tracks)
+    }
+  }
+
+  private suspend fun collectFiles(root: DocumentFile, stopAtDirectories: Set<String> = emptySet()): List<Source> {
     val result = mutableListOf<Source>()
     val pending = ArrayDeque<Source>().apply { add(Source(root, "")) }
     val visited = mutableSetOf<String>()
@@ -157,10 +276,136 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
       if (!parent.document.canRead()) throw IOException(parent.path)
       parent.document.listFiles().forEach { child ->
         val entry = Source(child, "${parent.path}/${child.name.orEmpty()}")
-        if (child.isDirectory) pending.add(entry) else if (child.isFile) result.add(entry)
+        if (child.isDirectory) {
+          if (child.uri.toString() !in stopAtDirectories) pending.add(entry)
+        } else if (child.isFile) result.add(entry)
       }
     }
     return result
+  }
+
+  private fun isAudio(document: DocumentFile): Boolean = document.isFile && (
+    document.type?.startsWith("audio/") == true ||
+      document.name?.substringAfterLast('.', "")?.lowercase() in FileTypeUtils.AUDIO_EXTENSIONS
+  )
+
+  private fun isBookMetadata(document: DocumentFile): Boolean = document.isFile && (
+    document.name?.equals("metadata.json", true) == true || document.name?.endsWith(".opf", true) == true
+  )
+
+  private fun groupAudioFiles(files: List<Source>): List<AudioBookGroup> {
+    val genericAlbumNames = setOf("unknown", "audiobook", "audio book", "track", "untitled")
+    val tagged = files.map { source ->
+      val album = runCatching {
+        MediaMetadataRetriever().let { retriever ->
+          try {
+            retriever.setDataSource(context, source.document.uri)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.trim().orEmpty()
+          } finally {
+            retriever.release()
+          }
+        }
+      }.getOrDefault("")
+      val usableAlbum = album.takeIf { it.isNotBlank() && normalizeBookTitle(it) !in genericAlbumNames }
+      val title = cleanBookTitle(usableAlbum ?: source.document.name.orEmpty()).ifBlank { source.document.name.orEmpty() }
+      val key = normalizeBookTitle(title).ifBlank { source.document.uri.toString() }
+      Triple(key, title, source)
+    }
+    return tagged.groupBy { it.first }.map { (key, group) ->
+      AudioBookGroup(key, group.first().second, group.map { it.third })
+    }.sortedBy { it.key }
+  }
+
+  private fun cleanBookTitle(value: String): String = value.substringBeforeLast('.', value)
+    .replace(Regex("(?i)[\\s._-]*\\d+(?:\\.\\d+)?\\s*(?:kb(?:ps?)?|kbit(?:/s)?|khz|mb(?:ps?)?)\\b.*$"), "")
+    .replace(Regex("(?i)[\\s._-]*(?:part|pt|disc|disk|cd|track|chapter)[\\s._-]*\\d+$"), "")
+    .replace(Regex("([a-z])([A-Z])"), "$1 $2")
+    .replace('_', ' ')
+    .replace('-', ' ')
+    .replace(Regex("\\s+"), " ")
+    .trim()
+
+  private fun normalizeBookTitle(value: String): String = cleanBookTitle(value)
+    .lowercase(Locale.ROOT)
+    .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+    .trim()
+
+  private fun discoverBookFolders(root: DocumentFile): List<DocumentFile> {
+    data class Directory(
+      val document: DocumentFile,
+      val parentUri: String?,
+      val childUris: List<String>,
+      val hasAudio: Boolean,
+      val hasMetadata: Boolean,
+    )
+
+    val directories = linkedMapOf<String, Directory>()
+    val pending = ArrayDeque<Pair<DocumentFile, String?>>().apply { add(root to null) }
+    while (pending.isNotEmpty()) {
+      val (directory, parentUri) = pending.removeFirst()
+      val uri = directory.uri.toString()
+      if (uri in directories) continue
+      val children = directory.listFiles().toList()
+      val childDirectories = children.filter { it.isDirectory && !it.name.orEmpty().startsWith(".") }
+      val hasAudio = children.any { child ->
+        child.isFile && (child.type?.startsWith("audio/") == true ||
+          child.name?.substringAfterLast('.', "")?.lowercase() in FileTypeUtils.AUDIO_EXTENSIONS)
+      }
+      val hasMetadata = children.any { child ->
+        child.isFile && (child.name?.equals("metadata.json", true) == true || child.name?.endsWith(".opf", true) == true)
+      }
+      directories[uri] = Directory(directory, parentUri, childDirectories.map { it.uri.toString() }, hasAudio, hasMetadata)
+      childDirectories.forEach { pending.addLast(it to uri) }
+    }
+
+    fun hasMetadataAncestor(directory: Directory): Boolean {
+      var parent = directory.parentUri?.let(directories::get)
+      while (parent != null) {
+        if (parent.hasMetadata) return true
+        parent = parent.parentUri?.let(directories::get)
+      }
+      return false
+    }
+
+    // An explicit book metadata file owns its otherwise-unlabelled child folders
+    // (for example, CD1/CD2). Audio-bearing folders without such an ancestor are
+    // separate books, even when another book also has files at the selected root.
+    val candidates = directories.values.filter { it.hasMetadata || it.hasAudio && !hasMetadataAncestor(it) }
+    val candidateUris = candidates.mapTo(mutableSetOf()) { it.document.uri.toString() }
+
+    fun containsAudioOutsideNestedBooks(rootDirectory: Directory): Boolean {
+      val search = ArrayDeque<Directory>().apply { add(rootDirectory) }
+      val visited = mutableSetOf<String>()
+      while (search.isNotEmpty()) {
+        val current = search.removeFirst()
+        val currentUri = current.document.uri.toString()
+        if (!visited.add(currentUri)) continue
+        if (current.hasAudio) return true
+        current.childUris.forEach { childUri ->
+          if (childUri !in candidateUris) directories[childUri]?.let(search::addLast)
+        }
+      }
+      return false
+    }
+
+    return candidates.filter(::containsAudioOutsideNestedBooks).map { it.document }.ifEmpty {
+      listOf(root)
+    }
+  }
+
+  private fun discoverBookRoots(storage: File): List<File> {
+    val result = mutableListOf<File>()
+    val pending = ArrayDeque<File>().apply { add(storage) }
+    while (pending.isNotEmpty()) {
+      val directory = pending.removeFirst()
+      val children = directory.listFiles() ?: continue
+      val hasAudio = children.any { it.isFile && it.extension.lowercase() in FileTypeUtils.AUDIO_EXTENSIONS }
+      val hasBookMetadata = children.any { it.isFile && (it.name.equals("metadata.json", true) || it.extension.equals("opf", true)) }
+      if (hasAudio || hasBookMetadata) result += directory
+      children.filter { it.isDirectory && !it.name.startsWith(".") }.forEach(pending::addLast)
+    }
+    // A metadata-bearing/audio-bearing parent represents the book; avoid duplicate nested books.
+    return result.filter { directory -> result.none { other -> other != directory && directory.parentFile == other } }
   }
 
   private fun readMetadata(files: List<Source>): JSONObject {

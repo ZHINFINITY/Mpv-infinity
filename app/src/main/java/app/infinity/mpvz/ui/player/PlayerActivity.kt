@@ -74,6 +74,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.lifecycle.repeatOnLifecycle
 import app.infinity.mpvz.R
+import app.infinity.mpvz.catalog.StreamWatchHistory
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.entities.PlaylistItemEntity
@@ -227,6 +228,8 @@ class PlayerActivity :
    * `intent` isn't safely readable this early (before `onCreate`/`attach`).
    */
   private var isSecureFolderLaunch = false
+  var isStreamTabPlayback: Boolean = false
+    private set
 
   // ==================== Dependency Injection ====================
 
@@ -476,11 +479,14 @@ class PlayerActivity :
     val requestGeneration: Long,
     val legacyMediaIdentifier: String? = null,
     val ytdlFormat: String? = null,
+    val streamVideoHint: Boolean = false,
     val positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   )
 
   private var pendingSavedPlaylistSelection: SavedPlaylistSelection? = null
   private var acceptedPreparedPlaybackLaunch: PreparedPlaybackLaunch? = null
+  private var restoredAudioPlaybackSnapshot: AudioPlaybackResumeSnapshot? = null
+  private var audioPlaybackSessionAttachableAtLaunch = false
 
   /**
    * Playlist ID for tracking play history (optional, only for custom playlists)
@@ -561,6 +567,7 @@ class PlayerActivity :
   private var pendingVideoParamRefreshRequiresShaderReload = false
   private var lastBackgroundThumbnailKey: String? = null
   private var lastBackgroundThumbnail: Bitmap? = null
+  private val backgroundArtworkRequestGuard = BackgroundArtworkRequestGuard()
   private var currentPlayableUri: String? = null // Store current URI for notification re-entry
   private var activeTorrentSourceUri: String? = null
   private val playbackRenderDispatcher = Dispatchers.Main
@@ -724,6 +731,7 @@ class PlayerActivity :
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    restoreAudioPlaybackSessionIfNeeded()
     if (redirectUnselectedTorrentToPicker(intent, finishCurrent = true)) return
     if (!acceptPreparedPlaybackLaunch(intent)) {
       finish()
@@ -737,6 +745,7 @@ class PlayerActivity :
     }
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
+    isStreamTabPlayback = intent.getBooleanExtra("stream_tab_playback", false)
     applyInitialVideoOrientation(intent)
     setContentView(binding.root)
     nativeEngine.attach(binding.media3Player)
@@ -1167,7 +1176,8 @@ class PlayerActivity :
       playlistTotalCount = playlist.size
       viewModel.refreshPlaylistItems()
     }
-    val hasReusableSavedPlaybackSession = hasValidSavedPlaybackSession()
+    val hasReusableSavedPlaybackSession =
+      hasValidSavedPlaybackSession() || audioPlaybackSessionAttachableAtLaunch || restoredAudioPlaybackSnapshot != null
 
     // If playlist is empty but playlist_id is provided, load asynchronously from database
     // Load all items - LazyColumn handles pagination/virtualization efficiently
@@ -1206,9 +1216,11 @@ class PlayerActivity :
     legacyMediaIdentifier = getLegacyMediaIdentifier(intent, fileName)
     mediaIdentifier = getMediaIdentifier(intent, fileName)
 
-    // A validated process-local session still owns its queue. Do not clear or republish it before
-    // the saved-state attachment below has a chance to claim that exact current item.
-    if (intent.action != MediaPlaybackService.ACTION_OPEN_PLAYER &&
+    // Restore a durable audio queue before loading its current item. A process-local session is
+    // also left intact until the live-session attachment below claims it.
+    restoredAudioPlaybackSnapshot?.let(::restoreAudioPlaybackQueue)
+    if (restoredAudioPlaybackSnapshot == null &&
+      intent.action != MediaPlaybackService.ACTION_OPEN_PLAYER &&
       !preparedPlaybackQueue &&
       !hasReusableSavedPlaybackSession
     ) {
@@ -1239,14 +1251,23 @@ class PlayerActivity :
             playableUri = playableUri,
             originalUri = originalUri?.toString(),
             fileName = fileName,
-            mimeType = intent.type,
+            mimeType = resolvePlaybackMimeType(intent.type, intent.getStringExtra("mime_type")),
             hasExistingPlaylist = playlist.isNotEmpty(),
             hasPlaylistId = playlistId != null,
           )
         if (shouldExpandM3u) {
-          startMediaLoad(playableUri, originalUri?.toString(), expandM3u = true)
+          startMediaLoad(
+            playableUri,
+            originalUri?.toString(),
+            expandM3u = true,
+            positionRestoreOverride = restoredAudioPlaybackSnapshot?.toPositionRestoreOverride(),
+          )
         } else {
-          startMediaLoad(playableUri, originalUri?.toString())
+          startMediaLoad(
+            playableUri,
+            originalUri?.toString(),
+            positionRestoreOverride = restoredAudioPlaybackSnapshot?.toPositionRestoreOverride(),
+          )
         }
       }
     }
@@ -2307,6 +2328,7 @@ class PlayerActivity :
       }
 
       saveVideoPlaybackState(fileName, immediate = true)
+      persistAudioPlaybackSnapshot()
     }.onFailure { e ->
       Log.e(TAG, "Error during onPause", e)
     }
@@ -2792,7 +2814,8 @@ class PlayerActivity :
       PlayerLifecyclePolicy.launchPreparation(
         coreInitialized = PlaybackSession.isInitialized,
         phase = phase,
-        attachCurrentMedia = hasAttachableNotificationSession() || hasValidSavedPlaybackSession(),
+        attachCurrentMedia =
+          hasAttachableNotificationSession() || hasValidSavedPlaybackSession() || hasAttachableAudioSession(),
       )
     reusingPlaybackSessionOnLaunch =
       preparation in
@@ -2808,7 +2831,7 @@ class PlayerActivity :
   }
 
   private fun attachToCurrentPlaybackSessionIfRequested(sourceIntent: Intent = intent): Boolean {
-    if (sourceIntent.action != MediaPlaybackService.ACTION_OPEN_PLAYER) return false
+    if (sourceIntent.action != MediaPlaybackService.ACTION_OPEN_PLAYER && !hasAttachableAudioSession(sourceIntent)) return false
     return attachToPlaybackSession(sourceIntent)
   }
 
@@ -2817,6 +2840,96 @@ class PlayerActivity :
     val state = PlaybackSession.state.value
     return state.currentItem != null &&
       state.phase in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+  }
+
+  private fun hasAttachableAudioSession(sourceIntent: Intent = intent): Boolean {
+    if (sourceIntent.action == MediaPlaybackService.ACTION_OPEN_PLAYER ||
+      extractUriFromIntent(sourceIntent) != null ||
+      sourceIntent.hasExtra("playlist") ||
+      sourceIntent.hasExtra("playlist_id") ||
+      sourceIntent.getBooleanExtra(EXTRA_PREPARED_PLAYBACK_QUEUE, false)
+    ) {
+      return false
+    }
+    val state = PlaybackSession.state.value
+    if (state.phase !in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return false
+    val item = state.currentItem ?: PlaybackSession.queue.value.currentItem ?: return false
+    return item.isDefinitelyAudioOnly() && item.audiobook == null && !item.requiresTorrentResolution()
+  }
+
+  private fun restoreAudioPlaybackSessionIfNeeded() {
+    audioPlaybackSessionAttachableAtLaunch = hasAttachableAudioSession(intent)
+    if (audioPlaybackSessionAttachableAtLaunch) return
+    val sourceIntent = intent
+    if (sourceIntent.action !in setOf(null, Intent.ACTION_MAIN, Intent.ACTION_VIEW) ||
+      extractUriFromIntent(sourceIntent) != null ||
+      sourceIntent.hasExtra("playlist") ||
+      sourceIntent.hasExtra("playlist_id") ||
+      sourceIntent.getBooleanExtra(EXTRA_PREPARED_PLAYBACK_QUEUE, false)
+    ) {
+      return
+    }
+
+    val snapshot = AudioPlaybackResumeStore.load(this) ?: return
+    val currentItem = snapshot.currentItem ?: return
+    restoredAudioPlaybackSnapshot = snapshot
+    setIntent(
+      Intent(sourceIntent).apply {
+        action = Intent.ACTION_VIEW
+        data = Uri.parse(currentItem.originalUri)
+        type = currentItem.mimeType?.takeIf(String::isNotBlank) ?: "audio/*"
+        putExtra("is_audio", true)
+        putExtra("media_library_audio", true)
+        putExtra("title", currentItem.title)
+        putExtra("media_identifier", currentItem.stableId)
+        putExtra("playlist_index", snapshot.queueState.currentIndex)
+        val headerPairs = currentItem.headers.flatMap { (name, value) -> listOf(name, value) }
+        if (headerPairs.isNotEmpty()) putExtra("headers", headerPairs.toTypedArray())
+        currentItem.networkSource?.let { source ->
+          putExtra("network_connection_id", source.connectionId)
+          putExtra("network_file_path", source.relativePath)
+        }
+      },
+    )
+    Log.i(TAG, "Restoring the last audio item after process recreation")
+  }
+
+  private fun restoreAudioPlaybackQueue(snapshot: AudioPlaybackResumeSnapshot) {
+    val savedQueue = snapshot.queueState
+    val currentItem = savedQueue.currentItem ?: return
+    playlistId = null
+    playlistItems = emptyList()
+    playlistEntity = null
+    playlist = savedQueue.items.map { item -> Uri.parse(NetworkPlaybackUri.normalize(item.originalUri)) }
+    playlistIndex = savedQueue.currentIndex
+    playlistWindowOffset = 0
+    playlistTotalCount = playlist.size
+    isM3uPlaylist = savedQueue.isM3u
+    networkPlaylistPaths = savedQueue.items.map { item -> item.networkSource?.relativePath.orEmpty() }
+    networkPlaylistTitles = savedQueue.items.map { item -> item.title.orEmpty() }
+    networkPlaylistArtworkUrls = savedQueue.items.map { item -> item.artworkUri.orEmpty() }
+    networkPlaylistHeaders = savedQueue.items.map(PlaybackItem::headers)
+    networkPlaylistConnectionId = currentItem.networkSource?.connectionId ?: -1L
+    PlaybackSession.replaceQueue(
+      items = savedQueue.items,
+      currentIndex = savedQueue.currentIndex,
+      isExplicitQueue = savedQueue.isExplicitQueue,
+      isM3u = savedQueue.isM3u,
+    )
+    PlaybackSession.setRepeatMode(savedQueue.repeatMode)
+    PlaybackSession.setShuffleEnabled(savedQueue.shuffleEnabled)
+    viewModel.refreshPlaylistItems()
+  }
+
+  private fun AudioPlaybackResumeSnapshot.toPositionRestoreOverride() =
+    PlaybackPositionRestoreOverride(positionSeconds = positionSeconds, paused = paused)
+
+  private fun persistAudioPlaybackSnapshot() {
+    val queueState = PlaybackSession.queue.value
+    if (queueState.currentItem == null) return
+    val positionSeconds = PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
+    val paused = PlaybackSession.getPropertyBoolean("pause") ?: PlaybackSession.state.value.paused
+    AudioPlaybackResumeStore.save(applicationContext, queueState, positionSeconds, paused)
   }
 
   private fun attachToSavedPlaybackSessionIfValid(sourceIntent: Intent = intent): Boolean {
@@ -2866,7 +2979,7 @@ class PlayerActivity :
       Intent(sourceIntent).apply {
         action = Intent.ACTION_VIEW
         data = Uri.parse(currentItem.originalUri)
-        type = currentItem.mimeType
+        type = currentItem.mimeType ?: sourceIntent.type
         putExtra("title", currentItem.title)
         putExtra("media_identifier", currentItem.stableId)
         putExtra("playlist_index", queueState.currentIndex)
@@ -2878,7 +2991,8 @@ class PlayerActivity :
         val isAudio =
           sourceIntent.getBooleanExtra("is_audio", false) ||
             sourceIntent.getBooleanExtra("media_library_audio", false) ||
-            currentItem.mimeType?.startsWith("audio/") == true
+            currentItem.mimeType?.startsWith("audio/") == true ||
+            currentItem.isDefinitelyAudioOnly()
         putExtra("is_audio", isAudio)
         putExtra("media_library_audio", isAudio)
         currentItem.networkSource?.let { source ->
@@ -4529,7 +4643,9 @@ class PlayerActivity :
     if (durationSecs > 0 && positionSecs < durationSecs - 2) return
     if (fileName.isNotBlank()) saveVideoPlaybackState(fileName, immediate = true)
 
-    val isAudiobook = PlaybackSession.state.value.currentItem?.audiobook != null
+    val isAudiobook = PlaybackSession.state.value.currentItem?.let { item ->
+      item.audiobook != null || item.directAudiobook != null
+    } == true
     if (AudiobookPlayback.handleEndOfFile()) return
     val repeatMode = if (isAudiobook) RepeatMode.OFF else viewModel.repeatMode.value
     if (repeatMode == RepeatMode.ONE) {
@@ -5284,9 +5400,25 @@ class PlayerActivity :
     immediate: Boolean = false,
   ) {
     val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return
+    val appContext = applicationContext
+    val directAudiobook = PlaybackSession.queue.value.items
+      .firstOrNull { item -> item.stableId == snapshot.mediaIdentifier }
+      ?.directAudiobook
+    val streamHistoryKey = currentStreamHistoryAliases(snapshot.mediaIdentifier).firstOrNull()
 
     // Cancel any previous pending save operation
     savePlaybackStateJob?.cancel()
+
+    // Snapshot every Activity-owned value before dispatch. Immediate saves are deliberately
+    // non-cancellable and may finish after onDestroy, so the worker must not retain this Activity.
+    val saveRepository = playbackStateRepository
+    val savePositionOnQuit = playerPreferences.savePositionOnQuit.get()
+    val watchedThreshold = browserPreferences.watchedThreshold.get()
+    val appContext = applicationContext
+    val streamHistoryKey =
+      intent.takeIf { it.getBooleanExtra("stream_tab_playback", false) }
+        ?.getStringExtra("stream_history_key")
+        ?.takeIf { it.isNotBlank() }
 
     val saveBlock: suspend kotlinx.coroutines.CoroutineScope.() -> Unit = {
       runCatching {
@@ -5294,18 +5426,19 @@ class PlayerActivity :
           delay(250)
         }
 
-        val oldState = playbackStateRepository.getVideoDataByTitle(snapshot.mediaIdentifier)
+        val oldState = saveRepository.getVideoDataByTitle(snapshot.mediaIdentifier)
         Log.d(TAG, "Saving playback state for: ${snapshot.mediaTitle} (identifier: ${snapshot.mediaIdentifier})")
 
         val playbackState =
           PlaybackStatePersistence.buildEntity(
             oldState = oldState,
             snapshot = snapshot,
-            savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
-            watchedThreshold = browserPreferences.watchedThreshold.get(),
+            savePositionOnQuit = savePositionOnQuit,
+            watchedThreshold = watchedThreshold,
           )
-        playbackStateRepository.upsert(playbackState)
+        saveRepository.upsert(playbackState)
         PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
+        persistStreamHistoryProgress(appContext, snapshot, streamHistoryKey)
       }.onFailure { e ->
         Log.e(TAG, "Error saving playback state", e)
       }
@@ -5318,6 +5451,13 @@ class PlayerActivity :
       savePlaybackStateJob = lifecycleScope.launch(Dispatchers.IO, block = saveBlock)
     }
   }
+
+  private fun currentStreamHistoryAliases(itemIdentifier: String = mediaIdentifier): List<String> =
+    StreamWatchHistory.aliasesForItem(
+      enabled = intent.getBooleanExtra("stream_tab_playback", false),
+      launchKey = intent.getStringExtra("stream_history_key"),
+      itemIdentifier = itemIdentifier,
+    )
 
   private fun startJellyfinProgressLoop() {
     jellyfinProgressJob?.cancel()
@@ -5663,6 +5803,7 @@ class PlayerActivity :
       }
 
       RecentlyPlayedOps.addRecentlyPlayed(
+        context = applicationContext,
         filePath = filePath,
         fileName = resolvedFileName,
         videoTitle = videoTitle,
@@ -5671,6 +5812,7 @@ class PlayerActivity :
         width = width,
         height = height,
         launchSource = launchSource,
+        aliases = currentStreamHistoryAliases(),
       )
 
       Log.d(TAG, "Saved recently played: $filePath")
@@ -5773,6 +5915,27 @@ class PlayerActivity :
             if (type.isNullOrBlank() && getBooleanExtra("is_audio", false)) type = "audio/*"
           }
       }
+    }
+
+    if (intent.action != MediaPlaybackService.ACTION_OPEN_PLAYER &&
+      hasAttachableAudioSession(intent) &&
+      attachToCurrentPlaybackSessionIfRequested(intent)
+    ) {
+      isBackgroundPlaybackSessionActive = false
+      pendingBackgroundTransition = false
+      isReady = PlaybackSession.state.value.phase == PlaybackPhase.READY
+      if (isReady) viewModel.onVideoLoadCompleted()
+      applyPlaybackBrightnessPolicy(isAudio = true)
+      setOrientation()
+      if (isBackgroundPlaybackEnabled()) {
+        if (!serviceBound || mediaPlaybackService == null) {
+          startBackgroundPlaybackInternal(bindToActivity = true)
+        }
+        syncBackgroundPlaybackService(updateThumbnail = true)
+      } else {
+        endBackgroundPlayback()
+      }
+      return
     }
 
     if (!acceptPreparedPlaybackLaunch(intent)) return
@@ -5941,7 +6104,7 @@ class PlayerActivity :
           playableUri = uri,
           originalUri = originalUri?.toString(),
           fileName = fileName,
-          mimeType = intent.type,
+          mimeType = resolvePlaybackMimeType(intent.type, intent.getStringExtra("mime_type")),
           hasExistingPlaylist = playlist.isNotEmpty(),
           hasPlaylistId = playlistId != null,
         )
@@ -5969,6 +6132,11 @@ class PlayerActivity :
     cancelPlaybackLoadRecovery()
     playWhenFileLoaded = true
     val sourceIntent = Intent(intent)
+    val sourceMimeType =
+      resolvePlaybackMimeType(sourceIntent.type, sourceIntent.getStringExtra("mime_type"))
+    val streamVideoHint =
+      sourceIntent.getBooleanExtra("stream_tab_playback", false) &&
+        !sourceIntent.getBooleanExtra("is_audio", false)
     val requestedFileName = fileName
     val isWebDavPlayback =
       sourceIntent.getStringExtra("network_file_path")?.isNotBlank() == true &&
@@ -6051,7 +6219,7 @@ class PlayerActivity :
           var resolvedOriginalUri = requestedSource
           var resolvedFileName = requestedFileName
           var resolvedMediaIdentifier = requestedMediaIdentifier
-          var resolvedMimeType = sourceIntent.type ?: "audio/*".takeIf { isKnownAudioLaunch(sourceIntent) }
+          var resolvedMimeType = sourceMimeType ?: "audio/*".takeIf { isKnownAudioLaunch(sourceIntent) }
           var torrentResult: TorrentStreamResult? = null
 
           if (isTorrentRequest && preserveTorrentSession) {
@@ -6062,7 +6230,7 @@ class PlayerActivity :
             resolvedPlayableUri = playableUri
             resolvedOriginalUri = activeTorrentSourceUri ?: requestedSource
             resolvedFileName = requestedFileName
-            resolvedMimeType = sourceIntent.type
+            resolvedMimeType = sourceMimeType
           } else if (isTorrentRequest) {
             val result =
               torrentStreamingEngine.startStream(
@@ -6129,9 +6297,20 @@ class PlayerActivity :
             } else {
               null
             }
+          val audioLaunch = isKnownAudioLaunch(sourceIntent)
+          val itemMimeType =
+            sequenceOf(requestedQueueItem?.mimeType, resolvedMimeType)
+              .filterNotNull()
+              .firstOrNull { mimeType ->
+                !audioLaunch || mimeType.startsWith("audio/") || mimeType.startsWith("video/")
+              } ?: "audio/*".takeIf { audioLaunch }
           val item =
             if (!isTorrentRequest) {
-              requestedQueueItem?.copy(playableUri = resolvedPlayableUri, headers = requestedHeaders)
+              requestedQueueItem?.copy(
+                playableUri = resolvedPlayableUri,
+                headers = requestedHeaders,
+                mimeType = itemMimeType,
+              )
             } else {
               null
             }
@@ -6140,7 +6319,7 @@ class PlayerActivity :
                 originalUri = resolvedOriginalUri,
                 playableUri = resolvedPlayableUri,
                 title = resolvedFileName,
-                mimeType = resolvedMimeType,
+                mimeType = itemMimeType,
                 headers = requestedHeaders,
                 networkSource = networkSource,
                 torrentFileIndex = torrentResult?.selectedFile?.index,
@@ -6202,12 +6381,15 @@ class PlayerActivity :
               commitMediaRequest(requestGeneration) { PlaybackSession.replaceQueue(listOf(item), 0) }
             }
           }
+          val restoreOverride =
+            positionRestoreOverride ?: AudiobookPlayback.positionForLoad(item, sourceIntent)
           issuePlaybackLoad(
             item = item,
             attempt = 0,
             requestGeneration = requestGeneration,
             legacyMediaIdentifier = requestedLegacyMediaIdentifier.takeUnless { isTorrentRequest },
-            positionRestoreOverride = positionRestoreOverride,
+            streamVideoHint = streamVideoHint,
+            positionRestoreOverride = restoreOverride,
           )
         } catch (error: CancellationException) {
           throw error
@@ -6237,6 +6419,7 @@ class PlayerActivity :
     requestGeneration: Long,
     legacyMediaIdentifier: String? = null,
     ytdlFormat: String? = null,
+    streamVideoHint: Boolean = false,
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   ) {
     ensureCurrentMediaRequest(requestGeneration)
@@ -6269,6 +6452,26 @@ class PlayerActivity :
       }
     if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
     ensureCurrentMediaRequest(requestGeneration)
+    val resolvedPageMediaUrl =
+      if (requiresYtdlp) {
+        YtdlpManager.resolveDirectMediaUrl(this, item.playableUri) { line ->
+          line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
+        }
+      } else {
+        null
+      }
+    val playbackItem =
+      resolvedPageMediaUrl?.let { resolved ->
+        item.copy(
+          playableUri = resolved,
+          headers = PlaybackHttpHeaders.withDefault(
+            item.headers,
+            "Referer",
+            HttpUtils.extractRefererDomain(Uri.parse(item.playableUri)),
+          ),
+        )
+      } ?: item
+    val playbackRequiresYtdlp = YtdlpManager.requiresYtdlp(playbackItem.playableUri)
     // Native Media3 is used for HDR-family video, while MPV remains the normal video/audio
     // pipeline. Auto keeps ordinary videos on MPV and routes HDR, HLG, and Dolby Vision to Native.
     val configuredEngine =
@@ -6277,18 +6480,19 @@ class PlayerActivity :
         ?.second
         ?: decoderPreferences.playbackEngine.get()
     val selectedEngine =
-      when (configuredEngine) {
-        PlaybackEngineMode.AUTO ->
+      when {
+        isStreamTabPlayback && !requiresYtdlp && item.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO -> PlaybackEngineMode.NATIVE
+        configuredEngine == PlaybackEngineMode.AUTO ->
           if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
         else -> configuredEngine
       }
     val nativeResolvedUri =
       if (selectedEngine == PlaybackEngineMode.NATIVE && requiresYtdlp) {
-        YtdlpManager.resolveDirectMediaUrl(this, item.playableUri) { message -> Log.d(TAG, message) }
+        resolvedPageMediaUrl
       } else {
         null
       }
-    val nativeItem = nativeResolvedUri?.let { item.copy(playableUri = it) } ?: item
+    val nativeItem = nativeResolvedUri?.let { playbackItem } ?: item
     val nativeSourceIsPlayable = !isTorrentSource(nativeItem.playableUri, nativeItem.mimeType)
     val canUseNative =
       selectedEngine == PlaybackEngineMode.NATIVE &&
@@ -6350,17 +6554,17 @@ class PlayerActivity :
     ensureCurrentMediaRequest(requestGeneration)
     val generation =
       PlaybackSession.load(
-        item = item,
+        item = playbackItem,
         restoreSavedPosition = restoreSavedPosition,
         positionRestoreOverride = positionRestoreOverride,
         initialPositionSeconds = initialPositionSeconds,
-        flattenEditions = requiresYtdlp && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions"),
+        flattenEditions = playbackRequiresYtdlp && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions"),
         commit = { nativeLoad ->
           PlaybackActivityOwner.runIfOwner(playbackOwnerToken, -1L) {
             if (requestGeneration != mediaRequestGeneration) {
               -1L
             } else {
-              if (requiresYtdlp) PlaybackSession.setPropertyString("ytdl-format", ytdlFormat.orEmpty())
+              if (playbackRequiresYtdlp) PlaybackSession.setPropertyString("ytdl-format", ytdlFormat.orEmpty())
               nativeLoad()
             }
           }
@@ -6373,12 +6577,13 @@ class PlayerActivity :
 
     val request =
       PendingMediaLoadRecovery(
-        item = item,
+        item = playbackItem,
         generation = generation,
         attempt = attempt,
         requestGeneration = requestGeneration,
         legacyMediaIdentifier = legacyMediaIdentifier,
         ytdlFormat = ytdlFormat,
+        streamVideoHint = streamVideoHint,
         positionRestoreOverride = positionRestoreOverride,
       )
     withContext(Dispatchers.Main) { armPlaybackLoadRecovery(request) }
@@ -6469,6 +6674,7 @@ class PlayerActivity :
             requestGeneration = request.requestGeneration,
             legacyMediaIdentifier = request.legacyMediaIdentifier,
             ytdlFormat = request.ytdlFormat,
+            streamVideoHint = request.streamVideoHint,
             positionRestoreOverride = request.positionRestoreOverride,
           )
         } catch (cancellation: CancellationException) {
@@ -7879,7 +8085,10 @@ class PlayerActivity :
         ?: runCatching { PlaybackSession.getPropertyString("metadata/artist") }.getOrNull().orEmpty()
     val thumbnailKey = buildBackgroundThumbnailKey()
     val cachedThumbnail =
-      if (thumbnailKey == lastBackgroundThumbnailKey) {
+      if (
+        thumbnailKey == lastBackgroundThumbnailKey &&
+          backgroundArtworkRequestGuard.hasReadyArtwork(thumbnailKey)
+      ) {
         lastBackgroundThumbnail
       } else {
         null
@@ -7899,54 +8108,72 @@ class PlayerActivity :
     if (!updateThumbnail || thumbnailKey.isBlank()) return
     if (thumbnailKey == lastBackgroundThumbnailKey && cachedThumbnail != null) return
 
+    val request = backgroundArtworkRequestGuard.begin(thumbnailKey, isReady) ?: return
     backgroundServiceSyncJob?.cancel()
     backgroundServiceSyncJob =
       lifecycleScope.launch {
-        delay(150)
-        val generatedThumbnail =
-          withContext(Dispatchers.IO) {
-            app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
-              this@PlayerActivity,
-              currentQueueItem?.artworkUri,
-            ) ?: runCatching { PlaybackSession.grabThumbnail(480) }.getOrNull() ?: runCatching {
-              val uriStr = currentPlayableUri
-              if (!uriStr.isNullOrBlank()) {
-                val parsedUri = Uri.parse(uriStr)
-                val cleanPath =
-                  when (parsedUri.scheme) {
-                    null, "file" -> parsedUri.path ?: uriStr
-                    "content" -> null
-                    // Probing a remote/proxied URL opens a second upstream stream that competes
-                    // with live playback and audibly stalls it during Mini Player handoffs.
-                    else -> return@runCatching null
+        var settled = false
+        var hasArtwork = false
+        try {
+          delay(150)
+          val generatedThumbnail =
+            withContext(Dispatchers.IO) {
+              app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
+                this@PlayerActivity,
+                currentQueueItem?.artworkUri,
+              ) ?: runCatching { PlaybackSession.grabThumbnail(480) }.getOrNull() ?: runCatching {
+                val uriStr = currentPlayableUri
+                if (!uriStr.isNullOrBlank()) {
+                  val parsedUri = Uri.parse(uriStr)
+                  val cleanPath =
+                    when (parsedUri.scheme) {
+                      null, "file" -> parsedUri.path ?: uriStr
+                      "content" -> null
+                      // Probing a remote/proxied URL opens a second upstream stream that competes
+                      // with live playback and audibly stalls it during Mini Player handoffs.
+                      else -> return@runCatching null
+                    }
+                  val retriever = android.media.MediaMetadataRetriever()
+                  if (cleanPath != null) {
+                    retriever.setDataSource(cleanPath)
+                  } else {
+                    retriever.setDataSource(this@PlayerActivity, parsedUri)
                   }
-                val retriever = android.media.MediaMetadataRetriever()
-                if (cleanPath != null) {
-                  retriever.setDataSource(cleanPath)
+                  val art = app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
+                  retriever.release()
+                  art
                 } else {
-                  retriever.setDataSource(this@PlayerActivity, parsedUri)
+                  null
                 }
-                val art = app.infinity.mpvz.domain.thumbnail.EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath, retriever)
-                retriever.release()
-                art
-              } else {
-                null
-              }
-            }.getOrNull()
+              }.getOrNull()
+            }
+
+          if (
+            !ownsPlaybackSession() ||
+              !mpvInitialized ||
+              player.isExiting ||
+              isFinishing ||
+              !backgroundArtworkRequestGuard.isCurrent(request, buildBackgroundThumbnailKey(), isReady)
+          ) {
+            return@launch
           }
 
-        if (!ownsPlaybackSession() || !mpvInitialized || player.isExiting || isFinishing) return@launch
-        if (thumbnailKey != buildBackgroundThumbnailKey()) return@launch
+          settled = true
+          if (generatedThumbnail == null) return@launch
 
-        lastBackgroundThumbnailKey = thumbnailKey
-        lastBackgroundThumbnail = generatedThumbnail
-        mediaPlaybackService?.setMediaInfo(
-          title = title,
-          artist = artist,
-          thumbnail = generatedThumbnail,
-          uri = currentDurableMediaUri(),
-          identifier = notificationIdentifier,
-        )
+          lastBackgroundThumbnailKey = thumbnailKey
+          lastBackgroundThumbnail = generatedThumbnail
+          hasArtwork = true
+          mediaPlaybackService?.setMediaInfo(
+            title = title,
+            artist = artist,
+            thumbnail = generatedThumbnail,
+            uri = currentDurableMediaUri(),
+            identifier = notificationIdentifier,
+          )
+        } finally {
+          backgroundArtworkRequestGuard.complete(request, settled, hasArtwork)
+        }
       }
   }
 
@@ -8115,6 +8342,7 @@ class PlayerActivity :
       }
 
       RecentlyPlayedOps.addRecentlyPlayed(
+        context = applicationContext,
         filePath = filePath,
         fileName = resolvedName,
         videoTitle = videoTitle,
@@ -8124,6 +8352,7 @@ class PlayerActivity :
         height = height,
         launchSource = "playlist",
         playlistId = historyPlaylistId,
+        aliases = currentStreamHistoryAliases(),
       )
 
       if (HttpUtils.isNetworkStream(uri) && !isJellyfinLaunchSource(intent)) {
@@ -8831,4 +9060,38 @@ class PlayerActivity :
     private const val STATE_PLAYLIST_STABLE_ID = "player_state_playlist_stable_id"
     private const val STATE_PLAYLIST_ORIGINAL_URI = "player_state_playlist_original_uri"
   }
+}
+
+private fun persistStreamHistoryProgress(
+  context: Context,
+  snapshot: PlaybackStateSnapshot,
+  key: String?,
+) {
+  if (key == null) return
+  val progress = if (snapshot.duration > 0) {
+    (snapshot.currentPosition.toFloat() / snapshot.duration.toFloat()).coerceIn(0f, 1f)
+  } else 0f
+  context.getSharedPreferences(StreamWatchHistory.PROGRESS_PREFERENCES_NAME, Context.MODE_PRIVATE)
+    .edit()
+    .putFloat(key, progress)
+    .apply()
+
+  // Resume progress is independent of Recently Played, so keep saving it when history is disabled.
+  // Do not add the poster when the source is merely selected; this method is reached only after
+  // playback state has been captured.
+  val history = context.getSharedPreferences(StreamWatchHistory.PREFERENCES_NAME, Context.MODE_PRIVATE)
+  val ordered =
+    StreamWatchHistory.orderAfterPlayback(
+      enabled = RecentlyPlayedOps.isRecentlyPlayedEnabled(),
+      currentOrder = history.getString(StreamWatchHistory.ORDER_KEY, "").orEmpty(),
+      key = key,
+    ) ?: return
+  history.edit()
+    .putString(StreamWatchHistory.ORDER_KEY, ordered.joinToString("|"))
+    .putStringSet(
+      StreamWatchHistory.KEYS_KEY,
+      StreamWatchHistory.fallbackKeysAfterPlayback(ordered),
+    )
+    .putInt("schema_version", 3)
+    .apply()
 }
