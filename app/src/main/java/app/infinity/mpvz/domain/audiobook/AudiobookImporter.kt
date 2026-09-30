@@ -73,6 +73,8 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
       extension in FileTypeUtils.AUDIO_EXTENSIONS || source.document.type?.startsWith("audio/") == true
     }
     if (audio.isEmpty()) throw IOException(context.getString(R.string.audiobook_no_audio))
+    val legacySourceKey = folder?.toString()
+      ?: digest(audio.map { it.document.uri.toString() }.sorted().joinToString("\n"))
     val sourceKey = folder?.let(AudiobookSourceIdentity::key)
       ?: digest(audio.map { AudiobookSourceIdentity.key(it.document.uri) }.sorted().joinToString("\n"))
     val metadata = readMetadata(sources)
@@ -152,7 +154,7 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
       coverUri = coverUri,
     )
     val orderedTracks = ordered.map { it.track }
-    val legacyBookId = folder?.let { dao.findBySource(it.toString()) }
+    val legacyBookId = dao.findBySource(legacySourceKey)
     val id =
       if (legacyBookId != null) {
         dao.reconcileImportedBook(legacyBookId, sourceKey, orderedTracks)

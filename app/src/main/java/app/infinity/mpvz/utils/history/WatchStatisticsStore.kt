@@ -38,8 +38,13 @@ internal data class WatchStatisticsState(
     return copy(itemKeyDigests = updatedKeys)
   }
 
-  fun reconcile(filePaths: List<String>): WatchStatisticsState =
-    filePaths.take(MAX_ITEMS).fold(this) { state, filePath -> state.record(filePath) }
+  fun reconcile(
+    filePaths: List<String>,
+    aliasesByFilePath: Map<String, List<String>> = emptyMap(),
+  ): WatchStatisticsState =
+    filePaths.take(MAX_ITEMS).fold(this) { state, filePath ->
+      state.record(filePath, aliasesByFilePath[filePath].orEmpty())
+    }
 
   fun reconcileStreamIdentities(streamKeys: List<String>): WatchStatisticsState =
     streamKeys.take(MAX_ITEMS).fold(this) { state, streamKey -> state.record(streamKey) }
@@ -73,15 +78,18 @@ internal object WatchStatisticsStore {
     context: Context,
     history: List<RecentlyPlayedEntity>,
     streamHistoryKeys: List<String> = emptyList(),
+    historyAliases: Map<String, List<String>> = emptyMap(),
   ) {
+    val historyPaths = history.map { it.filePath }
     synchronized(lock) {
       val preferences = preferences(context)
       val current = if (preferences.getBoolean(INITIALIZED_KEY, false)) {
         read(preferences)
-          .reconcile(history.map { it.filePath })
+          .reconcile(historyPaths, historyAliases)
           .reconcileStreamIdentities(streamHistoryKeys)
       } else {
-        WatchStatisticsState.fromHistory(history.map { it.filePath })
+        WatchStatisticsState.fromHistory(historyPaths)
+          .reconcile(historyPaths, historyAliases)
           .reconcileStreamIdentities(streamHistoryKeys)
       }
       persist(preferences, current)

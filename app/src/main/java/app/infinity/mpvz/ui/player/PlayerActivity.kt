@@ -5287,12 +5287,7 @@ class PlayerActivity :
   ) {
     val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return
     val appContext = applicationContext
-    val streamHistoryKey =
-      if (intent.getBooleanExtra("stream_tab_playback", false)) {
-        intent.getStringExtra("stream_history_key")?.takeIf(String::isNotBlank)
-      } else {
-        null
-      }
+    val streamHistoryKey = currentStreamHistoryAliases().firstOrNull()
 
     // Cancel any previous pending save operation
     savePlaybackStateJob?.cancel()
@@ -5327,6 +5322,11 @@ class PlayerActivity :
       // Launch new save job and track it
       savePlaybackStateJob = lifecycleScope.launch(Dispatchers.IO, block = saveBlock)
     }
+  }
+
+  private fun currentStreamHistoryAliases(): List<String> {
+    if (!intent.getBooleanExtra("stream_tab_playback", false)) return emptyList()
+    return listOfNotNull(intent.getStringExtra("stream_history_key")?.takeIf(String::isNotBlank))
   }
 
   private fun startJellyfinProgressLoop() {
@@ -5682,6 +5682,7 @@ class PlayerActivity :
         width = width,
         height = height,
         launchSource = launchSource,
+        aliases = currentStreamHistoryAliases(),
       )
 
       Log.d(TAG, "Saved recently played: $filePath")
@@ -8158,6 +8159,7 @@ class PlayerActivity :
         height = height,
         launchSource = "playlist",
         playlistId = historyPlaylistId,
+        aliases = currentStreamHistoryAliases(),
       )
 
       if (HttpUtils.isNetworkStream(uri) && !isJellyfinLaunchSource(intent)) {

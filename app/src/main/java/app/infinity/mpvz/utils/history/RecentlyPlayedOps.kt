@@ -51,6 +51,7 @@ object RecentlyPlayedOps {
     height: Int = 0,
     launchSource: String? = null,
     playlistId: Int? = null,
+    aliases: List<String> = emptyList(),
   ) {
     // Check if recently played feature is enabled
     if (!isRecentlyPlayedEnabled()) return
@@ -72,7 +73,7 @@ object RecentlyPlayedOps {
       playlistId,
     )
     try {
-      recordWatchStatistics(context, filePath)
+      recordWatchStatistics(context, filePath, aliases = aliases)
     } catch (cancelled: kotlinx.coroutines.CancellationException) {
       throw cancelled
     } catch (failure: Exception) {
@@ -86,14 +87,17 @@ object RecentlyPlayedOps {
 
   fun isRecentlyPlayedEnabled(): Boolean = preferences.enableRecentlyPlayed.get()
 
-  suspend fun backfillWatchStatistics(context: Context) {
+  suspend fun backfillWatchStatistics(
+    context: Context,
+    historyAliases: Map<String, List<String>> = emptyMap(),
+  ) {
     if (!preferences.enableWatchStatistics.get()) return
     val history = withContext(Dispatchers.IO) {
       repository.getRecentlyPlayed(limit = WatchStatisticsState.MAX_ITEMS)
     }
     val streamHistoryKeys = withContext(Dispatchers.IO) { StreamWatchHistory.statisticsEntries(context) }
     withContext(Dispatchers.IO) {
-      WatchStatisticsStore.backfillIfNeeded(context, history, streamHistoryKeys)
+      WatchStatisticsStore.backfillIfNeeded(context, history, streamHistoryKeys, historyAliases)
     }
   }
 
@@ -104,7 +108,7 @@ object RecentlyPlayedOps {
     enabled: Boolean = isRecentlyPlayedEnabled(),
   ) {
     if (!shouldTrackWatchStatistics(enabled, preferences.enableWatchStatistics.get()) || itemKey.isBlank()) return
-    backfillWatchStatistics(context)
+    backfillWatchStatistics(context, mapOf(itemKey to aliases))
     withContext(Dispatchers.IO) {
       WatchStatisticsStore.record(context, itemKey, aliases)
     }

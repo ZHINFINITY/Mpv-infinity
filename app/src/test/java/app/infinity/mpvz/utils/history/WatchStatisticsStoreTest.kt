@@ -47,6 +47,27 @@ class WatchStatisticsStoreTest {
   }
 
   @Test
+  fun backfillAliasesConnectRecentAndStreamIdentitiesWithoutDoubleCounting() {
+    val historyPath = "/test/media-stream"
+    val streamKey = "opaque-test-stream-key"
+    val history = listOf(historyPath)
+    val aliases = mapOf(historyPath to listOf(streamKey))
+    val state =
+      WatchStatisticsState.fromHistory(history)
+        .reconcile(history, aliases)
+        .reconcileStreamIdentities(listOf(streamKey))
+
+    assertEquals(1, state.count)
+    assertEquals(2, state.itemKeyDigests.size)
+    val existingSnapshot =
+      WatchStatisticsState.fromHistory(emptyList())
+        .record(historyPath)
+        .reconcile(history, aliases)
+        .reconcileStreamIdentities(listOf(streamKey))
+    assertEquals(1, existingSnapshot.count)
+  }
+
+  @Test
   fun persistedIdentityValuesAreDigestsRatherThanRawPaths() {
     val rawIdentity = "/test/media-a"
     val state = WatchStatisticsState.fromHistory(listOf(rawIdentity))
