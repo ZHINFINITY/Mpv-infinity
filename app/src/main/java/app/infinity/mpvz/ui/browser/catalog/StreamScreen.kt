@@ -76,10 +76,13 @@ import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.catalog.CatalogProvider
 import app.infinity.mpvz.catalog.CatalogViewModel
+import app.infinity.mpvz.catalog.isDirectHttpStreamUrl
 import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.R
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
 import app.infinity.mpvz.ui.components.InlineSearchBar
@@ -97,6 +100,10 @@ import coil3.compose.AsyncImage
 @kotlinx.serialization.Serializable
 object StreamScreen : app.infinity.mpvz.presentation.Screen {
   @Composable override fun Content() {
+    Content(showBackButton = true)
+  }
+
+  @Composable fun Content(showBackButton: Boolean) {
     val backstack = LocalBackStack.current
     val context = LocalContext.current
     val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
@@ -184,13 +191,30 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
     LaunchedEffect(Unit) {
       viewModel.resolvedStream.collect { stream ->
         if (stream != null) {
-          context.startActivity(android.content.Intent(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java).apply {
-            action = android.content.Intent.ACTION_VIEW
-            data = android.net.Uri.parse(stream.url)
-            stream.mimeType?.takeIf(String::isNotBlank)?.let { putExtra("mime_type", it) }
-            putExtra("stream_tab_playback", true)
-            putExtra("stream_history_key", PlaybackIdentity.forUri(stream.url))
-          })
+          if (isDirectHttpStreamUrl(stream.url)) {
+            val item = viewModel.state.value.selectedItem
+            val title = item?.title?.takeIf(String::isNotBlank) ?: stream.title
+            val streamUri = Uri.parse(stream.url)
+            context.startActivity(Intent(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java).apply {
+              action = Intent.ACTION_VIEW
+              data = streamUri
+              putExtra(Intent.EXTRA_STREAM, streamUri)
+              putExtra(MediaUtils.EXTRA_MEDIA_TITLE, title)
+              putExtra(Intent.EXTRA_TITLE, title)
+              item?.overview?.takeIf(String::isNotBlank)?.let { putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, it) }
+              item?.posterUrl?.takeIf(String::isNotBlank)?.let { putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, it) }
+              item?.backdropUrl?.takeIf(String::isNotBlank)?.let { putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, it) }
+              stream.mimeType?.takeIf(String::isNotBlank)?.let { putExtra("mime_type", it) }
+              putExtra("is_audio", stream.mimeType?.startsWith("audio/", ignoreCase = true) == true)
+              if (stream.headers.isNotEmpty()) {
+                putExtra("headers", stream.headers.flatMap { (name, value) -> listOf(name, value) }.toTypedArray())
+              }
+              putExtra("stream_tab_playback", true)
+              putExtra("stream_history_key", PlaybackIdentity.forUri(stream.url))
+            })
+          } else {
+            Toast.makeText(context, R.string.stream_link_unsupported, Toast.LENGTH_SHORT).show()
+          }
           viewModel.consumeResolvedStream()
         }
       }
@@ -215,7 +239,9 @@ object StreamScreen : app.infinity.mpvz.presentation.Screen {
               }
             } else Text(if (browseRail != null) "Browse" else "Stream")
           },
-          navigationIcon = { IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
+          navigationIcon = {
+            if (showBackButton) IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") }
+          },
           actions = {
             IconButton(onClick = {
               if (searchActive) {

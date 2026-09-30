@@ -4531,7 +4531,9 @@ class PlayerActivity :
     if (durationSecs > 0 && positionSecs < durationSecs - 2) return
     if (fileName.isNotBlank()) saveVideoPlaybackState(fileName, immediate = true)
 
-    val isAudiobook = PlaybackSession.state.value.currentItem?.audiobook != null
+    val isAudiobook = PlaybackSession.state.value.currentItem?.let { item ->
+      item.audiobook != null || item.directAudiobook != null
+    } == true
     if (AudiobookPlayback.handleEndOfFile()) return
     val repeatMode = if (isAudiobook) RepeatMode.OFF else viewModel.repeatMode.value
     if (repeatMode == RepeatMode.ONE) {
@@ -5287,6 +5289,9 @@ class PlayerActivity :
   ) {
     val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return
     val appContext = applicationContext
+    val directAudiobook = PlaybackSession.queue.value.items
+      .firstOrNull { item -> item.stableId == snapshot.mediaIdentifier }
+      ?.directAudiobook
     val streamHistoryKey = currentStreamHistoryAliases(snapshot.mediaIdentifier).firstOrNull()
 
     // Cancel any previous pending save operation
@@ -5307,8 +5312,9 @@ class PlayerActivity :
             snapshot = snapshot,
             savePositionOnQuit = playerPreferences.savePositionOnQuit.get(),
             watchedThreshold = browserPreferences.watchedThreshold.get(),
-          )
+        )
         playbackStateRepository.upsert(playbackState)
+        directAudiobook?.let { DirectAudiobookResumeStore.recordPlaying(appContext, it) }
         PlaybackStateEvents.notifyChanged(snapshot.mediaIdentifier)
         persistStreamHistoryProgress(appContext, snapshot, streamHistoryKey)
       }.onFailure { e ->

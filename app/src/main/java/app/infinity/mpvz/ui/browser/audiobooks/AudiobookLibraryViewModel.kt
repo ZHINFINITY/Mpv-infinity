@@ -4,12 +4,15 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.R
 import app.infinity.mpvz.database.dao.AudiobookDao
 import app.infinity.mpvz.database.entities.AudiobookEntity
-import app.infinity.mpvz.domain.audiobook.AudiobookImporter
+import app.infinity.mpvz.domain.audiobook.AudiobookFolderScanner
+import app.infinity.mpvz.domain.audiobook.AudiobookFolderTrack
+import app.infinity.mpvz.domain.audiobook.AudiobookFolderTree
 import app.infinity.mpvz.ui.player.AudiobookPlayback
 import app.infinity.mpvz.ui.player.PlaybackSession
 import kotlinx.coroutines.CancellationException
@@ -21,7 +24,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.core.context.GlobalContext
+import java.io.IOException
 
 internal fun hasDurableAudiobookReadAccess(
   uriScheme: String?,
@@ -33,15 +38,59 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
   val library = dao.observeLibrary()
     .map { list -> list.filter { !it.book.sourceKey.startsWith("abs:") } }
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-  private val _progress = MutableStateFlow<Pair<Int, Int>?>(null)
-  val progress = _progress.asStateFlow()
   private val _error = MutableStateFlow<String?>(null)
   val error = _error.asStateFlow()
-  private var importJob: Job? = null
+  private val folderPreferences = application.getSharedPreferences("audiobook_folder_browser", Context.MODE_PRIVATE)
+  private val _folderTree = MutableStateFlow<AudiobookFolderTree?>(null)
+  val folderTree = _folderTree.asStateFlow()
+  private val _folderLoading = MutableStateFlow(false)
+  val folderLoading = _folderLoading.asStateFlow()
+  private val _folderError = MutableStateFlow<String?>(null)
+  val folderError = _folderError.asStateFlow()
+  private var folderScanJob: Job? = null
+  private var folderScanGeneration = 0L
 
   init {
     viewModelScope.launch(Dispatchers.IO) {
       app.infinity.mpvz.domain.audiobook.AudiobookMarkerUtils.syncKnownAudiobooks(application, dao)
+    }
+    folderPreferences.getString(FOLDER_TREE_URI_KEY, null)?.let { savedUri ->
+      loadFolderTree(Uri.parse(savedUri), persistPermission = false, saveSelection = false)
+    }
+  }
+
+  fun selectFolder(uri: Uri) {
+    loadFolderTree(uri, persistPermission = true, saveSelection = true)
+  }
+
+  fun refreshFolder() {
+    val savedUri = folderPreferences.getString(FOLDER_TREE_URI_KEY, null) ?: return
+    loadFolderTree(Uri.parse(savedUri), persistPermission = false, saveSelection = false)
+  }
+
+  private fun loadFolderTree(uri: Uri, persistPermission: Boolean, saveSelection: Boolean) {
+    folderScanJob?.cancel()
+    val generation = ++folderScanGeneration
+    _folderError.value = null
+    _folderLoading.value = true
+    if (saveSelection) _folderTree.value = null
+    folderScanJob = viewModelScope.launch(Dispatchers.IO) {
+      val context = getApplication<Application>()
+      try {
+        if (persistPermission) ensurePersistedReadPermission(context, uri)
+        val tree = AudiobookFolderScanner.scan(context, uri.toString())
+        if (generation != folderScanGeneration) return@launch
+        if (saveSelection) folderPreferences.edit().putString(FOLDER_TREE_URI_KEY, uri.toString()).apply()
+        _folderTree.value = tree
+      } catch (cancelled: CancellationException) {
+        throw cancelled
+      } catch (failure: Exception) {
+        if (generation == folderScanGeneration) {
+          _folderError.value = failure.localizedMessage ?: context.getString(R.string.audiobook_folder_unavailable)
+        }
+      } finally {
+        if (generation == folderScanGeneration) _folderLoading.value = false
+      }
     }
   }
 
@@ -62,32 +111,28 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
     }
   }
 
-  fun importFiles(uris: List<Uri>, folder: Uri? = null) {
-    if (importJob?.isActive == true || uris.isEmpty() && folder == null) return
-    _error.value = null
-    _progress.value = 0 to 0
-    importJob = viewModelScope.launch(Dispatchers.IO) {
-      val context = getApplication<Application>()
-      try {
-        (listOfNotNull(folder) + uris).distinct().forEach { uri ->
-          ensurePersistedReadPermission(context, uri)
-        }
-        if (folder != null) {
-          AudiobookImporter(context, dao).importFolderAsBooks(folder) { current, total -> _progress.value = current to total }
-        } else {
-          AudiobookImporter(context, dao).importBook(uris) { current, total -> _progress.value = current to total }
-        }
-      } catch (cancelled: CancellationException) {
-        throw cancelled
-      } catch (failure: Exception) {
-        _error.value = context.getString(R.string.audiobook_import_failed, failure.localizedMessage.orEmpty())
-      } finally {
-        _progress.value = null
-      }
+  suspend fun resolveDirectAudioFiles(uris: List<Uri>): List<AudiobookFolderTrack> = withContext(Dispatchers.IO) {
+    val context = getApplication<Application>()
+    val documents = uris.distinct().mapNotNull { uri ->
+      val document = DocumentFile.fromSingleUri(context, uri) ?: return@mapNotNull null
+      if (!document.isFile || !AudiobookFolderScanner.isSupportedAudio(document.name, document.type)) null
+      else uri to document
+    }
+    if (documents.isEmpty()) throw IOException(context.getString(R.string.audiobook_no_audio))
+    documents.forEach { (uri, document) ->
+      ensurePersistedReadPermission(context, uri)
+      if (!document.canRead()) throw SecurityException(context.getString(R.string.audiobook_folder_unavailable))
+    }
+    documents.map { (uri, document) ->
+      AudiobookFolderTrack(
+        uri = uri.toString(),
+        name = document.name?.takeIf(String::isNotBlank) ?: context.getString(R.string.audiobook_audio_file),
+        mimeType = document.type?.takeIf(String::isNotBlank),
+        sizeBytes = document.length().coerceAtLeast(0L),
+      )
     }
   }
 
-  fun cancelImport() { importJob?.cancel() }
   fun dismissError() { _error.value = null }
 
   fun remove(id: Long) = operation {
@@ -139,5 +184,9 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
     } catch (failure: Exception) {
       _error.value = failure.localizedMessage.orEmpty()
     }
+  }
+
+  private companion object {
+    const val FOLDER_TREE_URI_KEY = "selected_tree_uri"
   }
 }
