@@ -6,22 +6,39 @@ import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
 internal data class WatchStatisticsState(
   val count: Int,
   val itemKeyDigests: List<String>,
+  val aliasDigests: List<String> = emptyList(),
 ) {
   fun record(
     itemKey: String,
     aliases: List<String> = emptyList(),
   ): WatchStatisticsState {
-    val digests = (listOf(itemKey) + aliases)
+    val primaryDigest = itemKey.takeIf(String::isNotBlank)?.let(::digestHistoryIdentity)
+    val requestedAliasDigests = aliases
       .filter(String::isNotBlank)
       .map(::digestHistoryIdentity)
       .distinct()
+      .filterNot { it == primaryDigest }
+    val digests = (listOfNotNull(primaryDigest) + requestedAliasDigests).distinct()
     if (digests.isEmpty()) return this
 
-    val alreadyCounted = digests.any(itemKeyDigests::contains)
-    val updatedKeys = (digests + itemKeyDigests.filterNot(digests::contains)).take(MAX_ITEMS)
+    val alreadyCounted = digests.any { it in itemKeyDigests || it in aliasDigests }
+    val updatedItemKeys =
+      if (primaryDigest == null) {
+        itemKeyDigests.filterNot { it in requestedAliasDigests }.take(MAX_ITEMS)
+      } else {
+        (listOf(primaryDigest) +
+          itemKeyDigests.filterNot {
+            it == primaryDigest || it in requestedAliasDigests || it in aliasDigests
+          }).take(MAX_ITEMS)
+      }
+    val updatedAliasDigests =
+      (requestedAliasDigests +
+        aliasDigests.filterNot { it == primaryDigest || it in requestedAliasDigests })
+        .take(MAX_ITEMS)
     return copy(
       count = if (alreadyCounted) count else (count + 1).coerceAtMost(MAX_ITEMS),
-      itemKeyDigests = updatedKeys,
+      itemKeyDigests = updatedItemKeys,
+      aliasDigests = updatedAliasDigests,
     )
   }
 
@@ -32,10 +49,23 @@ internal data class WatchStatisticsState(
     if (oldKey.isBlank() || newKey.isBlank()) return this
     val oldDigest = digestHistoryIdentity(oldKey)
     val newDigest = digestHistoryIdentity(newKey)
-    if (oldDigest !in itemKeyDigests) return this
-    val updatedKeys = (listOf(newDigest) + itemKeyDigests.filterNot { it == oldDigest || it == newDigest })
-      .take(MAX_ITEMS)
-    return copy(itemKeyDigests = updatedKeys)
+    val oldIsPrimary = oldDigest in itemKeyDigests
+    val oldIsAlias = oldDigest in aliasDigests
+    if (!oldIsPrimary && !oldIsAlias) return this
+    val renameAsPrimary = oldIsPrimary || newDigest in itemKeyDigests
+    val updatedItemKeys =
+      if (renameAsPrimary) {
+        (listOf(newDigest) + itemKeyDigests.filterNot { it == oldDigest || it == newDigest }).take(MAX_ITEMS)
+      } else {
+        itemKeyDigests.filterNot { it == newDigest }
+      }
+    val updatedAliasDigests =
+      if (!renameAsPrimary && (oldIsAlias || newDigest in aliasDigests)) {
+        (listOf(newDigest) + aliasDigests.filterNot { it == oldDigest || it == newDigest }).take(MAX_ITEMS)
+      } else {
+        aliasDigests.filterNot { it == oldDigest || it == newDigest }
+      }
+    return copy(itemKeyDigests = updatedItemKeys, aliasDigests = updatedAliasDigests)
   }
 
   fun reconcile(
@@ -47,7 +77,18 @@ internal data class WatchStatisticsState(
     }
 
   fun reconcileStreamIdentities(streamKeys: List<String>): WatchStatisticsState =
-    streamKeys.take(MAX_ITEMS).fold(this) { state, streamKey -> state.record(streamKey) }
+    streamKeys.take(MAX_ITEMS).fold(this) { state, streamKey -> state.recordStreamIdentity(streamKey) }
+
+  private fun recordStreamIdentity(streamKey: String): WatchStatisticsState {
+    if (streamKey.isBlank()) return this
+    val digest = digestHistoryIdentity(streamKey)
+    val alreadyCounted = digest in itemKeyDigests || digest in aliasDigests
+    return copy(
+      count = if (alreadyCounted) count else (count + 1).coerceAtMost(MAX_ITEMS),
+      itemKeyDigests = itemKeyDigests.filterNot { it == digest },
+      aliasDigests = (listOf(digest) + aliasDigests.filterNot { it == digest }).take(MAX_ITEMS),
+    )
+  }
 
   companion object {
     const val MAX_ITEMS = 200
@@ -67,6 +108,7 @@ internal object WatchStatisticsStore {
   private const val INITIALIZED_KEY = "initialized"
   private const val COUNT_KEY = "count"
   private const val ITEM_KEYS_KEY = "item_key_digests"
+  private const val ALIAS_KEYS_KEY = "alias_key_digests"
   private val lock = Any()
 
   fun isInitialized(context: Context): Boolean =
@@ -133,13 +175,19 @@ internal object WatchStatisticsStore {
     context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
   private fun read(preferences: android.content.SharedPreferences): WatchStatisticsState {
+    val aliasDigests = preferences.getString(ALIAS_KEYS_KEY, "").orEmpty()
+      .split(',')
+      .filter(String::isNotBlank)
+      .take(WatchStatisticsState.MAX_ITEMS)
     val digests = preferences.getString(ITEM_KEYS_KEY, "").orEmpty()
       .split(',')
       .filter(String::isNotBlank)
+      .filterNot(aliasDigests::contains)
       .take(WatchStatisticsState.MAX_ITEMS)
     return WatchStatisticsState(
       count = preferences.getInt(COUNT_KEY, 0).coerceIn(0, WatchStatisticsState.MAX_ITEMS),
       itemKeyDigests = digests,
+      aliasDigests = aliasDigests,
     )
   }
 
@@ -152,6 +200,7 @@ internal object WatchStatisticsStore {
         .putBoolean(INITIALIZED_KEY, true)
         .putInt(COUNT_KEY, state.count.coerceIn(0, WatchStatisticsState.MAX_ITEMS))
         .putString(ITEM_KEYS_KEY, state.itemKeyDigests.distinct().take(WatchStatisticsState.MAX_ITEMS).joinToString(","))
+        .putString(ALIAS_KEYS_KEY, state.aliasDigests.distinct().take(WatchStatisticsState.MAX_ITEMS).joinToString(","))
         .commit(),
     ) {
       "Unable to persist Watch Statistics"

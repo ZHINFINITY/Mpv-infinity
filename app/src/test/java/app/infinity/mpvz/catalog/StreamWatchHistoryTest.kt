@@ -51,6 +51,22 @@ class StreamWatchHistoryTest {
   }
 
   @Test
+  fun launchAliasAppliesOnlyToTheMatchingMediaItem() {
+    val launchKey = "opaque-launch-stream-key"
+
+    assertEquals(listOf(launchKey), StreamWatchHistory.aliasesForItem(true, launchKey, launchKey))
+    assertEquals(emptyList<String>(), StreamWatchHistory.aliasesForItem(true, launchKey, "next-item"))
+    assertEquals(emptyList<String>(), StreamWatchHistory.aliasesForItem(false, launchKey, launchKey))
+  }
+
+  @Test
+  fun fallbackKeysStayInSyncWithTheLimitedOrderedHistory() {
+    val ordered = (0..35).map { "opaque-stream-$it" }
+
+    assertEquals(ordered.take(30).toSet(), StreamWatchHistory.fallbackKeysAfterPlayback(ordered))
+  }
+
+  @Test
   fun statisticsEntriesUseOrderedKeysThenLegacyFallbackAndStayBounded() {
     assertEquals(
       listOf("first", "second"),

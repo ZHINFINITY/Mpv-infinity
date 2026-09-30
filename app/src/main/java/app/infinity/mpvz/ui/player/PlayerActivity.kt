@@ -5287,7 +5287,7 @@ class PlayerActivity :
   ) {
     val snapshot = capturePlaybackStateSnapshot(mediaTitle) ?: return
     val appContext = applicationContext
-    val streamHistoryKey = currentStreamHistoryAliases().firstOrNull()
+    val streamHistoryKey = currentStreamHistoryAliases(snapshot.mediaIdentifier).firstOrNull()
 
     // Cancel any previous pending save operation
     savePlaybackStateJob?.cancel()
@@ -5324,10 +5324,12 @@ class PlayerActivity :
     }
   }
 
-  private fun currentStreamHistoryAliases(): List<String> {
-    if (!intent.getBooleanExtra("stream_tab_playback", false)) return emptyList()
-    return listOfNotNull(intent.getStringExtra("stream_history_key")?.takeIf(String::isNotBlank))
-  }
+  private fun currentStreamHistoryAliases(itemIdentifier: String = mediaIdentifier): List<String> =
+    StreamWatchHistory.aliasesForItem(
+      enabled = intent.getBooleanExtra("stream_tab_playback", false),
+      launchKey = intent.getStringExtra("stream_history_key"),
+      itemIdentifier = itemIdentifier,
+    )
 
   private fun startJellyfinProgressLoop() {
     jellyfinProgressJob?.cancel()
@@ -8896,7 +8898,7 @@ private fun persistStreamHistoryProgress(
     .putString(StreamWatchHistory.ORDER_KEY, ordered.joinToString("|"))
     .putStringSet(
       StreamWatchHistory.KEYS_KEY,
-      (setOf(key) + history.getStringSet(StreamWatchHistory.KEYS_KEY, emptySet()).orEmpty()).take(30).toSet(),
+      StreamWatchHistory.fallbackKeysAfterPlayback(ordered),
     )
     .putInt("schema_version", 3)
     .apply()

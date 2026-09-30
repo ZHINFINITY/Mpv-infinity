@@ -29,6 +29,18 @@ internal object StreamWatchHistory {
       .ifEmpty { fallbackKeys.toList() }
   }
 
+  fun aliasesForItem(
+    enabled: Boolean,
+    launchKey: String?,
+    itemIdentifier: String,
+  ): List<String> {
+    if (!enabled || itemIdentifier.isBlank()) return emptyList()
+    return listOfNotNull(launchKey?.takeIf { it.isNotBlank() && it == itemIdentifier })
+  }
+
+  fun fallbackKeysAfterPlayback(ordered: List<String>): Set<String> =
+    ordered.take(HISTORY_LIMIT).toSet()
+
   fun orderAfterPlayback(
     enabled: Boolean,
     currentOrder: String,

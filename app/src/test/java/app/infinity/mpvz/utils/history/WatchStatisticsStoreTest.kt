@@ -42,8 +42,8 @@ class WatchStatisticsStoreTest {
     val state = WatchStatisticsState.fromHistory(emptyList()).reconcileStreamIdentities(listOf(streamKey, streamKey))
 
     assertEquals(1, state.count)
-    assertFalse(state.itemKeyDigests.contains(streamKey))
-    assertEquals(64, state.itemKeyDigests.single().length)
+    assertFalse(state.aliasDigests.contains(streamKey))
+    assertEquals(64, state.aliasDigests.single().length)
   }
 
   @Test
@@ -58,13 +58,38 @@ class WatchStatisticsStoreTest {
         .reconcileStreamIdentities(listOf(streamKey))
 
     assertEquals(1, state.count)
-    assertEquals(2, state.itemKeyDigests.size)
+    assertEquals(1, state.itemKeyDigests.size)
+    assertEquals(1, state.aliasDigests.size)
     val existingSnapshot =
       WatchStatisticsState.fromHistory(emptyList())
         .record(historyPath)
         .reconcile(history, aliases)
         .reconcileStreamIdentities(listOf(streamKey))
     assertEquals(1, existingSnapshot.count)
+  }
+
+  @Test
+  fun repeatedStreamAliasesDoNotEvictPrimaryItemsFromTheHistoryLimit() {
+    val historyPaths = (0 until 180).map { "/test/media-$it" }
+    var state = WatchStatisticsState.fromHistory(historyPaths)
+    var retainedStreamKeys = emptyList<String>()
+
+    repeat(30) { index ->
+      val historyPath = historyPaths[index]
+      val streamKey = "opaque-test-stream-key-$index"
+      retainedStreamKeys = (retainedStreamKeys + streamKey).takeLast(30)
+      state =
+        state
+          .reconcile(historyPaths, mapOf(historyPath to listOf(streamKey)))
+          .reconcileStreamIdentities(retainedStreamKeys)
+          .record(historyPath, listOf(streamKey))
+    }
+
+    val replayed = state.reconcile(historyPaths)
+    assertEquals(180, state.count)
+    assertEquals(180, replayed.count)
+    assertEquals(180, replayed.itemKeyDigests.size)
+    assertEquals(30, replayed.aliasDigests.size)
   }
 
   @Test
