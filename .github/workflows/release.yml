@@ -46,6 +46,7 @@ jobs:
           echo "/usr/bin" >> "$GITHUB_PATH"
 
       - name: Resolve and validate release tag
+        id: release_tag
         shell: bash
         run: |
           set -euo pipefail
@@ -59,7 +60,15 @@ jobs:
             echo "Invalid stable release tag: $version_tag"
             exit 1
           fi
+          if tag_commit="$(git rev-parse --verify --quiet "refs/tags/${version_tag}^{commit}")"; then
+            checkout_commit="$(git rev-parse HEAD)"
+            if [[ "$tag_commit" != "$checkout_commit" ]]; then
+              echo "Release tag $version_tag does not point to the checkout commit"
+              exit 1
+            fi
+          fi
           echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
+          echo "version_tag=$version_tag" >> "$GITHUB_OUTPUT"
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
@@ -202,28 +211,15 @@ jobs:
           latest = '\n'.join(section).strip()
           if not latest:
               raise SystemExit('Could not find latest changelog section')
-          variant_guide = """
-          ### APK variants
-
-          All variants contain the same Mpv∞ app version and features, with their native backends built from [mpvlib Android](https://github.com/Riteshp2001/mpvlibAndroid). Choose the package that best matches your device:
-
-          - **Standard** (`Mpv∞-<architecture>-<version>.apk`): Recommended for most devices. Available as Universal and architecture-specific APKs with the standard Vulkan-capable playback backend.
-          - **FongMi** (`Mpv∞-fongmi-<version>.apk`, `Mpv∞-fongmi-arm64-v8a-<version>.apk`): Universal and ARM64 packages using the FongMi native profile for Vulkan, direct MediaCodec, and Dolby Vision playback.
-          - **Non-Vulkan** (`Mpv∞-no-vulkan-<version>.apk`, `Mpv∞-no-vulkan-arm64-v8a-<version>.apk`): Universal and ARM64 OpenGL-only packages for devices without compatible Vulkan support or with unstable legacy GPU drivers.
-          """.strip()
-          Path('release-notes.md').write_text(
-              latest + '\n\n---\n' + variant_guide + '\n\n### SHA-256 checksums\n\n```text\n',
-              encoding='utf-8',
-          )
+          Path('release-notes.md').write_text(latest + '\n', encoding='utf-8')
           PY
-          cat checksums.txt >> release-notes.md
-          printf '%s\n' '```' >> release-notes.md
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Mpv ∞ ${{ github.ref_name }}
+          tag_name: ${{ steps.release_tag.outputs.version_tag }}
+          name: Mpv ∞ ${{ steps.release_tag.outputs.version_tag }}
+          target_commitish: ${{ github.sha }}
           body_path: release-notes.md
           generate_release_notes: false
           draft: false
