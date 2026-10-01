@@ -104,6 +104,7 @@ import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.browser.folderlist.FolderListScreen
 import app.infinity.mpvz.ui.browser.music.MusicLibraryContent
 import app.infinity.mpvz.ui.browser.networkstreaming.NetworkStreamingScreen
+import app.infinity.mpvz.ui.browser.catalog.StreamScreen
 import app.infinity.mpvz.ui.browser.playlist.PlaylistScreen
 import app.infinity.mpvz.ui.browser.recentlyplayed.RecentlyPlayedScreen
 import app.infinity.mpvz.ui.icons.Icon
@@ -124,6 +125,7 @@ object MainScreen : Screen {
     RECENTS,
     PLAYLISTS,
     NETWORK,
+    STREAMS,
     JELLYFIN,
     NAVIDROME,
     AUDIOBOOKS,
@@ -176,6 +178,7 @@ object MainScreen : Screen {
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
     val showPlaylistsTab by appearancePreferences.showPlaylistsTab.collectAsState()
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
+    val showStreamsTab by appearancePreferences.showStreamsTab.collectAsState()
     val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
     val showNavidromeTab by appearancePreferences.showNavidromeTab.collectAsState()
     val showAudiobooksTab by appearancePreferences.showAudiobooksTab.collectAsState()
@@ -192,6 +195,7 @@ object MainScreen : Screen {
         showRecentsTab,
         showPlaylistsTab,
         showNetworkTab,
+        showStreamsTab,
         showJellyfinTab,
         showNavidromeTab,
         showAudiobooksTab,
@@ -202,6 +206,7 @@ object MainScreen : Screen {
           if (showRecentsTab) add(MainTab.RECENTS)
           if (showPlaylistsTab) add(MainTab.PLAYLISTS)
           if (showNetworkTab) add(MainTab.NETWORK)
+          if (showStreamsTab) add(MainTab.STREAMS)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
           if (showNavidromeTab) add(MainTab.NAVIDROME)
           if (showAudiobooksTab) add(MainTab.AUDIOBOOKS)
@@ -324,6 +329,7 @@ object MainScreen : Screen {
         MainTab.RECENTS -> 48.dp
         MainTab.PLAYLISTS -> 52.dp
         MainTab.NETWORK -> 50.dp
+        MainTab.STREAMS -> 54.dp
         MainTab.JELLYFIN -> 44.dp
         MainTab.NAVIDROME -> 56.dp
         MainTab.AUDIOBOOKS -> 68.dp
@@ -436,6 +442,7 @@ object MainScreen : Screen {
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
+                MainTab.STREAMS -> StreamScreen.Content()
                 MainTab.JELLYFIN -> app.infinity.mpvz.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
                 MainTab.NAVIDROME -> app.infinity.mpvz.ui.browser.navidrome.NavidromeContent(viewModel = navidromeViewModel)
                 MainTab.AUDIOBOOKS -> app.infinity.mpvz.ui.browser.audiobooks.AudiobookLibraryScreen.Content()
@@ -586,6 +593,7 @@ private fun ExpressivePillNavigationBar(
       MainScreen.MainTab.RECENTS -> 104.dp
       MainScreen.MainTab.PLAYLISTS -> 108.dp
       MainScreen.MainTab.NETWORK -> 106.dp
+      MainScreen.MainTab.STREAMS -> 112.dp
       MainScreen.MainTab.JELLYFIN -> 120.dp
       MainScreen.MainTab.NAVIDROME -> 108.dp
       MainScreen.MainTab.AUDIOBOOKS -> 144.dp
@@ -738,6 +746,13 @@ private fun ExpressivePillNavigationBar(
                     tint = contentColor,
                     modifier = Modifier.size(22.dp),
                   )
+                MainScreen.MainTab.STREAMS ->
+                  Icon(
+                    Icons.RoundedFilled.Movie,
+                    contentDescription = stringResource(R.string.ui_streams),
+                    tint = contentColor,
+                    modifier = Modifier.size(22.dp),
+                  )
                 MainScreen.MainTab.JELLYFIN ->
                   androidx.compose.material3.Icon(
                     painter = painterResource(R.drawable.ic_jellyfin),
@@ -771,6 +786,7 @@ private fun ExpressivePillNavigationBar(
                       MainScreen.MainTab.RECENTS -> stringResource(R.string.ui_recents)
                       MainScreen.MainTab.PLAYLISTS -> stringResource(R.string.ui_playlists)
                       MainScreen.MainTab.NETWORK -> stringResource(R.string.ui_network)
+                      MainScreen.MainTab.STREAMS -> stringResource(R.string.ui_streams)
                       MainScreen.MainTab.JELLYFIN -> stringResource(R.string.ui_jellyfin)
                       MainScreen.MainTab.NAVIDROME -> stringResource(R.string.pref_navidrome_title)
                       MainScreen.MainTab.AUDIOBOOKS -> stringResource(R.string.audiobooks_title)

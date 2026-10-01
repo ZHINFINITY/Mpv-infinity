@@ -10,24 +10,38 @@
 package app.infinity.mpvz.utils.history
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.net.Uri
+import app.infinity.mpvz.catalog.StreamWatchHistory
 import app.infinity.mpvz.database.entities.RecentlyPlayedEntity
 import app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.withContext
 import org.koin.java.KoinJavaComponent.inject
 
+internal fun shouldTrackWatchStatistics(
+  recentlyPlayedEnabled: Boolean,
+  watchStatisticsEnabled: Boolean,
+): Boolean = recentlyPlayedEnabled && watchStatisticsEnabled
+
+internal fun <T> visibleRecentlyPlayedItems(
+  enabled: Boolean,
+  items: List<T>,
+): List<T> = if (enabled) items else emptyList()
+
 object RecentlyPlayedOps {
   private val repository: RecentlyPlayedRepository by inject(RecentlyPlayedRepository::class.java)
   private val preferences: AdvancedPreferences by inject(AdvancedPreferences::class.java)
 
   suspend fun addRecentlyPlayed(
+    context: Context,
     filePath: String,
     fileName: String,
     videoTitle: String? = null,
@@ -37,9 +51,10 @@ object RecentlyPlayedOps {
     height: Int = 0,
     launchSource: String? = null,
     playlistId: Int? = null,
+    aliases: List<String> = emptyList(),
   ) {
     // Check if recently played feature is enabled
-    if (!preferences.enableRecentlyPlayed.get()) return
+    if (!isRecentlyPlayedEnabled()) return
 
     val uri = Uri.parse(filePath)
 
@@ -57,11 +72,46 @@ object RecentlyPlayedOps {
       launchSource,
       playlistId,
     )
+    try {
+      recordWatchStatistics(context, filePath, aliases = aliases)
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+      throw cancelled
+    } catch (failure: Exception) {
+      android.util.Log.w("RecentlyPlayedOps", "Watch statistics update failed", failure)
+    }
+  }
+
+  suspend fun backfillWatchStatistics(context: Context) {
+    if (!shouldTrackWatchStatistics(preferences.enableRecentlyPlayed.get(), preferences.enableWatchStatistics.get())) return
+    withContext(Dispatchers.IO) {
+      val history = repository.getRecentlyPlayed(limit = WatchStatisticsState.MAX_ITEMS)
+      val streamPreferences = context.applicationContext.getSharedPreferences(
+        StreamWatchHistory.PREFERENCES_NAME,
+        Context.MODE_PRIVATE,
+      )
+      val streamHistoryKeys = StreamWatchHistory.keysForDisplay(
+        enabled = true,
+        order = streamPreferences.getString(StreamWatchHistory.ORDER_KEY, "").orEmpty(),
+        fallbackKeys = streamPreferences.getStringSet(StreamWatchHistory.KEYS_KEY, emptySet()).orEmpty(),
+      )
+      WatchStatisticsStore.backfillIfNeeded(context, history, streamHistoryKeys = streamHistoryKeys)
+    }
+  }
+
+  private suspend fun recordWatchStatistics(context: Context, itemKey: String, aliases: List<String>) {
+    if (!shouldTrackWatchStatistics(preferences.enableRecentlyPlayed.get(), preferences.enableWatchStatistics.get())) return
+    if (!WatchStatisticsStore.isInitialized(context)) backfillWatchStatistics(context)
+    if (!WatchStatisticsStore.isInitialized(context)) return
+    withContext(Dispatchers.IO) {
+      WatchStatisticsStore.record(context, itemKey, aliases)
+    }
   }
 
   suspend fun clearAll() {
     repository.clearAll()
   }
+
+  fun isRecentlyPlayedEnabled(): Boolean = preferences.enableRecentlyPlayed.get()
 
   suspend fun updateVideoTitle(
     filePath: String,
@@ -83,6 +133,7 @@ object RecentlyPlayedOps {
 
   suspend fun getLastPlayed(): String? {
     return withContext(Dispatchers.IO) {
+      if (!isRecentlyPlayedEnabled()) return@withContext null
       val recent = kotlin.runCatching { repository.getRecentlyPlayed(limit = 50) }.getOrDefault(emptyList())
       for (entity in recent) {
         val path = entity.filePath
@@ -101,6 +152,7 @@ object RecentlyPlayedOps {
 
   suspend fun getLastPlayedEntity(): app.infinity.mpvz.database.entities.RecentlyPlayedEntity? {
     return withContext(Dispatchers.IO) {
+      if (!isRecentlyPlayedEnabled()) return@withContext null
       val recent = kotlin.runCatching { repository.getRecentlyPlayed(limit = 50) }.getOrDefault(emptyList())
       for (entity in recent) {
         val path = entity.filePath
@@ -119,30 +171,41 @@ object RecentlyPlayedOps {
 
   suspend fun hasRecentlyPlayed(): Boolean =
     withContext(Dispatchers.IO) {
-      if (!preferences.enableRecentlyPlayed.get()) return@withContext false
+      if (!isRecentlyPlayedEnabled()) return@withContext false
       getLastPlayed() != null
     }
 
-  suspend fun getRecentlyPlayed(limit: Int = 50): List<RecentlyPlayedEntity> = repository.getRecentlyPlayed(limit)
+  suspend fun getRecentlyPlayed(limit: Int = 50): List<RecentlyPlayedEntity> =
+    if (isRecentlyPlayedEnabled()) repository.getRecentlyPlayed(limit) else emptyList()
 
-  suspend fun getRecentlyPlayedCount(): Int = repository.getRecentlyPlayedCount()
+  suspend fun getRecentlyPlayedCount(): Int =
+    if (isRecentlyPlayedEnabled()) repository.getRecentlyPlayedCount() else 0
+
+  fun observeRecentlyPlayed(limit: Int = 50): Flow<List<RecentlyPlayedEntity>> =
+    combine(
+      repository.observeRecentlyPlayed(limit),
+      preferences.enableRecentlyPlayed.changes(),
+    ) { items, enabled -> if (enabled) items else emptyList() }
+      .distinctUntilChanged()
+      .flowOn(Dispatchers.IO)
 
   @OptIn(ExperimentalCoroutinesApi::class)
   fun observeLastPlayedEntity(): Flow<RecentlyPlayedEntity?> =
-    repository
-      .observeLastPlayed()
-      .mapLatest { _ ->
-        if (!preferences.enableRecentlyPlayed.get()) null
-        else getLastPlayedEntity()
-      }.distinctUntilChanged()
+    combine(
+      repository.observeLastPlayed(),
+      preferences.enableRecentlyPlayed.changes(),
+    ) { _, enabled -> enabled }
+      .mapLatest { enabled -> if (enabled) getLastPlayedEntity() else null }
+      .distinctUntilChanged()
       .flowOn(Dispatchers.IO)
 
   @OptIn(ExperimentalCoroutinesApi::class)
   fun observeLastPlayedPath(): Flow<String?> =
-    repository
-      .observeLastPlayedForHighlight()
-      .mapLatest { entity ->
-        val path = entity?.filePath
+    combine(
+      repository.observeLastPlayedForHighlight(),
+      preferences.enableRecentlyPlayed.changes(),
+    ) { entity, enabled -> if (enabled) entity?.filePath else null }
+      .mapLatest { path ->
         if (path.isNullOrEmpty()) {
           null
         } else if (fileExists(path)) {
@@ -161,6 +224,7 @@ object RecentlyPlayedOps {
   }
 
   suspend fun onVideoRenamed(
+    context: Context,
     oldPath: String,
     newPath: String,
   ) {
@@ -170,6 +234,7 @@ object RecentlyPlayedOps {
     kotlin
       .runCatching {
         repository.updateFilePath(oldPath, newPath, newFileName)
+        withContext(Dispatchers.IO) { WatchStatisticsStore.rename(context, oldPath, newPath) }
         android.util.Log.d("RecentlyPlayedOps", "Updated history: $oldPath -> $newPath")
       }.onFailure { e ->
         android.util.Log.w("RecentlyPlayedOps", "Failed to update history path: ${e.message}")

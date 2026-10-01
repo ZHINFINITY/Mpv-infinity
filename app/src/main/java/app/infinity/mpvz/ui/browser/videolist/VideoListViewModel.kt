@@ -21,6 +21,7 @@ import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
 import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.utils.history.RecentlyPlayedOps
 import app.infinity.mpvz.utils.media.MediaLibraryEvents
 import app.infinity.mpvz.utils.media.MetadataRetrieval
 import app.infinity.mpvz.utils.media.PlaybackStateEvents
@@ -151,7 +152,6 @@ class VideoListViewModel(
       .getSharedPreferences("video_watched_overrides", android.content.Context.MODE_PRIVATE)
       .getStringSet("values", emptySet())
       ?.any { it == "${video.path}\u001f1" } == true
-  private val recentlyPlayedRepository: app.infinity.mpvz.domain.recentlyplayed.repository.RecentlyPlayedRepository by inject()
   // Using MediaFileRepository singleton directly
 
   private val _videos = MutableStateFlow<List<Video>>(emptyList())
@@ -168,7 +168,7 @@ class VideoListViewModel(
   val videosWereDeletedOrMoved: StateFlow<Boolean> = _videosWereDeletedOrMoved.asStateFlow()
 
   val lastPlayedInFolderPath: StateFlow<String?> =
-    recentlyPlayedRepository
+    RecentlyPlayedOps
       .observeRecentlyPlayed(limit = 100)
       .map { recentlyPlayedList ->
         val folderPath =

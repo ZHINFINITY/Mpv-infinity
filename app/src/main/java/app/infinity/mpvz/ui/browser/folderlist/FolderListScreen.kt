@@ -90,6 +90,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.infinity.mpvz.BuildConfig
 import app.infinity.mpvz.R
+import app.infinity.mpvz.domain.audiobook.AudiobookFolderTrack
 import app.infinity.mpvz.domain.browser.FileSystemItem
 import app.infinity.mpvz.domain.media.model.Video
 import app.infinity.mpvz.domain.media.model.VideoFolder
@@ -102,6 +103,7 @@ import app.infinity.mpvz.preferences.MediaLayoutMode
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
+import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.LocalNavigationBarHeight
 import app.infinity.mpvz.ui.browser.cards.FolderCard
 import app.infinity.mpvz.ui.browser.cards.SwipeableFolderActions
@@ -127,6 +129,8 @@ import app.infinity.mpvz.ui.browser.videolist.VideoListScreen
 import app.infinity.mpvz.ui.components.InlineSearchBar
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.AudiobookPlayback
+import app.infinity.mpvz.ui.player.launchDirectAudiobookFiles
 import app.infinity.mpvz.ui.securefolder.SecureFolderGateScreen
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.calculateResponsiveGridSpans
@@ -168,8 +172,13 @@ object FolderListScreen : Screen {
     audioOnly: Boolean = false,
     embedded: Boolean = false,
     searchQuery: String = "",
+    rootPath: String? = null,
+    externalViewOptionsOpen: Boolean = false,
+    onExternalViewOptionsDismiss: () -> Unit = {},
+    audiobookTab: Boolean = false,
   ) {
     val context = LocalContext.current
+    val audiobookMode = audiobookTab || audioOnly && !rootPath.isNullOrBlank()
     val backstack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -177,8 +186,8 @@ object FolderListScreen : Screen {
     // ViewModels and preferences
     val viewModel: FolderListViewModel =
       viewModel(
-        key = if (audioOnly) "MusicListViewModel" else "FolderListViewModel",
-        factory = FolderListViewModel.factory(context.applicationContext as android.app.Application, audioOnly),
+        key = if (audioOnly) "MusicListViewModel:${rootPath.orEmpty()}" else "FolderListViewModel:${rootPath.orEmpty()}",
+        factory = FolderListViewModel.factory(context.applicationContext as android.app.Application, audioOnly, rootPath),
       )
     val browserPreferences = koinInject<BrowserPreferences>()
     val gesturePreferences = koinInject<GesturePreferences>()
@@ -196,6 +205,25 @@ object FolderListScreen : Screen {
     val scanStatus by viewModel.scanStatus.collectAsState()
     val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
     val foldersWereDeleted by viewModel.foldersWereDeleted.collectAsState()
+
+    if (!rootPath.isNullOrBlank()) {
+      val selectedRoot = videoFolders.firstOrNull { it.path.equals(rootPath, ignoreCase = true) }
+      val hasNestedAudioFolders = selectedRoot != null && videoFolders.any { folder ->
+        folder.path.startsWith(selectedRoot.path.trimEnd('/') + "/", ignoreCase = true)
+      }
+      if (selectedRoot != null && !hasNestedAudioFolders) {
+        VideoListScreen(
+          bucketId = selectedRoot.bucketId,
+          folderName = selectedRoot.name,
+          isAudio = true,
+          isAudiobook = audiobookMode,
+          searchQuery = searchQuery,
+          externalViewOptionsOpen = externalViewOptionsOpen,
+          onExternalViewOptionsDismiss = onExternalViewOptionsDismiss,
+        ).Content()
+        return
+      }
+    }
 
     // Preferences
     val mediaLayoutMode by browserPreferences.folderViewFolderLayoutMode.collectAsState()
@@ -527,7 +555,7 @@ object FolderListScreen : Screen {
       selectionManager.isInSelectionMode ||
         (!embedded && internalIsSearching) ||
         isFabExpanded.value ||
-        (isDualPaneActive && selectedFolderBucketId != null)
+        ((isDualPaneActive || embedded && audiobookMode) && selectedFolderBucketId != null)
     androidx.activity.compose.BackHandler(enabled = shouldHandleBack) {
       when {
         isFabExpanded.value -> isFabExpanded.value = false
@@ -536,7 +564,7 @@ object FolderListScreen : Screen {
           internalIsSearching = false
           internalSearchQuery = ""
         }
-        isDualPaneActive && selectedFolderBucketId != null -> {
+        (isDualPaneActive || embedded && audiobookMode) && selectedFolderBucketId != null -> {
           selectedFolderBucketId = null
           selectedFolderName = null
         }
@@ -571,8 +599,8 @@ object FolderListScreen : Screen {
               inputFieldModifier = Modifier.focusRequester(focusRequester),
               placeholder = {
                 Text(
-                  androidx.compose.ui.res
-                    .stringResource(app.infinity.mpvz.R.string.ui_search_folders_and_videos),
+                  if (audiobookMode) "Search audiobook folders and files"
+                  else stringResource(app.infinity.mpvz.R.string.ui_search_folders_and_videos),
                 )
               },
               leadingIcon = {
@@ -605,7 +633,7 @@ object FolderListScreen : Screen {
             )
           } else {
             BrowserTopBar(
-              title = stringResource(app.infinity.mpvz.R.string.app_name),
+              title = if (audiobookMode) "Audiobooks" else stringResource(app.infinity.mpvz.R.string.app_name),
               isInSelectionMode = selectionManager.isInSelectionMode,
               selectedCount = selectionManager.selectedCount,
               totalCount = videoFolders.size,
@@ -850,7 +878,7 @@ object FolderListScreen : Screen {
                     EmptyState(
                       icon = Icons.RoundedFilled.Search,
                       title = stringResource(R.string.ui_no_results_found),
-                      message = if (audioOnly) "No audio folders or songs match your search query" else "No folders or videos match your search query",
+                      message = if (audiobookMode) "No audiobook folders or files match your search query" else if (audioOnly) "No audio folders or songs match your search query" else "No folders or videos match your search query",
                       modifier = Modifier.fillMaxSize(),
                     )
                   } else {
@@ -869,12 +897,18 @@ object FolderListScreen : Screen {
                         } else {
                           backstack.add(
                             app.infinity.mpvz.ui.browser.videolist
-                              .VideoListScreen(folder.bucketId, folder.name, isAudio = audioOnly),
+                              .VideoListScreen(folder.bucketId, folder.name, isAudio = audioOnly, isAudiobook = audiobookMode),
                           )
                         }
                       },
                       onVideoClick = { video ->
-                        MediaUtils.playFile(video, context)
+                        if (audiobookMode) {
+                          coroutineScope.launch {
+                            AudiobookPlayback.launchForFile(context, video.path, video.uri.toString())
+                          }
+                        } else {
+                          MediaUtils.playFile(video, context)
+                        }
                       },
                       mediaLayoutMode = mediaLayoutMode,
                     )
@@ -905,10 +939,13 @@ object FolderListScreen : Screen {
                       if (isDualPaneActive) {
                         selectedFolderBucketId = folder.bucketId
                         selectedFolderName = folder.name
+                      } else if (embedded && audiobookMode) {
+                        selectedFolderBucketId = folder.bucketId
+                        selectedFolderName = folder.name
                       } else {
                         backstack.add(
                           app.infinity.mpvz.ui.browser.videolist
-                            .VideoListScreen(folder.bucketId, folder.name, isAudio = audioOnly),
+                            .VideoListScreen(folder.bucketId, folder.name, isAudio = audioOnly, isAudiobook = audiobookMode),
                         )
                       }
                     }
@@ -928,6 +965,29 @@ object FolderListScreen : Screen {
                   onToggleFolderWatched = { folder, watched -> viewModel.setFolderWatched(folder, watched) },
                   selectedFolderBucketId = selectedFolderBucketId,
                   audioOnly = audioOnly,
+                  audiobookMode = audiobookMode,
+                  onQuickPlayFolder = if (audiobookMode) {
+                    { folder ->
+                      coroutineScope.launch {
+                        val tracks = MediaFileRepository.getVideosInFolder(
+                          context,
+                          folder.bucketId,
+                          includeAudioOverride = true,
+                        ).asSequence()
+                          .filter { it.isAudio || it.mimeType.startsWith("audio/", ignoreCase = true) }
+                          .map { video ->
+                            AudiobookFolderTrack(
+                              uri = video.uri.toString(),
+                              name = video.displayName,
+                              mimeType = video.mimeType,
+                              sizeBytes = video.size,
+                              durationMs = video.duration,
+                            )
+                          }.toList()
+                        if (tracks.isNotEmpty()) launchDirectAudiobookFiles(context, tracks)
+                      }
+                    }
+                  } else null,
                 )
               }
           } else if (isPermissionSetupCompleted) {
@@ -1005,6 +1065,10 @@ object FolderListScreen : Screen {
                 folderName = selectedFolderName.orEmpty(),
                 isDualPane = true,
                 isAudio = audioOnly,
+                isAudiobook = audiobookMode,
+                searchQuery = searchQuery,
+                externalViewOptionsOpen = externalViewOptionsOpen,
+                onExternalViewOptionsDismiss = onExternalViewOptionsDismiss,
                 onBack = {
                   selectedFolderBucketId = null
                   selectedFolderName = null
@@ -1012,6 +1076,26 @@ object FolderListScreen : Screen {
               ).Content()
             }
           }
+        }
+      }
+    } else if (embedded && audiobookMode && selectedFolderBucketId != null) {
+      key(selectedFolderBucketId) {
+        CompositionLocalProvider(
+          app.infinity.mpvz.ui.browser.LocalNavigationBarHeight provides 0.dp,
+        ) {
+          VideoListScreen(
+            bucketId = selectedFolderBucketId!!,
+            folderName = selectedFolderName.orEmpty(),
+            isAudio = true,
+            isAudiobook = true,
+            searchQuery = searchQuery,
+            externalViewOptionsOpen = externalViewOptionsOpen,
+            onExternalViewOptionsDismiss = onExternalViewOptionsDismiss,
+            onBack = {
+              selectedFolderBucketId = null
+              selectedFolderName = null
+            },
+          ).Content()
         }
       }
     } else {
@@ -1148,13 +1232,17 @@ object FolderListScreen : Screen {
     }
 
     FolderSortDialog(
-      isOpen = sortDialogOpen.value,
-      onDismiss = { sortDialogOpen.value = false },
+      isOpen = sortDialogOpen.value || externalViewOptionsOpen,
+      onDismiss = {
+        sortDialogOpen.value = false
+        if (externalViewOptionsOpen) onExternalViewOptionsDismiss()
+      },
       sortType = folderSortType,
       sortOrder = folderSortOrder,
       onSortTypeChange = { browserPreferences.folderSortType.set(it) },
       onSortOrderChange = { browserPreferences.folderSortOrder.set(it) },
       isDualPane = isDualPaneActive && selectedFolderBucketId != null,
+      embeddedAlbumView = embedded && audioOnly,
     )
 
     if (pendingDeleteFolders.isNotEmpty()) {
@@ -1229,6 +1317,8 @@ private fun FolderListContent(
   onToggleFolderWatched: (VideoFolder, Boolean) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
+  audiobookMode: Boolean = false,
+  onQuickPlayFolder: ((VideoFolder) -> Unit)? = null,
 ) {
   val isGridMode = mediaLayoutMode == MediaLayoutMode.GRID
   val showLoading = isLoading && !hasCompletedInitialLoad
@@ -1259,14 +1349,14 @@ private fun FolderListContent(
         if (showLoading) {
           LoadingState(
             icon = Icons.RoundedFilled.Folder,
-            title = if (audioOnly) "Scanning for songs" else stringResource(R.string.ui_scanning_for_videos),
-            message = scanStatus ?: if (audioOnly) "Please wait while we search your device" else "Please wait while we search your device",
+            title = if (audiobookMode) "Scanning for audiobooks" else if (audioOnly) "Scanning for songs" else stringResource(R.string.ui_scanning_for_videos),
+            message = scanStatus ?: if (audiobookMode) "Please wait while we search the selected audiobook folder" else "Please wait while we search your device",
           )
         } else if (showEmpty) {
           EmptyState(
             icon = Icons.RoundedFilled.Folder,
-            title = if (audioOnly) "No song folders found" else stringResource(R.string.ui_no_video_folders_found),
-            message = if (audioOnly) "Add some audio files to your device to see them here" else "Add some video files to your device to see them here",
+            title = if (audiobookMode) "No audiobook folders found" else if (audioOnly) "No song folders found" else stringResource(R.string.ui_no_video_folders_found),
+            message = if (audiobookMode) "Choose an audiobook folder to see its folders and files here" else if (audioOnly) "Add some audio files to your device to see them here" else "Add some video files to your device to see them here",
           )
         }
       }
@@ -1288,6 +1378,7 @@ private fun FolderListContent(
           onToggleFolderWatched = onToggleFolderWatched,
           selectedFolderBucketId = selectedFolderBucketId,
           audioOnly = audioOnly,
+          onQuickPlayFolder = onQuickPlayFolder,
         )
       } else {
         ListContent(
@@ -1306,6 +1397,7 @@ private fun FolderListContent(
           onToggleFolderWatched = onToggleFolderWatched,
           selectedFolderBucketId = selectedFolderBucketId,
           audioOnly = audioOnly,
+          onQuickPlayFolder = onQuickPlayFolder,
         )
       }
     }
@@ -1329,6 +1421,7 @@ private fun GridContent(
   onToggleFolderWatched: (VideoFolder, Boolean) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
+  onQuickPlayFolder: ((VideoFolder) -> Unit)? = null,
 ) {
   val newCountByBucketId =
     remember(foldersWithNewCount) {
@@ -1412,6 +1505,7 @@ private fun GridContent(
           isDualPane = isDualPane,
           isActive = isActive,
           isAudioOnly = audioOnly,
+          onQuickPlay = if (audioOnly && onQuickPlayFolder != null) ({ onQuickPlayFolder(folder) }) else null,
         )
         }
       }
@@ -1451,6 +1545,7 @@ private fun ListContent(
   onToggleFolderWatched: (VideoFolder, Boolean) -> Unit,
   selectedFolderBucketId: String? = null,
   audioOnly: Boolean = false,
+  onQuickPlayFolder: ((VideoFolder) -> Unit)? = null,
 ) {
   val configuration = androidx.compose.ui.platform.LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -1529,6 +1624,7 @@ private fun ListContent(
           isDualPane = isDualPaneActive && selectedFolderBucketId != null,
           isActive = isActive,
           isAudioOnly = audioOnly,
+          onQuickPlay = if (audioOnly && onQuickPlayFolder != null) ({ onQuickPlayFolder(folder) }) else null,
         )
       }
     }

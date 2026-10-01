@@ -33,6 +33,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
+      - name: Run standard debug unit tests
+        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a --stacktrace --no-daemon --max-workers=2
       - name: Build arm64-v8a debug APK
         run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a --stacktrace --no-daemon --max-workers=2
       - name: Upload arm64-v8a debug APK

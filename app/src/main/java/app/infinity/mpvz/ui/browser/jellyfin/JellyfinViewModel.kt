@@ -163,7 +163,11 @@ class JellyfinViewModel(
     viewModelScope.launch {
       jellyfinRepository.allServers.collect { servers ->
         _uiState.update { state ->
-          val active = state.activeServer?.let { cur -> servers.find { it.id == cur.id } } ?: servers.firstOrNull()
+          val newest = servers.firstOrNull()
+          val active = state.activeServer?.let { cur ->
+            servers.find { it.id == cur.id }?.takeIf { newest == null || newest.id == it.id || newest.lastConnected >= cur.lastConnected }
+              ?: newest
+          } ?: newest
           state.copy(
             servers = servers,
             activeServer = active,
@@ -178,9 +182,10 @@ class JellyfinViewModel(
   }
 
   fun selectServer(server: JellyfinServer) {
+    val selected = server.copy(lastConnected = System.currentTimeMillis())
     _uiState.update {
       it.copy(
-        activeServer = server,
+        activeServer = selected,
         openLibrary = null,
         currentItems = emptyList(),
         resumeItems = emptyList(),
@@ -194,7 +199,8 @@ class JellyfinViewModel(
         error = null,
       )
     }
-    loadHomeDashboard(server)
+    viewModelScope.launch(Dispatchers.IO) { jellyfinRepository.updateServer(selected) }
+    loadHomeDashboard(selected)
   }
 
   fun refresh() {

@@ -96,7 +96,7 @@ class LyricsRepository(
       cache.get(mediaPath)?.let { return@withContext it }
     }
 
-    Log.d(TAG, "Loading lyrics for: $title by $artist ($mediaPath)")
+    Log.d(TAG, "Loading lyrics for: $title by $artist")
 
     // 1. Check embedded lyrics first
     val embedded = EmbeddedLyricsExtractor.extractEmbeddedLyrics(context, mediaPath)

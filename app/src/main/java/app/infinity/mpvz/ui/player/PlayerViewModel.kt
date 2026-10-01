@@ -785,16 +785,9 @@ class PlayerViewModel : ViewModel(),
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val showVideoQualitySelector: StateFlow<Boolean> =
-    combine(videoQualityTracks, PlaybackSession.state) { qualityTracks, session ->
-      if (qualityTracks.isEmpty()) return@combine false
-
-      val item = session.currentItem
-      val isYtdlpPage =
-        sequenceOf(item?.originalUri, item?.playableUri)
-          .filterNotNull()
-          .any(YtdlpManager::requiresYtdlp)
-      isYtdlpPage || qualityTracks.size > 1
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    videoQualityTracks
+      .map { qualityTracks -> qualityTracks.isNotEmpty() }
+      .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
   fun selectVideoQuality(track: TrackNode) {
     if (currentItemRequiresYtdlp() && !MpvConfigOverridePolicy.isOwnedByMpvConf("ytdl-format")) {
@@ -6940,12 +6933,36 @@ class PlayerViewModel : ViewModel(),
   }
 
   override fun onCleared() {
-    // ViewModel normally cancels this scope after onCleared; cancel it first so dispatcher workers
-    // cannot start another callback while the player resources below are being released.
+    // Cancel manually retained jobs before releasing native/player resources. ViewModel's
+    // automatic scope cancellation happens after onCleared(), and a dispatcher worker that is
+    // still unwinding can otherwise retain this ViewModel (observed in LeakCanary).
+    hostReference.clear()
+    nativeSubtitleVisibilityListener = null
+    realtimeSubtitleService.stop()
     subtitleSearchJob?.cancel()
     subtitleSearchJob = null
     mediaSearchJob?.cancel()
     mediaSearchJob = null
+    embeddedCueTranslationJob?.cancel()
+    realtimeSubsJob?.cancel()
+    playlistMetadataJob?.cancel()
+    introLookupJob?.cancel()
+    autoCropJob?.cancel()
+    autoCropReadinessJob?.cancel()
+    mpvStateCollectorsJob?.cancel()
+    androidSystemInfoBridgeJob?.cancel()
+    customButtonsSetupJob?.cancel()
+    equalizerMpvDebounceJob?.cancel()
+    lyricsLoadJob?.cancel()
+    lyricsTranslateJob?.cancel()
+    timerJob?.cancel()
+    videoHashJob?.cancel()
+    ambientDebounceJob?.cancel()
+    seekCoalesceJob?.cancel()
+    seekPreviewJob?.cancel()
+    frameSeekJob?.cancel()
+    frameNavigationCollapseJob?.cancel()
+    translationJob?.cancel()
     viewModelScope.cancel()
     if (nativeSubtitleHiddenForTranslation) {
       PlaybackSession.setPropertyBoolean("sub-visibility", true)

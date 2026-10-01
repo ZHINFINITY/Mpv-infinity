@@ -74,7 +74,9 @@ fun EditConnectionSheet(
   var path by remember(connection.id) { mutableStateOf(connection.path) }
   var isAnonymous by remember(connection.id) { mutableStateOf(connection.isAnonymous) }
   var useHttps by remember(connection.id) { mutableStateOf(connection.useHttps) }
+  var sftpHostKeyFingerprint by remember(connection.id) { mutableStateOf(connection.sftpHostKeyFingerprint) }
   var protocolMenuExpanded by remember { mutableStateOf(false) }
+  val validSftpFingerprint = sftpHostKeyFingerprint.trim().matches(Regex("""SHA256:[A-Za-z0-9+/]{43}"""))
 
   val handleDismiss = {
     onDismiss()
@@ -92,6 +94,7 @@ fun EditConnectionSheet(
         path = path.ifBlank { "/" },
         isAnonymous = isAnonymous,
         useHttps = useHttps,
+        sftpHostKeyFingerprint = sftpHostKeyFingerprint.trim(),
       )
     onSave(updatedConnection, isAnonymous || clearPassword)
   }
@@ -250,6 +253,18 @@ fun EditConnectionSheet(
           )
         }
 
+        if (protocol == NetworkProtocol.SFTP) {
+          OutlinedTextField(
+            value = sftpHostKeyFingerprint,
+            onValueChange = { sftpHostKeyFingerprint = it.trim() },
+            label = { Text("SFTP host-key SHA-256 fingerprint") },
+            placeholder = { Text("SHA256:...") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            supportingText = { Text("Verify this fingerprint with the server administrator before saving.") },
+          )
+        }
+
         // Anonymous checkbox
         Row(
           verticalAlignment = Alignment.CenterVertically,
@@ -373,7 +388,10 @@ fun EditConnectionSheet(
           Spacer(modifier = Modifier.width(8.dp))
           Button(
             onClick = handleSave,
-            enabled = host.isNotBlank() && (isAnonymous || username.isNotBlank()),
+            enabled =
+              host.isNotBlank() &&
+                (isAnonymous || username.isNotBlank()) &&
+                (protocol != NetworkProtocol.SFTP || validSftpFingerprint),
           ) {
             Text(
               text =

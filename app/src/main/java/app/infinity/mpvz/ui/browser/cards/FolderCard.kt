@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -80,6 +81,7 @@ fun FolderCard(
   isDualPane: Boolean = false,
   isActive: Boolean = false,
   isAudioOnly: Boolean = false,
+  onQuickPlay: (() -> Unit)? = null,
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
@@ -355,6 +357,14 @@ fun FolderCard(
                 )
               }
             }
+            if (isAudioOnly && onQuickPlay != null) {
+              IconButton(
+                onClick = onQuickPlay,
+                modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
+              ) {
+                Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play folder")
+              }
+            }
           }
 
           Spacer(modifier = Modifier.height(8.dp))
@@ -368,7 +378,7 @@ fun FolderCard(
             textAlign = if (isSingleColumn) androidx.compose.ui.text.style.TextAlign.Start else (if (centerGridTitles) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Start),
           )
 
-          if (showTotalVideosChip && folder.videoCount > 0) {
+          if ((showTotalVideosChip || isAudioOnly && onQuickPlay != null) && folder.videoCount > 0) {
             Text(
               if (isAudioOnly) {
                 if (folder.videoCount == 1) "1 Song" else "${folder.videoCount} Songs"
@@ -379,6 +389,22 @@ fun FolderCard(
               } else {
                 "${folder.videoCount} Videos"
               },
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          if ((showFolderPath || isAudioOnly && onQuickPlay != null) && parentPath.isNotEmpty()) {
+            Text(
+              parentPath,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = maxLines,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          if ((showTotalSizeChip || isAudioOnly && onQuickPlay != null) && folder.totalSize > 0) {
+            Text(
+              formatFileSize(folder.totalSize),
               style = MaterialTheme.typography.labelSmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -464,7 +490,7 @@ fun FolderCard(
               maxLines = maxLines,
               overflow = TextOverflow.Ellipsis,
             )
-            if (showFolderPath && parentPath.isNotEmpty()) {
+            if ((showFolderPath || isAudioOnly && onQuickPlay != null) && parentPath.isNotEmpty()) {
               Text(
                 parentPath,
                 style = MaterialTheme.typography.bodySmall,
@@ -492,7 +518,7 @@ fun FolderCard(
               }
 
               // Hide chips at storage root level (when videoCount is 0)
-              if (showTotalVideosChip && folder.videoCount > 0) {
+              if ((showTotalVideosChip || isAudioOnly && onQuickPlay != null) && folder.videoCount > 0) {
                 Text(
                   if (isAudioOnly) {
                     if (folder.videoCount == 1) "1 Song" else "${folder.videoCount} Songs"
@@ -515,7 +541,7 @@ fun FolderCard(
                 hasChip = true
               }
 
-              if (showTotalSizeChip && folder.totalSize > 0) {
+              if ((showTotalSizeChip || isAudioOnly && onQuickPlay != null) && folder.totalSize > 0) {
                 Text(
                   formatFileSize(folder.totalSize),
                   style = MaterialTheme.typography.labelSmall,
@@ -558,6 +584,11 @@ fun FolderCard(
                   color = MaterialTheme.colorScheme.onSurface,
                 )
               }
+            }
+          }
+          if (isAudioOnly && onQuickPlay != null) {
+            IconButton(onClick = onQuickPlay, modifier = Modifier.size(40.dp)) {
+              Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play folder")
             }
           }
         }

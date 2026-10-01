@@ -52,6 +52,7 @@ data class FolderWithNewCount(
 class FolderListViewModel(
   application: Application,
   private val audioOnly: Boolean = false,
+  private val rootPath: String? = null,
 ) : BaseBrowserViewModel(application),
   KoinComponent {
   private val foldersPreferences: FoldersPreferences by inject()
@@ -107,9 +108,10 @@ class FolderListViewModel(
     fun factory(
       application: Application,
       audioOnly: Boolean = false,
+      rootPath: String? = null,
     ) = object : ViewModelProvider.Factory {
       @Suppress("UNCHECKED_CAST")
-      override fun <T : ViewModel> create(modelClass: Class<T>): T = FolderListViewModel(application, audioOnly) as T
+      override fun <T : ViewModel> create(modelClass: Class<T>): T = FolderListViewModel(application, audioOnly, rootPath) as T
     }
   }
 
@@ -177,6 +179,8 @@ class FolderListViewModel(
     viewModelScope.launch {
       combine(_allVideoFolders, blacklistFlow) { folders, blacklist ->
         folders.filter { folder ->
+          (rootPath.isNullOrBlank() || folder.path.equals(rootPath, ignoreCase = true) ||
+            folder.path.startsWith(rootPath.trimEnd('/') + "/", ignoreCase = true)) &&
           blacklist.none { blacklisted ->
             folder.path.equals(blacklisted, ignoreCase = true) ||
               folder.path.startsWith(if (blacklisted.endsWith("/")) blacklisted else "$blacklisted/", ignoreCase = true)
