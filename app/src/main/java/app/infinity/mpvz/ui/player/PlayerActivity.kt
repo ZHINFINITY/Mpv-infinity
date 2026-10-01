@@ -7012,6 +7012,13 @@ class PlayerActivity :
 
   // ==================== Key Event Handling ====================
 
+  private fun shouldUseSystemVolumeUiForCurrentMedia(): Boolean =
+    PlayerVolumeKeyPolicy.shouldUseSystemVolumeUi(
+      isAudioOnly = viewModel.isAudioOnly.value,
+      isKnownAudio = isCurrentMediaKnownAudio(),
+      isAudioLaunch = isKnownAudioLaunch(intent),
+    )
+
   /**
    * Handles hardware key down events for player control.
    * Supports D-pad navigation, media keys, and volume controls.
@@ -7097,7 +7104,7 @@ class PlayerActivity :
       }
 
       KeyEvent.KEYCODE_VOLUME_UP -> {
-        if (viewModel.isAudioOnly.value) {
+        if (shouldUseSystemVolumeUiForCurrentMedia()) {
           viewModel.changeVolumeBy(1, showUi = true)
           return true
         }
@@ -7107,7 +7114,7 @@ class PlayerActivity :
       }
 
       KeyEvent.KEYCODE_VOLUME_DOWN -> {
-        if (viewModel.isAudioOnly.value) {
+        if (shouldUseSystemVolumeUiForCurrentMedia()) {
           viewModel.changeVolumeBy(-1, showUi = true)
           return true
         }
