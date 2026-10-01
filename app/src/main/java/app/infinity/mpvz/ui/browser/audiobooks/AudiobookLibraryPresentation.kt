@@ -1,5 +1,24 @@
 package app.infinity.mpvz.ui.browser.audiobooks
 
+/**
+ * The selected SAF root feeds the All Books library; its navigable folder tree is a separate Folders pane.
+ */
+internal enum class AudiobookLibraryContentMode {
+  ALL_BOOKS,
+  FOLDERS,
+  SAF_FOLDER_TREE,
+}
+
+internal fun resolveAudiobookLibraryContentMode(
+  selectedTabIndex: Int,
+  isFolderBrowser: Boolean,
+  isAudiobookshelfSource: Boolean,
+): AudiobookLibraryContentMode = when {
+  selectedTabIndex == 0 -> AudiobookLibraryContentMode.ALL_BOOKS
+  selectedTabIndex == 1 && isFolderBrowser && !isAudiobookshelfSource -> AudiobookLibraryContentMode.SAF_FOLDER_TREE
+  else -> AudiobookLibraryContentMode.FOLDERS
+}
+
 /** Filters the complete local or remote book list without mixing in folder-tree contents. */
 internal fun <T> filterAudiobooksByProgress(
   books: List<T>,
@@ -17,8 +36,7 @@ internal fun <T> filterAudiobooksByProgress(
   }
 }
 
-/** Progress chips belong to the All books library pane, never either folder browser. */
+/** Progress filters are shown in All Books and never inside either folder pane. */
 internal fun shouldShowAudiobookProgressFilters(
-  isFoldersTab: Boolean,
-  isFolderTreeBrowser: Boolean,
-): Boolean = !isFoldersTab && !isFolderTreeBrowser
+  contentMode: AudiobookLibraryContentMode,
+): Boolean = contentMode == AudiobookLibraryContentMode.ALL_BOOKS
