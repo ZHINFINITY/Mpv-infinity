@@ -19,10 +19,12 @@ import app.infinity.mpvz.database.dao.DownloadItemDao
 import app.infinity.mpvz.database.entities.DownloadItemEntity
 import app.infinity.mpvz.network.SharedHttpClient
 import app.infinity.mpvz.network.awaitResponse
+import app.infinity.mpvz.repository.subtitle.readBoundedSubtitleResponse
 import app.infinity.mpvz.utils.media.PlaybackSubtitleTrack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -158,6 +160,12 @@ class AppDownloadManager(
           .minByOrNull { it.timeQueued } ?: break
       runDownload(next, onUpdate)
     }
+    // An enqueue can complete while the service is finishing its final query. Give the
+    // database writer and a second service start a short hand-off window before stopping.
+    delay(250L)
+    if (dao.getAll().any { it.status == AppDownloadStatus.QUEUED.name }) {
+      drainQueue(onUpdate)
+    }
     _activeSnapshot.value = null
   }
 
@@ -207,10 +215,34 @@ class AppDownloadManager(
 
         val requestBuilder = Request.Builder().url(entity.url).get()
         decodeHeaders(entity.stagingPath).forEach { (key, value) -> requestBuilder.header(key, value) }
-        if (resumeFrom > 0) requestBuilder.header("Range", "bytes=$resumeFrom-")
+        if (resumeFrom > 0) {
+          requestBuilder.header("Range", "bytes=$resumeFrom-")
+          requestBuilder.header("Accept-Encoding", "identity")
+        }
 
         httpClient.newCall(requestBuilder.build()).awaitResponse().use { response ->
-          if (resumeFrom > 0 && response.code != 206) {
+          var rangedTotal: Long? = null
+          if (resumeFrom > 0 && response.code == 206) {
+            val contentRange = response.header("Content-Range").orEmpty()
+            val match = CONTENT_RANGE_PATTERN.matchEntire(contentRange)
+            val rangeStart = match?.groupValues?.get(1)?.toLongOrNull()
+            val rangeEnd = match?.groupValues?.get(2)?.toLongOrNull()
+            rangedTotal = match?.groupValues?.get(3)?.takeUnless { it == "*" }?.toLongOrNull()
+            val rangeLength =
+              if (rangeStart != null && rangeEnd != null && rangeEnd >= rangeStart) {
+                rangeEnd - rangeStart + 1L
+              } else {
+                null
+              }
+            val bodyLength = response.body.contentLength()
+            if (
+              rangeStart != resumeFrom || rangeLength == null || rangedTotal == null ||
+              rangeEnd == null || rangeEnd + 1L != rangedTotal ||
+              (bodyLength >= 0L && bodyLength != rangeLength)
+            ) {
+              throw IOException("Invalid Content-Range for resumed download: $contentRange")
+            }
+          } else if (resumeFrom > 0) {
             // Server ignored the range; start over.
             partFile.delete()
             resumeFrom = 0
@@ -218,7 +250,7 @@ class AppDownloadManager(
           check(response.isSuccessful) { "HTTP ${response.code}" }
           val body = response.body
           val totalBytes =
-            body.contentLength().takeIf { it > 0 }?.plus(resumeFrom) ?: 0L
+            rangedTotal ?: body.contentLength().takeIf { it > 0 }?.plus(resumeFrom) ?: 0L
 
           var downloaded = resumeFrom
           var windowBytes = 0L
@@ -343,7 +375,7 @@ class AppDownloadManager(
           val request = requestBuilder.build()
           httpClient.newCall(request).awaitResponse().use { response ->
             check(response.isSuccessful) { "HTTP ${response.code}" }
-            val body = response.body.bytes()
+            val body = readBoundedSubtitleResponse(response.body)
             check(body.isNotEmpty()) { "Empty subtitle body" }
             if (!directory.exists()) directory.mkdirs()
             target.writeBytes(body)
@@ -429,6 +461,7 @@ class AppDownloadManager(
     private const val PART_SUFFIX = ".part"
     private const val PROGRESS_INTERVAL_MS = 750L
     private const val DB_WRITE_INTERVAL_MS = 1_500L
+    private val CONTENT_RANGE_PATTERN = Regex("""bytes (\d+)-(\d+)/(\d+|\*)""", RegexOption.IGNORE_CASE)
 
     val SUBTITLE_EXTENSIONS = setOf("srt", "ass", "ssa", "vtt", "sub", "sup", "idx", "txt")
 

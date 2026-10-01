@@ -1,577 +1,979 @@
 package app.infinity.mpvz.ui.browser.catalog
 
+import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.SheetValue
-import androidx.compose.material3.rememberBottomSheetState
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.tween
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
-import android.content.Intent
-import android.net.Uri
-import android.util.Log
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import app.infinity.mpvz.catalog.CatalogProvider
+import app.infinity.mpvz.catalog.CatalogSource
 import app.infinity.mpvz.catalog.CatalogViewModel
+import app.infinity.mpvz.catalog.isDirectHttpStreamUrl
+import app.infinity.mpvz.ui.player.PlaybackIdentity
+import app.infinity.mpvz.R
 import app.infinity.mpvz.catalog.MediaItem
 import app.infinity.mpvz.catalog.MediaType
-import app.infinity.mpvz.ui.components.InlineSearchBar
-import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.icons.Icon
-import app.infinity.mpvz.ui.utils.LocalBackStack
-import app.infinity.mpvz.ui.preferences.PreferencesScreen
-import app.infinity.mpvz.ui.utils.popSafely
-import app.infinity.mpvz.ui.torrent.TorrentSelectionActivity
-import app.infinity.mpvz.utils.media.MediaUtils
+import app.infinity.mpvz.catalog.StreamOption
+import app.infinity.mpvz.catalog.catalogArtworkCandidates
+import app.infinity.mpvz.catalog.catalogItemIdentityKey
+import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.presentation.components.RemoteImageWithFallback
+import app.infinity.mpvz.presentation.components.pullrefresh.InfinityLoadingIndicator
 import app.infinity.mpvz.presentation.components.pullrefresh.PullRefreshBox
-import coil3.compose.AsyncImage
+import app.infinity.mpvz.ui.browser.components.BrowserTopBar
+import app.infinity.mpvz.ui.components.InlineSearchBar
+import app.infinity.mpvz.ui.icons.Icon
+import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.PlayerActivity
+import app.infinity.mpvz.ui.preferences.MediaServersPreferencesScreen
+import app.infinity.mpvz.ui.utils.LocalBackStack
+import app.infinity.mpvz.ui.utils.popSafely
+import app.infinity.mpvz.utils.media.MediaUtils
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import kotlinx.serialization.Serializable
+import kotlin.math.abs
+import org.koin.compose.koinInject
 
-@OptIn(ExperimentalMaterial3Api::class)
-@kotlinx.serialization.Serializable
-object StreamScreen : app.infinity.mpvz.presentation.Screen {
-  @Composable override fun Content() {
+private const val HERO_AUTO_SCROLL_INTERVAL_MS = 8_000L
+
+private data class StreamRail(val key: String, val title: String, val items: List<MediaItem>)
+
+@Serializable
+object StreamScreen : Screen {
+  @Composable
+  override fun Content() {
     val backstack = LocalBackStack.current
     val context = LocalContext.current
-    val viewModel: CatalogViewModel = viewModel(factory = CatalogViewModel.Factory(context.applicationContext as android.app.Application))
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val viewModel: CatalogViewModel = viewModel(
+      key = "nuvio-stream-catalog",
+      factory = CatalogViewModel.Factory(context.applicationContext as Application),
+    )
     val state by viewModel.state.collectAsState()
     val catalogSources by viewModel.catalogSources.collectAsState()
-    fun openTorrent(item: MediaItem, stream: app.infinity.mpvz.catalog.StreamOption, streams: List<app.infinity.mpvz.catalog.StreamOption> = listOf(stream), season: Int? = state.selectedSeason, episodeNumber: Int? = state.selectedEpisode) {
-      val selectedEpisode = season?.let { seasonNumber ->
-        episodeNumber?.let { number -> item.seasons.firstOrNull { it.number == seasonNumber }?.episodes?.firstOrNull { it.number == number } }
-      }
-      context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
-        action = Intent.ACTION_VIEW
-        data = Uri.parse(stream.url)
-        putExtra(MediaUtils.EXTRA_TORRENT_SOURCE, stream.url)
-        putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
-        putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
-        putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
-        putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
-        putExtra("catalog_provider_id", item.providerId)
-        putExtra("catalog_imdb_id", item.imdbId)
-        putExtra("catalog_release_year", item.releaseYear)
-        putExtra("catalog_rating", item.contentRating)
-        putExtra("catalog_duration", item.duration)
-        putExtra("catalog_genres", item.genres.joinToString(" • "))
-        putExtra("is_series", item.type == app.infinity.mpvz.catalog.MediaType.TV)
-        putExtra("streams_json", kotlinx.serialization.json.Json.encodeToString(streams))
-        if (item.seasons.isNotEmpty()) putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
-        selectedEpisode?.let { episode ->
-          putExtra("episode_season", season)
-          putExtra("episode_number", episodeNumber)
-          putExtra("episode_title", episode.title)
-          putExtra("episode_overview", episode.overview)
-          putExtra("episode_thumbnail", episode.stillUrl)
-        }
-        stream.torrentFileIndex?.let { putExtra(MediaUtils.EXTRA_TORRENT_FILE_INDEX, it) }
-      })
-    }
-    LaunchedEffect(Unit) {
-      viewModel.torrentLaunch.collect { request -> openTorrent(request.item, request.stream, request.streams, request.season, request.episode) }
-    }
-    var heroItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
-    LaunchedEffect(state.items) { heroItems = state.items.shuffled().take(7) }
-    val heroInitialPage = remember(heroItems) {
-      if (heroItems.size > 1) {
-        val middle = Int.MAX_VALUE / 2
-        middle - (middle % heroItems.size)
-      } else 0
-    }
-    val heroPagerState = rememberPagerState(initialPage = heroInitialPage, pageCount = { if (heroItems.size > 1) Int.MAX_VALUE else heroItems.size })
-    LaunchedEffect(heroPagerState.settledPage, heroItems.size) {
-      if (heroItems.size > 1) {
-        delay(5000)
-        if (!heroPagerState.isScrollInProgress) {
-          heroPagerState.animateScrollToPage(heroPagerState.currentPage + 1, animationSpec = tween(800))
-        }
-      }
-    }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
-    var showCatalogs by rememberSaveable { mutableStateOf(false) }
+    val playbackStream by viewModel.playbackStream.collectAsState()
+    val linkDownloadCoordinator = koinInject<app.infinity.mpvz.domain.download.LinkDownloadCoordinator>()
+
     var isSearching by rememberSaveable { mutableStateOf(false) }
+    var searchFilter by rememberSaveable { mutableStateOf("All") }
     var browseRail by rememberSaveable { mutableStateOf<String?>(null) }
     var genreFilter by rememberSaveable { mutableStateOf("All") }
-    var searchFilter by rememberSaveable { mutableStateOf("All") }
-    val isRefreshing = remember { mutableStateOf(false) }
-    val refreshScope = rememberCoroutineScope()
+    var streamSheetDismissed by rememberSaveable { mutableStateOf(false) }
     val streamListState = rememberLazyListState()
+    val refreshScope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val isRefreshing = remember { mutableStateOf(false) }
     val searchActive = isSearching || state.query.isNotBlank()
-    LaunchedEffect(browseRail) {
-      androidx.compose.runtime.snapshotFlow {
-        streamListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-      }.collect { lastVisibleIndex ->
-        val total = streamListState.layoutInfo.totalItemsCount
-        if (browseRail != null && total > 0 && lastVisibleIndex >= total - 4) viewModel.loadMore()
+    val openItem: (MediaItem) -> Unit = { item ->
+      browseRail = null
+      viewModel.showDetails(item)
+    }
+
+    LaunchedEffect(lifecycleOwner, viewModel) {
+      val observer = LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_RESUME) {
+          viewModel.reloadAddonConfiguration()
+          viewModel.refreshHistory()
+        }
+      }
+      lifecycleOwner.lifecycle.addObserver(observer)
+      viewModel.reloadAddonConfiguration()
+      try {
+        kotlinx.coroutines.awaitCancellation()
+      } finally {
+        lifecycleOwner.lifecycle.removeObserver(observer)
       }
     }
-    LaunchedEffect(searchActive, state.query, state.items.size, catalogSources) {
-      Log.i("MpvCatalogDiag", "screen searchActive=$searchActive query=\"${state.query}\" items=${state.items.size} sources=${catalogSources.map { "${it.id}:${it.isEnabled}" }} browseRail=${browseRail ?: "<home>"}")
-    }
-    BackHandler(enabled = searchActive || browseRail != null) {
-      if (browseRail != null) browseRail = null
-      else {
-        isSearching = false
-        viewModel.setQuery("")
+
+    LaunchedEffect(playbackStream) {
+      val stream = playbackStream ?: return@LaunchedEffect
+      if (stream.isExternal) {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(stream.url)))
+      } else if ((stream.url.startsWith("http://", ignoreCase = true) || stream.url.startsWith("https://", ignoreCase = true)) && stream.isPlayable) {
+        context.startActivity(Intent(context, PlayerActivity::class.java).apply {
+          action = Intent.ACTION_VIEW
+          data = Uri.parse(stream.url)
+          putExtra(Intent.EXTRA_STREAM, Uri.parse(stream.url))
+          putExtra(MediaUtils.EXTRA_MEDIA_TITLE, state.selectedItem?.title ?: stream.title)
+          putExtra("title", state.selectedItem?.title ?: stream.title)
+          putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, state.selectedItem?.overview.orEmpty())
+          putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, state.selectedItem?.posterUrl)
+          putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, state.selectedItem?.backdropUrl)
+          putExtra("is_audio", false)
+          putExtra("stream_tab_playback", true)
+          state.selectedItem?.let { selected ->
+            putExtra(
+              "stream_history_key",
+              "${selected.catalogSourceId.orEmpty()}:${selected.catalogId.orEmpty()}:${selected.providerId ?: selected.id}:${state.selectedSeason ?: 0}:${state.selectedEpisode ?: 0}",
+            )
+          }
+          stream.filename?.let { putExtra("filename", it) }
+          stream.mimeType?.let { putExtra("mime_type", it) }
+          if (stream.headers.isNotEmpty()) {
+            putExtra("headers", stream.headers.flatMap { (name, value) -> listOf(name, value) }.toTypedArray())
+          }
+        })
       }
+      viewModel.consumePlaybackStream()
     }
-    LaunchedEffect(Unit) {
-      viewModel.resolvedUrl.collect { url ->
-        if (url != null) {
-          context.startActivity(android.content.Intent(context, app.infinity.mpvz.ui.player.PlayerActivity::class.java).apply { action = android.content.Intent.ACTION_VIEW; data = android.net.Uri.parse(url) })
-          viewModel.consumeResolvedUrl()
+
+    // See All is a local view over the catalog pages held by the ViewModel.
+    // Keep requesting pages as its grid approaches the end; without this,
+    // genre-filtered rails could only ever show the first catalog page.
+    LaunchedEffect(browseRail, genreFilter) {
+      snapshotFlow {
+        val layout = streamListState.layoutInfo
+        val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+        lastVisible to layout.totalItemsCount
+      }.collect { (lastVisible, totalItems) ->
+        if (browseRail != null && totalItems > 0 && lastVisible >= totalItems - 4) {
+          viewModel.loadMore(if (genreFilter != "All") 3 else 1)
         }
       }
     }
-    Scaffold(
-      topBar = {
-          TopAppBar(
-          title = {
-            if (searchActive) {
-              CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodyMedium) {
-                InlineSearchBar(
-                  query = state.query,
-                  onQueryChange = viewModel::setQuery,
-                  onSearch = viewModel::setQuery,
-                  modifier = Modifier.fillMaxWidth().height(48.dp),
-                  inputFieldModifier = Modifier.height(48.dp),
-                  placeholder = { Text("Search streams", style = MaterialTheme.typography.bodyMedium) },
-                  leadingIcon = { Icon(Icons.RoundedFilled.Search, "Search", modifier = Modifier.size(20.dp)) },
-                  tonalElevation = 0.dp,
-                  windowInsets = WindowInsets(0.dp),
-                )
-              }
-            } else Text(if (browseRail != null) "Browse" else "Stream")
-          },
-          navigationIcon = { IconButton(onClick = { backstack.popSafely() }) { Icon(Icons.RoundedFilled.ArrowBack, "Back") } },
-          actions = {
-            IconButton(onClick = {
-              if (searchActive) {
-                isSearching = false
-                viewModel.setQuery("")
-              } else {
-                isSearching = true
-              }
-            }) { Icon(if (searchActive) Icons.RoundedFilled.Close else Icons.RoundedFilled.Search, if (searchActive) "Close search" else "Search") }
-            IconButton(onClick = { showSettings = true }) { Icon(Icons.RoundedFilled.Explore, "Catalogs and resolvers") }
-            IconButton(onClick = { backstack.add(PreferencesScreen) }) { Icon(Icons.RoundedFilled.Settings, "General settings") }
-          },
-          colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-        )
-      },
-    ) { padding ->
-      PullRefreshBox(
-        isRefreshing = isRefreshing,
-        onRefresh = {
-          if (!isRefreshing.value) refreshScope.launch {
-            isRefreshing.value = true
-            try { viewModel.refreshAll() } finally { isRefreshing.value = false }
+
+    val sourceNames = remember(catalogSources) { catalogSources.associate { it.id to it.name } }
+    val rails = remember(state.items, sourceNames) {
+      state.items.groupBy { item ->
+        val title = item.catalogName ?: sourceNames[item.catalogSourceId] ?: "Discover"
+        "${item.catalogSourceId.orEmpty()}|${item.catalogType.orEmpty()}|${item.catalogId.orEmpty()}|$title"
+      }.mapValues { (_, items) ->
+        items.distinctBy(::catalogItemIdentityKey)
+      }
+    }
+    val heroItems = remember(state.items, state.query) {
+      if (state.query.isNotBlank()) emptyList()
+      else state.items.distinctBy(::catalogItemIdentityKey).take(7)
+    }
+    val railSections = remember(rails, state.items, state.recentItems) {
+      buildList {
+        if (state.recentItems.isNotEmpty()) add(StreamRail("recently-watched", "Continue watching", state.recentItems))
+        rails.forEach { (railKey, items) ->
+          val catalogType = railKey.split('|').getOrNull(1).orEmpty()
+          val suffix = when (catalogType) {
+            "movie" -> " Movies"
+            "series", "tv" -> " TV Shows"
+            else -> ""
           }
+          add(StreamRail(railKey, railKey.substringAfterLast('|') + suffix, items))
+        }
+        val movies = state.items.filter { it.type == MediaType.MOVIE }
+        val shows = state.items.filter { it.type == MediaType.TV }
+        if (movies.size >= 4) add(StreamRail("curated-movies", "Trending Movies", movies))
+        if (shows.size >= 4) add(StreamRail("curated-series", "Trending Series", shows))
+        state.items.flatMap { it.genres }.distinct().sorted().forEach { genre ->
+          val genreItems = state.items.filter { genre in it.genres }
+          if (genreItems.size >= 4) add(StreamRail("genre-$genre", genre, genreItems))
+        }
+      }.distinctBy { it.key }
+    }
+
+    BackHandler(enabled = searchActive || browseRail != null || state.selectedItem != null) {
+      when {
+        state.selectedItem != null -> viewModel.closeDetails()
+        browseRail != null -> browseRail = null
+        else -> {
+          isSearching = false
+          viewModel.setQuery("")
+        }
+      }
+    }
+
+      Column(
+      modifier = Modifier.fillMaxSize().background(
+        Brush.verticalGradient(
+          listOf(
+            MaterialTheme.colorScheme.surface.copy(alpha = .72f),
+            MaterialTheme.colorScheme.background,
+            MaterialTheme.colorScheme.background,
+          ),
+        ),
+      ),
+    ) {
+      // Keep the tab shell mounted while a title is open. Jellyfin does not
+      // replace its fixed BrowserTopBar with the detail content; it renders the
+      // detail surface below that header and supplies a back action in the bar.
+      NuvioStreamTopOverlay(
+        query = state.query,
+        isSearching = if (state.selectedItem == null) searchActive else false,
+        hasHero = false,
+        title = "Discover",
+        onQueryChange = viewModel::setQuery,
+        onSearch = { isSearching = true },
+        onCloseSearch = {
+          keyboardController?.hide()
+          isSearching = false
+          viewModel.setQuery("")
         },
-        modifier = Modifier.fillMaxSize().padding(padding),
-      ) {
-        val streamSearchMode = searchActive && state.query.isNotBlank()
-        androidx.compose.animation.AnimatedVisibility(
-          // Search keeps the list container mounted while provider results change. This prevents
-          // the empty-state item from being re-entered for every typed word.
-          visible = streamSearchMode || (state.items.isNotEmpty() && !state.isLoading),
-          enter = if (streamSearchMode) androidx.compose.animation.EnterTransition.None else fadeIn(tween(420)) + expandVertically(tween(520)),
-        ) {
-        LazyColumn(
+        onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
+        onOpenDownloads = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
+        onSubmitSearch = { keyboardController?.hide(); viewModel.setQuery(state.query) },
+        onBack = if (state.selectedItem != null) viewModel::closeDetails else null,
+      )
+      if (state.selectedItem != null) {
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+          PullRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+              viewModel.refreshSelectedDetails()
+              delay(900L)
+            },
+            modifier = Modifier.fillMaxSize(),
+          ) {
+            CatalogDetailsPage(
+              item = state.selectedItem!!,
+              selectedSeason = state.selectedSeason,
+              isMetadataLoading = state.metadataLoadingKey == state.selectedItem?.let(::catalogItemIdentityKey),
+              isResolving = state.resolvingKey == state.selectedItem?.let(::catalogItemIdentityKey),
+              error = state.error,
+              onBack = viewModel::closeDetails,
+              onChooseSeason = viewModel::selectSeason,
+              onFindDirectStreams = {
+                streamSheetDismissed = false
+                state.selectedItem?.let { item -> viewModel.resolve(item, episodeVideoId = item.providerId) }
+              },
+              onChooseEpisode = { season, episode -> streamSheetDismissed = false; viewModel.resolve(state.selectedItem!!, season, episode.number, episode.videoId) },
+            )
+          }
+        }
+      } else {
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+          PullRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { viewModel.refreshAll() },
+            modifier = Modifier.fillMaxSize(),
+          ) {
+          LazyColumn(
           state = streamListState,
           modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(bottom = 96.dp),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
+          contentPadding = PaddingValues(
+            // Match Jellyfin's top shell: content always starts beneath the header layer.
+            top = 0.dp,
+            bottom = 104.dp,
+          ),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-        item { Spacer(Modifier.height(4.dp)) }
-        if (searchActive) item {
-          Row(Modifier.fillMaxWidth().horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("All", "Movies", "TV Shows", "Episodes").forEach { filter ->
-              val selected = searchFilter == filter
-              FilterChip(
-                selected = selected,
-                onClick = { searchFilter = filter },
-                label = { Text(filter, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
-                shape = RoundedCornerShape(12.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                  selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                  selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
+          if (searchActive) item {
+            Row(
+              Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              listOf("All", "Movies", "TV Shows").forEach { filter ->
+                FilterChip(
+                  selected = searchFilter == filter,
+                  onClick = { searchFilter = filter },
+                  label = { Text(filter, fontWeight = if (searchFilter == filter) FontWeight.Bold else FontWeight.Normal) },
+                )
+              }
+            }
+          }
+
+          if (!searchActive && browseRail == null && heroItems.isNotEmpty()) {
+            item(key = "stream_hero") {
+              NuvioStyleHero(
+                items = heroItems,
+                onItemClick = openItem,
+                onPosterLoadFailure = viewModel::onCatalogPosterLoadFailure,
+              )
+            }
+          }
+
+          if (!searchActive && state.isLoading && state.items.isEmpty()) item { StreamLoadingState() }
+
+          if (!searchActive && browseRail == null) {
+            railSections.forEachIndexed { index, rail ->
+              streamCatalogRail(
+                title = rail.title,
+                items = rail.items,
+                revealIndex = index,
+                onSeeAll = { browseRail = rail.key; genreFilter = "All" },
+                onItemClick = openItem,
+                onPosterLoadFailure = viewModel::onCatalogPosterLoadFailure,
+              )
+            }
+          }
+
+          if (browseRail != null && state.query.isBlank()) {
+            val browseItems = railSections.firstOrNull { it.key == browseRail }?.items.orEmpty()
+            val isHistoryRail = browseRail == "recently-watched"
+            item(key = "stream_browse_header") {
+              Surface(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .82f),
+              ) {
+                Row(
+                  Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Box(Modifier.width(5.dp).height(34.dp).clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.primary))
+                  Spacer(Modifier.width(12.dp))
+                  Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(railSections.firstOrNull { it.key == browseRail }?.title ?: "Browse", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                    Text("${browseItems.size} titles", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  }
+                  TextButton(onClick = { browseRail = null }) { Text("Done") }
+                }
+              }
+            }
+            val genres = if (isHistoryRail) emptyList() else listOf("All") + browseItems.flatMap { it.genres }.distinct().sorted()
+            item(key = "stream_browse_genres") {
+              if (genres.isNotEmpty()) {
+                Row(
+                  Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                  genres.forEach { genre ->
+                    FilterChip(selected = genreFilter == genre, onClick = { genreFilter = genre }, label = { Text(genre) })
+                  }
+                }
+              }
+            }
+            browseItems.filter { isHistoryRail || genreFilter == "All" || genreFilter in it.genres }.chunked(2).forEachIndexed { index, rowItems ->
+              item(key = "stream_browse_${browseRail}_$index") {
+                androidx.compose.animation.AnimatedVisibility(visible = true, enter = fadeIn(tween(260, delayMillis = (index.coerceAtMost(8)) * 45)) + slideInVertically(tween(300, delayMillis = (index.coerceAtMost(8)) * 45)) { it / 8 }) {
+                  Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    rowItems.forEach { mediaItem ->
+                      Box(Modifier.weight(1f)) {
+                        NuvioCatalogPosterCard(
+                          mediaItem,
+                          onPosterLoadFailure = { viewModel.onCatalogPosterLoadFailure(mediaItem) },
+                        ) { openItem(mediaItem) }
+                      }
+                    }
+                    if (rowItems.size == 1) Spacer(Modifier.weight(1f))
+                  }
+                }
+              }
+            }
+          }
+
+          if (searchActive && state.query.isNotBlank()) {
+            val searchItems = state.items.filter { item ->
+              when (searchFilter) {
+                "Movies" -> item.type == MediaType.MOVIE
+                "TV Shows" -> item.type == MediaType.TV
+                else -> true
+              }
+            }
+            if (state.isLoading) item(key = "stream_search_loading") { StreamSearchLoadingState() }
+            if (searchItems.isEmpty() && !state.isLoading && state.error == null) item { StreamEmptySearchState(state.query) }
+            searchItems.chunked(2).forEachIndexed { index, rowItems ->
+              item(key = "stream_search_$index") {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                  rowItems.forEach { mediaItem ->
+                    Box(Modifier.weight(1f)) {
+                      NuvioCatalogPosterCard(
+                        mediaItem,
+                        onPosterLoadFailure = { viewModel.onCatalogPosterLoadFailure(mediaItem) },
+                      ) { openItem(mediaItem) }
+                    }
+                  }
+                  if (rowItems.size == 1) Spacer(Modifier.weight(1f))
+                }
+              }
+            }
+          }
+
+          if (!searchActive && state.isLoading && state.items.isNotEmpty() && !isRefreshing.value) item { StreamLoadingState(compact = true) }
+          if (state.isLoadingMore) item { StreamLoadingState(compact = true) }
+          state.error?.takeIf { state.selectedItem == null }?.let { error ->
+            item {
+              Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(error, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = viewModel::retry) { Text("Retry") }
+              }
+            }
+          }
+          if (!searchActive && browseRail == null && !state.isLoading && state.items.isEmpty() && state.error == null) {
+            item(key = "stream_no_catalogs") {
+              StreamNoCatalogsState(
+                hasCatalogAddons = catalogSources.any { it.isEnabled },
+                onOpenSettings = { backstack.add(MediaServersPreferencesScreen) },
+                onRefresh = {
+                  if (!isRefreshing.value) refreshScope.launch {
+                    isRefreshing.value = true
+                    try { viewModel.refreshAll() } finally { isRefreshing.value = false }
+                  }
+                },
               )
             }
           }
         }
-        if (state.isLoading && state.items.isEmpty()) item { StreamLoadingState(searching = searchActive) }
-        if (!searchActive && state.query.isBlank() && browseRail == null && heroItems.isNotEmpty()) item { StreamHeroCarousel(heroItems, heroPagerState) { openResolverChooser(context, it) } }
-        val sourceNames = catalogSources.associate { it.id to it.name }
-        val rails = state.items.groupBy { item ->
-          val title = item.catalogName ?: when (item.catalogSourceId) {
-            "cinemeta-movies" -> "Trending Movies"
-            "cinemeta-series" -> "Popular Series"
-            "kitsu-anime" -> "Top Anime"
-            else -> sourceNames[item.catalogSourceId] ?: item.provider.name
+
           }
-          "${item.catalogSourceId.orEmpty()}|${item.catalogId.orEmpty()}|$title"
-        }.mapValues { (_, sourceItems) -> sourceItems.distinctBy { "${it.catalogSourceId}:${it.catalogId}:${it.providerId ?: it.id}" } }
-        if (!searchActive && state.query.isBlank() && browseRail == null) rails.forEach { (title, sourceItems) ->
-          StreamRail(title.substringAfterLast('|'), sourceItems, onSeeMore = { browseRail = title; genreFilter = "All" }) { openResolverChooser(context, it) }
-        }
-        if (!searchActive && state.query.isBlank() && browseRail != null) {
-          val browseItems = rails[browseRail].orEmpty()
-          val genres = listOf("All") + browseItems.flatMap { it.genres }.distinct().sorted()
-          item {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp).horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              genres.forEach { genre -> FilterChip(selected = genreFilter == genre, onClick = { genreFilter = genre }, label = { Text(genre) }) }
-            }
-          }
-          browseItems.filter { genreFilter == "All" || genreFilter in it.genres }.chunked(2).forEach { rowItems ->
-            item {
-              Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                rowItems.forEach { mediaItem ->
-                  androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { openResolverChooser(context, mediaItem) } }
-                }
-                if (rowItems.size == 1) Spacer(Modifier.weight(1f))
-              }
-            }
-          }
-        }
-        if (searchActive && state.query.isNotBlank()) {
-          val searchItems = state.items.filter { item ->
-            when (searchFilter) {
-              "Movies" -> item.type == MediaType.MOVIE
-              "TV Shows" -> item.type == MediaType.TV
-              "Episodes" -> item.type == MediaType.TV && item.seasons.any { season -> season.episodes.isNotEmpty() }
-              else -> true
-            }
-          }
-          if (searchItems.isEmpty() && !state.isLoading) item {
-            StreamEmptySearchState(state.query)
-          }
-          searchItems.chunked(2).forEach { rowItems ->
-            item {
-              Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                rowItems.forEach { mediaItem ->
-                  androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { CatalogGridItem(mediaItem, false) { openResolverChooser(context, mediaItem) } }
-                }
-                if (rowItems.size == 1) Spacer(Modifier.weight(1f))
-              }
-            }
-          }
-        }
-        if (state.isLoading && state.items.isNotEmpty()) item { StreamLoadingState(searching = searchActive) }
-        if (state.isLoadingMore) item { StreamLoadingState(searching = false, compact = true) }
-        if (state.error != null) item { Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
-        }
         }
       }
     }
-    if (showSettings) StreamResolverSettingsDialog(viewModel) { showSettings = false }
+    if (!streamSheetDismissed && state.selectedItem != null &&
+      (state.streamOptions.isNotEmpty() || state.resolvingKey == state.selectedItem?.let(::catalogItemIdentityKey))
+    ) {
+      StreamLinksBottomSheet(
+        title = state.streamTitle ?: state.selectedItem!!.title,
+        streams = state.streamOptions,
+        isLoading = state.resolvingKey == state.selectedItem?.let(::catalogItemIdentityKey),
+        onDismiss = { streamSheetDismissed = true; viewModel.closeStreams() },
+        onPlay = viewModel::playStream,
+        onDownload = { stream ->
+          val route = linkDownloadCoordinator.enqueue(
+            url = stream.url,
+            title = stream.title,
+            headers = stream.headers,
+            posterUrl = state.selectedItem?.posterUrl,
+            season = stream.season,
+            episode = stream.episode,
+          )
+          if (route != app.infinity.mpvz.domain.download.LinkDownloadCoordinator.Route.UNSUPPORTED) {
+            Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+          }
+        },
+      )
+    }
 
   }
 }
 
-private fun openResolverChooser(context: android.content.Context, item: MediaItem) {
-  Log.i("MpvCatalogDiag", "item click title=\"${item.title}\" source=${item.catalogSourceId} catalog=${item.catalogId} type=${item.catalogType} providerId=${item.providerId}")
-  context.startActivity(Intent(context, TorrentSelectionActivity::class.java).apply {
-    action = Intent.ACTION_VIEW
-    putExtra(MediaUtils.EXTRA_MEDIA_TITLE, item.title)
-    putExtra(MediaUtils.EXTRA_MEDIA_DESCRIPTION, item.overview)
-    putExtra(MediaUtils.EXTRA_MEDIA_POSTER_URL, item.posterUrl)
-    putExtra(MediaUtils.EXTRA_MEDIA_BACKDROP_URL, item.backdropUrl)
-    putExtra("catalog_provider_id", item.providerId)
-    putExtra("catalog_imdb_id", item.imdbId)
-    putExtra("catalog_id", item.id)
-    putExtra("catalog_provider", item.provider.name)
-    putExtra("catalog_source_id", item.catalogSourceId)
-    putExtra("catalog_type_name", item.catalogType)
-    putExtra("catalog_type", item.type.name)
-    putExtra("catalog_release_year", item.releaseYear)
-    putExtra("catalog_rating", item.contentRating)
-    putExtra("catalog_duration", item.duration)
-    putExtra("catalog_genres", item.genres.joinToString(" • "))
-    putExtra("is_series", item.type == MediaType.TV)
-    putExtra("seasons_json", kotlinx.serialization.json.Json.encodeToString(item.seasons))
-  })
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun StreamLinksBottomSheet(
+  title: String,
+  streams: List<StreamOption>,
+  isLoading: Boolean,
+  onDismiss: () -> Unit,
+  onPlay: (StreamOption) -> Unit,
+  onDownload: (StreamOption) -> Unit,
+) {
+  val listState = rememberLazyListState()
+  ModalBottomSheet(
+    onDismissRequest = onDismiss,
+    containerColor = MaterialTheme.colorScheme.surface,
+    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+    dragHandle = {
+      Box(
+        Modifier.padding(top = 8.dp).size(width = 32.dp, height = 4.dp)
+          .clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f)),
+      )
+    },
+  ) {
+    LazyColumn(
+      state = listState,
+      modifier = Modifier.fillMaxWidth().navigationBarsPadding().heightIn(max = 620.dp),
+      contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      item {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("Choose a link", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(
+              if (streams.isEmpty()) "Waiting for enabled providers" else "${streams.size} link${if (streams.size == 1) "" else "s"} available",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          if (!isLoading && streams.isNotEmpty()) {
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(20.dp)) {
+              Text("Ready", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+          }
+        }
+        Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (isLoading) {
+          Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Text(if (streams.isEmpty()) "Looking for links…" else "More providers are still responding…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        }
+      }
+      items(streams, key = { "stream-sheet-${it.url}" }) { stream ->
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(20.dp),
+          color = MaterialTheme.colorScheme.surfaceContainerHighest,
+          tonalElevation = 2.dp,
+        ) {
+          Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+              Text(stream.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+              val extra = listOfNotNull(stream.qualityRank.takeIf { it > 0 }?.let { "${it}p" }, stream.size, stream.source).joinToString(" · ")
+              if (extra.isNotBlank()) Text(extra, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Box(
+              Modifier.size(32.dp).clip(CircleShape).clickable { onDownload(stream) },
+              contentAlignment = Alignment.Center,
+            ) {
+              Icon(Icons.RoundedFilled.Download, contentDescription = "Download stream", tint = MaterialTheme.colorScheme.primary)
+            }
+            Surface(
+              modifier = Modifier.clickable { onPlay(stream) },
+              color = MaterialTheme.colorScheme.primary,
+              contentColor = MaterialTheme.colorScheme.onPrimary,
+              shape = RoundedCornerShape(14.dp),
+            ) {
+              Row(Modifier.padding(horizontal = 11.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.RoundedFilled.PlayArrow, contentDescription = "Play stream", modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Play", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+        }
+      }
+      item { Spacer(Modifier.height(8.dp)) }
+    }
+  }
+}
+
+@Composable
+private fun NuvioStreamTopOverlay(
+  modifier: Modifier = Modifier,
+  title: String,
+  query: String,
+  isSearching: Boolean,
+  hasHero: Boolean,
+  onQueryChange: (String) -> Unit,
+  onSearch: () -> Unit,
+  onCloseSearch: () -> Unit,
+  onOpenSettings: () -> Unit,
+  onOpenDownloads: () -> Unit,
+  onSubmitSearch: () -> Unit,
+  onBack: (() -> Unit)? = null,
+) {
+  val keyboardController = LocalSoftwareKeyboardController.current
+  val focusRequester = remember { FocusRequester() }
+  LaunchedEffect(isSearching) {
+    if (isSearching) {
+      delay(100)
+      runCatching { focusRequester.requestFocus() }
+      keyboardController?.show()
+    }
+  }
+  AnimatedVisibility(
+    visible = isSearching,
+    enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+    exit = fadeOut(tween(120)) + shrinkVertically(tween(180)),
+  ) {
+    Row(
+      modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      InlineSearchBar(
+        query = query,
+        onQueryChange = onQueryChange,
+        onSearch = { onSubmitSearch() },
+        modifier = Modifier.weight(1f).shadow(18.dp, RoundedCornerShape(28.dp), clip = false),
+        inputFieldModifier = Modifier.focusRequester(focusRequester),
+        leadingIcon = { Icon(Icons.RoundedFilled.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+        trailingIcon = {
+          IconButton(onClick = onCloseSearch) {
+            Icon(Icons.RoundedFilled.Close, contentDescription = "Close search")
+          }
+        },
+        shape = RoundedCornerShape(28.dp),
+        tonalElevation = 6.dp,
+      )
+    }
+  }
+  if (!isSearching) {
+      BrowserTopBar(
+        title = title,
+        showTitle = true,
+      isInSelectionMode = false,
+      selectedCount = 0,
+      totalCount = 0,
+      onCancelSelection = {},
+      onSearchClick = onSearch,
+        onSettingsClick = onOpenSettings,
+        additionalActions = {
+          IconButton(onClick = onOpenDownloads) {
+            Icon(Icons.RoundedFilled.Download, contentDescription = "Downloads", modifier = Modifier.size(24.dp))
+          }
+        },
+        onBackClick = onBack,
+        modifier = modifier.fillMaxWidth(),
+      )
+    }
+  }
+
+@Composable
+private fun NuvioStyleHero(
+  items: List<MediaItem>,
+  onItemClick: (MediaItem) -> Unit,
+  onPosterLoadFailure: (MediaItem) -> Unit,
+) {
+  if (items.isEmpty()) return
+  val pagerState = key(items.size) {
+    rememberPagerState(
+      initialPage = if (items.size > 1) Int.MAX_VALUE / 2 - (Int.MAX_VALUE / 2) % items.size else 0,
+      pageCount = { if (items.size > 1) Int.MAX_VALUE else 1 },
+    )
+  }
+  val heroScope = rememberCoroutineScope()
+
+  LaunchedEffect(pagerState.settledPage, items.size) {
+    if (items.size > 1) {
+      delay(HERO_AUTO_SCROLL_INTERVAL_MS)
+      if (!pagerState.isScrollInProgress) pagerState.animateScrollToPage(pagerState.currentPage + 1)
+    }
+  }
+
+  BoxWithConstraints(
+    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)),
+  ) {
+    val isWide = maxWidth >= 600.dp
+    val width = maxWidth.value
+    val heroHeight = when {
+      width >= 1200f -> (width * .42f).dp.coerceIn(360.dp, 440.dp)
+      width >= 840f -> (width * .46f).dp.coerceIn(340.dp, 420.dp)
+      width >= 600f -> (width * .58f).dp.coerceIn(320.dp, 380.dp)
+      else -> 360.dp
+    }
+    Box(Modifier.fillMaxWidth().height(heroHeight)) {
+      HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+        val item = items[page % items.size]
+          val pageOffset = abs((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
+          Box(
+            Modifier.fillMaxSize().graphicsLayer {
+              alpha = 1f - pageOffset * .22f
+              scaleX = 1f - pageOffset * .035f
+              scaleY = 1f - pageOffset * .035f
+            },
+          ) {
+          RemoteImageWithFallback(
+            urls = catalogArtworkCandidates(listOfNotNull(item.backdropUrl, item.posterUrl)),
+            contentDescription = item.title,
+            modifier = Modifier.fillMaxSize(),
+            alignment = if (isWide) Alignment.TopCenter else Alignment.Center,
+            contentScale = ContentScale.Crop,
+            onAllCandidatesFailed = { onPosterLoadFailure(item) },
+          )
+          Box(
+            Modifier.fillMaxSize().background(
+              Brush.verticalGradient(
+                colors = listOf(
+                  MaterialTheme.colorScheme.background.copy(alpha = .02f),
+                  MaterialTheme.colorScheme.background.copy(alpha = .12f),
+                  MaterialTheme.colorScheme.background.copy(alpha = .34f),
+                  MaterialTheme.colorScheme.background.copy(alpha = .98f),
+                ),
+              ),
+            ),
+          )
+          if (isWide) {
+            item.posterUrl?.takeIf(String::isNotBlank)?.let { poster ->
+              RemoteImageWithFallback(
+                urls = catalogArtworkCandidates(listOf(poster)),
+                contentDescription = "${item.title} poster",
+                modifier = Modifier
+                  .align(Alignment.TopEnd)
+                  .padding(top = 30.dp, end = 42.dp)
+                  .width(132.dp)
+                  .height(190.dp)
+                  .shadow(20.dp, RoundedCornerShape(18.dp), clip = false)
+                  .clip(RoundedCornerShape(18.dp)),
+                contentScale = ContentScale.Crop,
+                onAllCandidatesFailed = { onPosterLoadFailure(item) },
+              )
+            }
+          }
+          Column(
+              modifier = Modifier
+              .align(if (isWide) Alignment.BottomStart else Alignment.BottomCenter)
+              .fillMaxWidth(if (isWide) .76f else 1f)
+              .padding(horizontal = if (isWide) 42.dp else 24.dp, vertical = 22.dp),
+            horizontalAlignment = if (isWide) Alignment.Start else Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Surface(
+              color = Color.Black.copy(alpha = .28f),
+              shape = RoundedCornerShape(20.dp),
+            ) {
+              Row(
+                Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                HeroInfo(item.type.name.lowercase().replaceFirstChar(Char::uppercase))
+                item.genres.firstOrNull()?.let { HeroInfo("•  $it") }
+                item.releaseYear?.let { HeroInfo("•  $it") }
+              }
+            }
+            Text(
+              item.title,
+              style = MaterialTheme.typography.displaySmall,
+              color = MaterialTheme.colorScheme.onBackground,
+              fontWeight = FontWeight.Black,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+              textAlign = if (isWide) androidx.compose.ui.text.style.TextAlign.Start else androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            if (item.overview.isNotBlank()) {
+              Text(
+                item.overview,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = .78f),
+                maxLines = if (isWide) 3 else 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = if (isWide) androidx.compose.ui.text.style.TextAlign.Start else androidx.compose.ui.text.style.TextAlign.Center,
+              )
+            }
+            Surface(
+              modifier = Modifier.clickable { onItemClick(item) },
+              color = MaterialTheme.colorScheme.onBackground,
+              contentColor = MaterialTheme.colorScheme.background,
+              shape = RoundedCornerShape(40.dp),
+            ) {
+              Row(Modifier.padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text("View details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+        }
+      }
+      if (items.size > 1) {
+        Row(
+          Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 18.dp)
+            .background(Color.Black.copy(alpha = .32f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          items.forEachIndexed { index, _ ->
+            val active = index == pagerState.currentPage % items.size
+            val dotWidth by animateDpAsState(if (active) 18.dp else 6.dp, tween(280), label = "hero-dot-width")
+            val dotAlpha by animateFloatAsState(if (active) .96f else .42f, tween(280), label = "hero-dot-alpha")
+            Box(
+              Modifier.size(width = dotWidth, height = 6.dp).clip(CircleShape)
+                .background(MaterialTheme.colorScheme.onBackground.copy(alpha = dotAlpha))
+                .clickable {
+                  val current = pagerState.currentPage
+                  val base = current - current % items.size
+                  heroScope.launch { pagerState.animateScrollToPage(base + index) }
+                },
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun HeroInfo(text: String) {
+  Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+private fun LazyListScope.streamCatalogRail(
+  title: String,
+  items: List<MediaItem>,
+  revealIndex: Int,
+  onSeeAll: () -> Unit,
+  onItemClick: (MediaItem) -> Unit,
+  onPosterLoadFailure: (MediaItem) -> Unit,
+) {
+  if (items.isEmpty()) return
+  item(key = "rail-header-$title") {
+    AnimatedVisibility(visible = true, enter = fadeIn(tween(260, delayMillis = revealIndex * 55)) + expandVertically(tween(320, delayMillis = revealIndex * 55))) {
+      Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Box(Modifier.width(4.dp).height(26.dp).clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.primary))
+        Spacer(Modifier.width(10.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        TextButton(onClick = onSeeAll, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+          Text("See All", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+          Icon(Icons.RoundedFilled.ChevronRight, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+      }
+    }
+  }
+  item(key = "rail-row-$title") {
+    AnimatedVisibility(visible = true, enter = fadeIn(tween(300, delayMillis = revealIndex * 55)) + slideInVertically(tween(360, delayMillis = revealIndex * 55)) { it / 10 }) {
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 10.dp)
+          .shadow(8.dp, RoundedCornerShape(22.dp), clip = false),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .78f),
+      ) {
+        LazyRow(
+          contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          items(items, key = ::catalogItemIdentityKey) { item ->
+            Box(Modifier.width(142.dp)) {
+              NuvioCatalogPosterCard(
+                item,
+                onPosterLoadFailure = { onPosterLoadFailure(item) },
+              ) { onItemClick(item) }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun StreamLoadingState(compact: Boolean = false) {
+  Box(
+    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compact) 10.dp else 44.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    if (compact) InfinityLoadingIndicator(size = 28.dp)
+    else Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      InfinityLoadingIndicator()
+      Text("Loading catalogs", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+  }
 }
 
 @Composable
 private fun StreamEmptySearchState(query: String) {
-  Box(
-    modifier = Modifier.fillMaxWidth().height(360.dp).padding(horizontal = 24.dp),
-    contentAlignment = androidx.compose.ui.Alignment.Center,
+  Column(
+    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 44.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
-    Column(
-      horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+    Icon(Icons.RoundedFilled.Search, contentDescription = null, modifier = Modifier.size(54.dp), tint = MaterialTheme.colorScheme.primary)
+    Text("No results found for \"$query\"", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+  }
+}
+
+@Composable
+private fun StreamSearchLoadingState() {
+  Surface(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
+    shape = RoundedCornerShape(18.dp),
+    color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = .72f),
+  ) {
+    Row(
+      Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      Icon(
-        Icons.RoundedFilled.Movie,
-        contentDescription = "No search results",
-        modifier = Modifier.size(64.dp),
-        tint = MaterialTheme.colorScheme.primary,
-      )
-      Text(
-        "No results found for \"$query\"",
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-      )
+      InfinityLoadingIndicator(size = 28.dp)
+      Text("Searching enabled catalogs…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
 }
 
 @Composable
-private fun StreamLoadingState(searching: Boolean, compact: Boolean = false) {
-  Box(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compact) 12.dp else 40.dp),
-    contentAlignment = androidx.compose.ui.Alignment.Center,
+private fun StreamNoCatalogsState(hasCatalogAddons: Boolean, onOpenSettings: () -> Unit, onRefresh: () -> Unit) {
+  Surface(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 38.dp),
+    shape = RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f),
   ) {
-    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Icon(
-        Icons.RoundedFilled.Movie,
-        contentDescription = if (searching) "Searching" else "Loading catalog",
-        modifier = Modifier.size(if (compact) 32.dp else 56.dp),
-        tint = MaterialTheme.colorScheme.primary,
+    Column(
+      Modifier.fillMaxWidth().padding(horizontal = 26.dp, vertical = 30.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(13.dp),
+    ) {
+      Icon(Icons.RoundedFilled.Movie, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+      Text(if (hasCatalogAddons) "Catalogs are not responding" else "Connect a discovery catalog", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+      Text(
+        if (hasCatalogAddons) {
+          "Your installed catalog add-ons returned no titles. Check the add-on's catalog resources or try another catalog source."
+        } else {
+          "Nuvio separates discovery catalogs from video providers. A JavaScript repository such as Yoru installs stream scrapers; it does not create home rails. Add a Stremio-compatible catalog add-on under Global Settings → Network → Media Servers → Stream Catalogs. A TMDB key is optional metadata enrichment, not a catalog source."
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
       )
-      if (!compact) {
-        Text(
-          if (searching) "Finding titles" else "Loading catalog",
-          style = MaterialTheme.typography.titleMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-    }
-  }
-}
-
-private fun LazyListScope.StreamRail(title: String, items: List<MediaItem>, onSeeMore: (() -> Unit)?, onClick: (MediaItem) -> Unit) {
-  if (items.isEmpty()) return
-  item {
-    AnimatedVisibility(
-      visible = true,
-      enter = fadeIn(tween(420)) + slideInVertically(tween(420)) { it / 8 },
-    ) {
-      Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-          Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-          Text("Popular and recently added", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        onSeeMore?.let { TextButton(onClick = it) { Text("See all") } }
-      }
-    }
-  }
-  item {
-    AnimatedVisibility(
-      visible = true,
-      enter = fadeIn(tween(520)) + slideInVertically(tween(520)) { it / 10 },
-    ) {
-      LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(items.take(18), key = { "stream-${it.catalogSourceId}-${it.catalogId}-${it.providerId ?: it.id}" }) { item ->
-          androidx.compose.foundation.layout.Box(Modifier.width(144.dp)) { CatalogGridItem(item, false) { onClick(item) } }
-        }
-      }
-    }
-  }
-}
-
-@Composable private fun itemHeader(title: String) { Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
-@Composable private fun StreamHeroCarousel(items: List<MediaItem>, pagerState: androidx.compose.foundation.pager.PagerState, onClick: (MediaItem) -> Unit) {
-  HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { page ->
-    val item = items[page % items.size]
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(300.dp).clip(RoundedCornerShape(20.dp)).clickable { onClick(item) }) {
-      AsyncImage(model = item.backdropUrl ?: item.posterUrl, contentDescription = item.title, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-      androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = .35f), Color.Transparent, MaterialTheme.colorScheme.background.copy(alpha = .96f)))))
-      androidx.compose.foundation.layout.Column(Modifier.align(androidx.compose.ui.Alignment.BottomStart).padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-          androidx.compose.material3.Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .9f)) {
-            Text(if (item.type == MediaType.TV) "SERIES" else "MOVIE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
-          }
-          item.releaseYear?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Color.White) }
-          item.contentRating?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = .8f)) }
-        }
-        Text(item.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (item.overview.isNotBlank()) Text(item.overview, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = .78f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Button(onClick = { onClick(item) }, shape = RoundedCornerShape(14.dp)) { Icon(Icons.RoundedFilled.PlayArrow, "Play"); Text("Watch / Details", modifier = Modifier.padding(start = 6.dp)) }
-      }
-    }
-  }
-}
-
-@Composable private fun StreamResolverSettingsDialog(viewModel: CatalogViewModel, onDismiss: () -> Unit) {
-  val persistedResolvers by viewModel.resolvers.collectAsState()
-  val initial = remember { viewModel.currentSettings() }
-  var endpoints by remember(persistedResolvers) { mutableStateOf(persistedResolvers) }
-  var newUrl by remember { mutableStateOf("") }
-  var autoChooseBest by remember { mutableStateOf(viewModel.autoChooseBestTorrent) }
-  val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
-  ModalBottomSheet(
-    onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    dragHandle = { BottomSheetDefaults.DragHandle() },
-  ) {
-    androidx.compose.foundation.layout.Column(
-      modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
-      verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-      Text("Stream resolvers", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-      Text("Configure metadata and stream resolver sources", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-          androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
-            Text("Automatically choose best torrent", style = MaterialTheme.typography.titleMedium)
-            Text("Use the highest-quality torrent when available.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-          }
-          androidx.compose.material3.Switch(checked = autoChooseBest, onCheckedChange = { autoChooseBest = it })
-        }
-        endpoints.forEachIndexed { index, endpoint ->
-          Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            androidx.compose.material3.Switch(checked = endpoint.enabled, onCheckedChange = { checked -> endpoints = endpoints.toMutableList().also { it[index] = endpoint.copy(enabled = checked) } })
-            Spacer(Modifier.width(16.dp))
-            Text(endpoint.baseUrl, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            IconButton(onClick = { endpoints = endpoints.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
-          }
-        }
-        androidx.compose.material3.OutlinedTextField(
-          value = newUrl,
-          onValueChange = { newUrl = it },
-          placeholder = { Text("Resolver base URL") },
-          singleLine = true,
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(12.dp),
-        )
-        androidx.compose.material3.Button(
-          onClick = { if (newUrl.isNotBlank()) { viewModel.addResolverEndpoint(newUrl); endpoints = viewModel.resolvers.value; newUrl = "" } },
-          shape = RoundedCornerShape(24.dp),
-        ) { Text("Add resolver + catalog rails") }
-      }
-      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        TextButton(onClick = onDismiss) { Text("Cancel") }
-        Button(onClick = { viewModel.saveAutoChooseBestTorrent(autoChooseBest); viewModel.saveSettings(endpoints, initial.resolverToken, initial.resolverPath); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") }
-      }
-      Spacer(Modifier.height(8.dp))
-    }
-  }
-}
-
-@Composable private fun CatalogProvidersDialog(viewModel: CatalogViewModel, onDismiss: () -> Unit) {
-  val initial = remember { viewModel.currentCatalogSources() }
-  var sources by remember { mutableStateOf(initial) }
-  var newUrl by remember { mutableStateOf("") }
-  val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
-  ModalBottomSheet(
-    onDismissRequest = onDismiss,
-    sheetState = sheetState,
-    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    dragHandle = { BottomSheetDefaults.DragHandle() },
-  ) {
-    androidx.compose.foundation.layout.Column(
-      modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding(),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text("Catalog providers", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-      Text("Choose the metadata catalogs used on the Stream home", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-      androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        sources.forEachIndexed { index, source ->
-          Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            androidx.compose.material3.Switch(checked = source.isEnabled, onCheckedChange = { enabled -> sources = sources.toMutableList().also { it[index] = source.copy(isEnabled = enabled) } })
-            Spacer(Modifier.width(16.dp))
-            Text(source.name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            IconButton(onClick = { sources = sources.filterIndexed { i, _ -> i != index } }) { Icon(Icons.RoundedFilled.Delete, "Delete") }
-          }
-        }
-        androidx.compose.material3.OutlinedTextField(
-          value = newUrl,
-          onValueChange = { newUrl = it },
-          placeholder = { Text("Add catalog provider (API or endpoint URL)") },
-          supportingText = { Text("Supports custom catalog endpoints and public metadata APIs.") },
-          minLines = 2,
-          maxLines = 2,
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(12.dp),
-        )
-        androidx.compose.material3.Button(onClick = {
-          val manifestUrl = newUrl.trim().let { value ->
-            if (value.endsWith("manifest.json", ignoreCase = true)) value else value.trimEnd('/') + "/manifest.json"
-          }
-          if (manifestUrl.startsWith("http://") || manifestUrl.startsWith("https://")) {
-            val name = manifestUrl.substringAfter("://").substringBefore('/').ifBlank { "Custom catalog" }
-            val source = app.infinity.mpvz.catalog.CatalogSource("custom-${manifestUrl.hashCode()}", name, manifestUrl)
-            sources = (sources.filterNot { it.manifestUrl.equals(manifestUrl, ignoreCase = true) } + source)
-            newUrl = ""
-          }
-        }, shape = RoundedCornerShape(24.dp)) { Text("Add catalog") }
-      }
-      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        TextButton(onClick = onDismiss) { Text("Cancel") }
-        Button(onClick = { viewModel.saveCatalogSources(sources); onDismiss() }, shape = RoundedCornerShape(24.dp)) { Text("Save") }
-      }
-      Spacer(Modifier.height(8.dp))
+      Button(onClick = onOpenSettings) { Text("Add or manage catalog add-ons") }
+      TextButton(onClick = onOpenSettings) { Text("Manage Nuvio video providers") }
+      TextButton(onClick = onRefresh) { Text("Refresh catalogs") }
     }
   }
 }

@@ -37,6 +37,7 @@ data class CustomThemeData(
   val mediaAspectRatio: Float = 1f,
   val primaryArgb: Int = Color(0xFF6750A4).toArgb(),
   val backgroundArgb: Int = Color(0xFF1C1B1F).toArgb(),
+  /** Foreground colour used for text and icons on custom-theme surfaces. */
   val onBackgroundArgb: Int = Color.White.toArgb(),
 )
 

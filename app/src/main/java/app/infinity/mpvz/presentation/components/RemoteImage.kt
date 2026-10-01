@@ -21,7 +21,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -73,8 +75,51 @@ fun RemoteImage(
   }
 }
 
+/** Try artwork candidates in order; remote image failures must not become a silent gray card. */
+@Composable
+fun RemoteImageWithFallback(
+  urls: List<String>,
+  contentDescription: String?,
+  modifier: Modifier = Modifier,
+  contentScale: ContentScale = ContentScale.Fit,
+  alignment: Alignment = Alignment.Center,
+  alpha: Float = 1f,
+  onAllCandidatesFailed: (() -> Unit)? = null,
+) {
+  val context = LocalContext.current
+  val client = koinInject<OkHttpClient>()
+  val candidates = remember(urls) { urls.map(String::trim).filter(String::isNotBlank).distinct() }
+  val latestFailureCallback by rememberUpdatedState(onAllCandidatesFailed)
+  var bitmap by remember(candidates) { mutableStateOf<Bitmap?>(null) }
+
+  LaunchedEffect(candidates) {
+    var loaded = false
+    for (candidate in candidates) {
+      bitmap = RemoteImageLoader.load(context.applicationContext, client, candidate)
+      if (bitmap != null) {
+        loaded = true
+        break
+      }
+    }
+    if (candidates.isNotEmpty() && !loaded) latestFailureCallback?.invoke()
+  }
+
+  bitmap?.let {
+    Image(
+      bitmap = it.asImageBitmap(),
+      contentDescription = contentDescription,
+      modifier = modifier,
+      alignment = alignment,
+      contentScale = contentScale,
+      alpha = alpha,
+    )
+  }
+}
+
 internal object RemoteImageLoader {
-  private const val MAX_IMAGE_DIMENSION = 1024
+  // Search/catalog cards can be rendered at >1,024 px on dense phones and tablets.
+  // Keep enough source detail for those cards while still bounding memory use.
+  private const val MAX_IMAGE_DIMENSION = 2048
   private const val CACHE_DIRECTORY = "remote_images"
   private const val FAILURE_RETRY_MS = 30_000L
   private val loaderScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -209,7 +254,7 @@ internal object RemoteImageLoader {
           null,
           BitmapFactory.Options().apply {
             inSampleSize = sampleSize
-            inPreferredConfig = Bitmap.Config.RGB_565
+            inPreferredConfig = Bitmap.Config.ARGB_8888
           },
         )
       }
@@ -229,7 +274,7 @@ internal object RemoteImageLoader {
       file.absolutePath,
       BitmapFactory.Options().apply {
         inSampleSize = sampleSize
-        inPreferredConfig = Bitmap.Config.RGB_565
+        inPreferredConfig = Bitmap.Config.ARGB_8888
       },
     )
   }

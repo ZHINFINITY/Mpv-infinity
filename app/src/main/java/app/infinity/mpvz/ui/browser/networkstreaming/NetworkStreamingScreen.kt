@@ -119,7 +119,6 @@ import app.infinity.mpvz.repository.wyzie.WyzieSearchRepository
 import app.infinity.mpvz.utils.media.MediaInfoParser
 import app.infinity.mpvz.ui.browser.cards.NetworkConnectionCard
 import app.infinity.mpvz.ui.browser.components.BrowserTopBar
-import app.infinity.mpvz.ui.browser.catalog.StreamScreen
 import app.infinity.mpvz.ui.browser.dialogs.AddConnectionSheet
 import app.infinity.mpvz.ui.browser.dialogs.EditConnectionSheet
 import app.infinity.mpvz.ui.components.InlineSearchBar
@@ -421,14 +420,6 @@ object NetworkStreamingScreen : Screen {
                 onInvertSelection = null,
                 onDeselectAll = null,
                 additionalActions = {
-                  androidx.compose.material3.FilledTonalButton(
-                    onClick = { backstack.add(StreamScreen) },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp),
-                  ) {
-                    Icon(Icons.RoundedFilled.PlayCircle, contentDescription = "Stream")
-                    Spacer(Modifier.size(4.dp))
-                    Text("Stream")
-                  }
                   IconButton(
                     onClick = { backstack.add(app.infinity.mpvz.ui.downloads.DownloadsScreen) },
                     modifier = Modifier.padding(horizontal = 2.dp),

@@ -430,7 +430,7 @@ object PermissionUtils {
 
           if (oldFile.exists() && oldFile.renameTo(newFile)) {
             // Update history
-            RecentlyPlayedOps.onVideoRenamed(oldFile.absolutePath, newFile.absolutePath)
+            RecentlyPlayedOps.onVideoRenamed(context, oldFile.absolutePath, newFile.absolutePath)
             PlaybackStateOps.onVideoRenamed(oldFile.absolutePath, newFile.absolutePath)
 
             // Notify that media library has changed
@@ -486,7 +486,7 @@ object PermissionUtils {
         if (!source.renameTo(destination)) return@withContext false
 
         mediaPaths.forEach { (oldPath, newPath) ->
-          RecentlyPlayedOps.onVideoRenamed(oldPath, newPath)
+          RecentlyPlayedOps.onVideoRenamed(context, oldPath, newPath)
           PlaybackStateOps.onVideoRenamed(oldPath, newPath)
         }
         scanChangedPaths(context, mediaPaths.flatMap { (oldPath, newPath) -> listOf(oldPath, newPath) })
@@ -547,7 +547,7 @@ object PermissionUtils {
             val parent = File(oldPath).parentFile
             val newPath = parent?.let { File(it, newDisplayName).absolutePath } ?: oldPath
 
-            RecentlyPlayedOps.onVideoRenamed(oldPath, newPath)
+            RecentlyPlayedOps.onVideoRenamed(context, oldPath, newPath)
             PlaybackStateOps.onVideoRenamed(oldPath, newPath)
             MediaLibraryEvents.notifyChanged()
 

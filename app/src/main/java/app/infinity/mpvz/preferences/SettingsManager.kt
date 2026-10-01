@@ -205,6 +205,7 @@ class SettingsManager(
     serializer.attribute(null, "lastConnected", connection.lastConnected.toString())
     serializer.attribute(null, "autoConnect", connection.autoConnect.toString())
     serializer.attribute(null, "useHttps", connection.useHttps.toString())
+    serializer.attribute(null, "sftpHostKeyFingerprint", sanitizeXmlValue(connection.sftpHostKeyFingerprint))
     serializer.endTag(null, TAG_NETWORK_CONNECTION)
   }
 
@@ -315,6 +316,7 @@ class SettingsManager(
       // Avoid repeated authentication attempts before credentials have been re-entered.
       autoConnect = false,
       useHttps = parser.getAttributeValue(null, "useHttps")?.toBoolean() ?: false,
+      sftpHostKeyFingerprint = parser.getAttributeValue(null, "sftpHostKeyFingerprint") ?: "",
     )
 
   fun getDefaultExportFilename(): String {

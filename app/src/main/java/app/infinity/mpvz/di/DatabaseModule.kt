@@ -793,6 +793,13 @@ val MIGRATION_20_21 =
     }
   }
 
+val MIGRATION_21_22 =
+  object : Migration(21, 22) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL("ALTER TABLE `network_connections` ADD COLUMN `sftpHostKeyFingerprint` TEXT NOT NULL DEFAULT ''")
+    }
+  }
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -828,6 +835,7 @@ val DatabaseModule =
           MIGRATION_18_19,
           MIGRATION_19_20,
           MIGRATION_20_21,
+          MIGRATION_21_22,
         ).build()
     }
 

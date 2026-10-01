@@ -29,6 +29,7 @@ class SftpClient(
   companion object {
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val SERVER_ALIVE_INTERVAL_MS = 15_000
+    private val HOST_KEY_FINGERPRINT_PATTERN = Regex("""SHA256:[A-Za-z0-9+/]{43}""")
   }
 
   @Volatile
@@ -38,9 +39,15 @@ class SftpClient(
     withContext(Dispatchers.IO) {
       try {
         val host = connection.host.trim().removePrefix("[").removeSuffix("]")
+        val fingerprint = connection.sftpHostKeyFingerprint.trim()
+        if (!HOST_KEY_FINGERPRINT_PATTERN.matches(fingerprint)) {
+          throw IOException("SFTP requires a verified SHA256: host-key fingerprint")
+        }
         val username = if (connection.isAnonymous) "anonymous" else connection.username
-        val candidate = JSch().getSession(username, host, connection.port)
-        candidate.setConfig("StrictHostKeyChecking", "no")
+        val jsch = JSch()
+        jsch.setHostKeyRepository(PinnedSftpHostKeyRepository(host, connection.port, fingerprint))
+        val candidate = jsch.getSession(username, host, connection.port)
+        candidate.setConfig("StrictHostKeyChecking", "yes")
         // Skipping GSSAPI avoids a long Kerberos negotiation stall against plain SSH servers.
         candidate.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
         val password = if (connection.isAnonymous) "" else connection.password

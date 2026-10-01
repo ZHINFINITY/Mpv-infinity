@@ -38,9 +38,18 @@ data class NetworkPlaybackSource(
   val relativePath: String,
 )
 
+internal fun resolvePlaybackMimeType(intentMimeType: String?, mimeTypeExtra: String?): String? =
+  intentMimeType?.trim()?.takeIf { it.isNotEmpty() }
+    ?: mimeTypeExtra?.trim()?.takeIf { it.isNotEmpty() }
+
 data class AudiobookPlaybackInfo(
   val bookId: Long,
   val trackId: Long,
+)
+
+data class DirectAudiobookPlaybackInfo(
+  val queueIdentity: String,
+  val trackIdentity: String,
 )
 
 /**
@@ -60,6 +69,7 @@ data class PlaybackItem(
   val artworkUri: String? = null,
   val durationSeconds: Int? = null,
   val audiobook: AudiobookPlaybackInfo? = null,
+  val directAudiobook: DirectAudiobookPlaybackInfo? = null,
   /** Dimensions supplied by external launchers when the stream URL has no descriptive filename. */
   val videoWidth: Int? = null,
   val videoHeight: Int? = null,
@@ -118,7 +128,7 @@ internal enum class DeclaredPlaybackMediaKind {
   UNKNOWN,
 }
 
-internal fun PlaybackItem.declaredMediaKind(): DeclaredPlaybackMediaKind {
+internal fun PlaybackItem.declaredMediaKind(videoHint: Boolean = false): DeclaredPlaybackMediaKind {
   if (mimeType?.startsWith("audio/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.AUDIO
   if (mimeType?.startsWith("video/", ignoreCase = true) == true) return DeclaredPlaybackMediaKind.VIDEO
 
@@ -136,6 +146,7 @@ internal fun PlaybackItem.declaredMediaKind(): DeclaredPlaybackMediaKind {
     }) {
     return DeclaredPlaybackMediaKind.AUDIO
   }
+  if (videoHint) return DeclaredPlaybackMediaKind.VIDEO
   return DeclaredPlaybackMediaKind.UNKNOWN
 }
 
@@ -152,6 +163,15 @@ internal fun PlaybackItem.isHdrOrDolbyVision(): Boolean {
   val metadata = sequenceOf(title, mimeType, originalUri, playableUri).filterNotNull().joinToString(" ")
   return HDR_MARKERS.any { marker -> metadata.contains(marker, ignoreCase = true) }
 }
+
+internal fun resolvePlaybackEngineMode(
+  configuredEngine: PlaybackEngineMode,
+  item: PlaybackItem,
+): PlaybackEngineMode =
+  when (configuredEngine) {
+    PlaybackEngineMode.AUTO -> if (item.isHdrOrDolbyVision()) PlaybackEngineMode.NATIVE else PlaybackEngineMode.MPV
+    else -> configuredEngine
+  }
 
 /** AUTO keeps ordinary video on MPV and selects Native for identifiable 4K HDR media. */
 internal fun PlaybackItem.isAutoNativeCandidate(): Boolean {

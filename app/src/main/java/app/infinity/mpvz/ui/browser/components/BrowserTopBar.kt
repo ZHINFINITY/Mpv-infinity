@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -105,6 +106,7 @@ fun BrowserTopBar(
   colors: TopAppBarColors? = null,
   forceHeadlineSmall: Boolean = false,
   showBetaBadge: Boolean = false,
+  windowInsets: WindowInsets? = null,
 ) {
   if (isInSelectionMode) {
     SelectionTopBar(
@@ -128,6 +130,7 @@ fun BrowserTopBar(
       useRemoveIcon = useRemoveIcon,
       onAddToPlaylist = onAddToPlaylistClick,
       colors = colors,
+      windowInsets = windowInsets,
       additionalActions = additionalActions,
     )
   } else {
@@ -146,6 +149,7 @@ fun BrowserTopBar(
       onTitleLongPress = onTitleLongPress,
       onTitleDoubleTap = onTitleDoubleTap,
       colors = colors,
+      windowInsets = windowInsets,
       forceHeadlineSmall = forceHeadlineSmall,
       showBetaBadge = showBetaBadge,
     )
@@ -172,6 +176,7 @@ private fun NormalTopBar(
   onTitleLongPress: (() -> Unit)?,
   onTitleDoubleTap: (() -> Unit)? = null,
   colors: TopAppBarColors? = null,
+  windowInsets: WindowInsets? = null,
   forceHeadlineSmall: Boolean = false,
   showBetaBadge: Boolean = false,
 ) {
@@ -218,6 +223,7 @@ private fun NormalTopBar(
             MaterialTheme.colorScheme.surfaceContainer
           },
       ),
+    windowInsets = windowInsets ?: TopAppBarDefaults.windowInsets,
     title = {
       if (showTitle) {
       val betaBadgeSuffix =
@@ -412,6 +418,7 @@ private fun SelectionTopBar(
   onMoveToSecure: (() -> Unit)? = null,
   onRestore: (() -> Unit)? = null,
   colors: TopAppBarColors? = null,
+  windowInsets: WindowInsets? = null,
   additionalActions: @Composable RowScope.() -> Unit = { },
 ) {
   var showDropdown by remember { mutableStateOf(false) }
@@ -435,6 +442,7 @@ private fun SelectionTopBar(
             MaterialTheme.colorScheme.surfaceContainer
           },
       ),
+    windowInsets = windowInsets ?: TopAppBarDefaults.windowInsets,
     title = {
       Row(
         verticalAlignment = Alignment.CenterVertically,

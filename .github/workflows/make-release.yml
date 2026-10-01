@@ -29,19 +29,17 @@ jobs:
 
       - name: Resolve release tag
         shell: bash
+        env:
+          VERSION_TAG_INPUT: ${{ inputs.version_tag }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            version_tag="${{ inputs.version_tag }}"
+            version_tag="${VERSION_TAG_INPUT}"
           else
             version_tag="${GITHUB_REF#refs/tags/}"
           fi
           if [[ ! "$version_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Invalid stable version tag: $version_tag"
-            exit 1
-          fi
-          if [[ "$version_tag" != "v1.0.8" ]]; then
-            echo "This workflow is currently prepared for v1.0.8; received $version_tag"
             exit 1
           fi
           echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
@@ -69,15 +67,20 @@ jobs:
 
       - name: Sign and verify all APKs
         shell: bash
+        env:
+          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
           apksigner="$ANDROID_HOME/build-tools/34.0.0/apksigner"
           test -x "$apksigner"
-          if [[ -z "${{ secrets.SIGNING_KEYSTORE }}" || -z "${{ secrets.SIGNING_KEY_ALIAS }}" || -z "${{ secrets.SIGNING_STORE_PASSWORD }}" || -z "${{ secrets.KEY_PASSWORD }}" ]]; then
+          if [[ -z "${SIGNING_KEYSTORE}" || -z "${SIGNING_KEY_ALIAS}" || -z "${SIGNING_STORE_PASSWORD}" || -z "${SIGNING_KEY_PASSWORD}" ]]; then
             echo "Stable releases require all signing secrets."
             exit 1
           fi
-          printf '%s' "${{ secrets.SIGNING_KEYSTORE }}" | base64 --decode > release.keystore
+          printf '%s' "$SIGNING_KEYSTORE" | base64 --decode > release.keystore
           trap 'rm -f release.keystore' EXIT
 
           sign_apk() {
@@ -86,9 +89,9 @@ jobs:
             test -f "$unsigned"
             "$apksigner" sign \
               --ks release.keystore \
-              --ks-key-alias "${{ secrets.SIGNING_KEY_ALIAS }}" \
-              --ks-pass "pass:${{ secrets.SIGNING_STORE_PASSWORD }}" \
-              --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
+              --ks-key-alias "$SIGNING_KEY_ALIAS" \
+              --ks-pass "pass:$SIGNING_STORE_PASSWORD" \
+              --key-pass "pass:$SIGNING_KEY_PASSWORD" \
               --out "$signed" \
               "$unsigned"
             "$apksigner" verify --verbose "$signed"
@@ -123,8 +126,8 @@ jobs:
           cp app/build/outputs/apk/fongmi/release/app-fongmi-universal-release.apk release/mpv-infinity-fongmi-universal-${VERSION_TAG}.apk
           cp app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release.apk release/mpv-infinity-no-vulkan-universal-${VERSION_TAG}.apk
 
-          cat > release-notes.md <<'EOF'
-          ## Mpv∞ v1.0.8
+          cat > release-notes.md <<EOF
+          ## Mpv∞ ${VERSION_TAG}
 
           ### Highlights
 
@@ -155,6 +158,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION_TAG }}
+          target_commitish: ${{ github.sha }}
           name: Mpv∞ ${{ env.VERSION_TAG }}
           body_path: release-notes.md
           draft: false

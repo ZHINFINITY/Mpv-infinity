@@ -94,10 +94,11 @@ class NavidromeViewModel(
       navidromeRepository.allServers.collect { servers ->
         _uiState.update { current ->
           val currentActive = current.activeServer
+          val newest = servers.firstOrNull()
           val newActive = if (currentActive != null && servers.any { it.id == currentActive.id }) {
-            servers.first { it.id == currentActive.id }
+            servers.first { it.id == currentActive.id }.takeIf { newest == null || newest.id == it.id || newest.lastConnected >= currentActive.lastConnected } ?: newest
           } else {
-            servers.firstOrNull()
+            newest
           }
           current.copy(servers = servers, activeServer = newActive)
         }
@@ -118,7 +119,9 @@ class NavidromeViewModel(
   }
 
   fun selectServer(server: NavidromeServer) {
-    _uiState.update { it.copy(activeServer = server) }
+    val selected = server.copy(lastConnected = System.currentTimeMillis())
+    _uiState.update { it.copy(activeServer = selected) }
+    viewModelScope.launch(Dispatchers.IO) { navidromeRepository.updateServer(selected) }
     loadAllData()
   }
 
