@@ -27,25 +27,41 @@ class AudiobookLibraryPresentationTest {
   }
 
   @Test
-  fun selectedSafTreeKeepsEveryBookInAllBooksAndShowsNavigationOnlyOnFoldersTab() {
-    val root = "content://root"
-    val bookOne = "$root/book-one"
-    val discOne = "$bookOne/disc-one"
-    val discTwo = "$bookOne/disc-two"
-    val bookTwo = "$root/book-two"
+  fun flatSelectedRootShowsEveryAlbumGroupedAndNestedBookOnAllBooksOnly() {
+    val root = "content://root/audio-books"
+    val nested = "$root/nested-book"
+    val rootTracks = listOf(
+      track("$root/unrelated-alpha-name.mp3", album = "Album Alpha", title = "Chapter Alpha"),
+      track("$root/unrelated-beta-name.mp3", album = "Album Beta", title = "Chapter Beta"),
+      track("$root/Fallback_Book-Part-01.m4b", album = "unknown", title = "Track Title"),
+    )
+    val nestedTracks = listOf(
+      track("$nested/01.m4b", album = "Nested Album", title = "Chapter 1"),
+      track("$nested/02.m4b", album = "Nested Album", title = "Chapter 2"),
+    )
     val tree = AudiobookFolderTree(
       rootUri = root,
       listings = linkedMapOf(
-        root to listing(root, "Library", childUris = listOf(bookOne, bookTwo)),
-        bookOne to listing(bookOne, "Book One", childUris = listOf(discOne, discTwo), hasMetadata = true, parentUri = root),
-        discOne to listing(discOne, "Disc One", tracks = listOf(track("$discOne/01.m4b")), parentUri = bookOne),
-        discTwo to listing(discTwo, "Disc Two", tracks = listOf(track("$discTwo/02.m4b")), parentUri = bookOne),
-        bookTwo to listing(bookTwo, "Book Two", tracks = listOf(track("$bookTwo/book.mp3")), parentUri = root),
+        root to listing(root, "Audio Books", childUris = listOf(nested), tracks = rootTracks),
+        nested to listing(nested, "Nested Book", tracks = nestedTracks, hasMetadata = true, parentUri = root),
       ),
     )
-    val discoveredBooks = tree.bookListings()
-    val libraryCards = discoveredBooks.map { Book(it.folder.name, progressMs = 0L, finished = false) }
+    val discoveredBooks = tree.virtualBookListings()
+    val names = listOf("Album Alpha", "Album Beta", "Fallback Book", "Nested Book")
+    assertEquals(names, discoveredBooks.map { it.title })
+    assertEquals(
+      listOf(listOf(rootTracks[0].uri), listOf(rootTracks[1].uri), listOf(rootTracks[2].uri), nestedTracks.map { it.uri }),
+      discoveredBooks.map { it.tracks.map(AudiobookFolderTrack::uri) },
+    )
+    assertEquals(listOf(nested), tree.listing(root)?.folders?.map { it.uri })
 
+    val cards = discoveredBooks.mapIndexed { index, book ->
+      when (index) {
+        1 -> Book(book.title, progressMs = 1_200L, finished = false)
+        3 -> Book(book.title, progressMs = 2_400L, finished = true)
+        else -> Book(book.title, progressMs = 0L, finished = false)
+      }
+    }
     val allBooksMode = resolveAudiobookLibraryContentMode(
       selectedTabIndex = 0,
       isFolderBrowser = true,
@@ -53,11 +69,11 @@ class AudiobookLibraryPresentationTest {
     )
     assertEquals(AudiobookLibraryContentMode.ALL_BOOKS, allBooksMode)
     assertTrue(shouldShowAudiobookProgressFilters(allBooksMode))
+    assertEquals(names, filterAudiobooksByProgress(cards, 0, Book::progressMs, Book::finished).map { it.name })
     assertEquals(
-      listOf("Book One", "Book Two"),
-      filterAudiobooksByProgress(libraryCards, 3, Book::progressMs, Book::finished).map { it.name },
+      listOf("Album Alpha", "Fallback Book"),
+      filterAudiobooksByProgress(cards, 3, Book::progressMs, Book::finished).map { it.name },
     )
-    assertEquals(listOf(2, 1), discoveredBooks.map { tree.tracksForBook(it.folder.uri).size })
 
     val foldersMode = resolveAudiobookLibraryContentMode(
       selectedTabIndex = 1,
@@ -98,6 +114,13 @@ class AudiobookLibraryPresentationTest {
     hasBookMetadata = hasMetadata,
   )
 
-  private fun track(uri: String) =
-    AudiobookFolderTrack(uri, uri.substringAfterLast('/'), "audio/mpeg", 1_024L, 10_000L)
+  private fun track(uri: String, album: String? = null, title: String? = null) = AudiobookFolderTrack(
+    uri = uri,
+    name = uri.substringAfterLast('/'),
+    mimeType = "audio/mpeg",
+    sizeBytes = 1_024L,
+    durationMs = 10_000L,
+    title = title,
+    album = album,
+  )
 }

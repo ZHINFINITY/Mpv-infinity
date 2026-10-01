@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong
 internal data class DirectAudiobookLibrarySource(
   val folderUri: String,
   val tracks: List<AudiobookFolderTrack>,
+  val queueIdentity: String,
 )
 
 class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(application) {
@@ -181,10 +182,13 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
       .associateBy { it.mediaTitle }
     val books = linkedMapOf<String, Pair<Audiobook, DirectAudiobookLibrarySource>>()
     trees.forEach { tree ->
-      tree.bookListings().forEach bookLoop@{ listing ->
-        val tracks = tree.tracksForBook(listing.folder.uri)
+      tree.virtualBookListings().forEach bookLoop@{ listing ->
+        val tracks = listing.tracks
         if (tracks.isEmpty()) return@bookLoop
-        val sourceKey = DIRECT_BOOK_SOURCE_PREFIX + directAudiobookFolderIdentity(listing.folder.uri)
+        val folderIdentity = directAudiobookFolderIdentity(listing.folder.uri)
+        val sourceKey = DIRECT_BOOK_SOURCE_PREFIX + folderIdentity +
+          (listing.groupIdentity?.let { "#audiobook-$it" } ?: "")
+        val queueIdentity = listing.groupIdentity ?: folderIdentity
         val savedPositions = tracks.associate { track ->
           track.uri to (states[PlaybackIdentity.forUri(track.uri)]?.lastPosition?.toLong()?.times(1000L) ?: 0L)
         }
@@ -212,7 +216,7 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
         val entity = AudiobookEntity(
           id = bookId,
           sourceKey = sourceKey,
-          title = listing.folder.name,
+          title = listing.title,
           author = tracks.firstNotNullOfOrNull { it.artist?.takeIf(String::isNotBlank) }.orEmpty(),
           coverUri = listing.coverUri,
           addedAt = 0L,
@@ -221,7 +225,10 @@ class AudiobookLibraryViewModel(application: Application) : AndroidViewModel(app
           progressMs = progress.progressMs,
           finished = progress.finished,
         )
-        books.putIfAbsent(sourceKey, Audiobook(entity, trackEntities) to DirectAudiobookLibrarySource(listing.folder.uri, tracks))
+        books.putIfAbsent(
+          sourceKey,
+          Audiobook(entity, trackEntities) to DirectAudiobookLibrarySource(listing.folder.uri, tracks, queueIdentity),
+        )
       }
     }
     _virtualBooks.value = books.values.map { it.first }
