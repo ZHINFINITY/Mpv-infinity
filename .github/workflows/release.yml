@@ -60,6 +60,13 @@ jobs:
             echo "Invalid stable release tag: $version_tag"
             exit 1
           fi
+          if tag_commit="$(git rev-parse --verify --quiet "refs/tags/${version_tag}^{commit}")"; then
+            checkout_commit="$(git rev-parse HEAD)"
+            if [[ "$tag_commit" != "$checkout_commit" ]]; then
+              echo "Release tag $version_tag does not point to the checkout commit"
+              exit 1
+            fi
+          fi
           echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
           echo "version_tag=$version_tag" >> "$GITHUB_OUTPUT"
 
