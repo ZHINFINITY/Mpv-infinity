@@ -18,7 +18,6 @@ import app.infinity.mpvz.utils.storage.FileTypeUtils
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
-import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -293,42 +292,26 @@ internal class AudiobookImporter(private val context: Context, private val dao: 
     document.name?.equals("metadata.json", true) == true || document.name?.endsWith(".opf", true) == true
   )
 
-  private fun groupAudioFiles(files: List<Source>): List<AudioBookGroup> {
-    val genericAlbumNames = setOf("unknown", "audiobook", "audio book", "track", "untitled")
-    val tagged = files.map { source ->
-      val album = runCatching {
-        MediaMetadataRetriever().let { retriever ->
-          try {
-            retriever.setDataSource(context, source.document.uri)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.trim().orEmpty()
-          } finally {
-            retriever.release()
+  private fun groupAudioFiles(files: List<Source>): List<AudioBookGroup> =
+    groupAudiobookItemsByAlbumOrFilename(
+      items = files,
+      fileName = { it.document.name.orEmpty() },
+      album = { source ->
+        runCatching {
+          MediaMetadataRetriever().let { retriever ->
+            try {
+              retriever.setDataSource(context, source.document.uri)
+              retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.trim().orEmpty()
+            } finally {
+              retriever.release()
+            }
           }
-        }
-      }.getOrDefault("")
-      val usableAlbum = album.takeIf { it.isNotBlank() && normalizeBookTitle(it) !in genericAlbumNames }
-      val title = cleanBookTitle(usableAlbum ?: source.document.name.orEmpty()).ifBlank { source.document.name.orEmpty() }
-      val key = normalizeBookTitle(title).ifBlank { source.document.uri.toString() }
-      Triple(key, title, source)
+        }.getOrDefault("")
+      },
+      identity = { it.document.uri.toString() },
+    ).map { group ->
+      AudioBookGroup(group.key, group.title, group.items)
     }
-    return tagged.groupBy { it.first }.map { (key, group) ->
-      AudioBookGroup(key, group.first().second, group.map { it.third })
-    }.sortedBy { it.key }
-  }
-
-  private fun cleanBookTitle(value: String): String = value.substringBeforeLast('.', value)
-    .replace(Regex("(?i)[\\s._-]*\\d+(?:\\.\\d+)?\\s*(?:kb(?:ps?)?|kbit(?:/s)?|khz|mb(?:ps?)?)\\b.*$"), "")
-    .replace(Regex("(?i)[\\s._-]*(?:part|pt|disc|disk|cd|track|chapter)[\\s._-]*\\d+$"), "")
-    .replace(Regex("([a-z])([A-Z])"), "$1 $2")
-    .replace('_', ' ')
-    .replace('-', ' ')
-    .replace(Regex("\\s+"), " ")
-    .trim()
-
-  private fun normalizeBookTitle(value: String): String = cleanBookTitle(value)
-    .lowercase(Locale.ROOT)
-    .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
-    .trim()
 
   private fun discoverBookFolders(root: DocumentFile): List<DocumentFile> {
     data class Directory(

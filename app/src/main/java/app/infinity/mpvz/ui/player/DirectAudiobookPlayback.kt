@@ -67,8 +67,9 @@ internal fun launchDirectAudiobookFolder(
   tracks: List<AudiobookFolderTrack>,
   selectedTrackUri: String? = null,
   restart: Boolean = false,
+  queueIdentity: String = directAudiobookFolderIdentity(folderUri),
 ) {
-  launchDirectAudiobookQueue(context, directAudiobookFolderIdentity(folderUri), tracks, selectedTrackUri, restart)
+  launchDirectAudiobookQueue(context, queueIdentity, tracks, selectedTrackUri, restart)
 }
 
 internal fun launchDirectAudiobookFiles(

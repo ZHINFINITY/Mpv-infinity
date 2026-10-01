@@ -34,6 +34,15 @@ internal data class AudiobookFolderListing(
   val coverUri: String? = null,
 )
 
+internal data class AudiobookVirtualBookListing(
+  val folder: AudiobookFolderEntry,
+  val title: String,
+  val tracks: List<AudiobookFolderTrack>,
+  val coverUri: String?,
+  /** Null for the canonical folder identity; additional album/filename groups use a stable URI selection identity. */
+  val groupIdentity: String? = null,
+)
+
 internal data class AudiobookFolderTree(
   val rootUri: String,
   val listings: Map<String, AudiobookFolderListing>,
@@ -83,19 +92,9 @@ internal data class AudiobookFolderTree(
       return false
     }
 
-    val directAudioFolderUris = directories.filter { it.tracks.isNotEmpty() }.mapTo(mutableSetOf()) { it.folder.uri }
-    fun hasDirectAudioAncestor(directory: AudiobookFolderListing): Boolean {
-      var parent = directory.parentUri?.let(listings::get)
-      while (parent != null) {
-        if (parent.folder.uri in directAudioFolderUris && !parent.hasBookMetadata) return true
-        parent = parent.parentUri?.let(listings::get)
-      }
-      return false
-    }
-
     val candidates = directories.filter { directory ->
       directory.hasBookMetadata || directory.tracks.isNotEmpty() &&
-        !hasMetadataAncestor(directory) && !hasDirectAudioAncestor(directory)
+        !hasMetadataAncestor(directory)
     }
     val candidateUris = candidates.mapTo(mutableSetOf()) { it.folder.uri }
     fun containsAudioOutsideNestedBooks(root: AudiobookFolderListing): Boolean {
@@ -115,6 +114,31 @@ internal data class AudiobookFolderTree(
 
     return candidates.filter(::containsAudioOutsideNestedBooks).ifEmpty {
       listing(rootUri)?.takeIf { tracksUnder(rootUri).isNotEmpty() }?.let(::listOf).orEmpty()
+    }
+  }
+
+  /** Applies the approved importer's direct-folder grouping while keeping files virtual and URI-backed. */
+  fun virtualBookListings(): List<AudiobookVirtualBookListing> = bookListings().flatMap { listing ->
+    if (!listing.hasBookMetadata && listing.tracks.size > 1) {
+      groupAudiobookItemsByAlbumOrFilename(
+        items = listing.tracks,
+        fileName = { it.name },
+        album = { it.album },
+        identity = { it.uri },
+      ).mapIndexed { groupIndex, group ->
+        AudiobookVirtualBookListing(
+          folder = listing.folder,
+          title = group.title,
+          tracks = group.items,
+          coverUri = listing.coverUri,
+          groupIdentity = if (groupIndex == 0) null else
+            directAudiobookSelectionIdentity(group.items.map { it.uri }),
+        )
+      }
+    } else {
+      val tracks = tracksForBook(listing.folder.uri)
+      if (tracks.isEmpty()) emptyList()
+      else listOf(AudiobookVirtualBookListing(listing.folder, listing.folder.name, tracks, listing.coverUri))
     }
   }
 }

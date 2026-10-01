@@ -29,21 +29,102 @@ class AudiobookFolderLibraryTest {
   }
 
   @Test
-  fun directAudioParentOwnsNestedTracksWithoutDuplicatingDiscFolders() {
+  fun directAudioParentAndUnlabelledNestedAudioFolderAreSeparateBooksLikeTheReferenceImporter() {
     val root = "content://root"
     val book = "$root/book"
-    val disc = "$book/disc"
+    val nestedBook = "$book/nested-book"
     val tree = AudiobookFolderTree(
       rootUri = root,
       listings = linkedMapOf(
         root to listing(root, "Library", listOf(book)),
-        book to listing(book, "Book", listOf(disc), tracks = listOf(track("$book/intro.m4b", 4_000L)), parentUri = root),
-        disc to listing(disc, "Disc", tracks = listOf(track("$disc/chapter.m4b", 6_000L)), parentUri = book),
+        book to listing(book, "Book", listOf(nestedBook), tracks = listOf(track("$book/intro.m4b", 4_000L)), parentUri = root),
+        nestedBook to listing(nestedBook, "Nested Book", tracks = listOf(track("$nestedBook/chapter.m4b", 6_000L)), parentUri = book),
       ),
     )
 
-    assertEquals(listOf(book), tree.bookListings().map { it.folder.uri })
-    assertEquals(listOf("$book/intro.m4b", "$disc/chapter.m4b"), tree.tracksForBook(book).map { it.uri })
+    assertEquals(listOf(book, nestedBook), tree.bookListings().map { it.folder.uri })
+    assertEquals(listOf("$book/intro.m4b"), tree.tracksForBook(book).map { it.uri })
+    assertEquals(listOf("$nestedBook/chapter.m4b"), tree.tracksForBook(nestedBook).map { it.uri })
+  }
+
+  @Test
+  fun flatRootSplitsThreeLooseAudioFilesAndKeepsNestedBookSeparateWithStableIdentities() {
+    val root = "content://root/audio-books"
+    val nestedBook = "$root/nested-book"
+    val alpha = track(
+      uri = "$root/unrelated-alpha-name.mp3",
+      durationMs = 10_000L,
+      album = "Album Alpha",
+      title = "Chapter Alpha",
+    )
+    val beta = track(
+      uri = "$root/unrelated-beta-name.mp3",
+      durationMs = 12_000L,
+      album = "Album Beta",
+      title = "Chapter Beta",
+    )
+    val fallback = track(
+      uri = "$root/Fallback_Book-Part-01.m4b",
+      durationMs = 14_000L,
+      album = "unknown",
+      title = "Track Title Is Not The Book Grouping Key",
+    )
+    val nestedTracks = listOf(
+      track("$nestedBook/01.m4b", 16_000L, album = "Nested Album", title = "Chapter 1"),
+      track("$nestedBook/02.m4b", 18_000L, album = "Nested Album", title = "Chapter 2"),
+    )
+    val tree = AudiobookFolderTree(
+      rootUri = root,
+      listings = linkedMapOf(
+        root to listing(root, "Audio Books", listOf(nestedBook), tracks = listOf(alpha, beta, fallback)),
+        nestedBook to listing(nestedBook, "Nested Book", tracks = nestedTracks, hasMetadata = true, parentUri = root),
+      ),
+    )
+
+    val books = tree.virtualBookListings()
+    assertEquals(listOf(root, nestedBook), tree.bookListings().map { it.folder.uri })
+    assertEquals(listOf("Album Alpha", "Album Beta", "Fallback Book", "Nested Book"), books.map { it.title })
+    assertEquals(
+      listOf(
+        listOf(alpha.uri),
+        listOf(beta.uri),
+        listOf(fallback.uri),
+        nestedTracks.map { it.uri },
+      ),
+      books.map { it.tracks.map(AudiobookFolderTrack::uri) },
+    )
+    assertEquals(listOf(alpha.uri, beta.uri, fallback.uri), tree.tracksForBook(root).map { it.uri })
+
+    val sourceIdentities = books.map { book ->
+      directAudiobookFolderIdentity(book.folder.uri) + (book.groupIdentity?.let { "#audiobook-$it" } ?: "")
+    }
+    val queueIdentities = books.map { book ->
+      book.groupIdentity ?: directAudiobookFolderIdentity(book.folder.uri)
+    }
+    assertEquals(4, sourceIdentities.distinct().size)
+    assertEquals(4, queueIdentities.distinct().size)
+    assertEquals(4, sourceIdentities.map { stableVirtualAudiobookId("book", it) }.distinct().size)
+    assertEquals(directAudiobookSelectionIdentity(listOf(beta.uri)), books[1].groupIdentity)
+    assertEquals(directAudiobookSelectionIdentity(listOf(fallback.uri)), books[2].groupIdentity)
+    assertTrue(books[0].groupIdentity == null)
+    assertTrue(books[3].groupIdentity == null)
+  }
+
+  @Test
+  fun sameUsableAlbumTagGroupsTracksTogether() {
+    val first = track("content://root/first-file.mp3", 1_000L, album = "Shared Album")
+    val second = track("content://root/second-file.mp3", 1_000L, album = "shared album")
+
+    val groups = groupAudiobookItemsByAlbumOrFilename(
+      items = listOf(first, second),
+      fileName = AudiobookFolderTrack::name,
+      album = AudiobookFolderTrack::album,
+      identity = AudiobookFolderTrack::uri,
+    )
+
+    assertEquals(1, groups.size)
+    assertEquals("Shared Album", groups.single().title)
+    assertEquals(listOf(first.uri, second.uri), groups.single().items.map { it.uri })
   }
 
   @Test
@@ -108,6 +189,19 @@ class AudiobookFolderLibraryTest {
     hasBookMetadata = hasMetadata,
   )
 
-  private fun track(uri: String, durationMs: Long) =
-    AudiobookFolderTrack(uri, uri.substringAfterLast('/'), "audio/mpeg", 1_024L, durationMs)
+  private fun track(
+    uri: String,
+    durationMs: Long,
+    name: String = uri.substringAfterLast('/'),
+    album: String? = null,
+    title: String? = null,
+  ) = AudiobookFolderTrack(
+    uri = uri,
+    name = name,
+    mimeType = "audio/mpeg",
+    sizeBytes = 1_024L,
+    durationMs = durationMs,
+    title = title,
+    album = album,
+  )
 }

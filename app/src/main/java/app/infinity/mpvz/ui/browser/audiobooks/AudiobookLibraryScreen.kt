@@ -297,7 +297,13 @@ object AudiobookLibraryScreen : Screen {
         try {
           val directSource = model.directBookSource(book.book.sourceKey)
           if (directSource != null) {
-            launchDirectAudiobookFolder(context, directSource.folderUri, directSource.tracks, restart = restart)
+            launchDirectAudiobookFolder(
+              context,
+              directSource.folderUri,
+              directSource.tracks,
+              restart = restart,
+              queueIdentity = directSource.queueIdentity,
+            )
           } else {
             AudiobookPlayback.launch(context, book.book.id, fromBeginning = restart)
           }
