@@ -18,4 +18,10 @@ class DirectHttpStreamPolicyTest {
     assertFalse(isDirectHttpStreamUrl("file:///media/audio.m4b"))
     assertFalse(isDirectHttpStreamUrl("javascript:play()"))
   }
+
+  @Test
+  fun rejectsTorrentFilesAndMalformedHttpUris() {
+    assertFalse(isDirectHttpStreamUrl("https://media.example.test/download.torrent"))
+    assertFalse(isDirectHttpStreamUrl("http://[invalid-host]/video"))
+  }
 }

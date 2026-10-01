@@ -6,5 +6,5 @@ internal fun mergeStreamOptions(
   incoming: List<StreamOption>,
 ): List<StreamOption> =
   (existing + incoming)
-    .filter { it.url.startsWith("http://", ignoreCase = true) || it.url.startsWith("https://", ignoreCase = true) }
+    .filter { isDirectHttpStreamUrl(it.url) }
     .distinctBy { it.url }
