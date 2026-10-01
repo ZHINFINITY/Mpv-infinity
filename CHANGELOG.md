@@ -2,6 +2,16 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.1.5
+
+### What’s new
+
+- A better Stream experience. Browse the built-in catalog or add your own compatible add-ons, then open supported direct links in the player using your preferred playback engine. Poster and season artwork can be enriched with metadata keys.
+- Audiobooks that stay in your folders. Browse and play books directly from selected storage, including nested folders—no importing or copying. All Books and Folders are separate views, with progress filters and resume support.
+- More ways to make the app yours. Custom themes now let you adjust text color, giving you more control over the look of the app.
+- A more dependable music player. Improvements to lyrics and audio-file handling.
+- History and playback improvements. Watch history and its settings now work across Media and Stream, while clearing history keeps playback progress and downloads. Watch Statistics stays separate, and resolution labels are more accurate.
+
 ## 2.1.4 - Performance, Downloads & Smoothness
 
 ### Faster and smoother everyday use
