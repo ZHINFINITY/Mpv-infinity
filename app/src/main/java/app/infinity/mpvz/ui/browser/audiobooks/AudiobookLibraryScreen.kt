@@ -277,10 +277,17 @@ object AudiobookLibraryScreen : Screen {
     }
 
     val isAbsSource = currentSource == AudiobookSourceProvider.AUDIOBOOKSHELF
-    val totalCount = when {
-      isFolderBrowser && !isAbsSource -> folderTree?.listings?.values?.sumOf { it.tracks.size } ?: 0
-      isAbsSource -> visibleAbsBooks.size
-      else -> visibleLocalBooks.size
+    val contentMode = resolveAudiobookLibraryContentMode(
+      selectedTabIndex = audiobookSubTab,
+      isFolderBrowser = isFolderBrowser,
+      isAudiobookshelfSource = isAbsSource,
+    )
+    val totalCount = if (contentMode == AudiobookLibraryContentMode.SAF_FOLDER_TREE) {
+      folderTree?.listings?.values?.sumOf { it.tracks.size } ?: 0
+    } else if (isAbsSource) {
+      visibleAbsBooks.size
+    } else {
+      visibleLocalBooks.size
     }
 
     fun playLocal(book: Audiobook, restart: Boolean = false) {
@@ -348,7 +355,7 @@ object AudiobookLibraryScreen : Screen {
         BrowserTopBar(
           title = when {
             isAbsSource -> ""
-            isFolderBrowser -> stringResource(R.string.audiobook_choose_folder)
+            contentMode == AudiobookLibraryContentMode.SAF_FOLDER_TREE -> stringResource(R.string.audiobook_choose_folder)
             else -> stringResource(R.string.audiobooks_title)
           },
           isInSelectionMode = false,
@@ -539,7 +546,7 @@ object AudiobookLibraryScreen : Screen {
       },
     ) { padding ->
       Column(Modifier.fillMaxSize().padding(padding)) {
-        if (!isFolderBrowser && search) {
+        if (contentMode != AudiobookLibraryContentMode.SAF_FOLDER_TREE && search) {
           OutlinedTextField(
             value = query,
             onValueChange = { query = it },
@@ -577,7 +584,7 @@ object AudiobookLibraryScreen : Screen {
           }
         }
 
-        if (audiobookSubTab == 1) {
+        if (contentMode == AudiobookLibraryContentMode.FOLDERS) {
           val selectedFolderPath by model.selectedFolderPath.collectAsStateWithLifecycle()
           app.infinity.mpvz.ui.browser.folderlist.FolderListScreen.MediaStoreFolderListContent(
             audioOnly = true,
@@ -589,10 +596,7 @@ object AudiobookLibraryScreen : Screen {
             onExternalViewOptionsDismiss = { folderViewOptionsOpen = false },
           )
         } else {
-        if (shouldShowAudiobookProgressFilters(
-            isFoldersTab = audiobookSubTab == 1,
-            isFolderTreeBrowser = isFolderBrowser && !isAbsSource,
-          )) {
+        if (shouldShowAudiobookProgressFilters(contentMode)) {
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -616,7 +620,7 @@ object AudiobookLibraryScreen : Screen {
         }
         }
 
-        if (isFolderBrowser && !isAbsSource) {
+        if (contentMode == AudiobookLibraryContentMode.SAF_FOLDER_TREE) {
           AudiobookFolderBrowserContent(
             tree = folderTree,
             isLoading = folderLoading,
@@ -743,8 +747,8 @@ object AudiobookLibraryScreen : Screen {
                 }
               }
             }
-            else -> LazyVerticalGrid(
-              columns = GridCells.Fixed(2),
+            layoutMode == MediaLayoutMode.GRID -> LazyVerticalGrid(
+              columns = GridCells.Adaptive(minSize = 145.dp),
               modifier = Modifier.fillMaxSize(),
               contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = navBarHeight + 16.dp),
               verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -752,6 +756,26 @@ object AudiobookLibraryScreen : Screen {
             ) {
               items(visibleLocalBooks, key = { it.book.id }) { book ->
                 AudiobookGridCard(
+                  title = book.book.title,
+                  author = book.book.author,
+                  coverUri = book.book.coverUri,
+                  embeddedTrackUri = book.orderedTracks.firstOrNull()?.uri,
+                  progressPercent = book.progress,
+                  isFinished = book.book.finished,
+                  remainingMs = (((book.durationMs - book.book.progressMs).coerceAtLeast(0) / book.book.playbackSpeed).toLong()),
+                  opening = opening,
+                  onClick = { detailsId = book.book.id },
+                  onPlay = { playLocal(book) },
+                )
+              }
+            }
+            else -> LazyColumn(
+              modifier = Modifier.fillMaxSize(),
+              contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = navBarHeight + 16.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              items(visibleLocalBooks, key = { it.book.id }) { book ->
+                AudiobookListRow(
                   title = book.book.title,
                   author = book.book.author,
                   coverUri = book.book.coverUri,
@@ -777,8 +801,10 @@ object AudiobookLibraryScreen : Screen {
         onDismiss = { isSortMenuExpanded = false },
         sortType = sortType,
         sortOrder = sortOrder,
+        layoutMode = layoutMode,
         onSortTypeChange = { browserPreferences.audiobookSortType.set(it) },
         onSortOrderChange = { browserPreferences.audiobookSortOrder.set(it) },
+        onLayoutModeChange = { browserPreferences.audiobookLayoutMode.set(it) },
       )
     }
 
