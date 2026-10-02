@@ -4,10 +4,10 @@ plugins {
 
 android {
     namespace = "androidx.media3.subtitle.libass"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
-        minSdk = 21
+        minSdk = 23
         consumerProguardFiles("consumer-rules.pro")
         externalNativeBuild {
             cmake {
@@ -34,8 +34,8 @@ android {
 }
 
 dependencies {
-    api("androidx.media3:media3-common:1.6.1")
-    api("androidx.media3:media3-exoplayer:1.6.1")
+    api(libs.androidx.media3.common)
+    api(libs.androidx.media3.exoplayer)
     implementation("androidx.annotation:annotation:1.9.1")
     testImplementation("junit:junit:4.13.2")
 }

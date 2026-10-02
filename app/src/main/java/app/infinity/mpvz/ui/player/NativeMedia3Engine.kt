@@ -14,12 +14,14 @@ import app.infinity.mpvz.R
 import androidx.media3.common.C
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.text.CueGroup
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Metadata
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -74,6 +76,9 @@ data class NativePlaybackSnapshot(
   val totalBufferedDurationMs: Long = 0L,
   val videoWidth: Int = 0,
   val videoHeight: Int = 0,
+  val videoOutputWidth: Int = 0,
+  val videoOutputHeight: Int = 0,
+  val videoFrameRate: Float = 0f,
   val videoMimeType: String? = null,
   val videoCodec: String? = null,
   val videoDecoder: String? = null,
@@ -81,10 +86,17 @@ data class NativePlaybackSnapshot(
   val videoDynamicRange: String? = null,
   val videoColorSpace: String? = null,
   val videoBitrate: Int = 0,
+  val droppedVideoFrames: Long = 0L,
+  val frameProcessingOffsetAverageUs: Long = 0L,
+  val frameProcessingOffsetLastUs: Long = 0L,
+  val frameProcessingSampleCount: Long = 0L,
   val audioCodec: String? = null,
   val audioBitrate: Int = 0,
   val audioChannels: Int = 0,
   val audioSampleRate: Int = 0,
+  val bandwidthEstimateBps: Long = 0L,
+  val bandwidthBytesLoaded: Long = 0L,
+  val sourceSizeBytes: Long = 0L,
   val speed: Float = 1f,
   val subtitleTracks: List<NativeTrack> = emptyList(),
   val audioTracks: List<NativeTrack> = emptyList(),
@@ -251,6 +263,14 @@ class NativeMedia3Engine(context: Context) {
   private var sourceSizeBytes: Long = 0L
   private var videoDecoderName: String? = null
   private var audioDecoderName: String? = null
+  private var currentVideoFormat: Format? = null
+  private var currentAudioFormat: Format? = null
+  private var droppedVideoFrames = 0L
+  private var frameProcessingOffsetTotalUs = 0L
+  private var frameProcessingSampleCount = 0L
+  private var frameProcessingOffsetLastUs = 0L
+  private var bandwidthEstimateBps = 0L
+  private var bandwidthBytesLoaded = 0L
   private var selectedNativeSubtitleSelection: NativeSubtitleSelection? = null
   private var restoringNativeSubtitleSelection = false
 
@@ -274,9 +294,66 @@ class NativeMedia3Engine(context: Context) {
       audioDecoderName = decoderName
       publishSnapshot()
     }
+
+    override fun onVideoInputFormatChanged(
+      eventTime: AnalyticsListener.EventTime,
+      format: Format,
+      decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+    ) {
+      currentVideoFormat = format
+      publishSnapshot()
+    }
+
+    override fun onAudioInputFormatChanged(
+      eventTime: AnalyticsListener.EventTime,
+      format: Format,
+      decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+    ) {
+      currentAudioFormat = format
+      publishSnapshot()
+    }
+
+    override fun onDroppedVideoFrames(
+      eventTime: AnalyticsListener.EventTime,
+      droppedFrames: Int,
+      elapsedMs: Long,
+    ) {
+      if (droppedFrames > 0) {
+        this@NativeMedia3Engine.droppedVideoFrames += droppedFrames.toLong()
+        publishPlaybackSnapshot()
+      }
+    }
+
+    override fun onVideoFrameProcessingOffset(
+      eventTime: AnalyticsListener.EventTime,
+      totalProcessingOffsetUs: Long,
+      frameCount: Int,
+    ) {
+      if (frameCount > 0) {
+        frameProcessingOffsetTotalUs += totalProcessingOffsetUs
+        frameProcessingSampleCount += frameCount.toLong()
+        frameProcessingOffsetLastUs = totalProcessingOffsetUs / frameCount
+        publishPlaybackSnapshot()
+      }
+    }
+
+    override fun onBandwidthEstimate(
+      eventTime: AnalyticsListener.EventTime,
+      totalLoadTimeMs: Int,
+      totalBytesLoaded: Long,
+      bitrateEstimate: Long,
+    ) {
+      bandwidthEstimateBps = bitrateEstimate.coerceAtLeast(0L)
+      bandwidthBytesLoaded = totalBytesLoaded.coerceAtLeast(0L)
+      publishPlaybackSnapshot()
+    }
   }
 
   private val listener = object : Player.Listener {
+    override fun onVideoSizeChanged(videoSize: VideoSize) {
+      publishPlaybackSnapshot()
+    }
+
     override fun onRenderedFirstFrame() {
       val uri = player.currentMediaItem?.localConfiguration?.uri
       val elapsed = preparationStartedAtMs.takeIf { it > 0L }?.let { SystemClock.elapsedRealtime() - it }
@@ -753,6 +830,14 @@ class NativeMedia3Engine(context: Context) {
     lastKnownDurationMs = 0L
     videoDecoderName = null
     audioDecoderName = null
+    currentVideoFormat = null
+    currentAudioFormat = null
+    droppedVideoFrames = 0L
+    frameProcessingOffsetTotalUs = 0L
+    frameProcessingSampleCount = 0L
+    frameProcessingOffsetLastUs = 0L
+    bandwidthEstimateBps = 0L
+    bandwidthBytesLoaded = 0L
     // The player instance survives item changes; reset any ducked/zero output level before the
     // first audio-only item after a video transition.
     player.volume = 1f
@@ -1137,10 +1222,12 @@ class NativeMedia3Engine(context: Context) {
       }.flatten()
     val subtitles = tracksOfType(C.TRACK_TYPE_TEXT, "Subtitle")
     val audioTracks = tracksOfType(C.TRACK_TYPE_AUDIO, "Audio")
-    val video = groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }
-      ?.getTrackFormat(0)
-    val audio = groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
-      ?.getTrackFormat(0)
+    val video = currentVideoFormat
+      ?: groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }
+        ?.getTrackFormat(0)
+    val audio = currentAudioFormat
+      ?: groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
+        ?.getTrackFormat(0)
     val reportedDurationMs = player.duration
       .takeIf { it != C.TIME_UNSET && it > 0L }
       ?.also { lastKnownDurationMs = it }
@@ -1182,6 +1269,9 @@ class NativeMedia3Engine(context: Context) {
       totalBufferedDurationMs = player.totalBufferedDuration.coerceAtLeast(0L),
       videoWidth = video?.width ?: 0,
       videoHeight = video?.height ?: 0,
+      videoOutputWidth = player.videoSize.width,
+      videoOutputHeight = player.videoSize.height,
+      videoFrameRate = video?.frameRate?.takeIf { it > 0f } ?: 0f,
       videoMimeType = video?.sampleMimeType,
       videoCodec = video?.codecs,
       videoDecoder = videoDecoderName,
@@ -1189,10 +1279,18 @@ class NativeMedia3Engine(context: Context) {
       videoDynamicRange = dynamicRange,
       videoColorSpace = colorSpace,
       videoBitrate = declaredVideoBitrate.takeIf { it > 0 } ?: estimatedVideoBitrate,
+      droppedVideoFrames = droppedVideoFrames,
+      frameProcessingOffsetAverageUs =
+        if (frameProcessingSampleCount > 0L) frameProcessingOffsetTotalUs / frameProcessingSampleCount else 0L,
+      frameProcessingOffsetLastUs = frameProcessingOffsetLastUs,
+      frameProcessingSampleCount = frameProcessingSampleCount,
       audioCodec = audio?.codecs ?: audio?.sampleMimeType,
       audioBitrate = audio?.bitrate?.takeIf { it > 0 } ?: 0,
       audioChannels = audio?.channelCount ?: 0,
       audioSampleRate = audio?.sampleRate ?: 0,
+      bandwidthEstimateBps = bandwidthEstimateBps,
+      bandwidthBytesLoaded = bandwidthBytesLoaded,
+      sourceSizeBytes = sourceSizeBytes,
       speed = player.playbackParameters.speed,
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
@@ -1216,6 +1314,16 @@ class NativeMedia3Engine(context: Context) {
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = reportedDurationMs,
       totalBufferedDurationMs = player.totalBufferedDuration.coerceAtLeast(0L),
+      videoOutputWidth = player.videoSize.width,
+      videoOutputHeight = player.videoSize.height,
+      droppedVideoFrames = droppedVideoFrames,
+      frameProcessingOffsetAverageUs =
+        if (frameProcessingSampleCount > 0L) frameProcessingOffsetTotalUs / frameProcessingSampleCount else 0L,
+      frameProcessingOffsetLastUs = frameProcessingOffsetLastUs,
+      frameProcessingSampleCount = frameProcessingSampleCount,
+      bandwidthEstimateBps = bandwidthEstimateBps,
+      bandwidthBytesLoaded = bandwidthBytesLoaded,
+      sourceSizeBytes = sourceSizeBytes,
       speed = player.playbackParameters.speed,
     )
   }

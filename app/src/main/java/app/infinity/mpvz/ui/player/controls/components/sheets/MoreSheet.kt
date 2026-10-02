@@ -245,6 +245,20 @@ fun MoreSheet(
             } else {
               "Preparing output"
             }
+            val outputQuality = if (nativeSnapshot.videoOutputWidth > 0 && nativeSnapshot.videoOutputHeight > 0) {
+              "${nativeSnapshot.videoOutputWidth}×${nativeSnapshot.videoOutputHeight}"
+            } else {
+              quality
+            }
+            val frameRate = nativeSnapshot.videoFrameRate.takeIf { it > 0f && it.isFinite() }
+              ?.let { "${"%.2f".format(it)} fps" } ?: "--"
+            val frameOffset = if (nativeSnapshot.frameProcessingSampleCount > 0L) {
+              "${"%.1f".format(nativeSnapshot.frameProcessingOffsetAverageUs / 1000.0)} ms avg"
+            } else {
+              "--"
+            }
+            val bandwidth = nativeSnapshot.bandwidthEstimateBps.takeIf { it > 0L }
+              ?.let { "${it / 1_000} kbps" } ?: "--"
             val codec = nativeCodecLabel(nativeSnapshot.videoMimeType, nativeSnapshot.videoCodec)
             val decoder = nativeSnapshot.videoDecoder ?: "Media3"
             val range = nativeSnapshot.videoDynamicRange ?: "SDR"
@@ -252,11 +266,20 @@ fun MoreSheet(
             val audio = nativeSnapshot.audioCodec
               ?: if (nativeSnapshot.audioTracks.isNotEmpty()) "Audio" else "--"
             Text(
-              "Output: $quality · $range$colorSpace · $codec",
+              "Output: $outputQuality · $range$colorSpace · $codec",
               style = MaterialTheme.typography.bodySmall,
             )
             Text(
               "Decoder: $decoder · Audio: $audio · ${if (nativeSnapshot.isPlaying) "Playing" else "Paused"}",
+              style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+              "Frames: $frameRate · dropped ${nativeSnapshot.droppedVideoFrames} · offset $frameOffset",
+              style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+              "Buffer ahead: ${String.format("%.1f", nativeSnapshot.totalBufferedDurationMs / 1000.0)}s · " +
+                "Bandwidth: $bandwidth",
               style = MaterialTheme.typography.bodySmall,
             )
           } else {
