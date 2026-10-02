@@ -1360,7 +1360,7 @@ class NativeMedia3Engine(context: Context) {
         C.COLOR_RANGE_LIMITED -> "Limited"
         else -> null
       },
-      videoHasHdrStaticMetadata = colorInfo?.let { !it.hdrStaticInfo.isNullOrEmpty() },
+      videoHasHdrStaticMetadata = colorInfo?.hdrStaticInfo?.let { it.size > 0 },
       videoTrackBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0,
       videoRenderedOutputBuffers = videoFrameCounters?.renderedOutputBuffers,
       videoSkippedInputBuffers = videoFrameCounters?.skippedInputBuffers,
