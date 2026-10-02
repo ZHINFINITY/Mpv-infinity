@@ -53,7 +53,7 @@ public final class DirectAssSubtitleRenderer extends BaseRenderer {
     sink.replaceTrack(trackId, document);
     android.util.Log.i("Media3Libass", "direct ASS stream id=" + trackId + " mime=" + format.sampleMimeType + " headerBytes=" + (document == null ? 0 : document.length));
   }
-  @Override protected void onPositionReset(long positionUs, boolean joining) {
+  @Override protected void onPositionReset(long positionUs, boolean joining, boolean sampleStreamIsResetToKeyFrame) {
     inputBuffer.clear();
     inputEnded = false;
     if (trackId != null && document != null) {
