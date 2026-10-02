@@ -10,7 +10,6 @@
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
-import app.infinity.mpvz.ui.player.NativeStatsDisplay
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
 
@@ -241,20 +240,23 @@ fun MoreSheet(
         Column(modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small)) {
           Text("Engine: ${activeEngine.title}", style = MaterialTheme.typography.titleSmall)
           if (activeEngine == PlaybackEngineMode.NATIVE) {
-            val outputQuality = NativeStatsDisplay.resolution(
-              outputWidth = nativeSnapshot.videoOutputWidth,
-              outputHeight = nativeSnapshot.videoOutputHeight,
-              inputWidth = nativeSnapshot.videoWidth,
-              inputHeight = nativeSnapshot.videoHeight,
-            )
+            val quality = if (nativeSnapshot.videoWidth > 0 && nativeSnapshot.videoHeight > 0) {
+              "${nativeSnapshot.videoWidth}×${nativeSnapshot.videoHeight}"
+            } else {
+              "Preparing output"
+            }
             val codec = nativeCodecLabel(nativeSnapshot.videoMimeType, nativeSnapshot.videoCodec)
+            val decoder = nativeSnapshot.videoDecoder ?: "Media3"
+            val range = nativeSnapshot.videoDynamicRange ?: "SDR"
+            val colorSpace = nativeSnapshot.videoColorSpace?.let { " · $it" }.orEmpty()
+            val audio = nativeSnapshot.audioCodec
+              ?: if (nativeSnapshot.audioTracks.isNotEmpty()) "Audio" else "--"
             Text(
-              "Output: ${NativeStatsDisplay.outputSummary(
-                resolution = outputQuality,
-                dynamicRange = nativeSnapshot.videoDynamicRange,
-                colorSpace = nativeSnapshot.videoColorSpace,
-                codec = codec,
-              )}",
+              "Output: $quality · $range$colorSpace · $codec",
+              style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+              "Decoder: $decoder · Audio: $audio · ${if (nativeSnapshot.isPlaying) "Playing" else "Paused"}",
               style = MaterialTheme.typography.bodySmall,
             )
           } else {

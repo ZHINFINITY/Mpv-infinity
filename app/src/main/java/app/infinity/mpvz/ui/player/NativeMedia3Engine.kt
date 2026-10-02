@@ -12,6 +12,7 @@ import android.view.SurfaceView
 import java.io.File
 import app.infinity.mpvz.R
 import androidx.media3.common.C
+import androidx.media3.common.ColorInfo
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.Format
@@ -25,6 +26,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.FileDataSource
@@ -78,6 +80,8 @@ data class NativePlaybackSnapshot(
   val videoHeight: Int = 0,
   val videoOutputWidth: Int = 0,
   val videoOutputHeight: Int = 0,
+  val videoPixelWidthHeightRatio: Float? = null,
+  val videoOutputPixelWidthHeightRatio: Float? = null,
   val videoFrameRate: Float = 0f,
   val videoMimeType: String? = null,
   val videoCodec: String? = null,
@@ -85,8 +89,18 @@ data class NativePlaybackSnapshot(
   val audioDecoder: String? = null,
   val videoDynamicRange: String? = null,
   val videoColorSpace: String? = null,
-  val videoBitrate: Int = 0,
-  val droppedVideoFrames: Long = 0L,
+  val videoLumaBitDepth: Int? = null,
+  val videoChromaBitDepth: Int? = null,
+  val videoColorPrimariesIsoCode: Int? = null,
+  val videoTransferCharacteristicsIsoCode: Int? = null,
+  val videoMatrixCoefficientsIsoCode: Int? = null,
+  val videoColorRange: String? = null,
+  val videoHasHdrStaticMetadata: Boolean? = null,
+  val videoTrackBitrate: Int = 0,
+  val videoRenderedOutputBuffers: Long? = null,
+  val videoSkippedInputBuffers: Long? = null,
+  val videoSkippedOutputBuffers: Long? = null,
+  val videoDroppedBuffers: Long? = null,
   val frameProcessingOffsetAverageUs: Long = 0L,
   val frameProcessingOffsetLastUs: Long = 0L,
   val frameProcessingSampleCount: Long = 0L,
@@ -122,6 +136,31 @@ private data class NativeSubtitleSelection(
   val mimeType: String?,
   val codecs: String?,
 )
+
+private data class NativeVideoFrameCounts(
+  val renderedOutputBuffers: Long,
+  val skippedInputBuffers: Long,
+  val skippedOutputBuffers: Long,
+  val droppedBuffers: Long,
+) {
+  fun since(previous: NativeVideoFrameCounts) = NativeVideoFrameCounts(
+    renderedOutputBuffers = (renderedOutputBuffers - previous.renderedOutputBuffers).coerceAtLeast(0L),
+    skippedInputBuffers = (skippedInputBuffers - previous.skippedInputBuffers).coerceAtLeast(0L),
+    skippedOutputBuffers = (skippedOutputBuffers - previous.skippedOutputBuffers).coerceAtLeast(0L),
+    droppedBuffers = (droppedBuffers - previous.droppedBuffers).coerceAtLeast(0L),
+  )
+
+  companion object {
+    val ZERO = NativeVideoFrameCounts(0L, 0L, 0L, 0L)
+
+    fun from(counters: DecoderCounters) = NativeVideoFrameCounts(
+      renderedOutputBuffers = counters.renderedOutputBufferCount.toLong(),
+      skippedInputBuffers = counters.skippedInputBufferCount.toLong(),
+      skippedOutputBuffers = counters.skippedOutputBufferCount.toLong(),
+      droppedBuffers = counters.droppedBufferCount.toLong(),
+    )
+  }
+}
 
 data class NativeChapter(
   val title: String,
@@ -265,7 +304,9 @@ class NativeMedia3Engine(context: Context) {
   private var audioDecoderName: String? = null
   private var currentVideoFormat: Format? = null
   private var currentAudioFormat: Format? = null
-  private var droppedVideoFrames = 0L
+  private var currentVideoSize: VideoSize? = null
+  private var videoDecoderCounters: DecoderCounters? = null
+  private var videoFrameCounterBaseline = NativeVideoFrameCounts.ZERO
   private var frameProcessingOffsetTotalUs = 0L
   private var frameProcessingSampleCount = 0L
   private var frameProcessingOffsetLastUs = 0L
@@ -275,6 +316,27 @@ class NativeMedia3Engine(context: Context) {
   private var restoringNativeSubtitleSelection = false
 
   private val analyticsListener = object : AnalyticsListener {
+    override fun onVideoEnabled(
+      eventTime: AnalyticsListener.EventTime,
+      decoderCounters: DecoderCounters,
+    ) {
+      if (this@NativeMedia3Engine.videoDecoderCounters !== decoderCounters) {
+        decoderCounters.ensureUpdated()
+        videoFrameCounterBaseline = NativeVideoFrameCounts.ZERO
+      }
+      this@NativeMedia3Engine.videoDecoderCounters = decoderCounters
+      publishSnapshot()
+    }
+
+    override fun onVideoDisabled(
+      eventTime: AnalyticsListener.EventTime,
+      decoderCounters: DecoderCounters,
+    ) {
+      decoderCounters.ensureUpdated()
+      this@NativeMedia3Engine.videoDecoderCounters = decoderCounters
+      publishSnapshot()
+    }
+
     override fun onVideoDecoderInitialized(
       eventTime: AnalyticsListener.EventTime,
       decoderName: String,
@@ -319,7 +381,6 @@ class NativeMedia3Engine(context: Context) {
       elapsedMs: Long,
     ) {
       if (droppedFrames > 0) {
-        this@NativeMedia3Engine.droppedVideoFrames += droppedFrames.toLong()
         publishPlaybackSnapshot()
       }
     }
@@ -351,6 +412,7 @@ class NativeMedia3Engine(context: Context) {
 
   private val listener = object : Player.Listener {
     override fun onVideoSizeChanged(videoSize: VideoSize) {
+      currentVideoSize = videoSize
       publishPlaybackSnapshot()
     }
 
@@ -832,7 +894,8 @@ class NativeMedia3Engine(context: Context) {
     audioDecoderName = null
     currentVideoFormat = null
     currentAudioFormat = null
-    droppedVideoFrames = 0L
+    currentVideoSize = null
+    resetVideoFrameCounterBaseline()
     frameProcessingOffsetTotalUs = 0L
     frameProcessingSampleCount = 0L
     frameProcessingOffsetLastUs = 0L
@@ -1153,6 +1216,9 @@ class NativeMedia3Engine(context: Context) {
     pendingSeekDisplayPositionMs = null
     player.stop()
     player.clearMediaItems()
+    currentVideoFormat = null
+    currentVideoSize = null
+    videoDecoderName = null
     _subtitleCueText.value = ""
     selectedNativeSubtitleKey = null
     selectedNativeSubtitleSelection = null
@@ -1170,6 +1236,7 @@ class NativeMedia3Engine(context: Context) {
     loopHandler.removeCallbacks(seekRunnable)
     pendingSeekPositionMs = null
     player.removeListener(listener)
+    player.removeAnalyticsListener(analyticsListener)
     attachedView?.player = null
     libassRenderer?.close()
     libassRenderer = null
@@ -1222,9 +1289,9 @@ class NativeMedia3Engine(context: Context) {
       }.flatten()
     val subtitles = tracksOfType(C.TRACK_TYPE_TEXT, "Subtitle")
     val audioTracks = tracksOfType(C.TRACK_TYPE_AUDIO, "Audio")
+    // Track groups can describe unselected alternatives; video telemetry is sourced only from
+    // the format actually consumed by the renderer.
     val video = currentVideoFormat
-      ?: groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 }
-        ?.getTrackFormat(0)
     val audio = currentAudioFormat
       ?: groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.length > 0 }
         ?.getTrackFormat(0)
@@ -1240,24 +1307,24 @@ class NativeMedia3Engine(context: Context) {
         mime.contains("dolby-vision") || codecs.startsWith("dvhe") || codecs.startsWith("dvh1") -> "Dolby Vision"
         colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG -> "HLG"
         colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 -> "HDR10"
-        else -> "SDR"
+        colorInfo?.colorTransfer == C.COLOR_TRANSFER_SDR -> "SDR"
+        else -> null
       }
     }
     val colorSpace =
       when (colorInfo?.colorSpace) {
         C.COLOR_SPACE_BT2020 -> "BT.2020"
         C.COLOR_SPACE_BT709 -> "BT.709"
+        C.COLOR_SPACE_BT601 -> "BT.601"
         else -> null
       }
-    val declaredVideoBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0
-    val estimatedVideoBitrate =
-      if (declaredVideoBitrate == 0 && sourceSizeBytes > 0L && reportedDurationMs > 0L) {
-        ((sourceSizeBytes * 8_000L) / reportedDurationMs)
-          .coerceIn(1L, Int.MAX_VALUE.toLong())
-          .toInt()
-      } else {
-        0
-      }
+    val activeVideoSize = currentVideoSize.takeIf { video != null }
+    val videoFrameCounters = currentVideoFrameCounters()
+    fun isoColorCode(code: Int?, convert: (Int) -> Int): Int? =
+      code
+        ?.takeIf { it != Format.NO_VALUE }
+        ?.let(convert)
+        ?.takeIf { it > 0 }
     _snapshot.value = NativePlaybackSnapshot(
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
@@ -1269,8 +1336,10 @@ class NativeMedia3Engine(context: Context) {
       totalBufferedDurationMs = player.totalBufferedDuration.coerceAtLeast(0L),
       videoWidth = video?.width ?: 0,
       videoHeight = video?.height ?: 0,
-      videoOutputWidth = player.videoSize.width,
-      videoOutputHeight = player.videoSize.height,
+      videoOutputWidth = activeVideoSize?.width ?: 0,
+      videoOutputHeight = activeVideoSize?.height ?: 0,
+      videoPixelWidthHeightRatio = video?.pixelWidthHeightRatio?.takeIf { it > 0f && it.isFinite() },
+      videoOutputPixelWidthHeightRatio = activeVideoSize?.pixelWidthHeightRatio?.takeIf { it > 0f && it.isFinite() },
       videoFrameRate = video?.frameRate?.takeIf { it > 0f } ?: 0f,
       videoMimeType = video?.sampleMimeType,
       videoCodec = video?.codecs,
@@ -1278,8 +1347,25 @@ class NativeMedia3Engine(context: Context) {
       audioDecoder = audioDecoderName,
       videoDynamicRange = dynamicRange,
       videoColorSpace = colorSpace,
-      videoBitrate = declaredVideoBitrate.takeIf { it > 0 } ?: estimatedVideoBitrate,
-      droppedVideoFrames = droppedVideoFrames,
+      videoLumaBitDepth = colorInfo?.lumaBitdepth?.takeIf { it > 0 },
+      videoChromaBitDepth = colorInfo?.chromaBitdepth?.takeIf { it > 0 },
+      videoColorPrimariesIsoCode =
+        isoColorCode(colorInfo?.colorSpace) { ColorInfo.colorSpaceToIsoColorPrimaries(it) },
+      videoTransferCharacteristicsIsoCode =
+        isoColorCode(colorInfo?.colorTransfer) { ColorInfo.colorTransferToIsoTransferCharacteristics(it) },
+      videoMatrixCoefficientsIsoCode =
+        isoColorCode(colorInfo?.colorSpace) { ColorInfo.colorSpaceToIsoMatrixCoefficients(it) },
+      videoColorRange = when (colorInfo?.colorRange) {
+        C.COLOR_RANGE_FULL -> "Full"
+        C.COLOR_RANGE_LIMITED -> "Limited"
+        else -> null
+      },
+      videoHasHdrStaticMetadata = colorInfo?.let { !it.hdrStaticInfo.isNullOrEmpty() },
+      videoTrackBitrate = video?.bitrate?.takeIf { it > 0 } ?: 0,
+      videoRenderedOutputBuffers = videoFrameCounters?.renderedOutputBuffers,
+      videoSkippedInputBuffers = videoFrameCounters?.skippedInputBuffers,
+      videoSkippedOutputBuffers = videoFrameCounters?.skippedOutputBuffers,
+      videoDroppedBuffers = videoFrameCounters?.droppedBuffers,
       frameProcessingOffsetAverageUs =
         if (frameProcessingSampleCount > 0L) frameProcessingOffsetTotalUs / frameProcessingSampleCount else 0L,
       frameProcessingOffsetLastUs = frameProcessingOffsetLastUs,
@@ -1305,6 +1391,8 @@ class NativeMedia3Engine(context: Context) {
       .takeIf { it != C.TIME_UNSET && it > 0L }
       ?.also { lastKnownDurationMs = it }
       ?: lastKnownDurationMs
+    val activeVideoSize = currentVideoSize.takeIf { currentVideoFormat != null }
+    val videoFrameCounters = currentVideoFrameCounters()
     _snapshot.value = previous.copy(
       isPlaying = player.isPlaying,
       isReady = player.playbackState == Player.STATE_READY,
@@ -1314,9 +1402,13 @@ class NativeMedia3Engine(context: Context) {
       positionMs = (pendingSeekDisplayPositionMs ?: player.currentPosition).coerceAtLeast(0L),
       durationMs = reportedDurationMs,
       totalBufferedDurationMs = player.totalBufferedDuration.coerceAtLeast(0L),
-      videoOutputWidth = player.videoSize.width,
-      videoOutputHeight = player.videoSize.height,
-      droppedVideoFrames = droppedVideoFrames,
+      videoOutputWidth = activeVideoSize?.width ?: 0,
+      videoOutputHeight = activeVideoSize?.height ?: 0,
+      videoOutputPixelWidthHeightRatio = activeVideoSize?.pixelWidthHeightRatio?.takeIf { it > 0f && it.isFinite() },
+      videoRenderedOutputBuffers = videoFrameCounters?.renderedOutputBuffers,
+      videoSkippedInputBuffers = videoFrameCounters?.skippedInputBuffers,
+      videoSkippedOutputBuffers = videoFrameCounters?.skippedOutputBuffers,
+      videoDroppedBuffers = videoFrameCounters?.droppedBuffers,
       frameProcessingOffsetAverageUs =
         if (frameProcessingSampleCount > 0L) frameProcessingOffsetTotalUs / frameProcessingSampleCount else 0L,
       frameProcessingOffsetLastUs = frameProcessingOffsetLastUs,
@@ -1326,6 +1418,23 @@ class NativeMedia3Engine(context: Context) {
       sourceSizeBytes = sourceSizeBytes,
       speed = player.playbackParameters.speed,
     )
+  }
+
+  private fun resetVideoFrameCounterBaseline() {
+    val counters = videoDecoderCounters
+    if (counters == null) {
+      videoFrameCounterBaseline = NativeVideoFrameCounts.ZERO
+      return
+    }
+    counters.ensureUpdated()
+    videoFrameCounterBaseline = NativeVideoFrameCounts.from(counters)
+  }
+
+  private fun currentVideoFrameCounters(): NativeVideoFrameCounts? {
+    if (currentVideoFormat == null) return null
+    val counters = videoDecoderCounters ?: return null
+    counters.ensureUpdated()
+    return NativeVideoFrameCounts.from(counters).since(videoFrameCounterBaseline)
   }
 
   private fun metadataEntriesToChapters(metadata: Metadata): List<NativeChapter> =

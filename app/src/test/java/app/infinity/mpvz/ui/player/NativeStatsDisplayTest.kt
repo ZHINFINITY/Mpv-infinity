@@ -5,27 +5,35 @@ import org.junit.Test
 
 class NativeStatsDisplayTest {
   @Test
-  fun resolutionPrefersMeasuredOutputThenInputAndDoesNotInventDimensions() {
-    assertEquals("1920×1080", NativeStatsDisplay.resolution(1920, 1080, 1280, 720))
-    assertEquals("1280×720", NativeStatsDisplay.resolution(0, 0, 1280, 720))
-    assertEquals("--", NativeStatsDisplay.resolution(0, 1080, 1280, 0))
+  fun sourceAndRendererResolutionAreNeverSubstitutedForOneAnother() {
+    assertEquals("1920×1080", NativeStatsDisplay.resolution(1920, 1080))
+    assertEquals("--", NativeStatsDisplay.resolution(0, 1080))
+    assertEquals("--", NativeStatsDisplay.resolution(0, 0))
   }
 
   @Test
-  fun outputSummaryIsCompactInMoreAndExplicitAboutMissingFieldsInStatistics() {
-    assertEquals(
-      "1920×1080 · HDR10 · BT.2020 · HEVC",
-      NativeStatsDisplay.outputSummary("1920×1080", "HDR10", "BT.2020", "HEVC"),
-    )
-    assertEquals(
-      "1920×1080 · HDR10",
-      NativeStatsDisplay.outputSummary("1920×1080", "HDR10", null, "--"),
-    )
-    assertEquals(
-      "1920×1080 · HDR10 · -- · --",
-      NativeStatsDisplay.outputSummary("1920×1080", "HDR10", null, "--", includeMissingParts = true),
-    )
-    assertEquals("--", NativeStatsDisplay.outputSummary("--", null, null, "--"))
+  fun aspectRatioUsesSuppliedPixelRatioAndMarksMissingValues() {
+    assertEquals("1.778:1", NativeStatsDisplay.aspectRatio(1920, 1080, 1f))
+    assertEquals("1.778:1", NativeStatsDisplay.aspectRatio(1440, 1080, 1.3333334f))
+    assertEquals("--", NativeStatsDisplay.aspectRatio(1920, 1080, null))
+    assertEquals("--", NativeStatsDisplay.aspectRatio(1920, 1080, Float.NaN))
+    assertEquals("--", NativeStatsDisplay.aspectRatio(0, 1080, 1f))
+  }
+
+  @Test
+  fun colorDepthHdrAndFrameCountersPreserveUnknownInsteadOfInventingZero() {
+    assertEquals("10-bit", NativeStatsDisplay.bitDepth(10, 10))
+    assertEquals("luma 10-bit / chroma 8-bit", NativeStatsDisplay.bitDepth(10, 8))
+    assertEquals("10-bit luma", NativeStatsDisplay.bitDepth(10, null))
+    assertEquals("--", NativeStatsDisplay.bitDepth(null, null))
+    assertEquals("16", NativeStatsDisplay.isoCode(16))
+    assertEquals("--", NativeStatsDisplay.isoCode(null))
+    assertEquals("present", NativeStatsDisplay.hdrStaticMetadata(true))
+    assertEquals("not signalled", NativeStatsDisplay.hdrStaticMetadata(false))
+    assertEquals("--", NativeStatsDisplay.hdrStaticMetadata(null))
+    assertEquals("0", NativeStatsDisplay.frameCount(0L))
+    assertEquals("27", NativeStatsDisplay.frameCount(27L))
+    assertEquals("--", NativeStatsDisplay.frameCount(null))
   }
 
   @Test

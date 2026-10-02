@@ -2313,12 +2313,24 @@ private fun NativeStatsPageOverlay(
   snapshot: NativePlaybackSnapshot,
   modifier: Modifier = Modifier,
 ) {
-  val outputQuality = NativeStatsDisplay.resolution(
-    outputWidth = snapshot.videoOutputWidth,
-    outputHeight = snapshot.videoOutputHeight,
-    inputWidth = snapshot.videoWidth,
-    inputHeight = snapshot.videoHeight,
+  val inputResolution = NativeStatsDisplay.resolution(snapshot.videoWidth, snapshot.videoHeight)
+  val rendererResolution = NativeStatsDisplay.resolution(snapshot.videoOutputWidth, snapshot.videoOutputHeight)
+  val inputAspectRatio = NativeStatsDisplay.aspectRatio(
+    snapshot.videoWidth,
+    snapshot.videoHeight,
+    snapshot.videoPixelWidthHeightRatio,
   )
+  val rendererAspectRatio = NativeStatsDisplay.aspectRatio(
+    snapshot.videoOutputWidth,
+    snapshot.videoOutputHeight,
+    snapshot.videoOutputPixelWidthHeightRatio,
+  )
+  val bitDepth = NativeStatsDisplay.bitDepth(snapshot.videoLumaBitDepth, snapshot.videoChromaBitDepth)
+  val primaries = NativeStatsDisplay.isoCode(snapshot.videoColorPrimariesIsoCode)
+  val transfer = NativeStatsDisplay.isoCode(snapshot.videoTransferCharacteristicsIsoCode)
+  val matrix = NativeStatsDisplay.isoCode(snapshot.videoMatrixCoefficientsIsoCode)
+  val colorRange = NativeStatsDisplay.knownLabel(snapshot.videoColorRange)
+  val hdrStaticMetadata = NativeStatsDisplay.hdrStaticMetadata(snapshot.videoHasHdrStaticMetadata)
   val frameRate = NativeStatsDisplay.frameRate(snapshot.videoFrameRate)
   val averageFrameOffset = NativeStatsDisplay.frameOffset(
     snapshot.frameProcessingOffsetAverageUs,
@@ -2331,17 +2343,15 @@ private fun NativeStatsPageOverlay(
   val bandwidth = NativeStatsDisplay.bandwidth(snapshot.bandwidthEstimateBps)
   val sourceSize = NativeStatsDisplay.byteSize(snapshot.sourceSizeBytes)
   val loadedBytes = NativeStatsDisplay.byteSize(snapshot.bandwidthBytesLoaded)
-  val videoBitrate = NativeStatsDisplay.bitrate(snapshot.videoBitrate.toLong())
+  val videoTrackBitrate = NativeStatsDisplay.bitrate(snapshot.videoTrackBitrate.toLong())
   val audioBitrate = NativeStatsDisplay.bitrate(snapshot.audioBitrate.toLong())
   val videoCodec = nativeStatsCodecLabel(snapshot.videoMimeType, snapshot.videoCodec)
-  val outputFormat = NativeStatsDisplay.outputSummary(
-    resolution = outputQuality,
-    dynamicRange = snapshot.videoDynamicRange,
-    colorSpace = snapshot.videoColorSpace,
-    codec = videoCodec,
-    includeMissingParts = true,
-  )
+  val videoCodecString = NativeStatsDisplay.knownLabel(snapshot.videoCodec)
   val videoDecoder = NativeStatsDisplay.knownLabel(snapshot.videoDecoder)
+  val renderedFrames = NativeStatsDisplay.frameCount(snapshot.videoRenderedOutputBuffers)
+  val skippedInputFrames = NativeStatsDisplay.frameCount(snapshot.videoSkippedInputBuffers)
+  val skippedOutputFrames = NativeStatsDisplay.frameCount(snapshot.videoSkippedOutputBuffers)
+  val droppedFrames = NativeStatsDisplay.frameCount(snapshot.videoDroppedBuffers)
   val audioCodec = NativeStatsDisplay.knownLabel(snapshot.audioCodec)
   val audioDecoder = NativeStatsDisplay.knownLabel(snapshot.audioDecoder)
   val audioChannels = NativeStatsDisplay.audioChannels(snapshot.audioChannels)
@@ -2360,14 +2370,45 @@ private fun NativeStatsPageOverlay(
       when (page) {
         1 -> {
           Text(
-            "Output: $outputFormat",
+            "Video track (input): $videoCodec · codec/profile string: $videoCodecString · " +
+              "$inputResolution · AR $inputAspectRatio · $frameRate",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
-          Text("Video: $videoCodec · Decoder: $videoDecoder", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text(
-            "Bitrate: $videoBitrate · $frameRate · Dropped: ${snapshot.droppedVideoFrames} · " +
-              "Duration: $duration",
+            "Media3 renderer-reported video size: $rendererResolution · AR $rendererAspectRatio",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Video decoder: $videoDecoder · operating mode: -- (not exposed by Media3 analytics)",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Color: ${NativeStatsDisplay.knownLabel(snapshot.videoDynamicRange)} · $bitDepth · " +
+              "primaries ISO $primaries · transfer ISO $transfer · matrix ISO $matrix · range $colorRange",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "HDR static metadata (CTA-861.3): $hdrStaticMetadata",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Video track bitrate (format): $videoTrackBitrate · Network bandwidth estimate (Media3): $bandwidth",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Frames: rendered $renderedFrames · skipped input/output $skippedInputFrames/$skippedOutputFrames · " +
+              "dropped $droppedFrames",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.White,
+          )
+          Text(
+            "Position: $position / $duration · Buffer ahead: $bufferAhead",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
@@ -2379,7 +2420,7 @@ private fun NativeStatsPageOverlay(
         }
         2 -> {
           Text("Audio: $audioCodec · Decoder: $audioDecoder", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Bitrate: $audioBitrate · $audioChannels · $audioSampleRate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio track bitrate: $audioBitrate · $audioChannels · $audioSampleRate", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Tracks: ${snapshot.audioTracks.size} audio · ${snapshot.subtitleTracks.size} subtitles", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         3 -> {
@@ -2399,26 +2440,22 @@ private fun NativeStatsPageOverlay(
           )
         }
         5 -> {
-          Text(
-            "Output: $outputFormat",
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.White,
-          )
-          Text("Video: $videoCodec · $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video track (input): $videoCodec · track bitrate: $videoTrackBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Audio: $audioCodec · $audioBitrate · Chapters: ${snapshot.chapters.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Source size: $sourceSize", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text(
-            "Bandwidth estimate: $bandwidth · Bytes loaded: $loadedBytes",
+            "Network bandwidth estimate (Media3): $bandwidth · Bytes loaded: $loadedBytes",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
         }
         else -> {
           Text("Ready: ${snapshot.isReady}", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Video bitrate: $videoBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Audio bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Video track bitrate: $videoTrackBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Audio track bitrate: $audioBitrate", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text(
-            "Frames: $frameRate · dropped: ${snapshot.droppedVideoFrames} · offset avg: $averageFrameOffset",
+            "Frames: $frameRate · rendered $renderedFrames · skipped input/output $skippedInputFrames/$skippedOutputFrames · " +
+              "dropped $droppedFrames · offset avg: $averageFrameOffset",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )

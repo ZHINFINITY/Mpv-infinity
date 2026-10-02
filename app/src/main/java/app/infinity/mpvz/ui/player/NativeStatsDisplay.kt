@@ -6,35 +6,43 @@ import java.util.Locale
 internal object NativeStatsDisplay {
   const val UNAVAILABLE = "--"
 
-  fun resolution(
-    outputWidth: Int,
-    outputHeight: Int,
-    inputWidth: Int,
-    inputHeight: Int,
-  ): String {
-    val (width, height) =
-      if (outputWidth > 0 && outputHeight > 0) {
-        outputWidth to outputHeight
-      } else {
-        inputWidth to inputHeight
-      }
-    return if (width > 0 && height > 0) "${width}×${height}" else UNAVAILABLE
+  fun resolution(width: Int, height: Int): String =
+    if (width > 0 && height > 0) "${width}×${height}" else UNAVAILABLE
+
+  /** Returns the aspect ratio represented by the supplied Media3 dimensions and pixel ratio. */
+  fun aspectRatio(width: Int, height: Int, pixelWidthHeightRatio: Float?): String {
+    if (width <= 0 || height <= 0 || pixelWidthHeightRatio == null ||
+      !pixelWidthHeightRatio.isFinite() || pixelWidthHeightRatio <= 0f
+    ) {
+      return UNAVAILABLE
+    }
+    val ratio = width.toDouble() * pixelWidthHeightRatio / height.toDouble()
+    return ratio.takeIf { it.isFinite() && it > 0.0 }
+      ?.let { String.format(Locale.ROOT, "%.3f:1", it) }
+      ?: UNAVAILABLE
   }
 
-  fun outputSummary(
-    resolution: String,
-    dynamicRange: String?,
-    colorSpace: String?,
-    codec: String?,
-    includeMissingParts: Boolean = false,
-  ): String {
-    val parts = listOf(resolution, dynamicRange, colorSpace, codec)
-      .map { value -> value?.trim()?.takeIf { it.isNotEmpty() && it != UNAVAILABLE } }
-    val displayParts =
-      if (includeMissingParts) parts.map { it ?: UNAVAILABLE }
-      else parts.filterNotNull().ifEmpty { listOf(UNAVAILABLE) }
-    return displayParts.joinToString(" · ")
+  fun bitDepth(lumaBitDepth: Int?, chromaBitDepth: Int?): String {
+    val luma = lumaBitDepth?.takeIf { it > 0 }
+    val chroma = chromaBitDepth?.takeIf { it > 0 }
+    return when {
+      luma != null && chroma != null && luma == chroma -> "$luma-bit"
+      luma != null && chroma != null -> "luma $luma-bit / chroma $chroma-bit"
+      luma != null -> "$luma-bit luma"
+      chroma != null -> "$chroma-bit chroma"
+      else -> UNAVAILABLE
+    }
   }
+
+  fun isoCode(value: Int?): String = value?.takeIf { it > 0 }?.toString() ?: UNAVAILABLE
+
+  fun hdrStaticMetadata(present: Boolean?): String = when (present) {
+    true -> "present"
+    false -> "not signalled"
+    null -> UNAVAILABLE
+  }
+
+  fun frameCount(value: Long?): String = value?.takeIf { it >= 0L }?.toString() ?: UNAVAILABLE
 
   fun knownLabel(value: String?): String =
     value?.trim()?.takeIf(String::isNotEmpty) ?: UNAVAILABLE
