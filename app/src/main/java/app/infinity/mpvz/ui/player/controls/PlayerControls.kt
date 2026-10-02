@@ -140,6 +140,7 @@ import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.Decoder.Companion.getDecoderFromValue
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
+import app.infinity.mpvz.ui.player.NativeStatsDisplay
 import app.infinity.mpvz.ui.player.Panels
 import app.infinity.mpvz.ui.player.PlayerActivity
 import app.infinity.mpvz.ui.player.PlayerUpdates
@@ -2312,41 +2313,42 @@ private fun NativeStatsPageOverlay(
   snapshot: NativePlaybackSnapshot,
   modifier: Modifier = Modifier,
 ) {
-  val quality = if (snapshot.videoWidth > 0 && snapshot.videoHeight > 0) {
-    "${snapshot.videoWidth}×${snapshot.videoHeight}"
-  } else {
-    "--"
-  }
-  val outputQuality = if (snapshot.videoOutputWidth > 0 && snapshot.videoOutputHeight > 0) {
-    "${snapshot.videoOutputWidth}×${snapshot.videoOutputHeight}"
-  } else {
-    quality
-  }
-  val frameRate = snapshot.videoFrameRate.takeIf { it > 0f && it.isFinite() }
-    ?.let { "${"%.2f".format(it)} fps" } ?: "--"
-  val averageFrameOffset = if (snapshot.frameProcessingSampleCount > 0L) {
-    "${"%.1f".format(snapshot.frameProcessingOffsetAverageUs / 1000.0)} ms"
-  } else {
-    "--"
-  }
-  val lastFrameOffset = if (snapshot.frameProcessingSampleCount > 0L) {
-    "${"%.1f".format(snapshot.frameProcessingOffsetLastUs / 1000.0)} ms"
-  } else {
-    "--"
-  }
-  val bandwidth = snapshot.bandwidthEstimateBps.takeIf { it > 0L }
-    ?.let { "${it / 1_000} kbps" } ?: "--"
-  val sourceSize = snapshot.sourceSizeBytes.takeIf { it > 0L }?.let {
-    if (it >= 1_073_741_824L) "${"%.2f".format(it / 1_073_741_824.0)} GiB" else "${it / 1_048_576L} MiB"
-  } ?: "--"
-  val videoBitrate = if (snapshot.videoBitrate > 0) "${snapshot.videoBitrate / 1000} kbps" else "--"
-  val audioBitrate = if (snapshot.audioBitrate > 0) "${snapshot.audioBitrate / 1000} kbps" else "--"
+  val outputQuality = NativeStatsDisplay.resolution(
+    outputWidth = snapshot.videoOutputWidth,
+    outputHeight = snapshot.videoOutputHeight,
+    inputWidth = snapshot.videoWidth,
+    inputHeight = snapshot.videoHeight,
+  )
+  val frameRate = NativeStatsDisplay.frameRate(snapshot.videoFrameRate)
+  val averageFrameOffset = NativeStatsDisplay.frameOffset(
+    snapshot.frameProcessingOffsetAverageUs,
+    snapshot.frameProcessingSampleCount,
+  )
+  val lastFrameOffset = NativeStatsDisplay.frameOffset(
+    snapshot.frameProcessingOffsetLastUs,
+    snapshot.frameProcessingSampleCount,
+  )
+  val bandwidth = NativeStatsDisplay.bandwidth(snapshot.bandwidthEstimateBps)
+  val sourceSize = NativeStatsDisplay.byteSize(snapshot.sourceSizeBytes)
+  val loadedBytes = NativeStatsDisplay.byteSize(snapshot.bandwidthBytesLoaded)
+  val videoBitrate = NativeStatsDisplay.bitrate(snapshot.videoBitrate.toLong())
+  val audioBitrate = NativeStatsDisplay.bitrate(snapshot.audioBitrate.toLong())
   val videoCodec = nativeStatsCodecLabel(snapshot.videoMimeType, snapshot.videoCodec)
-  val videoDecoder = snapshot.videoDecoder ?: "Media3"
-  val outputRange = snapshot.videoDynamicRange ?: "--"
-  val colorSpace = snapshot.videoColorSpace ?: "--"
-  val audioCodec = snapshot.audioCodec ?: "--"
-  val audioDecoder = snapshot.audioDecoder ?: "Media3"
+  val outputFormat = NativeStatsDisplay.outputSummary(
+    resolution = outputQuality,
+    dynamicRange = snapshot.videoDynamicRange,
+    colorSpace = snapshot.videoColorSpace,
+    codec = videoCodec,
+    includeMissingParts = true,
+  )
+  val videoDecoder = NativeStatsDisplay.knownLabel(snapshot.videoDecoder)
+  val audioCodec = NativeStatsDisplay.knownLabel(snapshot.audioCodec)
+  val audioDecoder = NativeStatsDisplay.knownLabel(snapshot.audioDecoder)
+  val audioChannels = NativeStatsDisplay.audioChannels(snapshot.audioChannels)
+  val audioSampleRate = NativeStatsDisplay.audioSampleRate(snapshot.audioSampleRate)
+  val duration = NativeStatsDisplay.duration(snapshot.durationMs)
+  val position = NativeStatsDisplay.position(snapshot.positionMs)
+  val bufferAhead = NativeStatsDisplay.bufferedDuration(snapshot.totalBufferedDurationMs)
   Surface(
     modifier = modifier,
     color = Color.Transparent,
@@ -2358,26 +2360,26 @@ private fun NativeStatsPageOverlay(
       when (page) {
         1 -> {
           Text(
-            "Output: $outputQuality · $outputRange · $colorSpace",
+            "Output: $outputFormat",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
           Text("Video: $videoCodec · Decoder: $videoDecoder", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text(
             "Bitrate: $videoBitrate · $frameRate · Dropped: ${snapshot.droppedVideoFrames} · " +
-              "Duration: ${snapshot.durationMs / 1000}s",
+              "Duration: $duration",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
           Text(
-            "Frame processing offset: avg $averageFrameOffset · last $lastFrameOffset",
+            "Frame processing offset: avg $averageFrameOffset · last batch avg $lastFrameOffset",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
         }
         2 -> {
           Text("Audio: $audioCodec · Decoder: $audioDecoder", style = MaterialTheme.typography.bodySmall, color = Color.White)
-          Text("Bitrate: $audioBitrate · ${snapshot.audioChannels} ch · ${snapshot.audioSampleRate} Hz", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Bitrate: $audioBitrate · $audioChannels · $audioSampleRate", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Tracks: ${snapshot.audioTracks.size} audio · ${snapshot.subtitleTracks.size} subtitles", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         3 -> {
@@ -2386,11 +2388,11 @@ private fun NativeStatsPageOverlay(
           Text("Selected subtitles: ${snapshot.subtitleTracks.count { it.selected }}", style = MaterialTheme.typography.bodySmall, color = Color.White)
         }
         4 -> {
-          Text("Position: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Position: $position / $duration", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Speed: ${"%.2f".format(snapshot.speed)}×", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("State: ${if (snapshot.isBuffering) "Buffering" else if (snapshot.isPlaying) "Playing" else "Paused"}", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text(
-            "Buffer ahead: ${String.format("%.1f", snapshot.totalBufferedDurationMs / 1000.0)}s · " +
+            "Buffer ahead: $bufferAhead · " +
               "Loading: ${snapshot.isLoading}",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
@@ -2398,7 +2400,7 @@ private fun NativeStatsPageOverlay(
         }
         5 -> {
           Text(
-            "Output: $outputRange · $colorSpace · $outputQuality",
+            "Output: $outputFormat",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
@@ -2406,7 +2408,7 @@ private fun NativeStatsPageOverlay(
           Text("Audio: $audioCodec · $audioBitrate · Chapters: ${snapshot.chapters.size}", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text("Source size: $sourceSize", style = MaterialTheme.typography.bodySmall, color = Color.White)
           Text(
-            "Bandwidth estimate: $bandwidth · Last sample: ${snapshot.bandwidthBytesLoaded / 1024} KiB",
+            "Bandwidth estimate: $bandwidth · Bytes loaded: $loadedBytes",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
@@ -2420,10 +2422,10 @@ private fun NativeStatsPageOverlay(
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
-          Text("Playback: ${snapshot.positionMs / 1000}s / ${snapshot.durationMs / 1000}s", style = MaterialTheme.typography.bodySmall, color = Color.White)
+          Text("Playback: $position / $duration", style = MaterialTheme.typography.bodySmall, color = Color.White)
           val state = if (snapshot.isBuffering) "Buffering" else if (snapshot.isPlaying) "Playing" else "Paused"
           Text(
-            "State: $state · ahead: ${String.format("%.1f", snapshot.totalBufferedDurationMs / 1000.0)}s · loading: ${snapshot.isLoading}",
+            "State: $state · ahead: $bufferAhead · loading: ${snapshot.isLoading}",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )

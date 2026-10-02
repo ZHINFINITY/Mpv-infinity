@@ -10,6 +10,7 @@
 package app.infinity.mpvz.ui.player.controls.components.sheets
 
 import app.infinity.mpvz.ui.player.NativePlaybackSnapshot
+import app.infinity.mpvz.ui.player.NativeStatsDisplay
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
 
@@ -240,46 +241,20 @@ fun MoreSheet(
         Column(modifier = Modifier.fillMaxWidth().padding(MaterialTheme.spacing.small)) {
           Text("Engine: ${activeEngine.title}", style = MaterialTheme.typography.titleSmall)
           if (activeEngine == PlaybackEngineMode.NATIVE) {
-            val quality = if (nativeSnapshot.videoWidth > 0 && nativeSnapshot.videoHeight > 0) {
-              "${nativeSnapshot.videoWidth}×${nativeSnapshot.videoHeight}"
-            } else {
-              "Preparing output"
-            }
-            val outputQuality = if (nativeSnapshot.videoOutputWidth > 0 && nativeSnapshot.videoOutputHeight > 0) {
-              "${nativeSnapshot.videoOutputWidth}×${nativeSnapshot.videoOutputHeight}"
-            } else {
-              quality
-            }
-            val frameRate = nativeSnapshot.videoFrameRate.takeIf { it > 0f && it.isFinite() }
-              ?.let { "${"%.2f".format(it)} fps" } ?: "--"
-            val frameOffset = if (nativeSnapshot.frameProcessingSampleCount > 0L) {
-              "${"%.1f".format(nativeSnapshot.frameProcessingOffsetAverageUs / 1000.0)} ms avg"
-            } else {
-              "--"
-            }
-            val bandwidth = nativeSnapshot.bandwidthEstimateBps.takeIf { it > 0L }
-              ?.let { "${it / 1_000} kbps" } ?: "--"
+            val outputQuality = NativeStatsDisplay.resolution(
+              outputWidth = nativeSnapshot.videoOutputWidth,
+              outputHeight = nativeSnapshot.videoOutputHeight,
+              inputWidth = nativeSnapshot.videoWidth,
+              inputHeight = nativeSnapshot.videoHeight,
+            )
             val codec = nativeCodecLabel(nativeSnapshot.videoMimeType, nativeSnapshot.videoCodec)
-            val decoder = nativeSnapshot.videoDecoder ?: "Media3"
-            val range = nativeSnapshot.videoDynamicRange ?: "SDR"
-            val colorSpace = nativeSnapshot.videoColorSpace?.let { " · $it" }.orEmpty()
-            val audio = nativeSnapshot.audioCodec
-              ?: if (nativeSnapshot.audioTracks.isNotEmpty()) "Audio" else "--"
             Text(
-              "Output: $outputQuality · $range$colorSpace · $codec",
-              style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-              "Decoder: $decoder · Audio: $audio · ${if (nativeSnapshot.isPlaying) "Playing" else "Paused"}",
-              style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-              "Frames: $frameRate · dropped ${nativeSnapshot.droppedVideoFrames} · offset $frameOffset",
-              style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-              "Buffer ahead: ${String.format("%.1f", nativeSnapshot.totalBufferedDurationMs / 1000.0)}s · " +
-                "Bandwidth: $bandwidth",
+              "Output: ${NativeStatsDisplay.outputSummary(
+                resolution = outputQuality,
+                dynamicRange = nativeSnapshot.videoDynamicRange,
+                colorSpace = nativeSnapshot.videoColorSpace,
+                codec = codec,
+              )}",
               style = MaterialTheme.typography.bodySmall,
             )
           } else {
