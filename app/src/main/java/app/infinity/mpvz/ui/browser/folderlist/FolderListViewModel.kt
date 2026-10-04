@@ -18,6 +18,7 @@ import app.infinity.mpvz.domain.media.model.VideoFolder
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.preferences.AppearancePreferences
+import app.infinity.mpvz.preferences.FolderBlacklistMatcher
 import app.infinity.mpvz.preferences.FoldersPreferences
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
@@ -181,10 +182,7 @@ class FolderListViewModel(
         folders.filter { folder ->
           (rootPath.isNullOrBlank() || folder.path.equals(rootPath, ignoreCase = true) ||
             folder.path.startsWith(rootPath.trimEnd('/') + "/", ignoreCase = true)) &&
-          blacklist.none { blacklisted ->
-            folder.path.equals(blacklisted, ignoreCase = true) ||
-              folder.path.startsWith(if (blacklisted.endsWith("/")) blacklisted else "$blacklisted/", ignoreCase = true)
-          }
+          !FolderBlacklistMatcher.isBlacklisted(folder.path, blacklist)
         }
       }.collectLatest { filteredFolders ->
         // Check if folders became empty after having folders

@@ -11,6 +11,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.infinity.mpvz.database.entities.PlaylistEntity
 import app.infinity.mpvz.database.repository.PlaylistRepository
+import app.infinity.mpvz.preferences.FolderBlacklistMatcher
 import app.infinity.mpvz.ui.player.PlaybackItem
 import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.player.PreparedPlaybackLaunchStore
@@ -200,16 +201,13 @@ class MusicLibraryViewModel : ViewModel(), KoinComponent {
   /**
    * Minimum duration is a lower bound only. There is intentionally no upper bound: if the user
    * selects 30 seconds, every 30s, 3min, 30min, or multi-hour audio file remains in the library.
-   * Also filters out songs whose path starts with any blacklisted audio folder path.
+   * Also filters songs directly contained in an explicitly blacklisted audio folder.
    */
   private fun applyFilters(minimumSeconds: Int, blacklist: Set<String>) {
     val minimumMs = minimumSeconds.coerceAtLeast(0).toLong() * 1000L
     val visibleSongs = _allSongs.value.filter { song ->
       val meetsDuration = (minimumMs == 0L || song.durationMs >= minimumMs)
-      val isNotBlacklisted = blacklist.none { folderPath ->
-        song.path.equals(folderPath, ignoreCase = true) ||
-          song.path.startsWith(if (folderPath.endsWith("/")) folderPath else "$folderPath/", ignoreCase = true)
-      }
+      val isNotBlacklisted = !FolderBlacklistMatcher.isMediaFileBlacklisted(song.path, blacklist)
       meetsDuration && isNotBlacklisted
     }
 
