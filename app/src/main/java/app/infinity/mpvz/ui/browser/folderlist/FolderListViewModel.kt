@@ -177,35 +177,28 @@ class FolderListViewModel(
     }
 
     viewModelScope.launch {
-      combine(_allVideoFolders, blacklistFlow) { folders, blacklist ->
-        folders.filter { folder ->
-          (rootPath.isNullOrBlank() || folder.path.equals(rootPath, ignoreCase = true) ||
-            folder.path.startsWith(rootPath.trimEnd('/') + "/", ignoreCase = true)) &&
-          blacklist.none { blacklisted ->
-            folder.path.equals(blacklisted, ignoreCase = true) ||
-              folder.path.startsWith(if (blacklisted.endsWith("/")) blacklisted else "$blacklisted/", ignoreCase = true)
+      FolderListBlacklistFilter
+        .observe(_allVideoFolders, blacklistFlow, rootPath)
+        .collectLatest { filteredFolders ->
+          // Check if folders became empty after having folders
+          if (previousFolderCount > 0 && filteredFolders.isEmpty()) {
+            _foldersWereDeleted.value = true
+            Log.d(TAG, "Folders became empty (had $previousFolderCount folders before)")
+          } else if (filteredFolders.isNotEmpty()) {
+            // Reset flag if folders now exist
+            _foldersWereDeleted.value = false
           }
+
+          // Update previous count
+          previousFolderCount = filteredFolders.size
+
+          _videoFolders.value = filteredFolders
+          // Calculate new video counts for each folder
+          calculateNewVideoCounts(filteredFolders)
+
+          // Save to cache for next app launch (save unfiltered list)
+          saveFoldersToCache(_allVideoFolders.value)
         }
-      }.collectLatest { filteredFolders ->
-        // Check if folders became empty after having folders
-        if (previousFolderCount > 0 && filteredFolders.isEmpty()) {
-          _foldersWereDeleted.value = true
-          Log.d(TAG, "Folders became empty (had $previousFolderCount folders before)")
-        } else if (filteredFolders.isNotEmpty()) {
-          // Reset flag if folders now exist
-          _foldersWereDeleted.value = false
-        }
-
-        // Update previous count
-        previousFolderCount = filteredFolders.size
-
-        _videoFolders.value = filteredFolders
-        // Calculate new video counts for each folder
-        calculateNewVideoCounts(filteredFolders)
-
-        // Save to cache for next app launch (save unfiltered list)
-        saveFoldersToCache(_allVideoFolders.value)
-      }
     }
   }
 
