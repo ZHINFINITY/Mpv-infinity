@@ -18,7 +18,6 @@ import app.infinity.mpvz.domain.media.model.VideoFolder
 import app.infinity.mpvz.domain.playbackstate.repository.PlaybackStateRepository
 import app.infinity.mpvz.database.entities.PlaybackStateEntity
 import app.infinity.mpvz.preferences.AppearancePreferences
-import app.infinity.mpvz.preferences.FolderBlacklistMatcher
 import app.infinity.mpvz.preferences.FoldersPreferences
 import app.infinity.mpvz.repository.MediaFileRepository
 import app.infinity.mpvz.ui.browser.base.BaseBrowserViewModel
@@ -178,32 +177,28 @@ class FolderListViewModel(
     }
 
     viewModelScope.launch {
-      combine(_allVideoFolders, blacklistFlow) { folders, blacklist ->
-        folders.filter { folder ->
-          (rootPath.isNullOrBlank() || folder.path.equals(rootPath, ignoreCase = true) ||
-            folder.path.startsWith(rootPath.trimEnd('/') + "/", ignoreCase = true)) &&
-          !FolderBlacklistMatcher.isBlacklisted(folder.path, blacklist)
+      FolderListBlacklistFilter
+        .observe(_allVideoFolders, blacklistFlow, rootPath)
+        .collectLatest { filteredFolders ->
+          // Check if folders became empty after having folders
+          if (previousFolderCount > 0 && filteredFolders.isEmpty()) {
+            _foldersWereDeleted.value = true
+            Log.d(TAG, "Folders became empty (had $previousFolderCount folders before)")
+          } else if (filteredFolders.isNotEmpty()) {
+            // Reset flag if folders now exist
+            _foldersWereDeleted.value = false
+          }
+
+          // Update previous count
+          previousFolderCount = filteredFolders.size
+
+          _videoFolders.value = filteredFolders
+          // Calculate new video counts for each folder
+          calculateNewVideoCounts(filteredFolders)
+
+          // Save to cache for next app launch (save unfiltered list)
+          saveFoldersToCache(_allVideoFolders.value)
         }
-      }.collectLatest { filteredFolders ->
-        // Check if folders became empty after having folders
-        if (previousFolderCount > 0 && filteredFolders.isEmpty()) {
-          _foldersWereDeleted.value = true
-          Log.d(TAG, "Folders became empty (had $previousFolderCount folders before)")
-        } else if (filteredFolders.isNotEmpty()) {
-          // Reset flag if folders now exist
-          _foldersWereDeleted.value = false
-        }
-
-        // Update previous count
-        previousFolderCount = filteredFolders.size
-
-        _videoFolders.value = filteredFolders
-        // Calculate new video counts for each folder
-        calculateNewVideoCounts(filteredFolders)
-
-        // Save to cache for next app launch (save unfiltered list)
-        saveFoldersToCache(_allVideoFolders.value)
-      }
     }
   }
 
