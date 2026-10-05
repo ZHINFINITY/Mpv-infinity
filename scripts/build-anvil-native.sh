@@ -19,11 +19,11 @@ export cores="${ANVIL_BUILD_CORES:-2}"
 export NDK_LIBS_OUT="$ANVIL_DIR/app/src/main/libs"
 mkdir -p "$NDK_LIBS_OUT"
 
-python3 - "$BUILDSCRIPTS/include/ci.sh" "$BUILDSCRIPTS/include/depinfo.sh" <<'PY'
+python3 - "$BUILDSCRIPTS/include/ci.sh" "$BUILDSCRIPTS/include/depinfo.sh" "$BUILDSCRIPTS/buildall.sh" <<'PY'
 from pathlib import Path
 import sys
 
-ci_path, depinfo_path = map(Path, sys.argv[1:])
+ci_path, depinfo_path, buildall_path = map(Path, sys.argv[1:])
 lines = ci_path.read_text().splitlines()
 expected = [
     'msg "Fetching mpv"',
@@ -59,6 +59,19 @@ depinfo = depinfo_path.read_text()
 if depinfo.count("v_ci_ffmpeg=n8.0.1") != 1:
     raise SystemExit(f"Expected ANVIL's pinned FFmpeg 8.0.1 line in {depinfo_path}")
 depinfo_path.write_text(depinfo.replace("v_ci_ffmpeg=n8.0.1", "v_ci_ffmpeg=n8.1", 1))
+
+qairt_script = buildall_path.parent / "scripts/qairt.sh"
+if not qairt_script.is_file():
+    raise SystemExit(f"Expected ANVIL's no-QAIRT build script at {qairt_script}")
+buildall = buildall_path.read_text()
+old_guard = 'if [[ $1 != "mpv-android" && ! -d deps/$1 ]]; then'
+new_guard = 'if [[ $1 != "mpv-android" && ! -d deps/$1 && ! -f scripts/$1.sh ]]; then'
+if buildall.count(old_guard) == 1 and new_guard not in buildall:
+    buildall = buildall.replace(old_guard, new_guard, 1)
+elif buildall.count(new_guard) != 1 or old_guard in buildall:
+    raise SystemExit(f"Expected one ANVIL target guard in {buildall_path}; refusing unsafe patch")
+buildall_path.write_text(buildall)
+print("Patched ANVIL buildall to allow script-only targets such as qairt")
 PY
 
 cd "$BUILDSCRIPTS"
