@@ -42,7 +42,13 @@ jobs:
           java-version: '17'
           cache: gradle
       - name: Install ANVIL native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build meson nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl
+          pipx install meson==1.6.1
+          export PATH="$HOME/.local/bin:$PATH"
+          meson --version
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
       - name: Build ANVIL + MPV native arm64 debug package
