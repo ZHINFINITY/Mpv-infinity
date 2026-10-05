@@ -29,7 +29,7 @@ def main() -> None:
         print("FFmpeg Android symver capability probe already enabled")
     else:
         raise SystemExit(
-            f"Expected exactly one pristine FFmpeg 8.1 Android symver block in {configure}; refusing unsafe patch"
+            f"Expected exactly one pristine FFmpeg Android symver block in {configure}; refusing unsafe patch"
         )
 
 

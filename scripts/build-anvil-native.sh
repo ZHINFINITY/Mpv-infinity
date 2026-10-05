@@ -67,7 +67,8 @@ print("Prepared ANVIL's deps/qairt work directory and restored FFmpeg's Android 
 depinfo = depinfo_path.read_text()
 if depinfo.count("v_ci_ffmpeg=n8.0.1") != 1:
     raise SystemExit(f"Expected ANVIL's pinned FFmpeg 8.0.1 line in {depinfo_path}")
-depinfo_path.write_text(depinfo.replace("v_ci_ffmpeg=n8.0.1", "v_ci_ffmpeg=n8.1", 1))
+depinfo_path.write_text(depinfo.replace("v_ci_ffmpeg=n8.0.1", "v_ci_ffmpeg=n9.0.2", 1))
+print("Pinned FFmpeg 9.0.2 (libavcodec/libavformat 63, libavutil 61) for MPV∞ ABI")
 PY
 
 cd "$BUILDSCRIPTS"

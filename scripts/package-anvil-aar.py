@@ -115,6 +115,8 @@ def main() -> None:
             raise SystemExit(
                 "The preserved MPV∞ JNI bridge needs FFmpeg ABI versions not supplied by ANVIL: "
                 + ", ".join(missing_tags)
+                + "; ANVIL exports: "
+                + (", ".join(sorted(provided_tags)) or "no FFmpeg version tags")
             )
 
     overlay = {
