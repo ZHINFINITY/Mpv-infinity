@@ -17,6 +17,13 @@ export DONT_BUILD_RELEASE=1
 export CACHE_MODE=none
 export cores="${ANVIL_BUILD_CORES:-2}"
 export NDK_LIBS_OUT="$ANVIL_DIR/app/src/main/jniLibs"
+if [[ -f "$NDK_LIBS_OUT" && ! -d "$NDK_LIBS_OUT" ]]; then
+  if [[ -s "$NDK_LIBS_OUT" ]]; then
+    echo "Refusing to replace non-empty ANVIL jniLibs path: $NDK_LIBS_OUT" >&2
+    exit 1
+  fi
+  rm -- "$NDK_LIBS_OUT"
+fi
 mkdir -p "$NDK_LIBS_OUT"
 
 python3 - "$BUILDSCRIPTS/include/ci.sh" "$BUILDSCRIPTS/include/depinfo.sh" <<'PY'
