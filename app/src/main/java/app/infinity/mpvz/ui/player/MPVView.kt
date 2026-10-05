@@ -229,9 +229,18 @@ class MPVView(
 
     // Fongmi can map direct MediaCodec frames into Vulkan; other Vulkan builds start with copy mode.
     if (frameInterpolationEnabled) {
-      // ANVIL consumes FFmpeg-exported H.264 motion vectors and must receive software frames.
-      PlaybackSession.setOptionString("hwdec", "no")
-      PlaybackSession.setOptionString("vd-lavc-o", "flags2=+export_mvs")
+      // ANVIL needs software frames and FFmpeg-exported motion-vector side data.
+      val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
+      val motionVectorExportOptionResult =
+        PlaybackSession.setOptionString("vd-lavc-o", "flags2=+export_mvs")
+      PlaybackSession.configureAnvilDecoderOptions(
+        softwareDecodeOptionAccepted = softwareDecodeOptionResult == 0,
+        motionVectorExportOptionAccepted = motionVectorExportOptionResult == 0,
+      )
+      Log.i(
+        TAG,
+        "ANVIL_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult export_mvs_rc=$motionVectorExportOptionResult",
+      )
     } else if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HARDWARE_DECODER)) {
       PlaybackSession.setOptionString(
         "hwdec",

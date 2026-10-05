@@ -107,7 +107,7 @@ static void *htp_thread_fn(void *arg)
     source = replace_once(
         source,
         "struct priv {\n    enum anvil_state state;\n    int frame_count;",
-        "struct priv {\n    enum anvil_state state;\n    int frame_count;\n    int last_motion_vectors;\n    int last_backend_vulkan;\n    uint64_t generated_frames;",
+        "struct priv {\n    enum anvil_state state;\n    int frame_count;\n    int last_motion_vectors;\n    int last_backend_vulkan;\n    int interval_max_motion_vectors;\n    int interval_vector_frames;\n    uint64_t generated_frames;",
         "filter counters",
     )
     source = replace_once(
@@ -187,24 +187,24 @@ static void *htp_thread_fn(void *arg)
     )
     source = replace_once(
         source,
-        '''            break;
-        }
-    }
-
-    if (p->frame_count % 60 == 1) {
-        MP_INFO(f, "ANVIL: frame %d, %dx%d, %d MVs, qnn=%d, async=%d\\n",
-                p->frame_count, W, H, n_mvs, p->qnn.ready, p->htp_thread_created);
+        '''    if (p->frame_count % 60 == 1) {
+        MP_INFO(f, "ANVIL[INPUT]: frames=%d resolution=%dx%d motion_vectors=%d motion_vector_side_data=%s\\n",
+                p->frame_count, W, H, n_mvs, motion_vector_side_data);
     }
 
     // First frame''',
-        '''            break;
-        }
-    }
-    p->last_motion_vectors = n_mvs;
+        '''    p->last_motion_vectors = n_mvs;
+    if (n_mvs > p->interval_max_motion_vectors)
+        p->interval_max_motion_vectors = n_mvs;
+    if (n_mvs > 0)
+        p->interval_vector_frames++;
 
     if (p->frame_count % 60 == 1) {
-        MP_INFO(f, "ANVIL[INPUT]: frames=%d resolution=%dx%d motion_vectors=%d\\n",
-                p->frame_count, W, H, n_mvs);
+        MP_INFO(f, "ANVIL[INPUT]: frames=%d resolution=%dx%d motion_vectors=%d motion_vector_side_data=%s interval_max_motion_vectors=%d vector_frames=%d\\n",
+                p->frame_count, W, H, n_mvs, motion_vector_side_data,
+                p->interval_max_motion_vectors, p->interval_vector_frames);
+        p->interval_max_motion_vectors = 0;
+        p->interval_vector_frames = 0;
     }
 
     // First frame''',
@@ -270,6 +270,8 @@ static void *htp_thread_fn(void *arg)
         "    p->frame_count = 0;\n"
         "    p->last_motion_vectors = 0;\n"
         "    p->last_backend_vulkan = 0;\n"
+        "    p->interval_max_motion_vectors = 0;\n"
+        "    p->interval_vector_frames = 0;\n"
         "    p->generated_frames = 0;\n"
         "    MP_INFO(f, \"ANVIL[RESET]: generated_frames=0\\n\");",
         "frame counter reset",

@@ -53,9 +53,14 @@ data class AnvilFrameInterpolationTelemetry(
   val filterSeen: Boolean = false,
   val inputFrames: Long = 0L,
   val lastMotionVectors: Int = 0,
+  val intervalMaxMotionVectors: Int = 0,
+  val intervalVectorFrames: Int = 0,
   val generatedFrames: Long = 0L,
   val backend: String = "unknown",
   val qnn: String = "unknown",
+  val motionVectorSideData: String = "unknown",
+  val softwareDecodeOptionAccepted: Boolean? = null,
+  val motionVectorExportOptionAccepted: Boolean? = null,
 )
 
 data class PlaybackPositionRestoreOverride(
@@ -163,7 +168,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private val anvilGeneratedLog =
     Regex("""ANVIL\[GENERATED]: count=(\d+) input_frame=(\d+) motion_vectors=(\d+) backend=(vulkan|cpu) qnn=(active|disabled)""")
   private val anvilInputLog =
-    Regex("""ANVIL\[INPUT]: frames=(\d+) resolution=(\d+)x(\d+) motion_vectors=(\d+)""")
+    Regex("""ANVIL\[INPUT]: frames=(\d+) resolution=(\d+)x(\d+) motion_vectors=(\d+) motion_vector_side_data=(missing|empty|present)""")
   private val anvilLogObserver =
     object : MPVLib.LogObserver {
       override fun logMessage(
@@ -179,6 +184,7 @@ object PlaybackSession : MPVLib.EventObserver {
   val queue: StateFlow<PlaybackQueueState> = _queue.asStateFlow()
   val anvilFrameInterpolationTelemetry: StateFlow<AnvilFrameInterpolationTelemetry> =
     _anvilFrameInterpolationTelemetry.asStateFlow()
+  private val anvilIntervalLog = Regex("""interval_max_motion_vectors=([0-9]+) vector_frames=([0-9]+)""")
 
   @Volatile
   private var initialized = false
@@ -241,13 +247,32 @@ object PlaybackSession : MPVLib.EventObserver {
       )
   }
 
+  fun configureAnvilDecoderOptions(
+    softwareDecodeOptionAccepted: Boolean,
+    motionVectorExportOptionAccepted: Boolean,
+  ) {
+    _anvilFrameInterpolationTelemetry.update {
+      it.copy(
+        softwareDecodeOptionAccepted = softwareDecodeOptionAccepted,
+        motionVectorExportOptionAccepted = motionVectorExportOptionAccepted,
+      )
+    }
+  }
+
   private fun handleAnvilLog(text: String) {
     val line = text.trim()
     if (!line.contains("ANVIL[")) return
 
     if (line.contains("ANVIL[RESET]")) {
       _anvilFrameInterpolationTelemetry.update {
-        it.copy(inputFrames = 0L, lastMotionVectors = 0, generatedFrames = 0L)
+        it.copy(
+          inputFrames = 0L,
+          lastMotionVectors = 0,
+          intervalMaxMotionVectors = 0,
+          intervalVectorFrames = 0,
+          generatedFrames = 0L,
+          motionVectorSideData = "unknown",
+        )
       }
       return
     }
@@ -268,6 +293,7 @@ object PlaybackSession : MPVLib.EventObserver {
     }
 
     val input = anvilInputLog.find(line)
+    val interval = anvilIntervalLog.find(line)
     val backend = Regex("""backend=(vulkan|cpu)""").find(line)?.groupValues?.get(1)
     val qnn = Regex("""qnn=(active|disabled|unknown)""").find(line)?.groupValues?.get(1)
     val isCapability = line.contains("ANVIL[CAPABILITY]")
@@ -276,6 +302,9 @@ object PlaybackSession : MPVLib.EventObserver {
         filterSeen = it.filterSeen || isCapability || input != null,
         inputFrames = input?.groupValues?.get(1)?.toLongOrNull() ?: it.inputFrames,
         lastMotionVectors = input?.groupValues?.get(4)?.toIntOrNull() ?: it.lastMotionVectors,
+        motionVectorSideData = input?.groupValues?.get(5) ?: it.motionVectorSideData,
+        intervalMaxMotionVectors = interval?.groupValues?.get(1)?.toIntOrNull() ?: it.intervalMaxMotionVectors,
+        intervalVectorFrames = interval?.groupValues?.get(2)?.toIntOrNull() ?: it.intervalVectorFrames,
         backend = backend ?: it.backend,
         qnn = qnn ?: it.qnn,
       )

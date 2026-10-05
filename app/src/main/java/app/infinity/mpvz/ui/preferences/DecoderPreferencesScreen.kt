@@ -56,6 +56,7 @@ import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
+import app.infinity.mpvz.ui.player.AnvilMotionVectorExportCapability
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
 import app.infinity.mpvz.ui.player.AnvilFrameInterpolationTelemetry
@@ -63,6 +64,7 @@ import app.infinity.mpvz.ui.player.Debanding
 import app.infinity.mpvz.ui.player.MPVProfile
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 import app.infinity.mpvz.ui.player.PlaybackSession
+import app.infinity.mpvz.ui.player.anvilMotionVectorExportCapability
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -83,6 +85,8 @@ object DecoderPreferencesScreen : Screen {
     val selectedPlaybackEngine by preferences.playbackEngine.collectAsState()
     val anvilFrameInterpolationEnabled by preferences.anvilFrameInterpolation.collectAsState()
     val anvilTelemetry by PlaybackSession.anvilFrameInterpolationTelemetry.collectAsState()
+    val sourceVideoCodec by PlaybackSession.propString["video-codec"].collectAsState()
+    val activeHardwareDecoder by PlaybackSession.propString["hwdec-current"].collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
@@ -375,6 +379,8 @@ object DecoderPreferencesScreen : Screen {
                 nativeFilterIncluded = BuildConfig.MPV_HAS_ANVIL,
                 configOwned = frameInterpolationConfigOwned,
                 playbackEngine = selectedPlaybackEngine,
+                sourceCodec = sourceVideoCodec,
+                activeHardwareDecoder = activeHardwareDecoder,
               )
 
               PreferenceDivider()
@@ -556,7 +562,31 @@ private fun AnvilFrameInterpolationStatusCard(
   nativeFilterIncluded: Boolean,
   configOwned: Boolean,
   playbackEngine: PlaybackEngineMode,
+  sourceCodec: String?,
+  activeHardwareDecoder: String?,
 ) {
+  val codecCapability = anvilMotionVectorExportCapability(sourceCodec)
+  val codecLabel = sourceCodec?.takeIf { it.isNotBlank() } ?: stringResource(R.string.pref_decoder_anvil_codec_unknown)
+  val decoderLabel =
+    when {
+      activeHardwareDecoder.isNullOrBlank() -> stringResource(R.string.pref_decoder_anvil_decoder_unknown)
+      activeHardwareDecoder.equals("no", ignoreCase = true) -> stringResource(R.string.pref_decoder_anvil_decoder_software)
+      else -> stringResource(R.string.pref_decoder_anvil_decoder_hardware, activeHardwareDecoder)
+    }
+  val exportOptionLabel =
+    when (telemetry.motionVectorExportOptionAccepted) {
+      true -> stringResource(R.string.pref_decoder_anvil_option_accepted)
+      false -> stringResource(R.string.pref_decoder_anvil_option_failed)
+      null -> stringResource(R.string.pref_decoder_anvil_option_not_requested)
+    }
+  val softwareOptionLabel =
+    when (telemetry.softwareDecodeOptionAccepted) {
+      true -> stringResource(R.string.pref_decoder_anvil_option_accepted)
+      false -> stringResource(R.string.pref_decoder_anvil_option_failed)
+      null -> stringResource(R.string.pref_decoder_anvil_option_not_requested)
+    }
+  val hardwareDecoderActive =
+    activeHardwareDecoder?.let { it.isNotBlank() && !it.equals("no", ignoreCase = true) } == true
   val statusRes =
     when {
       !nativeFilterIncluded -> R.string.pref_decoder_anvil_status_missing_native
@@ -566,8 +596,23 @@ private fun AnvilFrameInterpolationStatusCard(
       telemetry.generatedFrames > 0L && telemetry.activeForCore ->
         R.string.pref_decoder_anvil_status_generating
       telemetry.generatedFrames > 0L -> R.string.pref_decoder_anvil_status_last_run
-      telemetry.filterSeen && telemetry.inputFrames > 0L && telemetry.lastMotionVectors == 0 ->
+      codecCapability == AnvilMotionVectorExportCapability.UNSUPPORTED ->
+        R.string.pref_decoder_anvil_status_codec_unsupported
+      telemetry.motionVectorExportOptionAccepted == false || telemetry.softwareDecodeOptionAccepted == false ->
+        R.string.pref_decoder_anvil_status_option_failed
+      telemetry.inputFrames > 0L && hardwareDecoderActive ->
+        R.string.pref_decoder_anvil_status_hardware_decoder
+      telemetry.inputFrames > 0L && telemetry.lastMotionVectors == 0 &&
+        telemetry.intervalVectorFrames == 0 &&
+        codecCapability == AnvilMotionVectorExportCapability.SUPPORTED ->
+        R.string.pref_decoder_anvil_status_supported_no_vectors
+      telemetry.inputFrames > 0L && telemetry.lastMotionVectors == 0 &&
+        telemetry.intervalVectorFrames == 0 ->
         R.string.pref_decoder_anvil_status_no_motion_vectors
+      telemetry.inputFrames > 0L &&
+        (telemetry.lastMotionVectors > 0 || telemetry.intervalVectorFrames > 0) &&
+        telemetry.generatedFrames == 0L ->
+        R.string.pref_decoder_anvil_status_vectors_seen
       telemetry.filterSeen -> R.string.pref_decoder_anvil_status_filter_loaded
       else -> R.string.pref_decoder_anvil_status_waiting
     }
@@ -592,6 +637,14 @@ private fun AnvilFrameInterpolationStatusCard(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
       Text(
+        text = stringResource(R.string.pref_decoder_anvil_source_decoder, codecLabel, decoderLabel),
+        style = MaterialTheme.typography.bodySmall,
+      )
+      Text(
+        text = stringResource(R.string.pref_decoder_anvil_option_results, exportOptionLabel, softwareOptionLabel),
+        style = MaterialTheme.typography.bodySmall,
+      )
+      Text(
         text =
           stringResource(
             R.string.pref_decoder_anvil_generated_frames,
@@ -604,6 +657,16 @@ private fun AnvilFrameInterpolationStatusCard(
           R.string.pref_decoder_anvil_input_stats,
           telemetry.inputFrames,
           telemetry.lastMotionVectors,
+          stringResource(
+            when (telemetry.motionVectorSideData) {
+              "missing" -> R.string.pref_decoder_anvil_side_data_missing
+              "empty" -> R.string.pref_decoder_anvil_side_data_empty
+              "present" -> R.string.pref_decoder_anvil_side_data_present
+              else -> R.string.pref_decoder_anvil_side_data_unknown
+            },
+            ),
+          telemetry.intervalMaxMotionVectors,
+          telemetry.intervalVectorFrames,
         ),
         style = MaterialTheme.typography.bodySmall,
       )

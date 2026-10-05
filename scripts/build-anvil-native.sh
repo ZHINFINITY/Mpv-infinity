@@ -60,7 +60,12 @@ download_marker = "IN_CI=1 ./include/download-deps.sh\n"
 if ci.count(download_marker) != 1:
     raise SystemExit(f"Expected one dependency download step in {ci_path}; refusing unsafe patch")
 symver_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-symver.py" deps/ffmpeg/configure\n'
-ci = ci.replace(download_marker, download_marker + "mkdir -p deps/qairt\n" + symver_patch, 1)
+hevc_mvs_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-hevc-mvs.py" deps/ffmpeg\n'
+ci = ci.replace(
+    download_marker,
+    download_marker + "mkdir -p deps/qairt\n" + symver_patch + hevc_mvs_patch,
+    1,
+)
 ci_path.write_text(ci)
 print("Prepared ANVIL's deps/qairt work directory and restored FFmpeg's Android symver probe")
 

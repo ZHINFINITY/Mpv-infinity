@@ -2881,20 +2881,24 @@ static void f_process(struct mp_filter *f)
     // Get MVs from side data
     const AVMotionVector *mvs = NULL;
     int n_mvs = 0;
+    const char *motion_vector_side_data = "missing";
     for (int n = 0; n < mpi->num_ff_side_data; n++) {
         if (mpi->ff_side_data[n].type == AV_FRAME_DATA_MOTION_VECTORS) {
             AVBufferRef *buf = mpi->ff_side_data[n].buf;
+            motion_vector_side_data = "empty";
             if (buf && buf->data) {
                 mvs = (const AVMotionVector *)buf->data;
                 n_mvs = buf->size / sizeof(AVMotionVector);
+                if (n_mvs > 0)
+                    motion_vector_side_data = "present";
             }
             break;
         }
     }
 
     if (p->frame_count % 60 == 1) {
-        MP_INFO(f, "ANVIL: frame %d, %dx%d, %d MVs, qnn=%d, async=%d\n",
-                p->frame_count, W, H, n_mvs, p->qnn.ready, p->htp_thread_created);
+        MP_INFO(f, "ANVIL[INPUT]: frames=%d resolution=%dx%d motion_vectors=%d motion_vector_side_data=%s\n",
+                p->frame_count, W, H, n_mvs, motion_vector_side_data);
     }
 
     // First frame (I-frame, no MVs) or no prev: just pass through
