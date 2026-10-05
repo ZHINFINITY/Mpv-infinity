@@ -1,4 +1,4 @@
-name: Catalog arm64 Debug APK
+name: ANVIL arm64 Debug APK
 
 on:
   push:
@@ -15,32 +15,50 @@ concurrency:
 
 jobs:
   build-arm64-debug:
-    name: Build standard arm64-v8a debug APK
+    name: Build ANVIL-enabled MPV∞ arm64-v8a debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 240
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Checkout pinned ANVIL source
+        uses: actions/checkout@v6
+        with:
+          repository: NihilDigit/mpv-android-anvil
+          ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467
+          path: anvil-project
+      - name: Checkout pinned MPV source
+        uses: actions/checkout@v6
+        with:
+          repository: mpv-player/mpv
+          ref: c1529642089bfebfc928a1c1664638a7a5d219ba
+          path: mpv-source
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      - name: Install native subtitle build dependencies
-        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config
+      - name: Install ANVIL native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build meson nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
+      - name: Build ANVIL + MPV native arm64 debug package
+        run: ./scripts/build-anvil-native.sh
+        env:
+          ANVIL_BUILD_CORES: '2'
+      - name: Overlay ANVIL MPV/FFmpeg arm64 runtime into MPV∞ AAR
+        run: python3 scripts/package-anvil-aar.py --anvil-apk "$ANVIL_ARM64_APK" --mpv-aar app/libs/mpvlib.aar
       - name: Run standard debug unit tests
-        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PanvilNativeBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Build arm64-v8a debug APK
-        run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a -PanvilNativeBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Upload arm64-v8a debug APK
         uses: actions/upload-artifact@v7
         with:
-          name: mpv-infinity-standard-arm64-v8a-debug-${{ github.sha }}
+          name: mpv-infinity-anvil-arm64-v8a-debug-${{ github.sha }}
           path: app/build/outputs/apk/standard/debug/*arm64-v8a-debug*.apk
           if-no-files-found: error
           retention-days: 14

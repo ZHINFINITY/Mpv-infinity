@@ -38,6 +38,7 @@ enum class MpvConfigOverride(
         "hwdec-codecs",
         "vd-lavc-dr",
         "vd-lavc-queue",
+        "vd-lavc-o",
         "vd-lavc-film-grain",
       ),
   ),
@@ -281,7 +282,9 @@ object MpvConfigControlledFeatures {
 
   val AUTO_CROP = setOf("video-crop")
 
-  val HARDWARE_DECODER = setOf("hwdec", "gpu-api", "gpu-context")
+  val HARDWARE_DECODER = setOf("hwdec", "gpu-api", "gpu-context", "vd-lavc-o")
+
+  val FRAME_INTERPOLATION = setOf("vf", "hwdec", "vd-lavc-o")
 }
 
 /** The ownership snapshot used by the active libmpv core. */

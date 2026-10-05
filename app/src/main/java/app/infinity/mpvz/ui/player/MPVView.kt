@@ -77,8 +77,12 @@ class MPVView(
     // selection, but recreate the core when gpu-next/Vulkan selection actually changes.
     MpvConfigOverridePolicy.configure(advancedPreferences.mpvConfOverrides.get())
     val requestedBackend = selectRenderBackend(ignoreForcedOpenGlFallback = true)
+    val frameInterpolationActive =
+      decoderPreferences.anvilFrameInterpolation.get() &&
+        BuildConfig.MPV_HAS_ANVIL &&
+        !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val coreConfigurationKey =
-      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}"
+      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|anvil=$frameInterpolationActive"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
@@ -187,6 +191,16 @@ class MPVView(
     val backend = selectRenderBackend()
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
+    val frameInterpolationPreference = decoderPreferences.anvilFrameInterpolation.get()
+    val frameInterpolationConfigOwned =
+      MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
+    val frameInterpolationEnabled =
+      frameInterpolationPreference && BuildConfig.MPV_HAS_ANVIL && !frameInterpolationConfigOwned
+    PlaybackSession.configureAnvilFrameInterpolation(
+      preferenceEnabled = frameInterpolationPreference,
+      nativeFilterIncluded = BuildConfig.MPV_HAS_ANVIL,
+      blockedByMpvConf = frameInterpolationPreference && frameInterpolationConfigOwned,
+    )
     PlaybackSession.setVideoOutput(backend.vo)
     PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
     PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
@@ -214,7 +228,11 @@ class MPVView(
     }
 
     // Fongmi can map direct MediaCodec frames into Vulkan; other Vulkan builds start with copy mode.
-    if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HARDWARE_DECODER)) {
+    if (frameInterpolationEnabled) {
+      // ANVIL consumes FFmpeg-exported H.264 motion vectors and must receive software frames.
+      PlaybackSession.setOptionString("hwdec", "no")
+      PlaybackSession.setOptionString("vd-lavc-o", "flags2=+export_mvs")
+    } else if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HARDWARE_DECODER)) {
       PlaybackSession.setOptionString(
         "hwdec",
         hwdecMode,
@@ -228,10 +246,20 @@ class MPVView(
     PlaybackSession.setOptionString("vd-lavc-dr", "auto")
     PlaybackSession.setOptionString("vd-lavc-queue", "no")
 
-    if (decoderPreferences.useYUV420P.get()) {
-      PlaybackSession.setOptionString("vf", "format=yuv420p")
+    val appVideoFilters =
+      buildList {
+        if (frameInterpolationEnabled) add("anvil")
+        if (decoderPreferences.useYUV420P.get()) add("format=yuv420p")
+      }
+    if (appVideoFilters.isNotEmpty() && !MpvConfigOverridePolicy.isOwnedByMpvConf("vf")) {
+      PlaybackSession.setOptionString("vf", appVideoFilters.joinToString(","))
     }
-    val logLevel = if (advancedPreferences.verboseLogging.get()) "v" else "warn"
+    val logLevel =
+      when {
+        frameInterpolationEnabled -> "info"
+        advancedPreferences.verboseLogging.get() -> "v"
+        else -> "warn"
+      }
     PlaybackSession.setOptionString("msg-level", "all=$logLevel")
 
     PlaybackSession.setOptionString("keep-open", "yes")

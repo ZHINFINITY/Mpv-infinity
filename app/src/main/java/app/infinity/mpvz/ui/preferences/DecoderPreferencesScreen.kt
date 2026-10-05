@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,15 +52,17 @@ import app.infinity.mpvz.R
 import app.infinity.mpvz.domain.anime4k.Anime4KManager
 import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
-import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
+import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
+import app.infinity.mpvz.ui.player.AnvilFrameInterpolationTelemetry
 import app.infinity.mpvz.ui.player.Debanding
 import app.infinity.mpvz.ui.player.MPVProfile
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
+import app.infinity.mpvz.ui.player.PlaybackSession
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -77,12 +80,17 @@ object DecoderPreferencesScreen : Screen {
   override fun Content() {
     val preferences = koinInject<DecoderPreferences>()
     val advancedPreferences = koinInject<AdvancedPreferences>()
+    val selectedPlaybackEngine by preferences.playbackEngine.collectAsState()
+    val anvilFrameInterpolationEnabled by preferences.anvilFrameInterpolation.collectAsState()
+    val anvilTelemetry by PlaybackSession.anvilFrameInterpolationTelemetry.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
     val profileConfigOwned = "profile" in configOwnedOptions
     val rendererBackendConfigOwned = setOf("gpu-api", "gpu-context").any(configOwnedOptions::contains)
     val decoderConfigOwned = MpvConfigControlledFeatures.HARDWARE_DECODER.any(configOwnedOptions::contains)
+    val frameInterpolationConfigOwned =
+      MpvConfigControlledFeatures.FRAME_INTERPOLATION.any(configOwnedOptions::contains)
     val shadersConfigOwned = MpvConfigControlledFeatures.ANIME4K.any(configOwnedOptions::contains)
     val debandingConfigOwned =
       setOf("vf", "deband", "deband-iterations", "deband-threshold", "deband-range", "deband-grain")
@@ -334,6 +342,43 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_anvil_title),
+                value = anvilFrameInterpolationEnabled,
+                enabled =
+                  BuildConfig.MPV_HAS_ANVIL &&
+                    !frameInterpolationConfigOwned &&
+                    selectedPlaybackEngine != PlaybackEngineMode.NATIVE,
+                onValueChange = { preferences.anvilFrameInterpolation.set(it) },
+                title = { Text(stringResource(R.string.pref_decoder_anvil_title)) },
+                summary = {
+                  Text(
+                    stringResource(
+                      when {
+                        !BuildConfig.MPV_HAS_ANVIL -> R.string.pref_decoder_anvil_summary_unavailable
+                        frameInterpolationConfigOwned -> R.string.pref_decoder_anvil_summary_config_owned
+                        selectedPlaybackEngine == PlaybackEngineMode.NATIVE ->
+                          R.string.pref_decoder_anvil_summary_native_engine
+                        else -> R.string.pref_decoder_anvil_summary
+                      },
+                    ),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              AnvilFrameInterpolationStatusCard(
+                telemetry = anvilTelemetry,
+                preferenceEnabled = anvilFrameInterpolationEnabled,
+                nativeFilterIncluded = BuildConfig.MPV_HAS_ANVIL,
+                configOwned = frameInterpolationConfigOwned,
+                playbackEngine = selectedPlaybackEngine,
+              )
+
+              PreferenceDivider()
+
               val enableAnime4K by preferences.enableAnime4K.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_anime4k_title),
@@ -500,6 +545,77 @@ object DecoderPreferencesScreen : Screen {
           }
         }
       }
+    }
+  }
+}
+
+@Composable
+private fun AnvilFrameInterpolationStatusCard(
+  telemetry: AnvilFrameInterpolationTelemetry,
+  preferenceEnabled: Boolean,
+  nativeFilterIncluded: Boolean,
+  configOwned: Boolean,
+  playbackEngine: PlaybackEngineMode,
+) {
+  val statusRes =
+    when {
+      !nativeFilterIncluded -> R.string.pref_decoder_anvil_status_missing_native
+      configOwned -> R.string.pref_decoder_anvil_status_config_owned
+      playbackEngine == PlaybackEngineMode.NATIVE -> R.string.pref_decoder_anvil_status_native_engine
+      !preferenceEnabled -> R.string.pref_decoder_anvil_status_off
+      telemetry.generatedFrames > 0L && telemetry.activeForCore ->
+        R.string.pref_decoder_anvil_status_generating
+      telemetry.generatedFrames > 0L -> R.string.pref_decoder_anvil_status_last_run
+      telemetry.filterSeen && telemetry.inputFrames > 0L && telemetry.lastMotionVectors == 0 ->
+        R.string.pref_decoder_anvil_status_no_motion_vectors
+      telemetry.filterSeen -> R.string.pref_decoder_anvil_status_filter_loaded
+      else -> R.string.pref_decoder_anvil_status_waiting
+    }
+
+  Surface(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+    shape = MaterialTheme.shapes.medium,
+    color = MaterialTheme.colorScheme.surfaceVariant,
+    tonalElevation = 1.dp,
+  ) {
+    Column(
+      modifier = Modifier.padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.pref_decoder_anvil_status_title),
+        style = MaterialTheme.typography.titleSmall,
+      )
+      Text(
+        text = stringResource(statusRes),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Text(
+        text =
+          stringResource(
+            R.string.pref_decoder_anvil_generated_frames,
+            telemetry.generatedFrames,
+          ),
+        style = MaterialTheme.typography.bodySmall,
+      )
+      Text(
+        text = stringResource(
+          R.string.pref_decoder_anvil_input_stats,
+          telemetry.inputFrames,
+          telemetry.lastMotionVectors,
+        ),
+        style = MaterialTheme.typography.bodySmall,
+      )
+      Text(
+        text =
+          stringResource(
+            R.string.pref_decoder_anvil_backend_stats,
+            telemetry.backend,
+            telemetry.qnn,
+          ),
+        style = MaterialTheme.typography.bodySmall,
+      )
     }
   }
 }
