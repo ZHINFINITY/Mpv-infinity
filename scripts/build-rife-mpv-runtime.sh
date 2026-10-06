@@ -66,10 +66,14 @@ ci_path.write_text(ci)
 print("Prepared the Android MPV builder and restored FFmpeg's Android symbol-version probe")
 
 depinfo = depinfo_path.read_text()
+qairt_dependency = "dep_mpv=(ffmpeg libass lua libplacebo qairt)"
+if depinfo.count(qairt_dependency) != 1:
+    raise SystemExit(f"Expected one MPV dependency list containing QAIRT in {depinfo_path}")
+depinfo = depinfo.replace(qairt_dependency, "dep_mpv=(ffmpeg libass lua libplacebo)", 1)
 if depinfo.count("v_ci_ffmpeg=n8.0.1") != 1:
     raise SystemExit(f"Expected the pinned FFmpeg 8.0.1 line in {depinfo_path}")
 depinfo_path.write_text(depinfo.replace("v_ci_ffmpeg=n8.0.1", "v_ci_ffmpeg=n9.0.2", 1))
-print("Pinned FFmpeg 9.0.2 to match MPV∞'s FFmpeg ABI")
+print("Excluded unused QAIRT from the RIFE-only build and pinned FFmpeg 9.0.2 to match MPV∞'s ABI")
 PY
 
 cd "$BUILDSCRIPTS"
