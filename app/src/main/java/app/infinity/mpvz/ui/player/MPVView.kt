@@ -27,6 +27,7 @@ import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.normalizeRifeProcessingResolution
 import app.infinity.mpvz.preferences.normalizeRifeTargetFps
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.YtdlPreferences
@@ -83,6 +84,8 @@ class MPVView(
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val rifeRequested = decoderPreferences.rifeFrameInterpolation.get()
     val requestedRifeTargetFps = normalizeRifeTargetFps(decoderPreferences.rifeTargetFps.get())
+    val requestedRifeProcessingResolution =
+      normalizeRifeProcessingResolution(decoderPreferences.rifeProcessingResolution.get())
     rifeModelDirectory =
       if (rifeRequested && BuildConfig.MPV_HAS_RIFE && !frameInterpolationConfigOwned) {
         runCatching { RifeModelInstaller.install(context.applicationContext).absolutePath }
@@ -93,7 +96,11 @@ class MPVView(
       }
     val rifeFrameInterpolationActive = rifeModelDirectory != null
     val frameInterpolationKey =
-      if (rifeFrameInterpolationActive) "rife=on,target-fps=$requestedRifeTargetFps" else "rife=off"
+      if (rifeFrameInterpolationActive) {
+        "rife=on,target-fps=$requestedRifeTargetFps,max-dimension=$requestedRifeProcessingResolution"
+      } else {
+        "rife=off"
+      }
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|$frameInterpolationKey"
     val result =
@@ -206,6 +213,8 @@ class MPVView(
     val hwdecMode = preferredHwdecMode(useVulkan)
     val rifeFrameInterpolationPreference = decoderPreferences.rifeFrameInterpolation.get()
     val rifeTargetFps = normalizeRifeTargetFps(decoderPreferences.rifeTargetFps.get())
+    val rifeProcessingResolution =
+      normalizeRifeProcessingResolution(decoderPreferences.rifeProcessingResolution.get())
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val rifeFrameInterpolationEnabled =
@@ -262,7 +271,10 @@ class MPVView(
     val appVideoFilters =
       buildList {
         if (rifeFrameInterpolationEnabled) {
-          add("rife=model-dir=$rifeModelDirectory:target-fps=$rifeTargetFps")
+          add(
+            "rife=model-dir=$rifeModelDirectory:target-fps=$rifeTargetFps:" +
+              "max-dimension=$rifeProcessingResolution",
+          )
         }
         if (decoderPreferences.useYUV420P.get()) add("format=yuv420p")
       }
@@ -281,9 +293,24 @@ class MPVView(
           rifeModelDirectory == null -> "model_unavailable"
           else -> "renderer_or_engine_unsupported"
         }
+      val resolutionMode =
+        when {
+          rifeProcessingResolution == 0 -> "auto"
+          rifeProcessingResolution < 0 -> "source"
+          else -> "capped"
+        }
+      val diagnostic =
+        listOf(
+          "RIFE_DIAGNOSTIC event=config enabled=$rifeFrameInterpolationEnabled " +
+            "target_fps=$rifeTargetFps max_dimension=$rifeProcessingResolution " +
+            "resolution_mode=$resolutionMode",
+          "display_refresh_hz=${display?.refreshRate ?: 0f} renderer=${backend.vo} " +
+            "gpu_api=${backend.gpuApi} software_decode_required=$rifeFrameInterpolationEnabled",
+          "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
+        ).joinToString(" ")
       Log.i(
         TAG,
-        "RIFE_DIAGNOSTIC event=config enabled=$rifeFrameInterpolationEnabled target_fps=$rifeTargetFps renderer=${backend.vo} gpu_api=${backend.gpuApi} software_decode_required=$rifeFrameInterpolationEnabled filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
+        diagnostic,
       )
     }
     val logLevel =

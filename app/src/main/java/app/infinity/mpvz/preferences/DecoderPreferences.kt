@@ -23,6 +23,16 @@ internal fun normalizeRifeTargetFps(value: Int): Int =
   RIFE_TARGET_FPS_OPTIONS.minByOrNull { kotlin.math.abs(it.toLong() - value.toLong()) }
     ?: DEFAULT_RIFE_TARGET_FPS
 
+internal val RIFE_PROCESSING_RESOLUTION_OPTIONS = listOf(-1, 0, 480, 720, 1080)
+internal const val DEFAULT_RIFE_PROCESSING_RESOLUTION = 0
+
+internal fun normalizeRifeProcessingResolution(value: Int): Int =
+  value.takeIf { it in RIFE_PROCESSING_RESOLUTION_OPTIONS }
+    ?: RIFE_PROCESSING_RESOLUTION_OPTIONS.filter { it > 0 }.minByOrNull {
+      kotlin.math.abs(it.toLong() - value.toLong())
+    }
+    ?: DEFAULT_RIFE_PROCESSING_RESOLUTION
+
 class DecoderPreferences(
   preferenceStore: PreferenceStore,
 ) {
@@ -40,6 +50,8 @@ class DecoderPreferences(
   val useYUV420P = preferenceStore.getBoolean("use_yuv420p", false)
   val rifeFrameInterpolation = preferenceStore.getBoolean("rife_frame_interpolation", false)
   val rifeTargetFps = preferenceStore.getInt("rife_target_fps", DEFAULT_RIFE_TARGET_FPS)
+  val rifeProcessingResolution =
+    preferenceStore.getInt("rife_processing_resolution", DEFAULT_RIFE_PROCESSING_RESOLUTION)
 
   val debanding = preferenceStore.getEnum("debanding", Debanding.None)
   val debandIterations = preferenceStore.getInt("deband_iterations", 1)

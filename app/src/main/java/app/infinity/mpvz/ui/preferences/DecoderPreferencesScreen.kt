@@ -54,6 +54,7 @@ import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
+import app.infinity.mpvz.preferences.RIFE_PROCESSING_RESOLUTION_OPTIONS
 import app.infinity.mpvz.preferences.RIFE_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
@@ -82,6 +83,7 @@ object DecoderPreferencesScreen : Screen {
     val selectedPlaybackEngine by preferences.playbackEngine.collectAsState()
     val rifeFrameInterpolationEnabled by preferences.rifeFrameInterpolation.collectAsState()
     val rifeTargetFps by preferences.rifeTargetFps.collectAsState()
+    val rifeProcessingResolution by preferences.rifeProcessingResolution.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
@@ -386,6 +388,43 @@ object DecoderPreferencesScreen : Screen {
                 summary = {
                   Text(
                     stringResource(R.string.pref_decoder_rife_target_fps_summary, rifeTargetFps),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_processing_resolution_title),
+                value = rifeProcessingResolution,
+                onValueChange = preferences.rifeProcessingResolution::set,
+                values = RIFE_PROCESSING_RESOLUTION_OPTIONS,
+                enabled = rifeAvailable,
+                valueToText = {
+                  AnnotatedString(
+                    when (it) {
+                      -1 -> context.getString(R.string.pref_decoder_rife_processing_resolution_source)
+                      0 -> context.getString(R.string.pref_decoder_rife_processing_resolution_auto)
+                      else -> context.getString(R.string.pref_decoder_rife_processing_resolution_value, it)
+                    },
+                  )
+                },
+                title = { Text(stringResource(R.string.pref_decoder_rife_processing_resolution_title)) },
+                summary = {
+                  Text(
+                    stringResource(
+                      R.string.pref_decoder_rife_processing_resolution_summary,
+                      when (rifeProcessingResolution) {
+                        -1 -> context.getString(R.string.pref_decoder_rife_processing_resolution_source)
+                        0 -> context.getString(R.string.pref_decoder_rife_processing_resolution_auto)
+                        else ->
+                          context.getString(
+                            R.string.pref_decoder_rife_processing_resolution_value,
+                            rifeProcessingResolution,
+                          )
+                      },
+                    ),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

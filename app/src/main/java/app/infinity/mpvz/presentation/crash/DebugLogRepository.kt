@@ -19,7 +19,7 @@ import java.util.Date
 import java.util.Locale
 
 internal const val DEBUG_LOG_ENTRY_LIMIT = 1_500
-private const val RIFE_DIAGNOSTIC_ENTRY_RESERVE = 200
+private const val RIFE_DIAGNOSTIC_ENTRY_RESERVE = 500
 
 internal enum class DebugLogLevel(
   val code: String,
@@ -295,16 +295,18 @@ internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogE
 
   val rifeDiagnostics =
     entries
-      .filter { entry ->
-        entry.tag.contains("rife", ignoreCase = true) ||
-          entry.message.contains("rife", ignoreCase = true) ||
-          entry.message.contains("vf_rife", ignoreCase = true)
-      }.takeLast(RIFE_DIAGNOSTIC_ENTRY_RESERVE)
+      .filter(DebugLogEntry::isRifeDiagnostic)
+      .takeLast(RIFE_DIAGNOSTIC_ENTRY_RESERVE)
   val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - rifeDiagnostics.size).coerceAtLeast(0)
   return (entries.takeLast(recentCapacity) + rifeDiagnostics)
     .distinctBy(DebugLogEntry::id)
     .sortedBy(DebugLogEntry::timeMillis)
 }
+
+internal fun DebugLogEntry.isRifeDiagnostic(): Boolean =
+  tag.contains("rife", ignoreCase = true) ||
+    message.contains("rife", ignoreCase = true) ||
+    message.contains("vf_rife", ignoreCase = true)
 
 private fun String.toDebugLogLevel(): DebugLogLevel? =
   when (this) {

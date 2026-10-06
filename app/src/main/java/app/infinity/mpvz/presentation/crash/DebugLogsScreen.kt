@@ -615,11 +615,6 @@ private fun formatDebugLogEntry(entry: DebugLogEntry): String =
     append(entry.message)
   }
 
-private fun DebugLogEntry.isRifeDiagnostic(): Boolean =
-  tag.contains("rife", ignoreCase = true) ||
-    message.contains("rife", ignoreCase = true) ||
-    message.contains("vf_rife", ignoreCase = true)
-
 private fun buildDebugLogText(
   entries: List<DebugLogEntry>,
   includeDeviceInfo: Boolean,
