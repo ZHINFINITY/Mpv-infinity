@@ -82,8 +82,15 @@ cd "$BUILDSCRIPTS"
 # final APK cannot load a V75 context/runtime on an unverified SM8735 target.
 ./include/ci.sh install
 
-python3 "$ROOT/scripts/prepare-anvil-mpv.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv"
+cd "$ROOT"
+RIFE_PREFIX="$BUILDSCRIPTS/prefix/arm64" ./scripts/build-rife-native.sh
 
+python3 "$ROOT/scripts/prepare-anvil-mpv.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv"
+python3 "$ROOT/scripts/prepare-rife-mpv.py" \
+  --mpv-dir "$BUILDSCRIPTS/deps/mpv" \
+  --prefix-dir "$BUILDSCRIPTS/prefix/arm64"
+
+cd "$BUILDSCRIPTS"
 ./include/ci.sh build
 
 APK="$(find "$ANVIL_DIR/app/build/outputs/apk" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"

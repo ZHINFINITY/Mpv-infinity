@@ -311,6 +311,12 @@
   <string name="pref_decoder_anvil_summary_unavailable">The native ANVIL filter is not included in this APK. It is available in the experimental arm64 GitHub Actions build.</string>
   <string name="pref_decoder_anvil_summary_config_owned">Unavailable because mpv.conf owns vf, hwdec, or vd-lavc-o. Clear those overrides to let the app manage this feature.</string>
   <string name="pref_decoder_anvil_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
+  <string name="pref_decoder_rife_title">Frame interpolation (RIFE Vulkan/NCNN, experimental)</string>
+  <string name="pref_decoder_rife_summary">Experimental full-frame RIFE-v4.6 synthesis through ncnn/Vulkan. Targets 60 fps, requires software-readable frames, and passes through unsupported HDR, interlaced, or high-bit-depth video. May increase GPU load, heat, battery use, or dropped frames; restart playback after changing.</string>
+  <string name="pref_decoder_rife_summary_unavailable">The RIFE native runtime is not included in this APK. It is built only by the experimental arm64 GitHub Actions workflow.</string>
+  <string name="pref_decoder_rife_summary_config_owned">Unavailable because mpv.conf owns vf, hwdec, or vd-lavc-o. Clear those overrides to let the app manage this feature.</string>
+  <string name="pref_decoder_rife_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
+  <string name="pref_decoder_rife_summary_vulkan_unavailable">This device or selected MPV renderer has no available Vulkan path.</string>
   <string name="pref_decoder_anvil_status_title">Frame interpolation status</string>
   <string name="pref_decoder_anvil_status_missing_native">This APK does not contain the ANVIL native filter.</string>
   <string name="pref_decoder_anvil_status_config_owned">Not applied: mpv.conf owns one or more required MPV options.</string>

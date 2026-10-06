@@ -63,6 +63,7 @@ class MPVView(
   var isSurfaceReady = false
     private set
   var onSurfaceReady: (() -> Unit)? = null
+  private var rifeModelDirectory: String? = null
 
   /**
    * Configures the process-wide player and binds this view as its current rendering surface.
@@ -77,12 +78,26 @@ class MPVView(
     // selection, but recreate the core when gpu-next/Vulkan selection actually changes.
     MpvConfigOverridePolicy.configure(advancedPreferences.mpvConfOverrides.get())
     val requestedBackend = selectRenderBackend(ignoreForcedOpenGlFallback = true)
-    val frameInterpolationActive =
+    val frameInterpolationConfigOwned =
+      MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
+    val rifeRequested = decoderPreferences.rifeFrameInterpolation.get()
+    rifeModelDirectory =
+      if (rifeRequested && BuildConfig.MPV_HAS_RIFE && !frameInterpolationConfigOwned) {
+        runCatching { RifeModelInstaller.install(context.applicationContext).absolutePath }
+          .onFailure { Log.e(TAG, "RIFE model extraction failed; interpolation will remain disabled", it) }
+          .getOrNull()
+      } else {
+        null
+      }
+    val rifeFrameInterpolationActive = rifeModelDirectory != null
+    val anvilFrameInterpolationActive =
       decoderPreferences.anvilFrameInterpolation.get() &&
         BuildConfig.MPV_HAS_ANVIL &&
-        !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
+        !frameInterpolationConfigOwned &&
+        !rifeFrameInterpolationActive
+    val frameInterpolationKey = "anvil=$anvilFrameInterpolationActive|rife=$rifeFrameInterpolationActive"
     val coreConfigurationKey =
-      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|anvil=$frameInterpolationActive"
+      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|$frameInterpolationKey"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
@@ -191,15 +206,25 @@ class MPVView(
     val backend = selectRenderBackend()
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
-    val frameInterpolationPreference = decoderPreferences.anvilFrameInterpolation.get()
+    val anvilFrameInterpolationPreference = decoderPreferences.anvilFrameInterpolation.get()
+    val rifeFrameInterpolationPreference = decoderPreferences.rifeFrameInterpolation.get()
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
-    val frameInterpolationEnabled =
-      frameInterpolationPreference && BuildConfig.MPV_HAS_ANVIL && !frameInterpolationConfigOwned
+    val rifeFrameInterpolationEnabled =
+      rifeFrameInterpolationPreference &&
+        BuildConfig.MPV_HAS_RIFE &&
+        rifeModelDirectory != null &&
+        !frameInterpolationConfigOwned
+    val anvilFrameInterpolationEnabled =
+      anvilFrameInterpolationPreference &&
+        BuildConfig.MPV_HAS_ANVIL &&
+        !frameInterpolationConfigOwned &&
+        !rifeFrameInterpolationEnabled
+    val frameInterpolationEnabled = rifeFrameInterpolationEnabled || anvilFrameInterpolationEnabled
     PlaybackSession.configureAnvilFrameInterpolation(
-      preferenceEnabled = frameInterpolationPreference,
+      preferenceEnabled = anvilFrameInterpolationPreference && !rifeFrameInterpolationEnabled,
       nativeFilterIncluded = BuildConfig.MPV_HAS_ANVIL,
-      blockedByMpvConf = frameInterpolationPreference && frameInterpolationConfigOwned,
+      blockedByMpvConf = anvilFrameInterpolationPreference && frameInterpolationConfigOwned,
     )
     PlaybackSession.setVideoOutput(backend.vo)
     PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
@@ -228,7 +253,11 @@ class MPVView(
     }
 
     // Fongmi can map direct MediaCodec frames into Vulkan; other Vulkan builds start with copy mode.
-    if (frameInterpolationEnabled) {
+    if (rifeFrameInterpolationEnabled) {
+      // RIFE consumes software-readable RGB frames and does not use codec MV side data.
+      val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
+      Log.i(TAG, "RIFE_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult model_dir=$rifeModelDirectory")
+    } else if (anvilFrameInterpolationEnabled) {
       // ANVIL needs software frames and FFmpeg-exported motion-vector side data.
       val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
       val motionVectorExportOptionResult =
@@ -257,7 +286,11 @@ class MPVView(
 
     val appVideoFilters =
       buildList {
-        if (frameInterpolationEnabled) add("anvil")
+        if (rifeFrameInterpolationEnabled) {
+          add("rife=model-dir=$rifeModelDirectory:target-fps=60")
+        } else if (anvilFrameInterpolationEnabled) {
+          add("anvil")
+        }
         if (decoderPreferences.useYUV420P.get()) add("format=yuv420p")
       }
     if (appVideoFilters.isNotEmpty() && !MpvConfigOverridePolicy.isOwnedByMpvConf("vf")) {

@@ -11,6 +11,7 @@ import tempfile
 import zipfile
 
 REQUIRED_LIBS = {
+    "librife_vfi.so",
     "libmpv.so",
     "libavcodec.so",
     "libavfilter.so",

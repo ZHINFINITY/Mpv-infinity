@@ -84,6 +84,7 @@ object DecoderPreferencesScreen : Screen {
     val advancedPreferences = koinInject<AdvancedPreferences>()
     val selectedPlaybackEngine by preferences.playbackEngine.collectAsState()
     val anvilFrameInterpolationEnabled by preferences.anvilFrameInterpolation.collectAsState()
+    val rifeFrameInterpolationEnabled by preferences.rifeFrameInterpolation.collectAsState()
     val anvilTelemetry by PlaybackSession.anvilFrameInterpolationTelemetry.collectAsState()
     val sourceVideoCodec by PlaybackSession.propString["video-codec"].collectAsState()
     val activeHardwareDecoder by PlaybackSession.propString["hwdec-current"].collectAsState()
@@ -353,7 +354,10 @@ object DecoderPreferencesScreen : Screen {
                   BuildConfig.MPV_HAS_ANVIL &&
                     !frameInterpolationConfigOwned &&
                     selectedPlaybackEngine != PlaybackEngineMode.NATIVE,
-                onValueChange = { preferences.anvilFrameInterpolation.set(it) },
+                onValueChange = {
+                  preferences.anvilFrameInterpolation.set(it)
+                  if (it) preferences.rifeFrameInterpolation.set(false)
+                },
                 title = { Text(stringResource(R.string.pref_decoder_anvil_title)) },
                 summary = {
                   Text(
@@ -381,6 +385,38 @@ object DecoderPreferencesScreen : Screen {
                 playbackEngine = selectedPlaybackEngine,
                 sourceCodec = sourceVideoCodec,
                 activeHardwareDecoder = activeHardwareDecoder,
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_title),
+                value = rifeFrameInterpolationEnabled,
+                enabled =
+                  BuildConfig.MPV_HAS_RIFE &&
+                    isVulkanSupported &&
+                    !frameInterpolationConfigOwned &&
+                    selectedPlaybackEngine != PlaybackEngineMode.NATIVE,
+                onValueChange = {
+                  preferences.rifeFrameInterpolation.set(it)
+                  if (it) preferences.anvilFrameInterpolation.set(false)
+                },
+                title = { Text(stringResource(R.string.pref_decoder_rife_title)) },
+                summary = {
+                  Text(
+                    stringResource(
+                      when {
+                        !BuildConfig.MPV_HAS_RIFE -> R.string.pref_decoder_rife_summary_unavailable
+                        frameInterpolationConfigOwned -> R.string.pref_decoder_rife_summary_config_owned
+                        selectedPlaybackEngine == PlaybackEngineMode.NATIVE ->
+                          R.string.pref_decoder_rife_summary_native_engine
+                        !isVulkanSupported -> R.string.pref_decoder_rife_summary_vulkan_unavailable
+                        else -> R.string.pref_decoder_rife_summary
+                      },
+                    ),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
               )
 
               PreferenceDivider()

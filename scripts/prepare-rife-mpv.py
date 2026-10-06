@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Register the experimental RIFE user filter in the pinned Android MPV checkout."""
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import shutil
+
+ROOT = Path(__file__).resolve().parents[1]
+VENDOR = ROOT / "app/src/main/cpp/rife"
+
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"Expected one {label} anchor, found {count}")
+    return text.replace(old, new, 1)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mpv-dir", required=True, type=Path)
+    parser.add_argument("--prefix-dir", required=True, type=Path)
+    args = parser.parse_args()
+    mpv_dir = args.mpv_dir.resolve()
+    prefix_dir = args.prefix_dir.resolve()
+    runtime_library = prefix_dir / "lib/librife_vfi.so"
+    for path in (mpv_dir / "meson.build", mpv_dir / "filters/user_filters.h", mpv_dir / "filters/user_filters.c"):
+        if not path.is_file():
+            raise SystemExit(f"Pinned MPV source is missing {path}")
+    if not runtime_library.is_file():
+        raise SystemExit(f"RIFE shared runtime is missing: {runtime_library}")
+    for name in ("vf_rife.c", "rife_vfi.h"):
+        if not (VENDOR / name).is_file():
+            raise SystemExit(f"RIFE MPV source is missing: {VENDOR / name}")
+
+    video_filter_dir = mpv_dir / "video/filter"
+    shutil.copy2(VENDOR / "vf_rife.c", video_filter_dir / "vf_rife.c")
+    shutil.copy2(VENDOR / "rife_vfi.h", video_filter_dir / "rife_vfi.h")
+
+    meson_path = mpv_dir / "meson.build"
+    meson = meson_path.read_text()
+    if "# RIFE_ANDROID_FILTER" not in meson:
+        marker = "# ANVIL_ANDROID_FILTER\n"
+        block = (
+            "# RIFE is an opt-in Android filter linked to the pinned ncnn/Vulkan runtime.\n"
+            "if host_machine.system() == 'android'\n"
+            "    sources += files('video/filter/vf_rife.c')\n"
+            f"    rife_vfi_dep = declare_dependency(link_args: ['-L{prefix_dir / 'lib'}', '-lrife_vfi'])\n"
+            "    dependencies += [rife_vfi_dep]\n"
+            "endif\n"
+            "# RIFE_ANDROID_FILTER\n"
+        )
+        meson = replace_once(meson, marker, marker + block, "ANVIL Android filter marker")
+        meson_path.write_text(meson)
+
+    user_h_path = mpv_dir / "filters/user_filters.h"
+    user_h = user_h_path.read_text()
+    if "vf_rife" not in user_h:
+        user_h = replace_once(
+            user_h,
+            "#ifdef __ANDROID__\nextern const struct mp_user_filter_entry vf_anvil;\n#endif",
+            "#ifdef __ANDROID__\n"
+            "extern const struct mp_user_filter_entry vf_anvil;\n"
+            "extern const struct mp_user_filter_entry vf_rife;\n"
+            "#endif",
+            "Android user-filter declarations",
+        )
+        user_h_path.write_text(user_h)
+
+    user_c_path = mpv_dir / "filters/user_filters.c"
+    user_c = user_c_path.read_text()
+    if "&vf_rife" not in user_c:
+        user_c = replace_once(
+            user_c,
+            "#ifdef __ANDROID__\n    &vf_anvil,\n#endif",
+            "#ifdef __ANDROID__\n    &vf_anvil,\n    &vf_rife,\n#endif",
+            "Android user-filter registry",
+        )
+        user_c_path.write_text(user_c)
+
+    anvil_dir = prefix_dir.parents[2]
+    android_mk_path = anvil_dir / "app/src/main/jni/Android.mk"
+    if not android_mk_path.is_file():
+        raise SystemExit(f"ANVIL Android NDK packaging file is missing: {android_mk_path}")
+    android_mk = android_mk_path.read_text()
+    module_marker = "# RIFE_VFI_PREBUILT\n"
+    if module_marker not in android_mk:
+        anchor = "include $(CLEAR_VARS)\n\nLOCAL_MODULE    := libplayer"
+        module = (
+            "include $(CLEAR_VARS)\n"
+            "LOCAL_MODULE := rife_vfi\n"
+            "LOCAL_SRC_FILES := $(PREFIX)/lib/librife_vfi.so\n"
+            "include $(PREBUILT_SHARED_LIBRARY)\n"
+            "# RIFE_VFI_PREBUILT\n\n"
+            "include $(CLEAR_VARS)\n\nLOCAL_MODULE    := libplayer"
+        )
+        android_mk = replace_once(android_mk, anchor, module, "libplayer NDK module")
+    if "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv rife_vfi" not in android_mk:
+        android_mk = replace_once(
+            android_mk,
+            "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv",
+            "LOCAL_SHARED_LIBRARIES := swscale avcodec mpv rife_vfi",
+            "player shared-library list",
+        )
+    android_mk_path.write_text(android_mk)
+    print(f"Registered vf_rife and packaged librife_vfi.so in {mpv_dir}")
+
+
+if __name__ == "__main__":
+    main()
