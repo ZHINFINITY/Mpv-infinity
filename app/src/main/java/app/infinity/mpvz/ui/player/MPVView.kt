@@ -280,11 +280,20 @@ class MPVView(
       val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
       Log.i(TAG, "RIFE_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult model_dir=$rifeModelDirectory")
     } else if (mpvFlowFrameInterpolationEnabled) {
-      // The prototype's CPU block matcher and warper require software-readable RGB frames.
-      val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
+      // Keep MediaCodec hardware decoding, but copy decoded frames to CPU-readable memory for the
+      // current MPVFlow filter. Direct/no-copy decoder surfaces are not readable by this filter.
+      val hardwareDecodeMode = RendererBackendPolicy.interpolationHwdecMode()
+      val hardwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", hardwareDecodeMode)
+      val hardwareDecodeCodecsOptionResult =
+        if (!MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec-codecs")) {
+          PlaybackSession.setOptionString("hwdec-codecs", "all")
+        } else {
+          null
+        }
       Log.i(
         TAG,
-        "MPVFLOW_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult target_fps=$mpvFlowTargetFps",
+        "MPVFLOW_OPTIONS hwdec_mode=$hardwareDecodeMode hwdec_rc=$hardwareDecodeOptionResult " +
+          "hwdec_codecs_rc=${hardwareDecodeCodecsOptionResult ?: "mpv.conf"} target_fps=$mpvFlowTargetFps",
       )
     } else if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HARDWARE_DECODER)) {
       PlaybackSession.setOptionString(
@@ -363,7 +372,7 @@ class MPVView(
         "MPVFLOW_DIAGNOSTIC event=config enabled=$mpvFlowFrameInterpolationEnabled " +
           "requested_target_fps=${decoderPreferences.mpvFlowTargetFps.get()} " +
           "effective_target_fps=$mpvFlowTargetFps display_refresh_hz=${display?.refreshRate ?: 0f} " +
-          "software_decode_required=$mpvFlowFrameInterpolationEnabled " +
+          "hardware_decode_mode=mediacodec-copy software_readable_frames_required=true " +
           "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
       )
     }

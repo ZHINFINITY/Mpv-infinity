@@ -5,10 +5,14 @@
  * reference implementation, not a production-optimized or exact SVPFlow clone.
  */
 #include "mpvflow_core.h"
+#include <limits.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 #define MPVFLOW_PYRAMID_LEVELS 3
 #define MPVFLOW_SCENE_CUT_MEAN_DELTA 48.0
 #define MPVFLOW_CONSISTENCY_LIMIT 4.0
@@ -33,6 +37,7 @@ struct MPVFlowPair {
     int step;
     int level_count;
     bool scene_cut;
+    bool identical_frames;
     struct flow_level levels[MPVFLOW_PYRAMID_LEVELS];
     struct MPVFlowStats stats;
 };
@@ -116,16 +121,41 @@ static const int16_t *vector_at(const struct flow_level *level,
     return field + ((size_t)gy * level->grid_width + gx) * 2;
 }
 static int block_sad(const uint8_t *source, const uint8_t *target,
-                     int width, int x, int y, int dx, int dy, int block)
+                     int width, int x, int y, int dx, int dy, int block,
+                     int cutoff)
 {
-    int64_t sum = 0;
+    int sum = 0;
+#if defined(__aarch64__)
+    if (block == 16) {
+        for (int by = 0; by < block; by++) {
+            const uint8_t *a = source + (size_t)(y + by) * width + x;
+            const uint8_t *b = target + (size_t)(y + by + dy) * width + x + dx;
+            sum += vaddlvq_u8(vabdq_u8(vld1q_u8(a), vld1q_u8(b)));
+            if (sum > cutoff)
+                return sum;
+        }
+        return sum;
+    }
+    if (block == 8) {
+        for (int by = 0; by < block; by++) {
+            const uint8_t *a = source + (size_t)(y + by) * width + x;
+            const uint8_t *b = target + (size_t)(y + by + dy) * width + x + dx;
+            sum += vaddlv_u8(vabd_u8(vld1_u8(a), vld1_u8(b)));
+            if (sum > cutoff)
+                return sum;
+        }
+        return sum;
+    }
+#endif
     for (int by = 0; by < block; by++) {
         const uint8_t *a = source + (size_t)(y + by) * width + x;
         const uint8_t *b = target + (size_t)(y + by + dy) * width + x + dx;
         for (int bx = 0; bx < block; bx++)
             sum += abs((int)a[bx] - (int)b[bx]);
+        if (sum > cutoff)
+            return sum;
     }
-    return sum > INT32_MAX ? INT32_MAX : (int)sum;
+    return sum;
 }
 static void estimate_one_direction(struct flow_level *levels, int level_count,
                                    int block, int step, int search_radius,
@@ -163,11 +193,13 @@ static void estimate_one_direction(struct flow_level *levels, int level_count,
                 int best_dx = clamp_int(center_dx, min_dx, max_dx);
                 int best_dy = clamp_int(center_dy, min_dy, max_dy);
                 int best_cost = block_sad(source, target, level->width, x, y,
-                                          best_dx, best_dy, block);
+                                          best_dx, best_dy, block, INT32_MAX);
                 for (int dy = min_dy; dy <= max_dy; dy++) {
                     for (int dx = min_dx; dx <= max_dx; dx++) {
+                        if (dx == best_dx && dy == best_dy)
+                            continue;
                         int cost = block_sad(source, target, level->width,
-                                             x, y, dx, dy, block);
+                                             x, y, dx, dy, block, best_cost);
                         if (cost < best_cost ||
                             (cost == best_cost &&
                              abs(dx) + abs(dy) < abs(best_dx) + abs(best_dy))) {
@@ -264,7 +296,7 @@ static bool collect_stats(const struct flow_level *level, int step,
             size_t index = ((size_t)gy * level->grid_width + gx) * 2;
             sad_sum += block_sad(level->luma0, level->luma1, level->width,
                                  x, y, level->forward[index],
-                                 level->forward[index + 1], block);
+                                 level->forward[index + 1], block, INT32_MAX);
         }
     }
     if (!blocks)
@@ -313,6 +345,13 @@ int mpvflow_analyze_pair(MPVFlowContext *context,
         return MPVFLOW_ERROR;
     pair->width = width;
     pair->height = height;
+    if (memcmp(frame0, frame1, (size_t)width * height * 3) == 0) {
+        pair->identical_frames = true;
+        *pair_out = pair;
+        if (stats)
+            *stats = pair->stats;
+        return MPVFLOW_OK;
+    }
     pair->step = context->block_size / 2;
     int w = width;
     int h = height;
@@ -394,6 +433,11 @@ int mpvflow_synthesize_rgb24(MPVFlowContext *context,
         size_t bytes = (size_t)pair->width * pair->height * 3;
         memcpy(output, timestep <= 0.5f ? frame0 : frame1, bytes);
         return MPVFLOW_SCENE_CUT;
+    }
+    if (pair->identical_frames) {
+        size_t bytes = (size_t)pair->width * pair->height * 3;
+        memcpy(output, frame0, bytes);
+        return MPVFLOW_OK;
     }
     const struct flow_level *full = &pair->levels[0];
     double consistency_sum = 0.0;

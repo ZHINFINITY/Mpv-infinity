@@ -39,4 +39,9 @@ internal object RendererBackendPolicy {
       "mediacodec-copy,no"
     }
   }
+
+  /**
+   * MediaCodec copy mode keeps frames CPU-visible for filters that cannot import decoder surfaces.
+   */
+  fun interpolationHwdecMode(): String = "mediacodec-copy,no"
 }

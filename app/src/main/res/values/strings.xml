@@ -321,7 +321,7 @@
   <string name="pref_decoder_rife_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
   <string name="pref_decoder_rife_summary_vulkan_unavailable">This device or selected MPV renderer has no available Vulkan path.</string>
   <string name="pref_decoder_mpvflow_title">On-device motion interpolation (MPVFlow, experimental)</string>
-  <string name="pref_decoder_mpvflow_summary">Separate, non-RIFE motion-compensation prototype. It estimates block motion on the device, then synthesizes intermediate frames. SDR progressive video only; the test filter forces software decoding while enabled. The actual target is limited by display refresh and device performance. Restart playback after changing.</string>
+  <string name="pref_decoder_mpvflow_summary">Separate, non-RIFE motion-compensation filter. It estimates block motion on the device, then synthesizes intermediate frames. SDR progressive video only; it requests MediaCodec copy-mode hardware decoding where supported and copies frames to CPU-visible memory for processing. Unsupported streams may fall back to software decoding. Smoothness and detail depend on device performance; restart playback after changing.</string>
   <string name="pref_decoder_mpvflow_summary_unavailable">The MPVFlow filter is included only in the experimental arm64 testing APK.</string>
   <string name="pref_decoder_mpvflow_summary_config_owned">Unavailable because mpv.conf owns vf or hwdec. Clear those overrides to let the app manage this feature.</string>
   <string name="pref_decoder_mpvflow_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
