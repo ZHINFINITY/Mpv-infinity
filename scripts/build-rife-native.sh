@@ -53,8 +53,8 @@ add_dependencies(rife_vfi generate-spirv)
     text = text.replace(old_target, new_target, 1)
     old_link = "target_link_libraries(rife-ncnn-vulkan ${RIFE_LINK_LIBRARIES})"
     new_link = '''target_link_libraries(rife_vfi PRIVATE ${RIFE_LINK_LIBRARIES})
-install(TARGETS rife_vfi LIBRARY DESTINATION lib)
-install(FILES rife_vfi.h DESTINATION include)'''
+install(TARGETS rife_vfi LIBRARY DESTINATION lib COMPONENT RifeRuntime)
+install(FILES rife_vfi.h DESTINATION include COMPONENT RifeRuntime)'''
     if text.count(old_link) != 1:
         raise SystemExit("Expected exactly one upstream RIFE link target; refusing an unverified patch")
     text = text.replace(old_link, new_link, 1)
@@ -145,7 +145,7 @@ cmake -S "$RIFE_DIR/src" -B "$BUILD_DIR" \
   -DWEBP_BUILD_CWEBP=OFF \
   -DWEBP_BUILD_DWEBP=OFF
 cmake --build "$BUILD_DIR" --target rife_vfi --parallel "${RIFE_BUILD_CORES:-2}"
-cmake --install "$BUILD_DIR"
+cmake --install "$BUILD_DIR" --component RifeRuntime
 
 python3 "$ROOT/scripts/stage-rife-model.py" \
   --source "$RIFE_DIR/models/rife-v4.6" \
