@@ -4,7 +4,6 @@
 
 #include "gpu.h"
 #include <cstdio>
-#include <cstring>
 #include <mutex>
 #include <new>
 #include <string>
@@ -114,16 +113,16 @@ extern "C" int rife_vfi_interpolate_rgb24(RifeVfiEngine *engine,
         width <= 0 || height <= 0 || timestep <= 0.f || timestep >= 1.f)
         return -1;
 
-    ncnn::Mat input0 = ncnn::Mat::from_pixels(frame0, ncnn::Mat::PIXEL_RGB, width, height);
-    ncnn::Mat input1 = ncnn::Mat::from_pixels(frame1, ncnn::Mat::PIXEL_RGB, width, height);
-    if (input0.empty() || input1.empty())
+    // The pinned RIFE process_v4 path expects packed RGB bytes and wraps them as
+    // external Mats itself; from_pixels() would expand to float planes first.
+    ncnn::Mat input0(width, height, const_cast<uint8_t *>(frame0), (size_t)3, 3);
+    ncnn::Mat input1(width, height, const_cast<uint8_t *>(frame1), (size_t)3, 3);
+    ncnn::Mat synthesized(width, height, output, (size_t)3, 3);
+
+    // RIFE writes RGB24 into synthesized's caller-owned buffer, avoiding an
+    // intermediate output allocation and a full-frame memcpy after inference.
+    if (engine->network->process(input0, input1, timestep, synthesized) != 0)
         return -1;
 
-    ncnn::Mat synthesized(width, height, (size_t)3, 3);
-    if (synthesized.empty() || engine->network->process(input0, input1, timestep, synthesized) != 0 ||
-        synthesized.empty() || synthesized.w != width || synthesized.h != height)
-        return -1;
-
-    std::memcpy(output, synthesized.data, static_cast<size_t>(width) * height * 3);
     return 0;
 }
