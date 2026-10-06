@@ -27,8 +27,9 @@
 #define RIFE_MAX_SYNTH_PER_GAP 12
 #define RIFE_LOG_EVERY 120
 #define RIFE_FALLBACK_QUEUE_SIZE 4
-#define RIFE_SLOW_INFERENCE_LIMIT 3
+#define RIFE_SLOW_INFERENCE_LIMIT 2
 #define RIFE_SLOW_INFERENCE_BUDGET_MULTIPLIER 1.5
+#define RIFE_SEVERE_INFERENCE_BUDGET_MULTIPLIER 3.0
 
 struct f_opts {
     char *model_dir;
@@ -269,16 +270,21 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     if (elapsed > 0)
         p->inference_ns += elapsed;
     p->inference_count++;
+    int64_t frame_period_ns = (int64_t)(p->frame_step * 1e9);
     int64_t inference_budget_ns =
-        (int64_t)(p->frame_step * 1e9 * RIFE_SLOW_INFERENCE_BUDGET_MULTIPLIER);
+        (int64_t)(frame_period_ns * RIFE_SLOW_INFERENCE_BUDGET_MULTIPLIER);
+    int64_t severe_inference_budget_ns =
+        (int64_t)(frame_period_ns * RIFE_SEVERE_INFERENCE_BUDGET_MULTIPLIER);
+    bool severe_slowdown = elapsed > severe_inference_budget_ns;
     if (elapsed > inference_budget_ns)
         p->slow_inference_count++;
     else
         p->slow_inference_count = 0;
-    if (p->slow_inference_count >= RIFE_SLOW_INFERENCE_LIMIT) {
+    if (severe_slowdown || p->slow_inference_count >= RIFE_SLOW_INFERENCE_LIMIT) {
         p->performance_limited = true;
-        MP_WARN(f, "RIFE_DIAGNOSTIC event=auto_fallback reason=slow_inference target_fps=%.0f last_inference_ms=%.2f consecutive_slow=%u\n",
-                p->opts->target_fps, elapsed / 1e6, p->slow_inference_count);
+        MP_WARN(f, "RIFE_DIAGNOSTIC event=auto_fallback reason=slow_inference target_fps=%.0f last_inference_ms=%.2f consecutive_slow=%u immediate=%d\n",
+                p->opts->target_fps, elapsed / 1e6, p->slow_inference_count,
+                severe_slowdown ? 1 : 0);
         goto done;
     }
     if (p->inference_count >= RIFE_LOG_EVERY) {
