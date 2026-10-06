@@ -10,7 +10,7 @@ This is an independently written prototype informed by SVP's public descriptions
 
 1. The Android mpv user filter holds adjacent decoded pictures and places output timestamps on the selected target-FPS grid.
 2. Each source pair is converted to a reduced RGB24 image. A luma pyramid is built at up to three scales.
-3. The native C core performs coarse-to-fine block matching in both directions. The default block is 8×8 with a 4-pixel grid step; the search is wider at the coarsest scale and locally refined at finer scales.
+3. The native C core performs the same exhaustive coarse-to-fine block matching in both directions. Independent block rows are analyzed concurrently on up to four online CPU workers when a pyramid level is large enough; small levels stay serial. This changes scheduling, not the search candidates or vector decisions.
 4. The resulting pair of vector fields is cached. Analysis runs once per decoded pair; the cached vectors are reused for every synthesized timestamp in that interval.
 5. For each output timestamp, vectors warp samples from both source pictures. Forward/backward consistency and photometric agreement provide a confidence estimate; uncertain/occluded pixels fall back toward the nearer source picture. A large frame-wide change is treated as a scene cut and does not get motion-warped.
 6. The reduced output is converted back to the input dimensions and pixel format, with its presentation timestamp set to the target grid.
@@ -25,7 +25,7 @@ The implementation is CPU-side and requires software-readable **SDR progressive*
 
 ## Build and tests
 
-- `scripts/test-mpvflow-core.sh` runs host-only synthetic tests for translation recovery, identical-frame handling, scene-cut handling, and deterministic parallel output. It does not make an Android APK or validate A/V synchronization.
+- `scripts/test-mpvflow-core.sh` runs host-only synthetic tests for translation recovery, identical-frame handling, scene-cut handling, and deterministic parallel analysis/synthesis. It does not make an Android APK or validate A/V synchronization.
 - `scripts/prepare-mpvflow.py` registers `vf_mpvflow` and its core files in the pinned Android mpv source tree.
 - `.github/workflows/mpvflow-debug-arm64.yml` builds the arm64 MPV runtime and debug APK remotely, without building or linking the RIFE runtime into this test APK. The GitHub Actions artifact is retained for 14 days.
 - In the testing APK, open **Settings → Decoder → On-device motion interpolation (MPVFlow, experimental)**, choose a target, then restart playback. The player log includes `MPVFLOW_DIAGNOSTIC` lines for selected/effective rate, per-pair vector analysis, scene cuts, and any pass-through/disable reason.

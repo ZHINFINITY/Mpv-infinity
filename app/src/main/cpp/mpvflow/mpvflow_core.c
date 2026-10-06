@@ -17,6 +17,8 @@
 #endif
 #define MPVFLOW_PYRAMID_LEVELS 3
 #define MPVFLOW_SYNTH_MAX_WORKERS 4
+#define MPVFLOW_ANALYSIS_MAX_WORKERS 4
+#define MPVFLOW_ANALYSIS_MIN_BLOCKS 256
 #define MPVFLOW_SCENE_CUT_MEAN_DELTA 48.0
 #define MPVFLOW_CONSISTENCY_LIMIT 4.0
 #define MPVFLOW_PHOTOMETRIC_LIMIT 96.0
@@ -160,62 +162,137 @@ static int block_sad(const uint8_t *source, const uint8_t *target,
     }
     return sum;
 }
+struct estimate_job {
+    struct flow_level *levels;
+    int level_count;
+    int level_index;
+    int block;
+    int step;
+    int search_radius;
+    bool forward;
+    int grid_y_start;
+    int grid_y_end;
+};
+
+static void estimate_rows(struct estimate_job *job)
+{
+    struct flow_level *levels = job->levels;
+    int li = job->level_index;
+    int block = job->block;
+    int step = job->step;
+    bool forward = job->forward;
+    struct flow_level *level = &levels[li];
+    int16_t *field = forward ? level->forward : level->backward;
+    const uint8_t *source = forward ? level->luma0 : level->luma1;
+    const uint8_t *target = forward ? level->luma1 : level->luma0;
+    bool coarse = li == job->level_count - 1;
+    struct flow_level *parent = coarse ? NULL : &levels[li + 1];
+    int radius = coarse ? job->search_radius : 2;
+    for (int gy = job->grid_y_start; gy < job->grid_y_end; gy++) {
+        int y = clamp_int(gy * step, 0, level->height - block);
+        for (int gx = 0; gx < level->grid_width; gx++) {
+            int x = clamp_int(gx * step, 0, level->width - block);
+            int center_dx = 0;
+            int center_dy = 0;
+            if (parent) {
+                const int16_t *prediction = vector_at(
+                    parent, forward ? parent->forward : parent->backward,
+                    x / 2, y / 2, step);
+                center_dx = prediction[0] * 2;
+                center_dy = prediction[1] * 2;
+            }
+            int min_dx = clamp_int(center_dx - radius, -x,
+                                   level->width - block - x);
+            int max_dx = clamp_int(center_dx + radius, -x,
+                                   level->width - block - x);
+            int min_dy = clamp_int(center_dy - radius, -y,
+                                   level->height - block - y);
+            int max_dy = clamp_int(center_dy + radius, -y,
+                                   level->height - block - y);
+            int best_dx = clamp_int(center_dx, min_dx, max_dx);
+            int best_dy = clamp_int(center_dy, min_dy, max_dy);
+            int best_cost = block_sad(source, target, level->width, x, y,
+                                      best_dx, best_dy, block, INT32_MAX);
+            for (int dy = min_dy; dy <= max_dy; dy++) {
+                for (int dx = min_dx; dx <= max_dx; dx++) {
+                    if (dx == best_dx && dy == best_dy)
+                        continue;
+                    int cost = block_sad(source, target, level->width,
+                                         x, y, dx, dy, block, best_cost);
+                    if (cost < best_cost ||
+                        (cost == best_cost &&
+                         abs(dx) + abs(dy) < abs(best_dx) + abs(best_dy))) {
+                        best_cost = cost;
+                        best_dx = dx;
+                        best_dy = dy;
+                    }
+                }
+            }
+            size_t index = ((size_t)gy * level->grid_width + gx) * 2;
+            field[index] = (int16_t)best_dx;
+            field[index + 1] = (int16_t)best_dy;
+        }
+    }
+}
+
+static void *estimate_rows_thread(void *opaque)
+{
+    estimate_rows(opaque);
+    return NULL;
+}
+
+static int analysis_worker_limit(void)
+{
+    long online_processors = sysconf(_SC_NPROCESSORS_ONLN);
+    if (online_processors < 2)
+        return 1;
+    return online_processors > MPVFLOW_ANALYSIS_MAX_WORKERS
+        ? MPVFLOW_ANALYSIS_MAX_WORKERS : (int)online_processors;
+}
+
 static void estimate_one_direction(struct flow_level *levels, int level_count,
                                    int block, int step, int search_radius,
-                                   bool forward)
+                                   bool forward, int max_workers)
 {
     for (int li = level_count - 1; li >= 0; li--) {
         struct flow_level *level = &levels[li];
-        int16_t *field = forward ? level->forward : level->backward;
-        const uint8_t *source = forward ? level->luma0 : level->luma1;
-        const uint8_t *target = forward ? level->luma1 : level->luma0;
-        bool coarse = li == level_count - 1;
-        struct flow_level *parent = coarse ? NULL : &levels[li + 1];
-        int radius = coarse ? search_radius : 2;
-        for (int gy = 0; gy < level->grid_height; gy++) {
-            int y = clamp_int(gy * step, 0, level->height - block);
-            for (int gx = 0; gx < level->grid_width; gx++) {
-                int x = clamp_int(gx * step, 0, level->width - block);
-                int center_dx = 0;
-                int center_dy = 0;
-                if (parent) {
-                    const int16_t *prediction = vector_at(
-                        parent, forward ? parent->forward : parent->backward,
-                        x / 2, y / 2, step);
-                    center_dx = prediction[0] * 2;
-                    center_dy = prediction[1] * 2;
-                }
-                int min_dx = clamp_int(center_dx - radius, -x,
-                                       level->width - block - x);
-                int max_dx = clamp_int(center_dx + radius, -x,
-                                       level->width - block - x);
-                int min_dy = clamp_int(center_dy - radius, -y,
-                                       level->height - block - y);
-                int max_dy = clamp_int(center_dy + radius, -y,
-                                       level->height - block - y);
-                int best_dx = clamp_int(center_dx, min_dx, max_dx);
-                int best_dy = clamp_int(center_dy, min_dy, max_dy);
-                int best_cost = block_sad(source, target, level->width, x, y,
-                                          best_dx, best_dy, block, INT32_MAX);
-                for (int dy = min_dy; dy <= max_dy; dy++) {
-                    for (int dx = min_dx; dx <= max_dx; dx++) {
-                        if (dx == best_dx && dy == best_dy)
-                            continue;
-                        int cost = block_sad(source, target, level->width,
-                                             x, y, dx, dy, block, best_cost);
-                        if (cost < best_cost ||
-                            (cost == best_cost &&
-                             abs(dx) + abs(dy) < abs(best_dx) + abs(best_dy))) {
-                            best_cost = cost;
-                            best_dx = dx;
-                            best_dy = dy;
-                        }
-                    }
-                }
-                size_t index = ((size_t)gy * level->grid_width + gx) * 2;
-                field[index] = (int16_t)best_dx;
-                field[index + 1] = (int16_t)best_dy;
+        int worker_count = max_workers;
+        int block_count = level->grid_width * level->grid_height;
+        if (block_count < MPVFLOW_ANALYSIS_MIN_BLOCKS)
+            worker_count = 1;
+        if (worker_count > level->grid_height)
+            worker_count = level->grid_height;
+        if (worker_count < 1)
+            worker_count = 1;
+
+        struct estimate_job jobs[MPVFLOW_ANALYSIS_MAX_WORKERS] = {0};
+        pthread_t threads[MPVFLOW_ANALYSIS_MAX_WORKERS - 1];
+        bool thread_started[MPVFLOW_ANALYSIS_MAX_WORKERS - 1] = {false};
+        for (int i = 0; i < worker_count; i++) {
+            jobs[i] = (struct estimate_job) {
+                .levels = levels,
+                .level_count = level_count,
+                .level_index = li,
+                .block = block,
+                .step = step,
+                .search_radius = search_radius,
+                .forward = forward,
+                .grid_y_start = level->grid_height * i / worker_count,
+                .grid_y_end = level->grid_height * (i + 1) / worker_count,
+            };
+        }
+        for (int i = 1; i < worker_count; i++) {
+            if (pthread_create(&threads[i - 1], NULL, estimate_rows_thread,
+                               &jobs[i]) == 0) {
+                thread_started[i - 1] = true;
+            } else {
+                estimate_rows(&jobs[i]);
             }
+        }
+        estimate_rows(&jobs[0]);
+        for (int i = 1; i < worker_count; i++) {
+            if (thread_started[i - 1])
+                pthread_join(threads[i - 1], NULL);
         }
     }
 }
@@ -395,12 +472,13 @@ int mpvflow_analyze_pair(MPVFlowContext *context,
             *stats = pair->stats;
         return MPVFLOW_SCENE_CUT;
     }
+    int analysis_workers = analysis_worker_limit();
     estimate_one_direction(pair->levels, pair->level_count,
                            context->block_size, pair->step,
-                           context->search_radius, true);
+                           context->search_radius, true, analysis_workers);
     estimate_one_direction(pair->levels, pair->level_count,
                            context->block_size, pair->step,
-                           context->search_radius, false);
+                           context->search_radius, false, analysis_workers);
     if (!collect_stats(&pair->levels[0], pair->step, &pair->stats)) {
         mpvflow_pair_destroy(pair);
         return MPVFLOW_ERROR;

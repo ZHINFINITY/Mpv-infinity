@@ -94,6 +94,43 @@ static void test_parallel_synthesis_is_deterministic(void)
     free(out0);
     free(out1);
 }
+static void test_parallel_analysis_is_deterministic(void)
+{
+    const int width = 320, height = 192;
+    size_t bytes = (size_t)width * height * 3;
+    uint8_t *a = malloc(bytes), *b = malloc(bytes);
+    uint8_t *out0 = malloc(bytes), *out1 = malloc(bytes);
+    assert(a && b && out0 && out1);
+    fill_texture(a, width, height, 96);
+    fill_texture(b, width, height, 104);
+    MPVFlowContext *context0 = mpvflow_create(8, 8);
+    MPVFlowContext *context1 = mpvflow_create(8, 8);
+    assert(context0 && context1);
+    MPVFlowPair *pair0 = NULL, *pair1 = NULL;
+    struct MPVFlowStats stats0 = {0}, stats1 = {0};
+    assert(mpvflow_analyze_pair(context0, a, b, width, height,
+                                &pair0, &stats0) == MPVFLOW_OK);
+    assert(mpvflow_analyze_pair(context1, a, b, width, height,
+                                &pair1, &stats1) == MPVFLOW_OK);
+    assert(pair0 && pair1);
+    assert(stats0.mean_block_sad == stats1.mean_block_sad);
+    assert(stats0.mean_vector_consistency_error ==
+           stats1.mean_vector_consistency_error);
+    assert(stats0.mean_motion_pixels == stats1.mean_motion_pixels);
+    assert(mpvflow_synthesize_rgb24(context0, pair0, a, b, 0.5f,
+                                    out0, NULL) == MPVFLOW_OK);
+    assert(mpvflow_synthesize_rgb24(context1, pair1, a, b, 0.5f,
+                                    out1, NULL) == MPVFLOW_OK);
+    assert(memcmp(out0, out1, bytes) == 0);
+    mpvflow_pair_destroy(pair0);
+    mpvflow_pair_destroy(pair1);
+    mpvflow_destroy(context0);
+    mpvflow_destroy(context1);
+    free(a);
+    free(b);
+    free(out0);
+    free(out1);
+}
 static void test_scene_cut_avoids_synthetic_blend(void)
 {
     const int width = 64, height = 48;
@@ -120,6 +157,7 @@ int main(void)
     test_translation_is_compensated();
     test_identical_frames_are_preserved();
     test_parallel_synthesis_is_deterministic();
+    test_parallel_analysis_is_deterministic();
     test_scene_cut_avoids_synthetic_blend();
     puts("mpvflow core tests passed");
     return 0;
