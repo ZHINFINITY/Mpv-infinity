@@ -19,6 +19,7 @@ import java.util.Date
 import java.util.Locale
 
 internal const val DEBUG_LOG_ENTRY_LIMIT = 1_500
+private const val RIFE_DIAGNOSTIC_ENTRY_RESERVE = 200
 
 internal enum class DebugLogLevel(
   val code: String,
@@ -104,7 +105,7 @@ internal object DebugLogReader {
       val parsed = parseLines(primary.lines, expectedPid = pid, allowRawFallback = true)
       if (parsed.isNotEmpty()) {
         return DebugLogSnapshot(
-          entries = parsed.takeLast(DEBUG_LOG_ENTRY_LIMIT),
+          entries = retainDebugLogEntries(parsed),
           source = "process-filtered",
           rawLineCount = primary.lines.size,
         )
@@ -129,7 +130,7 @@ internal object DebugLogReader {
       val parsed = parseLines(fallback.lines, expectedPid = pid, allowRawFallback = false)
       if (parsed.isNotEmpty()) {
         return DebugLogSnapshot(
-          entries = parsed.takeLast(DEBUG_LOG_ENTRY_LIMIT),
+          entries = retainDebugLogEntries(parsed),
           source = "pid-fallback",
           rawLineCount = fallback.lines.size,
         )
@@ -287,6 +288,22 @@ internal object DebugLogReader {
       return if (detail.isBlank()) "$label exited with code $exitCode" else "$label: $detail"
     }
   }
+}
+
+internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogEntry> {
+  if (entries.size <= DEBUG_LOG_ENTRY_LIMIT) return entries
+
+  val rifeDiagnostics =
+    entries
+      .filter { entry ->
+        entry.tag.contains("rife", ignoreCase = true) ||
+          entry.message.contains("rife", ignoreCase = true) ||
+          entry.message.contains("vf_rife", ignoreCase = true)
+      }.takeLast(RIFE_DIAGNOSTIC_ENTRY_RESERVE)
+  val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - rifeDiagnostics.size).coerceAtLeast(0)
+  return (entries.takeLast(recentCapacity) + rifeDiagnostics)
+    .distinctBy(DebugLogEntry::id)
+    .sortedBy(DebugLogEntry::timeMillis)
 }
 
 private fun String.toDebugLogLevel(): DebugLogLevel? =

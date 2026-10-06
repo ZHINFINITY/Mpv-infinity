@@ -3544,6 +3544,9 @@ class PlayerViewModel : ViewModel(),
       )
 
     introLookupJob?.cancel()
+    // Child provider coroutines may outlive cancellation while network work unwinds. Keep their
+    // closure limited to the repository instead of retaining this ViewModel instance.
+    val introRepository = introDbRepository
     introLookupJob =
       viewModelScope.launch {
         val outcome =
@@ -3560,7 +3563,7 @@ class PlayerViewModel : ViewModel(),
                 .map { lookupProvider ->
                   async(Dispatchers.IO) {
                     try {
-                      introDbRepository.lookupSegments(lookupRequest.copy(provider = lookupProvider))
+                      introRepository.lookupSegments(lookupRequest.copy(provider = lookupProvider))
                     } catch (cancellation: kotlinx.coroutines.CancellationException) {
                       throw cancellation
                     } catch (error: Exception) {
@@ -3609,7 +3612,7 @@ class PlayerViewModel : ViewModel(),
               }
             }
           } else {
-            introDbRepository.lookupSegments(lookupRequest)
+            introRepository.lookupSegments(lookupRequest)
           }
 
         if (currentMediaTitle != lookupKey) return@launch
@@ -6947,6 +6950,7 @@ class PlayerViewModel : ViewModel(),
     realtimeSubsJob?.cancel()
     playlistMetadataJob?.cancel()
     introLookupJob?.cancel()
+    introLookupJob = null
     autoCropJob?.cancel()
     autoCropReadinessJob?.cancel()
     mpvStateCollectorsJob?.cancel()

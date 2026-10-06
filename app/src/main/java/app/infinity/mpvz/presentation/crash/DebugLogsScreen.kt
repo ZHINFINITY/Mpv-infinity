@@ -86,6 +86,7 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
 
   var query by remember { mutableStateOf("") }
   var selectedLevels by remember { mutableStateOf(DebugLogLevel.entries.toSet()) }
+  var rifeOnly by remember { mutableStateOf(false) }
   var liveEntries by remember { mutableStateOf<List<DebugLogEntry>>(emptyList()) }
   var pausedEntries by remember { mutableStateOf<List<DebugLogEntry>?>(null) }
   var expandedEntryIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -133,10 +134,11 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
       DebugLogLevel.entries.associateWith { level -> sourceEntries.count { it.level == level } }
     }
   val filteredEntries =
-    remember(sourceEntries, query, selectedLevels) {
+    remember(sourceEntries, query, selectedLevels, rifeOnly) {
       val needle = query.trim()
       sourceEntries.filter { entry ->
         entry.level in selectedLevels &&
+          (!rifeOnly || entry.isRifeDiagnostic()) &&
           (needle.isEmpty() ||
             entry.level.label.contains(needle, ignoreCase = true) ||
             entry.tag.contains(needle, ignoreCase = true) ||
@@ -363,6 +365,11 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
               leadingIcon = { DebugLogLevelBadge(level, compact = true) },
             )
           }
+          FilterChip(
+            selected = rifeOnly,
+            onClick = { rifeOnly = !rifeOnly },
+            label = { Text("RIFE ${sourceEntries.count { it.isRifeDiagnostic() }}") },
+          )
         }
 
         AnimatedVisibility(visible = readError != null && sourceEntries.isNotEmpty()) {
@@ -607,6 +614,11 @@ private fun formatDebugLogEntry(entry: DebugLogEntry): String =
     append(": ")
     append(entry.message)
   }
+
+private fun DebugLogEntry.isRifeDiagnostic(): Boolean =
+  tag.contains("rife", ignoreCase = true) ||
+    message.contains("rife", ignoreCase = true) ||
+    message.contains("vf_rife", ignoreCase = true)
 
 private fun buildDebugLogText(
   entries: List<DebugLogEntry>,

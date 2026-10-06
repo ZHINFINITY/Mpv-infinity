@@ -27,6 +27,8 @@
 #define RIFE_MAX_SYNTH_PER_GAP 12
 #define RIFE_LOG_EVERY 120
 #define RIFE_FALLBACK_QUEUE_SIZE 4
+#define RIFE_SLOW_INFERENCE_LIMIT 3
+#define RIFE_SLOW_INFERENCE_BUDGET_MULTIPLIER 1.5
 
 struct f_opts {
     char *model_dir;
@@ -59,6 +61,9 @@ struct priv {
 
     bool active;
     bool warned;
+    bool passthrough_recovery_pending;
+    bool performance_limited;
+    unsigned int slow_inference_count;
     struct mp_frame fallback[RIFE_FALLBACK_QUEUE_SIZE];
     int fallback_count;
     int fallback_pos;
@@ -122,7 +127,7 @@ static void log_fallback(struct mp_filter *f, const char *why)
 {
     struct priv *p = f->priv;
     if (!p->warned) {
-        MP_WARN(f, "RIFE disabled; passing source frames through (%s).\n", why);
+        MP_WARN(f, "RIFE_DIAGNOSTIC state=passthrough reason=%s\n", why);
         p->warned = true;
     }
 }
@@ -133,7 +138,8 @@ static void disable_and_queue(struct mp_filter *f, const char *why,
                               struct mp_frame current)
 {
     struct priv *p = f->priv;
-    log_fallback(f, why);
+    MP_WARN(f, "RIFE_DIAGNOSTIC event=disabled reason=%s\n", why);
+    p->warned = true;
 
     if (p->prev.type && !p->prev_was_emitted && p->outputs_in_gap == 0)
         fallback_add(p, mp_frame_ref(p->prev));
@@ -147,6 +153,28 @@ static void disable_and_queue(struct mp_filter *f, const char *why,
     mp_frame_unref(&p->prev);
     p->active = false;
     p->outputs_in_gap = 0;
+}
+
+// A bad timestamp or one unsupported frame should not disable interpolation for the rest of the
+// file. Flush any held source frames in order, then let the next valid frame pair re-arm RIFE.
+static void bypass_unsupported_segment(struct mp_filter *f, const char *why)
+{
+    struct priv *p = f->priv;
+    log_fallback(f, why);
+
+    if (p->prev.type && !p->prev_was_emitted && p->outputs_in_gap == 0)
+        fallback_add(p, mp_frame_ref(p->prev));
+    if (p->pending.type) {
+        fallback_add(p, p->pending);
+        p->pending = MP_NO_FRAME;
+    }
+
+    mp_frame_unref(&p->prev);
+    p->prev = MP_NO_FRAME;
+    p->next_pts = 0;
+    p->prev_was_emitted = false;
+    p->outputs_in_gap = 0;
+    p->passthrough_recovery_pending = true;
 }
 
 static bool write_fallback(struct mp_filter *f)
@@ -241,10 +269,23 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     if (elapsed > 0)
         p->inference_ns += elapsed;
     p->inference_count++;
+    int64_t inference_budget_ns =
+        (int64_t)(p->frame_step * 1e9 * RIFE_SLOW_INFERENCE_BUDGET_MULTIPLIER);
+    if (elapsed > inference_budget_ns)
+        p->slow_inference_count++;
+    else
+        p->slow_inference_count = 0;
+    if (p->slow_inference_count >= RIFE_SLOW_INFERENCE_LIMIT) {
+        p->performance_limited = true;
+        MP_WARN(f, "RIFE_DIAGNOSTIC event=auto_fallback reason=slow_inference target_fps=%.0f last_inference_ms=%.2f consecutive_slow=%u\n",
+                p->opts->target_fps, elapsed / 1e6, p->slow_inference_count);
+        goto done;
+    }
     if (p->inference_count >= RIFE_LOG_EVERY) {
-        MP_INFO(f, "RIFE inference latency average over %u frames: %.2f ms\n",
+        MP_INFO(f, "RIFE_DIAGNOSTIC event=inference_latency average_frames=%u average_ms=%.2f target_fps=%.0f\n",
                 p->inference_count,
-                p->inference_ns / (double)p->inference_count / 1e6);
+                p->inference_ns / (double)p->inference_count / 1e6,
+                p->opts->target_fps);
         p->inference_count = 0;
         p->inference_ns = 0;
     }
@@ -301,9 +342,10 @@ static void f_process(struct mp_filter *f)
     if (!mp_pin_in_needs_data(f->ppins[1]))
         return;
 
+    if (write_fallback(f))
+        return;
+
     if (!p->active) {
-        if (write_fallback(f))
-            return;
         mp_pin_transfer_data(f->ppins[1], f->ppins[0]);
         return;
     }
@@ -319,9 +361,18 @@ static void f_process(struct mp_filter *f)
             }
             struct mp_image *img = frame_image(frame);
             if (!img || !image_is_supported(img) || !pts_is_valid(img->pts)) {
-                disable_and_queue(f, "unsupported frame or missing PTS", frame);
-                write_fallback(f);
+                const char *why = !img ? "non-video frame" :
+                    !image_is_supported(img) ? "unsupported frame format" :
+                    "missing PTS";
+                log_fallback(f, why);
+                p->passthrough_recovery_pending = true;
+                mp_pin_in_write(f->ppins[1], frame);
                 return;
+            }
+            if (p->passthrough_recovery_pending) {
+                MP_INFO(f, "RIFE_DIAGNOSTIC state=interpolating resumed=1 target_fps=%.0f\n",
+                        p->opts->target_fps);
+                p->passthrough_recovery_pending = false;
             }
             p->prev = mp_frame_ref(frame);
             p->prev_was_emitted = true;
@@ -356,7 +407,12 @@ static void f_process(struct mp_filter *f)
         struct mp_image *b = frame_image(p->pending);
         if (!b || !frames_compatible(a, b) || !pts_is_valid(b->pts) ||
             b->pts <= a->pts) {
-            disable_and_queue(f, "unsupported frame or non-monotonic PTS", MP_NO_FRAME);
+            const char *why = !b ? "non-video frame" :
+                !image_is_supported(b) ? "unsupported frame format" :
+                !pts_is_valid(b->pts) ? "missing PTS" :
+                b->pts <= a->pts ? "non-monotonic PTS" :
+                "incompatible frame format or dimensions";
+            bypass_unsupported_segment(f, why);
             write_fallback(f);
             return;
         }
@@ -374,7 +430,11 @@ static void f_process(struct mp_filter *f)
             }
             struct mp_image *out = interpolate(f, a, b, p->next_pts);
             if (!out) {
-                disable_and_queue(f, "swscale conversion or RIFE inference failed",
+                const char *why = p->performance_limited ?
+                    "inference exceeded target frame-time budget" :
+                    "swscale conversion or RIFE inference failed";
+                p->performance_limited = false;
+                disable_and_queue(f, why,
                                   MP_NO_FRAME);
                 write_fallback(f);
                 return;
@@ -409,6 +469,9 @@ static void f_reset(struct mp_filter *f)
     clear_frames(p);
     p->active = p->engine != NULL;
     p->warned = false;
+    p->passthrough_recovery_pending = false;
+    p->performance_limited = false;
+    p->slow_inference_count = 0;
     p->inference_ns = 0;
     p->inference_count = 0;
 }
@@ -449,6 +512,8 @@ static struct mp_filter *f_create(struct mp_filter *parent, void *options)
     char error[256] = {0};
     p->engine = rife_vfi_create(p->opts->model_dir, error, sizeof(error));
     p->active = p->engine != NULL;
+    MP_INFO(f, "RIFE_DIAGNOSTIC event=initialized target_fps=%.0f engine_ready=%d\n",
+            p->opts->target_fps, p->active);
     if (!p->engine) {
         MP_WARN(f, "RIFE model initialization failed%s%s; passing source frames through.\n",
                 error[0] ? ": " : "", error);

@@ -231,6 +231,16 @@ class CrashActivity : AppCompatActivity() {
       val logcat = StringBuilder()
       // reader.lines() looks much nicer so why not use it on devices that support it?
       reader.lines().forEach(logcat::appendLine)
+      val rifeLines =
+        logcat
+          .lineSequence()
+          .filter { line ->
+            line.contains("rife", ignoreCase = true) ||
+              line.contains("vf_rife", ignoreCase = true)
+          }.joinToString("\n")
+      logcat.appendLine()
+      logcat.appendLine("===== RIFE interpolation diagnostics =====")
+      logcat.appendLine(if (rifeLines.isBlank()) "No RIFE diagnostics captured." else rifeLines)
       val media3Lines =
         logcat
           .lineSequence()

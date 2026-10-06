@@ -27,6 +27,7 @@ import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.normalizeRifeTargetFps
 import app.infinity.mpvz.preferences.SubtitlesPreferences
 import app.infinity.mpvz.preferences.YtdlPreferences
 import app.infinity.mpvz.ui.player.PlayerActivity.Companion.TAG
@@ -81,6 +82,7 @@ class MPVView(
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val rifeRequested = decoderPreferences.rifeFrameInterpolation.get()
+    val requestedRifeTargetFps = normalizeRifeTargetFps(decoderPreferences.rifeTargetFps.get())
     rifeModelDirectory =
       if (rifeRequested && BuildConfig.MPV_HAS_RIFE && !frameInterpolationConfigOwned) {
         runCatching { RifeModelInstaller.install(context.applicationContext).absolutePath }
@@ -90,7 +92,8 @@ class MPVView(
         null
       }
     val rifeFrameInterpolationActive = rifeModelDirectory != null
-    val frameInterpolationKey = "rife=$rifeFrameInterpolationActive"
+    val frameInterpolationKey =
+      if (rifeFrameInterpolationActive) "rife=on,target-fps=$requestedRifeTargetFps" else "rife=off"
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|$frameInterpolationKey"
     val result =
@@ -202,6 +205,7 @@ class MPVView(
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
     val rifeFrameInterpolationPreference = decoderPreferences.rifeFrameInterpolation.get()
+    val rifeTargetFps = normalizeRifeTargetFps(decoderPreferences.rifeTargetFps.get())
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val rifeFrameInterpolationEnabled =
@@ -258,12 +262,29 @@ class MPVView(
     val appVideoFilters =
       buildList {
         if (rifeFrameInterpolationEnabled) {
-          add("rife=model-dir=$rifeModelDirectory:target-fps=60")
+          add("rife=model-dir=$rifeModelDirectory:target-fps=$rifeTargetFps")
         }
         if (decoderPreferences.useYUV420P.get()) add("format=yuv420p")
       }
-    if (appVideoFilters.isNotEmpty() && !MpvConfigOverridePolicy.isOwnedByMpvConf("vf")) {
-      PlaybackSession.setOptionString("vf", appVideoFilters.joinToString(","))
+    val filterOptionResult =
+      if (appVideoFilters.isNotEmpty() && !MpvConfigOverridePolicy.isOwnedByMpvConf("vf")) {
+        PlaybackSession.setOptionString("vf", appVideoFilters.joinToString(","))
+      } else {
+        null
+      }
+    if (rifeFrameInterpolationPreference) {
+      val reason =
+        when {
+          rifeFrameInterpolationEnabled -> "enabled"
+          !BuildConfig.MPV_HAS_RIFE -> "runtime_unavailable"
+          frameInterpolationConfigOwned -> "mpv_config_owns_filter"
+          rifeModelDirectory == null -> "model_unavailable"
+          else -> "renderer_or_engine_unsupported"
+        }
+      Log.i(
+        TAG,
+        "RIFE_DIAGNOSTIC event=config enabled=$rifeFrameInterpolationEnabled target_fps=$rifeTargetFps renderer=${backend.vo} gpu_api=${backend.gpuApi} software_decode_required=$rifeFrameInterpolationEnabled filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
+      )
     }
     val logLevel =
       when {

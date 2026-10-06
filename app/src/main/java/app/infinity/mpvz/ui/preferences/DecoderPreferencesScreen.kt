@@ -54,6 +54,7 @@ import app.infinity.mpvz.preferences.AdvancedPreferences
 import app.infinity.mpvz.preferences.DecoderPreferences
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
+import app.infinity.mpvz.preferences.RIFE_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
@@ -80,6 +81,7 @@ object DecoderPreferencesScreen : Screen {
     val advancedPreferences = koinInject<AdvancedPreferences>()
     val selectedPlaybackEngine by preferences.playbackEngine.collectAsState()
     val rifeFrameInterpolationEnabled by preferences.rifeFrameInterpolation.collectAsState()
+    val rifeTargetFps by preferences.rifeTargetFps.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
@@ -97,6 +99,11 @@ object DecoderPreferencesScreen : Screen {
     val context = LocalContext.current
     val isDeviceVulkanSupported = remember { VulkanCapabilities.isDeviceSupported(context) }
     val isVulkanSupported = BuildConfig.MPV_SUPPORTS_VULKAN && isDeviceVulkanSupported
+    val rifeAvailable =
+      BuildConfig.MPV_HAS_RIFE &&
+        isVulkanSupported &&
+        !frameInterpolationConfigOwned &&
+        selectedPlaybackEngine != PlaybackEngineMode.NATIVE
     var showGpuNextWarning by remember { mutableStateOf(false) }
     var anime4kExpanded by remember { mutableStateOf(false) }
     Scaffold(
@@ -342,11 +349,7 @@ object DecoderPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_title),
                 value = rifeFrameInterpolationEnabled,
-                enabled =
-                  BuildConfig.MPV_HAS_RIFE &&
-                    isVulkanSupported &&
-                    !frameInterpolationConfigOwned &&
-                    selectedPlaybackEngine != PlaybackEngineMode.NATIVE,
+                enabled = rifeAvailable,
                 onValueChange = {
                   preferences.rifeFrameInterpolation.set(it)
                 },
@@ -363,6 +366,26 @@ object DecoderPreferencesScreen : Screen {
                         else -> R.string.pref_decoder_rife_summary
                       },
                     ),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_target_fps_title),
+                value = rifeTargetFps,
+                onValueChange = preferences.rifeTargetFps::set,
+                values = RIFE_TARGET_FPS_OPTIONS,
+                enabled = rifeAvailable,
+                valueToText = {
+                  AnnotatedString(context.getString(R.string.pref_decoder_rife_target_fps_value, it))
+                },
+                title = { Text(stringResource(R.string.pref_decoder_rife_target_fps_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_decoder_rife_target_fps_summary, rifeTargetFps),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

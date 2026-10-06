@@ -16,6 +16,13 @@ import app.infinity.mpvz.ui.player.Debanding
 import app.infinity.mpvz.ui.player.HdrScreenMode
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
 
+internal val RIFE_TARGET_FPS_OPTIONS = listOf(30, 48, 60)
+internal const val DEFAULT_RIFE_TARGET_FPS = 30
+
+internal fun normalizeRifeTargetFps(value: Int): Int =
+  RIFE_TARGET_FPS_OPTIONS.minByOrNull { kotlin.math.abs(it.toLong() - value.toLong()) }
+    ?: DEFAULT_RIFE_TARGET_FPS
+
 class DecoderPreferences(
   preferenceStore: PreferenceStore,
 ) {
@@ -32,6 +39,7 @@ class DecoderPreferences(
   val boostSdrToHdr = preferenceStore.getBoolean("boost_sdr_to_hdr", true)
   val useYUV420P = preferenceStore.getBoolean("use_yuv420p", false)
   val rifeFrameInterpolation = preferenceStore.getBoolean("rife_frame_interpolation", false)
+  val rifeTargetFps = preferenceStore.getInt("rife_target_fps", DEFAULT_RIFE_TARGET_FPS)
 
   val debanding = preferenceStore.getEnum("debanding", Debanding.None)
   val debandIterations = preferenceStore.getInt("deband_iterations", 1)

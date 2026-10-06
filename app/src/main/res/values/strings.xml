@@ -307,7 +307,10 @@
   <string name="pref_decoder_yuv420p_title">Use YUV420P pixel format</string>
   <string name="pref_decoder_yuv420p_summary">May fix black screens on some video codecs, can also improve performance at the cost of quality</string>
   <string name="pref_decoder_rife_title">Frame interpolation (RIFE Vulkan/NCNN, experimental)</string>
-  <string name="pref_decoder_rife_summary">Experimental full-frame RIFE-v4.6 synthesis through ncnn/Vulkan. Targets 60 fps, requires software-readable frames, and passes through unsupported HDR, interlaced, or high-bit-depth video. May increase GPU load, heat, battery use, or dropped frames; restart playback after changing.</string>
+  <string name="pref_decoder_rife_summary">Experimental full-frame RIFE-v4.6 synthesis through ncnn/Vulkan. Requires software-readable frames and passes unsupported HDR, interlaced, or high-bit-depth frames through. Lower target rates reduce GPU load; RIFE automatically falls back to normal playback if inference cannot keep up. Restart playback after changing.</string>
+  <string name="pref_decoder_rife_target_fps_title">RIFE target frame rate</string>
+  <string name="pref_decoder_rife_target_fps_value">%1$d fps</string>
+  <string name="pref_decoder_rife_target_fps_summary">Current target: %1$d fps. Choose 30, 48, or 60 fps; lower targets reduce GPU load. Restart playback after changing.</string>
   <string name="pref_decoder_rife_summary_unavailable">The RIFE native runtime is not included in this APK. It is built only by the experimental arm64 GitHub Actions workflow.</string>
   <string name="pref_decoder_rife_summary_config_owned">Unavailable because mpv.conf owns vf or hwdec. Clear those overrides to let the app manage this feature.</string>
   <string name="pref_decoder_rife_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
