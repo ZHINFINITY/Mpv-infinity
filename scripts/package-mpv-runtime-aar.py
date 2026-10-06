@@ -22,6 +22,7 @@ REQUIRED_LIBS = {
     "libswscale.so",
     "libc++_shared.so",
 }
+NEW_RUNTIME_LIBS = {"librife_vfi.so"}
 PRESERVE_FROM_MPV_INFINITY = {"libplayer.so"}
 KNOWN_SYSTEM_LIBS = {
     "libandroid.so", "libc.so", "libdl.so", "libEGL.so", "libGLESv1_CM.so",
@@ -82,7 +83,7 @@ def main() -> None:
     player_name = "jni/arm64-v8a/libplayer.so"
     if player_name not in original_entries:
         raise SystemExit("The MPV∞ AAR has no arm64 libplayer.so JNI bridge to preserve")
-    for name in REQUIRED_LIBS:
+    for name in REQUIRED_LIBS - NEW_RUNTIME_LIBS:
         if f"jni/arm64-v8a/{name}" not in original_entries:
             raise SystemExit(f"The MPV∞ AAR has no arm64 slot for {name}")
 
