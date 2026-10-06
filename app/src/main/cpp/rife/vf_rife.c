@@ -55,7 +55,9 @@ struct priv {
     struct mp_sws_context *sws;
     uint8_t *pair_input0;
     uint8_t *pair_input1;
+    uint8_t *pair_output_scratch;
     size_t pair_input_bytes;
+    bool pair_output_direct;
     int pair_process_width;
     int pair_process_height;
     int64_t pair_work_ns;
@@ -106,9 +108,12 @@ static void clear_pair_cache(struct priv *p)
 {
     free(p->pair_input0);
     free(p->pair_input1);
+    free(p->pair_output_scratch);
     p->pair_input0 = NULL;
     p->pair_input1 = NULL;
+    p->pair_output_scratch = NULL;
     p->pair_input_bytes = 0;
+    p->pair_output_direct = false;
     p->pair_process_width = 0;
     p->pair_process_height = 0;
     p->pair_work_ns = 0;
@@ -391,9 +396,15 @@ static bool prepare_pair_inputs(struct mp_filter *f, struct mp_image *a,
                                              process_width, process_height);
     uint8_t *packed_a = malloc(bytes);
     uint8_t *packed_b = malloc(bytes);
+    uint8_t *packed_out = NULL;
+    bool output_direct = rgb_a && rgb_a->planes[0] &&
+                         rgb_a->stride[0] == (int)row_bytes;
     bool ok = false;
 
-    if (!rgb_a || !rgb_b || !packed_a || !packed_b) {
+    if (!output_direct)
+        packed_out = malloc(bytes);
+    if (!rgb_a || !rgb_b || !packed_a || !packed_b ||
+        (!output_direct && !packed_out)) {
         MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=pair_cache_allocation_failed source_width=%d source_height=%d process_width=%d process_height=%d bytes=%zu\n",
                 a->w, a->h, process_width, process_height, bytes);
         goto done;
@@ -418,16 +429,20 @@ static bool prepare_pair_inputs(struct mp_filter *f, struct mp_image *a,
         p->conversion_ns += conversion_elapsed;
     p->pair_input0 = packed_a;
     p->pair_input1 = packed_b;
+    p->pair_output_scratch = packed_out;
     p->pair_input_bytes = bytes;
+    p->pair_output_direct = output_direct;
     p->pair_process_width = process_width;
     p->pair_process_height = process_height;
     packed_a = NULL;
     packed_b = NULL;
+    packed_out = NULL;
     ok = true;
 
 done:
     free(packed_a);
     free(packed_b);
+    free(packed_out);
     talloc_free(rgb_a);
     talloc_free(rgb_b);
     return ok;
@@ -453,7 +468,9 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
 
     struct mp_image *rgb_out = mp_image_alloc(IMGFMT_RGB24, process_width, process_height);
     struct mp_image *out = NULL;
-    uint8_t *packed_out = NULL;
+    uint8_t *temporary_output = NULL;
+    uint8_t *network_output = NULL;
+    bool direct_output = false;
     bool ok = false;
 
     if (!prepare_pair_inputs(f, a, b, process_width, process_height,
@@ -464,8 +481,15 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
                 a->w, a->h, process_width, process_height);
         goto done;
     }
-    packed_out = malloc(bytes);
-    if (!packed_out) {
+    direct_output = p->pair_output_direct && rgb_out->planes[0] &&
+                    rgb_out->stride[0] == (int)row_bytes;
+    network_output = direct_output ? rgb_out->planes[0] :
+                     p->pair_output_scratch;
+    if (!network_output) {
+        temporary_output = malloc(bytes);
+        network_output = temporary_output;
+    }
+    if (!network_output) {
         MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=rgb_output_allocation_failed process_width=%d process_height=%d bytes=%zu\n",
                 process_width, process_height, bytes);
         goto done;
@@ -484,7 +508,7 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
                                             p->pair_input1,
                                             process_width, process_height,
                                             (float)alpha,
-                                            packed_out);
+                                            network_output);
     int64_t elapsed = mp_time_ns() - start;
     if (elapsed > 0)
         p->inference_ns += elapsed;
@@ -507,7 +531,7 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
                 result, process_width, process_height);
         goto done;
     }
-    if (!unpack_rgb24(packed_out, rgb_out, row_bytes)) {
+    if (!direct_output && !unpack_rgb24(network_output, rgb_out, row_bytes)) {
         MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=rgb_unpack_failed process_width=%d process_height=%d\n",
                 process_width, process_height);
         goto done;
@@ -563,7 +587,7 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     }
 
 done:
-    free(packed_out);
+    free(temporary_output);
     talloc_free(rgb_out);
     if (!ok && out) {
         talloc_free(out);
