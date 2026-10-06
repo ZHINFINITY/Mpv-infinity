@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Overlay ANVIL-built arm64 MPV/FFmpeg libraries into MPV∞'s existing AAR."""
+"""Overlay RIFE-enabled arm64 MPV/FFmpeg libraries into MPV∞'s existing AAR."""
 from __future__ import annotations
 
 import argparse
@@ -58,23 +58,24 @@ def elf_version_tags(path: Path) -> set[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--anvil-apk", required=True, type=Path)
+    parser.add_argument("--runtime-apk", required=True, type=Path)
     parser.add_argument("--mpv-aar", required=True, type=Path)
     args = parser.parse_args()
-    apk_path = args.anvil_apk.resolve()
+    apk_path = args.runtime_apk.resolve()
     aar_path = args.mpv_aar.resolve()
     if not apk_path.is_file() or not aar_path.is_file():
-        raise SystemExit("Both --anvil-apk and --mpv-aar must name existing files")
+        raise SystemExit("Both --runtime-apk and --mpv-aar must name existing files")
 
     with zipfile.ZipFile(apk_path) as apk:
         entries = {
             Path(name).name: apk.read(name)
             for name in apk.namelist()
             if name.startswith("lib/arm64-v8a/") and name.endswith(".so")
+            and not Path(name).name.lower().startswith("libqnn")
         }
     if not REQUIRED_LIBS.issubset(entries):
         missing = sorted(REQUIRED_LIBS - entries.keys())
-        raise SystemExit(f"ANVIL arm64 APK is missing required native libraries: {missing}")
+        raise SystemExit(f"RIFE MPV arm64 runtime APK is missing required native libraries: {missing}")
 
     with zipfile.ZipFile(aar_path) as aar:
         original_entries = {name: (info, aar.read(name)) for info in aar.infolist() for name in [info.filename]}
@@ -85,7 +86,7 @@ def main() -> None:
         if f"jni/arm64-v8a/{name}" not in original_entries:
             raise SystemExit(f"The MPV∞ AAR has no arm64 slot for {name}")
 
-    with tempfile.TemporaryDirectory(prefix="anvil-aar-") as td:
+    with tempfile.TemporaryDirectory(prefix="rife-runtime-aar-") as td:
         temp = Path(td)
         for name, blob in entries.items():
             (temp / name).write_bytes(blob)
@@ -99,7 +100,7 @@ def main() -> None:
                 if dependency in KNOWN_SYSTEM_LIBS or dependency.startswith(("libgcc", "libunwind")):
                     continue
                 if dependency not in final_libs:
-                    raise SystemExit(f"ANVIL {name} needs {dependency}, which would not be packaged")
+                    raise SystemExit(f"Native runtime {name} needs {dependency}, which would not be packaged")
         for dependency in needed_libraries(player_file):
             if dependency in KNOWN_SYSTEM_LIBS or dependency.startswith(("libgcc", "libunwind")):
                 continue
@@ -114,9 +115,9 @@ def main() -> None:
         missing_tags = sorted(required_tags - provided_tags)
         if missing_tags:
             raise SystemExit(
-                "The preserved MPV∞ JNI bridge needs FFmpeg ABI versions not supplied by ANVIL: "
+                "The preserved MPV∞ JNI bridge needs FFmpeg ABI versions not supplied by the runtime: "
                 + ", ".join(missing_tags)
-                + "; ANVIL exports: "
+                + "; runtime exports: "
                 + (", ".join(sorted(provided_tags)) or "no FFmpeg version tags")
             )
 

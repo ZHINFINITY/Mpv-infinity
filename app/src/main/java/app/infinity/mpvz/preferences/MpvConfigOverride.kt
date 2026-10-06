@@ -284,7 +284,7 @@ object MpvConfigControlledFeatures {
 
   val HARDWARE_DECODER = setOf("hwdec", "gpu-api", "gpu-context", "vd-lavc-o")
 
-  val FRAME_INTERPOLATION = setOf("vf", "hwdec", "vd-lavc-o")
+  val FRAME_INTERPOLATION = setOf("vf", "hwdec")
 }
 
 /** The ownership snapshot used by the active libmpv core. */

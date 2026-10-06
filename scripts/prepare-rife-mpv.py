@@ -17,6 +17,39 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def base_sources_close(meson: str) -> int:
+    start = meson.index("sources = files(")
+    depth = 0
+    quote = None
+    escaped = False
+    comment = False
+    for pos in range(start, len(meson)):
+        char = meson[pos]
+        if comment:
+            if char == "\n":
+                comment = False
+            continue
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char == "#":
+            comment = True
+        elif char in "'\"":
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return pos
+    raise SystemExit("Could not find end of MPV base source list")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -41,9 +74,9 @@ def main() -> None:
     meson_path = mpv_dir / "meson.build"
     meson = meson_path.read_text()
     if "# RIFE_ANDROID_FILTER" not in meson:
-        marker = "# ANVIL_ANDROID_FILTER\n"
+        close = base_sources_close(meson)
         block = (
-            "# RIFE is an opt-in Android filter linked to the pinned ncnn/Vulkan runtime.\n"
+            "\n# RIFE is an opt-in Android filter linked to the pinned ncnn/Vulkan runtime.\n"
             "if host_machine.system() == 'android'\n"
             "    sources += files('video/filter/vf_rife.c')\n"
             f"    rife_vfi_dep = declare_dependency(link_args: ['-L{prefix_dir / 'lib'}', '-lrife_vfi'])\n"
@@ -51,7 +84,7 @@ def main() -> None:
             "endif\n"
             "# RIFE_ANDROID_FILTER\n"
         )
-        meson = replace_once(meson, marker, marker + block, "ANVIL Android filter marker")
+        meson = meson[:close + 1] + block + meson[close + 1:]
         meson_path.write_text(meson)
 
     user_h_path = mpv_dir / "filters/user_filters.h"
@@ -59,12 +92,10 @@ def main() -> None:
     if "vf_rife" not in user_h:
         user_h = replace_once(
             user_h,
-            "#ifdef __ANDROID__\nextern const struct mp_user_filter_entry vf_anvil;\n#endif",
-            "#ifdef __ANDROID__\n"
-            "extern const struct mp_user_filter_entry vf_anvil;\n"
-            "extern const struct mp_user_filter_entry vf_rife;\n"
-            "#endif",
-            "Android user-filter declarations",
+            "extern const struct mp_user_filter_entry vf_sub;",
+            "extern const struct mp_user_filter_entry vf_sub;\n"
+            "#ifdef __ANDROID__\nextern const struct mp_user_filter_entry vf_rife;\n#endif",
+            "MPV user-filter declarations",
         )
         user_h_path.write_text(user_h)
 
@@ -73,16 +104,16 @@ def main() -> None:
     if "&vf_rife" not in user_c:
         user_c = replace_once(
             user_c,
-            "#ifdef __ANDROID__\n    &vf_anvil,\n#endif",
-            "#ifdef __ANDROID__\n    &vf_anvil,\n    &vf_rife,\n#endif",
-            "Android user-filter registry",
+            "    &vf_sub,",
+            "    &vf_sub,\n#ifdef __ANDROID__\n    &vf_rife,\n#endif",
+            "MPV user-filter registry",
         )
         user_c_path.write_text(user_c)
 
-    anvil_dir = prefix_dir.parents[2]
-    android_mk_path = anvil_dir / "app/src/main/jni/Android.mk"
+    builder_dir = prefix_dir.parents[2]
+    android_mk_path = builder_dir / "app/src/main/jni/Android.mk"
     if not android_mk_path.is_file():
-        raise SystemExit(f"ANVIL Android NDK packaging file is missing: {android_mk_path}")
+        raise SystemExit(f"Android MPV builder packaging file is missing: {android_mk_path}")
     android_mk = android_mk_path.read_text()
     module_marker = "# RIFE_VFI_PREBUILT\n"
     if module_marker not in android_mk:

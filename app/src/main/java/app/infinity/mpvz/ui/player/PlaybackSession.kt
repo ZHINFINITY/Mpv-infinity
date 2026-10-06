@@ -45,24 +45,6 @@ data class PlaybackSessionState(
   val error: String? = null,
 )
 
-data class AnvilFrameInterpolationTelemetry(
-  val preferenceEnabled: Boolean = false,
-  val nativeFilterIncluded: Boolean = false,
-  val activeForCore: Boolean = false,
-  val blockedByMpvConf: Boolean = false,
-  val filterSeen: Boolean = false,
-  val inputFrames: Long = 0L,
-  val lastMotionVectors: Int = 0,
-  val intervalMaxMotionVectors: Int = 0,
-  val intervalVectorFrames: Int = 0,
-  val generatedFrames: Long = 0L,
-  val backend: String = "unknown",
-  val qnn: String = "unknown",
-  val motionVectorSideData: String = "unknown",
-  val softwareDecodeOptionAccepted: Boolean? = null,
-  val motionVectorExportOptionAccepted: Boolean? = null,
-)
-
 data class PlaybackPositionRestoreOverride(
   val positionSeconds: Double?,
   val paused: Boolean,
@@ -159,32 +141,14 @@ object PlaybackSession : MPVLib.EventObserver {
   private val nativeLock = ReentrantLock(true)
   private val observers = CopyOnWriteArraySet<MPVLib.EventObserver>()
   private val _state = MutableStateFlow(PlaybackSessionState())
-  private val _anvilFrameInterpolationTelemetry = MutableStateFlow(AnvilFrameInterpolationTelemetry())
   private val _queue = MutableStateFlow(PlaybackQueueState())
   private val streamSequence = AtomicLong()
   private val observedProperties = mutableSetOf<Pair<String, Int>>()
   private val seekAudioGuardHandler = Handler(Looper.getMainLooper())
   private val playbackTransitionAudioGuardHandler = Handler(Looper.getMainLooper())
-  private val anvilGeneratedLog =
-    Regex("""ANVIL\[GENERATED]: count=(\d+) input_frame=(\d+) motion_vectors=(\d+) backend=(vulkan|cpu) qnn=(active|disabled)""")
-  private val anvilInputLog =
-    Regex("""ANVIL\[INPUT]: frames=(\d+) resolution=(\d+)x(\d+) motion_vectors=(\d+) motion_vector_side_data=(missing|empty|present)""")
-  private val anvilLogObserver =
-    object : MPVLib.LogObserver {
-      override fun logMessage(
-        prefix: String,
-        level: Int,
-        text: String,
-      ) {
-        handleAnvilLog(text)
-      }
-    }
 
   val state: StateFlow<PlaybackSessionState> = _state.asStateFlow()
   val queue: StateFlow<PlaybackQueueState> = _queue.asStateFlow()
-  val anvilFrameInterpolationTelemetry: StateFlow<AnvilFrameInterpolationTelemetry> =
-    _anvilFrameInterpolationTelemetry.asStateFlow()
-  private val anvilIntervalLog = Regex("""interval_max_motion_vectors=([0-9]+) vector_frames=([0-9]+)""")
 
   @Volatile
   private var initialized = false
@@ -233,84 +197,6 @@ object PlaybackSession : MPVLib.EventObserver {
   val propString = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_STRING, ::getPropertyString)
   val propNode = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_NODE, ::getPropertyNode)
 
-  fun configureAnvilFrameInterpolation(
-    preferenceEnabled: Boolean,
-    nativeFilterIncluded: Boolean,
-    blockedByMpvConf: Boolean,
-  ) {
-    _anvilFrameInterpolationTelemetry.value =
-      AnvilFrameInterpolationTelemetry(
-        preferenceEnabled = preferenceEnabled,
-        nativeFilterIncluded = nativeFilterIncluded,
-        activeForCore = preferenceEnabled && nativeFilterIncluded && !blockedByMpvConf,
-        blockedByMpvConf = blockedByMpvConf,
-      )
-  }
-
-  fun configureAnvilDecoderOptions(
-    softwareDecodeOptionAccepted: Boolean,
-    motionVectorExportOptionAccepted: Boolean,
-  ) {
-    _anvilFrameInterpolationTelemetry.update {
-      it.copy(
-        softwareDecodeOptionAccepted = softwareDecodeOptionAccepted,
-        motionVectorExportOptionAccepted = motionVectorExportOptionAccepted,
-      )
-    }
-  }
-
-  private fun handleAnvilLog(text: String) {
-    val line = text.trim()
-    if (!line.contains("ANVIL[")) return
-
-    if (line.contains("ANVIL[RESET]")) {
-      _anvilFrameInterpolationTelemetry.update {
-        it.copy(
-          inputFrames = 0L,
-          lastMotionVectors = 0,
-          intervalMaxMotionVectors = 0,
-          intervalVectorFrames = 0,
-          generatedFrames = 0L,
-          motionVectorSideData = "unknown",
-        )
-      }
-      return
-    }
-
-    val generated = anvilGeneratedLog.find(line)
-    if (generated != null) {
-      _anvilFrameInterpolationTelemetry.update {
-        it.copy(
-          filterSeen = true,
-          inputFrames = generated.groupValues[2].toLongOrNull() ?: it.inputFrames,
-          lastMotionVectors = generated.groupValues[3].toIntOrNull() ?: it.lastMotionVectors,
-          generatedFrames = generated.groupValues[1].toLongOrNull() ?: it.generatedFrames,
-          backend = generated.groupValues[4],
-          qnn = generated.groupValues[5],
-        )
-      }
-      return
-    }
-
-    val input = anvilInputLog.find(line)
-    val interval = anvilIntervalLog.find(line)
-    val backend = Regex("""backend=(vulkan|cpu)""").find(line)?.groupValues?.get(1)
-    val qnn = Regex("""qnn=(active|disabled|unknown)""").find(line)?.groupValues?.get(1)
-    val isCapability = line.contains("ANVIL[CAPABILITY]")
-    _anvilFrameInterpolationTelemetry.update {
-      it.copy(
-        filterSeen = it.filterSeen || isCapability || input != null,
-        inputFrames = input?.groupValues?.get(1)?.toLongOrNull() ?: it.inputFrames,
-        lastMotionVectors = input?.groupValues?.get(4)?.toIntOrNull() ?: it.lastMotionVectors,
-        motionVectorSideData = input?.groupValues?.get(5) ?: it.motionVectorSideData,
-        intervalMaxMotionVectors = interval?.groupValues?.get(1)?.toIntOrNull() ?: it.intervalMaxMotionVectors,
-        intervalVectorFrames = interval?.groupValues?.get(2)?.toIntOrNull() ?: it.intervalVectorFrames,
-        backend = backend ?: it.backend,
-        qnn = qnn ?: it.qnn,
-      )
-    }
-  }
-
   /** Returns true when this call created the core, false when it was already alive. */
   fun initialize(
     context: Context,
@@ -350,7 +236,6 @@ object PlaybackSession : MPVLib.EventObserver {
         updateState { it.copy(phase = PlaybackPhase.INITIALIZING, error = null) }
         try {
           MPVLib.create(context.applicationContext)
-          MPVLib.addLogObserver(anvilLogObserver)
           MPVLib.setOptionString("config", "yes")
           MPVLib.setOptionString("config-dir", configDir)
           MPVLib.setOptionString("gpu-shader-cache-dir", cacheDir)
@@ -377,7 +262,6 @@ object PlaybackSession : MPVLib.EventObserver {
           true
         } catch (error: Throwable) {
           runCatching { MPVLib.removeObserver(this) }
-          runCatching { MPVLib.removeLogObserver(anvilLogObserver) }
           runCatching { MPVLib.destroy() }
           initialized = false
           nativeCoreReady = false
@@ -633,7 +517,6 @@ object PlaybackSession : MPVLib.EventObserver {
     runCatching { MPVLib.detachSurface() }
     attachedSurfaceOwner = null
     runCatching { MPVLib.removeObserver(this) }
-    runCatching { MPVLib.removeLogObserver(anvilLogObserver) }
     runCatching { MPVLib.destroy() }
       .onFailure { error -> Log.e(TAG, "Failed to destroy libmpv", error) }
     releaseActiveNetworkStreamLocked()
@@ -644,7 +527,6 @@ object PlaybackSession : MPVLib.EventObserver {
     initialized = false
     nativeCoreReady = false
     activeCoreConfigurationKey = null
-    _anvilFrameInterpolationTelemetry.update { it.copy(activeForCore = false) }
     clearTimelinePropertiesLocked()
     updateState { PlaybackSessionState(phase = PlaybackPhase.UNINITIALIZED) }
   }

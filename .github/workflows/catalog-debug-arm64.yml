@@ -1,4 +1,4 @@
-name: ANVIL + RIFE arm64 Debug APK
+name: RIFE arm64 Debug APK
 
 on:
   push:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build-arm64-debug:
-    name: Build ANVIL + RIFE MPV∞ arm64-v8a debug APK
+    name: Build RIFE MPV∞ arm64-v8a debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -24,12 +24,12 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Checkout pinned ANVIL source
+      - name: Checkout pinned Android MPV build tools
         uses: actions/checkout@v6
         with:
           repository: NihilDigit/mpv-android-anvil
           ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467
-          path: anvil-project
+          path: native-builder
       - name: Checkout pinned MPV source
         uses: actions/checkout@v6
         with:
@@ -53,7 +53,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      - name: Install ANVIL native build dependencies
+      - name: Install Android MPV native build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg
@@ -61,24 +61,22 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           meson --version
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Test patched HEVC motion-vector export on a synthetic B-frame clip
-        run: bash scripts/test-hevc-mv-export.sh
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: Build ANVIL + RIFE + MPV native arm64 debug package
-        run: ./scripts/build-anvil-native.sh
+      - name: Build RIFE + MPV native arm64 debug package
+        run: ./scripts/build-rife-mpv-runtime.sh
         env:
-          ANVIL_BUILD_CORES: '2'
-      - name: Overlay ANVIL MPV/FFmpeg arm64 runtime into MPV∞ AAR
-        run: python3 scripts/package-anvil-aar.py --anvil-apk "$ANVIL_ARM64_APK" --mpv-aar app/libs/mpvlib.aar
+          RIFE_MPV_BUILD_CORES: '2'
+      - name: Overlay RIFE MPV/FFmpeg arm64 runtime into MPV∞ AAR
+        run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$RIFE_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar
       - name: Run standard debug unit tests
-        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PanvilNativeBuild=true -PrifeNativeBuild=true --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PrifeNativeBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Build arm64-v8a debug APK
-        run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a -PanvilNativeBuild=true -PrifeNativeBuild=true --stacktrace --no-daemon --max-workers=2
+        run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a -PrifeNativeBuild=true --stacktrace --no-daemon --max-workers=2
       - name: Upload arm64-v8a debug APK
         uses: actions/upload-artifact@v7
         with:
-          name: mpv-infinity-anvil-rife-arm64-v8a-debug-${{ github.sha }}
+          name: mpv-infinity-rife-arm64-v8a-debug-${{ github.sha }}
           path: app/build/outputs/apk/standard/debug/*arm64-v8a-debug*.apk
           if-no-files-found: error
           retention-days: 14

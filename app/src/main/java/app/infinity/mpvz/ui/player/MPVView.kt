@@ -90,12 +90,7 @@ class MPVView(
         null
       }
     val rifeFrameInterpolationActive = rifeModelDirectory != null
-    val anvilFrameInterpolationActive =
-      decoderPreferences.anvilFrameInterpolation.get() &&
-        BuildConfig.MPV_HAS_ANVIL &&
-        !frameInterpolationConfigOwned &&
-        !rifeFrameInterpolationActive
-    val frameInterpolationKey = "anvil=$anvilFrameInterpolationActive|rife=$rifeFrameInterpolationActive"
+    val frameInterpolationKey = "rife=$rifeFrameInterpolationActive"
     val coreConfigurationKey =
       "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|$frameInterpolationKey"
     val result =
@@ -206,7 +201,6 @@ class MPVView(
     val backend = selectRenderBackend()
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
-    val anvilFrameInterpolationPreference = decoderPreferences.anvilFrameInterpolation.get()
     val rifeFrameInterpolationPreference = decoderPreferences.rifeFrameInterpolation.get()
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
@@ -215,17 +209,7 @@ class MPVView(
         BuildConfig.MPV_HAS_RIFE &&
         rifeModelDirectory != null &&
         !frameInterpolationConfigOwned
-    val anvilFrameInterpolationEnabled =
-      anvilFrameInterpolationPreference &&
-        BuildConfig.MPV_HAS_ANVIL &&
-        !frameInterpolationConfigOwned &&
-        !rifeFrameInterpolationEnabled
-    val frameInterpolationEnabled = rifeFrameInterpolationEnabled || anvilFrameInterpolationEnabled
-    PlaybackSession.configureAnvilFrameInterpolation(
-      preferenceEnabled = anvilFrameInterpolationPreference && !rifeFrameInterpolationEnabled,
-      nativeFilterIncluded = BuildConfig.MPV_HAS_ANVIL,
-      blockedByMpvConf = anvilFrameInterpolationPreference && frameInterpolationConfigOwned,
-    )
+    val frameInterpolationEnabled = rifeFrameInterpolationEnabled
     PlaybackSession.setVideoOutput(backend.vo)
     PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
     PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
@@ -257,19 +241,6 @@ class MPVView(
       // RIFE consumes software-readable RGB frames and does not use codec MV side data.
       val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
       Log.i(TAG, "RIFE_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult model_dir=$rifeModelDirectory")
-    } else if (anvilFrameInterpolationEnabled) {
-      // ANVIL needs software frames and FFmpeg-exported motion-vector side data.
-      val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
-      val motionVectorExportOptionResult =
-        PlaybackSession.setOptionString("vd-lavc-o", "flags2=+export_mvs")
-      PlaybackSession.configureAnvilDecoderOptions(
-        softwareDecodeOptionAccepted = softwareDecodeOptionResult == 0,
-        motionVectorExportOptionAccepted = motionVectorExportOptionResult == 0,
-      )
-      Log.i(
-        TAG,
-        "ANVIL_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult export_mvs_rc=$motionVectorExportOptionResult",
-      )
     } else if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HARDWARE_DECODER)) {
       PlaybackSession.setOptionString(
         "hwdec",
@@ -288,8 +259,6 @@ class MPVView(
       buildList {
         if (rifeFrameInterpolationEnabled) {
           add("rife=model-dir=$rifeModelDirectory:target-fps=60")
-        } else if (anvilFrameInterpolationEnabled) {
-          add("anvil")
         }
         if (decoderPreferences.useYUV420P.get()) add("format=yuv420p")
       }

@@ -56,15 +56,11 @@ import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
-import app.infinity.mpvz.ui.player.AnvilMotionVectorExportCapability
 import app.infinity.mpvz.ui.icons.Icon
 import app.infinity.mpvz.ui.icons.Icons
-import app.infinity.mpvz.ui.player.AnvilFrameInterpolationTelemetry
 import app.infinity.mpvz.ui.player.Debanding
 import app.infinity.mpvz.ui.player.MPVProfile
 import app.infinity.mpvz.ui.player.PlaybackEngineMode
-import app.infinity.mpvz.ui.player.PlaybackSession
-import app.infinity.mpvz.ui.player.anvilMotionVectorExportCapability
 import app.infinity.mpvz.ui.preferences.components.SwitchPreference
 import app.infinity.mpvz.ui.utils.LocalBackStack
 import app.infinity.mpvz.ui.utils.LocalShowSettingsBackArrow
@@ -83,11 +79,7 @@ object DecoderPreferencesScreen : Screen {
     val preferences = koinInject<DecoderPreferences>()
     val advancedPreferences = koinInject<AdvancedPreferences>()
     val selectedPlaybackEngine by preferences.playbackEngine.collectAsState()
-    val anvilFrameInterpolationEnabled by preferences.anvilFrameInterpolation.collectAsState()
     val rifeFrameInterpolationEnabled by preferences.rifeFrameInterpolation.collectAsState()
-    val anvilTelemetry by PlaybackSession.anvilFrameInterpolationTelemetry.collectAsState()
-    val sourceVideoCodec by PlaybackSession.propString["video-codec"].collectAsState()
-    val activeHardwareDecoder by PlaybackSession.propString["hwdec-current"].collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
@@ -348,48 +340,6 @@ object DecoderPreferencesScreen : Screen {
               PreferenceDivider()
 
               SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_anvil_title),
-                value = anvilFrameInterpolationEnabled,
-                enabled =
-                  BuildConfig.MPV_HAS_ANVIL &&
-                    !frameInterpolationConfigOwned &&
-                    selectedPlaybackEngine != PlaybackEngineMode.NATIVE,
-                onValueChange = {
-                  preferences.anvilFrameInterpolation.set(it)
-                  if (it) preferences.rifeFrameInterpolation.set(false)
-                },
-                title = { Text(stringResource(R.string.pref_decoder_anvil_title)) },
-                summary = {
-                  Text(
-                    stringResource(
-                      when {
-                        !BuildConfig.MPV_HAS_ANVIL -> R.string.pref_decoder_anvil_summary_unavailable
-                        frameInterpolationConfigOwned -> R.string.pref_decoder_anvil_summary_config_owned
-                        selectedPlaybackEngine == PlaybackEngineMode.NATIVE ->
-                          R.string.pref_decoder_anvil_summary_native_engine
-                        else -> R.string.pref_decoder_anvil_summary
-                      },
-                    ),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              AnvilFrameInterpolationStatusCard(
-                telemetry = anvilTelemetry,
-                preferenceEnabled = anvilFrameInterpolationEnabled,
-                nativeFilterIncluded = BuildConfig.MPV_HAS_ANVIL,
-                configOwned = frameInterpolationConfigOwned,
-                playbackEngine = selectedPlaybackEngine,
-                sourceCodec = sourceVideoCodec,
-                activeHardwareDecoder = activeHardwareDecoder,
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_title),
                 value = rifeFrameInterpolationEnabled,
                 enabled =
@@ -399,7 +349,6 @@ object DecoderPreferencesScreen : Screen {
                     selectedPlaybackEngine != PlaybackEngineMode.NATIVE,
                 onValueChange = {
                   preferences.rifeFrameInterpolation.set(it)
-                  if (it) preferences.anvilFrameInterpolation.set(false)
                 },
                 title = { Text(stringResource(R.string.pref_decoder_rife_title)) },
                 summary = {
@@ -587,134 +536,6 @@ object DecoderPreferencesScreen : Screen {
           }
         }
       }
-    }
-  }
-}
-
-@Composable
-private fun AnvilFrameInterpolationStatusCard(
-  telemetry: AnvilFrameInterpolationTelemetry,
-  preferenceEnabled: Boolean,
-  nativeFilterIncluded: Boolean,
-  configOwned: Boolean,
-  playbackEngine: PlaybackEngineMode,
-  sourceCodec: String?,
-  activeHardwareDecoder: String?,
-) {
-  val codecCapability = anvilMotionVectorExportCapability(sourceCodec)
-  val codecLabel = sourceCodec?.takeIf { it.isNotBlank() } ?: stringResource(R.string.pref_decoder_anvil_codec_unknown)
-  val decoderLabel =
-    when {
-      activeHardwareDecoder.isNullOrBlank() -> stringResource(R.string.pref_decoder_anvil_decoder_unknown)
-      activeHardwareDecoder.equals("no", ignoreCase = true) -> stringResource(R.string.pref_decoder_anvil_decoder_software)
-      else -> stringResource(R.string.pref_decoder_anvil_decoder_hardware, activeHardwareDecoder)
-    }
-  val exportOptionLabel =
-    when (telemetry.motionVectorExportOptionAccepted) {
-      true -> stringResource(R.string.pref_decoder_anvil_option_accepted)
-      false -> stringResource(R.string.pref_decoder_anvil_option_failed)
-      null -> stringResource(R.string.pref_decoder_anvil_option_not_requested)
-    }
-  val softwareOptionLabel =
-    when (telemetry.softwareDecodeOptionAccepted) {
-      true -> stringResource(R.string.pref_decoder_anvil_option_accepted)
-      false -> stringResource(R.string.pref_decoder_anvil_option_failed)
-      null -> stringResource(R.string.pref_decoder_anvil_option_not_requested)
-    }
-  val hardwareDecoderActive =
-    activeHardwareDecoder?.let { it.isNotBlank() && !it.equals("no", ignoreCase = true) } == true
-  val statusRes =
-    when {
-      !nativeFilterIncluded -> R.string.pref_decoder_anvil_status_missing_native
-      configOwned -> R.string.pref_decoder_anvil_status_config_owned
-      playbackEngine == PlaybackEngineMode.NATIVE -> R.string.pref_decoder_anvil_status_native_engine
-      !preferenceEnabled -> R.string.pref_decoder_anvil_status_off
-      telemetry.generatedFrames > 0L && telemetry.activeForCore ->
-        R.string.pref_decoder_anvil_status_generating
-      telemetry.generatedFrames > 0L -> R.string.pref_decoder_anvil_status_last_run
-      codecCapability == AnvilMotionVectorExportCapability.UNSUPPORTED ->
-        R.string.pref_decoder_anvil_status_codec_unsupported
-      telemetry.motionVectorExportOptionAccepted == false || telemetry.softwareDecodeOptionAccepted == false ->
-        R.string.pref_decoder_anvil_status_option_failed
-      telemetry.inputFrames > 0L && hardwareDecoderActive ->
-        R.string.pref_decoder_anvil_status_hardware_decoder
-      telemetry.inputFrames > 0L && telemetry.lastMotionVectors == 0 &&
-        telemetry.intervalVectorFrames == 0 &&
-        codecCapability == AnvilMotionVectorExportCapability.SUPPORTED ->
-        R.string.pref_decoder_anvil_status_supported_no_vectors
-      telemetry.inputFrames > 0L && telemetry.lastMotionVectors == 0 &&
-        telemetry.intervalVectorFrames == 0 ->
-        R.string.pref_decoder_anvil_status_no_motion_vectors
-      telemetry.inputFrames > 0L &&
-        (telemetry.lastMotionVectors > 0 || telemetry.intervalVectorFrames > 0) &&
-        telemetry.generatedFrames == 0L ->
-        R.string.pref_decoder_anvil_status_vectors_seen
-      telemetry.filterSeen -> R.string.pref_decoder_anvil_status_filter_loaded
-      else -> R.string.pref_decoder_anvil_status_waiting
-    }
-
-  Surface(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-    shape = MaterialTheme.shapes.medium,
-    color = MaterialTheme.colorScheme.surfaceVariant,
-    tonalElevation = 1.dp,
-  ) {
-    Column(
-      modifier = Modifier.padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-      Text(
-        text = stringResource(R.string.pref_decoder_anvil_status_title),
-        style = MaterialTheme.typography.titleSmall,
-      )
-      Text(
-        text = stringResource(statusRes),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-      Text(
-        text = stringResource(R.string.pref_decoder_anvil_source_decoder, codecLabel, decoderLabel),
-        style = MaterialTheme.typography.bodySmall,
-      )
-      Text(
-        text = stringResource(R.string.pref_decoder_anvil_option_results, exportOptionLabel, softwareOptionLabel),
-        style = MaterialTheme.typography.bodySmall,
-      )
-      Text(
-        text =
-          stringResource(
-            R.string.pref_decoder_anvil_generated_frames,
-            telemetry.generatedFrames,
-          ),
-        style = MaterialTheme.typography.bodySmall,
-      )
-      Text(
-        text = stringResource(
-          R.string.pref_decoder_anvil_input_stats,
-          telemetry.inputFrames,
-          telemetry.lastMotionVectors,
-          stringResource(
-            when (telemetry.motionVectorSideData) {
-              "missing" -> R.string.pref_decoder_anvil_side_data_missing
-              "empty" -> R.string.pref_decoder_anvil_side_data_empty
-              "present" -> R.string.pref_decoder_anvil_side_data_present
-              else -> R.string.pref_decoder_anvil_side_data_unknown
-            },
-            ),
-          telemetry.intervalMaxMotionVectors,
-          telemetry.intervalVectorFrames,
-        ),
-        style = MaterialTheme.typography.bodySmall,
-      )
-      Text(
-        text =
-          stringResource(
-            R.string.pref_decoder_anvil_backend_stats,
-            telemetry.backend,
-            telemetry.qnn,
-          ),
-        style = MaterialTheme.typography.bodySmall,
-      )
     }
   }
 }

@@ -12,7 +12,6 @@ val localProperties =
 
 val targetAbiProp = project.findProperty("targetAbi")?.toString() ?: localProperties.getProperty("targetAbi")
 val enableX86 = project.findProperty("enableX86") != "false"
-val includeAnvilNative = project.findProperty("anvilNativeBuild")?.toString() == "true"
 val requestedRifeNative = project.findProperty("rifeNativeBuild")?.toString() == "true"
 val x86Abis = if (enableX86) listOf("x86", "x86_64") else emptyList()
 val activeAbis =
@@ -59,7 +58,6 @@ android {
 
     buildConfigField("String", "GIT_SHA", "\"${getCommitSha()}\"")
     buildConfigField("int", "GIT_COUNT", getCommitCount())
-    buildConfigField("boolean", "MPV_HAS_ANVIL", includeAnvilNative.toString())
     buildConfigField("boolean", "MPV_HAS_RIFE", includeRifeNative.toString())
 
     externalNativeBuild {

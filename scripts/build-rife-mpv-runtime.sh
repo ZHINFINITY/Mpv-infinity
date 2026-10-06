@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT="${GITHUB_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-ANVIL_DIR="${ANVIL_SOURCE_DIR:-$ROOT/anvil-project}"
+MPV_BUILDER_DIR="${MPV_BUILDER_DIR:-$ROOT/native-builder}"
 MPV_SOURCE_DIR="${MPV_SOURCE_DIR:-$ROOT/mpv-source}"
-BUILDSCRIPTS="$ANVIL_DIR/buildscripts"
+BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
 
-[[ -d "$BUILDSCRIPTS" ]] || { echo "Missing pinned ANVIL source tree: $BUILDSCRIPTS" >&2; exit 1; }
+[[ -d "$BUILDSCRIPTS" ]] || { echo "Missing pinned Android MPV build tools: $BUILDSCRIPTS" >&2; exit 1; }
 [[ -d "$MPV_SOURCE_DIR/.git" ]] || { echo "Missing pinned MPV checkout: $MPV_SOURCE_DIR" >&2; exit 1; }
 [[ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ]] || { echo "ANDROID_HOME/ANDROID_SDK_ROOT is required" >&2; exit 1; }
 
@@ -15,8 +15,8 @@ export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export MPV_SOURCE_DIR
 export DONT_BUILD_RELEASE=1
 export CACHE_MODE=none
-export cores="${ANVIL_BUILD_CORES:-2}"
-export NDK_LIBS_OUT="$ANVIL_DIR/app/src/main/libs"
+export cores="${RIFE_MPV_BUILD_CORES:-2}"
+export NDK_LIBS_OUT="$MPV_BUILDER_DIR/app/src/main/libs"
 mkdir -p "$NDK_LIBS_OUT"
 
 python3 - "$BUILDSCRIPTS/include/ci.sh" "$BUILDSCRIPTS/include/depinfo.sh" <<'PY'
@@ -53,54 +53,45 @@ for old, new in (
     if ci.count(old) != 1:
         raise SystemExit(f"Expected exactly one {old!r} in {ci_path}, found {ci.count(old)}")
     ci = ci.replace(old, new, 1)
-qairt_script = ci_path.parent.parent / "scripts/qairt.sh"
-if not qairt_script.is_file():
-    raise SystemExit(f"Expected ANVIL's no-QAIRT build script at {qairt_script}")
 download_marker = "IN_CI=1 ./include/download-deps.sh\n"
 if ci.count(download_marker) != 1:
     raise SystemExit(f"Expected one dependency download step in {ci_path}; refusing unsafe patch")
 symver_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-symver.py" deps/ffmpeg/configure\n'
-hevc_mvs_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-hevc-mvs.py" deps/ffmpeg\n'
 ci = ci.replace(
     download_marker,
-    download_marker + "mkdir -p deps/qairt\n" + symver_patch + hevc_mvs_patch,
+    download_marker + symver_patch,
     1,
 )
 ci_path.write_text(ci)
-print("Prepared ANVIL's deps/qairt work directory and restored FFmpeg's Android symver probe")
+print("Prepared the Android MPV builder and restored FFmpeg's Android symbol-version probe")
 
 depinfo = depinfo_path.read_text()
 if depinfo.count("v_ci_ffmpeg=n8.0.1") != 1:
-    raise SystemExit(f"Expected ANVIL's pinned FFmpeg 8.0.1 line in {depinfo_path}")
+    raise SystemExit(f"Expected the pinned FFmpeg 8.0.1 line in {depinfo_path}")
 depinfo_path.write_text(depinfo.replace("v_ci_ffmpeg=n8.0.1", "v_ci_ffmpeg=n9.0.2", 1))
-print("Pinned FFmpeg 9.0.2 (libavcodec/libavformat 63, libavutil 61) for MPV∞ ABI")
+print("Pinned FFmpeg 9.0.2 to match MPV∞'s FFmpeg ABI")
 PY
 
 cd "$BUILDSCRIPTS"
-# The ANVIL CI scripts supply Android SDK/NDK setup and native dependency builds.
-# qairt.sh deliberately installs only its stub header in this workflow, so the
-# final APK cannot load a V75 context/runtime on an unverified SM8735 target.
+# The pinned Android MPV build scripts provide SDK/NDK setup and native dependency builds.
 ./include/ci.sh install
 
 cd "$ROOT"
 RIFE_PREFIX="$BUILDSCRIPTS/prefix/arm64" ./scripts/build-rife-native.sh
-
-python3 "$ROOT/scripts/prepare-anvil-mpv.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv"
 python3 "$ROOT/scripts/prepare-rife-mpv.py" \
   --mpv-dir "$BUILDSCRIPTS/deps/mpv" \
   --prefix-dir "$BUILDSCRIPTS/prefix/arm64"
 
 cd "$BUILDSCRIPTS"
 ./include/ci.sh build
-
-APK="$(find "$ANVIL_DIR/app/build/outputs/apk" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
+APK="$(find "$MPV_BUILDER_DIR/app/build/outputs/apk" -type f -path '*/debug/*' -name '*arm64-v8a-debug*.apk' -print -quit)"
 if [[ -z "$APK" ]]; then
-  echo "ANVIL build finished but no arm64-v8a debug APK was found" >&2
-  find "$ANVIL_DIR/app/build/outputs/apk" -maxdepth 5 -type f -print >&2 || true
+  echo "Android MPV runtime build finished but no arm64-v8a debug APK was found" >&2
+  find "$MPV_BUILDER_DIR/app/build/outputs/apk" -maxdepth 5 -type f -print >&2 || true
   exit 1
 fi
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
-  echo "ANVIL_ARM64_APK=$APK" >> "$GITHUB_ENV"
+  echo "RIFE_RUNTIME_APK=$APK" >> "$GITHUB_ENV"
 fi
-echo "Built ANVIL arm64 debug package: $APK"
+echo "Built RIFE-enabled arm64 MPV runtime package: $APK"

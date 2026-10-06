@@ -31,7 +31,6 @@ class DecoderPreferences(
   /** Boost SDR content into the HDR range when using the Linear HDR pipeline. */
   val boostSdrToHdr = preferenceStore.getBoolean("boost_sdr_to_hdr", true)
   val useYUV420P = preferenceStore.getBoolean("use_yuv420p", false)
-  val anvilFrameInterpolation = preferenceStore.getBoolean("anvil_frame_interpolation", false)
   val rifeFrameInterpolation = preferenceStore.getBoolean("rife_frame_interpolation", false)
 
   val debanding = preferenceStore.getEnum("debanding", Debanding.None)

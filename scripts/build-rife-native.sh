@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="${GITHUB_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 RIFE_DIR="${RIFE_SOURCE_DIR:-$ROOT/rife-project}"
-ANVIL_DIR="${ANVIL_SOURCE_DIR:-$ROOT/anvil-project}"
+MPV_BUILDER_DIR="${MPV_BUILDER_DIR:-$ROOT/native-builder}"
 ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 [[ -d "$RIFE_DIR/src" && -f "$RIFE_DIR/src/rife.cpp" ]] || { echo "Missing pinned RIFE source: $RIFE_DIR" >&2; exit 1; }
 [[ -n "$ANDROID_HOME" && -d "$ANDROID_HOME/ndk" ]] || { echo "ANDROID_HOME with an installed NDK is required" >&2; exit 1; }
@@ -11,7 +11,7 @@ ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 NDK_VERSION="${ANDROID_NDK_VERSION:-27.3.13750724}"
 NDK="$ANDROID_HOME/ndk/$NDK_VERSION"
 [[ -f "$NDK/build/cmake/android.toolchain.cmake" ]] || { echo "Missing Android NDK toolchain: $NDK" >&2; exit 1; }
-PREFIX="${RIFE_PREFIX:-$ANVIL_DIR/buildscripts/prefix/arm64}"
+PREFIX="${RIFE_PREFIX:-$MPV_BUILDER_DIR/buildscripts/prefix/arm64}"
 BUILD_DIR="${RIFE_BUILD_DIR:-$RIFE_DIR/build-android-arm64}"
 
 # RIFE upstream's CMake project builds a command-line executable. Convert only
