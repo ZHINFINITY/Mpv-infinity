@@ -211,6 +211,9 @@ class MPVView(
     val backend = selectRenderBackend()
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
+    val rifeHardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get()
+    val rifeHwdecMode =
+      RendererBackendPolicy.preferredHwdecModeForCpuFilter(rifeHardwareDecodingEnabled)
     val rifeFrameInterpolationPreference = decoderPreferences.rifeFrameInterpolation.get()
     val rifeTargetFps = normalizeRifeTargetFps(decoderPreferences.rifeTargetFps.get())
     val rifeProcessingResolution =
@@ -249,11 +252,22 @@ class MPVView(
       )
     }
 
-    // Fongmi can map direct MediaCodec frames into Vulkan; other Vulkan builds start with copy mode.
+    // RIFE needs software-readable pixels, but hardware decoding can still be retained through copy mode.
     if (rifeFrameInterpolationEnabled) {
-      // RIFE consumes software-readable RGB frames and does not use codec MV side data.
-      val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
-      Log.i(TAG, "RIFE_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult model_dir=$rifeModelDirectory")
+      val hwdecResult = PlaybackSession.setOptionString("hwdec", rifeHwdecMode)
+      val codecListResult =
+        if (rifeHardwareDecodingEnabled &&
+          !MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec-codecs")
+        ) {
+          PlaybackSession.setOptionString("hwdec-codecs", "all")
+        } else {
+          null
+        }
+      Log.i(
+        TAG,
+        "RIFE_OPTIONS hwdec=$rifeHwdecMode hwdec_rc=$hwdecResult " +
+          "hwdec_codecs_rc=${codecListResult ?: "skipped"} model_dir=$rifeModelDirectory",
+      )
     } else if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HARDWARE_DECODER)) {
       PlaybackSession.setOptionString(
         "hwdec",
@@ -305,7 +319,8 @@ class MPVView(
             "target_fps=$rifeTargetFps max_dimension=$rifeProcessingResolution " +
             "resolution_mode=$resolutionMode",
           "display_refresh_hz=${display?.refreshRate ?: 0f} renderer=${backend.vo} " +
-            "gpu_api=${backend.gpuApi} software_decode_required=$rifeFrameInterpolationEnabled",
+            "gpu_api=${backend.gpuApi} cpu_readable_frames_required=$rifeFrameInterpolationEnabled " +
+            "decoder_mode=${if (rifeFrameInterpolationEnabled) rifeHwdecMode else hwdecMode}",
           "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
         ).joinToString(" ")
       Log.i(

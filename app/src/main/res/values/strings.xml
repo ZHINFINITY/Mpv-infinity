@@ -307,7 +307,7 @@
   <string name="pref_decoder_yuv420p_title">Use YUV420P pixel format</string>
   <string name="pref_decoder_yuv420p_summary">May fix black screens on some video codecs, can also improve performance at the cost of quality</string>
   <string name="pref_decoder_rife_title">Frame interpolation (RIFE Vulkan/NCNN, experimental)</string>
-  <string name="pref_decoder_rife_summary">Experimental RIFE-v4.6 synthesis through ncnn/Vulkan. SDR 8/10-bit frames are converted for the model; HDR PQ/HLG, interlaced, and hardware-only frames pass through. Automatic processing resolution is lowered for higher targets. RIFE falls back to normal playback if total measured processing cannot keep up. Restart playback after changing.</string>
+  <string name="pref_decoder_rife_summary">Experimental RIFE-v4.6 synthesis through ncnn/Vulkan. When enabled, MediaCodec copy-mode hardware decoding is requested if hardware decoding is enabled; explicit mpv.conf codec limits are respected. SDR 8/10-bit frames are converted for the model; HDR PQ/HLG, interlaced, and non-copyable hardware-only frames pass through. Original source frames stay full resolution; only inserted frames use the selected processing resolution. RIFE automatically returns to normal playback when measured source-pair work cannot keep cadence. Restart playback after changing.</string>
   <string name="pref_decoder_rife_target_fps_title">RIFE target frame rate</string>
   <string name="pref_decoder_rife_target_fps_value">%1$d fps</string>
   <string name="pref_decoder_rife_target_fps_summary">Current target: %1$d fps. Choose 30, 48, or 60 fps; lower targets reduce GPU load. Restart playback after changing.</string>

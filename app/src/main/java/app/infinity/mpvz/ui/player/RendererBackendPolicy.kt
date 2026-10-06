@@ -39,4 +39,8 @@ internal object RendererBackendPolicy {
       "mediacodec-copy,no"
     }
   }
+
+  /** Keep MediaCodec hardware decoding while exposing frames to CPU video filters. */
+  fun preferredHwdecModeForCpuFilter(hardwareDecodingEnabled: Boolean): String =
+    if (hardwareDecodingEnabled) "mediacodec-copy,no" else "no"
 }

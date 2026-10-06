@@ -63,13 +63,14 @@ def main() -> None:
             raise SystemExit(f"Pinned MPV source is missing {path}")
     if not runtime_library.is_file():
         raise SystemExit(f"RIFE shared runtime is missing: {runtime_library}")
-    for name in ("vf_rife.c", "rife_vfi.h"):
+    for name in ("vf_rife.c", "rife_vfi.h", "rife_cadence.h"):
         if not (VENDOR / name).is_file():
             raise SystemExit(f"RIFE MPV source is missing: {VENDOR / name}")
 
     video_filter_dir = mpv_dir / "video/filter"
     shutil.copy2(VENDOR / "vf_rife.c", video_filter_dir / "vf_rife.c")
     shutil.copy2(VENDOR / "rife_vfi.h", video_filter_dir / "rife_vfi.h")
+    shutil.copy2(VENDOR / "rife_cadence.h", video_filter_dir / "rife_cadence.h")
 
     meson_path = mpv_dir / "meson.build"
     meson = meson_path.read_text()

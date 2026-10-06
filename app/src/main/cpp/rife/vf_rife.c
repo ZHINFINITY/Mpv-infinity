@@ -24,13 +24,11 @@
 #include "video/sws_utils.h"
 
 #include "rife_vfi.h"
+#include "rife_cadence.h"
 
 #define RIFE_MAX_SYNTH_PER_GAP 12
 #define RIFE_LOG_EVERY 60
 #define RIFE_FALLBACK_QUEUE_SIZE 4
-#define RIFE_SLOW_INFERENCE_LIMIT 2
-#define RIFE_SLOW_INFERENCE_BUDGET_MULTIPLIER 1.5
-#define RIFE_SEVERE_INFERENCE_BUDGET_MULTIPLIER 3.0
 
 struct f_opts {
     char *model_dir;
@@ -55,6 +53,13 @@ struct priv {
     struct f_opts *opts;
     RifeVfiEngine *engine;
     struct mp_sws_context *sws;
+    uint8_t *pair_input0;
+    uint8_t *pair_input1;
+    size_t pair_input_bytes;
+    int pair_process_width;
+    int pair_process_height;
+    int64_t pair_work_ns;
+    int64_t average_frame_work_ns;
 
     // prev and pending are the adjacent decoded frames bracketing output times.
     struct mp_frame prev;
@@ -68,8 +73,6 @@ struct priv {
     bool passthrough_recovery_pending;
     bool performance_limited;
     const char *performance_limited_reason;
-    unsigned int slow_inference_count;
-    unsigned int slow_total_count;
     char last_passthrough_reason[64];
     int last_passthrough_format;
     int last_passthrough_width;
@@ -97,6 +100,18 @@ struct priv {
 static struct mp_image *frame_image(struct mp_frame frame)
 {
     return frame.type == MP_FRAME_VIDEO ? frame.data : NULL;
+}
+
+static void clear_pair_cache(struct priv *p)
+{
+    free(p->pair_input0);
+    free(p->pair_input1);
+    p->pair_input0 = NULL;
+    p->pair_input1 = NULL;
+    p->pair_input_bytes = 0;
+    p->pair_process_width = 0;
+    p->pair_process_height = 0;
+    p->pair_work_ns = 0;
 }
 
 static bool pts_is_valid(double pts)
@@ -210,6 +225,7 @@ static void clear_frames(struct priv *p)
     p->prev_was_emitted = false;
     p->next_pts = 0;
     p->outputs_in_gap = 0;
+    clear_pair_cache(p);
 }
 
 static void fallback_add(struct priv *p, struct mp_frame frame)
@@ -265,9 +281,9 @@ static void disable_and_queue(struct mp_filter *f, const char *why,
                               struct mp_frame current)
 {
     struct priv *p = f->priv;
-    MP_WARN(f, "RIFE_DIAGNOSTIC event=disabled reason=%s target_fps=%.0f effective_max_dimension=%d slow_inference_count=%u slow_total_count=%u\n",
+    MP_WARN(f, "RIFE_DIAGNOSTIC event=disabled reason=%s target_fps=%.0f effective_max_dimension=%d pair_work_ms=%.2f average_synth_ms=%.2f\n",
             why, p->opts->target_fps, effective_max_dimension(p),
-            p->slow_inference_count, p->slow_total_count);
+            p->pair_work_ns / 1e6, p->average_frame_work_ns / 1e6);
 
     if (p->prev.type && !p->prev_was_emitted && p->outputs_in_gap == 0)
         fallback_add(p, mp_frame_ref(p->prev));
@@ -281,6 +297,7 @@ static void disable_and_queue(struct mp_filter *f, const char *why,
     mp_frame_unref(&p->prev);
     p->active = false;
     p->outputs_in_gap = 0;
+    clear_pair_cache(p);
 }
 
 // A bad timestamp or one unsupported frame should not disable interpolation for the rest of the
@@ -304,6 +321,7 @@ static void bypass_unsupported_segment(struct mp_filter *f, struct mp_image *img
     p->prev_was_emitted = false;
     p->outputs_in_gap = 0;
     p->passthrough_recovery_pending = true;
+    clear_pair_cache(p);
 }
 
 static bool write_fallback(struct mp_filter *f)
@@ -354,10 +372,75 @@ static bool unpack_rgb24(const uint8_t *packed, struct mp_image *rgb,
     return true;
 }
 
-static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
-                                    struct mp_image *b, double pts)
+static bool prepare_pair_inputs(struct mp_filter *f, struct mp_image *a,
+                                struct mp_image *b, int process_width,
+                                int process_height, size_t row_bytes,
+                                size_t bytes)
 {
     struct priv *p = f->priv;
+    if (p->pair_input0 && p->pair_input1 &&
+        p->pair_input_bytes == bytes &&
+        p->pair_process_width == process_width &&
+        p->pair_process_height == process_height)
+        return true;
+
+    clear_pair_cache(p);
+    struct mp_image *rgb_a = mp_image_alloc(IMGFMT_RGB24,
+                                             process_width, process_height);
+    struct mp_image *rgb_b = mp_image_alloc(IMGFMT_RGB24,
+                                             process_width, process_height);
+    uint8_t *packed_a = malloc(bytes);
+    uint8_t *packed_b = malloc(bytes);
+    bool ok = false;
+
+    if (!rgb_a || !rgb_b || !packed_a || !packed_b) {
+        MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=pair_cache_allocation_failed source_width=%d source_height=%d process_width=%d process_height=%d bytes=%zu\n",
+                a->w, a->h, process_width, process_height, bytes);
+        goto done;
+    }
+
+    int64_t conversion_start = mp_time_ns();
+    if (!convert_to_rgb(p, a, rgb_a) || !convert_to_rgb(p, b, rgb_b)) {
+        MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=source_rgb_conversion_failed source_format=%s source_width=%d source_height=%d process_width=%d process_height=%d component_bits=%d\n",
+                mp_imgfmt_to_name(a->imgfmt), a->w, a->h, process_width,
+                process_height, image_component_depth(a));
+        goto done;
+    }
+    if (!pack_rgb24(rgb_a, packed_a, row_bytes) ||
+        !pack_rgb24(rgb_b, packed_b, row_bytes)) {
+        MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=rgb_pack_failed process_width=%d process_height=%d bytes=%zu\n",
+                process_width, process_height, bytes);
+        goto done;
+    }
+
+    int64_t conversion_elapsed = mp_time_ns() - conversion_start;
+    if (conversion_elapsed > 0)
+        p->conversion_ns += conversion_elapsed;
+    p->pair_input0 = packed_a;
+    p->pair_input1 = packed_b;
+    p->pair_input_bytes = bytes;
+    p->pair_process_width = process_width;
+    p->pair_process_height = process_height;
+    packed_a = NULL;
+    packed_b = NULL;
+    ok = true;
+
+done:
+    free(packed_a);
+    free(packed_b);
+    talloc_free(rgb_a);
+    talloc_free(rgb_b);
+    return ok;
+}
+
+static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
+                                    struct mp_image *b, double pts,
+                                    int64_t pair_budget_ns,
+                                    int64_t *elapsed_out)
+{
+    struct priv *p = f->priv;
+    if (elapsed_out)
+        *elapsed_out = 0;
     int process_width, process_height;
     processing_dimensions(p, a->w, a->h, &process_width, &process_height);
     size_t width = (size_t)process_width;
@@ -368,39 +451,25 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     size_t bytes = row_bytes * height;
     int64_t total_start = mp_time_ns();
 
-    struct mp_image *rgb_a = mp_image_alloc(IMGFMT_RGB24, process_width, process_height);
-    struct mp_image *rgb_b = mp_image_alloc(IMGFMT_RGB24, process_width, process_height);
     struct mp_image *rgb_out = mp_image_alloc(IMGFMT_RGB24, process_width, process_height);
     struct mp_image *out = NULL;
-    uint8_t *packed_a = NULL, *packed_b = NULL, *packed_out = NULL;
+    uint8_t *packed_out = NULL;
     bool ok = false;
 
-    if (!rgb_a || !rgb_b || !rgb_out) {
-        MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=rgb_allocation_failed source_width=%d source_height=%d process_width=%d process_height=%d\n",
+    if (!prepare_pair_inputs(f, a, b, process_width, process_height,
+                             row_bytes, bytes))
+        goto done;
+    if (!rgb_out) {
+        MP_WARN(f, "RIFE_DIAGNOSTIC event=rgb_allocation_failed source_width=%d source_height=%d process_width=%d process_height=%d\n",
                 a->w, a->h, process_width, process_height);
         goto done;
     }
-    int64_t conversion_start = mp_time_ns();
-    if (!convert_to_rgb(p, a, rgb_a) || !convert_to_rgb(p, b, rgb_b)) {
-        MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=source_rgb_conversion_failed source_format=%s source_width=%d source_height=%d process_width=%d process_height=%d component_bits=%d\n",
-                mp_imgfmt_to_name(a->imgfmt), a->w, a->h, process_width,
-                process_height, image_component_depth(a));
-        goto done;
-    }
-
-    packed_a = malloc(bytes);
-    packed_b = malloc(bytes);
     packed_out = malloc(bytes);
-    if (!packed_a || !packed_b || !packed_out ||
-        !pack_rgb24(rgb_a, packed_a, row_bytes) ||
-        !pack_rgb24(rgb_b, packed_b, row_bytes)) {
-        MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=rgb_pack_failed process_width=%d process_height=%d bytes=%zu\n",
+    if (!packed_out) {
+        MP_WARN(f, "RIFE_DIAGNOSTIC event=processing_error reason=rgb_output_allocation_failed process_width=%d process_height=%d bytes=%zu\n",
                 process_width, process_height, bytes);
         goto done;
     }
-    int64_t conversion_elapsed = mp_time_ns() - conversion_start;
-    if (conversion_elapsed > 0)
-        p->conversion_ns += conversion_elapsed;
 
     double span = b->pts - a->pts;
     double alpha = (pts - a->pts) / span;
@@ -411,7 +480,8 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     }
 
     int64_t start = mp_time_ns();
-    int result = rife_vfi_interpolate_rgb24(p->engine, packed_a, packed_b,
+    int result = rife_vfi_interpolate_rgb24(p->engine, p->pair_input0,
+                                            p->pair_input1,
                                             process_width, process_height,
                                             (float)alpha,
                                             packed_out);
@@ -419,24 +489,17 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     if (elapsed > 0)
         p->inference_ns += elapsed;
     p->inference_count++;
-    int64_t frame_period_ns = (int64_t)(p->frame_step * 1e9);
-    int64_t inference_budget_ns =
-        (int64_t)(frame_period_ns * RIFE_SLOW_INFERENCE_BUDGET_MULTIPLIER);
-    int64_t severe_inference_budget_ns =
-        (int64_t)(frame_period_ns * RIFE_SEVERE_INFERENCE_BUDGET_MULTIPLIER);
-    bool severe_slowdown = elapsed > severe_inference_budget_ns;
-    if (elapsed > inference_budget_ns)
-        p->slow_inference_count++;
-    else
-        p->slow_inference_count = 0;
-    if (severe_slowdown || p->slow_inference_count >= RIFE_SLOW_INFERENCE_LIMIT) {
+
+    int64_t pre_output_elapsed = mp_time_ns() - total_start;
+    if (rife_cadence_work_exceeds_budget(p->pair_work_ns,
+                                        pre_output_elapsed,
+                                        pair_budget_ns)) {
         p->performance_limited = true;
-        p->performance_limited_reason = "inference_exceeded_target_frame_time_budget";
-        MP_WARN(f, "RIFE_DIAGNOSTIC event=auto_fallback reason=slow_inference target_fps=%.0f last_inference_ms=%.2f frame_budget_ms=%.2f source_format=%s source_width=%d source_height=%d process_width=%d process_height=%d component_bits=%d source_delta_ms=%.3f alpha=%.4f consecutive_slow=%u immediate=%d\n",
-                p->opts->target_fps, elapsed / 1e6, frame_period_ns / 1e6,
-                mp_imgfmt_to_name(a->imgfmt), a->w, a->h, process_width,
-                process_height, image_component_depth(a), span * 1000.0, alpha,
-                p->slow_inference_count, severe_slowdown ? 1 : 0);
+        p->performance_limited_reason = "inference_exceeded_source_pair_budget";
+        MP_WARN(f, "RIFE_DIAGNOSTIC event=auto_fallback reason=inference_exceeded_source_pair_budget target_fps=%.0f inference_ms=%.2f pair_elapsed_ms=%.2f pair_budget_ms=%.2f source_delta_ms=%.3f alpha=%.4f process_width=%d process_height=%d\n",
+                p->opts->target_fps, elapsed / 1e6,
+                pre_output_elapsed / 1e6, pair_budget_ns / 1e6,
+                span * 1000.0, alpha, process_width, process_height);
         goto done;
     }
     if (result != 0) {
@@ -475,23 +538,12 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     int64_t total_elapsed = mp_time_ns() - total_start;
     if (total_elapsed > 0)
         p->total_ns += total_elapsed;
-    bool severe_total_slowdown = total_elapsed > severe_inference_budget_ns;
-    if (total_elapsed > inference_budget_ns)
-        p->slow_total_count++;
-    else
-        p->slow_total_count = 0;
-    if (severe_total_slowdown || p->slow_total_count >= RIFE_SLOW_INFERENCE_LIMIT) {
-        p->performance_limited = true;
-        p->performance_limited_reason = "total_processing_exceeded_target_frame_time_budget";
-        MP_WARN(f, "RIFE_DIAGNOSTIC event=auto_fallback reason=slow_total_processing target_fps=%.0f frame_budget_ms=%.2f convert_ms=%.2f inference_ms=%.2f output_ms=%.2f total_ms=%.2f source_format=%s source_width=%d source_height=%d process_width=%d process_height=%d component_bits=%d consecutive_slow=%u immediate=%d\n",
-                p->opts->target_fps, frame_period_ns / 1e6,
-                conversion_elapsed / 1e6, elapsed / 1e6, output_elapsed / 1e6,
-                total_elapsed / 1e6, mp_imgfmt_to_name(a->imgfmt), a->w, a->h,
-                process_width, process_height, image_component_depth(a),
-                p->slow_total_count, severe_total_slowdown ? 1 : 0);
-        talloc_free(out);
-        out = NULL;
-        goto done;
+    if (total_elapsed > 0) {
+        if (p->average_frame_work_ns == 0)
+            p->average_frame_work_ns = total_elapsed;
+        else
+            p->average_frame_work_ns +=
+                (total_elapsed - p->average_frame_work_ns) / 8;
     }
     ok = true;
     if (p->inference_count >= RIFE_LOG_EVERY) {
@@ -511,16 +563,14 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     }
 
 done:
-    free(packed_a);
-    free(packed_b);
     free(packed_out);
-    talloc_free(rgb_a);
-    talloc_free(rgb_b);
     talloc_free(rgb_out);
     if (!ok && out) {
         talloc_free(out);
         out = NULL;
     }
+    if (elapsed_out)
+        *elapsed_out = mp_time_ns() - total_start;
     return out;
 }
 
@@ -531,6 +581,7 @@ static void promote_pending(struct priv *p, bool emitted)
     mp_frame_unref(&p->pending);
     p->prev_was_emitted = emitted;
     p->outputs_in_gap = 0;
+    clear_pair_cache(p);
 }
 
 static bool frames_compatible(struct mp_image *a, struct mp_image *b)
@@ -597,16 +648,19 @@ static void f_process(struct mp_filter *f)
                     p->outputs_in_gap == 0) {
                     fallback_add(p, mp_frame_ref(p->prev));
                     mp_frame_unref(&p->prev);
+                    clear_pair_cache(p);
                     fallback_add(p, frame);
                     p->active = false;
                     write_fallback(f);
                     return;
                 }
                 mp_frame_unref(&p->prev);
+                clear_pair_cache(p);
                 mp_pin_in_write(f->ppins[1], frame);
                 return;
             }
             p->pending = frame;
+            clear_pair_cache(p);
         }
 
         struct mp_image *a = frame_image(p->prev);
@@ -625,17 +679,43 @@ static void f_process(struct mp_filter *f)
         }
 
         double tolerance = fmax(1e-7, p->frame_step * 1e-6);
-        double span = b->pts - p->next_pts;
         if (p->next_pts < b->pts - tolerance) {
-            // Cap work for a source gap before emitting any outputs from that gap.
-            double count = ceil((span - tolerance) / p->frame_step);
-            if (!isfinite(count) || count > RIFE_MAX_SYNTH_PER_GAP) {
+            unsigned int outputs_required = 0;
+            if (!rife_cadence_count_outputs(p->next_pts, b->pts,
+                                            p->frame_step, tolerance,
+                                            RIFE_MAX_SYNTH_PER_GAP,
+                                            &outputs_required)) {
                 disable_and_queue(f, "source_timestamp_gap_exceeds_synthesis_limit",
                                   MP_NO_FRAME);
                 write_fallback(f);
                 return;
             }
-            struct mp_image *out = interpolate(f, a, b, p->next_pts);
+            int64_t pair_budget_ns = 0;
+            if (!rife_cadence_source_budget_ns(b->pts - a->pts,
+                                               &pair_budget_ns)) {
+                disable_and_queue(f, "invalid_source_pair_processing_budget",
+                                  MP_NO_FRAME);
+                write_fallback(f);
+                return;
+            }
+            if (rife_cadence_prediction_exceeds_budget(
+                    p->pair_work_ns, p->average_frame_work_ns,
+                    outputs_required, pair_budget_ns)) {
+                MP_WARN(f, "RIFE_DIAGNOSTIC event=auto_fallback reason=predicted_source_pair_budget_exceeded target_fps=%.0f source_delta_ms=%.3f outputs_remaining=%u pair_work_ms=%.2f average_synth_ms=%.2f pair_budget_ms=%.2f\n",
+                        p->opts->target_fps, (b->pts - a->pts) * 1000.0,
+                        outputs_required, p->pair_work_ns / 1e6,
+                        p->average_frame_work_ns / 1e6,
+                        pair_budget_ns / 1e6);
+                disable_and_queue(f, "predicted_source_pair_budget_exceeded",
+                                  MP_NO_FRAME);
+                write_fallback(f);
+                return;
+            }
+
+            int64_t frame_elapsed_ns = 0;
+            struct mp_image *out = interpolate(f, a, b, p->next_pts,
+                                                 pair_budget_ns,
+                                                 &frame_elapsed_ns);
             if (!out) {
                 const char *why = p->performance_limited && p->performance_limited_reason ?
                     p->performance_limited_reason : "conversion_or_rife_inference_failed";
@@ -646,6 +726,31 @@ static void f_process(struct mp_filter *f)
                 write_fallback(f);
                 return;
             }
+
+            bool pair_over_budget = rife_cadence_work_exceeds_budget(
+                p->pair_work_ns, frame_elapsed_ns, pair_budget_ns);
+            int64_t pair_work_after = frame_elapsed_ns > INT64_MAX - p->pair_work_ns ?
+                INT64_MAX : p->pair_work_ns + frame_elapsed_ns;
+            unsigned int outputs_remaining = outputs_required > 0 ?
+                outputs_required - 1 : 0;
+            bool predicted_over_budget =
+                rife_cadence_prediction_exceeds_budget(
+                    pair_work_after, p->average_frame_work_ns,
+                    outputs_remaining, pair_budget_ns);
+            if (pair_over_budget || predicted_over_budget) {
+                MP_WARN(f, "RIFE_DIAGNOSTIC event=auto_fallback reason=source_pair_processing_budget_exceeded target_fps=%.0f source_delta_ms=%.3f outputs_remaining=%u pair_work_ms=%.2f frame_work_ms=%.2f average_synth_ms=%.2f pair_budget_ms=%.2f\n",
+                        p->opts->target_fps, (b->pts - a->pts) * 1000.0,
+                        outputs_remaining, pair_work_after / 1e6,
+                        frame_elapsed_ns / 1e6,
+                        p->average_frame_work_ns / 1e6,
+                        pair_budget_ns / 1e6);
+                talloc_free(out);
+                disable_and_queue(f, "source_pair_processing_budget_exceeded",
+                                  MP_NO_FRAME);
+                write_fallback(f);
+                return;
+            }
+            p->pair_work_ns = pair_work_after;
             struct mp_frame output = MAKE_FRAME(MP_FRAME_VIDEO, out);
             p->next_pts += p->frame_step;
             p->outputs_in_gap++;
@@ -661,6 +766,7 @@ static void f_process(struct mp_filter *f)
             p->prev_was_emitted = true;
             p->next_pts += p->frame_step;
             p->outputs_in_gap = 0;
+            clear_pair_cache(p);
             mp_pin_in_write(f->ppins[1], output);
             return;
         }
@@ -678,8 +784,7 @@ static void f_reset(struct mp_filter *f)
     p->passthrough_recovery_pending = false;
     p->performance_limited = false;
     p->performance_limited_reason = NULL;
-    p->slow_inference_count = 0;
-    p->slow_total_count = 0;
+    p->average_frame_work_ns = 0;
     p->last_passthrough_reason[0] = '\0';
     p->last_passthrough_format = 0;
     p->last_passthrough_width = 0;
