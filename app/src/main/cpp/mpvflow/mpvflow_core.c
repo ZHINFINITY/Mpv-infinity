@@ -7,13 +7,16 @@
 #include "mpvflow_core.h"
 #include <limits.h>
 #include <math.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #if defined(__aarch64__)
 #include <arm_neon.h>
 #endif
 #define MPVFLOW_PYRAMID_LEVELS 3
+#define MPVFLOW_SYNTH_MAX_WORKERS 4
 #define MPVFLOW_SCENE_CUT_MEAN_DELTA 48.0
 #define MPVFLOW_CONSISTENCY_LIMIT 4.0
 #define MPVFLOW_PHOTOMETRIC_LIMIT 96.0
@@ -414,6 +417,81 @@ void mpvflow_pair_destroy(MPVFlowPair *pair)
     free_levels(pair->levels, pair->level_count);
     free(pair);
 }
+struct synthesis_job {
+    const MPVFlowPair *pair;
+    const uint8_t *frame0;
+    const uint8_t *frame1;
+    uint8_t *output;
+    float timestep;
+    int y_start;
+    int y_end;
+    double consistency_sum;
+};
+static void synthesize_rows(struct synthesis_job *job)
+{
+    const MPVFlowPair *pair = job->pair;
+    const struct flow_level *full = &pair->levels[0];
+    double consistency_sum = 0.0;
+    for (int y = job->y_start; y < job->y_end; y++) {
+        for (int x = 0; x < pair->width; x++) {
+            float fdx, fdy, bdx, bdy;
+            sample_vector(full, full->forward, pair->step, (float)x, (float)y,
+                          &fdx, &fdy);
+            sample_vector(full, full->backward, pair->step, (float)x, (float)y,
+                          &bdx, &bdy);
+            float ax = (float)x - job->timestep * fdx;
+            float ay = (float)y - job->timestep * fdy;
+            float bx = (float)x - (1.0f - job->timestep) * bdx;
+            float by = (float)y - (1.0f - job->timestep) * bdy;
+            for (int iteration = 0; iteration < 2; iteration++) {
+                sample_vector(full, full->forward, pair->step, ax, ay, &fdx, &fdy);
+                ax = (float)x - job->timestep * fdx;
+                ay = (float)y - job->timestep * fdy;
+                sample_vector(full, full->backward, pair->step, bx, by, &bdx, &bdy);
+                bx = (float)x - (1.0f - job->timestep) * bdx;
+                by = (float)y - (1.0f - job->timestep) * bdy;
+            }
+            float consistency = hypotf(fdx + bdx, fdy + bdy);
+            consistency_sum += consistency;
+            float color_a[3], color_b[3];
+            sample_rgb24(job->frame0, pair->width, pair->height, ax, ay, color_a);
+            sample_rgb24(job->frame1, pair->width, pair->height, bx, by, color_b);
+            float photo_delta = (fabsf(color_a[0] - color_b[0]) +
+                                 fabsf(color_a[1] - color_b[1]) +
+                                 fabsf(color_a[2] - color_b[2])) / 3.0f;
+            float flow_confidence =
+                clamp_float(1.0f - consistency / MPVFLOW_CONSISTENCY_LIMIT,
+                            0.0f, 1.0f);
+            float photo_confidence =
+                clamp_float(1.0f - photo_delta / MPVFLOW_PHOTOMETRIC_LIMIT,
+                            0.0f, 1.0f);
+            float confidence = flow_confidence * photo_confidence;
+            float weight_a = (1.0f - job->timestep) * confidence +
+                             (job->timestep <= 0.5f ? 1.0f - confidence : 0.0f);
+            float weight_b = job->timestep * confidence +
+                             (job->timestep > 0.5f ? 1.0f - confidence : 0.0f);
+            float weight_sum = weight_a + weight_b;
+            if (weight_sum <= 0.0f) {
+                weight_a = 1.0f - job->timestep;
+                weight_b = job->timestep;
+                weight_sum = 1.0f;
+            }
+            size_t output_index = ((size_t)y * pair->width + x) * 3;
+            for (int channel = 0; channel < 3; channel++) {
+                float value = (color_a[channel] * weight_a +
+                               color_b[channel] * weight_b) / weight_sum;
+                job->output[output_index + channel] =
+                    (uint8_t)clamp_int((int)lrintf(value), 0, 255);
+            }
+        }
+    }
+    job->consistency_sum = consistency_sum;
+}
+static void *synthesize_rows_thread(void *opaque)
+{
+    synthesize_rows(opaque);
+    return NULL;
+}
 int mpvflow_synthesize_rgb24(MPVFlowContext *context,
                              const MPVFlowPair *pair,
                              const uint8_t *frame0,
@@ -439,62 +517,47 @@ int mpvflow_synthesize_rgb24(MPVFlowContext *context,
         memcpy(output, frame0, bytes);
         return MPVFLOW_OK;
     }
-    const struct flow_level *full = &pair->levels[0];
-    double consistency_sum = 0.0;
-    size_t pixel_count = (size_t)pair->width * pair->height;
-    for (int y = 0; y < pair->height; y++) {
-        for (int x = 0; x < pair->width; x++) {
-            float fdx, fdy, bdx, bdy;
-            sample_vector(full, full->forward, pair->step, (float)x, (float)y,
-                          &fdx, &fdy);
-            sample_vector(full, full->backward, pair->step, (float)x, (float)y,
-                          &bdx, &bdy);
-            float ax = (float)x - timestep * fdx;
-            float ay = (float)y - timestep * fdy;
-            float bx = (float)x - (1.0f - timestep) * bdx;
-            float by = (float)y - (1.0f - timestep) * bdy;
-            for (int iteration = 0; iteration < 2; iteration++) {
-                sample_vector(full, full->forward, pair->step, ax, ay, &fdx, &fdy);
-                ax = (float)x - timestep * fdx;
-                ay = (float)y - timestep * fdy;
-                sample_vector(full, full->backward, pair->step, bx, by, &bdx, &bdy);
-                bx = (float)x - (1.0f - timestep) * bdx;
-                by = (float)y - (1.0f - timestep) * bdy;
-            }
-            float consistency = hypotf(fdx + bdx, fdy + bdy);
-            consistency_sum += consistency;
-            float color_a[3], color_b[3];
-            sample_rgb24(frame0, pair->width, pair->height, ax, ay, color_a);
-            sample_rgb24(frame1, pair->width, pair->height, bx, by, color_b);
-            float photo_delta = (fabsf(color_a[0] - color_b[0]) +
-                                 fabsf(color_a[1] - color_b[1]) +
-                                 fabsf(color_a[2] - color_b[2])) / 3.0f;
-            float flow_confidence =
-                clamp_float(1.0f - consistency / MPVFLOW_CONSISTENCY_LIMIT,
-                            0.0f, 1.0f);
-            float photo_confidence =
-                clamp_float(1.0f - photo_delta / MPVFLOW_PHOTOMETRIC_LIMIT,
-                            0.0f, 1.0f);
-            float confidence = flow_confidence * photo_confidence;
-            float weight_a = (1.0f - timestep) * confidence +
-                             (timestep <= 0.5f ? 1.0f - confidence : 0.0f);
-            float weight_b = timestep * confidence +
-                             (timestep > 0.5f ? 1.0f - confidence : 0.0f);
-            float weight_sum = weight_a + weight_b;
-            if (weight_sum <= 0.0f) {
-                weight_a = 1.0f - timestep;
-                weight_b = timestep;
-                weight_sum = 1.0f;
-            }
-            size_t output_index = ((size_t)y * pair->width + x) * 3;
-            for (int channel = 0; channel < 3; channel++) {
-                float value = (color_a[channel] * weight_a +
-                               color_b[channel] * weight_b) / weight_sum;
-                output[output_index + channel] =
-                    (uint8_t)clamp_int((int)lrintf(value), 0, 255);
-            }
+    long online_processors = sysconf(_SC_NPROCESSORS_ONLN);
+    int worker_count = online_processors > 1
+        ? (online_processors > MPVFLOW_SYNTH_MAX_WORKERS
+            ? MPVFLOW_SYNTH_MAX_WORKERS : (int)online_processors)
+        : 1;
+    int row_worker_limit = pair->height / 64;
+    if (row_worker_limit < 1)
+        row_worker_limit = 1;
+    if (worker_count > row_worker_limit)
+        worker_count = row_worker_limit;
+    struct synthesis_job jobs[MPVFLOW_SYNTH_MAX_WORKERS] = {0};
+    pthread_t threads[MPVFLOW_SYNTH_MAX_WORKERS - 1];
+    bool thread_started[MPVFLOW_SYNTH_MAX_WORKERS - 1] = {false};
+    for (int i = 0; i < worker_count; i++) {
+        jobs[i] = (struct synthesis_job) {
+            .pair = pair,
+            .frame0 = frame0,
+            .frame1 = frame1,
+            .output = output,
+            .timestep = timestep,
+            .y_start = pair->height * i / worker_count,
+            .y_end = pair->height * (i + 1) / worker_count,
+        };
+    }
+    for (int i = 1; i < worker_count; i++) {
+        if (pthread_create(&threads[i - 1], NULL, synthesize_rows_thread,
+                           &jobs[i]) == 0) {
+            thread_started[i - 1] = true;
+        } else {
+            synthesize_rows(&jobs[i]);
         }
     }
+    synthesize_rows(&jobs[0]);
+    for (int i = 1; i < worker_count; i++) {
+        if (thread_started[i - 1])
+            pthread_join(threads[i - 1], NULL);
+    }
+    double consistency_sum = 0.0;
+    for (int i = 0; i < worker_count; i++)
+        consistency_sum += jobs[i].consistency_sum;
+    size_t pixel_count = (size_t)pair->width * pair->height;
     if (stats)
         stats->mean_vector_consistency_error = consistency_sum / pixel_count;
     return MPVFLOW_OK;

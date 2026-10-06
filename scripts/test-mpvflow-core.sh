@@ -7,5 +7,5 @@ cc -std=c11 -O2 -Wall -Wextra -Werror \
   -I"$ROOT/app/src/main/cpp/mpvflow" \
   "$ROOT/app/src/main/cpp/mpvflow/mpvflow_core.c" \
   "$ROOT/scripts/tests/mpvflow_core_test.c" \
-  -lm -o "$OUT"
+  -pthread -lm -o "$OUT"
 "$OUT"

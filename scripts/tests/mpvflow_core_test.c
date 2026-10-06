@@ -71,6 +71,29 @@ static void test_identical_frames_are_preserved(void)
     free(a);
     free(out);
 }
+static void test_parallel_synthesis_is_deterministic(void)
+{
+    const int width = 160, height = 128;
+    size_t bytes = (size_t)width * height * 3;
+    uint8_t *a = malloc(bytes), *b = malloc(bytes);
+    uint8_t *out0 = malloc(bytes), *out1 = malloc(bytes);
+    assert(a && b && out0 && out1);
+    fill_texture(a, width, height, 40);
+    fill_texture(b, width, height, 48);
+    MPVFlowContext *context = mpvflow_create(8, 8);
+    assert(context);
+    MPVFlowPair *pair = NULL;
+    assert(mpvflow_analyze_pair(context, a, b, width, height, &pair, NULL) == MPVFLOW_OK);
+    assert(mpvflow_synthesize_rgb24(context, pair, a, b, 0.5f, out0, NULL) == MPVFLOW_OK);
+    assert(mpvflow_synthesize_rgb24(context, pair, a, b, 0.5f, out1, NULL) == MPVFLOW_OK);
+    assert(memcmp(out0, out1, bytes) == 0);
+    mpvflow_pair_destroy(pair);
+    mpvflow_destroy(context);
+    free(a);
+    free(b);
+    free(out0);
+    free(out1);
+}
 static void test_scene_cut_avoids_synthetic_blend(void)
 {
     const int width = 64, height = 48;
@@ -96,6 +119,7 @@ int main(void)
 {
     test_translation_is_compensated();
     test_identical_frames_are_preserved();
+    test_parallel_synthesis_is_deterministic();
     test_scene_cut_avoids_synthetic_blend();
     puts("mpvflow core tests passed");
     return 0;

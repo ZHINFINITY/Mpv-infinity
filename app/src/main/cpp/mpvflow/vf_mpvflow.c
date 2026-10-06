@@ -69,6 +69,8 @@ struct priv {
     uint8_t *packed_out;
     int64_t analysis_ns;
     int64_t synthesis_ns;
+    int64_t pair_work_ns;
+    double pair_budget_ms;
     unsigned int timing_count;
     struct mp_frame fallback[MPVFLOW_FALLBACK_QUEUE_SIZE];
     int fallback_count;
@@ -142,6 +144,8 @@ static void clear_pair_cache(struct priv *p)
     p->process_height = 0;
     p->analysis_ns = 0;
     p->synthesis_ns = 0;
+    p->pair_work_ns = 0;
+    p->pair_budget_ms = 0;
     p->timing_count = 0;
     p->prepared = false;
     p->pair_is_scene_cut = false;
@@ -257,6 +261,7 @@ static bool prepare_pair(struct mp_filter *f, struct mp_image *a,
                          struct mp_image *b)
 {
     struct priv *p = f->priv;
+    int64_t work_start = mp_time_ns();
     processing_dimensions(p, a->w, a->h, &p->process_width, &p->process_height);
     size_t width = (size_t)p->process_width;
     size_t height = (size_t)p->process_height;
@@ -303,6 +308,7 @@ static bool prepare_pair(struct mp_filter *f, struct mp_image *a,
             p->opts->target_fps, p->analysis_ns / 1e6,
             stats.mean_block_sad, stats.mean_motion_pixels,
             p->pair_is_scene_cut);
+    p->pair_work_ns += mp_time_ns() - work_start;
     return true;
 }
 static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
@@ -313,6 +319,7 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
         MP_WARN(f, "MPVFLOW_DIAGNOSTIC event=processing_error reason=pair_analysis_failed\n");
         return NULL;
     }
+    int64_t synthesis_work_start = mp_time_ns();
     struct mp_image *rgb_out = mp_image_alloc(IMGFMT_RGB24,
                                                p->process_width,
                                                p->process_height);
@@ -353,6 +360,7 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     }
     out->pts = pts;
     talloc_free(rgb_out);
+    p->pair_work_ns += mp_time_ns() - synthesis_work_start;
     return out;
 }
 static void report_pair_timing(struct mp_filter *f)
@@ -360,10 +368,14 @@ static void report_pair_timing(struct mp_filter *f)
     struct priv *p = f->priv;
     if (!p->timing_count)
         return;
-    MP_INFO(f, "MPVFLOW_DIAGNOSTIC event=source_pair_synthesis frames=%u analysis_ms=%.2f average_core_synthesis_ms=%.2f total_core_synthesis_ms=%.2f target_fps=%.0f process_width=%d process_height=%d scene_cut=%d\n",
+    double processing_ms = p->pair_work_ns / 1e6;
+    double budget_ratio = p->pair_budget_ms > 0
+        ? processing_ms / p->pair_budget_ms : 0;
+    MP_INFO(f, "MPVFLOW_DIAGNOSTIC event=source_pair_synthesis frames=%u analysis_ms=%.2f average_core_synthesis_ms=%.2f total_core_synthesis_ms=%.2f processing_ms=%.2f pair_budget_ms=%.2f budget_ratio=%.3f target_fps=%.0f process_width=%d process_height=%d scene_cut=%d\n",
             p->timing_count, p->analysis_ns / 1e6,
             p->synthesis_ns / (double)p->timing_count / 1e6,
-            p->synthesis_ns / 1e6, p->opts->target_fps,
+            p->synthesis_ns / 1e6, processing_ms, p->pair_budget_ms,
+            budget_ratio, p->opts->target_fps,
             p->process_width, p->process_height, p->pair_is_scene_cut);
 }
 static void promote_pending(struct mp_filter *f, bool emitted)
@@ -456,6 +468,8 @@ static void f_process(struct mp_filter *f)
                 write_fallback(f);
                 return;
             }
+            if (!p->prepared)
+                p->pair_budget_ms = (b->pts - a->pts) * 1000.0;
             struct mp_image *out = interpolate(f, a, b, p->next_pts);
             if (!out) {
                 disable_and_queue(f, "conversion_or_motion_synthesis_failed",
@@ -466,6 +480,13 @@ static void f_process(struct mp_filter *f)
             struct mp_frame output = MAKE_FRAME(MP_FRAME_VIDEO, out);
             p->next_pts += p->frame_step;
             p->outputs_in_gap++;
+            double processing_ms = p->pair_work_ns / 1e6;
+            double pair_budget_ms = p->pair_budget_ms;
+            if (pair_budget_ms > 0 && processing_ms >= pair_budget_ms * 0.85) {
+                MP_WARN(f, "MPVFLOW_DIAGNOSTIC event=deadline_miss processing_ms=%.2f pair_budget_ms=%.2f source_pts=%.6f next_output_pts=%.6f; disabling interpolation to preserve playback cadence\n",
+                        processing_ms, pair_budget_ms, b->pts, p->next_pts);
+                disable_and_queue(f, "processing_budget_exceeded", MP_NO_FRAME);
+            }
             mp_pin_in_write(f->ppins[1], output);
             return;
         }

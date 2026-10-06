@@ -367,12 +367,15 @@ class MPVView(
           decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE -> "native_engine_selected"
           else -> "unsupported_configuration"
         }
+      val interpolationHwdecDiagnostic =
+        if (mpvFlowFrameInterpolationEnabled) "mediacodec-copy" else "renderer_default"
       Log.i(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=config enabled=$mpvFlowFrameInterpolationEnabled " +
           "requested_target_fps=${decoderPreferences.mpvFlowTargetFps.get()} " +
           "effective_target_fps=$mpvFlowTargetFps display_refresh_hz=${display?.refreshRate ?: 0f} " +
-          "hardware_decode_mode=mediacodec-copy software_readable_frames_required=true " +
+          "hardware_decode_mode=$interpolationHwdecDiagnostic " +
+          "software_readable_frames_required=$mpvFlowFrameInterpolationEnabled " +
           "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
       )
     }
