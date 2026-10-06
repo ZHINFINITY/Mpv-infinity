@@ -320,6 +320,16 @@
   <string name="pref_decoder_rife_summary_config_owned">Unavailable because mpv.conf owns vf or hwdec. Clear those overrides to let the app manage this feature.</string>
   <string name="pref_decoder_rife_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
   <string name="pref_decoder_rife_summary_vulkan_unavailable">This device or selected MPV renderer has no available Vulkan path.</string>
+  <string name="pref_decoder_mpvflow_title">On-device motion interpolation (MPVFlow, experimental)</string>
+  <string name="pref_decoder_mpvflow_summary">Separate, non-RIFE motion-compensation prototype. It estimates block motion on the device, then synthesizes intermediate frames. SDR progressive video only; the test filter forces software decoding while enabled. The actual target is limited by display refresh and device performance. Restart playback after changing.</string>
+  <string name="pref_decoder_mpvflow_summary_unavailable">The MPVFlow filter is included only in the experimental arm64 testing APK.</string>
+  <string name="pref_decoder_mpvflow_summary_config_owned">Unavailable because mpv.conf owns vf or hwdec. Clear those overrides to let the app manage this feature.</string>
+  <string name="pref_decoder_mpvflow_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
+  <string name="pref_decoder_mpvflow_summary_rife_selected">Enabling MPVFlow turns off the separate RIFE toggle; only one interpolation path can run at a time.</string>
+  <string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>
+  <string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>
+  <string name="pref_decoder_mpvflow_target_fps_warning_value">(!) %1$d fps</string>
+  <string name="pref_decoder_mpvflow_target_fps_summary">Requested: %1$d fps. Choices mirror SVPlayer: 48, 60, 72, 90, 96, 120, and 144. (!) marks higher-cost targets; the effective rate is capped to display refresh. The automatic longest-side processing cap is 480 pixels through 60 fps, 360 at 72–90, 320 at 96–120, and 240 at 144. Test on your device; dropped frames and heat depend on the device.</string>
   <string name="pref_subtitles">Subtitles</string>
   <string name="pref_subtitles_summary">Preferred languages, fonts and search</string>
   <string name="pref_subtitle_search_title">Online Subtitle Search</string>

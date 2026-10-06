@@ -56,6 +56,7 @@ import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverride
 import app.infinity.mpvz.preferences.RIFE_PROCESSING_RESOLUTION_OPTIONS
 import app.infinity.mpvz.preferences.RIFE_TARGET_FPS_OPTIONS
+import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
 import app.infinity.mpvz.preferences.preference.collectAsState
 import app.infinity.mpvz.presentation.Screen
 import app.infinity.mpvz.ui.icons.Icon
@@ -84,6 +85,8 @@ object DecoderPreferencesScreen : Screen {
     val rifeFrameInterpolationEnabled by preferences.rifeFrameInterpolation.collectAsState()
     val rifeTargetFps by preferences.rifeTargetFps.collectAsState()
     val rifeProcessingResolution by preferences.rifeProcessingResolution.collectAsState()
+    val mpvFlowFrameInterpolationEnabled by preferences.mpvFlowFrameInterpolation.collectAsState()
+    val mpvFlowTargetFps by preferences.mpvFlowTargetFps.collectAsState()
     val storedConfigOverrides by advancedPreferences.mpvConfOverrides.collectAsState()
     val configOwnedOptions =
       remember(storedConfigOverrides) { MpvConfigOverride.resolveOptionNames(storedConfigOverrides) }
@@ -104,6 +107,10 @@ object DecoderPreferencesScreen : Screen {
     val rifeAvailable =
       BuildConfig.MPV_HAS_RIFE &&
         isVulkanSupported &&
+        !frameInterpolationConfigOwned &&
+        selectedPlaybackEngine != PlaybackEngineMode.NATIVE
+    val mpvFlowAvailable =
+      BuildConfig.MPV_HAS_MPVFLOW &&
         !frameInterpolationConfigOwned &&
         selectedPlaybackEngine != PlaybackEngineMode.NATIVE
     var showGpuNextWarning by remember { mutableStateOf(false) }
@@ -351,8 +358,9 @@ object DecoderPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_rife_title),
                 value = rifeFrameInterpolationEnabled,
-                enabled = rifeAvailable,
+                enabled = rifeAvailable && !mpvFlowFrameInterpolationEnabled,
                 onValueChange = {
+                  if (it) preferences.mpvFlowFrameInterpolation.set(false)
                   preferences.rifeFrameInterpolation.set(it)
                 },
                 title = { Text(stringResource(R.string.pref_decoder_rife_title)) },
@@ -380,7 +388,7 @@ object DecoderPreferencesScreen : Screen {
                 value = rifeTargetFps,
                 onValueChange = preferences.rifeTargetFps::set,
                 values = RIFE_TARGET_FPS_OPTIONS,
-                enabled = rifeAvailable,
+                enabled = rifeAvailable && !mpvFlowFrameInterpolationEnabled,
                 valueToText = {
                   AnnotatedString(context.getString(R.string.pref_decoder_rife_target_fps_value, it))
                 },
@@ -400,7 +408,7 @@ object DecoderPreferencesScreen : Screen {
                 value = rifeProcessingResolution,
                 onValueChange = preferences.rifeProcessingResolution::set,
                 values = RIFE_PROCESSING_RESOLUTION_OPTIONS,
-                enabled = rifeAvailable,
+                enabled = rifeAvailable && !mpvFlowFrameInterpolationEnabled,
                 valueToText = {
                   AnnotatedString(
                     when (it) {
@@ -425,6 +433,60 @@ object DecoderPreferencesScreen : Screen {
                           )
                       },
                     ),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
+                value = mpvFlowFrameInterpolationEnabled,
+                enabled = mpvFlowAvailable || mpvFlowFrameInterpolationEnabled,
+                onValueChange = { enabled ->
+                  if (enabled) preferences.rifeFrameInterpolation.set(false)
+                  preferences.mpvFlowFrameInterpolation.set(enabled)
+                },
+                title = { Text(stringResource(R.string.pref_decoder_mpvflow_title)) },
+                summary = {
+                  Text(
+                    stringResource(
+                      when {
+                        !BuildConfig.MPV_HAS_MPVFLOW -> R.string.pref_decoder_mpvflow_summary_unavailable
+                        frameInterpolationConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
+                        selectedPlaybackEngine == PlaybackEngineMode.NATIVE ->
+                          R.string.pref_decoder_mpvflow_summary_native_engine
+                        rifeFrameInterpolationEnabled -> R.string.pref_decoder_mpvflow_summary_rife_selected
+                        else -> R.string.pref_decoder_mpvflow_summary
+                      },
+                    ),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
+              ListPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_target_fps_title),
+                value = mpvFlowTargetFps,
+                onValueChange = preferences.mpvFlowTargetFps::set,
+                values = MPVFLOW_TARGET_FPS_OPTIONS,
+                enabled = mpvFlowAvailable || mpvFlowFrameInterpolationEnabled,
+                valueToText = {
+                  AnnotatedString(
+                    context.getString(
+                      if (it >= 90) R.string.pref_decoder_mpvflow_target_fps_warning_value
+                      else R.string.pref_decoder_mpvflow_target_fps_value,
+                      it,
+                    ),
+                  )
+                },
+                title = { Text(stringResource(R.string.pref_decoder_mpvflow_target_fps_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_decoder_mpvflow_target_fps_summary, mpvFlowTargetFps),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

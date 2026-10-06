@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Overlay RIFE-enabled arm64 MPV/FFmpeg libraries into MPV∞'s existing AAR."""
+"""Overlay a custom arm64 MPV/FFmpeg runtime into MPV∞'s existing AAR."""
 from __future__ import annotations
 
 import argparse
@@ -22,6 +22,7 @@ REQUIRED_LIBS = {
     "libswscale.so",
     "libc++_shared.so",
 }
+FLOW_REQUIRED_LIBS = REQUIRED_LIBS - {"librife_vfi.so"}
 NEW_RUNTIME_LIBS = {"librife_vfi.so"}
 PRESERVE_FROM_MPV_INFINITY = {"libplayer.so"}
 KNOWN_SYSTEM_LIBS = {
@@ -61,7 +62,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime-apk", required=True, type=Path)
     parser.add_argument("--mpv-aar", required=True, type=Path)
+    parser.add_argument(
+        "--without-rife",
+        action="store_true",
+        help="Overlay a standard MPVFlow runtime without requiring or packaging the RIFE library.",
+    )
     args = parser.parse_args()
+    required_libs = FLOW_REQUIRED_LIBS if args.without_rife else REQUIRED_LIBS
+    new_runtime_libs = set() if args.without_rife else NEW_RUNTIME_LIBS
     apk_path = args.runtime_apk.resolve()
     aar_path = args.mpv_aar.resolve()
     if not apk_path.is_file() or not aar_path.is_file():
@@ -74,20 +82,20 @@ def main() -> None:
             if name.startswith("lib/arm64-v8a/") and name.endswith(".so")
             and not Path(name).name.lower().startswith("libqnn")
         }
-    if not REQUIRED_LIBS.issubset(entries):
-        missing = sorted(REQUIRED_LIBS - entries.keys())
-        raise SystemExit(f"RIFE MPV arm64 runtime APK is missing required native libraries: {missing}")
+    if not required_libs.issubset(entries):
+        missing = sorted(required_libs - entries.keys())
+        raise SystemExit(f"MPV arm64 runtime APK is missing required native libraries: {missing}")
 
     with zipfile.ZipFile(aar_path) as aar:
         original_entries = {name: (info, aar.read(name)) for info in aar.infolist() for name in [info.filename]}
     player_name = "jni/arm64-v8a/libplayer.so"
     if player_name not in original_entries:
         raise SystemExit("The MPV∞ AAR has no arm64 libplayer.so JNI bridge to preserve")
-    for name in REQUIRED_LIBS - NEW_RUNTIME_LIBS:
+    for name in required_libs - new_runtime_libs:
         if f"jni/arm64-v8a/{name}" not in original_entries:
             raise SystemExit(f"The MPV∞ AAR has no arm64 slot for {name}")
 
-    with tempfile.TemporaryDirectory(prefix="rife-runtime-aar-") as td:
+    with tempfile.TemporaryDirectory(prefix="mpv-runtime-aar-") as td:
         temp = Path(td)
         for name, blob in entries.items():
             (temp / name).write_bytes(blob)
@@ -127,11 +135,14 @@ def main() -> None:
         for name, blob in entries.items()
         if name not in PRESERVE_FROM_MPV_INFINITY
     }
+    remove_from_aar = {"jni/arm64-v8a/librife_vfi.so"} if args.without_rife else set()
     fd, temp_name = tempfile.mkstemp(prefix=aar_path.name + ".", suffix=".tmp", dir=aar_path.parent)
     os.close(fd)
     try:
         with zipfile.ZipFile(aar_path) as source, zipfile.ZipFile(temp_name, "w") as output:
             for info in source.infolist():
+                if info.filename in remove_from_aar:
+                    continue
                 if info.filename in overlay:
                     output.writestr(info, overlay.pop(info.filename))
                 else:
@@ -147,6 +158,8 @@ def main() -> None:
 
     print(f"Overlay complete: {aar_path}")
     print("Preserved MPV∞ libplayer.so; replaced/added arm64 MPV, FFmpeg, and matching libc++_shared runtime libraries.")
+    if args.without_rife:
+        print("Packaged the MPVFlow runtime without the RIFE native library.")
     print(f"Validated FFmpeg ABI tags: {', '.join(sorted(required_tags)) or 'none exposed by the JNI bridge'}")
 
 

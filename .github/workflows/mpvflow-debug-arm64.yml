@@ -1,0 +1,71 @@
+name: MPVFlow arm64 Debug APK
+
+on:
+  push:
+    branches:
+      - Mpv∞-flow
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpvflow-debug-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-arm64-debug:
+    name: Build MPVFlow-only MPV∞ arm64-v8a debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Checkout pinned Android MPV build tools
+        uses: actions/checkout@v6
+        with:
+          repository: NihilDigit/mpv-android-anvil
+          ref: 1efc82739f6f7034cd63e7ee8b3ec5431df27467
+          path: native-builder
+      - name: Checkout pinned MPV source
+        uses: actions/checkout@v6
+        with:
+          repository: mpv-player/mpv
+          ref: c1529642089bfebfc928a1c1664638a7a5d219ba
+          path: mpv-source
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install Android MPV native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg
+          pipx install meson==1.6.1
+          export PATH="$HOME/.local/bin:$PATH"
+          meson --version
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: Build MPVFlow-only MPV native arm64 debug package
+        run: ./scripts/build-mpvflow-mpv-runtime.sh
+        env:
+          MPVFLOW_MPV_BUILD_CORES: '2'
+      - name: Overlay MPVFlow MPV/FFmpeg arm64 runtime into MPV∞ AAR
+        run: python3 scripts/package-mpv-runtime-aar.py --without-rife --runtime-apk "$MPVFLOW_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar
+      - name: Run standard arm64 debug unit tests
+        run: ./gradlew testStandardDebugUnitTest -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+      - name: Build arm64-v8a debug APK
+        run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a -PmpvFlowMpvBuild=true --stacktrace --no-daemon --max-workers=2
+      - name: Upload arm64-v8a debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpv-infinity-mpvflow-arm64-v8a-debug-${{ github.sha }}
+          path: app/build/outputs/apk/standard/debug/*arm64-v8a-debug*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
