@@ -72,6 +72,7 @@ struct priv {
     unsigned int outputs_in_gap;
 
     bool active;
+    bool cpu_path_logged;
     bool passthrough_recovery_pending;
     bool performance_limited;
     const char *performance_limited_reason;
@@ -143,6 +144,10 @@ static const char *image_unsupported_reason(struct mp_image *img)
         return "invalid_dimensions";
     if (img->fields & MP_IMGFIELD_INTERLACED)
         return "interlaced";
+    if (img->imgfmt == IMGFMT_MEDIACODEC)
+        return "mediacodec_ahb_import_unavailable";
+    if (img->imgfmt == IMGFMT_VULKAN)
+        return "vulkan_frame_ncnn_device_mismatch";
     if (img->hwctx || IMGFMT_IS_HWACCEL(img->imgfmt))
         return "hardware_only_frame";
     if (img->params.color.transfer == PL_COLOR_TRC_PQ)
@@ -272,7 +277,7 @@ static void log_fallback(struct mp_filter *f, struct mp_image *img,
     p->last_passthrough_height = height;
     p->last_passthrough_transfer = transfer;
     p->passthrough_run_count = 1;
-    MP_WARN(f, "RIFE_DIAGNOSTIC event=passthrough reason=%s format=%s width=%d height=%d component_bits=%d transfer=%d interlaced=%d hardware=%d pts_valid=%d pts=%.6f\n",
+    MP_WARN(f, "RIFE_DIAGNOSTIC event=passthrough gpu_path=inactive reason=%s format=%s width=%d height=%d component_bits=%d transfer=%d interlaced=%d hardware=%d pts_valid=%d pts=%.6f\n",
             why, img ? mp_imgfmt_to_name(img->imgfmt) : "none", width, height,
             image_component_depth(img), transfer,
             img ? !!(img->fields & MP_IMGFIELD_INTERLACED) : 0,
@@ -513,6 +518,10 @@ static struct mp_image *interpolate(struct mp_filter *f, struct mp_image *a,
     if (elapsed > 0)
         p->inference_ns += elapsed;
     p->inference_count++;
+    if (result == 0 && !p->cpu_path_logged) {
+        MP_INFO(f, "RIFE_DIAGNOSTIC event=cpu_path_active backend=ncnn_vulkan input=cpu_rgb24_upload inference=vulkan_ncnn output=cpu_rgb24_download renderer_handoff=cpu_frame gpu_resident=0\n");
+        p->cpu_path_logged = true;
+    }
 
     int64_t pre_output_elapsed = mp_time_ns() - total_start;
     if (rife_cadence_work_exceeds_budget(p->pair_work_ns,
@@ -867,7 +876,8 @@ static struct mp_filter *f_create(struct mp_filter *parent, void *options)
     p->engine = rife_vfi_create(p->opts->model_dir, error, sizeof(error));
     p->active = p->engine != NULL;
     int64_t initialization_ns = mp_time_ns() - initialization_start;
-    MP_INFO(f, "RIFE_DIAGNOSTIC event=initialized target_fps=%.0f resolution_setting=%d effective_max_dimension=%d engine_ready=%d fp16_arithmetic=%d model_load_ms=%.2f\n",
+    MP_INFO(f, "RIFE_DIAGNOSTIC event=gpu_path status=unavailable reason=decoder_ahb_and_renderer_handoff_missing ncnn_vk_device=engine_private output_share=missing gpu_resident=0 current_path=cpu_rgb24_filter\n");
+    MP_INFO(f, "RIFE_DIAGNOSTIC event=initialized target_fps=%.0f resolution_setting=%d effective_max_dimension=%d engine_ready=%d fp16_arithmetic=%d model_load_ms=%.2f gpu_path=unavailable\n",
             p->opts->target_fps, p->opts->max_dimension,
             effective_max_dimension(p), p->active,
             p->engine ? rife_vfi_uses_fp16_arithmetic(p->engine) : 0,

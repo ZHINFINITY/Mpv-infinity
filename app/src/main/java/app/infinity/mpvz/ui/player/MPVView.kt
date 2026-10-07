@@ -252,7 +252,7 @@ class MPVView(
       )
     }
 
-    // RIFE needs software-readable pixels, but hardware decoding can still be retained through copy mode.
+    // This filter still consumes CPU-readable pixels; copy mode is not AHardwareBuffer zero-copy.
     if (rifeFrameInterpolationEnabled) {
       val hwdecResult = PlaybackSession.setOptionString("hwdec", rifeHwdecMode)
       val codecListResult =
@@ -317,9 +317,11 @@ class MPVView(
         listOf(
           "RIFE_DIAGNOSTIC event=config enabled=$rifeFrameInterpolationEnabled " +
             "target_fps=$rifeTargetFps max_dimension=$rifeProcessingResolution " +
-            "resolution_mode=$resolutionMode",
+            "resolution_mode=$resolutionMode gpu_resident_path=unavailable " +
+            "active_filter_path=cpu_rgb24_filter",
           "display_refresh_hz=${display?.refreshRate ?: 0f} renderer=${backend.vo} " +
             "gpu_api=${backend.gpuApi} cpu_readable_frames_required=$rifeFrameInterpolationEnabled " +
+            "decoder_to_renderer_handoff=unavailable " +
             "decoder_mode=${if (rifeFrameInterpolationEnabled) rifeHwdecMode else hwdecMode}",
           "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
         ).joinToString(" ")
