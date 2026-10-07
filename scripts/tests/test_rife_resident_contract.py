@@ -111,6 +111,10 @@ def main() -> None:
     require("if (submitted && p->rife_pending_frame)" in flip and
             "event=gpu_resident_frame" in flip,
             "gpu_resident_frame must be emitted only after a successful swapchain submit")
+    present_failure = section(flip, "if (!submitted) {", "p->frame_pending = false;")
+    require("#if defined(__ANDROID__)" in present_failure and
+            "p->rife_pending_frame" in present_failure,
+            "resident-submit failure diagnostics must not break non-Android MPV builds")
     require("rife_cadence_origin_from_presentation" in vo,
             "resident target cadence must align to the presentation PTS phase")
     require("target_fps=%d cadence_origin_pts=%.6f" in vo,
