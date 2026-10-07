@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 
 #include "rife_vfi.h"
+#include "rife_fp16_policy.h"
 
 #include "gpu.h"
 #include <cstdio>
@@ -12,6 +13,7 @@
 
 struct RifeVfiEngine {
     RIFE *network = nullptr;
+    bool fp16_arithmetic = false;
 };
 
 namespace {
@@ -69,6 +71,10 @@ extern "C" RifeVfiEngine *rife_vfi_create(const char *model_dir,
         return nullptr;
     }
 
+    const ncnn::GpuInfo &gpu_info = ncnn::get_gpu_info(gpu_id);
+    engine->fp16_arithmetic = rife_fp16_arithmetic_is_usable(
+        true, gpu_info.support_fp16_arithmetic(),
+        gpu_info.bug_implicit_fp16_arithmetic());
     engine->network = new (std::nothrow) RIFE(gpu_id, false, false, true, 1, false, true);
     if (!engine->network) {
         delete engine;
@@ -99,6 +105,11 @@ extern "C" void rife_vfi_destroy(RifeVfiEngine *engine)
     delete engine->network;
     delete engine;
     release_gpu_instance();
+}
+
+extern "C" int rife_vfi_uses_fp16_arithmetic(const RifeVfiEngine *engine)
+{
+    return engine && engine->fp16_arithmetic;
 }
 
 extern "C" int rife_vfi_interpolate_rgb24(RifeVfiEngine *engine,

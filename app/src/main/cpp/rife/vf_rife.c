@@ -867,9 +867,11 @@ static struct mp_filter *f_create(struct mp_filter *parent, void *options)
     p->engine = rife_vfi_create(p->opts->model_dir, error, sizeof(error));
     p->active = p->engine != NULL;
     int64_t initialization_ns = mp_time_ns() - initialization_start;
-    MP_INFO(f, "RIFE_DIAGNOSTIC event=initialized target_fps=%.0f resolution_setting=%d effective_max_dimension=%d engine_ready=%d model_load_ms=%.2f\n",
+    MP_INFO(f, "RIFE_DIAGNOSTIC event=initialized target_fps=%.0f resolution_setting=%d effective_max_dimension=%d engine_ready=%d fp16_arithmetic=%d model_load_ms=%.2f\n",
             p->opts->target_fps, p->opts->max_dimension,
-            effective_max_dimension(p), p->active, initialization_ns / 1e6);
+            effective_max_dimension(p), p->active,
+            p->engine ? rife_vfi_uses_fp16_arithmetic(p->engine) : 0,
+            initialization_ns / 1e6);
     if (!p->engine) {
         MP_WARN(f, "RIFE_DIAGNOSTIC event=engine_error reason=initialization_failed error=%s\n",
                 error[0] ? error : "unknown");

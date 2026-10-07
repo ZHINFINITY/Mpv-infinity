@@ -15,6 +15,7 @@ typedef struct RifeVfiEngine RifeVfiEngine;
 RifeVfiEngine *rife_vfi_create(const char *model_dir, char *error,
                                size_t error_size);
 void rife_vfi_destroy(RifeVfiEngine *engine);
+int rife_vfi_uses_fp16_arithmetic(const RifeVfiEngine *engine);
 int rife_vfi_interpolate_rgb24(RifeVfiEngine *engine,
                                const uint8_t *frame0,
                                const uint8_t *frame1,

@@ -18,11 +18,11 @@ BUILD_DIR="${RIFE_BUILD_DIR:-$RIFE_DIR/build-android-arm64}"
 # that target into a shared library while retaining upstream's shader generation
 # and ncnn/libwebp configuration.
 git -C "$RIFE_DIR" submodule update --init --recursive
-python3 - "$RIFE_DIR/src/CMakeLists.txt" "$RIFE_DIR/src/rife_vfi_bridge.cpp" "$ROOT/app/src/main/cpp/rife/rife_vfi_bridge.cpp" <<'PY'
+python3 - "$RIFE_DIR/src/CMakeLists.txt" "$RIFE_DIR/src/rife_vfi_bridge.cpp" "$ROOT/app/src/main/cpp/rife/rife_vfi_bridge.cpp" "$RIFE_DIR/src/rife_fp16_policy.h" "$ROOT/app/src/main/cpp/rife/rife_fp16_policy.h" <<'PY'
 from pathlib import Path
 import sys
 
-cmake_path, bridge_target, bridge_source = map(Path, sys.argv[1:])
+cmake_path, bridge_target, bridge_source, policy_target, policy_source = map(Path, sys.argv[1:])
 text = cmake_path.read_text()
 if "RIFE_VFI_ANDROID_SHARED_TARGET" not in text:
     vulkan_anchor = "find_package(Vulkan REQUIRED)"
@@ -62,9 +62,32 @@ install(FILES rife_vfi.h DESTINATION include COMPONENT RifeRuntime)'''
 
 bridge_source = bridge_source.resolve()
 bridge_target.write_text(bridge_source.read_text())
+policy_target.write_text(policy_source.read_text())
 
 rife_cpp_path = cmake_path.parent / "rife.cpp"
 rife_cpp = rife_cpp_path.read_text()
+fp16_marker = "// RIFE_VFI_FP16_ARITHMETIC_POLICY"
+if fp16_marker not in rife_cpp:
+    include_anchor = '#include "rife.h"'
+    if rife_cpp.count(include_anchor) != 1:
+        raise SystemExit("Expected one upstream RIFE header include; refusing an unverified FP16 patch")
+    rife_cpp = rife_cpp.replace(
+        include_anchor,
+        include_anchor + '\n#include "rife_fp16_policy.h"',
+        1,
+    )
+    arithmetic_anchor = "    opt.use_fp16_arithmetic = false;"
+    arithmetic_replacement = (
+        "    opt.use_fp16_arithmetic = rife_fp16_arithmetic_is_usable(\n"
+        "        vkdev != 0,\n"
+        "        vkdev ? vkdev->info.support_fp16_arithmetic() : false,\n"
+        "        vkdev ? vkdev->info.bug_implicit_fp16_arithmetic() : false);\n"
+        f"    {fp16_marker}"
+    )
+    if rife_cpp.count(arithmetic_anchor) != 1:
+        raise SystemExit("Expected one upstream FP16 arithmetic option; refusing an unverified performance patch")
+    rife_cpp = rife_cpp.replace(arithmetic_anchor, arithmetic_replacement, 1)
+
 if "// RIFE_VFI_NULL_SAFE_UHD_DESTROY" not in rife_cpp:
     old = (
         "    if (uhd_mode)\n"
@@ -99,7 +122,9 @@ if "// RIFE_VFI_NULL_SAFE_UHD_DESTROY" not in rife_cpp:
     )
     if rife_cpp.count(old) != 1:
         raise SystemExit("Expected one RIFE UHD destructor block; refusing an unverified patch")
-    rife_cpp_path.write_text(rife_cpp.replace(old, new, 1))
+    rife_cpp = rife_cpp.replace(old, new, 1)
+
+rife_cpp_path.write_text(rife_cpp)
 
 ncnn_cmake_path = cmake_path.parent / "ncnn/src/CMakeLists.txt"
 ncnn_cmake = ncnn_cmake_path.read_text()
