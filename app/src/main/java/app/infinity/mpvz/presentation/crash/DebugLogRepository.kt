@@ -293,20 +293,121 @@ internal object DebugLogReader {
 internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogEntry> {
   if (entries.size <= DEBUG_LOG_ENTRY_LIMIT) return entries
 
-  val rifeDiagnostics =
-    entries
-      .filter(DebugLogEntry::isRifeDiagnostic)
-      .takeLast(RIFE_DIAGNOSTIC_ENTRY_RESERVE)
-  val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - rifeDiagnostics.size).coerceAtLeast(0)
-  return (entries.takeLast(recentCapacity) + rifeDiagnostics)
+  val rifeDiagnostics = entries.filter(DebugLogEntry::isRifeDiagnostic)
+  val lowVolumeDiagnostics =
+    sampleEvenly(
+      rifeDiagnostics.filterNot(DebugLogEntry::isHighVolumeRifeFrameEvent),
+      RIFE_DIAGNOSTIC_ENTRY_RESERVE,
+    )
+  val frameEventBudget = (RIFE_DIAGNOSTIC_ENTRY_RESERVE - lowVolumeDiagnostics.size).coerceAtLeast(0)
+  val frameDiagnostics =
+    sampleEvenly(
+      rifeDiagnostics.filter(DebugLogEntry::isHighVolumeRifeFrameEvent),
+      frameEventBudget,
+    )
+  val retainedRifeDiagnostics = (lowVolumeDiagnostics + frameDiagnostics).distinctBy(DebugLogEntry::id)
+  val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - retainedRifeDiagnostics.size).coerceAtLeast(0)
+  return (entries.takeLast(recentCapacity) + retainedRifeDiagnostics)
     .distinctBy(DebugLogEntry::id)
     .sortedBy(DebugLogEntry::timeMillis)
+}
+
+private fun sampleEvenly(
+  entries: List<DebugLogEntry>,
+  limit: Int,
+): List<DebugLogEntry> {
+  if (limit <= 0 || entries.isEmpty()) return emptyList()
+  if (entries.size <= limit) return entries
+  if (limit == 1) return listOf(entries.last())
+
+  val lastIndex = entries.lastIndex.toLong()
+  val intervals = (limit - 1).toLong()
+  return (0 until limit).map { sampleIndex ->
+    entries[(sampleIndex.toLong() * lastIndex / intervals).toInt()]
+  }
 }
 
 internal fun DebugLogEntry.isRifeDiagnostic(): Boolean =
   tag.contains("rife", ignoreCase = true) ||
     message.contains("rife", ignoreCase = true) ||
     message.contains("vf_rife", ignoreCase = true)
+
+internal fun DebugLogEntry.isHighVolumeRifeFrameEvent(): Boolean =
+  message.contains("event=ahb_input_imported", ignoreCase = true) ||
+    message.contains("event=gpu_resident_frame", ignoreCase = true) ||
+    message.contains("event=frame_timing", ignoreCase = true)
+
+internal fun buildRifeDiagnosticSummary(entries: List<DebugLogEntry>): List<String> {
+  val rifeEntries = entries.filter(DebugLogEntry::isRifeDiagnostic)
+  if (rifeEntries.isEmpty()) return listOf("No RIFE diagnostic entries are included in this capture.")
+
+  fun count(event: String): Int = rifeEntries.count { it.message.contains("event=$event", ignoreCase = true) }
+
+  val imports = count("ahb_input_imported")
+  val outputReady = count("resident_output_ready")
+  val rendered = count("resident_rendered")
+  val submitted = count("gpu_resident_frame")
+  val waits = rifeEntries.filter { it.message.contains("event=resident_wait", ignoreCase = true) }
+  val errors = rifeEntries.filter {
+    it.message.contains("event=resident_error", ignoreCase = true) ||
+      it.message.contains("event=resident_present_failed", ignoreCase = true)
+  }
+  val reasonPattern = Regex("""reason=([A-Za-z0-9_-]+)""")
+  val latestWait = waits.lastOrNull()
+  val latestWaitReason = latestWait?.message?.let { reasonPattern.find(it)?.groupValues?.get(1) }
+  val latestErrorReason = errors.lastOrNull()?.message?.let { reasonPattern.find(it)?.groupValues?.get(1) }
+  fun setupValue(name: String): String? =
+    rifeEntries.asReversed().firstNotNullOfOrNull { entry ->
+      Regex("""(?:^|\s)${Regex.escape(name)}=([^\s]+)""")
+        .find(entry.message)
+        ?.groupValues
+        ?.get(1)
+    }
+  fun latestWaitValue(name: String): String? =
+    latestWait?.message?.let {
+      Regex("""(?:^|\s)${Regex.escape(name)}=([^\s]+)""").find(it)?.groupValues?.get(1)
+    }
+  val setupFields =
+    listOf(
+      "resident_state",
+      "active_filter_path",
+      "target_fps",
+      "display_refresh_hz",
+      "renderer",
+      "gpu_api",
+      "decoder_mode",
+      "resident_option_rc",
+      "model_option_rc",
+      "filter_set_result",
+    ).mapNotNull { name -> setupValue(name)?.let { "$name=$it" } }
+  val latestWaitFields =
+    listOf("target_fps", "cadence_origin_pts", "queue_frames", "pts", "timestep")
+      .mapNotNull { name -> latestWaitValue(name)?.let { "$name=$it" } }
+  val errorCount = errors.size
+  val status =
+    when {
+      errorCount > 0 -> "RUNTIME FAILURE reported${latestErrorReason?.let { ": $it" }.orEmpty()}."
+      submitted > 0 -> "Resident frame submission observed; image correctness and cadence still need playback verification."
+      rendered > 0 -> "Synthesized frame rendered, but no successful swapchain submission was captured."
+      outputReady > 0 -> "Synthesized output created, but no rendered or submitted frame was captured."
+      imports > 0 -> "INPUTS ONLY: decoder buffers were imported, but no synthesized frame submission was captured. Interpolation is not confirmed working."
+      else -> "No resident synthesized-frame submission was captured."
+    }
+
+  return buildList {
+    add("RIFE status: $status")
+    add("Captured stages (high-rate frame records may be sampled): imported=$imports, output_ready=$outputReady, rendered=$rendered, submitted=$submitted.")
+    add("Wait/failure records: waits=${waits.size}, errors=$errorCount.")
+    if (setupFields.isNotEmpty()) add("Setup: ${setupFields.joinToString(" ")}.")
+    if (latestWaitReason != null) {
+      val details = if (latestWaitFields.isEmpty()) "" else " (${latestWaitFields.joinToString(" ")})"
+      add("Last observed wait: $latestWaitReason$details.")
+    }
+    if (imports > 0 && submitted == 0 && waits.isEmpty() && errors.isEmpty()) {
+      add("This capture has no intermediate wait/error marker; the running build may not report the failure stage.")
+    }
+  }
+}
 
 private fun String.toDebugLogLevel(): DebugLogLevel? =
   when (this) {

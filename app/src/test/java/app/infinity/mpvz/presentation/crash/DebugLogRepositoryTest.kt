@@ -67,7 +67,7 @@ class DebugLogRepositoryTest {
   }
 
   @Test
-  fun reservesTheLatestFiveHundredRifeDiagnosticsWhenTheLogBufferOverflows() {
+  fun samplesHighVolumeRifeFrameEventsAcrossTheLogWindow() {
     val rifeEntries =
       (0 until 520).map { index ->
         DebugLogEntry(
@@ -95,8 +95,94 @@ class DebugLogRepositoryTest {
 
     assertEquals(DEBUG_LOG_ENTRY_LIMIT, retained.size)
     assertEquals(500, retained.count(DebugLogEntry::isRifeDiagnostic))
-    assertTrue(retained.none { it.id == "rife-0" })
+    assertTrue(retained.any { it.id == "rife-0" })
     assertTrue(retained.any { it.id == "rife-519" })
     assertTrue(retained.any { it.id == "recent-${DEBUG_LOG_ENTRY_LIMIT - 1}" })
+  }
+
+  @Test
+  fun preservesSetupWaitAndFailureEventsWhenImportsFloodTheLog() {
+    fun rifeEntry(id: String, timeMillis: Long, message: String) =
+      DebugLogEntry(
+        id = id,
+        timeMillis = timeMillis,
+        timestamp = "00:00:00.000",
+        level = DebugLogLevel.Info,
+        tag = "Mpv∞",
+        message = message,
+      )
+
+    val setup =
+      rifeEntry(
+        "setup",
+        0L,
+        "RIFE_DIAGNOSTIC event=config resident_state=awaiting_gpu_resident_frame active_filter_path=resident_vulkan_ncnn target_fps=60 display_refresh_hz=120 renderer=gpu-next gpu_api=opengl decoder_mode=mediacodec,no resident_option_rc=0 model_option_rc=0 filter_set_result=skipped",
+      )
+    val imports =
+      (0 until 600).map { index ->
+        rifeEntry(
+          "import-$index",
+          index + 1L,
+          "RIFE_DIAGNOSTIC event=ahb_input_imported pts=$index pts_delta_ms=0.000",
+        )
+      }
+    val wait =
+      rifeEntry(
+        "wait",
+        700L,
+        "RIFE_DIAGNOSTIC event=resident_wait reason=source_pair_not_found target_fps=60 cadence_origin_pts=18.475333 queue_frames=2 pts=18.492",
+      )
+    val failure =
+      rifeEntry(
+        "failure",
+        701L,
+        "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_inference_failed",
+      )
+    val recentEntries =
+      (0 until DEBUG_LOG_ENTRY_LIMIT).map { index ->
+        DebugLogEntry(
+          id = "recent-$index",
+          timeMillis = 1_000L + index,
+          timestamp = "00:00:01.000",
+          level = DebugLogLevel.Info,
+          tag = "Playback",
+          message = "routine playback log $index",
+        )
+      }
+
+    val retained = retainDebugLogEntries(listOf(setup) + imports + listOf(wait, failure) + recentEntries)
+    val summary = buildRifeDiagnosticSummary(retained)
+
+    assertEquals(500, retained.count(DebugLogEntry::isRifeDiagnostic))
+    assertTrue(retained.any { it.id == "setup" })
+    assertTrue(retained.any { it.id == "wait" })
+    assertTrue(retained.any { it.id == "failure" })
+    assertTrue(summary.any { it.contains("RUNTIME FAILURE reported: vulkan_inference_failed") })
+    assertTrue(summary.any { it.contains("active_filter_path=resident_vulkan_ncnn") })
+    assertTrue(summary.any { it.contains("display_refresh_hz=120") })
+    assertTrue(summary.any { it.contains("resident_option_rc=0 model_option_rc=0") })
+    assertTrue(summary.any { it.contains("target_fps=60") && it.contains("queue_frames=2") })
+  }
+
+  @Test
+  fun reportsImportedFramesWithoutAnySubmittedResidentOutputAsNotWorking() {
+    val imports =
+      (0 until 500).map { index ->
+        DebugLogEntry(
+          id = "import-only-$index",
+          timeMillis = index.toLong(),
+          timestamp = "00:00:00.000",
+          level = DebugLogLevel.Info,
+          tag = "Mpv∞",
+          message = "RIFE_DIAGNOSTIC event=ahb_input_imported pts=$index pts_delta_ms=0.000",
+        )
+      }
+
+    val summary = buildRifeDiagnosticSummary(imports)
+
+    assertTrue(summary.first().contains("INPUTS ONLY"))
+    assertTrue(summary.first().contains("Interpolation is not confirmed working"))
+    assertTrue(summary.any { it.contains("imported=500") && it.contains("submitted=0") })
+    assertTrue(summary.any { it.contains("no intermediate wait/error marker") })
   }
 }

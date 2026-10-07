@@ -69,6 +69,30 @@ static void test_stable_stream_cadence_grid(void)
     assert(!rife_cadence_grid_index(10.0, 10.1, 0, false, 0, &index));
 }
 
+static void test_presentation_aligned_origin_avoids_source_phase_miss(void)
+{
+    int64_t index = -1;
+    double presentation_origin = 0.0;
+    const double source_origin = 18.484;
+    const double first_presentation_pts = 18.492;
+
+    // A 0.48-tick source/display phase offset falls outside the 0.45-tick
+    // tolerance on every presentation sample in a 60-Hz grid.
+    assert(!rife_cadence_grid_index(source_origin, first_presentation_pts,
+                                    60, false, 0, &index));
+    assert(!rife_cadence_grid_index(source_origin,
+                                    first_presentation_pts + 1.0 / 60.0,
+                                    60, false, 0, &index));
+
+    assert(rife_cadence_origin_from_presentation(first_presentation_pts, 60,
+                                                  &presentation_origin));
+    assert(rife_cadence_grid_index(presentation_origin, first_presentation_pts,
+                                   60, false, 0, &index));
+    assert(index == 1);
+    assert(!rife_cadence_origin_from_presentation(NAN, 60,
+                                                   &presentation_origin));
+}
+
 static void test_prediction_budget(void)
 {
     int64_t budget = 0;
@@ -85,6 +109,7 @@ int main(void)
 {
     test_output_counts();
     test_stable_stream_cadence_grid();
+    test_presentation_aligned_origin_avoids_source_phase_miss();
     test_source_pair_budget();
     test_prediction_budget();
     puts("RIFE cadence tests passed");

@@ -145,6 +145,7 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
             entry.message.contains(needle, ignoreCase = true))
       }
     }
+  val summaryItemCount = if (sourceEntries.any(DebugLogEntry::isRifeDiagnostic)) 1 else 0
 
   val isAtLatest = filteredEntries.isEmpty() || !listState.canScrollForward
   val showJumpToLatest = filteredEntries.isNotEmpty() && (!autoScrollEnabled || !isAtLatest)
@@ -161,9 +162,9 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
       }
   }
 
-  LaunchedEffect(filteredEntries.size, autoScrollEnabled, isPaused) {
+  LaunchedEffect(filteredEntries.size, summaryItemCount, autoScrollEnabled, isPaused) {
     if (!isPaused && autoScrollEnabled && filteredEntries.isNotEmpty()) {
-      listState.scrollToItem(filteredEntries.lastIndex)
+      listState.scrollToItem(filteredEntries.lastIndex + summaryItemCount)
     }
   }
 
@@ -171,6 +172,7 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
     buildDebugLogText(
       entries = filteredEntries,
       includeDeviceInfo = includeDeviceInfo,
+      summaryEntries = sourceEntries,
     )
 
   fun togglePause() {
@@ -296,7 +298,7 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
             autoScrollEnabled = true
             scope.launch {
               if (filteredEntries.isNotEmpty()) {
-                listState.animateScrollToItem(filteredEntries.lastIndex)
+                listState.animateScrollToItem(filteredEntries.lastIndex + summaryItemCount)
               }
             }
           },
@@ -425,6 +427,11 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
               contentPadding = PaddingValues(top = 10.dp, bottom = 88.dp),
               verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+              if (summaryItemCount > 0) {
+                item(key = "rife-summary") {
+                  RifeDiagnosticSummaryCard(entries = sourceEntries)
+                }
+              }
               items(
                 items = filteredEntries,
                 key = { entry -> entry.id },
@@ -615,9 +622,39 @@ private fun formatDebugLogEntry(entry: DebugLogEntry): String =
     append(entry.message)
   }
 
+
+@Composable
+private fun RifeDiagnosticSummaryCard(entries: List<DebugLogEntry>) {
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(12.dp),
+    color = MaterialTheme.colorScheme.secondaryContainer,
+  ) {
+    Column(
+      modifier = Modifier.padding(12.dp),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      Text(
+        text = "RIFE playback status",
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSecondaryContainer,
+      )
+      buildRifeDiagnosticSummary(entries).forEach { line ->
+        Text(
+          text = line,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSecondaryContainer,
+        )
+      }
+    }
+  }
+}
+
 private fun buildDebugLogText(
   entries: List<DebugLogEntry>,
   includeDeviceInfo: Boolean,
+  summaryEntries: List<DebugLogEntry> = entries,
 ): String {
   if (entries.isEmpty()) return ""
   return buildString {
@@ -625,6 +662,13 @@ private fun buildDebugLogText(
       appendLine(CrashActivity.collectDeviceInfo())
       appendLine()
       appendLine("Logcat:")
+    }
+    if (summaryEntries.any(DebugLogEntry::isRifeDiagnostic)) {
+      appendLine()
+      appendLine("===== RIFE diagnostic summary =====")
+      buildRifeDiagnosticSummary(summaryEntries).forEach { line -> appendLine(line) }
+      appendLine()
+      appendLine("===== Captured log entries =====")
     }
     entries.forEach { entry -> appendLine(formatDebugLogEntry(entry)) }
   }.trimEnd()

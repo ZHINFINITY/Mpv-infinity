@@ -106,4 +106,16 @@ static inline bool rife_cadence_prediction_exceeds_budget(
         remaining_budget_ns / (int64_t)outputs_remaining;
 }
 
+static inline bool rife_cadence_origin_from_presentation(double first_presentation_pts,
+                                                          int target_fps,
+                                                          double *origin_pts)
+{
+    // Decoder PTS and display cadence can have different phases; align the grid to presentation.
+    if (!origin_pts || !isfinite(first_presentation_pts) || target_fps <= 0)
+        return false;
+
+    *origin_pts = first_presentation_pts - 1.0 / target_fps;
+    return isfinite(*origin_pts);
+}
+
 #endif // MPV_INFINITY_RIFE_CADENCE_H

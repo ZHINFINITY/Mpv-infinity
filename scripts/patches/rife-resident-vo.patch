@@ -1,5 +1,5 @@
 diff --git a/options/options.c b/options/options.c
-index e8b590af8c04f155700b42f9115fbba58ac8d316..256d359a8ed9d111840ef81a7f1dbe03dc7bde65 100644
+index e8b590a..256d359 100644
 --- a/options/options.c
 +++ b/options/options.c
 @@ -940,6 +940,11 @@ static const m_option_t mp_opts[] = {
@@ -24,7 +24,7 @@ index e8b590af8c04f155700b42f9115fbba58ac8d316..256d359a8ed9d111840ef81a7f1dbe03
      .watch_history_path = "~~state/watch_history.jsonl",
      .autoload_files = true,
 diff --git a/options/options.h b/options/options.h
-index 26a791343ffffef9b38c4cbd7e260682756377d7..7bd98232ea27395b5978ab46638c371bf1120f35 100644
+index 26a7913..7bd9823 100644
 --- a/options/options.h
 +++ b/options/options.h
 @@ -414,6 +414,10 @@ typedef struct MPOpts {
@@ -39,7 +39,7 @@ index 26a791343ffffef9b38c4cbd7e260682756377d7..7bd98232ea27395b5978ab46638c371b
      struct opengl_opts *opengl_opts;
      struct vulkan_opts *vulkan_opts;
 diff --git a/video/out/gpu/hwdec.h b/video/out/gpu/hwdec.h
-index ea29b0dc2f7fbf59e7db70b2d7297b9ee8cf5a58..9901c00a52126aa54884ac1d045a40586f067f1d 100644
+index ea29b0d..9901c00 100644
 --- a/video/out/gpu/hwdec.h
 +++ b/video/out/gpu/hwdec.h
 @@ -1,6 +1,7 @@
@@ -65,7 +65,7 @@ index ea29b0dc2f7fbf59e7db70b2d7297b9ee8cf5a58..9901c00a52126aa54884ac1d045a4058
  // Returns IMGFMT_NONE if the name doesn't get matched.
  int ra_hwdec_driver_get_imgfmt_for_name(const char *name);
 diff --git a/video/out/hwdec/hwdec_aimagereader.c b/video/out/hwdec/hwdec_aimagereader.c
-index 55883c0be6fc4d23dee0ad193e8d521e81d91b03..fd3f5752ab423140536d8bee4d10cd92142dec8c 100644
+index 55883c0..3d74bea 100644
 --- a/video/out/hwdec/hwdec_aimagereader.c
 +++ b/video/out/hwdec/hwdec_aimagereader.c
 @@ -19,6 +19,10 @@
@@ -420,7 +420,7 @@ index 55883c0be6fc4d23dee0ad193e8d521e81d91b03..fd3f5752ab423140536d8bee4d10cd92
  
  const struct ra_hwdec_driver ra_hwdec_aimagereader = {
 diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
-index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0d2483db9 100644
+index bd3d1aa..acb331a 100644
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
 @@ -18,6 +18,8 @@
@@ -480,7 +480,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
      struct cache shader_cache, icc_cache;
      struct mp_csp_equalizer_state *video_eq;
      struct scaler_params scalers[SCALER_COUNT];
-@@ -178,6 +207,21 @@ struct priv {
+@@ -178,6 +207,25 @@ struct priv {
      struct frame_info perf_redraw;
  
      struct mp_image_params target_params;
@@ -498,11 +498,15 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +    bool rife_pending_frame;
 +    double rife_pending_pts;
 +    uint64_t rife_pending_signature;
++    int rife_last_wait_reason;
++    unsigned int rife_wait_count;
++    bool rife_output_ready_logged;
++    bool rife_rendered_logged;
 +#endif
  };
  
  static void update_render_options(struct vo *vo);
-@@ -561,6 +605,10 @@ struct frame_priv {
+@@ -561,6 +609,10 @@ struct frame_priv {
      struct osd_state subs;
      uint64_t osd_sync;
      struct ra_hwdec *hwdec;
@@ -513,7 +517,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
      // Optional Dolby Vision FEL.
      struct ra_hwdec *el_hwdec;
      pl_tex el_tex[4];
-@@ -810,6 +858,57 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
+@@ -810,6 +862,57 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
          }
          s->perf = timer_pool_measure(s->timer);
          s->owner = owner;
@@ -571,7 +575,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
      }
  
      if (ra_hwdec_mapper_begin_access(s->mapper) < 0)
-@@ -1127,12 +1226,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1127,12 +1230,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
      }
      slot_release_owner(p, &p->hwdec, mpi);
      slot_release_owner(p, &p->el_hwdec, mpi);
@@ -593,7 +597,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
      talloc_free(mpi);
  }
  
-@@ -1154,14 +1262,347 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1266,441 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -629,6 +633,55 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +    p->rife_last_cadence_index = 0;
 +    p->rife_cadence_origin_valid = false;
 +    p->rife_cadence_output_valid = false;
++    p->rife_last_wait_reason = 0;
++    p->rife_wait_count = 0;
++    p->rife_output_ready_logged = false;
++    p->rife_rendered_logged = false;
++}
++
++enum {
++    RIFE_WAIT_TOO_FEW_FRAMES = 1,
++    RIFE_WAIT_NO_SOURCE_BRACKET,
++    RIFE_WAIT_INPUT_NOT_READY,
++    RIFE_WAIT_CADENCE_MISS,
++    RIFE_WAIT_INVALID_FRACTION,
++    RIFE_WAIT_OUTPUT_RING,
++    RIFE_WAIT_SLOT_SYNC,
++    RIFE_WAIT_ENGINE_NOT_READY,
++    RIFE_WAIT_SESSION_DISABLED,
++    RIFE_WAIT_NO_INTERMEDIATE_TICK,
++};
++
++static const char *rife_wait_reason_name(int reason)
++{
++    switch (reason) {
++    case RIFE_WAIT_TOO_FEW_FRAMES: return "too_few_queue_frames";
++    case RIFE_WAIT_NO_SOURCE_BRACKET: return "source_pair_not_found";
++    case RIFE_WAIT_INPUT_NOT_READY: return "paired_ahb_input_unavailable";
++    case RIFE_WAIT_CADENCE_MISS: return "target_cadence_miss";
++    case RIFE_WAIT_INVALID_FRACTION: return "interpolation_fraction_out_of_range";
++    case RIFE_WAIT_OUTPUT_RING: return "output_ring_unavailable";
++    case RIFE_WAIT_SLOT_SYNC: return "output_slot_sync_unavailable";
++    case RIFE_WAIT_ENGINE_NOT_READY: return "resident_engine_not_ready";
++    case RIFE_WAIT_SESSION_DISABLED: return "resident_session_disabled_after_error";
++    case RIFE_WAIT_NO_INTERMEDIATE_TICK: return "target_fps_not_above_source_rate";
++    default: return "unknown";
++    }
++}
++
++static void rife_log_wait_reason(struct priv *p, int reason, int queue_frames)
++{
++    if (p->rife_last_wait_reason != reason) {
++        p->rife_last_wait_reason = reason;
++        p->rife_wait_count = 0;
++    }
++    p->rife_wait_count++;
++    if (p->rife_wait_count == 1 || p->rife_wait_count % 120 == 0)
++        MP_INFO(p, "RIFE_DIAGNOSTIC event=resident_wait reason=%s repeat=%u pts=%.6f queue_frames=%d target_fps=%d cadence_origin_pts=%.6f\n",
++                rife_wait_reason_name(reason), p->rife_wait_count,
++                p->last_pts, queue_frames,
++                p->rife_root_opts ? p->rife_root_opts->rife_target_fps : 0,
++                p->rife_cadence_origin_pts);
 +}
 +
 +static void rife_sync_engine(struct priv *p)
@@ -668,15 +721,19 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +            !capabilities.vulkan_device_ready ||
 +            !capabilities.android_ahb_import_extension ||
 +            !capabilities.foreign_queue_family_extension) {
++            MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_ahb_capabilities_unavailable\n");
 +            MP_WARN(p, "RIFE resident Vulkan/AHB capabilities are unavailable; preserving ordinary mpv rendering\n");
 +            rife_vfi_destroy(p->rife_engine);
 +            p->rife_engine = NULL;
 +            p->rife_disabled_for_session = true;
 +        }
 +    }
-+    if (!p->rife_engine)
++    if (!p->rife_engine) {
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=resident_engine_initialization_failed detail=%s\n",
++                error[0] ? error : "unknown error");
 +        MP_WARN(p, "RIFE resident engine unavailable; preserving ordinary playback: %s\n",
 +                error[0] ? error : "unknown error");
++    }
 +}
 +
 +static bool rife_init_output_ring(struct priv *p, int width, int height)
@@ -787,10 +844,21 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +                                   uint64_t *rife_signature,
 +                                   float *rife_timestamp, int *slot_index)
 +{
-+    if (!p->rife_root_opts->rife_resident || !p->rife_engine ||
-+        p->rife_disabled_for_session || mix->num_frames < 2 ||
++    if (!p->rife_root_opts->rife_resident ||
 +        p->rife_root_opts->rife_target_fps < 1)
 +        return false;
++    if (p->rife_disabled_for_session) {
++        rife_log_wait_reason(p, RIFE_WAIT_SESSION_DISABLED, mix->num_frames);
++        return false;
++    }
++    if (!p->rife_engine) {
++        rife_log_wait_reason(p, RIFE_WAIT_ENGINE_NOT_READY, mix->num_frames);
++        return false;
++    }
++    if (mix->num_frames < 2) {
++        rife_log_wait_reason(p, RIFE_WAIT_TOO_FEW_FRAMES, mix->num_frames);
++        return false;
++    }
 +
 +    int before = -1, after = -1;
 +    double before_pts = -INFINITY, after_pts = INFINITY;
@@ -807,8 +875,10 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +            after_pts = mpi->pts;
 +        }
 +    }
-+    if (before < 0 || after < 0 || after_pts <= before_pts)
++    if (before < 0 || after < 0 || after_pts <= before_pts) {
++        rife_log_wait_reason(p, RIFE_WAIT_NO_SOURCE_BRACKET, mix->num_frames);
 +        return false;
++    }
 +
 +    const struct pl_frame *source = mix->frames[before];
 +    const struct pl_frame *next = mix->frames[after];
@@ -818,27 +888,39 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +    struct frame_priv *fp1 = mpi1->priv;
 +    if (!fp0 || !fp1 || !fp0->rife_input || !fp1->rife_input ||
 +        source->enhancement_layer || next->enhancement_layer ||
-+        mpi0->params.w != mpi1->params.w || mpi0->params.h != mpi1->params.h)
++        mpi0->params.w != mpi1->params.w || mpi0->params.h != mpi1->params.h) {
++        rife_log_wait_reason(p, RIFE_WAIT_INPUT_NOT_READY, mix->num_frames);
 +        return false;
++    }
 +
 +    double source_duration = after_pts - before_pts;
 +    int target_fps = p->rife_root_opts->rife_target_fps;
-+    if (source_duration <= 0 || source_duration * target_fps <= 1.0)
++    if (source_duration <= 0 || source_duration * target_fps <= 1.0) {
++        rife_log_wait_reason(p, RIFE_WAIT_NO_INTERMEDIATE_TICK, mix->num_frames);
 +        return false;
++    }
 +    if (!p->rife_cadence_origin_valid) {
-+        p->rife_cadence_origin_pts = before_pts;
++        if (!rife_cadence_origin_from_presentation(
++                p->last_pts, target_fps, &p->rife_cadence_origin_pts)) {
++            rife_log_wait_reason(p, RIFE_WAIT_CADENCE_MISS, mix->num_frames);
++            return false;
++        }
 +        p->rife_cadence_origin_valid = true;
 +    }
 +    int64_t cadence_index = 0;
 +    if (!rife_cadence_grid_index(p->rife_cadence_origin_pts, p->last_pts,
 +                                 target_fps, p->rife_cadence_output_valid,
-+                                 p->rife_last_cadence_index, &cadence_index))
++                                 p->rife_last_cadence_index, &cadence_index)) {
++        rife_log_wait_reason(p, RIFE_WAIT_CADENCE_MISS, mix->num_frames);
 +        return false;
++    }
 +    // Compute motion for the timestamp mpv will actually present, not the
 +    // nearest cadence-grid timestamp (which can be slightly offset).
 +    float timestep = (float) ((p->last_pts - before_pts) / source_duration);
-+    if (timestep <= 0.f || timestep >= 1.f)
++    if (timestep <= 0.f || timestep >= 1.f) {
++        rife_log_wait_reason(p, RIFE_WAIT_INVALID_FRACTION, mix->num_frames);
 +        return false;
++    }
 +
 +    int width = mpi0->params.w;
 +    int height = mpi0->params.h;
@@ -848,15 +930,20 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +        width = MPMAX(2, ((int) (width * scale)) & ~1);
 +        height = MPMAX(2, ((int) (height * scale)) & ~1);
 +    }
-+    if (!rife_init_output_ring(p, width, height))
++    if (!rife_init_output_ring(p, width, height)) {
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_initialization_failed\n");
++        rife_log_wait_reason(p, RIFE_WAIT_OUTPUT_RING, mix->num_frames);
 +        return false;
++    }
 +
 +    int index = p->rife_output_cursor++ % MP_ARRAY_SIZE(p->rife_outputs);
 +    struct rife_output_slot *slot = &p->rife_outputs[index];
 +    if (slot->sampled) {
 +        GL *gl = ra_gl_get(p->ra_ctx->ra);
-+        if (!gl || !gl->Finish)
++        if (!gl || !gl->Finish) {
++            rife_log_wait_reason(p, RIFE_WAIT_SLOT_SYNC, mix->num_frames);
 +            return false;
++        }
 +        // Conservative cross-API reuse: wait until the GLES compositor has
 +        // stopped sampling this ring slot before NCNN reacquires it.
 +        gl->Finish();
@@ -868,6 +955,8 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +                                        fp1->rife_input, timestep,
 +                                        &synthesized) != 0 || !synthesized) {
 +        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_inference_failed pts=%.6f timestep=%.6f\n",
++                p->last_pts, timestep);
 +        MP_WARN(p, "RIFE Vulkan inference failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
 +        return false;
 +    }
@@ -876,6 +965,8 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +    rife_vfi_gpu_frame_release(synthesized);
 +    if (write_result != 0) {
 +        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_ahb_output_failed pts=%.6f result=%d\n",
++                p->last_pts, write_result);
 +        MP_WARN(p, "RIFE Vulkan-to-AHB output handoff failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
 +        return false;
 +    }
@@ -919,6 +1010,13 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +    };
 +    p->rife_last_cadence_index = cadence_index;
 +    p->rife_cadence_output_valid = true;
++    p->rife_last_wait_reason = 0;
++    p->rife_wait_count = 0;
++    if (!p->rife_output_ready_logged) {
++        MP_INFO(p, "RIFE_DIAGNOSTIC event=resident_output_ready pts=%.6f timestep=%.6f dimensions=%dx%d\n",
++                p->last_pts, timestep, width, height);
++        p->rife_output_ready_logged = true;
++    }
 +    *slot_index = index;
 +    return true;
 +}
@@ -941,7 +1039,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
  
      update_lut(p, &p->next_opts->lut);
      pars->params.lut = p->next_opts->lut.lut;
-@@ -1406,6 +1847,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1406,6 +1945,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              p->last_id = 0;
              p->want_reset = false;
              p->flush_cache = true;
@@ -951,7 +1049,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
          }
  
          if (p->flush_cache) {
-@@ -1652,6 +2096,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1652,6 +2194,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      update_tm_viz(&pars->color_map_params, &target);
  
      struct pl_frame_mix mix = {0};
@@ -969,7 +1067,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
      if (frame->current) {
          // Update queue state
          struct pl_queue_params qparams = *pl_queue_params(
-@@ -1747,10 +2202,39 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1747,10 +2300,44 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              update_hook_opts_dynamic(p, p->hooks[i], frame->current);
      }
  
@@ -1001,6 +1099,11 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +        stats_time_end(p->stats, "render");
 +    }
 +    if (render_ok && rife_interpolated) {
++        if (!p->rife_rendered_logged) {
++            MP_INFO(vo, "RIFE_DIAGNOSTIC event=resident_rendered pts=%.6f signature=%" PRIu64 "\n",
++                    p->last_pts, rife_signature);
++            p->rife_rendered_logged = true;
++        }
 +        p->rife_pending_frame = true;
 +        p->rife_pending_pts = p->last_pts;
 +        p->rife_pending_signature = rife_signature;
@@ -1009,7 +1112,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
      if (!render_ok) {
          MP_ERR(vo, "Failed rendering frame!\n");
          goto done;
-@@ -1777,7 +2261,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1777,7 +2364,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      }
      mp_mutex_unlock(&vo->params_mutex);
  
@@ -1021,7 +1124,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
      valid = true;
      // fall through
  
-@@ -1796,12 +2284,22 @@ static void flip_page(struct vo *vo)
+@@ -1796,12 +2387,25 @@ static void flip_page(struct vo *vo)
      struct ra_swapchain *sw = p->ra_ctx->swapchain;
  
      if (p->frame_pending) {
@@ -1029,6 +1132,9 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +        bool submitted = pl_swapchain_submit_frame(p->sw);
 +        if (!submitted) {
              MP_ERR(vo, "Failed presenting frame!\n");
++            if (p->rife_pending_frame)
++                MP_WARN(vo, "RIFE_DIAGNOSTIC event=resident_present_failed reason=swapchain_submit_failed pts=%.6f\n",
++                        p->rife_pending_pts);
 +        }
          p->frame_pending = false;
 +        sw->fns->swap_buffers(sw);
@@ -1047,7 +1153,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
  }
  
  static void get_vsync(struct vo *vo, struct vo_vsync_info *info)
-@@ -2464,6 +2962,13 @@ static void uninit(struct vo *vo)
+@@ -2464,6 +3068,13 @@ static void uninit(struct vo *vo)
          pl_gpu_finish(p->gpu);
  
      pl_queue_destroy(&p->queue); // destroy this first
@@ -1061,7 +1167,7 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
      for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
          pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
      for (int i = 0; i < p->num_sub_tex; i++)
-@@ -2519,6 +3024,10 @@ static int preinit(struct vo *vo)
+@@ -2519,6 +3130,10 @@ static int preinit(struct vo *vo)
      p->opts_cache = m_config_cache_alloc(p, vo->global, &gl_video_conf);
      p->next_opts_cache = m_config_cache_alloc(p, vo->global, &gl_next_conf);
      p->next_opts = p->next_opts_cache->opts;

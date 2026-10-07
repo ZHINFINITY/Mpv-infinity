@@ -111,8 +111,18 @@ def main() -> None:
     require("if (submitted && p->rife_pending_frame)" in flip and
             "event=gpu_resident_frame" in flip,
             "gpu_resident_frame must be emitted only after a successful swapchain submit")
+    require("rife_cadence_origin_from_presentation" in vo,
+            "resident target cadence must align to the presentation PTS phase")
+    require("target_fps=%d cadence_origin_pts=%.6f" in vo,
+            "resident wait events must include target FPS and cadence origin")
+    for marker in (
+        "event=resident_wait", "event=resident_error",
+        "event=resident_output_ready", "event=resident_rendered",
+        "event=resident_present_failed",
+    ):
+        require(marker in vo, f"resident runtime diagnostics are missing {marker}")
 
-    print("RIFE resident contracts passed: root options, shared async reader lease, AHB import/output, fallback, and submitted-frame diagnostic")
+    print("RIFE resident contracts passed: root options, shared async reader lease, AHB import/output, fallback, submitted-frame diagnostic, and runtime stage diagnostics")
 
 
 if __name__ == "__main__":

@@ -41,6 +41,12 @@ The retried [run 37629540639](https://github.com/ZHINFINITY/Mpv-infinity/actions
 
 The resident route is now compiled and present in the final app APK, but remains **not device-verified**. Keep `gpu_resident_playback_ready` false and do not describe visible interpolation as confirmed until a target-phone playback logs both `event=ahb_input_imported` and a submitted `event=gpu_resident_frame` on the intended Vulkan-NCNN/GLES-presentation path.
 
+### Latest target-device trace (2026-10-07)
+
+The supplied export identifies app `2.1.5-1482` (`97e39214`), a POCO `25053PC47I` on Android 16. It contains 500 `event=ahb_input_imported` entries over roughly 31 seconds, all with 1920×1080 buffers and `pts_delta_ms=0.000`, but **zero** `event=gpu_resident_frame` entries. This confirms that timestamp-matched decoder AHardwareBuffers reach the resident importer; it does not confirm inference, output rendering, swapchain submission, or proper visible interpolation. The user-observed lack of a visual difference is consistent with that trace.
+
+The export has no queue-wait, inference, output-ready, render, or swap-submit records, so it cannot identify the exact failing boundary. Its source PTS interval is about 42 ms (~23.8 fps), below the configured 60 fps target, so source cadence alone does not explain the absence of intermediate outputs. The 741.658-second PTS jump is a seek; the pinned VO reset path requests a queue reset and the resident patch resets cadence on that event. A scheduler hazard was also identified: the old target grid was anchored to a decoder-frame PTS but tested against presentation PTS, so an unlucky fixed phase offset could reject every 60 Hz sample. The patch now anchors the one-time stream grid to the first eligible presentation timestamp and has a regression test for that case. The next debug candidate also adds rate-limited queue/cadence wait reasons plus explicit inference, output-ready, rendered, and swap-submit failure events. This scheduler correction is source-tested but remains **not device-verified**.
+
 ## Acceptance checklist for the full candidate build
 
 1. **Identify the device/runtime:** record phone model, Android build fingerprint/API, Vulkan device/driver, mpv renderer (`gpu-next`/GLES), and selected RIFE mode.
