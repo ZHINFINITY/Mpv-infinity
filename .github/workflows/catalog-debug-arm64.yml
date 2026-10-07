@@ -69,8 +69,11 @@ jobs:
           cache: gradle
       - name: Install Android MPV native build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev build-essential python3-dev libavcodec-dev libavfilter-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libass-dev
+          # Avoid the intermittently unresponsive Azure HTTP mirror on hosted runners.
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          APT_OPTIONS=(-o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          sudo apt-get "${APT_OPTIONS[@]}" update
+          sudo apt-get "${APT_OPTIONS[@]}" install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools libvulkan-dev build-essential python3-dev libavcodec-dev libavfilter-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libass-dev
           pipx install meson==1.6.1
           pipx inject meson jinja2==3.1.6
           export PATH="$HOME/.local/bin:$PATH"
