@@ -76,6 +76,8 @@ jobs:
         run: ./scripts/test-rife-vulkan-layout.sh
       - name: Run RIFE AHardwareBuffer fail-closed policy tests
         run: bash ./scripts/test-rife-ahb-policy.sh
+      - name: Check RIFE Vulkan API 26-safe dispatch
+        run: bash ./scripts/test-rife-vulkan-dispatch.sh
       - name: Compile generated RIFE Vulkan input guard
         run: python3 ./scripts/tests/test_rife_vulkan_guard.py
       - name: Build RIFE + MPV native arm64 debug package

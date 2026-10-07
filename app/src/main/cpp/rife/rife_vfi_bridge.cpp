@@ -319,7 +319,9 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     ncnn::VulkanDevice *vkdev = engine->vkdev;
     if (vkdev->info.support_VK_ANDROID_external_memory_android_hardware_buffer() <= 0 ||
         vkdev->info.support_VK_EXT_queue_family_foreign() <= 0 ||
+        ncnn::support_VK_KHR_get_physical_device_properties2 <= 0 ||
         !vkdev->vkGetAndroidHardwareBufferPropertiesANDROID ||
+        !ncnn::vkGetPhysicalDeviceImageFormatProperties2KHR ||
         !vkdev->vkBindImageMemory2KHR) {
         set_error(error, error_size, "Vulkan AHardwareBuffer output extensions are unavailable");
         return false;
@@ -346,7 +348,9 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
     image_info.usage = image_usage;
     image_info.flags = 0;
-    VkResult result = vkGetPhysicalDeviceImageFormatProperties2(
+    // The API-26 Vulkan stub does not link the Vulkan 1.1 core symbol. NCNN
+    // resolves the KHR alias through vkGetInstanceProcAddr when supported.
+    VkResult result = ncnn::vkGetPhysicalDeviceImageFormatProperties2KHR(
         vkdev->info.physical_device(), &image_info, &image_properties);
     if (result != VK_SUCCESS ||
         !(external_properties.externalMemoryProperties.externalMemoryFeatures &

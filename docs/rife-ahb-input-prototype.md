@@ -25,7 +25,11 @@ The prior test target was a Xiaomi/POCO **25053PC47I** (`onyx`), Android 16 / AP
 
 ## Build and host checks
 
-The workflow builds the RIFE/native MPV ARM64 runtime and the app APK remotely. It checks that the VO patch applies to the exact pinned MPV commit before expensive native compilation, compiles both custom conversion shaders to SPIR-V 1.3, runs the RIFE cadence, AHB-policy, VkMat-layout and FP16 host tests, compiles the generated Vulkan input guard, then runs Android unit tests and packages the arm64 debug APK. Do not build an APK locally. A green Actions run still does not complete device acceptance.
+The workflow builds the RIFE/native MPV ARM64 runtime and the app APK remotely. It checks that the VO patch applies to the exact pinned MPV commit before expensive native compilation, compiles both custom conversion shaders to SPIR-V 1.3, runs the RIFE cadence, AHB-policy, VkMat-layout, FP16 and Vulkan-dispatch host tests, compiles the generated Vulkan input guard, then runs Android unit tests and packages the arm64 debug APK. Do not build an APK locally. A green Actions run still does not complete device acceptance.
+
+### Latest remote build
+
+Run [37608380375](https://github.com/ZHINFINITY/Mpv-infinity/actions/runs/37608380375) for commit `ab435f2b0f907c67daa69e661cc92cc0e5b0d30e` failed while linking `librife_vfi.so`: the API-26 `libvulkan.so` stub does not provide the directly referenced Vulkan 1.1 core symbol `vkGetPhysicalDeviceImageFormatProperties2`. Preflight, SPIR-V, and host tests passed; packaging was skipped and no APK was produced. The bridge now uses pinned NCNN's KHR dispatch pointer loaded through `vkGetInstanceProcAddr`, checks the extension and pointer before calling it, explicitly keeps NCNN static for those dispatch globals, and adds a regression guard ahead of native compilation. The corrected change still requires a new remote ARM64 build and target-phone acceptance.
 
 ## Acceptance checklist for the full candidate build
 
