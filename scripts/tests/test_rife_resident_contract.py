@@ -125,6 +125,43 @@ def main() -> None:
         "stage=vk_allocate_transition_command_failed",
     ):
         require(stage in output_init, f"native output-ring diagnostics are missing {stage}")
+    properties_check = section(
+        output_init,
+        "result = vkdev->vkGetAndroidHardwareBufferPropertiesANDROID(",
+        "VkExternalMemoryImageCreateInfo external_image{};",
+    )
+    require("format_properties.format != VK_FORMAT_R8G8B8A8_UNORM" in properties_check,
+            "output AHB import must reject a mismatched concrete Vulkan format")
+    require("format_properties.externalFormat != 0" not in properties_check,
+            "a nonzero externalFormat token must not reject a concrete VkFormat")
+    require("!buffer_properties.allocationSize" in properties_check and
+            "!buffer_properties.memoryTypeBits" in properties_check and
+            "format_properties.externalFormat" in properties_check,
+            "AHB validation must retain allocation/memory checks and log externalFormat")
+    create_image = section(output_init, "result = vkCreateImage(",
+                           "VkImportAndroidHardwareBufferInfoANDROID import_info{};")
+    require("image_create.format = format_properties.format" in output_init and
+            "if (result != VK_SUCCESS)" in create_image and
+            "stage=vk_create_image_failed" in create_image,
+            "concrete-format image creation must remain checked and fail closed")
+    require("import_info.buffer = output->hardware_buffer" in output_init and
+            "dedicated_info.image = output->image_memory.image" in output_init and
+            "memory_info.allocationSize = buffer_properties.allocationSize" in output_init and
+            "buffer_properties.memoryTypeBits" in output_init,
+            "Vulkan memory import must use the allocated AHB, dedicated image, and queried properties")
+    allocate_imported = section(output_init, "result = vkAllocateMemory(",
+                                "VkBindImageMemoryInfo bind_info{};")
+    bind_imported = section(output_init, "result = vkdev->vkBindImageMemory2KHR(",
+                            "VkImageViewCreateInfo view_info{};")
+    require("if (result != VK_SUCCESS)" in allocate_imported and
+            "stage=vk_allocate_imported_memory_failed" in allocate_imported and
+            "if (result != VK_SUCCESS)" in bind_imported and
+            "stage=vk_bind_imported_memory_failed" in bind_imported,
+            "imported-memory allocation and image binding must remain fail-closed")
+    output_create = section(bridge, "extern \"C\" RifeVfiOutput *rife_vfi_output_create(",
+                            "extern \"C\" void *rife_vfi_output_get_ahb(")
+    require("if (!initialized)\n            destroy_output_resources(output.get());" in output_create,
+            "partially initialized AHB/Vulkan resources must be released on failure")
     ring_init = section(vo, "static bool rife_init_output_ring(",
                         "static bool rife_prepare_frame_input(")
     require("reason=output_ring_native_create_failed" in ring_init and

@@ -441,9 +441,11 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     buffer_properties.pNext = &format_properties;
     result = vkdev->vkGetAndroidHardwareBufferPropertiesANDROID(
         vkdev->vkdevice(), output->hardware_buffer, &buffer_properties);
+    // Vulkan requires externalFormat to be a nonzero opaque token even when
+    // format has a VkFormat equivalent. This RGBA8 path uses the concrete
+    // VkFormat for ordinary format queries and image creation.
     if (result != VK_SUCCESS ||
         format_properties.format != VK_FORMAT_R8G8B8A8_UNORM ||
-        format_properties.externalFormat != 0 ||
         !buffer_properties.allocationSize || !buffer_properties.memoryTypeBits) {
         set_errorf(error, error_size,
                    "stage=ahb_properties_import_failed vk_result=%d format=%d external_format=0x%016llx allocation_size=%llu memory_type_bits=0x%08x",
