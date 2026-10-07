@@ -35,6 +35,8 @@ The corrected [run 37612375997](https://github.com/ZHINFINITY/Mpv-infinity/actio
 
 Cause: CI checked the resident patch in a separate MPV checkout, then exported pristine `git archive HEAD` into the native builder. The preparation step could silently return based on one VO marker and never validated the exact source tree being compiled. The fix now copies the tested patched working tree, runs the complete contract against the builder's source, tests the bare root options through a real pre-initialization `mpv_set_option_string` call, handles transient no-buffer results without poisoning the session, and rejects any Android runtime APK missing the required native markers. `active_filter_path` is also reported only after the selected setter succeeds.
 
+The first gated workflow attempt, [run 37629016307](https://github.com/ZHINFINITY/Mpv-infinity/actions/runs/37629016307), stopped at the host option test before any ARM64 compilation: CI's Meson 1.6.1 runs in a pipx-isolated Python environment, so the system Jinja2 package was invisible to libplacebo's shader generator. The same Meson/test setup now injects pinned Jinja2 into that venv; a local reproduction with Meson 1.6.1 and Jinja2 3.1.6 passes all four options and the unknown-option control. That run produced no APK.
+
 The resident path is still **not device-verified**. Keep `gpu_resident_playback_ready` false and do not treat another APK as a candidate until the repaired build passes and the phone logs both `event=ahb_input_imported` and a submitted `event=gpu_resident_frame` on the intended Vulkan-NCNN/GLES-presentation path.
 
 ## Acceptance checklist for the full candidate build
