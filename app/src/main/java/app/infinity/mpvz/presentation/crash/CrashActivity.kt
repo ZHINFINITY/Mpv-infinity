@@ -238,9 +238,19 @@ class CrashActivity : AppCompatActivity() {
             line.contains("rife", ignoreCase = true) ||
               line.contains("vf_rife", ignoreCase = true)
           }.joinToString("\n")
+      val mpvFlowLines =
+        logcat
+          .lineSequence()
+          .filter { line ->
+            line.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true) ||
+              line.contains("vf_mpvflow", ignoreCase = true)
+          }.joinToString("\n")
       logcat.appendLine()
       logcat.appendLine("===== RIFE interpolation diagnostics =====")
       logcat.appendLine(if (rifeLines.isBlank()) "No RIFE diagnostics captured." else rifeLines)
+      logcat.appendLine()
+      logcat.appendLine("===== MPVFlow interpolation diagnostics =====")
+      logcat.appendLine(if (mpvFlowLines.isBlank()) "No MPVFlow diagnostics captured." else mpvFlowLines)
       val media3Lines =
         logcat
           .lineSequence()

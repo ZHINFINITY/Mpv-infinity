@@ -20,6 +20,7 @@ import java.util.Locale
 
 internal const val DEBUG_LOG_ENTRY_LIMIT = 1_500
 private const val RIFE_DIAGNOSTIC_ENTRY_RESERVE = 500
+private const val MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE = 500
 
 internal enum class DebugLogLevel(
   val code: String,
@@ -84,9 +85,11 @@ internal object DebugLogReader {
   private val briefPattern =
     Regex("""^([VDIWEF])/([^\(]+)\(\s*(\d+)\):\s?(.*)$""")
 
-  fun readSnapshot(): DebugLogSnapshot {
+  fun readSnapshot(maxRawLines: Int? = null): DebugLogSnapshot {
     val pid = Process.myPid()
     val failures = mutableListOf<String>()
+    val primaryRawLimit = maxRawLines?.coerceIn(1, PRIMARY_RAW_LIMIT) ?: PRIMARY_RAW_LIMIT
+    val fallbackRawLimit = maxRawLines?.coerceIn(primaryRawLimit, FALLBACK_RAW_LIMIT) ?: FALLBACK_RAW_LIMIT
 
     val primary =
       runCommand(
@@ -97,7 +100,7 @@ internal object DebugLogReader {
           "threadtime",
           "-d",
           "-t",
-          PRIMARY_RAW_LIMIT.toString(),
+          primaryRawLimit.toString(),
         ),
       )
 
@@ -122,7 +125,7 @@ internal object DebugLogReader {
           "threadtime",
           "-d",
           "-t",
-          FALLBACK_RAW_LIMIT.toString(),
+          fallbackRawLimit.toString(),
         ),
       )
 
@@ -297,8 +300,13 @@ internal fun retainDebugLogEntries(entries: List<DebugLogEntry>): List<DebugLogE
     entries
       .filter(DebugLogEntry::isRifeDiagnostic)
       .takeLast(RIFE_DIAGNOSTIC_ENTRY_RESERVE)
-  val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - rifeDiagnostics.size).coerceAtLeast(0)
-  return (entries.takeLast(recentCapacity) + rifeDiagnostics)
+  val mpvFlowDiagnostics =
+    entries
+      .filter(DebugLogEntry::isMpvFlowDiagnostic)
+      .takeLast(MPVFLOW_DIAGNOSTIC_ENTRY_RESERVE)
+  val diagnostics = (rifeDiagnostics + mpvFlowDiagnostics).distinctBy(DebugLogEntry::id)
+  val recentCapacity = (DEBUG_LOG_ENTRY_LIMIT - diagnostics.size).coerceAtLeast(0)
+  return (entries.takeLast(recentCapacity) + diagnostics)
     .distinctBy(DebugLogEntry::id)
     .sortedBy(DebugLogEntry::timeMillis)
 }
@@ -307,6 +315,43 @@ internal fun DebugLogEntry.isRifeDiagnostic(): Boolean =
   tag.contains("rife", ignoreCase = true) ||
     message.contains("rife", ignoreCase = true) ||
     message.contains("vf_rife", ignoreCase = true)
+
+internal fun DebugLogEntry.isMpvFlowDiagnostic(): Boolean =
+  tag.contains("vf_mpvflow", ignoreCase = true) ||
+    message.contains("MPVFLOW_DIAGNOSTIC", ignoreCase = true) ||
+    message.contains("vf_mpvflow", ignoreCase = true)
+
+internal fun formatMpvFlowTimingSummary(entries: List<DebugLogEntry>): String {
+  val pair =
+    entries.lastOrNull { entry ->
+      entry.isMpvFlowDiagnostic() && entry.message.contains("event=source_pair_synthesis")
+    } ?: return if (entries.any(DebugLogEntry::isMpvFlowDiagnostic)) {
+      "MPVFlow active; pair timing not captured yet"
+    } else {
+      "No MPVFlow pair timing captured"
+    }
+  val fields =
+    Regex("""([A-Za-z_][A-Za-z0-9_]*)=([^\s]+)""")
+      .findAll(pair.message)
+      .associate { it.groupValues[1] to it.groupValues[2] }
+  fun number(name: String): Double? = fields[name]?.toDoubleOrNull()?.takeIf { it.isFinite() }
+  fun compact(value: Double?): String = value?.let { String.format(Locale.US, "%.1f", it) } ?: "--"
+
+  val frames = fields["frames"] ?: "?"
+  val processingMs = number("processing_ms")
+  val budgetMs = number("pair_budget_ms")
+  val budgetRatio = number("budget_ratio")
+    ?: if (processingMs != null && budgetMs != null && budgetMs > 0.0) processingMs / budgetMs else null
+  val percent = budgetRatio?.let { String.format(Locale.US, "%.0f%%", it * 100.0) } ?: "--"
+  val dimensions =
+    if (fields["process_width"] != null && fields["process_height"] != null) {
+      "${fields["process_width"]}×${fields["process_height"]}"
+    } else {
+      "--"
+    }
+  val targetFps = fields["target_fps"] ?: "?"
+  return "Last pair: $frames generated · ${compact(processingMs)}/${compact(budgetMs)} ms ($percent) · $dimensions · target $targetFps fps"
+}
 
 private fun String.toDebugLogLevel(): DebugLogLevel? =
   when (this) {

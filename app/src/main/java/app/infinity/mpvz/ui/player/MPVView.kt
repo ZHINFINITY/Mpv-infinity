@@ -47,6 +47,13 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.reflect.KProperty
 
+internal fun resolveSurfaceFrameRateHint(
+  sourceFrameRate: Double?,
+  interpolationFrameRate: Double?,
+): Double? =
+  interpolationFrameRate?.takeIf { it.isFinite() && it > 0.0 }
+    ?: sourceFrameRate?.takeIf { it.isFinite() && it > 0.0 }
+
 class MPVView(
   context: Context,
   attributes: AttributeSet,
@@ -67,6 +74,7 @@ class MPVView(
     private set
   var onSurfaceReady: (() -> Unit)? = null
   private var rifeModelDirectory: String? = null
+  private var interpolationOutputFrameRate: Double? = null
 
   /**
    * Configures the process-wide player and binds this view as its current rendering surface.
@@ -248,6 +256,12 @@ class MPVView(
         !frameInterpolationConfigOwned &&
         decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
     val frameInterpolationEnabled = rifeFrameInterpolationEnabled || mpvFlowFrameInterpolationEnabled
+    interpolationOutputFrameRate =
+      when {
+        rifeFrameInterpolationEnabled -> rifeTargetFps.toDouble()
+        mpvFlowFrameInterpolationEnabled -> mpvFlowTargetFps.toDouble()
+        else -> null
+      }
     PlaybackSession.setVideoOutput(backend.vo)
     PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
     PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
@@ -539,12 +553,12 @@ class MPVView(
     height: Int,
   ) {
     PlaybackSession.resizeSurface(width, height, owner = this)
-    applyFrameRate()
+    updateSurfaceFrameRateHint()
   }
 
   override fun surfaceCreated(holder: android.view.SurfaceHolder) {
     isSurfaceReady = PlaybackSession.bindSurface(holder.surface, width, height, this)
-    applyFrameRate()
+    updateSurfaceFrameRateHint()
     post {
       if (isSurfaceReady && holder.surface.isValid) {
         onSurfaceReady?.invoke()
@@ -557,15 +571,20 @@ class MPVView(
     PlaybackSession.unbindSurface(this)
   }
 
-  private fun applyFrameRate() {
+  internal fun updateSurfaceFrameRateHint() {
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-      val fps = PlaybackSession.getPropertyDouble("container-fps") ?: 0.0
-      if (fps > 0.0 && holder?.surface?.isValid == true) {
+      val fps =
+        resolveSurfaceFrameRateHint(
+          sourceFrameRate = PlaybackSession.getPropertyDouble("container-fps"),
+          interpolationFrameRate = interpolationOutputFrameRate,
+        )
+      if (fps != null && holder?.surface?.isValid == true) {
         try {
           holder.surface.setFrameRate(
             fps.toFloat(),
             android.view.Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
           )
+          Log.i(TAG, "Set surface frame-rate hint to ${fps}Hz")
         } catch (e: Exception) {
           Log.e(TAG, "Failed to set frame rate on surface", e)
         }

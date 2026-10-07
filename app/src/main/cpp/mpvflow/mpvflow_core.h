@@ -24,6 +24,18 @@ struct MPVFlowStats {
     double mean_vector_consistency_error;
     double mean_motion_pixels;
 };
+/* Return true only when more target frames remain and the 85% safety reserve is spent. */
+bool mpvflow_should_yield_for_deadline(double processing_ms,
+                                       double pair_budget_ms,
+                                       bool work_remains);
+/* High-rate sources need no motion analysis; preserve their original timestamps for VO pacing. */
+bool mpvflow_should_bypass_for_source_rate(double source_delta_seconds,
+                                          double target_step_seconds);
+/* Auto mode adapts its next-pair working cap with pressure/recovery hysteresis. */
+int mpvflow_update_adaptive_dimension(int current_dimension,
+                                      int configured_max_dimension,
+                                      double budget_ratio,
+                                      unsigned int *recovery_count);
 MPVFlowContext *mpvflow_create(int block_size, int search_radius);
 void mpvflow_destroy(MPVFlowContext *context);
 int mpvflow_analyze_pair(MPVFlowContext *context,

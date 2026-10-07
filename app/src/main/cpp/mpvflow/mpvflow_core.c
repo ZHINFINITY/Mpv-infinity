@@ -22,6 +22,12 @@
 #define MPVFLOW_SCENE_CUT_MEAN_DELTA 48.0
 #define MPVFLOW_CONSISTENCY_LIMIT 4.0
 #define MPVFLOW_PHOTOMETRIC_LIMIT 96.0
+#define MPVFLOW_DEADLINE_RESERVE_RATIO 0.85
+#define MPVFLOW_GOVERNOR_PRESSURE_RATIO 0.85
+#define MPVFLOW_GOVERNOR_RECOVERY_RATIO 0.60
+#define MPVFLOW_GOVERNOR_RECOVERY_PAIRS 60
+#define MPVFLOW_GOVERNOR_MIN_DIMENSION 160
+#define MPVFLOW_GOVERNOR_DIMENSION_STEP 16
 struct flow_level {
     int width;
     int height;
@@ -46,6 +52,54 @@ struct MPVFlowPair {
     struct flow_level levels[MPVFLOW_PYRAMID_LEVELS];
     struct MPVFlowStats stats;
 };
+bool mpvflow_should_yield_for_deadline(double processing_ms,
+                                       double pair_budget_ms,
+                                       bool work_remains)
+{
+    return work_remains && isfinite(processing_ms) && processing_ms >= 0.0 &&
+        isfinite(pair_budget_ms) && pair_budget_ms > 0.0 &&
+        processing_ms >= pair_budget_ms * MPVFLOW_DEADLINE_RESERVE_RATIO;
+}
+bool mpvflow_should_bypass_for_source_rate(double source_delta_seconds,
+                                          double target_step_seconds)
+{
+    return isfinite(source_delta_seconds) && source_delta_seconds > 0.0 &&
+        isfinite(target_step_seconds) && target_step_seconds > 0.0 &&
+        source_delta_seconds < target_step_seconds;
+}
+int mpvflow_update_adaptive_dimension(int current_dimension,
+                                      int configured_max_dimension,
+                                      double budget_ratio,
+                                      unsigned int *recovery_count)
+{
+    if (!recovery_count || current_dimension <= 0 ||
+        configured_max_dimension <= 0 || current_dimension > configured_max_dimension ||
+        !isfinite(budget_ratio) || budget_ratio < 0.0)
+        return current_dimension;
+    if (budget_ratio >= MPVFLOW_GOVERNOR_PRESSURE_RATIO) {
+        *recovery_count = 0;
+        if (current_dimension <= MPVFLOW_GOVERNOR_MIN_DIMENSION)
+            return current_dimension;
+        int next = (current_dimension * 7 / 8 / MPVFLOW_GOVERNOR_DIMENSION_STEP) *
+            MPVFLOW_GOVERNOR_DIMENSION_STEP;
+        if (next >= current_dimension)
+            next = current_dimension - MPVFLOW_GOVERNOR_DIMENSION_STEP;
+        if (next < MPVFLOW_GOVERNOR_MIN_DIMENSION)
+            next = MPVFLOW_GOVERNOR_MIN_DIMENSION;
+        return next > configured_max_dimension ? configured_max_dimension : next;
+    }
+    if (budget_ratio > MPVFLOW_GOVERNOR_RECOVERY_RATIO) {
+        *recovery_count = 0;
+        return current_dimension;
+    }
+    if (*recovery_count < MPVFLOW_GOVERNOR_RECOVERY_PAIRS)
+        (*recovery_count)++;
+    if (*recovery_count < MPVFLOW_GOVERNOR_RECOVERY_PAIRS)
+        return current_dimension;
+    *recovery_count = 0;
+    int next = current_dimension + MPVFLOW_GOVERNOR_DIMENSION_STEP;
+    return next > configured_max_dimension ? configured_max_dimension : next;
+}
 static int clamp_int(int value, int low, int high)
 {
     return value < low ? low : value > high ? high : value;

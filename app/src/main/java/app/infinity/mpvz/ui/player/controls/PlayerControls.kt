@@ -16,6 +16,8 @@ import app.infinity.mpvz.ui.player.declaredMediaKind
 import app.infinity.mpvz.domain.torrent.TorrentStreamingState
 import app.infinity.mpvz.domain.torrent.formatTorrentBytes
 import app.infinity.mpvz.domain.torrent.formatTorrentSpeed
+import app.infinity.mpvz.presentation.crash.DebugLogReader
+import app.infinity.mpvz.presentation.crash.formatMpvFlowTimingSummary
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import android.os.Debug
@@ -2491,6 +2493,8 @@ private fun nativeStatsCodecLabel(mimeType: String?, codecs: String?): String {
 private data class CustomStatsSnapshot(
   val fileName: String,
   val renderContext: String,
+  val mpvFlowTimingText: String,
+  val mpvPlaybackTimingText: String,
   val video: String,
   val audio: String,
   val cpuPercent: Float,
@@ -2531,6 +2535,8 @@ private fun CustomStatsPageSixOverlay(
       CustomStatsSnapshot(
         fileName = "--",
         renderContext = "--",
+        mpvFlowTimingText = "MPVFlow pair timing unavailable",
+        mpvPlaybackTimingText = "Pacing telemetry unavailable",
         video = "--",
         audio = "--",
         cpuPercent = 0f,
@@ -2558,6 +2564,8 @@ private fun CustomStatsPageSixOverlay(
     var lastTimeMs = android.os.SystemClock.elapsedRealtime()
     var lastMemorySampleMs = lastTimeMs
     var memorySnapshot = withContext(Dispatchers.Default) { readProcessMemorySnapshot() }
+    var lastMpvFlowDiagnosticReadMs = 0L
+    var mpvFlowTimingText = "No MPVFlow pair timing captured"
 
     var startBatteryTemp: Float? = null
     var peakBatteryTemp = 0.0f
@@ -2579,6 +2587,15 @@ private fun CustomStatsPageSixOverlay(
 
       val currentCpuMs = runCatching { android.os.Process.getElapsedCpuTime() }.getOrDefault(lastCpuMs)
       val currentTimeMs = android.os.SystemClock.elapsedRealtime()
+      if (currentTimeMs - lastMpvFlowDiagnosticReadMs >= 3_000L) {
+        lastMpvFlowDiagnosticReadMs = currentTimeMs
+        mpvFlowTimingText =
+          withContext(Dispatchers.IO) {
+            runCatching {
+              formatMpvFlowTimingSummary(DebugLogReader.readSnapshot(maxRawLines = 1_000).entries)
+            }.getOrElse { "MPVFlow logcat unavailable (${it.javaClass.simpleName})" }
+          }
+      }
       val cpuDelta = (currentCpuMs - lastCpuMs).coerceAtLeast(0L)
       val timeDelta = (currentTimeMs - lastTimeMs).coerceAtLeast(1L)
       if (currentTimeMs - lastMemorySampleMs >= MEMORY_STATS_SAMPLE_INTERVAL_MS) {
@@ -2731,7 +2748,43 @@ private fun CustomStatsPageSixOverlay(
       val currentHwdec = runCatching { PlaybackSession.getPropertyString("hwdec-current") ?: "no" }.getOrDefault("no")
       val gpuApi = runCatching { PlaybackSession.getPropertyString("gpu-api") ?: "--" }.getOrDefault("--")
       val gpuContext = runCatching { PlaybackSession.getPropertyString("gpu-context") ?: "--" }.getOrDefault("--")
-      val renderContext = "$currentVideoOutput | $gpuApi | $gpuContext"
+      val renderContext = "$currentVideoOutput | hwdec=$currentHwdec | $gpuApi | $gpuContext"
+      val estimatedVfFps =
+        runCatching { PlaybackSession.getPropertyDouble("estimated-vf-fps") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it > 0.0 }
+          ?.let { String.format(java.util.Locale.US, "%.1f", it) }
+          ?: "--"
+      val displayFps =
+        runCatching { PlaybackSession.getPropertyDouble("display-fps") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() && it > 0.0 }
+          ?.let { String.format(java.util.Locale.US, "%.1f", it) }
+          ?: "--"
+      val avSyncOffset =
+        runCatching { PlaybackSession.getPropertyDouble("avsync") }
+          .getOrNull()
+          ?.takeIf { it.isFinite() }
+          ?.let { String.format(java.util.Locale.US, "%+.1f ms", it * 1_000.0) }
+          ?: "--"
+      val decoderDrops =
+        runCatching { PlaybackSession.getPropertyInt("decoder-frame-drop-count") }
+          .getOrNull()
+          ?.toString()
+          ?: "--"
+      val outputDrops =
+        runCatching { PlaybackSession.getPropertyInt("frame-drop-count") }
+          .getOrNull()
+          ?.toString()
+          ?: "--"
+      val delayedFrames =
+        runCatching { PlaybackSession.getPropertyInt("vo-delayed-frame-count") }
+          .getOrNull()
+          ?.toString()
+          ?: "--"
+      val mpvPlaybackTimingText =
+        "vf estimate $estimatedVfFps fps · display $displayFps Hz · A/V offset $avSyncOffset · " +
+          "decoder/VO drops $decoderDrops/$outputDrops · delayed $delayedFrames"
       val decoderEfficiencyText =
         when {
           currentHwdec == "no" || currentHwdec.isBlank() -> "Low (Software Decoding, CPU-heavy)"
@@ -2743,6 +2796,8 @@ private fun CustomStatsPageSixOverlay(
         CustomStatsSnapshot(
           fileName = fileName,
           renderContext = renderContext,
+          mpvFlowTimingText = mpvFlowTimingText,
+          mpvPlaybackTimingText = mpvPlaybackTimingText,
           video = videoCodec,
           audio = audioCodec,
           cpuPercent = smoothedCpuPercent,
@@ -2827,6 +2882,8 @@ private fun CustomStatsPageSixOverlay(
       labelStyle,
       valueStyle,
     )
+    OutlinedLabeled("MPVFlow pair", stats.mpvFlowTimingText, labelStyle, valueStyle)
+    OutlinedLabeled("Pacing / sync", stats.mpvPlaybackTimingText, labelStyle, valueStyle)
     OutlinedLabeled("Audio", "${stats.audio} | HDR: ${stats.hdrActive}", labelStyle, valueStyle)
 
     when (val currentTorrentState = torrentState) {

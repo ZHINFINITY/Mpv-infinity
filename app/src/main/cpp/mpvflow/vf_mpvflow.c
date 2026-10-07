@@ -72,6 +72,9 @@ struct priv {
     int64_t pair_work_ns;
     double pair_budget_ms;
     unsigned int timing_count;
+    int adaptive_max_dimension;
+    unsigned int adaptive_recovery_count;
+    int64_t last_source_rate_guard_ns;
     struct mp_frame fallback[MPVFLOW_FALLBACK_QUEUE_SIZE];
     int fallback_count;
     int fallback_pos;
@@ -120,6 +123,9 @@ static void processing_dimensions(struct priv *p, int width, int height,
                                   int *process_width, int *process_height)
 {
     int limit = effective_max_dimension(p);
+    if (p->adaptive_max_dimension > 0 &&
+        (limit <= 0 || p->adaptive_max_dimension < limit))
+        limit = p->adaptive_max_dimension;
     int longest = width > height ? width : height;
     double scale = limit > 0 && longest > limit ? limit / (double)longest : 1.0;
     *process_width = (int)lround(width * scale);
@@ -161,6 +167,7 @@ static void clear_frames(struct priv *p)
     p->prev_was_emitted = false;
     p->next_pts = 0;
     p->outputs_in_gap = 0;
+    p->last_source_rate_guard_ns = 0;
     clear_pair_cache(p);
 }
 static void fallback_add(struct priv *p, struct mp_frame frame)
@@ -377,6 +384,19 @@ static void report_pair_timing(struct mp_filter *f)
             p->synthesis_ns / 1e6, processing_ms, p->pair_budget_ms,
             budget_ratio, p->opts->target_fps,
             p->process_width, p->process_height, p->pair_is_scene_cut);
+    if (p->opts->max_dimension == 0 && p->adaptive_max_dimension > 0) {
+        int previous_dimension = p->adaptive_max_dimension;
+        int next_dimension = mpvflow_update_adaptive_dimension(
+            previous_dimension, effective_max_dimension(p), budget_ratio,
+            &p->adaptive_recovery_count);
+        if (next_dimension != previous_dimension) {
+            p->adaptive_max_dimension = next_dimension;
+            MP_INFO(f, "MPVFLOW_DIAGNOSTIC event=resolution_governor reason=%s from_dimension=%d to_dimension=%d budget_ratio=%.3f target_fps=%.0f\n",
+                    budget_ratio >= 0.85 ? "budget_pressure" : "sustained_headroom",
+                    previous_dimension, next_dimension, budget_ratio,
+                    p->opts->target_fps);
+        }
+    }
 }
 static void promote_pending(struct mp_filter *f, bool emitted)
 {
@@ -387,6 +407,54 @@ static void promote_pending(struct mp_filter *f, bool emitted)
     p->prev = mp_frame_ref(p->pending);
     mp_frame_unref(&p->pending);
     p->prev_was_emitted = emitted;
+    p->outputs_in_gap = 0;
+}
+static void passthrough_high_rate_pair(struct mp_filter *f)
+{
+    struct priv *p = f->priv;
+    struct mp_image *source = frame_image(p->pending);
+    if (!source) {
+        disable_and_queue(f, "high_rate_source_missing_frame", MP_NO_FRAME);
+        write_fallback(f);
+        return;
+    }
+    if (p->prev.type && !p->prev_was_emitted && p->outputs_in_gap == 0)
+        fallback_add(p, mp_frame_ref(p->prev));
+    struct mp_frame source_frame = p->pending;
+    p->pending = MP_NO_FRAME;
+    fallback_add(p, mp_frame_ref(source_frame));
+    report_pair_timing(f);
+    clear_pair_cache(p);
+    mp_frame_unref(&p->prev);
+    p->prev = source_frame;
+    p->prev_was_emitted = true;
+    p->next_pts = source->pts + p->frame_step;
+    p->outputs_in_gap = 0;
+    write_fallback(f);
+}
+static void yield_unfinished_pair(struct mp_filter *f)
+{
+    struct priv *p = f->priv;
+    struct mp_image *source = frame_image(p->pending);
+    if (!source) {
+        disable_and_queue(f, "deadline_source_missing_frame", MP_NO_FRAME);
+        write_fallback(f);
+        return;
+    }
+    MP_WARN(f, "MPVFLOW_DIAGNOSTIC event=deadline_yield processing_ms=%.2f pair_budget_ms=%.2f source_pts=%.6f skipped_outputs=%u target_fps=%.0f\n",
+            p->pair_work_ns / 1e6, p->pair_budget_ms, source->pts,
+            p->outputs_in_gap, p->opts->target_fps);
+    struct mp_frame source_frame = p->pending;
+    p->pending = MP_NO_FRAME;
+    fallback_add(p, mp_frame_ref(source_frame));
+    report_pair_timing(f);
+    clear_pair_cache(p);
+    mp_frame_unref(&p->prev);
+    p->prev = source_frame;
+    p->prev_was_emitted = true;
+    double tolerance = fmax(1e-7, p->frame_step * 1e-6);
+    while (p->next_pts <= source->pts + tolerance)
+        p->next_pts += p->frame_step;
     p->outputs_in_gap = 0;
 }
 static bool frames_compatible(struct mp_image *a, struct mp_image *b)
@@ -458,6 +526,20 @@ static void f_process(struct mp_filter *f)
             write_fallback(f);
             return;
         }
+        double source_delta = b->pts - a->pts;
+        if (mpvflow_should_bypass_for_source_rate(source_delta, p->frame_step)) {
+            int64_t now_ns = mp_time_ns();
+            if (!p->last_source_rate_guard_ns ||
+                now_ns - p->last_source_rate_guard_ns >= 1000000000LL) {
+                MP_INFO(f, "MPVFLOW_DIAGNOSTIC event=source_rate_guard source_delta_ms=%.3f target_step_ms=%.3f target_fps=%.0f action=passthrough_original_pts\n",
+                        source_delta * 1000.0, p->frame_step * 1000.0,
+                        p->opts->target_fps);
+                p->last_source_rate_guard_ns = now_ns;
+            }
+            passthrough_high_rate_pair(f);
+            return;
+        }
+        p->last_source_rate_guard_ns = 0;
         double tolerance = fmax(1e-7, p->frame_step * 1e-6);
         if (p->next_pts < b->pts - tolerance) {
             double count = ceil((b->pts - p->next_pts - tolerance) /
@@ -482,10 +564,11 @@ static void f_process(struct mp_filter *f)
             p->outputs_in_gap++;
             double processing_ms = p->pair_work_ns / 1e6;
             double pair_budget_ms = p->pair_budget_ms;
-            if (pair_budget_ms > 0 && processing_ms >= pair_budget_ms * 0.85) {
-                MP_WARN(f, "MPVFLOW_DIAGNOSTIC event=deadline_miss processing_ms=%.2f pair_budget_ms=%.2f source_pts=%.6f next_output_pts=%.6f; disabling interpolation to preserve playback cadence\n",
-                        processing_ms, pair_budget_ms, b->pts, p->next_pts);
-                disable_and_queue(f, "processing_budget_exceeded", MP_NO_FRAME);
+            bool outputs_remain = p->next_pts < b->pts - tolerance;
+            if (mpvflow_should_yield_for_deadline(processing_ms,
+                                                  pair_budget_ms,
+                                                  outputs_remain)) {
+                yield_unfinished_pair(f);
             }
             mp_pin_in_write(f->ppins[1], output);
             return;
@@ -536,6 +619,8 @@ static struct mp_filter *f_create(struct mp_filter *parent, void *options)
     struct priv *p = f->priv;
     p->opts = talloc_steal(p, options);
     p->frame_step = 1.0 / p->opts->target_fps;
+    p->adaptive_max_dimension = p->opts->max_dimension == 0
+        ? effective_max_dimension(p) : 0;
     p->sws = mp_sws_alloc(p);
     MP_HANDLE_OOM(p->sws);
     mp_filter_add_pin(f, MP_PIN_IN, "in");

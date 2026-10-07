@@ -3,6 +3,7 @@
  */
 #include "mpvflow_core.h"
 #include <assert.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -152,6 +153,44 @@ static void test_scene_cut_avoids_synthetic_blend(void)
     free(b);
     free(out);
 }
+static void test_deadline_guard_yields_only_when_work_remains(void)
+{
+    assert(!mpvflow_should_yield_for_deadline(38.90, 41.00, false));
+    assert(!mpvflow_should_yield_for_deadline(41.81, 42.00, false));
+    assert(!mpvflow_should_yield_for_deadline(35.69, 42.00, true));
+    assert(mpvflow_should_yield_for_deadline(35.70, 42.00, true));
+    assert(mpvflow_should_yield_for_deadline(42.01, 42.00, true));
+    assert(!mpvflow_should_yield_for_deadline(100.0, 0.0, true));
+    assert(!mpvflow_should_yield_for_deadline(NAN, 42.0, true));
+}
+static void test_high_rate_source_bypass_preserves_rate_boundary(void)
+{
+    assert(mpvflow_should_bypass_for_source_rate(1.0 / 120.0, 1.0 / 60.0));
+    assert(mpvflow_should_bypass_for_source_rate(1.0 / 90.0, 1.0 / 60.0));
+    assert(!mpvflow_should_bypass_for_source_rate(1.0 / 60.0, 1.0 / 60.0));
+    assert(!mpvflow_should_bypass_for_source_rate(1.0 / 24.0, 1.0 / 60.0));
+    assert(!mpvflow_should_bypass_for_source_rate(NAN, 1.0 / 60.0));
+}
+static void test_adaptive_dimension_reduces_under_pressure_and_recovers_slowly(void)
+{
+    unsigned int recovery_count = 0;
+    int dimension = mpvflow_update_adaptive_dimension(480, 480, 0.995,
+                                                       &recovery_count);
+    assert(dimension == 416);
+    assert(recovery_count == 0);
+    for (int i = 0; i < 59; i++)
+        dimension = mpvflow_update_adaptive_dimension(dimension, 480, 0.50,
+                                                       &recovery_count);
+    assert(dimension == 416);
+    dimension = mpvflow_update_adaptive_dimension(dimension, 480, 0.50,
+                                                   &recovery_count);
+    assert(dimension == 432);
+    assert(recovery_count == 0);
+    dimension = mpvflow_update_adaptive_dimension(dimension, 480, 0.70,
+                                                   &recovery_count);
+    assert(recovery_count == 0);
+    assert(dimension == 432);
+}
 int main(void)
 {
     test_translation_is_compensated();
@@ -159,6 +198,9 @@ int main(void)
     test_parallel_synthesis_is_deterministic();
     test_parallel_analysis_is_deterministic();
     test_scene_cut_avoids_synthetic_blend();
+    test_deadline_guard_yields_only_when_work_remains();
+    test_high_rate_source_bypass_preserves_rate_boundary();
+    test_adaptive_dimension_reduces_under_pressure_and_recovers_slowly();
     puts("mpvflow core tests passed");
     return 0;
 }
