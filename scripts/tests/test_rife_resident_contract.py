@@ -30,6 +30,7 @@ def main() -> None:
         Path(__file__).resolve().parents[2]
         / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
     )
+    native_build = (Path(__file__).resolve().parents[1] / "build-rife-native.sh").read_text()
 
     options_c = (mpv / "options/options.c").read_text()
     options_h = (mpv / "options/options.h").read_text()
@@ -44,6 +45,8 @@ def main() -> None:
             "resident scheduling must supply and require a usable display refresh rate")
     require('isOwnedByMpvConf("display-fps-override")' in view,
             "the resident route must not override a user-owned display refresh setting")
+    require('cp "$ROOT/app/src/main/cpp/rife/rife_vfi_output_layout.h" "$RIFE_DIR/src/rife_vfi_output_layout.h"' in native_build,
+            "the native build must stage the private output-layout header beside the bridge")
 
     # These must be root libmpv options. App-side setOptionString calls must not
     # depend on gpu-next accepting arbitrary VO suboptions.
