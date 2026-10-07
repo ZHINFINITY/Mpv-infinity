@@ -64,7 +64,7 @@ def main() -> None:
     require("AImageReader_setImageListener" not in mapper_init,
             "a mapper must not replace the shared reader listener")
     callback = section(reader, "static void image_callback(void *context, AImageReader *reader)\n{",
-                       "static bool wait_for_acquire_fence")
+                       "static int mapper_init(")
     require("struct priv_owner *p = context" in callback and "image_cond" in callback,
             "reader callback must signal owner-level shared state")
     mapper_map = section(reader, "static int mapper_map(",
@@ -73,18 +73,22 @@ def main() -> None:
             "release/wait/acquire must be serialized across both mappers")
     require("av_mediacodec_release_buffer(buffer, 1)" in mapper_map,
             "mapper must release the exact decoder frame to the reader surface")
-    require("AImageReader_acquireLatestImageAsync" in mapper_map,
-            "mapper must acquire through the API-26 async reader")
-    fence_wait = mapper_map.find("wait_for_acquire_fence(acquire_fence_fd)")
+    require("AImageReader_acquireLatestImage(o->reader, &p->image)" in mapper_map,
+            "mapper must retain the upstream synchronous image acquire path")
+    require("AImageReader_acquireLatestImageAsync" not in reader and
+            "wait_for_acquire_fence" not in reader and "poll(" not in reader,
+            "renderer-thread AImage acquire-fence polling must remain disabled")
+    callback_wait = mapper_map.find("mp_cond_timedwait(&o->image_cond")
+    acquire = mapper_map.find("AImageReader_acquireLatestImage(o->reader, &p->image)")
     ahb_get = mapper_map.find("AImage_getHardwareBuffer(p->image, &hwbuf)")
-    require(0 <= fence_wait < ahb_get,
-            "the AImage acquire fence must signal before accessing/importing its AHB")
+    require(0 <= callback_wait < acquire < ahb_get,
+            "bounded callback wait and synchronous acquire must precede AHB access")
     no_buffer = mapper_map[mapper_map.find("AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE"):]
     no_buffer = section(no_buffer, "AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE", "if (ret != AMEDIA_OK)")
     require("mp_mutex_unlock(&o->acquire_lock)" in no_buffer and "return 0" in no_buffer,
             "a transient no-buffer result must unlock and preserve playback")
-    require("close(acquire_fence_fd)" in no_buffer and "p->hardware_buffer = NULL" in no_buffer,
-            "a no-buffer result must release temporary resources and clear the borrowed AHB lease")
+    require("p->hardware_buffer = NULL" in no_buffer,
+            "a no-buffer result must clear the borrowed AHB lease")
     require("rife_disabled_for_session" not in no_buffer,
             "a transient no-buffer result must not permanently disable resident RIFE")
     getter = section(reader, "void *ra_hwdec_aimagereader_get_hardware_buffer(",
@@ -100,8 +104,22 @@ def main() -> None:
                        "extern \"C\" int rife_vfi_interpolate_gpu_frames(")
     require("AHardwareBuffer_acquire(hardware_buffer)" in importer,
             "NCNN input import must retain its AHB before the AImage lease ends")
-    require("rife_vfi_write_output_rgba" in bridge and "vkDeviceWaitIdle" in bridge,
-            "Vulkan output handoff must complete before GLES presentation")
+    output_transition = section(bridge, "bool record_output_transition(",
+                                "void destroy_output_resources(")
+    require("vkdev->acquire_queue(family)" in output_transition and
+            output_transition.count("vkdev->reclaim_queue(family, queue)") == 2 and
+            "vkQueueWaitIdle(queue)" in output_transition,
+            "ownership transitions must borrow and return their NCNN queue on every submit path")
+    output_init = section(bridge, "bool initialize_output_slot(", "\n#endif")
+    require("transition_queue" not in bridge and "acquire_queue(" not in output_init,
+            "output slots must not reserve compute queues needed by RIFE inference")
+    require("vkdev->info.compute_queue_count()" in output_init and
+            "stage=compute_queue_unavailable" in output_init,
+            "output setup must fail closed instead of waiting forever without a compute queue")
+    require("rife_vfi_write_output_rgba" in bridge and
+            "cmd.submit_and_wait() != 0" in bridge and
+            "vkDeviceWaitIdle" not in bridge,
+            "output handoff must wait for its compute submission without a device-wide stall")
     output_init = section(bridge, "bool initialize_output_slot(", "\n#endif")
     for stage in (
         "stage=output_precondition_failed",
@@ -222,6 +240,9 @@ def main() -> None:
                            "int index = p->rife_output_cursor")
     require("return false;" in ring_failure,
             "output-ring failure must return before constructing/replacing the render mix")
+    require("if (max_dimension == 0)" in resident_mix and
+            "target_fps >= 60 ? 480 : target_fps >= 48 ? 720 : 1080" in resident_mix,
+            "resident Auto resolution must apply the documented target-FPS processing cap")
     require(resident_mix.find("rife_prepare_frame_input(p, source)") <
             resident_mix.find("!p->rife_diag_before_input_ready"),
             "both selected source frames must be pre-acquired before pair availability is tested")
@@ -238,7 +259,7 @@ def main() -> None:
         require(marker in vo, f"resident runtime diagnostics are missing {marker}")
 
     print(
-        "RIFE resident contracts passed: root options, Android display timing, shared async reader lease, "
+        "RIFE resident contracts passed: root options, Android display timing, shared reader lease, "
         "AHB import/output, fallback, submitted-frame diagnostic, and runtime stage diagnostics"
     )
 

@@ -46,6 +46,23 @@ class RifeResidentPlaybackPolicyTest {
   }
 
   @Test
+  fun legacyGpuWithVulkanUsesTheCpuReadableFilterFallback() {
+    assertFalse(eligible(videoOutput = "gpu", gpuApi = "vulkan"))
+    assertEquals(
+      "cpu_rgb24_filter",
+      RifeResidentPlaybackPolicy.activeFilterPath(
+        residentSelected = false,
+        cpuFilterRequested = true,
+        cpuFilterSetResult = 0,
+      ),
+    )
+    assertEquals(
+      "mediacodec-copy,no",
+      RendererBackendPolicy.preferredHwdecModeForCpuFilter(hardwareDecodingEnabled = true),
+    )
+  }
+
+  @Test
   fun residentRouteRequiresEveryLibmpvOptionSetterToReturnSuccess() {
     val accepted =
       RifeResidentPlaybackPolicy.OptionResults(

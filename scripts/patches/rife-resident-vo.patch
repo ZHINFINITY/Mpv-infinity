@@ -68,14 +68,11 @@ diff --git a/video/out/hwdec/hwdec_aimagereader.c b/video/out/hwdec/hwdec_aimage
 index 55883c0be..3d74bea7f 100644
 --- a/video/out/hwdec/hwdec_aimagereader.c
 +++ b/video/out/hwdec/hwdec_aimagereader.c
-@@ -19,6 +19,10 @@
+@@ -19,6 +19,7 @@
  
  #include <assert.h>
  #include <dlfcn.h>
-+#include <errno.h>
-+#include <poll.h>
 +#include <string.h>
-+#include <unistd.h>
  #include <EGL/egl.h>
  #include <media/NdkImageReader.h>
  #include <android/native_window_jni.h>
@@ -91,13 +88,11 @@ index 55883c0be..3d74bea7f 100644
      jobject surface;
      void *lib_handle;
  
-@@ -48,7 +57,9 @@ struct priv_owner {
+@@ -48,7 +57,8 @@ struct priv_owner {
          AImageReader *, ANativeWindow **);
      media_status_t (*AImageReader_setImageListener)(
          AImageReader *, AImageReader_ImageListener *);
--    media_status_t (*AImageReader_acquireLatestImage)(AImageReader *, AImage **);
-+    media_status_t (*AImageReader_acquireLatestImageAsync)(
-+        AImageReader *, AImage **, int *);
+     media_status_t (*AImageReader_acquireLatestImage)(AImageReader *, AImage **);
 +    media_status_t (*AImage_getTimestamp)(const AImage *, int64_t *);
      void (*AImageReader_delete)(AImageReader *);
      media_status_t (*AImage_getHardwareBuffer)(const AImage *, AHardwareBuffer **);
@@ -120,8 +115,7 @@ index 55883c0be..3d74bea7f 100644
      { "AImageReader_newWithUsage", offsetof(struct priv_owner, AImageReader_newWithUsage) },
      { "AImageReader_getWindow", offsetof(struct priv_owner, AImageReader_getWindow) },
      { "AImageReader_setImageListener", offsetof(struct priv_owner, AImageReader_setImageListener) },
--    { "AImageReader_acquireLatestImage", offsetof(struct priv_owner, AImageReader_acquireLatestImage) },
-+    { "AImageReader_acquireLatestImageAsync", offsetof(struct priv_owner, AImageReader_acquireLatestImageAsync) },
+     { "AImageReader_acquireLatestImage", offsetof(struct priv_owner, AImageReader_acquireLatestImage) },
 +    { "AImage_getTimestamp", offsetof(struct priv_owner, AImage_getTimestamp) },
      { "AImageReader_delete", offsetof(struct priv_owner, AImageReader_delete) },
      { "AImage_getHardwareBuffer", offsetof(struct priv_owner, AImage_getHardwareBuffer) },
@@ -169,7 +163,7 @@ index 55883c0be..3d74bea7f 100644
      hwdec_devices_remove(hw->devs, &p->hwctx);
      av_buffer_unref(&p->hwctx.av_device_ref);
  
-@@ -227,23 +253,35 @@ static void uninit(struct ra_hwdec *hw)
+@@ -227,23 +253,20 @@ static void uninit(struct ra_hwdec *hw)
  
  static void image_callback(void *context, AImageReader *reader)
  {
@@ -185,21 +179,6 @@ index 55883c0be..3d74bea7f 100644
 -    mp_mutex_unlock(&p->lock);
 +    mp_cond_signal(&p->image_cond);
 +    mp_mutex_unlock(&p->image_lock);
-+}
-+
-+static bool wait_for_acquire_fence(int fence_fd)
-+{
-+    if (fence_fd < 0)
-+        return true;
-+
-+    struct pollfd fence = {.fd = fence_fd, .events = POLLIN};
-+    int result;
-+    do {
-+        result = poll(&fence, 1, 250);
-+    } while (result < 0 && errno == EINTR);
-+    close(fence_fd);
-+    return result == 1 && (fence.revents & POLLIN) &&
-+           !(fence.revents & (POLLERR | POLLHUP | POLLNVAL));
  }
  
  static int mapper_init(struct ra_hwdec_mapper *mapper)
@@ -255,7 +234,7 @@ index 55883c0be..3d74bea7f 100644
  }
  
  static int mapper_map(struct ra_hwdec_mapper *mapper)
-@@ -334,56 +361,82 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+@@ -334,56 +361,69 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
      struct priv *p = mapper->priv;
      struct priv_owner *o = mapper->owner->priv;
      GL *gl = ra_gl_get(mapper->ra);
@@ -319,15 +298,11 @@ index 55883c0be..3d74bea7f 100644
 -    media_status_t ret = o->AImageReader_acquireLatestImage(o->reader, &p->image);
 +        MP_VERBOSE(p, "AImageReader callback timed out; checking once for a queued image\n");
 +
-+    // Keep acquireLatest to avoid presenting stale queued surfaces. RIFE input
-+    // is accepted only after its AImage timestamp matches the decoder PTS.
-+    int acquire_fence_fd = -1;
-+    media_status_t ret = o->AImageReader_acquireLatestImageAsync(
-+        o->reader, &p->image, &acquire_fence_fd);
++    // Keep the upstream synchronous acquire path instead of polling fences
++    // on the renderer thread. RIFE input still needs a timestamp-matched AImage.
++    media_status_t ret = o->AImageReader_acquireLatestImage(o->reader, &p->image);
 +    if (ret == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE) {
 +        MP_VERBOSE(p, "AImageReader has no ready buffer; this frame has no AHB lease\n");
-+        if (acquire_fence_fd >= 0)
-+            close(acquire_fence_fd);
 +        if (p->image) {
 +            o->AImage_delete(p->image);
 +            p->image = NULL;
@@ -342,21 +317,12 @@ index 55883c0be..3d74bea7f 100644
 -        // (same hack as above)
 -        return (ret == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE && !image_available)
 -            ? 0 : -1;
-+        if (acquire_fence_fd >= 0)
-+            close(acquire_fence_fd);
-+        MP_ERR(p, "acquireLatestImageAsync failed: %d\n", ret);
++        MP_ERR(p, "acquireLatestImage failed: %d\n", ret);
 +        mp_mutex_unlock(&o->acquire_lock);
 +        return -1;
      }
      mp_assert(p->image);
 -
-+    if (!wait_for_acquire_fence(acquire_fence_fd)) {
-+        MP_VERBOSE(p, "AImageReader acquire fence did not signal; skipping this frame\n");
-+        o->AImage_delete(p->image);
-+        p->image = NULL;
-+        mp_mutex_unlock(&o->acquire_lock);
-+        return 0;
-+    }
      AHardwareBuffer *hwbuf = NULL;
      ret = o->AImage_getHardwareBuffer(p->image, &hwbuf);
      if (ret != AMEDIA_OK) {
@@ -610,7 +576,7 @@ index bd3d1aa1e..852dd26bf 100644
      talloc_free(mpi);
  }
  
-@@ -1154,14 +1279,510 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1279,512 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -1006,6 +972,8 @@ index bd3d1aa1e..852dd26bf 100644
 +    int width = mpi0->params.w;
 +    int height = mpi0->params.h;
 +    int max_dimension = p->rife_root_opts->rife_max_dimension;
++    if (max_dimension == 0)
++        max_dimension = target_fps >= 60 ? 480 : target_fps >= 48 ? 720 : 1080;
 +    if (max_dimension > 0 && MPMAX(width, height) > max_dimension) {
 +        double scale = (double) max_dimension / MPMAX(width, height);
 +        width = MPMAX(2, ((int) (width * scale)) & ~1);

@@ -90,7 +90,6 @@ struct RifeVfiOutput {
     ncnn::VkImageMat image;
     VkCommandPool transition_pool = VK_NULL_HANDLE;
     VkCommandBuffer transition_command = VK_NULL_HANDLE;
-    VkQueue transition_queue = VK_NULL_HANDLE;
     int width = 0;
     int height = 0;
     bool initialized = false;
@@ -241,8 +240,8 @@ bool record_output_transition(RifeVfiOutput *output,
                               VkPipelineStageFlags src_stage,
                               VkPipelineStageFlags dst_stage)
 {
-    if (!output || !output->engine || !output->transition_command ||
-        !output->transition_queue || !output->image_memory.image)
+    if (!output || !output->engine || !output->engine->vkdev ||
+        !output->transition_command || !output->image_memory.image)
         return false;
 
     VkResult result = vkResetCommandBuffer(output->transition_command, 0);
@@ -278,13 +277,21 @@ bool record_output_transition(RifeVfiOutput *output,
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &output->transition_command;
-    if (vkQueueSubmit(output->transition_queue, 1, &submit_info,
-                      VK_NULL_HANDLE) != VK_SUCCESS)
+    ncnn::VulkanDevice *vkdev = output->engine->vkdev;
+    const uint32_t family = vkdev->info.compute_queue_family_index();
+    // NCNN exposes a finite pool of queues. Never pin one per output slot:
+    // RIFE inference must be able to acquire a queue from the same pool.
+    VkQueue queue = vkdev->acquire_queue(family);
+    if (!queue)
         return false;
-    // Conservative proof path: do not hand an image to another API until the
-    // ownership barrier has completed. Replace with native-fence handoff only
-    // after device acceptance.
-    return vkQueueWaitIdle(output->transition_queue) == VK_SUCCESS;
+    if (vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS) {
+        vkdev->reclaim_queue(family, queue);
+        return false;
+    }
+    // Do not hand the image to EGL until the ownership barrier completes.
+    VkResult wait_result = vkQueueWaitIdle(queue);
+    vkdev->reclaim_queue(family, queue);
+    return wait_result == VK_SUCCESS;
 }
 
 void destroy_output_resources(RifeVfiOutput *output)
@@ -293,14 +300,10 @@ void destroy_output_resources(RifeVfiOutput *output)
         return;
     ncnn::VulkanDevice *vkdev = output->engine->vkdev;
     output->image = ncnn::VkImageMat();
-    const uint32_t family = vkdev->info.compute_queue_family_index();
     if (output->transition_pool)
         vkDestroyCommandPool(vkdev->vkdevice(), output->transition_pool, nullptr);
     output->transition_pool = VK_NULL_HANDLE;
     output->transition_command = VK_NULL_HANDLE;
-    if (output->transition_queue)
-        vkdev->reclaim_queue(family, output->transition_queue);
-    output->transition_queue = VK_NULL_HANDLE;
     if (output->image_memory.imageview)
         vkDestroyImageView(vkdev->vkdevice(), output->image_memory.imageview, nullptr);
     if (output->image_memory.image)
@@ -568,8 +571,7 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     }
 
     const uint32_t family = vkdev->info.compute_queue_family_index();
-    output->transition_queue = vkdev->acquire_queue(family);
-    if (!output->transition_queue) {
+    if (!vkdev->info.compute_queue_count()) {
         set_errorf(error, error_size,
                    "stage=compute_queue_unavailable queue_family=%u", family);
         return false;
@@ -1057,8 +1059,8 @@ extern "C" int rife_vfi_write_output_rgba(
                         output->image);
     if (cmd.submit_and_wait() != 0)
         return -3;
-    if (vkDeviceWaitIdle(engine->vkdev->vkdevice()) != VK_SUCCESS)
-        return -4;
+    // submit_and_wait already waits for this compute submission's fence; a
+    // device-wide idle here needlessly stalls unrelated renderer work.
 
     const VkImageLayout layout = output->image_memory.image_layout;
     const VkAccessFlags access = output->image_memory.access_flags;
