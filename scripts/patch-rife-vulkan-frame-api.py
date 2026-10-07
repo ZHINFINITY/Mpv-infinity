@@ -168,7 +168,34 @@ def patch_source(text: str) -> str:
         + "\n".join("    " + line for line in mat_block.splitlines()[2:])
         + "\n    }"
     )
+    converted_mat_block = converted_mat_block.replace(
+        "if (opt.use_fp16_storage && opt.use_int8_storage)",
+        "if (opt.use_int8_storage)",
+        1,
+    )
     body = replace_once(body, mat_block, converted_mat_block, "RIFE CPU pixel conversion block")
+
+    packed_output_block = (
+        "        if (opt.use_fp16_storage && opt.use_int8_storage)\n"
+        "        {\n"
+        "            out_gpu.create(w, h, (size_t)channels, 1, blob_vkallocator);\n"
+        "        }\n"
+        "        else\n"
+        "        {\n"
+        "            out_gpu.create(w, h, channels, (size_t)4u, 1, blob_vkallocator);\n"
+        "        }"
+    )
+    if body.count(packed_output_block) != 2:
+        raise SystemExit(
+            "Expected two RIFE Vulkan output allocations; refusing an unverified layout patch"
+        )
+    body = body.replace(
+        packed_output_block,
+        packed_output_block.replace(
+            "if (opt.use_fp16_storage && opt.use_int8_storage)",
+            "if (opt.use_int8_storage)",
+        ),
+    )
 
     body = replace_once(
         body,
@@ -194,6 +221,13 @@ def patch_source(text: str) -> str:
     reclaim_anchor = "    vkdev->reclaim_blob_allocator(blob_vkallocator);"
     download_end = body.index(reclaim_anchor, download_start)
     download_block = body[download_start:download_end]
+    if download_block.count("if (opt.use_fp16_storage && opt.use_int8_storage)") != 1:
+        raise SystemExit("Expected one RIFE Vulkan output download format selector")
+    download_block = download_block.replace(
+        "if (opt.use_fp16_storage && opt.use_int8_storage)",
+        "if (opt.use_int8_storage)",
+        1,
+    )
     indented_download = "\n".join(
         "    " + line if line else line
         for line in download_block.rstrip("\n").splitlines()
@@ -224,6 +258,7 @@ def patch_cmake(text: str) -> str:
         anchor
         + "\nrife_add_shader(rife_vfi_pack_rgb.comp)"
         + "\nrife_add_shader(rife_vfi_rgba_output.comp)"
+        + "\nrife_add_shader(rife_vfi_rgba_output_fp32.comp)"
         + f"\n{marker}",
         "RIFE generated Vulkan conversion-shader list",
     )
@@ -246,7 +281,11 @@ def main() -> None:
     cmake = patch_cmake(cmake_path.read_text())
     project_root = Path(__file__).resolve().parents[1]
     shader_root = project_root / "app/src/main/cpp/rife"
-    for shader_name in ("rife_vfi_pack_rgb.comp", "rife_vfi_rgba_output.comp"):
+    for shader_name in (
+        "rife_vfi_pack_rgb.comp",
+        "rife_vfi_rgba_output.comp",
+        "rife_vfi_rgba_output_fp32.comp",
+    ):
         shader_source = shader_root / shader_name
         if not shader_source.is_file():
             raise SystemExit(f"Missing RIFE GPU conversion shader: {shader_source}")

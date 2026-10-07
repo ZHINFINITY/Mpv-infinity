@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Converts RIFE's planar FP32 RGB output (0..255) to a writable RGBA8 image.
+// The image is an imported Android HardwareBuffer shared with GLES.
+#version 450
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout (binding = 0) readonly buffer planar_rgb { float planar_data[]; };
+layout (binding = 1, rgba8) writeonly uniform image2D rgba_output;
+layout (push_constant) uniform parameter
+{
+    int width;
+    int height;
+    int cstep;
+} p;
+void main()
+{
+    int x = int(gl_GlobalInvocationID.x);
+    int y = int(gl_GlobalInvocationID.y);
+    if (x >= p.width || y >= p.height)
+        return;
+    int pixel = y * p.width + x;
+    vec3 rgb = vec3(
+        planar_data[pixel],
+        planar_data[p.cstep + pixel],
+        planar_data[2 * p.cstep + pixel]) / 255.0;
+    imageStore(rgba_output, ivec2(x, y), vec4(clamp(rgb, 0.0, 1.0), 1.0));
+}

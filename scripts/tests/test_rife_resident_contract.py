@@ -121,9 +121,20 @@ def main() -> None:
             "stage=compute_queue_unavailable" in output_init,
             "output setup must fail closed instead of waiting forever without a compute queue")
     require("rife_vfi_write_output_rgba" in bridge and
-            "cmd.submit_and_wait() != 0" in bridge and
+            "cmd.submit_and_wait()" in bridge and
+            "if (submit_result != 0)" in bridge and
             "vkDeviceWaitIdle" not in bridge,
             "output handoff must wait for its compute submission without a device-wide stall")
+    output_writer = section(
+        bridge,
+        'extern "C" int rife_vfi_write_output_rgba(',
+        'extern "C" void rife_vfi_output_destroy(',
+    )
+    require("rife_vfi_output_layout_classify" in output_writer and
+            "output_rgba_fp32_pipeline" in output_writer and
+            "stage=output_contract_failed" in output_writer and
+            "input_dims=%d input_w=%d input_h=%d input_d=%d input_c=%d input_elempack=%d input_elemsize=%zu input_cstep=%zu" in output_writer,
+            "output writer must bridge packed RGB8 and planar FP32 with tensor-field diagnostics")
     output_init = section(bridge, "bool initialize_output_slot(", "\n#endif")
     for stage in (
         "stage=output_precondition_failed",
@@ -199,6 +210,8 @@ def main() -> None:
             "resident inference must reject unpaired/untimestamped AImages")
     require("rife_vfi_import_ahb_rgb8" in vo and "rife_vfi_write_output_rgba" in vo,
             "VO must perform input import and synthesized output handoff")
+    require("char output_error[512]" in vo and "detail=%s" in vo,
+            "output writer diagnostics must be propagated into the Android playback log")
     import_branch = section(vo, "} else if (rife_vfi_import_ahb_rgb8(",
                             "RIFE_DIAGNOSTIC event=ahb_input_imported")
     require("} else {" in import_branch,

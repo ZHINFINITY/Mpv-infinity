@@ -70,7 +70,8 @@ RifeVfiOutput *rife_vfi_output_create(RifeVfiEngine *engine,
 void *rife_vfi_output_get_ahb(const RifeVfiOutput *output);
 int rife_vfi_write_output_rgba(RifeVfiEngine *engine,
                                const RifeVfiGpuFrame *rgb_frame,
-                               RifeVfiOutput *output);
+                               RifeVfiOutput *output,
+                               char *error, size_t error_size);
 void rife_vfi_output_destroy(RifeVfiOutput *output);
 
 #ifdef __cplusplus

@@ -2,6 +2,7 @@
 
 #include "rife_vfi.h"
 #include "rife_vfi_ahb_policy.h"
+#include "rife_vfi_output_layout.h"
 #include "rife_fp16_policy.h"
 
 #include "gpu.h"
@@ -10,6 +11,7 @@
 #include "pipeline.h"
 #include "rife_vfi_pack_rgb.comp.hex.h"
 #include "rife_vfi_rgba_output.comp.hex.h"
+#include "rife_vfi_rgba_output_fp32.comp.hex.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdarg>
@@ -54,6 +56,7 @@ struct RifeVfiEngine {
     ncnn::VulkanDevice *vkdev = nullptr;
     ncnn::Pipeline *pack_rgb_pipeline = nullptr;
     ncnn::Pipeline *output_rgba_pipeline = nullptr;
+    ncnn::Pipeline *output_rgba_fp32_pipeline = nullptr;
     bool fp16_arithmetic = false;
     std::atomic<bool> ahb_input_import_succeeded{false};
     std::atomic<bool> ahb_output_slot_created{false};
@@ -153,7 +156,8 @@ void set_errorf(char *buffer, size_t size, const char *format, ...)
 }
 
 bool create_gpu_pipeline(RifeVfiEngine *engine, const char *shader_data,
-                         int shader_size, ncnn::Pipeline **output)
+                         int shader_size, ncnn::Pipeline **output,
+                         bool use_int8_storage = true)
 {
     if (!engine || !engine->vkdev || !shader_data || shader_size <= 0 || !output)
         return false;
@@ -162,7 +166,7 @@ bool create_gpu_pipeline(RifeVfiEngine *engine, const char *shader_data,
     opt.use_vulkan_compute = true;
     opt.use_fp16_packed = false;
     opt.use_fp16_storage = false;
-    opt.use_int8_storage = true;
+    opt.use_int8_storage = use_int8_storage;
 
     std::vector<uint32_t> spirv;
     if (ncnn::compile_spirv_module(shader_data, shader_size, opt, spirv) != 0 ||
@@ -195,6 +199,10 @@ void ensure_gpu_conversion_pipelines(RifeVfiEngine *engine)
         create_gpu_pipeline(engine, rife_vfi_rgba_output_comp_data,
                             sizeof(rife_vfi_rgba_output_comp_data),
                             &engine->output_rgba_pipeline);
+    if (!engine->output_rgba_fp32_pipeline)
+        create_gpu_pipeline(engine, rife_vfi_rgba_output_fp32_comp_data,
+                            sizeof(rife_vfi_rgba_output_fp32_comp_data),
+                            &engine->output_rgba_fp32_pipeline, false);
 }
 
 void release_gpu_instance()
@@ -224,6 +232,7 @@ void release_engine_reference(RifeVfiEngine *engine)
     if (destroy) {
         delete engine->pack_rgb_pipeline;
         delete engine->output_rgba_pipeline;
+        delete engine->output_rgba_fp32_pipeline;
         delete engine->network;
         delete engine;
         release_gpu_instance();
@@ -1019,18 +1028,52 @@ extern "C" void *rife_vfi_output_get_ahb(const RifeVfiOutput *output)
 
 extern "C" int rife_vfi_write_output_rgba(
     RifeVfiEngine *engine, const RifeVfiGpuFrame *rgb_frame,
-    RifeVfiOutput *output)
+    RifeVfiOutput *output, char *error, size_t error_size)
 {
 #if defined(__ANDROID__) && __ANDROID_API__ >= 26 && \
     defined(VK_ANDROID_external_memory_android_hardware_buffer) && \
     defined(VK_EXT_queue_family_foreign)
-    if (!engine || !rgb_frame || !output || output->engine != engine ||
-        rgb_frame->engine != engine || !engine->output_rgba_pipeline ||
-        rgb_frame->image.empty() || rgb_frame->image.dims != 2 ||
-        rgb_frame->image.c != 1 || rgb_frame->image.elemsize != 3u ||
-        rgb_frame->image.w != output->width ||
-        rgb_frame->image.h != output->height || output->image.empty())
+    const ncnn::VkMat *image = rgb_frame ? &rgb_frame->image : nullptr;
+    const RifeVfiOutputLayout tensor_layout = image
+        ? rife_vfi_output_layout_classify(image->dims, image->d, image->c,
+                                          image->elempack, image->elemsize)
+        : RifeVfiOutputLayout::unsupported;
+    const char *layout_name =
+        tensor_layout == RifeVfiOutputLayout::packed_rgb8 ? "packed_rgb8" :
+        tensor_layout == RifeVfiOutputLayout::planar_rgb32f ? "planar_rgb32f" :
+        "unsupported";
+    ncnn::Pipeline *conversion_pipeline = nullptr;
+    if (engine && tensor_layout == RifeVfiOutputLayout::packed_rgb8)
+        conversion_pipeline = engine->output_rgba_pipeline;
+    else if (engine && tensor_layout == RifeVfiOutputLayout::planar_rgb32f)
+        conversion_pipeline = engine->output_rgba_fp32_pipeline;
+
+    const bool input_size_matches = image && output &&
+        image->w == output->width && image->h == output->height;
+    if (!engine || !engine->vkdev || !rgb_frame || !output ||
+        output->engine != engine || rgb_frame->engine != engine ||
+        rgb_frame->vkdev != engine->vkdev || !image || image->empty() ||
+        tensor_layout == RifeVfiOutputLayout::unsupported ||
+        !conversion_pipeline || !input_size_matches || output->image.empty()) {
+        set_errorf(error, error_size,
+                   "stage=output_contract_failed layout=%s engine=%d vk_device=%d frame_engine_match=%d frame_device_match=%d output_engine_match=%d input_empty=%d input_dims=%d input_w=%d input_h=%d input_d=%d input_c=%d input_elempack=%d input_elemsize=%zu input_cstep=%zu expected_w=%d expected_h=%d output_image_empty=%d packed_shader=%d fp32_shader=%d",
+                   layout_name, engine != nullptr,
+                   engine && engine->vkdev != nullptr,
+                   engine && rgb_frame && rgb_frame->engine == engine,
+                   engine && rgb_frame && rgb_frame->vkdev == engine->vkdev,
+                   engine && output && output->engine == engine,
+                   image ? image->empty() : -1,
+                   image ? image->dims : -1, image ? image->w : -1,
+                   image ? image->h : -1, image ? image->d : -1,
+                   image ? image->c : -1, image ? image->elempack : -1,
+                   image ? image->elemsize : 0u,
+                   image ? image->cstep : 0u,
+                   output ? output->width : -1, output ? output->height : -1,
+                   output ? output->image.empty() : -1,
+                   engine && engine->output_rgba_pipeline,
+                   engine && engine->output_rgba_fp32_pipeline);
         return -1;
+    }
 
     std::lock_guard<std::mutex> lock(engine->process_mutex);
     const uint32_t family = engine->vkdev->info.compute_queue_family_index();
@@ -1041,8 +1084,12 @@ extern "C" int rife_vfi_write_output_rgba(
                 output, VK_QUEUE_FAMILY_FOREIGN_EXT, family, 0,
                 VK_ACCESS_SHADER_WRITE_BIT, old_layout, VK_IMAGE_LAYOUT_GENERAL,
                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT))
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)) {
+            set_errorf(error, error_size,
+                       "stage=output_acquire_transition_failed layout=%s old_layout=%d queue_family=%u",
+                       layout_name, (int)old_layout, family);
             return -2;
+        }
         output->image_memory.image_layout = VK_IMAGE_LAYOUT_GENERAL;
         output->image_memory.access_flags = VK_ACCESS_SHADER_WRITE_BIT;
         output->image_memory.stage_flags = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
@@ -1051,14 +1098,28 @@ extern "C" int rife_vfi_write_output_rgba(
     }
 
     ncnn::VkCompute cmd(engine->vkdev);
-    std::vector<ncnn::vk_constant_type> constants(2);
-    constants[0].i = output->width;
-    constants[1].i = output->height;
-    cmd.record_pipeline(engine->output_rgba_pipeline,
-                        {rgb_frame->image}, {output->image}, constants,
-                        output->image);
-    if (cmd.submit_and_wait() != 0)
+    if (tensor_layout == RifeVfiOutputLayout::planar_rgb32f) {
+        std::vector<ncnn::vk_constant_type> constants(3);
+        constants[0].i = output->width;
+        constants[1].i = output->height;
+        constants[2].i = (int)image->cstep;
+        cmd.record_pipeline(conversion_pipeline, {*image}, {output->image},
+                            constants, output->image);
+    } else {
+        std::vector<ncnn::vk_constant_type> constants(2);
+        constants[0].i = output->width;
+        constants[1].i = output->height;
+        cmd.record_pipeline(conversion_pipeline, {*image}, {output->image},
+                            constants, output->image);
+    }
+    const int submit_result = cmd.submit_and_wait();
+    if (submit_result != 0) {
+        set_errorf(error, error_size,
+                   "stage=output_conversion_submit_failed layout=%s result=%d input_dims=%d input_c=%d input_elemsize=%zu input_cstep=%zu",
+                   layout_name, submit_result, image->dims, image->c,
+                   image->elemsize, image->cstep);
         return -3;
+    }
     // submit_and_wait already waits for this compute submission's fence; a
     // device-wide idle here needlessly stalls unrelated renderer work.
 
@@ -1071,19 +1132,27 @@ extern "C" int rife_vfi_write_output_rgba(
             access ? access : VK_ACCESS_SHADER_WRITE_BIT, 0,
             layout, VK_IMAGE_LAYOUT_GENERAL,
             stage ? stage : VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT))
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT)) {
+        set_errorf(error, error_size,
+                   "stage=output_release_transition_failed layout=%s image_layout=%d access=0x%08x stage_mask=0x%08x queue_family=%u",
+                   layout_name, (int)layout, (unsigned int)access,
+                   (unsigned int)stage, family);
         return -5;
+    }
 
     output->initialized = true;
     output->foreign_owned = true;
     output->image_memory.image_layout = VK_IMAGE_LAYOUT_GENERAL;
     output->image_memory.access_flags = 0;
     output->image_memory.stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    set_error(error, error_size, "");
     return 0;
 #else
     (void)engine;
     (void)rgb_frame;
     (void)output;
+    set_error(error, error_size,
+              "stage=android_vulkan_output_unavailable api_or_extension_guard");
     return -10;
 #endif
 }

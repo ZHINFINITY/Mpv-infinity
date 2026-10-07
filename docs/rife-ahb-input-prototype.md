@@ -19,6 +19,12 @@ The app selects this route only when RIFE is enabled, the model is installed, ha
 
 These are source-level implementation facts; **timestamp semantics, decoder-buffer reuse, cross-API synchronization, color/crop correctness, frame pacing, and sustained performance still require device evidence**.
 
+### RIFE inference-output layout failure
+
+The supplied `vulkan_ahb_output_failed result=-1` occurs after RIFE reports inference success, at the Vulkan tensor-to-RGBA8 AHardwareBuffer bridge. The old writer accepted only packed RGB8 (`dims=2`, `c=1`, `elempack=1`, `elemsize=3`), while pinned RIFE-v4.6 can produce either that packed representation or planar FP32 (`dims=3`, `c=3`, `elempack=1`, `elemsize=4`). Its postprocess shader selects packed output from `use_int8_storage` alone, but its output allocation had incorrectly required both FP16 and int8 storage; devices without FP16 storage could therefore allocate a planar-FP32-shaped buffer for an int8/packed shader result. The fix keys RIFE's Vulkan output allocation/download representation on int8 storage, adds a GPU planar-FP32-to-RGBA8 conversion path for the non-int8 tensor contract, and reports the input tensor's dimensions, channel count, element packing/size, channel stride, expected size, and pipeline/engine associations on rejection. Vulkan submission remains synchronous before handing the output image back to GLES, and a real failure still falls back to ordinary mpv playback.
+
+The supplied trace predates those field-level diagnostics, so it does not reveal which individual tensor field failed on that phone. A green build and shader/layout tests prove the bridge compiles and recognizes the pinned formats, **not that the phone now presents generated frames**; keep `gpu_resident_playback_ready` false until a new device trace confirms a generated output and successful submission.
+
 ## Last-known target
 
 The prior test target was a Xiaomi/POCO **25053PC47I** (`onyx`), Android 16 / API 36. Treat that as last-known, not a fresh device inventory; record the exact model, build fingerprint, GPU, and driver from the device used for acceptance.

@@ -91,6 +91,8 @@ jobs:
         run: ./scripts/test-rife-fp16-policy.sh
       - name: Run RIFE Vulkan VkMat layout policy tests
         run: ./scripts/test-rife-vulkan-layout.sh
+      - name: Run RIFE Vulkan output layout policy tests
+        run: bash ./scripts/test-rife-vulkan-output-layout.sh
       - name: Run RIFE AHardwareBuffer fail-closed policy tests
         run: bash ./scripts/test-rife-ahb-policy.sh
       - name: Check RIFE Vulkan API 26-safe dispatch

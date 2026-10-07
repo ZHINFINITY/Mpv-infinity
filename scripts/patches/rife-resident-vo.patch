@@ -575,8 +575,8 @@ index bd3d1aa1e..852dd26bf 100644
 +#endif
      talloc_free(mpi);
  }
- 
-@@ -1154,14 +1279,512 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+
+@@ -1154,14 +1279,515 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -1010,13 +1010,16 @@ index bd3d1aa1e..852dd26bf 100644
 +        MP_WARN(p, "RIFE Vulkan inference failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
 +        return false;
 +    }
++    char output_error[512] = {0};
 +    int write_result = rife_vfi_write_output_rgba(p->rife_engine, synthesized,
-+                                                   slot->output);
++                                                   slot->output, output_error,
++                                                   sizeof(output_error));
 +    rife_vfi_gpu_frame_release(synthesized);
 +    if (write_result != 0) {
 +        p->rife_disabled_for_session = true;
-+        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_ahb_output_failed pts=%.6f result=%d\n",
-+                p->last_pts, write_result);
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_ahb_output_failed pts=%.6f result=%d detail=%s\n",
++                p->last_pts, write_result,
++                output_error[0] ? output_error : "unknown");
 +        MP_WARN(p, "RIFE Vulkan-to-AHB output handoff failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
 +        return false;
 +    }
