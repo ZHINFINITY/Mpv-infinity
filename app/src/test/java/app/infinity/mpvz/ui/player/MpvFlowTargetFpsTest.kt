@@ -5,6 +5,7 @@ package app.infinity.mpvz.ui.player
 
 import app.infinity.mpvz.preferences.DEFAULT_MPVFLOW_TARGET_FPS
 import app.infinity.mpvz.preferences.MPVFLOW_TARGET_FPS_OPTIONS
+import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 import app.infinity.mpvz.preferences.effectiveMpvFlowTargetFps
 import app.infinity.mpvz.preferences.normalizeMpvFlowTargetFps
 import org.junit.Assert.assertEquals
@@ -38,5 +39,13 @@ class MpvFlowTargetFpsTest {
   fun unknownDisplayRefreshPreservesRequestedRate() {
     assertEquals(120, effectiveMpvFlowTargetFps(120, 0f))
     assertEquals(120, effectiveMpvFlowTargetFps(120, Float.NaN))
+  }
+
+  @Test
+  fun processingCapStepsDownAsTheRequestedRateRises() {
+    assertEquals(480, effectiveMpvFlowMaxDimension(60))
+    assertEquals(360, effectiveMpvFlowMaxDimension(72))
+    assertEquals(320, effectiveMpvFlowMaxDimension(96))
+    assertEquals(240, effectiveMpvFlowMaxDimension(144))
   }
 }

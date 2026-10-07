@@ -26,6 +26,14 @@ internal object RendererBackendPolicy {
     buildSupportsMediaCodecVulkan: Boolean,
   ): Boolean = !usesVulkan || buildSupportsMediaCodecVulkan
 
+  fun canUseDirectGpuFlow(
+    renderer: String,
+    gpuApi: String,
+  ): Boolean = renderer == "gpu-next" && gpuApi == "opengl"
+
+  fun gpuFlowHwdecMode(hardwareDecodingEnabled: Boolean): String =
+    if (hardwareDecodingEnabled) "mediacodec,no" else "no"
+
   fun preferredHwdecMode(
     hardwareDecodingEnabled: Boolean,
     usesVulkan: Boolean,
@@ -40,8 +48,4 @@ internal object RendererBackendPolicy {
     }
   }
 
-  /**
-   * MediaCodec copy mode keeps frames CPU-visible for filters that cannot import decoder surfaces.
-   */
-  fun interpolationHwdecMode(): String = "mediacodec-copy,no"
 }

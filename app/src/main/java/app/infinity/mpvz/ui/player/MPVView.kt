@@ -27,6 +27,7 @@ import app.infinity.mpvz.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.infinity.mpvz.preferences.MpvConfigControlledFeatures
 import app.infinity.mpvz.preferences.MpvConfigOverridePolicy
 import app.infinity.mpvz.preferences.PlayerPreferences
+import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 import app.infinity.mpvz.preferences.effectiveMpvFlowTargetFps
 import app.infinity.mpvz.preferences.normalizeRifeProcessingResolution
 import app.infinity.mpvz.preferences.normalizeRifeTargetFps
@@ -240,10 +241,12 @@ class MPVView(
         decoderPreferences.mpvFlowTargetFps.get(),
         display?.refreshRate ?: 0f,
       )
+    val mpvFlowMaxDimension = effectiveMpvFlowMaxDimension(mpvFlowTargetFps)
     val rifeProcessingResolution =
       normalizeRifeProcessingResolution(decoderPreferences.rifeProcessingResolution.get())
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
+    val anime4kActive = decoderPreferences.enableAnime4K.get() && decoderPreferences.anime4kMode.get() != "OFF"
     val rifeFrameInterpolationEnabled =
       rifeFrameInterpolationPreference &&
         BuildConfig.MPV_HAS_RIFE &&
@@ -254,6 +257,8 @@ class MPVView(
         !rifeFrameInterpolationPreference &&
         BuildConfig.MPV_HAS_MPVFLOW &&
         !frameInterpolationConfigOwned &&
+        !anime4kActive &&
+        RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) &&
         decoderPreferences.playbackEngine.get() != PlaybackEngineMode.NATIVE
     val frameInterpolationEnabled = rifeFrameInterpolationEnabled || mpvFlowFrameInterpolationEnabled
     interpolationOutputFrameRate =
@@ -294,9 +299,10 @@ class MPVView(
       val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
       Log.i(TAG, "RIFE_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult model_dir=$rifeModelDirectory")
     } else if (mpvFlowFrameInterpolationEnabled) {
-      // Keep MediaCodec hardware decoding, but copy decoded frames to CPU-readable memory for the
-      // current MPVFlow filter. Direct/no-copy decoder surfaces are not readable by this filter.
-      val hardwareDecodeMode = RendererBackendPolicy.interpolationHwdecMode()
+      // GPU-next/OpenGL ES imports MediaCodec AHardwareBuffers directly. Do not request
+      // mediacodec-copy: Flow never uses the CPU filter or downloads synthesized pixels.
+      val hardwareDecodeMode =
+        RendererBackendPolicy.gpuFlowHwdecMode(decoderPreferences.tryHWDecoding.get())
       val hardwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", hardwareDecodeMode)
       val hardwareDecodeCodecsOptionResult =
         if (!MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec-codecs")) {
@@ -307,14 +313,16 @@ class MPVView(
       Log.i(
         TAG,
         "MPVFLOW_OPTIONS hwdec_mode=$hardwareDecodeMode hwdec_rc=$hardwareDecodeOptionResult " +
-          "hwdec_codecs_rc=${hardwareDecodeCodecsOptionResult ?: "mpv.conf"} target_fps=$mpvFlowTargetFps",
+          "hwdec_codecs_rc=${hardwareDecodeCodecsOptionResult ?: "mpv.conf"} target_fps=$mpvFlowTargetFps " +
+          "max_dimension=$mpvFlowMaxDimension",
       )
-    } else if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HARDWARE_DECODER)) {
-      PlaybackSession.setOptionString(
-        "hwdec",
-        hwdecMode,
-      )
-      PlaybackSession.setOptionString("hwdec-codecs", "all")
+    } else {
+      if (!MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) {
+        PlaybackSession.setOptionString("hwdec", hwdecMode)
+      }
+      if (!MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec-codecs")) {
+        PlaybackSession.setOptionString("hwdec-codecs", "all")
+      }
     }
 
     // These were forced on between the last known-good build (e3b1de8) and the first build
@@ -322,6 +330,21 @@ class MPVView(
     // rendering heuristic and disable the extra decoder-frame queue, matching mpv's defaults.
     PlaybackSession.setOptionString("vd-lavc-dr", "auto")
     PlaybackSession.setOptionString("vd-lavc-queue", "no")
+
+    val mpvFlowRendererOptionResult =
+      if (BuildConfig.MPV_HAS_MPVFLOW && !MpvConfigOverridePolicy.isOwnedByMpvConf("mpvflow")) {
+        val enabledResult =
+          PlaybackSession.setOptionString("mpvflow", if (mpvFlowFrameInterpolationEnabled) "yes" else "no")
+        val dimensionResult =
+          if (mpvFlowFrameInterpolationEnabled) {
+            PlaybackSession.setOptionString("mpvflow-max-dimension", mpvFlowMaxDimension.toString())
+          } else {
+            null
+          }
+        "enabled=$enabledResult max_dimension=${dimensionResult ?: "unchanged"}"
+      } else {
+        null
+      }
 
     val appVideoFilters =
       buildList {
@@ -331,14 +354,17 @@ class MPVView(
               "max-dimension=$rifeProcessingResolution",
           )
         }
-        if (mpvFlowFrameInterpolationEnabled) {
-          add("mpvflow=target-fps=$mpvFlowTargetFps")
+        if (decoderPreferences.useYUV420P.get() && !mpvFlowFrameInterpolationEnabled) {
+          add("format=yuv420p")
         }
-        if (decoderPreferences.useYUV420P.get()) add("format=yuv420p")
       }
     val filterOptionResult =
-      if (appVideoFilters.isNotEmpty() && !MpvConfigOverridePolicy.isOwnedByMpvConf("vf")) {
-        PlaybackSession.setOptionString("vf", appVideoFilters.joinToString(","))
+      if (!MpvConfigOverridePolicy.isOwnedByMpvConf("vf")) {
+        if (appVideoFilters.isEmpty()) {
+          PlaybackSession.setOptionString("vf-clr", "")
+        } else {
+          PlaybackSession.setOptionString("vf", appVideoFilters.joinToString(","))
+        }
       } else {
         null
       }
@@ -377,20 +403,28 @@ class MPVView(
           rifeFrameInterpolationPreference -> "rife_selected"
           mpvFlowFrameInterpolationEnabled -> "enabled"
           !BuildConfig.MPV_HAS_MPVFLOW -> "runtime_unavailable"
-          frameInterpolationConfigOwned -> "mpv_config_owns_filter"
+          frameInterpolationConfigOwned -> "mpv_config_owns_options"
+          anime4kActive -> "anime4k_active"
+          !RendererBackendPolicy.canUseDirectGpuFlow(backend.vo, backend.gpuApi) ->
+            "requires_gpu_next_opengl"
           decoderPreferences.playbackEngine.get() == PlaybackEngineMode.NATIVE -> "native_engine_selected"
           else -> "unsupported_configuration"
         }
       val interpolationHwdecDiagnostic =
-        if (mpvFlowFrameInterpolationEnabled) "mediacodec-copy" else "renderer_default"
+        if (mpvFlowFrameInterpolationEnabled) {
+          RendererBackendPolicy.gpuFlowHwdecMode(decoderPreferences.tryHWDecoding.get())
+        } else {
+          "renderer_default"
+        }
       Log.i(
         TAG,
         "MPVFLOW_DIAGNOSTIC event=config enabled=$mpvFlowFrameInterpolationEnabled " +
           "requested_target_fps=${decoderPreferences.mpvFlowTargetFps.get()} " +
           "effective_target_fps=$mpvFlowTargetFps display_refresh_hz=${display?.refreshRate ?: 0f} " +
+          "renderer=${backend.vo} gpu_api=${backend.gpuApi} " +
           "hardware_decode_mode=$interpolationHwdecDiagnostic " +
-          "software_readable_frames_required=$mpvFlowFrameInterpolationEnabled " +
-          "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
+          "cpu_filter_fallback=disabled " +
+          "renderer_option_result=${mpvFlowRendererOptionResult ?: "skipped"} reason=$reason",
       )
     }
     val logLevel =
@@ -454,10 +488,21 @@ class MPVView(
     PlaybackSession.setOptionString("hr-seek", if (preciseSeek) "yes" else "no")
     PlaybackSession.setOptionString("hr-seek-framedrop", if (preciseSeek) "no" else "yes")
 
-    // Use audio-based video sync for better frame pacing with 4K HDR content.
-    // This prevents timing jitter when the display refresh rate doesn't perfectly
-    // match the video frame rate (e.g., 24fps content on 60Hz display).
-    PlaybackSession.setOptionString("video-sync", "audio")
+    // GPU-next's Flow stage needs mpv's display-synchronized temporal queue so it can synthesize
+    // at the presentation timestamp without a CPU filter queue. Keep the existing audio sync for
+    // all other playback modes.
+    if (!MpvConfigOverridePolicy.isOwnedByMpvConf("interpolation")) {
+      PlaybackSession.setOptionString(
+        "interpolation",
+        if (mpvFlowFrameInterpolationEnabled) "yes" else "no",
+      )
+    }
+    if (!MpvConfigOverridePolicy.isOwnedByMpvConf("video-sync")) {
+      PlaybackSession.setOptionString(
+        "video-sync",
+        if (mpvFlowFrameInterpolationEnabled) "display-resample" else "audio",
+      )
+    }
 
     // Anime4K shader initialization (MUST be in initOptions, not after file load!)
     if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.ANIME4K)) {

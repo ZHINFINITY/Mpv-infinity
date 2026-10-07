@@ -1,0 +1,457 @@
+diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
+index bd3d1aa1ec..e5301791b7 100644
+--- a/video/out/vo_gpu_next.c
++++ b/video/out/vo_gpu_next.c
+@@ -19,6 +19,7 @@
+ 
+ #include <sys/stat.h>
+ #include <time.h>
++#include <math.h>
+ 
+ #include <libplacebo/colorspace.h>
+ #include <libplacebo/options.h>
+@@ -50,6 +51,7 @@
+ #include "gpu/video_shaders.h"
+ #include "sub/osd.h"
+ #include "gpu_next/context.h"
++#include "mpvflow_gpu.h"
+ 
+ #if HAVE_GL && defined(PL_HAVE_OPENGL)
+ #include <libplacebo/opengl.h>
+@@ -155,6 +157,14 @@ struct priv {
+     bool frame_pending;
+     bool paused;
+ 
++    // MPVFLOW_GPU_INTEGRATION
++    MPVFlowGPUContext *flow_gpu;
++    MPVFlowGPUPair *flow_pair;
++    uint64_t flow_pair_ids[2];
++    pl_fmt flow_input_fmt;
++    bool flow_init_logged;
++    bool flow_active_logged;
++
+     pl_options pars;
+     struct m_config_cache *opts_cache;
+     struct m_config_cache *next_opts_cache;
+@@ -182,8 +192,11 @@ struct priv {
+ 
+ static void update_render_options(struct vo *vo);
+ static void update_lut(struct priv *p, struct user_lut *lut);
++static void flow_update_context(struct vo *vo);
+ 
+ struct gl_next_opts {
++    bool mpvflow;
++    int mpvflow_max_dimension;
+     bool delayed_peak;
+     int sub_hdr_peak;
+     int image_subs_hdr_peak;
+@@ -211,6 +224,8 @@ const struct m_opt_choice_alternatives lut_types[] = {
+ #define OPT_BASE_STRUCT struct gl_next_opts
+ const struct m_sub_options gl_next_conf = {
+     .opts = (const struct m_option[]) {
++        {"mpvflow", OPT_BOOL(mpvflow)},
++        {"mpvflow-max-dimension", OPT_INT(mpvflow_max_dimension), M_RANGE(8, 480)},
+         {"sub-hdr-peak", OPT_CHOICE(sub_hdr_peak, {"auto", 0}, {"sdr", PL_COLOR_SDR_WHITE}),
+             M_RANGE(10, 10000)},
+         {"image-subs-hdr-peak", OPT_CHOICE(image_subs_hdr_peak, {"sdr", PL_COLOR_SDR_WHITE},
+@@ -237,6 +252,7 @@ const struct m_sub_options gl_next_conf = {
+         {0},
+     },
+     .defaults = &(struct gl_next_opts) {
++        .mpvflow_max_dimension = 480,
+         .border_background = BACKGROUND_COLOR,
+         .background_blur_radius = 16.0f,
+         .inter_preserve = true,
+@@ -558,6 +574,10 @@ static void update_overlays(struct vo *vo, struct mp_osd_res res,
+ 
+ struct frame_priv {
+     struct vo *vo;
++    uint64_t frame_id;
++    pl_tex flow_input;
++    int flow_w, flow_h;
++    int flow_source_w, flow_source_h;
+     struct osd_state subs;
+     uint64_t osd_sync;
+     struct ra_hwdec *hwdec;
+@@ -567,6 +587,158 @@ struct frame_priv {
+     struct pl_frame el_frame;
+ };
+ 
++static void flow_release_pair(struct priv *p)
++{
++    if (p->flow_pair)
++        mpvflow_gpu_pair_release(p->flow_gpu, p->flow_pair);
++    p->flow_pair = NULL;
++    p->flow_pair_ids[0] = 0;
++    p->flow_pair_ids[1] = 0;
++}
++
++static void flow_release_pair_for_frame(struct priv *p, uint64_t frame_id)
++{
++    if (p->flow_pair && (p->flow_pair_ids[0] == frame_id ||
++                         p->flow_pair_ids[1] == frame_id))
++        flow_release_pair(p);
++}
++
++static void flow_update_context(struct vo *vo)
++{
++    struct priv *p = vo->priv;
++    if (!p->gpu)
++        return;
++
++    if (!p->next_opts->mpvflow) {
++        flow_release_pair(p);
++        mpvflow_gpu_destroy(p->flow_gpu);
++        p->flow_gpu = NULL;
++        p->flow_input_fmt = NULL;
++        p->flow_init_logged = false;
++        p->flow_active_logged = false;
++        return;
++    }
++    if (p->flow_gpu)
++        return;
++
++    struct MPVFlowGPUConfig config = {
++        .max_dimension = 480,
++        .search_radius = 8,
++    };
++    enum MPVFlowGPUResult status = MPVFLOW_GPU_INVALID;
++    MPVFlowGPUContext *ctx = mpvflow_gpu_create(p->gpu, &config, &status);
++    pl_fmt input_fmt = pl_find_fmt(p->gpu, PL_FMT_UNORM, 4, 8, 8,
++                                   PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_RENDERABLE);
++    if (!ctx || !input_fmt) {
++        mpvflow_gpu_destroy(ctx);
++        if (!p->flow_init_logged) {
++            MP_WARN(vo, "MPVFLOW_GPU_DIAGNOSTIC event=init enabled=yes status=%d input_rgba8=%d; "
++                    "Flow will pass source frames through without CPU fallback.\n",
++                    status, !!input_fmt);
++            p->flow_init_logged = true;
++        }
++        return;
++    }
++
++    p->flow_gpu = ctx;
++    p->flow_input_fmt = input_fmt;
++    p->flow_init_logged = true;
++    MP_INFO(vo, "MPVFLOW_GPU_DIAGNOSTIC event=init enabled=yes backend=opengl-es "
++            "compute=yes max_dimension=%d search_radius=%d "
++            "cpu_filter=no cpu_readback=no\n",
++            p->next_opts->mpvflow_max_dimension, config.search_radius);
++}
++
++static bool flow_prepare_input(struct vo *vo, struct pl_frame *frame,
++                               struct mp_image *mpi, struct frame_priv *fp)
++{
++    struct priv *p = vo->priv;
++    const struct gl_video_opts *opts = p->opts_cache->opts;
++    if (!p->next_opts->mpvflow || !p->flow_gpu || !p->flow_input_fmt ||
++        fp->flow_input)
++        return fp->flow_input != NULL;
++
++    const char *reason = NULL;
++    if (frame->rotation != PL_ROTATION_0)
++        reason = "rotated_frame";
++    else if (pl_color_transfer_is_hdr(frame->color.transfer))
++        reason = "hdr";
++    else if (frame->color.transfer == PL_COLOR_TRC_UNKNOWN)
++        reason = "unknown_transfer";
++    else if (frame->repr.dovi || frame->enhancement_layer)
++        reason = "dolby_vision_layer";
++    else if (frame->icc || frame->profile.len)
++        reason = "icc_profile";
++    else if (mpi->film_grain)
++        reason = "film_grain";
++    else if (mpi->fields & MP_IMGFIELD_INTERLACED)
++        reason = "interlaced";
++    else if (opts->blend_subs)
++        reason = "blended_subtitles";
++
++    int source_w = mpi->w;
++    int source_h = mpi->h;
++    int cap = MPMAX(8, p->next_opts->mpvflow_max_dimension);
++    if (!reason && (source_w < 8 || source_h < 8))
++        reason = "dimensions_below_block_size";
++    if (reason) {
++        MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=%s\n", reason);
++        return false;
++    }
++
++    float scale = MPMIN(1.0f, cap / (float) MPMAX(source_w, source_h));
++    int width = MPMAX(8, (int) (source_w * scale + 0.5f));
++    int height = MPMAX(8, (int) (source_h * scale + 0.5f));
++    pl_tex texture = pl_tex_create(p->gpu, pl_tex_params(
++        .w = width,
++        .h = height,
++        .d = 0,
++        .format = p->flow_input_fmt,
++        .sampleable = true,
++        .renderable = true,
++    ));
++    if (!texture) {
++        MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=input_texture_allocation\n");
++        return false;
++    }
++
++    struct pl_frame target = {
++        .repr = pl_color_repr_rgb,
++        .color = frame->color,
++        .num_planes = 1,
++        .planes[0] = {
++            .texture = texture,
++            .components = 4,
++            .component_mapping = {0, 1, 2, 3},
++        },
++    };
++    stats_time_start(p->stats, "mpvflow-input");
++    bool ok = pl_render_image(p->rr, frame, &target, NULL);
++    stats_time_end(p->stats, "mpvflow-input");
++    if (!ok) {
++        pl_tex_destroy(p->gpu, &texture);
++        MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=input_render\n");
++        return false;
++    }
++
++    fp->flow_input = texture;
++    fp->flow_w = width;
++    fp->flow_h = height;
++    fp->flow_source_w = source_w;
++    fp->flow_source_h = source_h;
++    return true;
++}
++
++static void flow_release_frame(struct vo *vo, struct frame_priv *fp)
++{
++    struct priv *p = vo->priv;
++    flow_release_pair_for_frame(p, fp->frame_id);
++    if (fp->flow_input)
++        pl_tex_destroy(p->gpu, &fp->flow_input);
++    fp->flow_w = fp->flow_h = 0;
++    fp->flow_source_w = fp->flow_source_h = 0;
++}
++
+ static int plane_data_from_imgfmt(struct pl_plane_data out_data[4],
+                                   struct pl_bit_encoding *out_bits,
+                                   enum mp_imgfmt imgfmt, bool use_uint)
+@@ -1107,6 +1279,7 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex, const struct pl_source_frame *src
+     update_lut(p, &p->next_opts->image_lut);
+     frame->lut = p->next_opts->image_lut.lut;
+     frame->lut_type = p->next_opts->image_lut.type;
++    flow_prepare_input(vo, frame, mpi, fp);
+     return true;
+ }
+ 
+@@ -1116,6 +1289,7 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+     struct mp_image *mpi = src->frame_data;
+     struct frame_priv *fp = mpi->priv;
+     struct priv *p = fp->vo->priv;
++    flow_release_frame(fp->vo, fp);
+     for (int i = 0; i < MP_ARRAY_SIZE(fp->subs.entries); i++) {
+         pl_tex tex = fp->subs.entries[i].tex;
+         if (tex)
+@@ -1133,6 +1307,8 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+ static void discard_frame(const struct pl_source_frame *src)
+ {
+     struct mp_image *mpi = src->frame_data;
++    struct frame_priv *fp = mpi->priv;
++    flow_release_frame(fp->vo, fp);
+     talloc_free(mpi);
+ }
+ 
+@@ -1339,6 +1515,130 @@ static void update_tm_viz(struct pl_color_map_params *params,
+ static void update_hook_opts_dynamic(struct priv *p, const struct pl_hook *hook,
+                                      const struct mp_image *mpi);
+ 
++static bool flow_render_frame(struct vo *vo, const struct pl_frame_mix *mix,
++                              struct pl_frame *target,
++                              const struct pl_render_params *params,
++                              bool *synthesized)
++{
++    struct priv *p = vo->priv;
++    *synthesized = false;
++
++    int nearest = -1;
++    int before = -1;
++    int after = -1;
++    float nearest_distance = INFINITY;
++    for (int i = 0; i < mix->num_frames; i++) {
++        float ts = mix->timestamps ? mix->timestamps[i] : (i ? 1.0f : 0.0f);
++        float distance = fabsf(ts);
++        if (distance < nearest_distance) {
++            nearest = i;
++            nearest_distance = distance;
++        }
++        if (ts < 0.0f)
++            before = i;
++        else if (ts > 0.0f && after < 0) {
++            after = i;
++            break;
++        }
++    }
++
++    if (p->flow_gpu && mix->timestamps && before >= 0 && after >= 0 && before != after) {
++        float t0 = mix->timestamps[before];
++        float t1 = mix->timestamps[after];
++        float t = -t0 / (t1 - t0);
++        struct pl_frame *image0 = (struct pl_frame *) mix->frames[before];
++        struct pl_frame *image1 = (struct pl_frame *) mix->frames[after];
++        struct mp_image *mpi0 = image0->user_data;
++        struct mp_image *mpi1 = image1->user_data;
++        struct frame_priv *fp0 = mpi0 ? mpi0->priv : NULL;
++        struct frame_priv *fp1 = mpi1 ? mpi1->priv : NULL;
++        float par0 = image0->pixel_aspect_ratio > 0 ? image0->pixel_aspect_ratio : 1.0f;
++        float par1 = image1->pixel_aspect_ratio > 0 ? image1->pixel_aspect_ratio : 1.0f;
++        bool metadata_compatible = pl_color_space_equal(&image0->color, &image1->color) &&
++            fabsf(par0 - par1) < 0.0001f;
++        if (!metadata_compatible)
++            MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=incompatible_pair_metadata\n");
++
++        if (t > 0.0f && t < 1.0f && fp0 && fp1 && metadata_compatible &&
++            fp0->flow_input && fp1->flow_input &&
++            fp0->flow_w == fp1->flow_w && fp0->flow_h == fp1->flow_h &&
++            fp0->flow_source_w == fp1->flow_source_w &&
++            fp0->flow_source_h == fp1->flow_source_h) {
++            if (!p->flow_pair || p->flow_pair_ids[0] != fp0->frame_id ||
++                p->flow_pair_ids[1] != fp1->frame_id) {
++                flow_release_pair(p);
++                MPVFlowGPUPair *pair = NULL;
++                stats_time_start(p->stats, "mpvflow-analysis");
++                enum MPVFlowGPUResult status = mpvflow_gpu_analyze_pair(
++                    p->flow_gpu, fp0->flow_input, fp1->flow_input, &pair);
++                stats_time_end(p->stats, "mpvflow-analysis");
++                if (status == MPVFLOW_GPU_OK && pair) {
++                    p->flow_pair = pair;
++                    p->flow_pair_ids[0] = fp0->frame_id;
++                    p->flow_pair_ids[1] = fp1->frame_id;
++                } else {
++                    MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=pair_analysis status=%d\n",
++                           status);
++                }
++            }
++
++            if (p->flow_pair) {
++                pl_tex output = NULL;
++                stats_time_start(p->stats, "mpvflow-synthesis");
++                enum MPVFlowGPUResult status = mpvflow_gpu_synthesize(
++                    p->flow_gpu, p->flow_pair, t, &output);
++                stats_time_end(p->stats, "mpvflow-synthesis");
++                if (status == MPVFLOW_GPU_OK && output) {
++                    struct pl_frame flow_image = {
++                        .repr = pl_color_repr_rgb,
++                        .color = image0->color,
++                        .num_planes = 1,
++                        .planes[0] = {
++                            .texture = output,
++                            .components = 4,
++                            .component_mapping = {0, 1, 2, 3},
++                        },
++                        .crop = {
++                            .x0 = image0->crop.x0 * fp0->flow_w / (float) fp0->flow_source_w,
++                            .y0 = image0->crop.y0 * fp0->flow_h / (float) fp0->flow_source_h,
++                            .x1 = image0->crop.x1 * fp0->flow_w / (float) fp0->flow_source_w,
++                            .y1 = image0->crop.y1 * fp0->flow_h / (float) fp0->flow_source_h,
++                        },
++                        .rotation = PL_ROTATION_0,
++                        .pixel_aspect_ratio = image0->pixel_aspect_ratio,
++                        .overlays = image0->overlays,
++                        .num_overlays = image0->num_overlays,
++                    };
++                    stats_time_start(p->stats, "mpvflow-render");
++                    bool ok = pl_render_image(p->rr, &flow_image, target, params);
++                    stats_time_end(p->stats, "mpvflow-render");
++                    if (ok) {
++                        if (!p->flow_active_logged) {
++                            MP_INFO(vo, "MPVFLOW_GPU_DIAGNOSTIC event=active backend=opengl-es "
++                                    "input_path=%s source=%dx%d processing=%dx%d "
++                                    "motion=yes synthesized=yes cpu_filter=no cpu_readback=no\n",
++                                    fp0->hwdec ? "direct-hw-surface" : "software-upload",
++                                    fp0->flow_source_w, fp0->flow_source_h,
++                                    fp0->flow_w, fp0->flow_h);
++                            p->flow_active_logged = true;
++                        }
++                        *synthesized = true;
++                        return true;
++                    }
++                    MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=synthesized_render\n");
++                }
++            }
++        }
++    }
++
++    // This is a direct source-frame pass-through, not the CPU `vf_mpvflow`
++    // filter and not mpv's temporal blend fallback.
++    MP_DBG(vo, "MPVFLOW_GPU_DIAGNOSTIC event=bypass reason=no_usable_gpu_pair\n");
++    if (nearest >= 0)
++        return pl_render_image(p->rr, mix->frames[nearest], target, params);
++    return pl_render_image(p->rr, NULL, target, params);
++}
++
+ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+ {
+     struct priv *p = vo->priv;
+@@ -1401,6 +1701,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+         int id = frame->frame_id + n;
+ 
+         if (p->want_reset) {
++            flow_release_pair(p);
+             pl_queue_reset(p->queue);
+             p->last_pts = 0.0;
+             p->last_id = 0;
+@@ -1420,6 +1721,7 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+         struct frame_priv *fp = talloc_zero(mpi, struct frame_priv);
+         mpi->priv = fp;
+         fp->vo = vo;
++        fp->frame_id = id;
+ 
+         pl_queue_push(p->queue, &(struct pl_source_frame) {
+             .pts = mpi->pts,
+@@ -1749,7 +2051,10 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+ 
+     // Render frame
+     stats_time_start(p->stats, "render");
+-    bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
++    bool flow_synthesized = false;
++    bool render_ok = p->next_opts->mpvflow
++        ? flow_render_frame(vo, &mix, &target, &params, &flow_synthesized)
++        : pl_render_image_mix(p->rr, &mix, &target, &params);
+     stats_time_end(p->stats, "render");
+     if (!render_ok) {
+         MP_ERR(vo, "Failed rendering frame!\n");
+@@ -1777,7 +2082,8 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+     }
+     mp_mutex_unlock(&vo->params_mutex);
+ 
+-    p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
++    p->is_interpolated = p->next_opts->mpvflow
++        ? flow_synthesized : pts_offset != 0 && mix.num_frames > 1;
+     valid = true;
+     // fall through
+ 
+@@ -2464,6 +2770,10 @@ static void uninit(struct vo *vo)
+         pl_gpu_finish(p->gpu);
+ 
+     pl_queue_destroy(&p->queue); // destroy this first
++    flow_release_pair(p);
++    mpvflow_gpu_destroy(p->flow_gpu);
++    p->flow_gpu = NULL;
++    p->flow_input_fmt = NULL;
+     for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
+         pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
+     for (int i = 0; i < p->num_sub_tex; i++)
+@@ -2844,6 +3154,7 @@ static void update_render_options(struct vo *vo)
+     struct priv *p = vo->priv;
+     pl_options pars = p->pars;
+     const struct gl_video_opts *opts = p->opts_cache->opts;
++    flow_update_context(vo);
+     pars->params.background_color[0] = opts->background_color.r / 255.0;
+     pars->params.background_color[1] = opts->background_color.g / 255.0;
+     pars->params.background_color[2] = opts->background_color.b / 255.0;
+@@ -2875,7 +3186,8 @@ static void update_render_options(struct vo *vo)
+     pars->params.upscaler = map_scaler(p, SCALER_SCALE);
+     pars->params.downscaler = map_scaler(p, SCALER_DSCALE);
+     pars->params.plane_upscaler = map_scaler(p, SCALER_CSCALE);
+-    pars->params.frame_mixer = opts->interpolation ? map_scaler(p, SCALER_TSCALE) : NULL;
++    pars->params.frame_mixer = opts->interpolation && !p->next_opts->mpvflow
++        ? map_scaler(p, SCALER_TSCALE) : NULL;
+ 
+     // Request as many frames as required from the decoder, depending on the
+     // speed VPS/FPS ratio libplacebo may need more frames. Request frames up to

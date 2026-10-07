@@ -19,11 +19,15 @@ export cores="${MPVFLOW_MPV_BUILD_CORES:-2}"
 export NDK_LIBS_OUT="$MPV_BUILDER_DIR/app/src/main/libs"
 mkdir -p "$NDK_LIBS_OUT"
 
-python3 - "$BUILDSCRIPTS/include/ci.sh" "$BUILDSCRIPTS/include/depinfo.sh" <<'PY'
+python3 - \
+  "$BUILDSCRIPTS/include/ci.sh" \
+  "$BUILDSCRIPTS/include/depinfo.sh" \
+  "$BUILDSCRIPTS/include/download-deps.sh" \
+  "$BUILDSCRIPTS/scripts/libplacebo.sh" <<'PY'
 from pathlib import Path
 import sys
 
-ci_path, depinfo_path = map(Path, sys.argv[1:])
+ci_path, depinfo_path, download_path, libplacebo_path = map(Path, sys.argv[1:])
 lines = ci_path.read_text().splitlines()
 expected = [
     'msg "Fetching mpv"',
@@ -60,6 +64,31 @@ symver_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-symver.py" deps/
 ci = ci.replace(download_marker, download_marker + symver_patch, 1)
 ci_path.write_text(ci)
 print("Prepared the pinned Android MPV builder and restored FFmpeg's Android symbol-version probe")
+
+download = download_path.read_text()
+libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"
+if download.count(libplacebo_clone) != 1:
+    raise SystemExit(f"Expected one unpinned libplacebo clone in {download_path}")
+libplacebo_revision = "0d043c7f6f79cd3687c023454bdacbe615e4d96f"
+download_path.write_text(download.replace(
+    libplacebo_clone,
+    libplacebo_clone + "\n" +
+    f"git -C libplacebo checkout --detach {libplacebo_revision}\n" +
+    "git -C libplacebo submodule update --init --recursive",
+    1,
+))
+print(f"Pinned libplacebo {libplacebo_revision} to satisfy MPV and GPU Flow APIs")
+
+libplacebo_script = libplacebo_path.read_text()
+opengl_option = "\t-Dvulkan=enabled -Ddemos=false"
+if libplacebo_script.count(opengl_option) != 1:
+    raise SystemExit(f"Expected one Vulkan-enabled libplacebo setup in {libplacebo_path}")
+libplacebo_path.write_text(libplacebo_script.replace(
+    opengl_option,
+    "\t-Dvulkan=enabled -Dopengl=enabled -Ddemos=false",
+    1,
+))
+print("Enabled OpenGL support in libplacebo for the GLES Flow compute backend")
 
 depinfo = depinfo_path.read_text()
 qairt_dependency = "dep_mpv=(ffmpeg libass lua libplacebo qairt)"

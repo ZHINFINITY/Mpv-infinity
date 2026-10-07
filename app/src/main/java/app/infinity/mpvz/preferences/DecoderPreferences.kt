@@ -39,6 +39,14 @@ internal fun effectiveMpvFlowTargetFps(value: Int, displayRefreshHz: Float): Int
     ?: kotlin.math.floor(displayRefreshHz.toDouble()).toInt().coerceAtLeast(1)
 }
 
+internal fun effectiveMpvFlowMaxDimension(targetFps: Int): Int =
+  when {
+    targetFps >= 144 -> 240
+    targetFps >= 96 -> 320
+    targetFps >= 72 -> 360
+    else -> 480
+  }
+
 internal val RIFE_PROCESSING_RESOLUTION_OPTIONS = listOf(-1, 0, 480, 720, 1080)
 internal const val DEFAULT_RIFE_PROCESSING_RESOLUTION = 0
 

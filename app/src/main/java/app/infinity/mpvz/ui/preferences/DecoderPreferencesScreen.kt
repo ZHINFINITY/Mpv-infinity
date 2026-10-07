@@ -82,6 +82,11 @@ object DecoderPreferencesScreen : Screen {
     val preferences = koinInject<DecoderPreferences>()
     val advancedPreferences = koinInject<AdvancedPreferences>()
     val selectedPlaybackEngine by preferences.playbackEngine.collectAsState()
+    val gpuNext by preferences.gpuNext.collectAsState()
+    val useVulkan by preferences.useVulkan.collectAsState()
+    val anime4kEnabledPreference by preferences.enableAnime4K.collectAsState()
+    val anime4kMode by preferences.anime4kMode.collectAsState()
+    val anime4kActivePreference = anime4kEnabledPreference && anime4kMode != "OFF"
     val rifeFrameInterpolationEnabled by preferences.rifeFrameInterpolation.collectAsState()
     val rifeTargetFps by preferences.rifeTargetFps.collectAsState()
     val rifeProcessingResolution by preferences.rifeProcessingResolution.collectAsState()
@@ -112,6 +117,10 @@ object DecoderPreferencesScreen : Screen {
     val mpvFlowAvailable =
       BuildConfig.MPV_HAS_MPVFLOW &&
         !frameInterpolationConfigOwned &&
+        !rendererBackendConfigOwned &&
+        gpuNext &&
+        !useVulkan &&
+        !anime4kActivePreference &&
         selectedPlaybackEngine != PlaybackEngineMode.NATIVE
     var showGpuNextWarning by remember { mutableStateOf(false) }
     var anime4kExpanded by remember { mutableStateOf(false) }
@@ -204,8 +213,6 @@ object DecoderPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              val gpuNext by preferences.gpuNext.collectAsState()
-              val useVulkan by preferences.useVulkan.collectAsState() // Added to check Vulkan state
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_gpu_next_title),
                 value = gpuNext,
@@ -455,9 +462,12 @@ object DecoderPreferencesScreen : Screen {
                       when {
                         !BuildConfig.MPV_HAS_MPVFLOW -> R.string.pref_decoder_mpvflow_summary_unavailable
                         frameInterpolationConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
+                        rendererBackendConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
                         selectedPlaybackEngine == PlaybackEngineMode.NATIVE ->
                           R.string.pref_decoder_mpvflow_summary_native_engine
                         rifeFrameInterpolationEnabled -> R.string.pref_decoder_mpvflow_summary_rife_selected
+                        !gpuNext || useVulkan || anime4kActivePreference ->
+                          R.string.pref_decoder_mpvflow_summary_requires_gpu_next_opengl
                         else -> R.string.pref_decoder_mpvflow_summary
                       },
                     ),

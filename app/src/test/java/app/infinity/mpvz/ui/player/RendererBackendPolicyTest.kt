@@ -8,7 +8,15 @@ import org.junit.Test
 
 class RendererBackendPolicyTest {
   @Test
-  fun interpolationUsesCopyModeHardwareDecodingForCpuVisibleFrames() {
-    assertEquals("mediacodec-copy,no", RendererBackendPolicy.interpolationHwdecMode())
+  fun directGpuFlowRequiresGpuNextWithOpenGl() {
+    assertEquals(true, RendererBackendPolicy.canUseDirectGpuFlow("gpu-next", "opengl"))
+    assertEquals(false, RendererBackendPolicy.canUseDirectGpuFlow("gpu-next", "vulkan"))
+    assertEquals(false, RendererBackendPolicy.canUseDirectGpuFlow("gpu", "opengl"))
+  }
+
+  @Test
+  fun gpuFlowDoesNotRequestMediaCodecCopyMode() {
+    assertEquals("mediacodec,no", RendererBackendPolicy.gpuFlowHwdecMode(true))
+    assertEquals("no", RendererBackendPolicy.gpuFlowHwdecMode(false))
   }
 }

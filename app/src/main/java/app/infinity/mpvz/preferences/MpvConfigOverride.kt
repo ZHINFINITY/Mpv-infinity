@@ -284,7 +284,17 @@ object MpvConfigControlledFeatures {
 
   val HARDWARE_DECODER = setOf("hwdec", "gpu-api", "gpu-context", "vd-lavc-o")
 
-  val FRAME_INTERPOLATION = setOf("vf", "hwdec")
+  val FRAME_INTERPOLATION =
+    setOf(
+      "vf",
+      "hwdec",
+      "interpolation",
+      "video-sync",
+      "mpvflow",
+      "mpvflow-max-dimension",
+      "gpu-api",
+      "gpu-context",
+    )
 }
 
 /** The ownership snapshot used by the active libmpv core. */
