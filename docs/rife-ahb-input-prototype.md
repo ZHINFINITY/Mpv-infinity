@@ -25,7 +25,7 @@ The prior test target was a Xiaomi/POCO **25053PC47I** (`onyx`), Android 16 / AP
 
 ## Build and host checks
 
-The workflow builds the RIFE/native MPV ARM64 runtime and the app APK remotely. Before native MPV compilation it runs a real `mpv_set_option_string` test against host libmpv built from the pinned, patched source, the shader and RIFE host-policy tests, and the Android unit-test gate. The MPV builder validates the complete resident contract against the exact source tree it will compile. After packaging, a binary-level guard rejects a runtime APK missing the root options, async/no-buffer reader, AHB-import event, or submitted-frame event. Do not build an APK locally. A green Actions run still does not complete device acceptance.
+The workflow builds the RIFE/native MPV ARM64 runtime and the app APK remotely. Before native MPV compilation it runs a real `mpv_set_option_string` test against host libmpv built from the pinned, patched source, the shader and RIFE host-policy tests, and the Android unit-test gate. The MPV builder validates the complete resident contract against the exact source tree it will compile. Binary-level guards check both the native runtime APK and final app APK after AAR overlay for the root options, async/no-buffer reader, AHB-import event, and submitted-frame event. Do not build an APK locally. A green Actions run still does not complete device acceptance.
 
 ### Latest remote build
 
@@ -37,12 +37,15 @@ Cause: CI checked the resident patch in a separate MPV checkout, then exported p
 
 The first gated workflow attempt, [run 37629016307](https://github.com/ZHINFINITY/Mpv-infinity/actions/runs/37629016307), stopped at the host option test before any ARM64 compilation: CI's Meson 1.6.1 runs in a pipx-isolated Python environment, so the system Jinja2 package was invisible to libplacebo's shader generator. The same Meson/test setup now injects pinned Jinja2 into that venv; a local reproduction with Meson 1.6.1 and Jinja2 3.1.6 passes all four options and the unknown-option control. That run produced no APK.
 
+
+The retried [run 37629540639](https://github.com/ZHINFINITY/Mpv-infinity/actions/runs/37629540639) for commit `fc3ee8ad46d058269dcd1805ab67661a93046cab` passed all pre-build gates, including the real root-option API test and app unit tests, then failed in ARM64 compilation because the resident VO patch used `MP_MAX`, which is not defined in this pinned mpv; it defines `MPMAX`. The patch now uses `MPMAX` in both dimension calculations. A fresh pinned source archive accepts the corrected patch, the resident source contract passes, and the real libmpv option test again accepts all four options before initialization. The following build adds a final-app binary check after AAR overlay.
+
 The resident path is still **not device-verified**. Keep `gpu_resident_playback_ready` false and do not treat another APK as a candidate until the repaired build passes and the phone logs both `event=ahb_input_imported` and a submitted `event=gpu_resident_frame` on the intended Vulkan-NCNN/GLES-presentation path.
 
 ## Acceptance checklist for the full candidate build
 
 1. **Identify the device/runtime:** record phone model, Android build fingerprint/API, Vulkan device/driver, mpv renderer (`gpu-next`/GLES), and selected RIFE mode.
-2. **Prove the intended path is active:** app diagnostics must show `active_filter_path=vo_gpu_next_vulkan_ncnn`; mpv must log both `RIFE_DIAGNOSTIC event=ahb_input_imported` and `RIFE_DIAGNOSTIC event=gpu_resident_frame`. Confirm the latter reports `inference=vulkan-ncnn` and `renderer=gpu-next-gles-presentation`.
+2. **Prove the intended path is active:** app diagnostics must show `active_filter_path=resident_vulkan_ncnn`; mpv must log both `RIFE_DIAGNOSTIC event=ahb_input_imported` and `RIFE_DIAGNOSTIC event=gpu_resident_frame`. Confirm the latter reports `inference=vulkan-ncnn` and `renderer=gpu-next-gles-presentation`.
 3. **Inspect each source boundary:** on successful input-import logs, verify AHB format/usage, buffer/process dimensions, and `pts_delta_ms` (absolute value no greater than 5 ms). Any padded-size or timestamp rejection must disable resident mode and preserve ordinary playback.
 4. **Check image correctness:** compare moving/color-bar content against non-interpolated playback for RGB order, range, crop/rotation, scale, alpha and visible output dimensions. Test SDR first; HDR, interlaced, padded/cropped, or otherwise unsupported inputs must bypass safely.
 5. **Check motion and timing:** test 24, 30 and 60 fps sources on 60/90/120 Hz displays; verify smooth cadence, no repeated/dropped synthesized ticks, no audio drift, and sustained playback without thermal/performance collapse.

@@ -538,10 +538,10 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +                int width = mpi->params.w;
 +                int height = mpi->params.h;
 +                int max_dimension = p->rife_root_opts->rife_max_dimension;
-+                if (max_dimension > 0 && MP_MAX(width, height) > max_dimension) {
-+                    double scale = (double) max_dimension / MP_MAX(width, height);
-+                    width = MP_MAX(2, ((int) (width * scale)) & ~1);
-+                    height = MP_MAX(2, ((int) (height * scale)) & ~1);
++                if (max_dimension > 0 && MPMAX(width, height) > max_dimension) {
++                    double scale = (double) max_dimension / MPMAX(width, height);
++                    width = MPMAX(2, ((int) (width * scale)) & ~1);
++                    height = MPMAX(2, ((int) (height * scale)) & ~1);
 +                }
 +                // Reject padded decoder surfaces until the importer has an
 +                // explicit crop-rectangle path. These checks are RIFE-only;
@@ -843,10 +843,10 @@ index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0
 +    int width = mpi0->params.w;
 +    int height = mpi0->params.h;
 +    int max_dimension = p->rife_root_opts->rife_max_dimension;
-+    if (max_dimension > 0 && MP_MAX(width, height) > max_dimension) {
-+        double scale = (double) max_dimension / MP_MAX(width, height);
-+        width = MP_MAX(2, ((int) (width * scale)) & ~1);
-+        height = MP_MAX(2, ((int) (height * scale)) & ~1);
++    if (max_dimension > 0 && MPMAX(width, height) > max_dimension) {
++        double scale = (double) max_dimension / MPMAX(width, height);
++        width = MPMAX(2, ((int) (width * scale)) & ~1);
++        height = MPMAX(2, ((int) (height * scale)) & ~1);
 +    }
 +    if (!rife_init_output_ring(p, width, height))
 +        return false;

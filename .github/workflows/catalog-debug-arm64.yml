@@ -104,6 +104,11 @@ jobs:
         run: python3 scripts/package-mpv-runtime-aar.py --runtime-apk "$RIFE_RUNTIME_APK" --mpv-aar app/libs/mpvlib.aar
       - name: Build arm64-v8a debug APK
         run: ./gradlew assembleStandardDebug -PtargetAbi=arm64-v8a -PrifeNativeBuild=true --stacktrace --no-daemon --max-workers=2
+      - name: Verify final app APK contains patched RIFE libmpv
+        run: |
+          apk="$(find app/build/outputs/apk/standard/debug -maxdepth 1 -type f -name '*arm64-v8a-debug*.apk' -print -quit)"
+          test -n "$apk"
+          python3 scripts/tests/test_rife_android_mpv_artifact.py --apk "$apk"
       - name: Upload arm64-v8a debug APK
         uses: actions/upload-artifact@v7
         with:

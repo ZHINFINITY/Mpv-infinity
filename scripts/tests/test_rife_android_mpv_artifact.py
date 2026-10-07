@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail if the Android MPV runtime APK omits the patched resident RIFE path."""
+"""Fail if an Android APK omits the patched resident RIFE libmpv path."""
 from __future__ import annotations
 
 import argparse
@@ -12,14 +12,14 @@ def main() -> None:
     parser.add_argument("--apk", required=True, type=Path)
     args = parser.parse_args()
     if not args.apk.is_file():
-        raise SystemExit(f"Runtime APK is missing: {args.apk}")
+        raise SystemExit(f"APK is missing: {args.apk}")
 
     library_name = "lib/arm64-v8a/libmpv.so"
     try:
         with ZipFile(args.apk) as apk:
             library = apk.read(library_name)
     except (BadZipFile, KeyError) as error:
-        raise SystemExit(f"Runtime APK does not contain {library_name}: {error}")
+        raise SystemExit(f"APK does not contain {library_name}: {error}")
 
     required = (
         b"rife-resident",
