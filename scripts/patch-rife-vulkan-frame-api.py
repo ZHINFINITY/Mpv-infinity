@@ -48,6 +48,13 @@ def patch_source(text: str) -> str:
     if SOURCE_MARKER in text:
         return text
 
+    text = replace_once(
+        text,
+        '#include "rife.h"',
+        '#include "rife.h"\n#include "rife_vfi_gpu_layout.h"',
+        "RIFE Vulkan input-layout helper include",
+    )
+
     signature = (
         "int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, "
         "float timestep, ncnn::Mat& outimage) const\n{"
@@ -118,11 +125,12 @@ def patch_source(text: str) -> str:
         "    if (w <= 0 || h <= 0 ||\n"
         "        (gpu_in0 && (gpu_in0->empty() || gpu_in1->empty() ||\n"
         "                     gpu_in0->w != gpu_in1->w || gpu_in0->h != gpu_in1->h ||\n"
-        "                     gpu_in0->dims != 3 || gpu_in1->dims != 3 ||\n"
-        "                     gpu_in0->c != 3 || gpu_in1->c != 3 ||\n"
-        "                     gpu_in0->elempack != 1 || gpu_in1->elempack != 1 ||\n"
-        "                     gpu_in0->elemsize != (flownet.opt.use_fp16_storage ? 2u : 4u) ||\n"
-        "                     gpu_in1->elemsize != (flownet.opt.use_fp16_storage ? 2u : 4u))))\n"
+        "                     !rife_vfi_gpu_input_layout_is_compatible(\n"
+        "                         flownet.opt.use_fp16_storage, flownet.opt.use_int8_storage,\n"
+        "                         gpu_in0->dims, gpu_in0->c, gpu_in0->elempack, gpu_in0->elemsize) ||\n"
+        "                     !rife_vfi_gpu_input_layout_is_compatible(\n"
+        "                         flownet.opt.use_fp16_storage, flownet.opt.use_int8_storage,\n"
+        "                         gpu_in1->dims, gpu_in1->c, gpu_in1->elempack, gpu_in1->elemsize)))\n"
         "        return -1;",
         "RIFE source dimensions and Vulkan tensor contract",
     )

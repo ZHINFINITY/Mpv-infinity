@@ -67,6 +67,8 @@ jobs:
         run: ./scripts/test-rife-cadence.sh
       - name: Run RIFE FP16 capability policy tests
         run: ./scripts/test-rife-fp16-policy.sh
+      - name: Run RIFE Vulkan VkMat layout policy tests
+        run: ./scripts/test-rife-vulkan-layout.sh
       - name: Build RIFE + MPV native arm64 debug package
         run: ./scripts/build-rife-mpv-runtime.sh
         env:

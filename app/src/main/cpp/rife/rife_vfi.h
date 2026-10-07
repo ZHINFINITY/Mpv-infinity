@@ -25,8 +25,10 @@ int rife_vfi_interpolate_rgb24(RifeVfiEngine *engine,
 
 /*
  * Experimental Vulkan-native seam. Input pointers must point to ncnn::VkMat
- * RGB tensors allocated on this engine's ncnn Vulkan device, with the layout
- * and storage precision accepted by the RIFE model. The producer must finish
+ * RGB data allocated on this engine's ncnn Vulkan device. With the pinned
+ * NCNN int8-storage preprocessor, this is a 2-D interleaved RGB8 tensor
+ * (dims=2, c=1, elempack=1, elemsize=3); otherwise it is planar RGB with the
+ * model's fp16/fp32 element size. The producer must finish
  * and synchronize writes before calling; the input tensors are borrowed for
  * the call. The synthesized result remains a Vulkan VkMat in an owned handle;
  * release that handle before expecting its GPU storage to be reclaimed. This
