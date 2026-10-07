@@ -12,6 +12,7 @@
 #include "rife_vfi_rgba_output.comp.hex.h"
 #include <algorithm>
 #include <atomic>
+#include <cstdarg>
 #include <cstring>
 #include <cstdio>
 #include <mutex>
@@ -140,6 +141,16 @@ void set_error(char *buffer, size_t size, const char *message)
 {
     if (buffer && size > 0)
         std::snprintf(buffer, size, "%s", message ? message : "unknown RIFE error");
+}
+
+void set_errorf(char *buffer, size_t size, const char *format, ...)
+{
+    if (!buffer || size == 0)
+        return;
+    va_list args;
+    va_start(args, format);
+    std::vsnprintf(buffer, size, format, args);
+    va_end(args);
 }
 
 bool create_gpu_pipeline(RifeVfiEngine *engine, const char *shader_data,
@@ -311,7 +322,11 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     if (!output || !output->engine || !output->engine->vkdev || width <= 0 ||
         height <= 0 || width > 8192 || height > 8192 ||
         !output->engine->output_rgba_pipeline) {
-        set_error(error, error_size, "RIFE output shader or dimensions are unavailable");
+        set_errorf(error, error_size,
+                   "stage=output_precondition_failed width=%d height=%d engine=%d vk_device=%d output_shader=%d",
+                   width, height, output && output->engine,
+                   output && output->engine && output->engine->vkdev,
+                   output && output->engine && output->engine->output_rgba_pipeline);
         return false;
     }
 
@@ -323,7 +338,13 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
         !vkdev->vkGetAndroidHardwareBufferPropertiesANDROID ||
         !ncnn::vkGetPhysicalDeviceImageFormatProperties2KHR ||
         !vkdev->vkBindImageMemory2KHR) {
-        set_error(error, error_size, "Vulkan AHardwareBuffer output extensions are unavailable");
+        set_errorf(error, error_size,
+                   "stage=vulkan_output_extensions_unavailable ahb=%d foreign=%d properties2=%d query_proc=%d bind_proc=%d",
+                   vkdev->info.support_VK_ANDROID_external_memory_android_hardware_buffer() > 0,
+                   vkdev->info.support_VK_EXT_queue_family_foreign() > 0,
+                   ncnn::support_VK_KHR_get_physical_device_properties2 > 0,
+                   ncnn::vkGetPhysicalDeviceImageFormatProperties2KHR != nullptr,
+                   vkdev->vkBindImageMemory2KHR != nullptr);
         return false;
     }
 
@@ -352,17 +373,33 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     // resolves the KHR alias through vkGetInstanceProcAddr when supported.
     VkResult result = ncnn::vkGetPhysicalDeviceImageFormatProperties2KHR(
         vkdev->info.physical_device(), &image_info, &image_properties);
-    if (result != VK_SUCCESS ||
-        !(external_properties.externalMemoryProperties.externalMemoryFeatures &
-          VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) ||
-        !ahb_usage.androidHardwareBufferUsage) {
-        set_error(error, error_size,
-                  "RGBA8 Vulkan storage-image AHardwareBuffer usage is unsupported");
+    if (result != VK_SUCCESS) {
+        set_errorf(error, error_size,
+                   "stage=external_image_format_query_failed vk_result=%d format=%d image_usage=0x%08x",
+                   (int)result, (int)image_info.format, (unsigned int)image_usage);
+        return false;
+    }
+    if (!(external_properties.externalMemoryProperties.externalMemoryFeatures &
+          VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) {
+        set_errorf(error, error_size,
+                   "stage=external_image_not_importable external_features=0x%08x format=%d image_usage=0x%08x",
+                   (unsigned int)external_properties.externalMemoryProperties.externalMemoryFeatures,
+                   (int)image_info.format, (unsigned int)image_usage);
+        return false;
+    }
+    if (!ahb_usage.androidHardwareBufferUsage) {
+        set_errorf(error, error_size,
+                   "stage=android_usage_flags_missing format=%d image_usage=0x%08x",
+                   (int)image_info.format, (unsigned int)image_usage);
         return false;
     }
     if ((uint32_t)width > image_properties.imageFormatProperties.maxExtent.width ||
         (uint32_t)height > image_properties.imageFormatProperties.maxExtent.height) {
-        set_error(error, error_size, "RIFE output exceeds the Vulkan AHardwareBuffer extent limit");
+        set_errorf(error, error_size,
+                   "stage=output_extent_exceeded requested=%dx%d max=%ux%u",
+                   width, height,
+                   image_properties.imageFormatProperties.maxExtent.width,
+                   image_properties.imageFormatProperties.maxExtent.height);
         return false;
     }
 
@@ -373,9 +410,13 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     desc.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
     desc.usage = ahb_usage.androidHardwareBufferUsage |
                  AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
-    if (AHardwareBuffer_allocate(&desc, &output->hardware_buffer) != 0 ||
-        !output->hardware_buffer) {
-        set_error(error, error_size, "Android rejected the queried RGBA AHardwareBuffer allocation");
+    int ahb_result = AHardwareBuffer_allocate(&desc, &output->hardware_buffer);
+    if (ahb_result != 0 || !output->hardware_buffer) {
+        set_errorf(error, error_size,
+                   "stage=ahb_allocate_failed ahb_result=%d dimensions=%ux%u format=%d usage=0x%016llx queried_usage=0x%016llx",
+                   ahb_result, desc.width, desc.height, desc.format,
+                   (unsigned long long)desc.usage,
+                   (unsigned long long)ahb_usage.androidHardwareBufferUsage);
         return false;
     }
 
@@ -384,7 +425,12 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     if (allocated_desc.width != desc.width || allocated_desc.height != desc.height ||
         allocated_desc.format != desc.format ||
         (allocated_desc.usage & desc.usage) != desc.usage) {
-        set_error(error, error_size, "Allocated output AHardwareBuffer does not match the Vulkan query");
+        set_errorf(error, error_size,
+                   "stage=ahb_descriptor_mismatch requested=%ux%ux%u format=%d usage=0x%016llx actual=%ux%ux%u format=%d usage=0x%016llx",
+                   desc.width, desc.height, desc.layers, desc.format,
+                   (unsigned long long)desc.usage,
+                   allocated_desc.width, allocated_desc.height, allocated_desc.layers,
+                   allocated_desc.format, (unsigned long long)allocated_desc.usage);
         return false;
     }
 
@@ -399,7 +445,12 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
         format_properties.format != VK_FORMAT_R8G8B8A8_UNORM ||
         format_properties.externalFormat != 0 ||
         !buffer_properties.allocationSize || !buffer_properties.memoryTypeBits) {
-        set_error(error, error_size, "Vulkan cannot import the allocated RGBA AHardwareBuffer");
+        set_errorf(error, error_size,
+                   "stage=ahb_properties_import_failed vk_result=%d format=%d external_format=0x%016llx allocation_size=%llu memory_type_bits=0x%08x",
+                   (int)result, (int)format_properties.format,
+                   (unsigned long long)format_properties.externalFormat,
+                   (unsigned long long)buffer_properties.allocationSize,
+                   (unsigned int)buffer_properties.memoryTypeBits);
         return false;
     }
 
@@ -422,7 +473,11 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     result = vkCreateImage(vkdev->vkdevice(), &image_create, nullptr,
                            &output->image_memory.image);
     if (result != VK_SUCCESS) {
-        set_error(error, error_size, "vkCreateImage rejected the imported RGBA AHardwareBuffer");
+        set_errorf(error, error_size,
+                   "stage=vk_create_image_failed vk_result=%d format=%d dimensions=%ux%u image_usage=0x%08x",
+                   (int)result, (int)image_create.format,
+                   image_create.extent.width, image_create.extent.height,
+                   (unsigned int)image_create.usage);
         return false;
     }
 
@@ -440,18 +495,32 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     memory_info.memoryTypeIndex = vkdev->find_memory_index(
         buffer_properties.memoryTypeBits, 0, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-    if (memory_info.memoryTypeIndex == (uint32_t)-1 ||
-        vkAllocateMemory(vkdev->vkdevice(), &memory_info, nullptr,
-                         &output->image_memory.memory) != VK_SUCCESS) {
-        set_error(error, error_size, "vkAllocateMemory could not import the output AHardwareBuffer");
+    if (memory_info.memoryTypeIndex == (uint32_t)-1) {
+        set_errorf(error, error_size,
+                   "stage=memory_type_unavailable memory_type_bits=0x%08x allocation_size=%llu",
+                   (unsigned int)buffer_properties.memoryTypeBits,
+                   (unsigned long long)buffer_properties.allocationSize);
+        return false;
+    }
+    result = vkAllocateMemory(vkdev->vkdevice(), &memory_info, nullptr,
+                              &output->image_memory.memory);
+    if (result != VK_SUCCESS) {
+        set_errorf(error, error_size,
+                   "stage=vk_allocate_imported_memory_failed vk_result=%d memory_type_index=%u memory_type_bits=0x%08x allocation_size=%llu",
+                   (int)result, memory_info.memoryTypeIndex,
+                   (unsigned int)buffer_properties.memoryTypeBits,
+                   (unsigned long long)buffer_properties.allocationSize);
         return false;
     }
     VkBindImageMemoryInfo bind_info{};
     bind_info.sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO;
     bind_info.image = output->image_memory.image;
     bind_info.memory = output->image_memory.memory;
-    if (vkdev->vkBindImageMemory2KHR(vkdev->vkdevice(), 1, &bind_info) != VK_SUCCESS) {
-        set_error(error, error_size, "vkBindImageMemory2KHR failed for the output AHardwareBuffer");
+    result = vkdev->vkBindImageMemory2KHR(vkdev->vkdevice(), 1, &bind_info);
+    if (result != VK_SUCCESS) {
+        set_errorf(error, error_size,
+                   "stage=vk_bind_imported_memory_failed vk_result=%d memory_type_index=%u",
+                   (int)result, memory_info.memoryTypeIndex);
         return false;
     }
 
@@ -463,9 +532,12 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     view_info.components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
                             VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
     view_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    if (vkCreateImageView(vkdev->vkdevice(), &view_info, nullptr,
-                          &output->image_memory.imageview) != VK_SUCCESS) {
-        set_error(error, error_size, "vkCreateImageView failed for the output AHardwareBuffer");
+    result = vkCreateImageView(vkdev->vkdevice(), &view_info, nullptr,
+                               &output->image_memory.imageview);
+    if (result != VK_SUCCESS) {
+        set_errorf(error, error_size,
+                   "stage=vk_create_image_view_failed vk_result=%d format=%d",
+                   (int)result, (int)view_info.format);
         return false;
     }
 
@@ -483,25 +555,33 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     output->image_memory.refcount = 0;
     output->wrapper_allocator = vkdev->acquire_blob_allocator();
     if (!output->wrapper_allocator) {
-        set_error(error, error_size, "Unable to allocate the NCNN output image wrapper");
+        set_error(error, error_size, "stage=wrapper_allocator_unavailable");
         return false;
     }
     output->image = ncnn::VkImageMat(width, height, &output->image_memory, 4u,
                                      output->wrapper_allocator);
+    if (output->image.empty()) {
+        set_error(error, error_size, "stage=output_image_wrapper_empty");
+        return false;
+    }
 
     const uint32_t family = vkdev->info.compute_queue_family_index();
     output->transition_queue = vkdev->acquire_queue(family);
     if (!output->transition_queue) {
-        set_error(error, error_size, "Unable to acquire the NCNN Vulkan compute queue");
+        set_errorf(error, error_size,
+                   "stage=compute_queue_unavailable queue_family=%u", family);
         return false;
     }
     VkCommandPoolCreateInfo pool_info{};
     pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     pool_info.queueFamilyIndex = family;
-    if (vkCreateCommandPool(vkdev->vkdevice(), &pool_info, nullptr,
-                            &output->transition_pool) != VK_SUCCESS) {
-        set_error(error, error_size, "Unable to create the output synchronization command pool");
+    result = vkCreateCommandPool(vkdev->vkdevice(), &pool_info, nullptr,
+                                 &output->transition_pool);
+    if (result != VK_SUCCESS) {
+        set_errorf(error, error_size,
+                   "stage=vk_create_transition_pool_failed vk_result=%d queue_family=%u",
+                   (int)result, family);
         return false;
     }
     VkCommandBufferAllocateInfo command_info{};
@@ -509,9 +589,12 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     command_info.commandPool = output->transition_pool;
     command_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     command_info.commandBufferCount = 1;
-    if (vkAllocateCommandBuffers(vkdev->vkdevice(), &command_info,
-                                 &output->transition_command) != VK_SUCCESS) {
-        set_error(error, error_size, "Unable to allocate the output synchronization command buffer");
+    result = vkAllocateCommandBuffers(vkdev->vkdevice(), &command_info,
+                                      &output->transition_command);
+    if (result != VK_SUCCESS) {
+        set_errorf(error, error_size,
+                   "stage=vk_allocate_transition_command_failed vk_result=%d",
+                   (int)result);
         return false;
     }
     output->width = width;

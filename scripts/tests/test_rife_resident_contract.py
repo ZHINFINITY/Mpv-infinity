@@ -102,6 +102,37 @@ def main() -> None:
             "NCNN input import must retain its AHB before the AImage lease ends")
     require("rife_vfi_write_output_rgba" in bridge and "vkDeviceWaitIdle" in bridge,
             "Vulkan output handoff must complete before GLES presentation")
+    output_init = section(bridge, "bool initialize_output_slot(", "\n#endif")
+    for stage in (
+        "stage=output_precondition_failed",
+        "stage=vulkan_output_extensions_unavailable",
+        "stage=external_image_format_query_failed",
+        "stage=external_image_not_importable",
+        "stage=android_usage_flags_missing",
+        "stage=output_extent_exceeded",
+        "stage=ahb_allocate_failed",
+        "stage=ahb_descriptor_mismatch",
+        "stage=ahb_properties_import_failed",
+        "stage=vk_create_image_failed",
+        "stage=memory_type_unavailable",
+        "stage=vk_allocate_imported_memory_failed",
+        "stage=vk_bind_imported_memory_failed",
+        "stage=vk_create_image_view_failed",
+        "stage=wrapper_allocator_unavailable",
+        "stage=output_image_wrapper_empty",
+        "stage=compute_queue_unavailable",
+        "stage=vk_create_transition_pool_failed",
+        "stage=vk_allocate_transition_command_failed",
+    ):
+        require(stage in output_init, f"native output-ring diagnostics are missing {stage}")
+    ring_init = section(vo, "static bool rife_init_output_ring(",
+                        "static bool rife_prepare_frame_input(")
+    require("reason=output_ring_native_create_failed" in ring_init and
+            "slot=%d width=%d height=%d detail=%s" in ring_init,
+            "native output-ring failure details must reach the Android log")
+    require("reason=output_ring_egl_import_failed" in ring_init and
+            "egl_error=0x%x" in ring_init,
+            "EGL import failures must expose the slot and EGL error")
 
     # Reject mismatched AImage timestamps; render and submit the original mpv
     # mix if RIFE output creation or presentation fails.
@@ -119,6 +150,10 @@ def main() -> None:
     fallback = draw[draw.find("if (!render_ok && rife_interpolated)"):]
     require("mix = source_mix;" in fallback and "render_ok = pl_render_image_mix" in fallback,
             "generated-frame render failure must retry the original mpv mix")
+    require(draw.find("source_mix = mix;") <
+            draw.find("if (rife_interpolated) {\n        mix = rife_mix;") <
+            draw.find("pl_render_image_mix(p->rr, &mix"),
+            "only a fully prepared RIFE frame may replace the original render mix")
     flip = section(vo, "static void flip_page(", "static void get_vsync(")
     require("if (submitted && p->rife_pending_frame)" in flip and
             "event=gpu_resident_frame" in flip,
@@ -139,8 +174,17 @@ def main() -> None:
     require("mutable_frame->acquire(p->gpu, mutable_frame)" in prepare and
             "mutable_frame->release(p->gpu, mutable_frame)" in prepare,
             "resident pair inputs must be acquired/imported and released before readiness checks")
+    hwdec_release = section(vo, "static void hwdec_release(",
+                            "static bool format_supported(")
+    require("slot_release(&p->hwdec);" in hwdec_release and
+            "talloc_free(" not in hwdec_release,
+            "preflight release must end decoder access without freeing queue-owned frames")
     resident_mix = section(vo, "static bool rife_build_display_mix(",
                            "static void update_options(")
+    ring_failure = section(resident_mix, "if (!rife_init_output_ring(p, width, height))",
+                           "int index = p->rife_output_cursor")
+    require("return false;" in ring_failure,
+            "output-ring failure must return before constructing/replacing the render mix")
     require(resident_mix.find("rife_prepare_frame_input(p, source)") <
             resident_mix.find("!p->rife_diag_before_input_ready"),
             "both selected source frames must be pre-acquired before pair availability is tested")

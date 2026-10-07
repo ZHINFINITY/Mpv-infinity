@@ -610,7 +610,7 @@ index bd3d1aa1e..852dd26bf 100644
      talloc_free(mpi);
  }
  
-@@ -1154,14 +1279,491 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1279,510 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -772,12 +772,17 @@ index bd3d1aa1e..852dd26bf 100644
 +    if (!p->gpu || !p->ra_ctx || !ra_is_gl(p->ra_ctx->ra) ||
 +        !pl_opengl_get(p->gpu)) {
 +        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_renderer_unavailable gpu=%d ra_ctx=%d is_gles=%d opengl=%d\n",
++                p->gpu != NULL, p->ra_ctx != NULL,
++                p->ra_ctx && p->ra_ctx->ra && ra_is_gl(p->ra_ctx->ra),
++                p->gpu && pl_opengl_get(p->gpu) != NULL);
 +        MP_WARN(p, "RIFE resident presentation requires the existing GLES renderer; preserving ordinary mpv rendering\n");
 +        return false;
 +    }
 +    GL *gl = ra_gl_get(p->ra_ctx->ra);
 +    if (!gl) {
 +        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_gles_context_unavailable\n");
 +        MP_WARN(p, "RIFE resident GLES context is unavailable; preserving ordinary mpv rendering\n");
 +        return false;
 +    }
@@ -798,6 +803,10 @@ index bd3d1aa1e..852dd26bf 100644
 +    if (!get_native_buffer || !create_image || !image_target || !destroy_image ||
 +        display == EGL_NO_DISPLAY) {
 +        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_egl_api_unavailable native_buffer=%d create_image=%d image_target=%d destroy_image=%d display=%d\n",
++                get_native_buffer != NULL, create_image != NULL,
++                image_target != NULL, destroy_image != NULL,
++                display != EGL_NO_DISPLAY);
 +        MP_WARN(p, "RIFE resident EGL AHardwareBuffer import is unavailable; preserving ordinary mpv rendering\n");
 +        return false;
 +    }
@@ -808,6 +817,9 @@ index bd3d1aa1e..852dd26bf 100644
 +        slot->output = rife_vfi_output_create(p->rife_engine, width, height,
 +                                               error, sizeof(error));
 +        if (!slot->output) {
++            MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_native_create_failed slot=%d width=%d height=%d detail=%s\n",
++                    i, width, height,
++                    error[0] ? error : "unsupported format or usage");
 +            MP_WARN(p, "RIFE output AHB allocation rejected; preserving ordinary playback: %s\n",
 +                    error[0] ? error : "unsupported format or usage");
 +            rife_clear_output_ring(p);
@@ -823,6 +835,10 @@ index bd3d1aa1e..852dd26bf 100644
 +                           client_buffer, image_attributes) : EGL_NO_IMAGE_KHR;
 +        slot->destroy_image = destroy_image;
 +        if (!slot->image) {
++            EGLint egl_error = buffer ? eglGetError() : EGL_SUCCESS;
++            MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_egl_import_failed slot=%d width=%d height=%d ahb=%d native_client_buffer=%d egl_error=0x%x\n",
++                    i, width, height, buffer != NULL, client_buffer != NULL,
++                    egl_error);
 +            MP_WARN(p, "RIFE output AHB EGL import failed; preserving ordinary playback\n");
 +            rife_clear_output_ring(p);
 +            p->rife_disabled_for_session = true;
@@ -848,6 +864,8 @@ index bd3d1aa1e..852dd26bf 100644
 +            .target = GL_TEXTURE_2D,
 +            .iformat = GL_RGBA8));
 +        if (!slot->wrapped) {
++            MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_texture_wrap_failed slot=%d width=%d height=%d texture=%u iformat=0x%x\n",
++                    i, width, height, slot->texture, GL_RGBA8);
 +            MP_WARN(p, "RIFE output AHB GLES texture wrapping failed; preserving ordinary playback\n");
 +            rife_clear_output_ring(p);
 +            p->rife_disabled_for_session = true;
@@ -994,7 +1012,8 @@ index bd3d1aa1e..852dd26bf 100644
 +        height = MPMAX(2, ((int) (height * scale)) & ~1);
 +    }
 +    if (!rife_init_output_ring(p, width, height)) {
-+        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_initialization_failed\n");
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=output_ring_initialization_failed width=%d height=%d\n",
++                width, height);
 +        rife_log_wait_reason(p, RIFE_WAIT_OUTPUT_RING, mix->num_frames);
 +        return false;
 +    }
@@ -1102,7 +1121,7 @@ index bd3d1aa1e..852dd26bf 100644
  
      update_lut(p, &p->next_opts->lut);
      pars->params.lut = p->next_opts->lut.lut;
-@@ -1350,9 +1952,24 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1350,9 +1971,24 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      const struct gl_video_opts *opts = p->opts_cache->opts;
      bool will_redraw = frame->display_synced && frame->num_vsyncs > 1;
      bool cache_frame = will_redraw || frame->still || p->paused;
@@ -1128,7 +1147,7 @@ index bd3d1aa1e..852dd26bf 100644
      params.info_callback = info_callback;
      params.info_priv = vo;
      params.skip_caching_single_frame = !cache_frame;
-@@ -1406,6 +2023,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1406,6 +2042,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              p->last_id = 0;
              p->want_reset = false;
              p->flush_cache = true;
@@ -1138,7 +1157,7 @@ index bd3d1aa1e..852dd26bf 100644
          }
  
          if (p->flush_cache) {
-@@ -1652,6 +2272,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1652,6 +2291,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      update_tm_viz(&pars->color_map_params, &target);
  
      struct pl_frame_mix mix = {0};
@@ -1156,7 +1175,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (frame->current) {
          // Update queue state
          struct pl_queue_params qparams = *pl_queue_params(
-@@ -1747,10 +2378,44 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1747,10 +2397,44 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              update_hook_opts_dynamic(p, p->hooks[i], frame->current);
      }
  
@@ -1201,7 +1220,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (!render_ok) {
          MP_ERR(vo, "Failed rendering frame!\n");
          goto done;
-@@ -1777,7 +2442,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1777,7 +2461,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      }
      mp_mutex_unlock(&vo->params_mutex);
  
@@ -1213,7 +1232,7 @@ index bd3d1aa1e..852dd26bf 100644
      valid = true;
      // fall through
  
-@@ -1796,12 +2465,27 @@ static void flip_page(struct vo *vo)
+@@ -1796,12 +2484,27 @@ static void flip_page(struct vo *vo)
      struct ra_swapchain *sw = p->ra_ctx->swapchain;
  
      if (p->frame_pending) {
@@ -1244,7 +1263,7 @@ index bd3d1aa1e..852dd26bf 100644
  }
  
  static void get_vsync(struct vo *vo, struct vo_vsync_info *info)
-@@ -2464,6 +3148,13 @@ static void uninit(struct vo *vo)
+@@ -2464,6 +3167,13 @@ static void uninit(struct vo *vo)
          pl_gpu_finish(p->gpu);
  
      pl_queue_destroy(&p->queue); // destroy this first
@@ -1258,7 +1277,7 @@ index bd3d1aa1e..852dd26bf 100644
      for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
          pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
      for (int i = 0; i < p->num_sub_tex; i++)
-@@ -2519,6 +3210,10 @@ static int preinit(struct vo *vo)
+@@ -2519,6 +3229,10 @@ static int preinit(struct vo *vo)
      p->opts_cache = m_config_cache_alloc(p, vo->global, &gl_video_conf);
      p->next_opts_cache = m_config_cache_alloc(p, vo->global, &gl_next_conf);
      p->next_opts = p->next_opts_cache->opts;
