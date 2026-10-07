@@ -20,6 +20,21 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def gpu_tensor_guard() -> str:
+    return (
+        "    if (w <= 0 || h <= 0 ||\n"
+        "        (gpu_in0 && (gpu_in0->empty() || gpu_in1->empty() ||\n"
+        "                     gpu_in0->w != gpu_in1->w || gpu_in0->h != gpu_in1->h ||\n"
+        "                     !rife_vfi_gpu_input_layout_is_compatible(\n"
+        "                         flownet.opt.use_fp16_storage, flownet.opt.use_int8_storage,\n"
+        "                         gpu_in0->dims, gpu_in0->c, gpu_in0->elempack, gpu_in0->elemsize) ||\n"
+        "                     !rife_vfi_gpu_input_layout_is_compatible(\n"
+        "                         flownet.opt.use_fp16_storage, flownet.opt.use_int8_storage,\n"
+        "                         gpu_in1->dims, gpu_in1->c, gpu_in1->elempack, gpu_in1->elemsize))))\n"
+        "        return -1;"
+    )
+
+
 def patch_header(text: str) -> str:
     if HEADER_MARKER in text:
         return text
@@ -122,16 +137,7 @@ def patch_source(text: str) -> str:
         "    const unsigned char* pixel1data = gpu_in1 ? 0 : (const unsigned char*)in1image.data;\n"
         "    const int w = gpu_in0 ? gpu_in0->w : in0image.w;\n"
         "    const int h = gpu_in0 ? gpu_in0->h : in0image.h;\n"
-        "    if (w <= 0 || h <= 0 ||\n"
-        "        (gpu_in0 && (gpu_in0->empty() || gpu_in1->empty() ||\n"
-        "                     gpu_in0->w != gpu_in1->w || gpu_in0->h != gpu_in1->h ||\n"
-        "                     !rife_vfi_gpu_input_layout_is_compatible(\n"
-        "                         flownet.opt.use_fp16_storage, flownet.opt.use_int8_storage,\n"
-        "                         gpu_in0->dims, gpu_in0->c, gpu_in0->elempack, gpu_in0->elemsize) ||\n"
-        "                     !rife_vfi_gpu_input_layout_is_compatible(\n"
-        "                         flownet.opt.use_fp16_storage, flownet.opt.use_int8_storage,\n"
-        "                         gpu_in1->dims, gpu_in1->c, gpu_in1->elempack, gpu_in1->elemsize)))\n"
-        "        return -1;",
+        + gpu_tensor_guard(),
         "RIFE source dimensions and Vulkan tensor contract",
     )
 

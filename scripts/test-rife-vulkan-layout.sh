@@ -13,6 +13,9 @@ int main()
     // adjacent uint8 values per pixel from a 2-D VkMat.
     assert(rife_vfi_gpu_input_layout_is_compatible(true, true, 2, 1, 1, 3));
     assert(rife_vfi_gpu_input_layout_is_compatible(false, true, 2, 1, 1, 3));
+    // The AHardwareBuffer input probe currently returns planar FP32 RGB; it
+    // must not be fed to the active int8-storage model without a GPU adapter.
+    assert(!rife_vfi_gpu_input_layout_is_compatible(true, true, 3, 3, 1, 4));
     assert(!rife_vfi_gpu_input_layout_is_compatible(true, true, 3, 3, 1, 2));
     assert(!rife_vfi_gpu_input_layout_is_compatible(true, true, 2, 3, 1, 3));
     assert(!rife_vfi_gpu_input_layout_is_compatible(true, true, 2, 1, 4, 3));

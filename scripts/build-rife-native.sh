@@ -152,6 +152,7 @@ PY
 # Stage the source-level C ABI header where the upstream CMake target can install it.
 cp "$ROOT/app/src/main/cpp/rife/rife_vfi.h" "$RIFE_DIR/src/rife_vfi.h"
 cp "$ROOT/app/src/main/cpp/rife/rife_vfi_gpu_layout.h" "$RIFE_DIR/src/rife_vfi_gpu_layout.h"
+cp "$ROOT/app/src/main/cpp/rife/rife_vfi_ahb_policy.h" "$RIFE_DIR/src/rife_vfi_ahb_policy.h"
 
 cmake -S "$RIFE_DIR/src" -B "$BUILD_DIR" \
   -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
