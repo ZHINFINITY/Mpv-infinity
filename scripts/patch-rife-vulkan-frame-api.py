@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Patch the pinned RIFE source with an explicit GPU-resident frame API.
+"""Patch pinned RIFE with the Vulkan tensor API used by mpv's resident VO path.
 
-This adds a Vulkan tensor-in/tensor-out inference method. It deliberately does
-not claim to connect mpv's MediaCodec AHardwareBuffer or renderer yet.
+This script modifies RIFE inference sources only. The separate pinned-mpv VO
+patch and preparation script wire decoder AHardwareBuffer input and presentation.
 """
 from __future__ import annotations
 
 import argparse
+import shutil
 from pathlib import Path
 
 HEADER_MARKER = "// RIFE_VFI_VULKAN_FRAME_API"
@@ -200,7 +201,8 @@ def patch_source(text: str) -> str:
     body = (
         body[:download_start]
         + "    if (gpu_out)\n    {\n"
-        + "        cmd.submit_and_wait();\n"
+        + "        if (cmd.submit_and_wait() != 0)\n"
+        + "            return -1;\n"
         + "        *gpu_out = out_gpu;\n"
         + "    }\n    else\n    {\n"
         + indented_download
@@ -209,6 +211,22 @@ def patch_source(text: str) -> str:
     )
 
     return text[:body_start] + body + text[body_end:]
+
+
+def patch_cmake(text: str) -> str:
+    marker = "# RIFE_VFI_GPU_CONVERSION_SHADERS"
+    if marker in text:
+        return text
+    anchor = "rife_add_shader(warp_pack8.comp)"
+    return replace_once(
+        text,
+        anchor,
+        anchor
+        + "\nrife_add_shader(rife_vfi_pack_rgb.comp)"
+        + "\nrife_add_shader(rife_vfi_rgba_output.comp)"
+        + f"\n{marker}",
+        "RIFE generated Vulkan conversion-shader list",
+    )
 
 
 def main() -> None:
@@ -222,9 +240,21 @@ def main() -> None:
 
     header = patch_header(header_path.read_text())
     source = patch_source(source_path.read_text())
+    cmake_path = args.rife_src / "CMakeLists.txt"
+    if not cmake_path.is_file():
+        raise SystemExit(f"Pinned RIFE source is missing CMakeLists.txt: {args.rife_src}")
+    cmake = patch_cmake(cmake_path.read_text())
+    project_root = Path(__file__).resolve().parents[1]
+    shader_root = project_root / "app/src/main/cpp/rife"
+    for shader_name in ("rife_vfi_pack_rgb.comp", "rife_vfi_rgba_output.comp"):
+        shader_source = shader_root / shader_name
+        if not shader_source.is_file():
+            raise SystemExit(f"Missing RIFE GPU conversion shader: {shader_source}")
+        shutil.copy2(shader_source, args.rife_src / shader_name)
     header_path.write_text(header)
     source_path.write_text(source)
-    print("Enabled RIFE Vulkan VkMat-in/VkMat-out API; legacy RGB24 path remains unchanged")
+    cmake_path.write_text(cmake)
+    print("Enabled RIFE Vulkan VkMat API and generated GPU conversion shaders; legacy RGB24 path remains unchanged")
 
 
 if __name__ == "__main__":

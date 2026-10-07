@@ -36,6 +36,9 @@ jobs:
           repository: mpv-player/mpv
           ref: c1529642089bfebfc928a1c1664638a7a5d219ba
           path: mpv-source
+      - name: Check RIFE resident VO patch against pinned MPV
+        working-directory: mpv-source
+        run: git apply --check ../scripts/patches/rife-resident-vo.patch
       - name: Checkout pinned RIFE-ncnn-vulkan source and model
         uses: actions/checkout@v6
         with:
@@ -56,11 +59,13 @@ jobs:
       - name: Install Android MPV native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg
+          sudo apt-get install -y autoconf automake libtool gettext autopoint gperf pkg-config ninja-build pipx nasm yasm binutils zlib1g-dev libssl-dev zip unzip wget curl ffmpeg glslang-tools
           pipx install meson==1.6.1
           export PATH="$HOME/.local/bin:$PATH"
           meson --version
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Compile RIFE Vulkan conversion shaders
+        run: bash ./scripts/test-rife-vulkan-shaders.sh
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
       - name: Run RIFE cadence regression tests

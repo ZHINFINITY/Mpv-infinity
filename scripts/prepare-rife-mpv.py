@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Register the experimental RIFE user filter in the pinned Android MPV checkout."""
+"""Register CPU RIFE and apply the experimental resident Vulkan/NCNN VO patch."""
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import shutil
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "app/src/main/cpp/rife"
+RESIDENT_VO_PATCH = ROOT / "scripts/patches/rife-resident-vo.patch"
+PINNED_MPV_REVISION = "c1529642089bfebfc928a1c1664638a7a5d219ba"
 
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
@@ -50,6 +54,34 @@ def base_sources_close(meson: str) -> int:
     raise SystemExit("Could not find end of MPV base source list")
 
 
+def apply_resident_vo_patch(mpv_dir: Path) -> None:
+    if not RESIDENT_VO_PATCH.is_file():
+        raise SystemExit(f"RIFE resident VO patch is missing: {RESIDENT_VO_PATCH}")
+    source_dir = Path(os.environ.get("MPV_SOURCE_DIR", mpv_dir)).resolve()
+    try:
+        revision = subprocess.check_output(
+            ["git", "-C", str(source_dir), "rev-parse", "HEAD"], text=True
+        ).strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise SystemExit(f"Unable to identify pinned MPV source revision: {error}")
+    if revision != PINNED_MPV_REVISION:
+        raise SystemExit(
+            f"RIFE resident VO patch expects MPV {PINNED_MPV_REVISION}, found {revision}"
+        )
+
+    vo_path = mpv_dir / "video/out/vo_gpu_next.c"
+    if "rife_cadence_grid_index" in vo_path.read_text():
+        return
+    subprocess.run(
+        ["git", "-C", str(mpv_dir), "apply", "--check", str(RESIDENT_VO_PATCH)],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(mpv_dir), "apply", str(RESIDENT_VO_PATCH)],
+        check=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
@@ -71,6 +103,7 @@ def main() -> None:
     shutil.copy2(VENDOR / "vf_rife.c", video_filter_dir / "vf_rife.c")
     shutil.copy2(VENDOR / "rife_vfi.h", video_filter_dir / "rife_vfi.h")
     shutil.copy2(VENDOR / "rife_cadence.h", video_filter_dir / "rife_cadence.h")
+    apply_resident_vo_patch(mpv_dir)
 
     meson_path = mpv_dir / "meson.build"
     meson = meson_path.read_text()
@@ -79,6 +112,7 @@ def main() -> None:
         block = (
             "\n# RIFE is an opt-in Android filter linked to the pinned ncnn/Vulkan runtime.\n"
             "if host_machine.system() == 'android'\n"
+            "    add_project_arguments('-DMPV_HAS_RIFE', language: 'c')\n"
             "    sources += files('video/filter/vf_rife.c')\n"
             f"    rife_vfi_dep = declare_dependency(link_args: ['-L{prefix_dir / 'lib'}', '-lrife_vfi'])\n"
             "    dependencies += [rife_vfi_dep]\n"

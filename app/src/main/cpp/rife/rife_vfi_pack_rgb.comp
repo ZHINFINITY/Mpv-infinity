@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Packs ncnn's planar FP32 RGB import into the packed RGB8 layout consumed by
+// the pinned RIFE int8-storage preprocessor. No pixels leave Vulkan memory.
+#version 450
+
+#extension GL_EXT_shader_8bit_storage : require
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout (binding = 0) readonly buffer planar_rgb { float planar_data[]; };
+layout (binding = 1) writeonly buffer packed_rgb { uint8_t packed_data[]; };
+
+layout (push_constant) uniform parameter
+{
+    int width;
+    int height;
+    int cstep;
+} p;
+
+void main()
+{
+    int x = int(gl_GlobalInvocationID.x);
+    int y = int(gl_GlobalInvocationID.y);
+    if (x >= p.width || y >= p.height)
+        return;
+
+    int pixel = y * p.width + x;
+    for (int channel = 0; channel < 3; ++channel) {
+        float value = clamp(planar_data[channel * p.cstep + pixel], 0.0, 255.0);
+        packed_data[pixel * 3 + channel] = uint8_t(int(value + 0.5));
+    }
+}

@@ -35,6 +35,36 @@ static inline bool rife_cadence_count_outputs(double next_pts, double end_pts,
     return true;
 }
 
+// Select at most one presentation sample for each tick on a stream-anchored
+// target-FPS grid. Keep `origin_pts` stable across source-frame pairs; the VO
+// still computes the RIFE timestep from the actual presentation PTS.
+static inline bool rife_cadence_grid_index(double origin_pts,
+                                            double presentation_pts,
+                                            int target_fps,
+                                            bool have_last_index,
+                                            int64_t last_index,
+                                            int64_t *output_index)
+{
+    if (!output_index || !isfinite(origin_pts) || !isfinite(presentation_pts) ||
+        target_fps <= 0 || presentation_pts < origin_pts)
+        return false;
+
+    double ticks = (presentation_pts - origin_pts) * target_fps;
+    if (!isfinite(ticks) || ticks < 0.0 || ticks >= (double)INT64_MAX)
+        return false;
+
+    double nearest = floor(ticks + 0.5);
+    if (nearest < 1.0 || fabs(ticks - nearest) > 0.45)
+        return false;
+
+    int64_t index = (int64_t)nearest;
+    if (have_last_index && index <= last_index)
+        return false;
+
+    *output_index = index;
+    return true;
+}
+
 static inline bool rife_cadence_source_budget_ns(double source_delta_seconds,
                                                   int64_t *budget_ns)
 {

@@ -879,13 +879,14 @@ static struct mp_filter *f_create(struct mp_filter *parent, void *options)
     RifeVfiGpuCapabilities gpu_capabilities = {0};
     if (p->engine)
         rife_vfi_get_gpu_capabilities(p->engine, &gpu_capabilities);
-    MP_INFO(f, "RIFE_DIAGNOSTIC event=ahb_input_probe vulkan_device_ready=%d ahb_import_extension=%d foreign_queue_family_extension=%d probe_available=%d gpu_resident_playback_ready=%d\n",
+    MP_INFO(f, "RIFE_DIAGNOSTIC event=ahb_input_resident vulkan_device_ready=%d ahb_import_extension=%d foreign_queue_family_extension=%d input_available=%d output_slot_created=%d gpu_resident_playback_ready=%d\n",
             gpu_capabilities.vulkan_device_ready,
             gpu_capabilities.android_ahb_import_extension,
             gpu_capabilities.foreign_queue_family_extension,
-            gpu_capabilities.ahb_input_probe_available,
+            gpu_capabilities.ahb_input_available,
+            gpu_capabilities.ahb_rgba_output_slot_created,
             gpu_capabilities.gpu_resident_playback_ready);
-    MP_INFO(f, "RIFE_DIAGNOSTIC event=gpu_path status=unavailable reason=decoder_ahb_and_renderer_handoff_missing ncnn_vk_device=engine_private output_share=missing gpu_resident=0 current_path=cpu_rgb24_filter\n");
+    MP_INFO(f, "RIFE_DIAGNOSTIC event=gpu_path status=not_used reason=cpu_filter_selected current_path=cpu_rgb24_filter resident_vo=separate_opt_in_runtime_gated_path\n");
     MP_INFO(f, "RIFE_DIAGNOSTIC event=initialized target_fps=%.0f resolution_setting=%d effective_max_dimension=%d engine_ready=%d fp16_arithmetic=%d model_load_ms=%.2f gpu_path=unavailable\n",
             p->opts->target_fps, p->opts->max_dimension,
             effective_max_dimension(p), p->active,

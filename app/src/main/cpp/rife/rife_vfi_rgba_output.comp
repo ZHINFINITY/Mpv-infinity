@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Converts packed RIFE RGB8 buffer output to a writable RGBA8 Vulkan image.
+// The image is an imported Android HardwareBuffer shared with GLES.
+#version 450
+
+#extension GL_EXT_shader_8bit_storage : require
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout (binding = 0) readonly buffer packed_rgb { uint8_t packed_data[]; };
+layout (binding = 1, rgba8) writeonly uniform image2D rgba_output;
+
+layout (push_constant) uniform parameter
+{
+    int width;
+    int height;
+} p;
+
+void main()
+{
+    int x = int(gl_GlobalInvocationID.x);
+    int y = int(gl_GlobalInvocationID.y);
+    if (x >= p.width || y >= p.height)
+        return;
+
+    int pixel = y * p.width + x;
+    vec4 rgba = vec4(
+        float(uint(packed_data[pixel * 3 + 0])),
+        float(uint(packed_data[pixel * 3 + 1])),
+        float(uint(packed_data[pixel * 3 + 2])),
+        255.0) / 255.0;
+    imageStore(rgba_output, ivec2(x, y), rgba);
+}

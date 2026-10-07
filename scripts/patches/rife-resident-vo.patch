@@ -1,0 +1,718 @@
+diff --git a/video/out/gpu/hwdec.h b/video/out/gpu/hwdec.h
+index ea29b0dc2..9901c00a5 100644
+--- a/video/out/gpu/hwdec.h
++++ b/video/out/gpu/hwdec.h
+@@ -1,6 +1,7 @@
+ #ifndef MPGL_HWDEC_H_
+ #define MPGL_HWDEC_H_
+ 
++#include <stdint.h>
+ #include <libavutil/hwcontext.h>
+ 
+ #include "video/mp_image.h"
+@@ -159,6 +160,13 @@ int ra_hwdec_mapper_map(struct ra_hwdec_mapper *mapper, struct mp_image *img);
+ int ra_hwdec_mapper_begin_access(struct ra_hwdec_mapper *mapper);
+ void ra_hwdec_mapper_end_access(struct ra_hwdec_mapper *mapper);
+ 
++#if defined(__ANDROID__)
++// Borrowed AImageReader buffer, valid only while its mapper remains mapped.
++// `timestamp_ns` is the source AImage presentation timestamp when available.
++void *ra_hwdec_aimagereader_get_hardware_buffer(
++    struct ra_hwdec_mapper *mapper, int64_t *timestamp_ns);
++#endif
++
+ // Get the primary image format for the given driver name.
+ // Returns IMGFMT_NONE if the name doesn't get matched.
+ int ra_hwdec_driver_get_imgfmt_for_name(const char *name);
+diff --git a/video/out/hwdec/hwdec_aimagereader.c b/video/out/hwdec/hwdec_aimagereader.c
+index 55883c0be..cde1b48c6 100644
+--- a/video/out/hwdec/hwdec_aimagereader.c
++++ b/video/out/hwdec/hwdec_aimagereader.c
+@@ -19,6 +19,7 @@
+ 
+ #include <assert.h>
+ #include <dlfcn.h>
++#include <string.h>
+ #include <EGL/egl.h>
+ #include <media/NdkImageReader.h>
+ #include <android/native_window_jni.h>
+@@ -49,6 +50,7 @@ struct priv_owner {
+     media_status_t (*AImageReader_setImageListener)(
+         AImageReader *, AImageReader_ImageListener *);
+     media_status_t (*AImageReader_acquireLatestImage)(AImageReader *, AImage **);
++    media_status_t (*AImage_getTimestamp)(const AImage *, int64_t *);
+     void (*AImageReader_delete)(AImageReader *);
+     media_status_t (*AImage_getHardwareBuffer)(const AImage *, AHardwareBuffer **);
+     void (*AImage_delete)(AImage *);
+@@ -61,6 +63,8 @@ struct priv {
+ 
+     GLuint gl_texture;
+     AImage *image;
++    AHardwareBuffer *hardware_buffer;
++    int64_t timestamp_ns;
+     EGLImageKHR egl_image;
+ 
+     mp_mutex lock;
+@@ -80,6 +84,7 @@ static const struct { const char *symbol; int offset; } lib_functions[] = {
+     { "AImageReader_getWindow", offsetof(struct priv_owner, AImageReader_getWindow) },
+     { "AImageReader_setImageListener", offsetof(struct priv_owner, AImageReader_setImageListener) },
+     { "AImageReader_acquireLatestImage", offsetof(struct priv_owner, AImageReader_acquireLatestImage) },
++    { "AImage_getTimestamp", offsetof(struct priv_owner, AImage_getTimestamp) },
+     { "AImageReader_delete", offsetof(struct priv_owner, AImageReader_delete) },
+     { "AImage_getHardwareBuffer", offsetof(struct priv_owner, AImage_getHardwareBuffer) },
+     { "AImage_delete", offsetof(struct priv_owner, AImage_delete) },
+@@ -327,6 +332,8 @@ static void mapper_unmap(struct ra_hwdec_mapper *mapper)
+         o->AImage_delete(p->image);
+         p->image = NULL;
+     }
++    p->hardware_buffer = NULL;
++    p->timestamp_ns = 0;
+ }
+ 
+ static int mapper_map(struct ra_hwdec_mapper *mapper)
+@@ -338,6 +345,8 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+     mp_mutex_lock(&p->lock);
+     p->image_available = false;
+     mp_mutex_unlock(&p->lock);
++    p->hardware_buffer = NULL;
++    p->timestamp_ns = 0;
+ 
+     {
+         if (mapper->src->imgfmt != IMGFMT_MEDIACODEC)
+@@ -382,6 +391,9 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+         return -1;
+     }
+     mp_assert(hwbuf);
++    p->hardware_buffer = hwbuf;
++    if (o->AImage_getTimestamp(p->image, &p->timestamp_ns) != AMEDIA_OK)
++        p->timestamp_ns = 0;
+ 
+     // Update texture size since it may differ
+     AHardwareBuffer_Desc d;
+@@ -409,6 +421,18 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+     return 0;
+ }
+ 
++void *ra_hwdec_aimagereader_get_hardware_buffer(
++    struct ra_hwdec_mapper *mapper, int64_t *timestamp_ns)
++{
++    if (!mapper || !mapper->owner || !mapper->owner->driver ||
++        strcmp(mapper->owner->driver->name, "aimagereader") != 0)
++        return NULL;
++    struct priv *p = mapper->priv;
++    if (timestamp_ns)
++        *timestamp_ns = p->timestamp_ns;
++    return p->hardware_buffer;
++}
++
+ 
+ const struct ra_hwdec_driver ra_hwdec_aimagereader = {
+     .name = "aimagereader",
+diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
+index bd3d1aa1e..7cea5580e 100644
+--- a/video/out/vo_gpu_next.c
++++ b/video/out/vo_gpu_next.c
+@@ -18,6 +18,8 @@
+  */
+ 
+ #include <sys/stat.h>
++#include <inttypes.h>
++#include <math.h>
+ #include <time.h>
+ 
+ #include <libplacebo/colorspace.h>
+@@ -54,6 +56,18 @@
+ #if HAVE_GL && defined(PL_HAVE_OPENGL)
+ #include <libplacebo/opengl.h>
+ #include "video/out/opengl/ra_gl.h"
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE)
++#include <android/hardware_buffer.h>
++#include <EGL/egl.h>
++#include <EGL/eglext.h>
++#include <GLES2/gl2.h>
++#include <GLES2/gl2ext.h>
++#include "video/filter/rife_vfi.h"
++#include "video/filter/rife_cadence.h"
++#ifndef EGL_NATIVE_BUFFER_ANDROID
++#define EGL_NATIVE_BUFFER_ANDROID 0x3140
++#endif
++#endif
+ #endif
+ 
+ #if HAVE_D3D11 && defined(PL_HAVE_D3D11)
+@@ -115,6 +129,17 @@ struct hwdec_slot {
+     pl_tex tex[4];            // plane textures of the current mapping
+ };
+ 
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++struct rife_output_slot {
++    RifeVfiOutput *output;
++    EGLImageKHR image;
++    GLuint texture;
++    pl_tex wrapped;
++    EGLBoolean (EGLAPIENTRY *destroy_image)(EGLDisplay, EGLImageKHR);
++    bool sampled;
++};
++#endif
++
+ struct priv {
+     struct mp_log *log;
+     struct mpv_global *global;
+@@ -178,6 +203,18 @@ struct priv {
+     struct frame_info perf_redraw;
+ 
+     struct mp_image_params target_params;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    RifeVfiEngine *rife_engine;
++    char *rife_model_dir;
++    struct rife_output_slot rife_outputs[3];
++    int rife_output_width, rife_output_height;
++    unsigned int rife_output_cursor;
++    bool rife_disabled_for_session;
++    double rife_cadence_origin_pts;
++    int64_t rife_last_cadence_index;
++    bool rife_cadence_origin_valid;
++    bool rife_cadence_output_valid;
++#endif
+ };
+ 
+ static void update_render_options(struct vo *vo);
+@@ -198,6 +235,10 @@ struct gl_next_opts {
+     int target_hint_mode;
+     bool target_hint_strict;
+     char **raw_opts;
++    bool rife_resident;
++    char *rife_model_dir;
++    int rife_target_fps;
++    int rife_max_dimension;
+ };
+ 
+ const struct m_opt_choice_alternatives lut_types[] = {
+@@ -232,6 +273,10 @@ const struct m_sub_options gl_next_conf = {
+         {"target-colorspace-hint", OPT_CHOICE(target_hint, {"auto", -1}, {"no", 0}, {"yes", 1})},
+         {"target-colorspace-hint-mode", OPT_CHOICE(target_hint_mode, {"target", 0}, {"source", 1}, {"source-dynamic", 2})},
+         {"target-colorspace-hint-strict", OPT_BOOL(target_hint_strict)},
++        {"rife-resident", OPT_BOOL(rife_resident)},
++        {"rife-model-dir", OPT_STRING(rife_model_dir), .flags = M_OPT_FILE},
++        {"rife-target-fps", OPT_INT(rife_target_fps), M_RANGE(1, 240)},
++        {"rife-max-dimension", OPT_INT(rife_max_dimension), M_RANGE(-1, 8192)},
+         // No `target-lut-type` because we don't support non-RGB targets
+         {"libplacebo-opts", OPT_KEYVALUELIST(raw_opts)},
+         {0},
+@@ -243,6 +288,7 @@ const struct m_sub_options gl_next_conf = {
+         .image_subs_hdr_peak = 1000,
+         .target_hint = -1,
+         .target_hint_strict = true,
++        .rife_target_fps = 60,
+     },
+     .size = sizeof(struct gl_next_opts),
+     .change_flags = UPDATE_VIDEO,
+@@ -561,6 +607,10 @@ struct frame_priv {
+     struct osd_state subs;
+     uint64_t osd_sync;
+     struct ra_hwdec *hwdec;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    RifeVfiGpuFrame *rife_input;
++    bool rife_input_failed;
++#endif
+     // Optional Dolby Vision FEL.
+     struct ra_hwdec *el_hwdec;
+     pl_tex el_tex[4];
+@@ -810,6 +860,58 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
+         }
+         s->perf = timer_pool_measure(s->timer);
+         s->owner = owner;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++        struct frame_priv *fp = owner->priv;
++        if (p->next_opts->rife_resident && p->rife_engine &&
++            !p->rife_disabled_for_session &&
++            owner == mpi && mpi->imgfmt == IMGFMT_MEDIACODEC && fp &&
++            !fp->rife_input && !fp->rife_input_failed)
++        {
++            int64_t image_timestamp_ns = 0;
++            void *ahb = ra_hwdec_aimagereader_get_hardware_buffer(
++                s->mapper, &image_timestamp_ns);
++            if (!ahb) {
++                fp->rife_input_failed = true;
++                p->rife_disabled_for_session = true;
++            } else {
++                AHardwareBuffer_Desc desc = {};
++                AHardwareBuffer_describe((AHardwareBuffer *) ahb, &desc);
++                double pts_delta = image_timestamp_ns && isfinite(mpi->pts)
++                    ? fabs((double) image_timestamp_ns * 1e-9 - mpi->pts) : INFINITY;
++                int width = mpi->params.w;
++                int height = mpi->params.h;
++                int max_dimension = p->next_opts->rife_max_dimension;
++                if (max_dimension > 0 && MP_MAX(width, height) > max_dimension) {
++                    double scale = (double) max_dimension / MP_MAX(width, height);
++                    width = MP_MAX(2, ((int) (width * scale)) & ~1);
++                    height = MP_MAX(2, ((int) (height * scale)) & ~1);
++                }
++                // Reject padded decoder surfaces until the importer has an
++                // explicit crop-rectangle path. These checks are RIFE-only;
++                // normal mpv rendering continues with the mapped image.
++                if (!image_timestamp_ns || pts_delta > 0.005 ||
++                    desc.width != (uint32_t) mpi->params.w ||
++                    desc.height != (uint32_t) mpi->params.h) {
++                    fp->rife_input_failed = true;
++                    p->rife_disabled_for_session = true;
++                    MP_VERBOSE(p, "RIFE AHB input rejected (timestamp delta %.6f s, AHB %ux%u, source %dx%d)\n",
++                               pts_delta, desc.width, desc.height,
++                               mpi->params.w, mpi->params.h);
++                } else if (rife_vfi_import_ahb_rgb8(p->rife_engine, ahb,
++                                                   width, height,
++                                                   &fp->rife_input) != 0) {
++                    fp->rife_input_failed = true;
++                    p->rife_disabled_for_session = true;
++                    MP_WARN(p, "RIFE AHB-to-NCNN Vulkan import failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
++                } else {
++                    MP_INFO(p, "RIFE_DIAGNOSTIC event=ahb_input_imported pts=%.6f image_timestamp_ns=%" PRId64 " pts_delta_ms=%.3f ahb_format=%u ahb_usage=0x%" PRIx64 " buffer_dimensions=%ux%u process_dimensions=%dx%d\n",
++                            mpi->pts, image_timestamp_ns, pts_delta * 1000.0,
++                            desc.format, (uint64_t) desc.usage,
++                            desc.width, desc.height, width, height);
++                }
++            }
++        }
++#endif
+     }
+ 
+     if (ra_hwdec_mapper_begin_access(s->mapper) < 0)
+@@ -1127,12 +1229,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+     }
+     slot_release_owner(p, &p->hwdec, mpi);
+     slot_release_owner(p, &p->el_hwdec, mpi);
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    rife_vfi_gpu_frame_release(fp->rife_input);
++    fp->rife_input = NULL;
++#endif
+     talloc_free(mpi);
+ }
+ 
+ static void discard_frame(const struct pl_source_frame *src)
+ {
+     struct mp_image *mpi = src->frame_data;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    struct frame_priv *fp = mpi->priv;
++    rife_vfi_gpu_frame_release(fp->rife_input);
++    fp->rife_input = NULL;
++#endif
+     talloc_free(mpi);
+ }
+ 
+@@ -1154,6 +1265,333 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+     pl_dispatch_info_move(&frame->info[info->index], info->pass);
+ }
+ 
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++static void rife_clear_output_ring(struct priv *p)
++{
++    if (p->ra_ctx && p->ra_ctx->ra && p->gpu) {
++        GL *gl = ra_gl_get(p->ra_ctx->ra);
++        if (gl && gl->Finish)
++            gl->Finish();
++    }
++    for (int i = 0; i < MP_ARRAY_SIZE(p->rife_outputs); i++) {
++        struct rife_output_slot *slot = &p->rife_outputs[i];
++        if (slot->wrapped && p->gpu)
++            pl_tex_destroy(p->gpu, &slot->wrapped);
++        if (slot->texture && p->ra_ctx && p->ra_ctx->ra) {
++            GL *gl = ra_gl_get(p->ra_ctx->ra);
++            if (gl)
++                gl->DeleteTextures(1, &slot->texture);
++        }
++        if (slot->image && slot->destroy_image)
++            slot->destroy_image(eglGetCurrentDisplay(), slot->image);
++        rife_vfi_output_destroy(slot->output);
++        *slot = (struct rife_output_slot) {0};
++    }
++    p->rife_output_width = p->rife_output_height = 0;
++    p->rife_output_cursor = 0;
++}
++
++static void rife_reset_cadence(struct priv *p)
++{
++    p->rife_cadence_origin_pts = 0.0;
++    p->rife_last_cadence_index = 0;
++    p->rife_cadence_origin_valid = false;
++    p->rife_cadence_output_valid = false;
++}
++
++static void rife_sync_engine(struct priv *p)
++{
++    const char *model_dir = p->next_opts->rife_model_dir;
++    bool enabled = p->next_opts->rife_resident && model_dir && model_dir[0];
++    if (!enabled) {
++        if (!p->rife_engine && !p->rife_model_dir &&
++            !p->rife_outputs[0].output && !p->rife_outputs[1].output &&
++            !p->rife_outputs[2].output)
++            return;
++        rife_clear_output_ring(p);
++        rife_vfi_destroy(p->rife_engine);
++        p->rife_engine = NULL;
++        talloc_free(p->rife_model_dir);
++        p->rife_model_dir = NULL;
++        p->rife_disabled_for_session = false;
++        rife_reset_cadence(p);
++        return;
++    }
++    if (p->rife_model_dir && strcmp(p->rife_model_dir, model_dir) == 0 &&
++        (p->rife_engine || p->rife_disabled_for_session))
++        return;
++
++    rife_clear_output_ring(p);
++    rife_vfi_destroy(p->rife_engine);
++    p->rife_engine = NULL;
++    talloc_free(p->rife_model_dir);
++    p->rife_model_dir = talloc_strdup(p, model_dir);
++    rife_reset_cadence(p);
++    char error[256] = {0};
++    p->rife_engine = rife_vfi_create(model_dir, error, sizeof(error));
++    p->rife_disabled_for_session = !p->rife_engine;
++    if (p->rife_engine) {
++        RifeVfiGpuCapabilities capabilities = {0};
++        if (rife_vfi_get_gpu_capabilities(p->rife_engine, &capabilities) != 0 ||
++            !capabilities.vulkan_device_ready ||
++            !capabilities.android_ahb_import_extension ||
++            !capabilities.foreign_queue_family_extension) {
++            MP_WARN(p, "RIFE resident Vulkan/AHB capabilities are unavailable; preserving ordinary mpv rendering\n");
++            rife_vfi_destroy(p->rife_engine);
++            p->rife_engine = NULL;
++            p->rife_disabled_for_session = true;
++        }
++    }
++    if (!p->rife_engine)
++        MP_WARN(p, "RIFE resident engine unavailable; preserving ordinary playback: %s\n",
++                error[0] ? error : "unknown error");
++}
++
++static bool rife_init_output_ring(struct priv *p, int width, int height)
++{
++    if (!p->rife_engine || p->rife_disabled_for_session || width <= 0 || height <= 0)
++        return false;
++    if (p->rife_output_width == width && p->rife_output_height == height &&
++        p->rife_outputs[0].wrapped && p->rife_outputs[1].wrapped &&
++        p->rife_outputs[2].wrapped)
++        return true;
++
++    rife_clear_output_ring(p);
++    if (!p->gpu || !p->ra_ctx || !ra_is_gl(p->ra_ctx->ra) ||
++        !pl_opengl_get(p->gpu)) {
++        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE resident presentation requires the existing GLES renderer; preserving ordinary mpv rendering\n");
++        return false;
++    }
++    GL *gl = ra_gl_get(p->ra_ctx->ra);
++    if (!gl) {
++        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE resident GLES context is unavailable; preserving ordinary mpv rendering\n");
++        return false;
++    }
++
++    typedef EGLClientBuffer (EGLAPIENTRY *get_native_buffer_fn)(const AHardwareBuffer *);
++    typedef EGLImageKHR (EGLAPIENTRY *create_image_fn)(EGLDisplay, EGLContext, EGLenum,
++                                                       EGLClientBuffer, const EGLint *);
++    typedef void (GL_APIENTRY *image_target_fn)(GLenum, GLeglImageOES);
++    get_native_buffer_fn get_native_buffer =
++        (get_native_buffer_fn) eglGetProcAddress("eglGetNativeClientBufferANDROID");
++    create_image_fn create_image =
++        (create_image_fn) eglGetProcAddress("eglCreateImageKHR");
++    image_target_fn image_target =
++        (image_target_fn) eglGetProcAddress("glEGLImageTargetTexture2DOES");
++    EGLBoolean (EGLAPIENTRY *destroy_image)(EGLDisplay, EGLImageKHR) =
++        (void *) eglGetProcAddress("eglDestroyImageKHR");
++    EGLDisplay display = eglGetCurrentDisplay();
++    if (!get_native_buffer || !create_image || !image_target || !destroy_image ||
++        display == EGL_NO_DISPLAY) {
++        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE resident EGL AHardwareBuffer import is unavailable; preserving ordinary mpv rendering\n");
++        return false;
++    }
++
++    for (int i = 0; i < MP_ARRAY_SIZE(p->rife_outputs); i++) {
++        struct rife_output_slot *slot = &p->rife_outputs[i];
++        char error[256] = {0};
++        slot->output = rife_vfi_output_create(p->rife_engine, width, height,
++                                               error, sizeof(error));
++        if (!slot->output) {
++            MP_WARN(p, "RIFE output AHB allocation rejected; preserving ordinary playback: %s\n",
++                    error[0] ? error : "unsupported format or usage");
++            rife_clear_output_ring(p);
++            p->rife_disabled_for_session = true;
++            return false;
++        }
++
++        AHardwareBuffer *buffer = rife_vfi_output_get_ahb(slot->output);
++        EGLClientBuffer client_buffer = buffer ? get_native_buffer(buffer) : NULL;
++        const EGLint image_attributes[] = {EGL_NONE};
++        slot->image = client_buffer
++            ? create_image(display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID,
++                           client_buffer, image_attributes) : EGL_NO_IMAGE_KHR;
++        slot->destroy_image = destroy_image;
++        if (!slot->image) {
++            MP_WARN(p, "RIFE output AHB EGL import failed; preserving ordinary playback\n");
++            rife_clear_output_ring(p);
++            p->rife_disabled_for_session = true;
++            return false;
++        }
++
++        gl->GenTextures(1, &slot->texture);
++        gl->BindTexture(GL_TEXTURE_2D, slot->texture);
++        gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++        gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++        gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++        gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++        image_target(GL_TEXTURE_2D, (GLeglImageOES) slot->image);
++        gl->BindTexture(GL_TEXTURE_2D, 0);
++
++#ifndef GL_RGBA8
++#define GL_RGBA8 0x8058
++#endif
++        slot->wrapped = pl_opengl_wrap(p->gpu, pl_opengl_wrap_params(
++            .texture = slot->texture,
++            .width = width,
++            .height = height,
++            .target = GL_TEXTURE_2D,
++            .iformat = GL_RGBA8));
++        if (!slot->wrapped) {
++            MP_WARN(p, "RIFE output AHB GLES texture wrapping failed; preserving ordinary playback\n");
++            rife_clear_output_ring(p);
++            p->rife_disabled_for_session = true;
++            return false;
++        }
++    }
++
++    p->rife_output_width = width;
++    p->rife_output_height = height;
++    return true;
++}
++
++static bool rife_build_display_mix(struct priv *p, const struct pl_frame_mix *mix,
++                                   struct pl_frame_mix *rife_mix,
++                                   struct pl_frame *rife_frame,
++                                   const struct pl_frame **rife_frames,
++                                   uint64_t *rife_signature,
++                                   float *rife_timestamp, int *slot_index)
++{
++    if (!p->next_opts->rife_resident || !p->rife_engine ||
++        p->rife_disabled_for_session || mix->num_frames < 2 ||
++        p->next_opts->rife_target_fps < 1)
++        return false;
++
++    int before = -1, after = -1;
++    double before_pts = -INFINITY, after_pts = INFINITY;
++    for (int i = 0; i < mix->num_frames; i++) {
++        const struct pl_frame *candidate = mix->frames[i];
++        struct mp_image *mpi = candidate ? candidate->user_data : NULL;
++        if (!mpi || !isfinite(mpi->pts) || mpi->imgfmt != IMGFMT_MEDIACODEC)
++            continue;
++        if (mpi->pts <= p->last_pts && mpi->pts > before_pts) {
++            before = i;
++            before_pts = mpi->pts;
++        } else if (mpi->pts > p->last_pts && mpi->pts < after_pts) {
++            after = i;
++            after_pts = mpi->pts;
++        }
++    }
++    if (before < 0 || after < 0 || after_pts <= before_pts)
++        return false;
++
++    const struct pl_frame *source = mix->frames[before];
++    const struct pl_frame *next = mix->frames[after];
++    struct mp_image *mpi0 = source->user_data;
++    struct mp_image *mpi1 = next->user_data;
++    struct frame_priv *fp0 = mpi0->priv;
++    struct frame_priv *fp1 = mpi1->priv;
++    if (!fp0 || !fp1 || !fp0->rife_input || !fp1->rife_input ||
++        source->enhancement_layer || next->enhancement_layer ||
++        mpi0->params.w != mpi1->params.w || mpi0->params.h != mpi1->params.h)
++        return false;
++
++    double source_duration = after_pts - before_pts;
++    int target_fps = p->next_opts->rife_target_fps;
++    if (source_duration <= 0 || source_duration * target_fps <= 1.0)
++        return false;
++    if (!p->rife_cadence_origin_valid) {
++        p->rife_cadence_origin_pts = before_pts;
++        p->rife_cadence_origin_valid = true;
++    }
++    int64_t cadence_index = 0;
++    if (!rife_cadence_grid_index(p->rife_cadence_origin_pts, p->last_pts,
++                                 target_fps, p->rife_cadence_output_valid,
++                                 p->rife_last_cadence_index, &cadence_index))
++        return false;
++    // Compute motion for the timestamp mpv will actually present, not the
++    // nearest cadence-grid timestamp (which can be slightly offset).
++    float timestep = (float) ((p->last_pts - before_pts) / source_duration);
++    if (timestep <= 0.f || timestep >= 1.f)
++        return false;
++
++    int width = mpi0->params.w;
++    int height = mpi0->params.h;
++    int max_dimension = p->next_opts->rife_max_dimension;
++    if (max_dimension > 0 && MP_MAX(width, height) > max_dimension) {
++        double scale = (double) max_dimension / MP_MAX(width, height);
++        width = MP_MAX(2, ((int) (width * scale)) & ~1);
++        height = MP_MAX(2, ((int) (height * scale)) & ~1);
++    }
++    if (!rife_init_output_ring(p, width, height))
++        return false;
++
++    int index = p->rife_output_cursor++ % MP_ARRAY_SIZE(p->rife_outputs);
++    struct rife_output_slot *slot = &p->rife_outputs[index];
++    if (slot->sampled) {
++        GL *gl = ra_gl_get(p->ra_ctx->ra);
++        if (!gl || !gl->Finish)
++            return false;
++        // Conservative cross-API reuse: wait until the GLES compositor has
++        // stopped sampling this ring slot before NCNN reacquires it.
++        gl->Finish();
++        slot->sampled = false;
++    }
++
++    RifeVfiGpuFrame *synthesized = NULL;
++    if (rife_vfi_interpolate_gpu_frames(p->rife_engine, fp0->rife_input,
++                                        fp1->rife_input, timestep,
++                                        &synthesized) != 0 || !synthesized) {
++        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE Vulkan inference failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
++        return false;
++    }
++    int write_result = rife_vfi_write_output_rgba(p->rife_engine, synthesized,
++                                                   slot->output);
++    rife_vfi_gpu_frame_release(synthesized);
++    if (write_result != 0) {
++        p->rife_disabled_for_session = true;
++        MP_WARN(p, "RIFE Vulkan-to-AHB output handoff failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
++        return false;
++    }
++
++    *rife_frame = *source;
++    rife_frame->num_planes = 1;
++    rife_frame->planes[0] = (struct pl_plane) {
++        .texture = slot->wrapped,
++        .components = 4,
++        .component_mapping = {0, 1, 2, 3},
++    };
++    rife_frame->repr = pl_color_repr_rgb;
++    rife_frame->acquire = NULL;
++    rife_frame->release = NULL;
++    rife_frame->enhancement_layer = NULL;
++    rife_frame->prev = NULL;
++    rife_frame->next = NULL;
++    if (source->crop.x0 == source->crop.x1 ||
++        source->crop.y0 == source->crop.y1) {
++        rife_frame->crop = (pl_rect2df) {0, 0, width, height};
++    } else {
++        float scale_x = (float) width / mpi0->params.w;
++        float scale_y = (float) height / mpi0->params.h;
++        rife_frame->crop.x0 *= scale_x;
++        rife_frame->crop.x1 *= scale_x;
++        rife_frame->crop.y0 *= scale_y;
++        rife_frame->crop.y1 *= scale_y;
++    }
++
++    *rife_signature = (mix->signatures ? mix->signatures[before] : 0) ^
++                      ((mix->signatures ? mix->signatures[after] : 0) << 1) ^
++                      (uint64_t) llround(p->last_pts * 1000000.0);
++    *rife_timestamp = 0.0f;
++    *rife_frames = rife_frame;
++    *rife_mix = (struct pl_frame_mix) {
++        .num_frames = 1,
++        .frames = rife_frames,
++        .signatures = rife_signature,
++        .timestamps = rife_timestamp,
++        .vsync_duration = mix->vsync_duration,
++    };
++    p->rife_last_cadence_index = cadence_index;
++    p->rife_cadence_output_valid = true;
++    *slot_index = index;
++    return true;
++}
++#endif
++
+ static void update_options(struct vo *vo)
+ {
+     struct priv *p = vo->priv;
+@@ -1162,6 +1600,9 @@ static void update_options(struct vo *vo)
+     changed = m_config_cache_update(p->next_opts_cache) || changed;
+     if (changed)
+         update_render_options(vo);
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    rife_sync_engine(p);
++#endif
+ 
+     update_lut(p, &p->next_opts->lut);
+     pars->params.lut = p->next_opts->lut.lut;
+@@ -1406,6 +1847,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+             p->last_id = 0;
+             p->want_reset = false;
+             p->flush_cache = true;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++            rife_reset_cadence(p);
++#endif
+         }
+ 
+         if (p->flush_cache) {
+@@ -1652,6 +2096,15 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+     update_tm_viz(&pars->color_map_params, &target);
+ 
+     struct pl_frame_mix mix = {0};
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    struct pl_frame_mix rife_mix = {0};
++    struct pl_frame rife_output_frame = {0};
++    const struct pl_frame *rife_frames[1] = {0};
++    uint64_t rife_signature = 0;
++    float rife_timestamp = 0.0f;
++    int rife_slot_index = -1;
++    bool rife_interpolated = false;
++#endif
+     if (frame->current) {
+         // Update queue state
+         struct pl_queue_params qparams = *pl_queue_params(
+@@ -1747,6 +2200,20 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+             update_hook_opts_dynamic(p, p->hooks[i], frame->current);
+     }
+ 
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    rife_interpolated = rife_build_display_mix(
++        p, &mix, &rife_mix, &rife_output_frame, rife_frames,
++        &rife_signature, &rife_timestamp, &rife_slot_index);
++    if (rife_interpolated) {
++        mix = rife_mix;
++        // Mark before rendering: even a failed draw may have submitted GLES
++        // reads, so the next Vulkan reuse must wait for GL completion.
++        p->rife_outputs[rife_slot_index].sampled = true;
++        MP_INFO(vo, "RIFE_DIAGNOSTIC event=gpu_resident_frame pts=%.6f signature=%" PRIu64 " renderer=gpu-next-gles-presentation inference=vulkan-ncnn\n",
++                p->last_pts, rife_signature);
++    }
++#endif
++
+     // Render frame
+     stats_time_start(p->stats, "render");
+     bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
+@@ -1777,7 +2244,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+     }
+     mp_mutex_unlock(&vo->params_mutex);
+ 
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    p->is_interpolated = rife_interpolated || (pts_offset != 0 && mix.num_frames > 1);
++#else
+     p->is_interpolated = pts_offset != 0 && mix.num_frames > 1;
++#endif
+     valid = true;
+     // fall through
+ 
+@@ -2464,6 +2935,13 @@ static void uninit(struct vo *vo)
+         pl_gpu_finish(p->gpu);
+ 
+     pl_queue_destroy(&p->queue); // destroy this first
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    rife_clear_output_ring(p);
++    rife_vfi_destroy(p->rife_engine);
++    p->rife_engine = NULL;
++    talloc_free(p->rife_model_dir);
++    p->rife_model_dir = NULL;
++#endif
+     for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
+         pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
+     for (int i = 0; i < p->num_sub_tex; i++)

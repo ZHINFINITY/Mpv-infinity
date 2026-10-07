@@ -2,3 +2,7 @@
 
 # Preserve pinned third-party source verbatim; upstream contains trailing whitespace.
 app/src/main/cpp/third_party/quickjs/** -whitespace
+
+# Unified diff context lines encode blank lines with a leading space. The patched
+# mpv sources are independently checked with git diff --check before packaging.
+scripts/patches/*.patch -whitespace

@@ -66,6 +66,7 @@ class MPVView(
     private set
   var onSurfaceReady: (() -> Unit)? = null
   private var rifeModelDirectory: String? = null
+  private var rifeResidentModeSelected = false
 
   /**
    * Configures the process-wide player and binds this view as its current rendering surface.
@@ -94,6 +95,16 @@ class MPVView(
       } else {
         null
       }
+    val requestedRifeResidentMode =
+      RifeResidentPlaybackPolicy.isEligible(
+        rifeEnabled = rifeRequested && BuildConfig.MPV_HAS_RIFE && !frameInterpolationConfigOwned,
+        hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
+        modelAvailable = rifeModelDirectory != null,
+        videoOutput = requestedBackend.vo,
+        gpuApi = requestedBackend.gpuApi,
+        timingOptionsOwnedByUser =
+          MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.RIFE_RESIDENT_TIMING),
+      )
     val rifeFrameInterpolationActive = rifeModelDirectory != null
     val frameInterpolationKey =
       if (rifeFrameInterpolationActive) {
@@ -102,7 +113,7 @@ class MPVView(
         "rife=off"
       }
     val coreConfigurationKey =
-      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|$frameInterpolationKey"
+      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|$frameInterpolationKey|rifeResident=$requestedRifeResidentMode"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
@@ -212,23 +223,57 @@ class MPVView(
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
     val rifeHardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get()
-    val rifeHwdecMode =
-      RendererBackendPolicy.preferredHwdecModeForCpuFilter(rifeHardwareDecodingEnabled)
     val rifeFrameInterpolationPreference = decoderPreferences.rifeFrameInterpolation.get()
     val rifeTargetFps = normalizeRifeTargetFps(decoderPreferences.rifeTargetFps.get())
     val rifeProcessingResolution =
       normalizeRifeProcessingResolution(decoderPreferences.rifeProcessingResolution.get())
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
+    val rifeResidentTimingConfigOwned =
+      MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.RIFE_RESIDENT_TIMING)
     val rifeFrameInterpolationEnabled =
       rifeFrameInterpolationPreference &&
         BuildConfig.MPV_HAS_RIFE &&
         rifeModelDirectory != null &&
         !frameInterpolationConfigOwned
+    // The resident path is a separate VO integration: Vulkan/NCNN performs all
+    // RIFE work, while the already-selected GLES renderer only presents its AHB output.
+    // Never force a backend switch; all other configurations retain CPU RGB24 vf_rife.
+    val rifeResidentMode =
+      RifeResidentPlaybackPolicy.isEligible(
+        rifeEnabled = rifeFrameInterpolationEnabled,
+        hardwareDecodingEnabled = rifeHardwareDecodingEnabled,
+        modelAvailable = rifeModelDirectory != null,
+        videoOutput = backend.vo,
+        gpuApi = backend.gpuApi,
+        timingOptionsOwnedByUser = rifeResidentTimingConfigOwned,
+      )
+    rifeResidentModeSelected = rifeResidentMode
+    val rifeCpuFilterEnabled = rifeFrameInterpolationEnabled && !rifeResidentMode
+    val rifeHwdecMode =
+      if (rifeResidentMode) "mediacodec,no"
+      else RendererBackendPolicy.preferredHwdecModeForCpuFilter(rifeHardwareDecodingEnabled)
     val frameInterpolationEnabled = rifeFrameInterpolationEnabled
     PlaybackSession.setVideoOutput(backend.vo)
     PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
     PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
+    if (BuildConfig.MPV_HAS_RIFE) {
+      val residentOptionResult =
+        PlaybackSession.setOptionString("rife-resident", if (rifeResidentMode) "yes" else "no")
+      val modelOptionResult =
+        PlaybackSession.setOptionString("rife-model-dir", rifeModelDirectory.orEmpty())
+      PlaybackSession.setOptionString("rife-target-fps", rifeTargetFps.toString())
+      PlaybackSession.setOptionString("rife-max-dimension", rifeProcessingResolution.toString())
+      if (rifeResidentMode && !MpvConfigOverridePolicy.isOwnedByMpvConf("interpolation")) {
+        PlaybackSession.setOptionString("interpolation", "yes")
+      }
+      Log.i(
+        TAG,
+        "RIFE_RESIDENT_OPTIONS selected=$rifeResidentMode " +
+          "resident_rc=$residentOptionResult model_rc=$modelOptionResult " +
+          "renderer=${backend.vo}/${backend.gpuApi}",
+      )
+    }
 
     val hdrScreenOutputEnabled = decoderPreferences.hdrScreenOutput.get()
     val isLinearAvailable = useVulkan && backend.vo == "gpu-next"
@@ -252,7 +297,8 @@ class MPVView(
       )
     }
 
-    // This filter still consumes CPU-readable pixels; copy mode is not AHardwareBuffer zero-copy.
+    // Resident RIFE consumes a timestamp-checked AHardwareBuffer via NCNN Vulkan;
+    // the existing user filter remains the safe CPU-readable fallback elsewhere.
     if (rifeFrameInterpolationEnabled) {
       val hwdecResult = PlaybackSession.setOptionString("hwdec", rifeHwdecMode)
       val codecListResult =
@@ -284,7 +330,7 @@ class MPVView(
 
     val appVideoFilters =
       buildList {
-        if (rifeFrameInterpolationEnabled) {
+        if (rifeCpuFilterEnabled) {
           add(
             "rife=model-dir=$rifeModelDirectory:target-fps=$rifeTargetFps:" +
               "max-dimension=$rifeProcessingResolution",
@@ -301,6 +347,9 @@ class MPVView(
     if (rifeFrameInterpolationPreference) {
       val reason =
         when {
+          rifeResidentMode -> "resident_path_opt_in_runtime_gated"
+          rifeResidentTimingConfigOwned && rifeFrameInterpolationEnabled ->
+            "resident_timing_owned_cpu_filter_fallback"
           rifeFrameInterpolationEnabled -> "enabled"
           !BuildConfig.MPV_HAS_RIFE -> "runtime_unavailable"
           frameInterpolationConfigOwned -> "mpv_config_owns_filter"
@@ -317,11 +366,11 @@ class MPVView(
         listOf(
           "RIFE_DIAGNOSTIC event=config enabled=$rifeFrameInterpolationEnabled " +
             "target_fps=$rifeTargetFps max_dimension=$rifeProcessingResolution " +
-            "resolution_mode=$resolutionMode gpu_resident_path=unavailable " +
-            "active_filter_path=cpu_rgb24_filter",
+            "resolution_mode=$resolutionMode gpu_resident_path=${if (rifeResidentMode) "vulkan_ncnn_ahb_gles_presentation_runtime_gated" else "not_selected"} " +
+            "active_filter_path=${if (rifeCpuFilterEnabled) "cpu_rgb24_filter" else if (rifeResidentMode) "vo_gpu_next_vulkan_ncnn" else "none"}",
           "display_refresh_hz=${display?.refreshRate ?: 0f} renderer=${backend.vo} " +
-            "gpu_api=${backend.gpuApi} cpu_readable_frames_required=$rifeFrameInterpolationEnabled " +
-            "decoder_to_renderer_handoff=unavailable " +
+            "gpu_api=${backend.gpuApi} cpu_readable_frames_required=$rifeCpuFilterEnabled " +
+            "decoder_to_renderer_handoff=${if (rifeResidentMode) "timestamped_ahb_runtime_gated" else "not_selected"} " +
             "decoder_mode=${if (rifeFrameInterpolationEnabled) rifeHwdecMode else hwdecMode}",
           "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
         ).joinToString(" ")
@@ -391,10 +440,14 @@ class MPVView(
     PlaybackSession.setOptionString("hr-seek", if (preciseSeek) "yes" else "no")
     PlaybackSession.setOptionString("hr-seek-framedrop", if (preciseSeek) "no" else "yes")
 
-    // Use audio-based video sync for better frame pacing with 4K HDR content.
-    // This prevents timing jitter when the display refresh rate doesn't perfectly
-    // match the video frame rate (e.g., 24fps content on 60Hz display).
-    PlaybackSession.setOptionString("video-sync", "audio")
+    // The resident RIFE queue requires display-synchronized PTS brackets. Other
+    // modes retain the app's existing audio-based sync behavior.
+    if (!MpvConfigOverridePolicy.isOwnedByMpvConf("video-sync")) {
+      PlaybackSession.setOptionString(
+        "video-sync",
+        if (rifeResidentMode) "display-resample" else "audio",
+      )
+    }
 
     // Anime4K shader initialization (MUST be in initOptions, not after file load!)
     if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.ANIME4K)) {
@@ -416,6 +469,17 @@ class MPVView(
 
   override fun postInitOptions() {
     applyOsdSafeAreaMargins()
+
+    // mpv.conf is parsed during MPVLib.init(). Re-apply only the prerequisites
+    // for the selected resident path unless the user explicitly owns them.
+    if (rifeResidentModeSelected) {
+      if (!MpvConfigOverridePolicy.isOwnedByMpvConf("interpolation")) {
+        PlaybackSession.setOptionString("interpolation", "yes")
+      }
+      if (!MpvConfigOverridePolicy.isOwnedByMpvConf("video-sync")) {
+        PlaybackSession.setOptionString("video-sync", "display-resample")
+      }
+    }
 
     when (decoderPreferences.debanding.get()) {
       Debanding.None -> {}

@@ -179,6 +179,7 @@ enum class MpvConfigOverride(
       setOf(
         "speed",
         "audio-pitch-correction",
+        "interpolation",
         "hr-seek",
         "hr-seek-framedrop",
         "video-sync",
@@ -285,6 +286,10 @@ object MpvConfigControlledFeatures {
   val HARDWARE_DECODER = setOf("hwdec", "gpu-api", "gpu-context", "vd-lavc-o")
 
   val FRAME_INTERPOLATION = setOf("vf", "hwdec")
+
+  // The GPU-resident RIFE VO needs mpv's display-synchronized interpolation
+  // queue. User-owned timing options keep that route off; CPU RIFE remains safe.
+  val RIFE_RESIDENT_TIMING = setOf("interpolation", "video-sync")
 }
 
 /** The ownership snapshot used by the active libmpv core. */
