@@ -325,7 +325,7 @@
   <string name="pref_decoder_mpvflow_summary_unavailable">The direct GPU Flow renderer is included only in the experimental arm64 testing APK.</string>
   <string name="pref_decoder_mpvflow_summary_config_owned">Unavailable because mpv.conf owns an option required by GPU Flow (such as gpu-api, gpu-context, mpvflow, mpvflow-max-dimension, interpolation, video-sync, vf, or hwdec). Clear those overrides to let the app manage this feature.</string>
   <string name="pref_decoder_mpvflow_summary_requires_gpu_next_opengl">The first direct GPU Flow backend requires GPU-next with OpenGL ES. Vulkan and legacy GPU are not supported by this implementation yet; disable Vulkan and Anime4K to enable it.</string>
-  <string name="pref_decoder_mpvflow_summary_native_engine">MPV engine only. Select MPV or Auto for supported media.</string>
+  <string name="pref_decoder_mpvflow_summary_native_engine">Native Media3 route: GLES 3.1 GPU block matching and frame synthesis for supported SDR video. HDR, Dolby Vision, DRM, rotated or non-square-pixel formats stay on Media3’s standard renderer; bounded queues fall back to source frames when deadlines are tight. Restart playback after changing.</string>
   <string name="pref_decoder_mpvflow_summary_rife_selected">Enabling MPVFlow turns off the separate RIFE toggle; only one interpolation path can run at a time.</string>
   <string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>
   <string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>

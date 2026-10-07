@@ -122,6 +122,7 @@ object DecoderPreferencesScreen : Screen {
         !useVulkan &&
         !anime4kActivePreference &&
         selectedPlaybackEngine != PlaybackEngineMode.NATIVE
+    val nativeMedia3FlowAvailable = selectedPlaybackEngine == PlaybackEngineMode.NATIVE
     var showGpuNextWarning by remember { mutableStateOf(false) }
     var anime4kExpanded by remember { mutableStateOf(false) }
     Scaffold(
@@ -450,7 +451,7 @@ object DecoderPreferencesScreen : Screen {
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_mpvflow_title),
                 value = mpvFlowFrameInterpolationEnabled,
-                enabled = mpvFlowAvailable || mpvFlowFrameInterpolationEnabled,
+                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
                 onValueChange = { enabled ->
                   if (enabled) preferences.rifeFrameInterpolation.set(false)
                   preferences.mpvFlowFrameInterpolation.set(enabled)
@@ -460,11 +461,10 @@ object DecoderPreferencesScreen : Screen {
                   Text(
                     stringResource(
                       when {
+                        nativeMedia3FlowAvailable -> R.string.pref_decoder_mpvflow_summary_native_engine
                         !BuildConfig.MPV_HAS_MPVFLOW -> R.string.pref_decoder_mpvflow_summary_unavailable
                         frameInterpolationConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
                         rendererBackendConfigOwned -> R.string.pref_decoder_mpvflow_summary_config_owned
-                        selectedPlaybackEngine == PlaybackEngineMode.NATIVE ->
-                          R.string.pref_decoder_mpvflow_summary_native_engine
                         rifeFrameInterpolationEnabled -> R.string.pref_decoder_mpvflow_summary_rife_selected
                         !gpuNext || useVulkan || anime4kActivePreference ->
                           R.string.pref_decoder_mpvflow_summary_requires_gpu_next_opengl
@@ -483,7 +483,7 @@ object DecoderPreferencesScreen : Screen {
                 value = mpvFlowTargetFps,
                 onValueChange = preferences.mpvFlowTargetFps::set,
                 values = MPVFLOW_TARGET_FPS_OPTIONS,
-                enabled = mpvFlowAvailable || mpvFlowFrameInterpolationEnabled,
+                enabled = mpvFlowAvailable || nativeMedia3FlowAvailable || mpvFlowFrameInterpolationEnabled,
                 valueToText = {
                   AnnotatedString(
                     context.getString(

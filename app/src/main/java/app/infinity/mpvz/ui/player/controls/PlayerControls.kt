@@ -2361,6 +2361,17 @@ private fun NativeStatsPageOverlay(
   val duration = NativeStatsDisplay.duration(snapshot.durationMs)
   val position = NativeStatsDisplay.position(snapshot.positionMs)
   val bufferAhead = NativeStatsDisplay.bufferedDuration(snapshot.totalBufferedDurationMs)
+  val flow = snapshot.media3Flow
+  val flowSourceRate = if (flow.sourceFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.sourceFps) else "—"
+  val flowOutputRate = if (flow.outputFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.outputFps) else "—"
+  val flowGeneratedRate = if (flow.generatedFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.generatedFps) else "—"
+  val flowMultiplier = if (flow.sourceFps > 0f && flow.outputFps > 0f) {
+    String.format(java.util.Locale.US, "%.1f", flow.outputFps / flow.sourceFps)
+  } else {
+    "—"
+  }
+  val flowConfidence = flow.confidence?.let { String.format(java.util.Locale.US, "%.0f%%", it * 100f) }
+    ?: "n/a (not read back)"
   Surface(
     modifier = modifier,
     color = Color.Transparent,
@@ -2409,6 +2420,23 @@ private fun NativeStatsPageOverlay(
             style = MaterialTheme.typography.bodySmall,
             color = Color.White,
           )
+          if (flow.enabled) {
+            Text(
+              "Media3 Flow: ${flow.state} · src $flowSourceRate fps → out $flowOutputRate/${flow.targetFps} fps " +
+                "($flowMultiplier×) · generated $flowGeneratedRate fps (${"%,d".format(java.util.Locale.US, flow.generatedFrames)} total)",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+            Text(
+              "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms · " +
+                "confidence $flowConfidence · drop ${flow.droppedFrames} · skip ${flow.skippedFrames} · " +
+                "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +
+                "processing ${flow.processingWidth}×${flow.processingHeight}" +
+                (flow.bypassReason?.let { " · $it" } ?: ""),
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
+          }
           Text(
             "Position: $position / $duration · Buffer ahead: $bufferAhead",
             style = MaterialTheme.typography.bodySmall,

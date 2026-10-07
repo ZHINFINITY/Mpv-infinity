@@ -112,6 +112,7 @@ data class NativePlaybackSnapshot(
   val bandwidthBytesLoaded: Long = 0L,
   val sourceSizeBytes: Long = 0L,
   val speed: Float = 1f,
+  val media3Flow: Media3FlowDiagnostics = Media3FlowDiagnostics(),
   val subtitleTracks: List<NativeTrack> = emptyList(),
   val audioTracks: List<NativeTrack> = emptyList(),
   val chapters: List<NativeChapter> = emptyList(),
@@ -168,9 +169,43 @@ data class NativeChapter(
 )
 
 /** A source-local Android Media3 playback engine. */
-class NativeMedia3Engine(context: Context) {
+class NativeMedia3Engine(
+  context: Context,
+  enableMedia3Flow: Boolean = false,
+  media3FlowTargetFps: Int = 60,
+) {
   private val appContext = context.applicationContext
   private val logTag = "Mpv∞-Media3"
+  private val flowDeviceSupported =
+    enableMedia3Flow && Media3FlowVideoSink.deviceSupportsGles31(appContext)
+  private val media3FlowSink = if (flowDeviceSupported) {
+    Media3FlowVideoSink(appContext, media3FlowTargetFps, ::publishFlowDiagnostics)
+  } else {
+    null
+  }
+  private val _flowDiagnostics = MutableStateFlow(
+    when {
+      !enableMedia3Flow -> Media3FlowDiagnostics()
+      !flowDeviceSupported -> Media3FlowDiagnostics(
+        enabled = true,
+        targetFps = media3FlowTargetFps,
+        state = "unavailable",
+        bypassReason = "gles31_unavailable",
+      )
+      media3FlowSink?.isPreflightAvailable() != true -> Media3FlowDiagnostics(
+        enabled = true,
+        targetFps = media3FlowTargetFps,
+        state = "unavailable",
+        bypassReason = "egl_preflight_failed",
+      )
+      else -> Media3FlowDiagnostics(
+        enabled = true,
+        targetFps = media3FlowTargetFps,
+        state = "waiting_for_supported_video",
+        bypassReason = "awaiting_sdr_format",
+      )
+    },
+  )
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
     .setAllowCrossProtocolRedirects(true)
     .setConnectTimeoutMs(15_000)
@@ -211,15 +246,7 @@ class NativeMedia3Engine(context: Context) {
     // still delivered through Player.Listener.onPlayerError.
     .setStuckBufferingDetectionTimeoutMs(Int.MAX_VALUE)
     .setMediaSourceFactory(mediaSourceFactory)
-    .setRenderersFactory(
-      DefaultRenderersFactory(context.applicationContext)
-        // Prefer platform hardware codecs for 4K/HDR; extensions remain available as fallback.
-        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-        // Keep Media3's decoder fallback enabled. Some HDR profile/codec combinations on Xiaomi
-        // devices reject the first candidate even though a compatible Media3 decoder is available.
-        .setEnableDecoderFallback(true)
-        .withAssSupport(assHandler)
-    )
+    .setRenderersFactory(createRenderersFactory())
     .build()
   private var attachedView: PlayerView? = null
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
@@ -286,7 +313,7 @@ class NativeMedia3Engine(context: Context) {
     android.graphics.Color.BLACK,
     null,
   )
-  private val _snapshot = MutableStateFlow(NativePlaybackSnapshot())
+  private val _snapshot = MutableStateFlow(NativePlaybackSnapshot(media3Flow = _flowDiagnostics.value))
   val snapshot: StateFlow<NativePlaybackSnapshot> = _snapshot.asStateFlow()
   private val _subtitleCueText = MutableStateFlow("")
   val subtitleCueText: StateFlow<String> = _subtitleCueText.asStateFlow()
@@ -1205,6 +1232,21 @@ class NativeMedia3Engine(context: Context) {
     libassRenderer?.getTrackIds()?.keys?.forEach { id -> libassRenderer?.setTrackEnabled(id, false) }
   }
 
+  private fun createRenderersFactory(): DefaultRenderersFactory {
+    val factory: DefaultRenderersFactory = media3FlowSink?.let { Media3FlowRenderersFactory(appContext, it) }
+      ?: DefaultRenderersFactory(appContext)
+    // Keep platform/extension codecs and Media3's standard renderer candidates available for
+    // HDR, DRM, unsupported geometry, and formats rejected by the Flow sink's EGL/GLES preflight.
+    factory.setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+    factory.setEnableDecoderFallback(true)
+    return factory.withAssSupport(assHandler)
+  }
+
+  private fun publishFlowDiagnostics(diagnostics: Media3FlowDiagnostics) {
+    _flowDiagnostics.value = diagnostics
+    _snapshot.value = _snapshot.value.copy(media3Flow = diagnostics)
+  }
+
   fun addListener(listener: Player.Listener) = player.addListener(listener)
   fun removeListener(listener: Player.Listener) = player.removeListener(listener)
 
@@ -1245,6 +1287,7 @@ class NativeMedia3Engine(context: Context) {
     attachedView = null
     assHandler.release()
     player.release()
+    media3FlowSink?.release()
   }
 
   private fun publishSnapshot() {
@@ -1378,6 +1421,7 @@ class NativeMedia3Engine(context: Context) {
       bandwidthBytesLoaded = bandwidthBytesLoaded,
       sourceSizeBytes = sourceSizeBytes,
       speed = player.playbackParameters.speed,
+      media3Flow = _flowDiagnostics.value,
       subtitleTracks = subtitles,
       audioTracks = audioTracks,
       chapters = chapters,
@@ -1417,6 +1461,7 @@ class NativeMedia3Engine(context: Context) {
       bandwidthBytesLoaded = bandwidthBytesLoaded,
       sourceSizeBytes = sourceSizeBytes,
       speed = player.playbackParameters.speed,
+      media3Flow = _flowDiagnostics.value,
     )
   }
 

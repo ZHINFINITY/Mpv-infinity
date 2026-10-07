@@ -195,10 +195,14 @@ class PlayerActivity :
 
   /**
    * Binding for the player layout.
-   */
+  */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
   private val nativeEngine by lazy {
-    NativeMedia3Engine(this).also {
+    NativeMedia3Engine(
+      context = this,
+      enableMedia3Flow = decoderPreferences.mpvFlowFrameInterpolation.get(),
+      media3FlowTargetFps = decoderPreferences.mpvFlowTargetFps.get(),
+    ).also {
       it.onEnded = { runOnUiThread { handleNativePlaybackEnded() } }
     }
   }
