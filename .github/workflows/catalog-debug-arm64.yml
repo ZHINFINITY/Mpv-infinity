@@ -38,7 +38,12 @@ jobs:
           path: mpv-source
       - name: Check RIFE resident VO patch against pinned MPV
         working-directory: mpv-source
-        run: git apply --check ../scripts/patches/rife-resident-vo.patch
+        run: |
+          git apply --check ../scripts/patches/rife-resident-vo.patch
+          git apply ../scripts/patches/rife-resident-vo.patch
+          python3 ../scripts/tests/test_rife_resident_contract.py \
+            --mpv-source . \
+            --native-bridge ../app/src/main/cpp/rife/rife_vfi_bridge.cpp
       - name: Checkout pinned RIFE-ncnn-vulkan source and model
         uses: actions/checkout@v6
         with:

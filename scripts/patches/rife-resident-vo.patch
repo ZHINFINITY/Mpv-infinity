@@ -1,5 +1,45 @@
+diff --git a/options/options.c b/options/options.c
+index e8b590af8c04f155700b42f9115fbba58ac8d316..256d359a8ed9d111840ef81a7f1dbe03dc7bde65 100644
+--- a/options/options.c
++++ b/options/options.c
+@@ -940,6 +940,11 @@ static const m_option_t mp_opts[] = {
+     {"curl", OPT_SUBSTRUCT(curl_opts, curl_conf)},
+ #endif
+ 
++    // RIFE resident controls are root libmpv options (settable via mpv_set_option_string).
++    {"rife-resident", OPT_BOOL(rife_resident), .flags = UPDATE_VIDEO},
++    {"rife-model-dir", OPT_STRING(rife_model_dir), .flags = UPDATE_VIDEO | M_OPT_FILE},
++    {"rife-target-fps", OPT_INT(rife_target_fps), M_RANGE(1, 240), .flags = UPDATE_VIDEO},
++    {"rife-max-dimension", OPT_INT(rife_max_dimension), M_RANGE(-1, 8192), .flags = UPDATE_VIDEO},
+     {"", OPT_SUBSTRUCT(vo, vo_sub_opts)},
+     {"", OPT_SUBSTRUCT(demux_opts, demux_conf)},
+     {"", OPT_SUBSTRUCT(demux_cache_opts, demux_cache_conf)},
+@@ -1050,6 +1055,8 @@ static const struct MPOpts mp_default_opts = {
+     .sync_max_audio_change = 0.125,
+     .sync_max_factor = 5,
+     .load_config = true,
++    .rife_target_fps = 60,
++    .rife_max_dimension = 0,
+     .position_resume = true,
+     .watch_history_path = "~~state/watch_history.jsonl",
+     .autoload_files = true,
+diff --git a/options/options.h b/options/options.h
+index 26a791343ffffef9b38c4cbd7e260682756377d7..7bd98232ea27395b5978ab46638c371bf1120f35 100644
+--- a/options/options.h
++++ b/options/options.h
+@@ -414,6 +414,10 @@ typedef struct MPOpts {
+     struct ra_ctx_opts *ra_ctx_opts;
+     struct gl_video_opts *gl_video_opts;
+     struct gl_next_opts *gl_next_opts;
++    bool rife_resident;
++    char *rife_model_dir;
++    int rife_target_fps;
++    int rife_max_dimension;
+     struct angle_opts *angle_opts;
+     struct opengl_opts *opengl_opts;
+     struct vulkan_opts *vulkan_opts;
 diff --git a/video/out/gpu/hwdec.h b/video/out/gpu/hwdec.h
-index ea29b0dc2..9901c00a5 100644
+index ea29b0dc2f7fbf59e7db70b2d7297b9ee8cf5a58..9901c00a52126aa54884ac1d045a40586f067f1d 100644
 --- a/video/out/gpu/hwdec.h
 +++ b/video/out/gpu/hwdec.h
 @@ -1,6 +1,7 @@
@@ -25,26 +65,44 @@ index ea29b0dc2..9901c00a5 100644
  // Returns IMGFMT_NONE if the name doesn't get matched.
  int ra_hwdec_driver_get_imgfmt_for_name(const char *name);
 diff --git a/video/out/hwdec/hwdec_aimagereader.c b/video/out/hwdec/hwdec_aimagereader.c
-index 55883c0be..cde1b48c6 100644
+index 55883c0be6fc4d23dee0ad193e8d521e81d91b03..fd3f5752ab423140536d8bee4d10cd92142dec8c 100644
 --- a/video/out/hwdec/hwdec_aimagereader.c
 +++ b/video/out/hwdec/hwdec_aimagereader.c
-@@ -19,6 +19,7 @@
+@@ -19,6 +19,10 @@
  
  #include <assert.h>
  #include <dlfcn.h>
++#include <errno.h>
++#include <poll.h>
 +#include <string.h>
++#include <unistd.h>
  #include <EGL/egl.h>
  #include <media/NdkImageReader.h>
  #include <android/native_window_jni.h>
-@@ -49,6 +50,7 @@ struct priv_owner {
+@@ -39,6 +43,11 @@ typedef void *EGLImageKHR;
+ struct priv_owner {
+     struct mp_hwdec_ctx hwctx;
+     AImageReader *reader;
++    // AImageReader has one listener per reader, shared by both gpu-next frame mappers.
++    mp_mutex image_lock;
++    mp_mutex acquire_lock;
++    mp_cond image_cond;
++    bool image_available;
+     jobject surface;
+     void *lib_handle;
+ 
+@@ -48,7 +57,9 @@ struct priv_owner {
+         AImageReader *, ANativeWindow **);
      media_status_t (*AImageReader_setImageListener)(
          AImageReader *, AImageReader_ImageListener *);
-     media_status_t (*AImageReader_acquireLatestImage)(AImageReader *, AImage **);
+-    media_status_t (*AImageReader_acquireLatestImage)(AImageReader *, AImage **);
++    media_status_t (*AImageReader_acquireLatestImageAsync)(
++        AImageReader *, AImage **, int *);
 +    media_status_t (*AImage_getTimestamp)(const AImage *, int64_t *);
      void (*AImageReader_delete)(AImageReader *);
      media_status_t (*AImage_getHardwareBuffer)(const AImage *, AHardwareBuffer **);
      void (*AImage_delete)(AImage *);
-@@ -61,6 +63,8 @@ struct priv {
+@@ -61,11 +72,10 @@ struct priv {
  
      GLuint gl_texture;
      AImage *image;
@@ -52,16 +110,143 @@ index 55883c0be..cde1b48c6 100644
 +    int64_t timestamp_ns;
      EGLImageKHR egl_image;
  
-     mp_mutex lock;
-@@ -80,6 +84,7 @@ static const struct { const char *symbol; int offset; } lib_functions[] = {
+-    mp_mutex lock;
+-    mp_cond cond;
+-    bool image_available;
+ 
+     EGLImageKHR (EGLAPIENTRY *CreateImageKHR)(
+         EGLDisplay, EGLContext, EGLenum, EGLClientBuffer, const EGLint *);
+@@ -79,7 +89,8 @@ static const struct { const char *symbol; int offset; } lib_functions[] = {
+     { "AImageReader_newWithUsage", offsetof(struct priv_owner, AImageReader_newWithUsage) },
      { "AImageReader_getWindow", offsetof(struct priv_owner, AImageReader_getWindow) },
      { "AImageReader_setImageListener", offsetof(struct priv_owner, AImageReader_setImageListener) },
-     { "AImageReader_acquireLatestImage", offsetof(struct priv_owner, AImageReader_acquireLatestImage) },
+-    { "AImageReader_acquireLatestImage", offsetof(struct priv_owner, AImageReader_acquireLatestImage) },
++    { "AImageReader_acquireLatestImageAsync", offsetof(struct priv_owner, AImageReader_acquireLatestImageAsync) },
 +    { "AImage_getTimestamp", offsetof(struct priv_owner, AImage_getTimestamp) },
      { "AImageReader_delete", offsetof(struct priv_owner, AImageReader_delete) },
      { "AImage_getHardwareBuffer", offsetof(struct priv_owner, AImage_getHardwareBuffer) },
      { "AImage_delete", offsetof(struct priv_owner, AImage_delete) },
-@@ -327,6 +332,8 @@ static void mapper_unmap(struct ra_hwdec_mapper *mapper)
+@@ -89,6 +100,7 @@ static const struct { const char *symbol; int offset; } lib_functions[] = {
+ };
+ 
+ 
++static void image_callback(void *context, AImageReader *reader);
+ static AVBufferRef *create_mediacodec_device_ref(jobject surface)
+ {
+     AVBufferRef *device_ref = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_MEDIACODEC);
+@@ -167,7 +179,18 @@ static int init(struct ra_hwdec *hw)
+         return -1;
+     }
+     mp_assert(p->reader);
+-
++    mp_mutex_init(&p->image_lock);
++    mp_mutex_init(&p->acquire_lock);
++    mp_cond_init(&p->image_cond);
++    AImageReader_ImageListener listener = {
++        .context = p,
++        .onImageAvailable = image_callback,
++    };
++    ret = p->AImageReader_setImageListener(p->reader, &listener);
++    if (ret != AMEDIA_OK) {
++        MP_ERR(hw, "setImageListener failed: %d\n", ret);
++        return -1;
++    }
+     ANativeWindow *window = NULL;
+     ret = p->AImageReader_getWindow(p->reader, &window);
+     if (ret != AMEDIA_OK) {
+@@ -212,10 +235,13 @@ static void uninit(struct ra_hwdec *hw)
+     }
+ 
+     if (p->reader) {
++        p->AImageReader_setImageListener(p->reader, NULL);
+         p->AImageReader_delete(p->reader);
+         p->reader = NULL;
+     }
+-
++    mp_cond_destroy(&p->image_cond);
++    mp_mutex_destroy(&p->acquire_lock);
++    mp_mutex_destroy(&p->image_lock);
+     hwdec_devices_remove(hw->devs, &p->hwctx);
+     av_buffer_unref(&p->hwctx.av_device_ref);
+ 
+@@ -227,23 +253,35 @@ static void uninit(struct ra_hwdec *hw)
+ 
+ static void image_callback(void *context, AImageReader *reader)
+ {
+-    struct priv *p = context;
+-
+-    mp_mutex_lock(&p->lock);
++    struct priv_owner *p = context;
++    if (reader != p->reader)
++        return;
++    mp_mutex_lock(&p->image_lock);
+     p->image_available = true;
+-    mp_cond_signal(&p->cond);
+-    mp_mutex_unlock(&p->lock);
++    mp_cond_signal(&p->image_cond);
++    mp_mutex_unlock(&p->image_lock);
++}
++
++static bool wait_for_acquire_fence(int fence_fd)
++{
++    if (fence_fd < 0)
++        return true;
++
++    struct pollfd fence = {.fd = fence_fd, .events = POLLIN};
++    int result;
++    do {
++        result = poll(&fence, 1, 250);
++    } while (result < 0 && errno == EINTR);
++    close(fence_fd);
++    return result == 1 && (fence.revents & POLLIN) &&
++           !(fence.revents & (POLLERR | POLLHUP | POLLNVAL));
+ }
+ 
+ static int mapper_init(struct ra_hwdec_mapper *mapper)
+ {
+     struct priv *p = mapper->priv;
+-    struct priv_owner *o = mapper->owner->priv;
+     GL *gl = ra_gl_get(mapper->ra);
+-
+     p->log = mapper->log;
+-    mp_mutex_init(&p->lock);
+-    mp_cond_init(&p->cond);
+ 
+     p->CreateImageKHR = (void *)eglGetProcAddress("eglCreateImageKHR");
+     p->DestroyImageKHR = (void *)eglGetProcAddress("eglDestroyImageKHR");
+@@ -256,12 +294,6 @@ static int mapper_init(struct ra_hwdec_mapper *mapper)
+         !p->GetNativeClientBufferANDROID || !p->EGLImageTargetTexture2DOES)
+         return -1;
+ 
+-    AImageReader_ImageListener listener = {
+-        .context = p,
+-        .onImageAvailable = image_callback,
+-    };
+-    o->AImageReader_setImageListener(o->reader, &listener);
+-
+     mapper->dst_params = mapper->src_params;
+     mapper->dst_params.imgfmt = IMGFMT_RGB0;
+     mapper->dst_params.hw_subfmt = 0;
+@@ -299,18 +331,11 @@ static int mapper_init(struct ra_hwdec_mapper *mapper)
+ static void mapper_uninit(struct ra_hwdec_mapper *mapper)
+ {
+     struct priv *p = mapper->priv;
+-    struct priv_owner *o = mapper->owner->priv;
+     GL *gl = ra_gl_get(mapper->ra);
+-
+-    o->AImageReader_setImageListener(o->reader, NULL);
+-
+     gl->DeleteTextures(1, &p->gl_texture);
+     p->gl_texture = 0;
+ 
+     ra_tex_free(mapper->ra, &mapper->tex[0]);
+-
+-    mp_mutex_destroy(&p->lock);
+-    mp_cond_destroy(&p->cond);
+ }
+ 
+ static void mapper_unmap(struct ra_hwdec_mapper *mapper)
+@@ -327,6 +352,8 @@ static void mapper_unmap(struct ra_hwdec_mapper *mapper)
          o->AImage_delete(p->image);
          p->image = NULL;
      }
@@ -70,29 +255,144 @@ index 55883c0be..cde1b48c6 100644
  }
  
  static int mapper_map(struct ra_hwdec_mapper *mapper)
-@@ -338,6 +345,8 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
-     mp_mutex_lock(&p->lock);
-     p->image_available = false;
-     mp_mutex_unlock(&p->lock);
+@@ -334,56 +361,74 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+     struct priv *p = mapper->priv;
+     struct priv_owner *o = mapper->owner->priv;
+     GL *gl = ra_gl_get(mapper->ra);
++    if (mapper->src->imgfmt != IMGFMT_MEDIACODEC)
++        return -1;
+ 
+-    mp_mutex_lock(&p->lock);
+-    p->image_available = false;
+-    mp_mutex_unlock(&p->lock);
+-
+-    {
+-        if (mapper->src->imgfmt != IMGFMT_MEDIACODEC)
+-            return -1;
+-        AVMediaCodecBuffer *buffer = (AVMediaCodecBuffer *)mapper->src->planes[3];
+-        int err = av_mediacodec_release_buffer(buffer, 1);
+-        if (err != 0) {
+-            char errstr[80];
+-            av_strerror(err, errstr, sizeof(errstr));
+-            MP_ERR(p, "Failed to render buffer: %s\n", errstr);
+-            // HACK: If the buffer has been released already, return fake
+-            // success to avoid flashing frames of render errors.
+-            // The VOs need to be fixed to handle this gracefully.
+-            return err == AVERROR(ENOENT) ? 0 : -1;
+-        }
++    // The reader and its callback are shared by gpu-next's two frame mappers.
++    // Serialize release -> callback wait -> acquire so a callback or image from
++    // one mapper cannot be consumed as another mapper's frame.
++    mp_mutex_lock(&o->acquire_lock);
++    mp_mutex_lock(&o->image_lock);
++    o->image_available = false;
++    mp_mutex_unlock(&o->image_lock);
 +    p->hardware_buffer = NULL;
 +    p->timestamp_ns = 0;
++    AVMediaCodecBuffer *buffer = (AVMediaCodecBuffer *)mapper->src->planes[3];
++    int err = av_mediacodec_release_buffer(buffer, 1);
++    if (err != 0) {
++        char errstr[80];
++        av_strerror(err, errstr, sizeof(errstr));
++        MP_ERR(p, "Failed to render buffer: %s\n", errstr);
++        mp_mutex_unlock(&o->acquire_lock);
++        // Preserve upstream behavior when a queued frame was already released.
++        return err == AVERROR(ENOENT) ? 0 : -1;
+     }
  
-     {
-         if (mapper->src->imgfmt != IMGFMT_MEDIACODEC)
-@@ -382,6 +391,9 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+     bool image_available = false;
+-    mp_mutex_lock(&p->lock);
+-    if (!p->image_available) {
+-        mp_cond_timedwait(&p->cond, &p->lock, MP_TIME_MS_TO_NS(100));
+-    }
+-    image_available = p->image_available;
+-    mp_mutex_unlock(&p->lock);
++    mp_mutex_lock(&o->image_lock);
++    if (!o->image_available)
++        mp_cond_timedwait(&o->image_cond, &o->image_lock, MP_TIME_MS_TO_NS(100));
++    image_available = o->image_available;
++    mp_mutex_unlock(&o->image_lock);
+     if (!image_available)
+-        MP_WARN(p, "Waiting for frame timed out!\n");
+-
+-    // Note that this will clear all queued images and only return the latest one
+-    media_status_t ret = o->AImageReader_acquireLatestImage(o->reader, &p->image);
++        MP_VERBOSE(p, "AImageReader callback timed out; checking once for a queued image\n");
++
++    // Keep acquireLatest to avoid presenting stale queued surfaces. RIFE input
++    // is accepted only after its AImage timestamp matches the decoder PTS.
++    int acquire_fence_fd = -1;
++    media_status_t ret = o->AImageReader_acquireLatestImageAsync(
++        o->reader, &p->image, &acquire_fence_fd);
++    if (ret == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE) {
++        MP_VERBOSE(p, "AImageReader has no ready buffer; this frame has no AHB lease\n");
++        mp_mutex_unlock(&o->acquire_lock);
++        return 0;
++    }
+     if (ret != AMEDIA_OK) {
+-        MP_ERR(p, "acquireLatestImage failed: %d\n", ret);
+-        // (same hack as above)
+-        return (ret == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE && !image_available)
+-            ? 0 : -1;
++        if (acquire_fence_fd >= 0)
++            close(acquire_fence_fd);
++        MP_ERR(p, "acquireLatestImageAsync failed: %d\n", ret);
++        mp_mutex_unlock(&o->acquire_lock);
++        return -1;
+     }
+     mp_assert(p->image);
+-
++    if (!wait_for_acquire_fence(acquire_fence_fd)) {
++        MP_VERBOSE(p, "AImageReader acquire fence did not signal; skipping this frame\n");
++        o->AImage_delete(p->image);
++        p->image = NULL;
++        mp_mutex_unlock(&o->acquire_lock);
++        return 0;
++    }
+     AHardwareBuffer *hwbuf = NULL;
+     ret = o->AImage_getHardwareBuffer(p->image, &hwbuf);
+     if (ret != AMEDIA_OK) {
+         MP_ERR(p, "getHardwareBuffer failed: %d\n", ret);
++        mp_mutex_unlock(&o->acquire_lock);
          return -1;
      }
      mp_assert(hwbuf);
+-
+-    // Update texture size since it may differ
 +    p->hardware_buffer = hwbuf;
 +    if (o->AImage_getTimestamp(p->image, &p->timestamp_ns) != AMEDIA_OK)
 +        p->timestamp_ns = 0;
- 
-     // Update texture size since it may differ
      AHardwareBuffer_Desc d;
-@@ -409,6 +421,18 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+     o->AHardwareBuffer_describe(hwbuf, &d);
+     if (mapper->tex[0]->params.w != d.width || mapper->tex[0]->params.h != d.height) {
+@@ -391,23 +436,39 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+         mapper->tex[0]->params.w = d.width;
+         mapper->tex[0]->params.h = d.height;
+     }
+-
+     EGLClientBuffer buf = p->GetNativeClientBufferANDROID(hwbuf);
+-    if (!buf)
++    if (!buf) {
++        mp_mutex_unlock(&o->acquire_lock);
+         return -1;
+-
++    }
+     const int attribs[] = {EGL_NONE};
+     p->egl_image = p->CreateImageKHR(eglGetCurrentDisplay(),
+         EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, buf, attribs);
+-    if (!p->egl_image)
++    if (!p->egl_image) {
++        mp_mutex_unlock(&o->acquire_lock);
+         return -1;
+-
++    }
+     gl->BindTexture(GL_TEXTURE_EXTERNAL_OES, p->gl_texture);
+     p->EGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, p->egl_image);
+     gl->BindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+-
++    mp_mutex_unlock(&o->acquire_lock);
      return 0;
  }
- 
 +void *ra_hwdec_aimagereader_get_hardware_buffer(
 +    struct ra_hwdec_mapper *mapper, int64_t *timestamp_ns)
 +{
@@ -100,16 +400,19 @@ index 55883c0be..cde1b48c6 100644
 +        strcmp(mapper->owner->driver->name, "aimagereader") != 0)
 +        return NULL;
 +    struct priv *p = mapper->priv;
++    // The returned AHB is borrowed from this exact AImage lease. Callers must
++    // import/acquire it before mapper_unmap deletes p->image.
++    if (!p->image || !p->hardware_buffer)
++        return NULL;
 +    if (timestamp_ns)
 +        *timestamp_ns = p->timestamp_ns;
 +    return p->hardware_buffer;
 +}
-+
+ 
  
  const struct ra_hwdec_driver ra_hwdec_aimagereader = {
-     .name = "aimagereader",
 diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
-index bd3d1aa1e..7cea5580e 100644
+index bd3d1aa1eca6fe0bac1d8a4dd52258cb93847185..3949b3238a539ad8c3a95aecaad3a0f0d2483db9 100644
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
 @@ -18,6 +18,8 @@
@@ -158,7 +461,18 @@ index bd3d1aa1e..7cea5580e 100644
  struct priv {
      struct mp_log *log;
      struct mpv_global *global;
-@@ -178,6 +203,18 @@ struct priv {
+@@ -159,6 +184,10 @@ struct priv {
+     struct m_config_cache *opts_cache;
+     struct m_config_cache *next_opts_cache;
+     struct gl_next_opts *next_opts;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    struct m_config_cache *rife_root_opts_cache;
++    MPOpts *rife_root_opts;
++#endif
+     struct cache shader_cache, icc_cache;
+     struct mp_csp_equalizer_state *video_eq;
+     struct scaler_params scalers[SCALER_COUNT];
+@@ -178,6 +207,21 @@ struct priv {
      struct frame_info perf_redraw;
  
      struct mp_image_params target_params;
@@ -173,41 +487,14 @@ index bd3d1aa1e..7cea5580e 100644
 +    int64_t rife_last_cadence_index;
 +    bool rife_cadence_origin_valid;
 +    bool rife_cadence_output_valid;
++    bool rife_pending_frame;
++    double rife_pending_pts;
++    uint64_t rife_pending_signature;
 +#endif
  };
  
  static void update_render_options(struct vo *vo);
-@@ -198,6 +235,10 @@ struct gl_next_opts {
-     int target_hint_mode;
-     bool target_hint_strict;
-     char **raw_opts;
-+    bool rife_resident;
-+    char *rife_model_dir;
-+    int rife_target_fps;
-+    int rife_max_dimension;
- };
- 
- const struct m_opt_choice_alternatives lut_types[] = {
-@@ -232,6 +273,10 @@ const struct m_sub_options gl_next_conf = {
-         {"target-colorspace-hint", OPT_CHOICE(target_hint, {"auto", -1}, {"no", 0}, {"yes", 1})},
-         {"target-colorspace-hint-mode", OPT_CHOICE(target_hint_mode, {"target", 0}, {"source", 1}, {"source-dynamic", 2})},
-         {"target-colorspace-hint-strict", OPT_BOOL(target_hint_strict)},
-+        {"rife-resident", OPT_BOOL(rife_resident)},
-+        {"rife-model-dir", OPT_STRING(rife_model_dir), .flags = M_OPT_FILE},
-+        {"rife-target-fps", OPT_INT(rife_target_fps), M_RANGE(1, 240)},
-+        {"rife-max-dimension", OPT_INT(rife_max_dimension), M_RANGE(-1, 8192)},
-         // No `target-lut-type` because we don't support non-RGB targets
-         {"libplacebo-opts", OPT_KEYVALUELIST(raw_opts)},
-         {0},
-@@ -243,6 +288,7 @@ const struct m_sub_options gl_next_conf = {
-         .image_subs_hdr_peak = 1000,
-         .target_hint = -1,
-         .target_hint_strict = true,
-+        .rife_target_fps = 60,
-     },
-     .size = sizeof(struct gl_next_opts),
-     .change_flags = UPDATE_VIDEO,
-@@ -561,6 +607,10 @@ struct frame_priv {
+@@ -561,6 +605,10 @@ struct frame_priv {
      struct osd_state subs;
      uint64_t osd_sync;
      struct ra_hwdec *hwdec;
@@ -218,13 +505,13 @@ index bd3d1aa1e..7cea5580e 100644
      // Optional Dolby Vision FEL.
      struct ra_hwdec *el_hwdec;
      pl_tex el_tex[4];
-@@ -810,6 +860,58 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
+@@ -810,6 +858,57 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
          }
          s->perf = timer_pool_measure(s->timer);
          s->owner = owner;
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
 +        struct frame_priv *fp = owner->priv;
-+        if (p->next_opts->rife_resident && p->rife_engine &&
++        if (p->rife_root_opts->rife_resident && p->rife_engine &&
 +            !p->rife_disabled_for_session &&
 +            owner == mpi && mpi->imgfmt == IMGFMT_MEDIACODEC && fp &&
 +            !fp->rife_input && !fp->rife_input_failed)
@@ -234,7 +521,7 @@ index bd3d1aa1e..7cea5580e 100644
 +                s->mapper, &image_timestamp_ns);
 +            if (!ahb) {
 +                fp->rife_input_failed = true;
-+                p->rife_disabled_for_session = true;
++                MP_VERBOSE(p, "RIFE_DIAGNOSTIC event=ahb_input_skipped reason=no_ready_image_lease\n");
 +            } else {
 +                AHardwareBuffer_Desc desc = {};
 +                AHardwareBuffer_describe((AHardwareBuffer *) ahb, &desc);
@@ -242,7 +529,7 @@ index bd3d1aa1e..7cea5580e 100644
 +                    ? fabs((double) image_timestamp_ns * 1e-9 - mpi->pts) : INFINITY;
 +                int width = mpi->params.w;
 +                int height = mpi->params.h;
-+                int max_dimension = p->next_opts->rife_max_dimension;
++                int max_dimension = p->rife_root_opts->rife_max_dimension;
 +                if (max_dimension > 0 && MP_MAX(width, height) > max_dimension) {
 +                    double scale = (double) max_dimension / MP_MAX(width, height);
 +                    width = MP_MAX(2, ((int) (width * scale)) & ~1);
@@ -255,8 +542,7 @@ index bd3d1aa1e..7cea5580e 100644
 +                    desc.width != (uint32_t) mpi->params.w ||
 +                    desc.height != (uint32_t) mpi->params.h) {
 +                    fp->rife_input_failed = true;
-+                    p->rife_disabled_for_session = true;
-+                    MP_VERBOSE(p, "RIFE AHB input rejected (timestamp delta %.6f s, AHB %ux%u, source %dx%d)\n",
++                    MP_VERBOSE(p, "RIFE AHB input rejected for this frame (timestamp delta %.6f s, AHB %ux%u, source %dx%d)\n",
 +                               pts_delta, desc.width, desc.height,
 +                               mpi->params.w, mpi->params.h);
 +                } else if (rife_vfi_import_ahb_rgb8(p->rife_engine, ahb,
@@ -277,7 +563,7 @@ index bd3d1aa1e..7cea5580e 100644
      }
  
      if (ra_hwdec_mapper_begin_access(s->mapper) < 0)
-@@ -1127,12 +1229,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1127,12 +1226,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
      }
      slot_release_owner(p, &p->hwdec, mpi);
      slot_release_owner(p, &p->el_hwdec, mpi);
@@ -299,7 +585,7 @@ index bd3d1aa1e..7cea5580e 100644
      talloc_free(mpi);
  }
  
-@@ -1154,6 +1265,333 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1262,347 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -339,8 +625,8 @@ index bd3d1aa1e..7cea5580e 100644
 +
 +static void rife_sync_engine(struct priv *p)
 +{
-+    const char *model_dir = p->next_opts->rife_model_dir;
-+    bool enabled = p->next_opts->rife_resident && model_dir && model_dir[0];
++    const char *model_dir = p->rife_root_opts->rife_model_dir;
++    bool enabled = p->rife_root_opts->rife_resident && model_dir && model_dir[0];
 +    if (!enabled) {
 +        if (!p->rife_engine && !p->rife_model_dir &&
 +            !p->rife_outputs[0].output && !p->rife_outputs[1].output &&
@@ -493,9 +779,9 @@ index bd3d1aa1e..7cea5580e 100644
 +                                   uint64_t *rife_signature,
 +                                   float *rife_timestamp, int *slot_index)
 +{
-+    if (!p->next_opts->rife_resident || !p->rife_engine ||
++    if (!p->rife_root_opts->rife_resident || !p->rife_engine ||
 +        p->rife_disabled_for_session || mix->num_frames < 2 ||
-+        p->next_opts->rife_target_fps < 1)
++        p->rife_root_opts->rife_target_fps < 1)
 +        return false;
 +
 +    int before = -1, after = -1;
@@ -528,7 +814,7 @@ index bd3d1aa1e..7cea5580e 100644
 +        return false;
 +
 +    double source_duration = after_pts - before_pts;
-+    int target_fps = p->next_opts->rife_target_fps;
++    int target_fps = p->rife_root_opts->rife_target_fps;
 +    if (source_duration <= 0 || source_duration * target_fps <= 1.0)
 +        return false;
 +    if (!p->rife_cadence_origin_valid) {
@@ -548,7 +834,7 @@ index bd3d1aa1e..7cea5580e 100644
 +
 +    int width = mpi0->params.w;
 +    int height = mpi0->params.h;
-+    int max_dimension = p->next_opts->rife_max_dimension;
++    int max_dimension = p->rife_root_opts->rife_max_dimension;
 +    if (max_dimension > 0 && MP_MAX(width, height) > max_dimension) {
 +        double scale = (double) max_dimension / MP_MAX(width, height);
 +        width = MP_MAX(2, ((int) (width * scale)) & ~1);
@@ -633,8 +919,12 @@ index bd3d1aa1e..7cea5580e 100644
  static void update_options(struct vo *vo)
  {
      struct priv *p = vo->priv;
-@@ -1162,6 +1600,9 @@ static void update_options(struct vo *vo)
+     pl_options pars = p->pars;
+     bool changed = m_config_cache_update(p->opts_cache);
      changed = m_config_cache_update(p->next_opts_cache) || changed;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    changed = m_config_cache_update(p->rife_root_opts_cache) || changed;
++#endif
      if (changed)
          update_render_options(vo);
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
@@ -653,11 +943,13 @@ index bd3d1aa1e..7cea5580e 100644
          }
  
          if (p->flush_cache) {
-@@ -1652,6 +2096,15 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1652,6 +2096,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      update_tm_viz(&pars->color_map_params, &target);
  
      struct pl_frame_mix mix = {0};
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    p->rife_pending_frame = false;
++    struct pl_frame_mix source_mix = {0};
 +    struct pl_frame_mix rife_mix = {0};
 +    struct pl_frame rife_output_frame = {0};
 +    const struct pl_frame *rife_frames[1] = {0};
@@ -669,11 +961,12 @@ index bd3d1aa1e..7cea5580e 100644
      if (frame->current) {
          // Update queue state
          struct pl_queue_params qparams = *pl_queue_params(
-@@ -1747,6 +2200,20 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1747,10 +2202,39 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              update_hook_opts_dynamic(p, p->hooks[i], frame->current);
      }
  
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    source_mix = mix;
 +    rife_interpolated = rife_build_display_mix(
 +        p, &mix, &rife_mix, &rife_output_frame, rife_frames,
 +        &rife_signature, &rife_timestamp, &rife_slot_index);
@@ -682,15 +975,33 @@ index bd3d1aa1e..7cea5580e 100644
 +        // Mark before rendering: even a failed draw may have submitted GLES
 +        // reads, so the next Vulkan reuse must wait for GL completion.
 +        p->rife_outputs[rife_slot_index].sampled = true;
-+        MP_INFO(vo, "RIFE_DIAGNOSTIC event=gpu_resident_frame pts=%.6f signature=%" PRIu64 " renderer=gpu-next-gles-presentation inference=vulkan-ncnn\n",
-+                p->last_pts, rife_signature);
 +    }
 +#endif
 +
      // Render frame
      stats_time_start(p->stats, "render");
      bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
-@@ -1777,7 +2244,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+     stats_time_end(p->stats, "render");
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    if (!render_ok && rife_interpolated) {
++        MP_WARN(vo, "RIFE_DIAGNOSTIC event=resident_render_fallback reason=generated_frame_render_failed\n");
++        p->rife_disabled_for_session = true;
++        mix = source_mix;
++        rife_interpolated = false;
++        stats_time_start(p->stats, "render");
++        render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
++        stats_time_end(p->stats, "render");
++    }
++    if (render_ok && rife_interpolated) {
++        p->rife_pending_frame = true;
++        p->rife_pending_pts = p->last_pts;
++        p->rife_pending_signature = rife_signature;
++    }
++#endif
+     if (!render_ok) {
+         MP_ERR(vo, "Failed rendering frame!\n");
+         goto done;
+@@ -1777,7 +2261,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      }
      mp_mutex_unlock(&vo->params_mutex);
  
@@ -702,7 +1013,33 @@ index bd3d1aa1e..7cea5580e 100644
      valid = true;
      // fall through
  
-@@ -2464,6 +2935,13 @@ static void uninit(struct vo *vo)
+@@ -1796,12 +2284,22 @@ static void flip_page(struct vo *vo)
+     struct ra_swapchain *sw = p->ra_ctx->swapchain;
+ 
+     if (p->frame_pending) {
+-        if (!pl_swapchain_submit_frame(p->sw))
++        bool submitted = pl_swapchain_submit_frame(p->sw);
++        if (!submitted) {
+             MP_ERR(vo, "Failed presenting frame!\n");
++        }
+         p->frame_pending = false;
++        sw->fns->swap_buffers(sw);
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++        if (submitted && p->rife_pending_frame) {
++            MP_INFO(vo, "RIFE_DIAGNOSTIC event=gpu_resident_frame pts=%.6f signature=%" PRIu64 " renderer=gpu-next-gles-presentation inference=vulkan-ncnn\n",
++                    p->rife_pending_pts, p->rife_pending_signature);
++        }
++        p->rife_pending_frame = false;
++#endif
++    } else {
++        sw->fns->swap_buffers(sw);
+     }
+-
+-    sw->fns->swap_buffers(sw);
+ }
+ 
+ static void get_vsync(struct vo *vo, struct vo_vsync_info *info)
+@@ -2464,6 +2962,13 @@ static void uninit(struct vo *vo)
          pl_gpu_finish(p->gpu);
  
      pl_queue_destroy(&p->queue); // destroy this first
@@ -716,3 +1053,14 @@ index bd3d1aa1e..7cea5580e 100644
      for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
          pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
      for (int i = 0; i < p->num_sub_tex; i++)
+@@ -2519,6 +3024,10 @@ static int preinit(struct vo *vo)
+     p->opts_cache = m_config_cache_alloc(p, vo->global, &gl_video_conf);
+     p->next_opts_cache = m_config_cache_alloc(p, vo->global, &gl_next_conf);
+     p->next_opts = p->next_opts_cache->opts;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    p->rife_root_opts_cache = m_config_cache_alloc(p, vo->global, &mp_opt_root);
++    p->rife_root_opts = p->rife_root_opts_cache->opts;
++#endif
+     p->video_eq = mp_csp_equalizer_create(p, vo->global);
+     p->global = vo->global;
+     p->log = vo->log;

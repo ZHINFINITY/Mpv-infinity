@@ -40,4 +40,44 @@ class RifeResidentPlaybackPolicyTest {
   fun userOwnedInterpolationOrVideoSyncKeepsResidentRouteOff() {
     assertFalse(eligible(timingOptionsOwnedByUser = true))
   }
+
+  @Test
+  fun residentRouteRequiresEveryLibmpvOptionSetterToReturnSuccess() {
+    val accepted =
+      RifeResidentPlaybackPolicy.OptionResults(
+        resident = 0,
+        modelDir = 0,
+        targetFps = 0,
+        maxDimension = 0,
+        residentDisable = 0,
+        residentEnable = 0,
+      )
+    assertTrue(accepted.allAccepted)
+    assertTrue(
+      RifeResidentPlaybackPolicy.shouldUseResidentRoute(candidate = true, results = accepted),
+    )
+    val optionNotFound =
+      RifeResidentPlaybackPolicy.OptionResults(
+        resident = 0,
+        modelDir = -5,
+        targetFps = 0,
+        maxDimension = 0,
+        residentDisable = 0,
+      )
+    assertFalse(optionNotFound.allAccepted)
+    assertFalse(
+      RifeResidentPlaybackPolicy.shouldUseResidentRoute(candidate = true, results = optionNotFound),
+    )
+    assertFalse(
+      RifeResidentPlaybackPolicy.shouldUseResidentRoute(candidate = false, results = accepted),
+    )
+    assertFalse(
+      RifeResidentPlaybackPolicy.OptionResults(
+        resident = 0,
+        modelDir = 0,
+        targetFps = -2,
+        maxDimension = 0,
+      ).allAccepted,
+    )
+  }
 }

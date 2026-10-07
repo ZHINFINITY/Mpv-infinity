@@ -239,7 +239,7 @@ class MPVView(
     // The resident path is a separate VO integration: Vulkan/NCNN performs all
     // RIFE work, while the already-selected GLES renderer only presents its AHB output.
     // Never force a backend switch; all other configurations retain CPU RGB24 vf_rife.
-    val rifeResidentMode =
+    val rifeResidentCandidate =
       RifeResidentPlaybackPolicy.isEligible(
         rifeEnabled = rifeFrameInterpolationEnabled,
         hardwareDecodingEnabled = rifeHardwareDecodingEnabled,
@@ -248,29 +248,66 @@ class MPVView(
         gpuApi = backend.gpuApi,
         timingOptionsOwnedByUser = rifeResidentTimingConfigOwned,
       )
+    val frameInterpolationEnabled = rifeFrameInterpolationEnabled
+    PlaybackSession.setVideoOutput(backend.vo)
+    PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
+    PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
+    val residentOptionResults =
+      if (BuildConfig.MPV_HAS_RIFE) {
+        val residentDisableRc =
+          PlaybackSession.setOptionString("rife-resident", "no")
+        val modelDirRc =
+          PlaybackSession.setOptionString("rife-model-dir", rifeModelDirectory.orEmpty())
+        val targetFpsRc =
+          PlaybackSession.setOptionString("rife-target-fps", rifeTargetFps.toString())
+        val maxDimensionRc =
+          PlaybackSession.setOptionString("rife-max-dimension", rifeProcessingResolution.toString())
+        val residentEnableRc =
+          if (
+            rifeResidentCandidate &&
+              residentDisableRc == 0 &&
+              modelDirRc == 0 &&
+              targetFpsRc == 0 &&
+              maxDimensionRc == 0
+          ) {
+            PlaybackSession.setOptionString("rife-resident", "yes")
+          } else {
+            null
+          }
+        RifeResidentPlaybackPolicy.OptionResults(
+          resident = residentEnableRc ?: residentDisableRc,
+          modelDir = modelDirRc,
+          targetFps = targetFpsRc,
+          maxDimension = maxDimensionRc,
+          residentDisable = residentDisableRc,
+          residentEnable = residentEnableRc,
+        )
+      } else {
+        null
+      }
+    val rifeResidentMode =
+      RifeResidentPlaybackPolicy.shouldUseResidentRoute(
+        rifeResidentCandidate,
+        residentOptionResults,
+      )
     rifeResidentModeSelected = rifeResidentMode
     val rifeCpuFilterEnabled = rifeFrameInterpolationEnabled && !rifeResidentMode
     val rifeHwdecMode =
       if (rifeResidentMode) "mediacodec,no"
       else RendererBackendPolicy.preferredHwdecModeForCpuFilter(rifeHardwareDecodingEnabled)
-    val frameInterpolationEnabled = rifeFrameInterpolationEnabled
-    PlaybackSession.setVideoOutput(backend.vo)
-    PlaybackSession.setOptionString("gpu-api", backend.gpuApi)
-    PlaybackSession.setOptionString("gpu-context", backend.gpuContext)
     if (BuildConfig.MPV_HAS_RIFE) {
-      val residentOptionResult =
-        PlaybackSession.setOptionString("rife-resident", if (rifeResidentMode) "yes" else "no")
-      val modelOptionResult =
-        PlaybackSession.setOptionString("rife-model-dir", rifeModelDirectory.orEmpty())
-      PlaybackSession.setOptionString("rife-target-fps", rifeTargetFps.toString())
-      PlaybackSession.setOptionString("rife-max-dimension", rifeProcessingResolution.toString())
       if (rifeResidentMode && !MpvConfigOverridePolicy.isOwnedByMpvConf("interpolation")) {
         PlaybackSession.setOptionString("interpolation", "yes")
       }
       Log.i(
         TAG,
-        "RIFE_RESIDENT_OPTIONS selected=$rifeResidentMode " +
-          "resident_rc=$residentOptionResult model_rc=$modelOptionResult " +
+        "RIFE_RESIDENT_OPTIONS candidate=$rifeResidentCandidate selected=$rifeResidentMode " +
+          "resident_rc=${residentOptionResults?.resident} " +
+          "model_rc=${residentOptionResults?.modelDir} " +
+          "target_fps_rc=${residentOptionResults?.targetFps} " +
+          "max_dimension_rc=${residentOptionResults?.maxDimension} " +
+          "resident_disable_rc=${residentOptionResults?.residentDisable} " +
+          "resident_enable_rc=${residentOptionResults?.residentEnable ?: "skipped"} " +
           "renderer=${backend.vo}/${backend.gpuApi}",
       )
     }
@@ -347,7 +384,8 @@ class MPVView(
     if (rifeFrameInterpolationPreference) {
       val reason =
         when {
-          rifeResidentMode -> "resident_path_opt_in_runtime_gated"
+          rifeResidentMode -> "resident_path_awaiting_first_submitted_frame"
+          rifeResidentCandidate -> "resident_option_rejected_cpu_filter_fallback"
           rifeResidentTimingConfigOwned && rifeFrameInterpolationEnabled ->
             "resident_timing_owned_cpu_filter_fallback"
           rifeFrameInterpolationEnabled -> "enabled"
@@ -366,13 +404,15 @@ class MPVView(
         listOf(
           "RIFE_DIAGNOSTIC event=config enabled=$rifeFrameInterpolationEnabled " +
             "target_fps=$rifeTargetFps max_dimension=$rifeProcessingResolution " +
-            "resolution_mode=$resolutionMode gpu_resident_path=${if (rifeResidentMode) "vulkan_ncnn_ahb_gles_presentation_runtime_gated" else "not_selected"} " +
-            "active_filter_path=${if (rifeCpuFilterEnabled) "cpu_rgb24_filter" else if (rifeResidentMode) "vo_gpu_next_vulkan_ncnn" else "none"}",
+            "resolution_mode=$resolutionMode resident_state=${if (rifeResidentMode) "awaiting_gpu_resident_frame" else if (rifeResidentCandidate) "options_rejected_cpu_fallback" else "not_selected"} " +
+            "active_filter_path=${if (rifeCpuFilterEnabled) "cpu_rgb24_filter" else "none"}",
           "display_refresh_hz=${display?.refreshRate ?: 0f} renderer=${backend.vo} " +
             "gpu_api=${backend.gpuApi} cpu_readable_frames_required=$rifeCpuFilterEnabled " +
-            "decoder_to_renderer_handoff=${if (rifeResidentMode) "timestamped_ahb_runtime_gated" else "not_selected"} " +
+            "decoder_to_renderer_handoff=${if (rifeResidentMode) "timestamped_ahb_pending_runtime_frame" else "not_selected"} " +
             "decoder_mode=${if (rifeFrameInterpolationEnabled) rifeHwdecMode else hwdecMode}",
-          "filter_set_result=${filterOptionResult ?: "skipped"} reason=$reason",
+          "filter_set_result=${filterOptionResult ?: "skipped"} " +
+            "resident_option_rc=${residentOptionResults?.resident ?: "skipped"} " +
+            "model_option_rc=${residentOptionResults?.modelDir ?: "skipped"} reason=$reason",
         ).joinToString(" ")
       Log.i(
         TAG,
