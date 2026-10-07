@@ -26,7 +26,6 @@ def main() -> None:
         b"rife-model-dir",
         b"rife-target-fps",
         b"rife-max-dimension",
-        b"AImageReader_acquireLatestImageAsync",
         b"AImageReader has no ready buffer",
         b"RIFE_DIAGNOSTIC event=ahb_input_imported",
         b"RIFE_DIAGNOSTIC event=gpu_resident_frame",
@@ -38,12 +37,15 @@ def main() -> None:
             + ", ".join(missing)
         )
 
-    # The old synchronous API string must not be an exact imported symbol name.
-    if b"AImageReader_acquireLatestImage\0" in library:
-        raise SystemExit("Packaged libmpv still imports synchronous acquireLatestImage")
+    # Keep the upstream synchronous API: async acquisition requires polling its
+    # fence on gpu-next's renderer thread, which this build deliberately avoids.
+    if b"AImageReader_acquireLatestImage\0" not in library:
+        raise SystemExit("Packaged libmpv is missing synchronous acquireLatestImage")
+    if b"AImageReader_acquireLatestImageAsync" in library:
+        raise SystemExit("Packaged libmpv still contains async acquire/fence polling")
 
     print(
-        f"Android libmpv artifact passed: root options, async/no-buffer reader, "
+        f"Android libmpv artifact passed: root options, synchronous/no-buffer reader, "
         f"AHB import, and submitted resident-frame diagnostics ({args.apk})"
     )
 

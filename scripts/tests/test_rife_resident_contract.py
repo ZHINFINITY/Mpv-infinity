@@ -78,6 +78,10 @@ def main() -> None:
     require("AImageReader_acquireLatestImageAsync" not in reader and
             "wait_for_acquire_fence" not in reader and "poll(" not in reader,
             "renderer-thread AImage acquire-fence polling must remain disabled")
+    artifact_verifier = Path(__file__).with_name("test_rife_android_mpv_artifact.py").read_text()
+    require('b"AImageReader_acquireLatestImage\\0" not in library' in artifact_verifier and
+            'if b"AImageReader_acquireLatestImageAsync" in library:' in artifact_verifier,
+            "APK artifact validation must enforce the synchronous, non-polling reader path")
     callback_wait = mapper_map.find("mp_cond_timedwait(&o->image_cond")
     acquire = mapper_map.find("AImageReader_acquireLatestImage(o->reader, &p->image)")
     ahb_get = mapper_map.find("AImage_getHardwareBuffer(p->image, &hwbuf)")
