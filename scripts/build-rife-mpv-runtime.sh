@@ -38,10 +38,11 @@ if len(starts) != 1 or [line.strip() for line in lines[starts[0]:starts[0] + len
 start = starts[0]
 indent = lines[start][:len(lines[start]) - len(lines[start].lstrip())]
 replacement = [
-    f'{indent}msg "Using pinned MPV source checkout"',
+    f'{indent}msg "Using patched pinned MPV working tree"',
     f'{indent}rm -rf deps/mpv',
     f'{indent}mkdir -p deps/mpv',
-    f'{indent}git -C "$MPV_SOURCE_DIR" archive HEAD | tar -x -C deps/mpv',
+    f'{indent}cp -a "$MPV_SOURCE_DIR"/. deps/mpv/',
+    f'{indent}rm -rf deps/mpv/.git',
 ]
 lines[start:start + len(expected)] = replacement
 ci = "\n".join(lines) + "\n"
@@ -94,6 +95,8 @@ if [[ -z "$APK" ]]; then
   find "$MPV_BUILDER_DIR/app/build/outputs/apk" -maxdepth 5 -type f -print >&2 || true
   exit 1
 fi
+
+python3 "$ROOT/scripts/tests/test_rife_android_mpv_artifact.py" --apk "$APK"
 
 if [[ -n "${GITHUB_ENV:-}" ]]; then
   echo "RIFE_RUNTIME_APK=$APK" >> "$GITHUB_ENV"

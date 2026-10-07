@@ -71,6 +71,10 @@ def main() -> None:
     no_buffer = section(no_buffer, "AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE", "if (ret != AMEDIA_OK)")
     require("mp_mutex_unlock(&o->acquire_lock)" in no_buffer and "return 0" in no_buffer,
             "a transient no-buffer result must unlock and preserve playback")
+    require("close(acquire_fence_fd)" in no_buffer and "p->hardware_buffer = NULL" in no_buffer,
+            "a no-buffer result must release temporary resources and clear the borrowed AHB lease")
+    require("rife_disabled_for_session" not in no_buffer,
+            "a transient no-buffer result must not permanently disable resident RIFE")
     getter = section(reader, "void *ra_hwdec_aimagereader_get_hardware_buffer(",
                      "const struct ra_hwdec_driver")
     require("!p->image || !p->hardware_buffer" in getter,
@@ -93,6 +97,10 @@ def main() -> None:
             "resident inference must reject unpaired/untimestamped AImages")
     require("rife_vfi_import_ahb_rgb8" in vo and "rife_vfi_write_output_rgba" in vo,
             "VO must perform input import and synthesized output handoff")
+    import_branch = section(vo, "} else if (rife_vfi_import_ahb_rgb8(",
+                            "RIFE_DIAGNOSTIC event=ahb_input_imported")
+    require("} else {" in import_branch,
+            "ahb_input_imported must be reachable only after a successful AHB import")
     draw = section(vo, "static bool draw_frame(", "static void flip_page(")
     require("source_mix = mix;" in draw and "if (!render_ok && rife_interpolated)" in draw,
             "the original PTS-aware mix must be retained for fallback")

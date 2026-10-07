@@ -255,7 +255,7 @@ index 55883c0be6fc4d23dee0ad193e8d521e81d91b03..fd3f5752ab423140536d8bee4d10cd92
  }
  
  static int mapper_map(struct ra_hwdec_mapper *mapper)
-@@ -334,56 +361,74 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+@@ -334,56 +361,82 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
      struct priv *p = mapper->priv;
      struct priv_owner *o = mapper->owner->priv;
      GL *gl = ra_gl_get(mapper->ra);
@@ -326,6 +326,14 @@ index 55883c0be6fc4d23dee0ad193e8d521e81d91b03..fd3f5752ab423140536d8bee4d10cd92
 +        o->reader, &p->image, &acquire_fence_fd);
 +    if (ret == AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE) {
 +        MP_VERBOSE(p, "AImageReader has no ready buffer; this frame has no AHB lease\n");
++        if (acquire_fence_fd >= 0)
++            close(acquire_fence_fd);
++        if (p->image) {
++            o->AImage_delete(p->image);
++            p->image = NULL;
++        }
++        p->hardware_buffer = NULL;
++        p->timestamp_ns = 0;
 +        mp_mutex_unlock(&o->acquire_lock);
 +        return 0;
 +    }
@@ -365,7 +373,7 @@ index 55883c0be6fc4d23dee0ad193e8d521e81d91b03..fd3f5752ab423140536d8bee4d10cd92
      AHardwareBuffer_Desc d;
      o->AHardwareBuffer_describe(hwbuf, &d);
      if (mapper->tex[0]->params.w != d.width || mapper->tex[0]->params.h != d.height) {
-@@ -391,23 +436,39 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
+@@ -391,23 +444,39 @@ static int mapper_map(struct ra_hwdec_mapper *mapper)
          mapper->tex[0]->params.w = d.width;
          mapper->tex[0]->params.h = d.height;
      }

@@ -27,6 +27,17 @@ internal object RifeResidentPlaybackPolicy {
   fun shouldUseResidentRoute(candidate: Boolean, results: OptionResults?): Boolean =
     candidate && results?.allAccepted == true
 
+  fun activeFilterPath(
+    residentSelected: Boolean,
+    cpuFilterRequested: Boolean,
+    cpuFilterSetResult: Int?,
+  ): String =
+    when {
+      residentSelected -> "resident_vulkan_ncnn"
+      cpuFilterRequested && cpuFilterSetResult == 0 -> "cpu_rgb24_filter"
+      else -> "none"
+    }
+
   fun isEligible(
     rifeEnabled: Boolean,
     hardwareDecodingEnabled: Boolean,

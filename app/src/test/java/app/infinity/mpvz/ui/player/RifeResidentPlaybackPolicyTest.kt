@@ -4,6 +4,7 @@
 
 package app.infinity.mpvz.ui.player
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -78,6 +79,42 @@ class RifeResidentPlaybackPolicyTest {
         targetFps = -2,
         maxDimension = 0,
       ).allAccepted,
+    )
+  }
+
+  @Test
+  fun activeFilterPathRequiresSuccessfulOptionSetting() {
+    assertEquals(
+      "resident_vulkan_ncnn",
+      RifeResidentPlaybackPolicy.activeFilterPath(
+        residentSelected = true,
+        cpuFilterRequested = false,
+        cpuFilterSetResult = null,
+      ),
+    )
+    assertEquals(
+      "cpu_rgb24_filter",
+      RifeResidentPlaybackPolicy.activeFilterPath(
+        residentSelected = false,
+        cpuFilterRequested = true,
+        cpuFilterSetResult = 0,
+      ),
+    )
+    assertEquals(
+      "none",
+      RifeResidentPlaybackPolicy.activeFilterPath(
+        residentSelected = false,
+        cpuFilterRequested = true,
+        cpuFilterSetResult = -5,
+      ),
+    )
+    assertEquals(
+      "none",
+      RifeResidentPlaybackPolicy.activeFilterPath(
+        residentSelected = false,
+        cpuFilterRequested = true,
+        cpuFilterSetResult = null,
+      ),
     )
   }
 }

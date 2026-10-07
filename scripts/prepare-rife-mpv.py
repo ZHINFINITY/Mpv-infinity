@@ -70,16 +70,15 @@ def apply_resident_vo_patch(mpv_dir: Path) -> None:
         )
 
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
-    if "rife_cadence_grid_index" in vo_path.read_text():
-        return
-    subprocess.run(
-        ["git", "-C", str(mpv_dir), "apply", "--check", str(RESIDENT_VO_PATCH)],
-        check=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(mpv_dir), "apply", str(RESIDENT_VO_PATCH)],
-        check=True,
-    )
+    if "rife_cadence_grid_index" not in vo_path.read_text():
+        subprocess.run(
+            ["git", "-C", str(mpv_dir), "apply", "--check", str(RESIDENT_VO_PATCH)],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(mpv_dir), "apply", str(RESIDENT_VO_PATCH)],
+            check=True,
+        )
 
 
 def main() -> None:
@@ -104,6 +103,17 @@ def main() -> None:
     shutil.copy2(VENDOR / "rife_vfi.h", video_filter_dir / "rife_vfi.h")
     shutil.copy2(VENDOR / "rife_cadence.h", video_filter_dir / "rife_cadence.h")
     apply_resident_vo_patch(mpv_dir)
+    subprocess.run(
+        [
+            "python3",
+            str(ROOT / "scripts/tests/test_rife_resident_contract.py"),
+            "--mpv-source",
+            str(mpv_dir),
+            "--native-bridge",
+            str(VENDOR / "rife_vfi_bridge.cpp"),
+        ],
+        check=True,
+    )
 
     meson_path = mpv_dir / "meson.build"
     meson = meson_path.read_text()

@@ -381,6 +381,12 @@ class MPVView(
       } else {
         null
       }
+    val activeFilterPath =
+      RifeResidentPlaybackPolicy.activeFilterPath(
+        residentSelected = rifeResidentMode,
+        cpuFilterRequested = rifeCpuFilterEnabled,
+        cpuFilterSetResult = filterOptionResult,
+      )
     if (rifeFrameInterpolationPreference) {
       val reason =
         when {
@@ -405,7 +411,7 @@ class MPVView(
           "RIFE_DIAGNOSTIC event=config enabled=$rifeFrameInterpolationEnabled " +
             "target_fps=$rifeTargetFps max_dimension=$rifeProcessingResolution " +
             "resolution_mode=$resolutionMode resident_state=${if (rifeResidentMode) "awaiting_gpu_resident_frame" else if (rifeResidentCandidate) "options_rejected_cpu_fallback" else "not_selected"} " +
-            "active_filter_path=${if (rifeCpuFilterEnabled) "cpu_rgb24_filter" else "none"}",
+          "active_filter_path=$activeFilterPath",
           "display_refresh_hz=${display?.refreshRate ?: 0f} renderer=${backend.vo} " +
             "gpu_api=${backend.gpuApi} cpu_readable_frames_required=$rifeCpuFilterEnabled " +
             "decoder_to_renderer_handoff=${if (rifeResidentMode) "timestamped_ahb_pending_runtime_frame" else "not_selected"} " +
