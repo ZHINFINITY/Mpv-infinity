@@ -27,6 +27,7 @@ int main(void)
     failed |= expect_option(ctx, "rife-model-dir", "/tmp/rife-model");
     failed |= expect_option(ctx, "rife-target-fps", "60");
     failed |= expect_option(ctx, "rife-max-dimension", "0");
+    failed |= expect_option(ctx, "display-fps-override", "60.0");
     failed |= expect_option(ctx, "rife-resident", "yes");
 
     int unknown = mpv_set_option_string(ctx, "rife-option-regression-unknown", "yes");

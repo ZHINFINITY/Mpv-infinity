@@ -26,12 +26,24 @@ def main() -> None:
     args = parser.parse_args()
     mpv = args.mpv_source.resolve()
     bridge_path = args.native_bridge.resolve()
+    app_view = (
+        Path(__file__).resolve().parents[2]
+        / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
+    )
 
     options_c = (mpv / "options/options.c").read_text()
     options_h = (mpv / "options/options.h").read_text()
     reader = (mpv / "video/out/hwdec/hwdec_aimagereader.c").read_text()
     vo = (mpv / "video/out/vo_gpu_next.c").read_text()
     bridge = bridge_path.read_text()
+    view = app_view.read_text()
+    require("DisplayManager" in view and "Display.DEFAULT_DISPLAY" in view,
+            "Android display refresh fallback must use DisplayManager when the view is unattached")
+    require('setOptionString("display-fps-override"' in view and
+            "displayRefreshRateAvailable" in view,
+            "resident scheduling must supply and require a usable display refresh rate")
+    require('isOwnedByMpvConf("display-fps-override")' in view,
+            "the resident route must not override a user-owned display refresh setting")
 
     # These must be root libmpv options. App-side setOptionString calls must not
     # depend on gpu-next accepting arbitrary VO suboptions.
@@ -144,7 +156,10 @@ def main() -> None:
     ):
         require(marker in vo, f"resident runtime diagnostics are missing {marker}")
 
-    print("RIFE resident contracts passed: root options, shared async reader lease, AHB import/output, fallback, submitted-frame diagnostic, and runtime stage diagnostics")
+    print(
+        "RIFE resident contracts passed: root options, Android display timing, shared async reader lease, "
+        "AHB import/output, fallback, submitted-frame diagnostic, and runtime stage diagnostics"
+    )
 
 
 if __name__ == "__main__":

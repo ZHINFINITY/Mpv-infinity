@@ -16,6 +16,7 @@ class RifeResidentPlaybackPolicyTest {
     modelAvailable: Boolean = true,
     videoOutput: String = "gpu-next",
     gpuApi: String = "opengl",
+    displayRefreshRateAvailable: Boolean = true,
     timingOptionsOwnedByUser: Boolean = false,
   ): Boolean =
     RifeResidentPlaybackPolicy.isEligible(
@@ -24,6 +25,7 @@ class RifeResidentPlaybackPolicyTest {
       modelAvailable = modelAvailable,
       videoOutput = videoOutput,
       gpuApi = gpuApi,
+      displayRefreshRateAvailable = displayRefreshRateAvailable,
       timingOptionsOwnedByUser = timingOptionsOwnedByUser,
     )
 
@@ -34,6 +36,7 @@ class RifeResidentPlaybackPolicyTest {
     assertFalse(eligible(videoOutput = "gpu-next", gpuApi = "vulkan"))
     assertFalse(eligible(hardwareDecodingEnabled = false))
     assertFalse(eligible(modelAvailable = false))
+    assertFalse(eligible(displayRefreshRateAvailable = false))
     assertFalse(eligible(rifeEnabled = false))
   }
 
@@ -50,6 +53,7 @@ class RifeResidentPlaybackPolicyTest {
         modelDir = 0,
         targetFps = 0,
         maxDimension = 0,
+        displayFpsOverride = 0,
         residentDisable = 0,
         residentEnable = 0,
       )
@@ -76,8 +80,9 @@ class RifeResidentPlaybackPolicyTest {
       RifeResidentPlaybackPolicy.OptionResults(
         resident = 0,
         modelDir = 0,
-        targetFps = -2,
+        targetFps = 0,
         maxDimension = 0,
+        displayFpsOverride = -5,
       ).allAccepted,
     )
   }

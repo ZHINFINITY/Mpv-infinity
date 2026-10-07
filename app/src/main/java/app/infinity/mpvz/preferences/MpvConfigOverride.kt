@@ -290,7 +290,8 @@ object MpvConfigControlledFeatures {
 
   // The GPU-resident RIFE VO needs display-synchronized interpolation and
   // frame lookahead. User-owned timing options keep that route off; CPU RIFE remains safe.
-  val RIFE_RESIDENT_TIMING = setOf("interpolation", "video-sync", "video-latency-hacks")
+  val RIFE_RESIDENT_TIMING =
+    setOf("interpolation", "video-sync", "video-latency-hacks", "display-fps-override")
 }
 
 /** The ownership snapshot used by the active libmpv core. */

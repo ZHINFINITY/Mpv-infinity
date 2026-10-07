@@ -17,11 +17,14 @@ internal object RifeResidentPlaybackPolicy {
     val modelDir: Int,
     val targetFps: Int,
     val maxDimension: Int,
+    val displayFpsOverride: Int? = null,
     val residentDisable: Int = 0,
     val residentEnable: Int? = null,
   ) {
     val allAccepted: Boolean
-      get() = resident == 0 && modelDir == 0 && targetFps == 0 && maxDimension == 0
+      get() =
+        resident == 0 && modelDir == 0 && targetFps == 0 && maxDimension == 0 &&
+          displayFpsOverride == 0
   }
 
   fun shouldUseResidentRoute(candidate: Boolean, results: OptionResults?): Boolean =
@@ -44,6 +47,7 @@ internal object RifeResidentPlaybackPolicy {
     modelAvailable: Boolean,
     videoOutput: String,
     gpuApi: String,
+    displayRefreshRateAvailable: Boolean,
     timingOptionsOwnedByUser: Boolean,
   ): Boolean =
     rifeEnabled &&
@@ -51,5 +55,6 @@ internal object RifeResidentPlaybackPolicy {
       modelAvailable &&
       videoOutput == "gpu-next" &&
       gpuApi == "opengl" &&
+      displayRefreshRateAvailable &&
       !timingOptionsOwnedByUser
 }

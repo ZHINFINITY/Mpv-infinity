@@ -10,9 +10,11 @@
 package app.infinity.mpvz.ui.player
 
 import android.content.Context
+import android.hardware.display.DisplayManager
 import android.os.Environment
 import android.util.AttributeSet
 import android.util.Log
+import android.view.Display
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import androidx.core.view.WindowInsetsCompat
@@ -68,6 +70,15 @@ class MPVView(
   private var rifeModelDirectory: String? = null
   private var rifeResidentModeSelected = false
 
+  private fun getDisplayRefreshRateHz(): Float {
+    val viewDisplay = display
+    val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+    val resolvedDisplay =
+      viewDisplay ?: displayManager?.getDisplay(Display.DEFAULT_DISPLAY)
+    val refreshRate = resolvedDisplay?.refreshRate ?: 0f
+    return refreshRate.takeIf { it.isFinite() && it > 0f } ?: 0f
+  }
+
   /**
    * Configures the process-wide player and binds this view as its current rendering surface.
    * Re-entering the player reuses the live core; it never creates a second native instance.
@@ -81,6 +92,7 @@ class MPVView(
     // selection, but recreate the core when gpu-next/Vulkan selection actually changes.
     MpvConfigOverridePolicy.configure(advancedPreferences.mpvConfOverrides.get())
     val requestedBackend = selectRenderBackend(ignoreForcedOpenGlFallback = true)
+    val requestedDisplayRefreshRateHz = getDisplayRefreshRateHz()
     val frameInterpolationConfigOwned =
       MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)
     val rifeRequested = decoderPreferences.rifeFrameInterpolation.get()
@@ -102,6 +114,7 @@ class MPVView(
         modelAvailable = rifeModelDirectory != null,
         videoOutput = requestedBackend.vo,
         gpuApi = requestedBackend.gpuApi,
+        displayRefreshRateAvailable = requestedDisplayRefreshRateHz > 0f,
         timingOptionsOwnedByUser =
           MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.RIFE_RESIDENT_TIMING),
       )
@@ -113,7 +126,9 @@ class MPVView(
         "rife=off"
       }
     val coreConfigurationKey =
-      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|$frameInterpolationKey|rifeResident=$requestedRifeResidentMode"
+      "${requestedBackend.configurationKey}|conf=${MpvConfigOverridePolicy.configurationKey()}|" +
+        "$frameInterpolationKey|rifeResident=$requestedRifeResidentMode|" +
+        "displayFps=${if (requestedRifeResidentMode) requestedDisplayRefreshRateHz else "auto"}"
     val result =
       PlaybackSession.initialize(
         context = context.applicationContext,
@@ -220,6 +235,7 @@ class MPVView(
     val profile = decoderPreferences.profile.get()
     PlaybackSession.setOptionString("profile", profile)
     val backend = selectRenderBackend()
+    val displayRefreshRateHz = getDisplayRefreshRateHz()
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
     val rifeHardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get()
@@ -246,6 +262,7 @@ class MPVView(
         modelAvailable = rifeModelDirectory != null,
         videoOutput = backend.vo,
         gpuApi = backend.gpuApi,
+        displayRefreshRateAvailable = displayRefreshRateHz > 0f,
         timingOptionsOwnedByUser = rifeResidentTimingConfigOwned,
       )
     val frameInterpolationEnabled = rifeFrameInterpolationEnabled
@@ -262,13 +279,20 @@ class MPVView(
           PlaybackSession.setOptionString("rife-target-fps", rifeTargetFps.toString())
         val maxDimensionRc =
           PlaybackSession.setOptionString("rife-max-dimension", rifeProcessingResolution.toString())
+        val displayFpsOverrideRc =
+          if (rifeResidentCandidate) {
+            PlaybackSession.setOptionString("display-fps-override", displayRefreshRateHz.toString())
+          } else {
+            null
+          }
         val residentEnableRc =
           if (
             rifeResidentCandidate &&
               residentDisableRc == 0 &&
               modelDirRc == 0 &&
               targetFpsRc == 0 &&
-              maxDimensionRc == 0
+              maxDimensionRc == 0 &&
+              displayFpsOverrideRc == 0
           ) {
             PlaybackSession.setOptionString("rife-resident", "yes")
           } else {
@@ -279,6 +303,7 @@ class MPVView(
           modelDir = modelDirRc,
           targetFps = targetFpsRc,
           maxDimension = maxDimensionRc,
+          displayFpsOverride = displayFpsOverrideRc,
           residentDisable = residentDisableRc,
           residentEnable = residentEnableRc,
         )
@@ -394,6 +419,8 @@ class MPVView(
           rifeResidentCandidate -> "resident_option_rejected_cpu_filter_fallback"
           rifeResidentTimingConfigOwned && rifeFrameInterpolationEnabled ->
             "resident_timing_owned_cpu_filter_fallback"
+          rifeFrameInterpolationEnabled && displayRefreshRateHz <= 0f ->
+            "display_refresh_rate_unavailable_cpu_filter_fallback"
           rifeFrameInterpolationEnabled -> "enabled"
           !BuildConfig.MPV_HAS_RIFE -> "runtime_unavailable"
           frameInterpolationConfigOwned -> "mpv_config_owns_filter"
@@ -412,12 +439,13 @@ class MPVView(
             "target_fps=$rifeTargetFps max_dimension=$rifeProcessingResolution " +
             "resolution_mode=$resolutionMode resident_state=${if (rifeResidentMode) "awaiting_gpu_resident_frame" else if (rifeResidentCandidate) "options_rejected_cpu_fallback" else "not_selected"} " +
           "active_filter_path=$activeFilterPath",
-          "display_refresh_hz=${display?.refreshRate ?: 0f} renderer=${backend.vo} " +
+          "display_refresh_hz=$displayRefreshRateHz renderer=${backend.vo} " +
             "gpu_api=${backend.gpuApi} cpu_readable_frames_required=$rifeCpuFilterEnabled " +
             "decoder_to_renderer_handoff=${if (rifeResidentMode) "timestamped_ahb_pending_runtime_frame" else "not_selected"} " +
             "decoder_mode=${if (rifeFrameInterpolationEnabled) rifeHwdecMode else hwdecMode}",
           "filter_set_result=${filterOptionResult ?: "skipped"} " +
             "resident_option_rc=${residentOptionResults?.resident ?: "skipped"} " +
+            "display_fps_override_rc=${residentOptionResults?.displayFpsOverride ?: "skipped"} " +
             "model_option_rc=${residentOptionResults?.modelDir ?: "skipped"} " +
             "resident_timing_options_owned=$rifeResidentTimingConfigOwned reason=$reason",
         ).joinToString(" ")
@@ -519,6 +547,17 @@ class MPVView(
 
   override fun postInitOptions() {
     applyOsdSafeAreaMargins()
+    val displayRefreshRateHz = getDisplayRefreshRateHz()
+    val displayFpsOverrideRc =
+      if (
+        rifeResidentModeSelected &&
+          displayRefreshRateHz > 0f &&
+          !MpvConfigOverridePolicy.isOwnedByMpvConf("display-fps-override")
+      ) {
+        PlaybackSession.setOptionString("display-fps-override", displayRefreshRateHz.toString())
+      } else {
+        null
+      }
 
     // mpv.conf is parsed during MPVLib.init(). Re-apply only the prerequisites
     // for the selected resident path unless the user explicitly owns them.
@@ -541,7 +580,8 @@ class MPVView(
       Log.i(
         TAG,
         "RIFE_DIAGNOSTIC event=config resident_lookahead_required=$rifeResidentModeSelected " +
-          "video_latency_hacks_owned=$lookaheadOwned video_latency_hacks_rc=${lookaheadResult ?: "skipped"}",
+          "video_latency_hacks_owned=$lookaheadOwned video_latency_hacks_rc=${lookaheadResult ?: "skipped"} " +
+          "display_refresh_hz=$displayRefreshRateHz display_fps_override_rc=${displayFpsOverrideRc ?: "skipped"}",
       )
     }
 
