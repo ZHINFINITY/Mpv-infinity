@@ -37,6 +37,7 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.RenderersFactory
 import androidx.media3.extractor.metadata.Chapter
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -1232,7 +1233,7 @@ class NativeMedia3Engine(
     libassRenderer?.getTrackIds()?.keys?.forEach { id -> libassRenderer?.setTrackEnabled(id, false) }
   }
 
-  private fun createRenderersFactory(): DefaultRenderersFactory {
+  private fun createRenderersFactory(): RenderersFactory {
     val factory: DefaultRenderersFactory = media3FlowSink?.let { Media3FlowRenderersFactory(appContext, it) }
       ?: DefaultRenderersFactory(appContext)
     // Keep platform/extension codecs and Media3's standard renderer candidates available for

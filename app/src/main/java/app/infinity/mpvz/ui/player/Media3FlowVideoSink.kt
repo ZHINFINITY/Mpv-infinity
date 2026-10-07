@@ -551,7 +551,14 @@ class Media3FlowVideoSink(
   private fun configureInputSurface(width: Int, height: Int) {
     check(ensureEgl()) { "No GLES 3.1 context for Media3 Flow" }
     if (inputSurfaceTexture == null) {
-      inputTextureId = createTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE)
+      inputTextureId = createTexture(
+        GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+        1,
+        1,
+        GLES20.GL_RGBA,
+        GLES20.GL_RGBA,
+        GLES20.GL_UNSIGNED_BYTE,
+      )
       inputSurfaceTexture = SurfaceTexture(inputTextureId).apply {
         setOnFrameAvailableListener({ onInputFrameAvailable() }, glHandler)
       }
