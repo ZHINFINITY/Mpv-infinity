@@ -18,6 +18,7 @@ BUILD_DIR="${RIFE_BUILD_DIR:-$RIFE_DIR/build-android-arm64}"
 # that target into a shared library while retaining upstream's shader generation
 # and ncnn/libwebp configuration.
 git -C "$RIFE_DIR" submodule update --init --recursive
+python3 "$ROOT/scripts/patch-rife-vulkan-frame-api.py" "$RIFE_DIR/src"
 python3 - "$RIFE_DIR/src/CMakeLists.txt" "$RIFE_DIR/src/rife_vfi_bridge.cpp" "$ROOT/app/src/main/cpp/rife/rife_vfi_bridge.cpp" "$RIFE_DIR/src/rife_fp16_policy.h" "$ROOT/app/src/main/cpp/rife/rife_fp16_policy.h" <<'PY'
 from pathlib import Path
 import sys

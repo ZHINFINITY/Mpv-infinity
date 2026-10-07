@@ -11,6 +11,7 @@ extern "C" {
 #endif
 
 typedef struct RifeVfiEngine RifeVfiEngine;
+typedef struct RifeVfiGpuFrame RifeVfiGpuFrame;
 
 RifeVfiEngine *rife_vfi_create(const char *model_dir, char *error,
                                size_t error_size);
@@ -21,6 +22,24 @@ int rife_vfi_interpolate_rgb24(RifeVfiEngine *engine,
                                const uint8_t *frame1,
                                int width, int height, float timestep,
                                uint8_t *output);
+
+/*
+ * Experimental Vulkan-native seam. Input pointers must point to ncnn::VkMat
+ * RGB tensors allocated on this engine's ncnn Vulkan device, with the layout
+ * and storage precision accepted by the RIFE model. The producer must finish
+ * and synchronize writes before calling; the input tensors are borrowed for
+ * the call. The synthesized result remains a Vulkan VkMat in an owned handle;
+ * release that handle before expecting its GPU storage to be reclaimed. This
+ * API does not import Android decoder buffers or share output with mpv's VO.
+ * The current vf_rife RGB24 filter does not call these functions.
+ */
+int rife_vfi_interpolate_vulkan(RifeVfiEngine *engine,
+                                const void *ncnn_vkmat0,
+                                const void *ncnn_vkmat1,
+                                float timestep,
+                                RifeVfiGpuFrame **output);
+const void *rife_vfi_gpu_frame_get_ncnn_vkmat(const RifeVfiGpuFrame *frame);
+void rife_vfi_gpu_frame_release(RifeVfiGpuFrame *frame);
 
 #ifdef __cplusplus
 }
