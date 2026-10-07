@@ -43,7 +43,8 @@ class Media3FlowCadenceTest {
   @Test
   fun sourceFramesAtOrAboveDisplayRateBypassSynthesis() {
     assertFalse(Media3FlowCadence.needsInterpolation(8_333L, 60, 1f))
-    assertFalse(Media3FlowCadence.needsInterpolation(16_667L, 60, 1f))
+    assertFalse(Media3FlowCadence.needsInterpolation(16_666L, 60, 1f))
+    assertTrue(Media3FlowCadence.needsInterpolation(16_667L, 60, 1f))
     assertTrue(Media3FlowCadence.needsInterpolation(41_667L, 60, 1f))
     assertTrue(Media3FlowCadence.needsInterpolation(41_667L, 60, 2f))
   }
