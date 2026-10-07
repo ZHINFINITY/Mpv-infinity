@@ -418,7 +418,8 @@ class MPVView(
             "decoder_mode=${if (rifeFrameInterpolationEnabled) rifeHwdecMode else hwdecMode}",
           "filter_set_result=${filterOptionResult ?: "skipped"} " +
             "resident_option_rc=${residentOptionResults?.resident ?: "skipped"} " +
-            "model_option_rc=${residentOptionResults?.modelDir ?: "skipped"} reason=$reason",
+            "model_option_rc=${residentOptionResults?.modelDir ?: "skipped"} " +
+            "resident_timing_options_owned=$rifeResidentTimingConfigOwned reason=$reason",
         ).joinToString(" ")
       Log.i(
         TAG,
@@ -494,6 +495,9 @@ class MPVView(
         if (rifeResidentMode) "display-resample" else "audio",
       )
     }
+    if (rifeResidentMode && !MpvConfigOverridePolicy.isOwnedByMpvConf("video-latency-hacks")) {
+      PlaybackSession.setOptionString("video-latency-hacks", "no")
+    }
 
     // Anime4K shader initialization (MUST be in initOptions, not after file load!)
     if (!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.ANIME4K)) {
@@ -525,6 +529,20 @@ class MPVView(
       if (!MpvConfigOverridePolicy.isOwnedByMpvConf("video-sync")) {
         PlaybackSession.setOptionString("video-sync", "display-resample")
       }
+    }
+    if (BuildConfig.MPV_HAS_RIFE) {
+      val lookaheadOwned = MpvConfigOverridePolicy.isOwnedByMpvConf("video-latency-hacks")
+      val lookaheadResult =
+        if (rifeResidentModeSelected && !lookaheadOwned) {
+          PlaybackSession.setOptionString("video-latency-hacks", "no")
+        } else {
+          null
+        }
+      Log.i(
+        TAG,
+        "RIFE_DIAGNOSTIC event=config resident_lookahead_required=$rifeResidentModeSelected " +
+          "video_latency_hacks_owned=$lookaheadOwned video_latency_hacks_rc=${lookaheadResult ?: "skipped"}",
+      )
     }
 
     when (decoderPreferences.debanding.get()) {

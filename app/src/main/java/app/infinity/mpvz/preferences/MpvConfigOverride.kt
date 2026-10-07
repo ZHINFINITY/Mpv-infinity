@@ -183,6 +183,7 @@ enum class MpvConfigOverride(
         "hr-seek",
         "hr-seek-framedrop",
         "video-sync",
+        "video-latency-hacks",
         "framedrop",
       ),
   ),
@@ -287,9 +288,9 @@ object MpvConfigControlledFeatures {
 
   val FRAME_INTERPOLATION = setOf("vf", "hwdec")
 
-  // The GPU-resident RIFE VO needs mpv's display-synchronized interpolation
-  // queue. User-owned timing options keep that route off; CPU RIFE remains safe.
-  val RIFE_RESIDENT_TIMING = setOf("interpolation", "video-sync")
+  // The GPU-resident RIFE VO needs display-synchronized interpolation and
+  // frame lookahead. User-owned timing options keep that route off; CPU RIFE remains safe.
+  val RIFE_RESIDENT_TIMING = setOf("interpolation", "video-sync", "video-latency-hacks")
 }
 
 /** The ownership snapshot used by the active libmpv core. */

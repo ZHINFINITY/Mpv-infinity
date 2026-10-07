@@ -378,10 +378,34 @@ internal fun buildRifeDiagnosticSummary(entries: List<DebugLogEntry>): List<Stri
       "decoder_mode",
       "resident_option_rc",
       "model_option_rc",
+      "resident_timing_options_owned",
+      "resident_lookahead_required",
+      "video_latency_hacks_owned",
+      "video_latency_hacks_rc",
       "filter_set_result",
     ).mapNotNull { name -> setupValue(name)?.let { "$name=$it" } }
   val latestWaitFields =
-    listOf("target_fps", "cadence_origin_pts", "queue_frames", "pts", "timestep")
+    listOf(
+      "target_fps",
+      "cadence_origin_pts",
+      "mix_frames",
+      "queue_depth",
+      "queue_frames",
+      "vo_frames",
+      "display_synced",
+      "mpv_interpolation",
+      "can_interpolate",
+      "paused",
+      "still",
+      "pts_offset",
+      "vsync_duration",
+      "pair_before_pts",
+      "pair_after_pts",
+      "before_input_ready",
+      "after_input_ready",
+      "pts",
+      "timestep",
+    )
       .mapNotNull { name -> latestWaitValue(name)?.let { "$name=$it" } }
   val errorCount = errors.size
   val status =

@@ -116,7 +116,7 @@ class DebugLogRepositoryTest {
       rifeEntry(
         "setup",
         0L,
-        "RIFE_DIAGNOSTIC event=config resident_state=awaiting_gpu_resident_frame active_filter_path=resident_vulkan_ncnn target_fps=60 display_refresh_hz=120 renderer=gpu-next gpu_api=opengl decoder_mode=mediacodec,no resident_option_rc=0 model_option_rc=0 filter_set_result=skipped",
+        "RIFE_DIAGNOSTIC event=config resident_state=awaiting_gpu_resident_frame active_filter_path=resident_vulkan_ncnn target_fps=60 display_refresh_hz=120 renderer=gpu-next gpu_api=opengl decoder_mode=mediacodec,no resident_option_rc=0 model_option_rc=0 resident_timing_options_owned=false filter_set_result=skipped",
       )
     val imports =
       (0 until 600).map { index ->
@@ -130,7 +130,13 @@ class DebugLogRepositoryTest {
       rifeEntry(
         "wait",
         700L,
-        "RIFE_DIAGNOSTIC event=resident_wait reason=source_pair_not_found target_fps=60 cadence_origin_pts=18.475333 queue_frames=2 pts=18.492",
+        "RIFE_DIAGNOSTIC event=resident_wait reason=paired_ahb_input_unavailable repeat=1 pts=18.492 mix_frames=2 queue_depth=3 vo_frames=1 display_synced=1 mpv_interpolation=1 can_interpolate=1 paused=0 still=0 pts_offset=0.004 vsync_duration=0.016667 pair_before_pts=18.475333 pair_after_pts=18.517 before_input_ready=1 after_input_ready=0 timestep=0.40 target_fps=60 cadence_origin_pts=18.475333",
+      )
+    val lookahead =
+      rifeEntry(
+        "lookahead",
+        699L,
+        "RIFE_DIAGNOSTIC event=config resident_lookahead_required=true video_latency_hacks_owned=false video_latency_hacks_rc=0",
       )
     val failure =
       rifeEntry(
@@ -150,7 +156,7 @@ class DebugLogRepositoryTest {
         )
       }
 
-    val retained = retainDebugLogEntries(listOf(setup) + imports + listOf(wait, failure) + recentEntries)
+    val retained = retainDebugLogEntries(listOf(setup) + imports + listOf(lookahead, wait, failure) + recentEntries)
     val summary = buildRifeDiagnosticSummary(retained)
 
     assertEquals(500, retained.count(DebugLogEntry::isRifeDiagnostic))
@@ -161,7 +167,11 @@ class DebugLogRepositoryTest {
     assertTrue(summary.any { it.contains("active_filter_path=resident_vulkan_ncnn") })
     assertTrue(summary.any { it.contains("display_refresh_hz=120") })
     assertTrue(summary.any { it.contains("resident_option_rc=0 model_option_rc=0") })
-    assertTrue(summary.any { it.contains("target_fps=60") && it.contains("queue_frames=2") })
+    assertTrue(summary.any { it.contains("resident_timing_options_owned=false") })
+    assertTrue(summary.any { it.contains("resident_lookahead_required=true") && it.contains("video_latency_hacks_rc=0") })
+    assertTrue(summary.any { it.contains("target_fps=60") && it.contains("mix_frames=2") && it.contains("queue_depth=3") })
+    assertTrue(summary.any { it.contains("vo_frames=1") && it.contains("display_synced=1") && it.contains("can_interpolate=1") })
+    assertTrue(summary.any { it.contains("pair_before_pts=18.475333") && it.contains("after_input_ready=0") })
   }
 
   @Test

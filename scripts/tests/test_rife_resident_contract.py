@@ -119,6 +119,24 @@ def main() -> None:
             "resident target cadence must align to the presentation PTS phase")
     require("target_fps=%d cadence_origin_pts=%.6f" in vo,
             "resident wait events must include target FPS and cadence origin")
+    require("frame->num_frames > 1 || resident_rife_active" in draw and
+            "frame->display_synced" in draw,
+            "resident RIFE must keep display-PTS scheduling active for one-frame VO batches")
+    prepare = section(vo, "static bool rife_prepare_frame_input(",
+                      "static bool rife_build_display_mix(")
+    require("mutable_frame->acquire(p->gpu, mutable_frame)" in prepare and
+            "mutable_frame->release(p->gpu, mutable_frame)" in prepare,
+            "resident pair inputs must be acquired/imported and released before readiness checks")
+    resident_mix = section(vo, "static bool rife_build_display_mix(",
+                           "static void update_options(")
+    require(resident_mix.find("rife_prepare_frame_input(p, source)") <
+            resident_mix.find("!p->rife_diag_before_input_ready"),
+            "both selected source frames must be pre-acquired before pair availability is tested")
+    require("mix_frames=%d queue_depth=%d" in vo and "vo_frames=%d" in vo and
+            "display_synced=%d" in vo and "pair_after_pts=%.6f" in vo,
+            "wait diagnostics must distinguish render-mix size from queue depth and expose timing/pair state")
+    require("source_frame_boundary_no_intermediate" in vo,
+            "source-frame boundary ticks must not be mislabeled as invalid interpolation fractions")
     for marker in (
         "event=resident_wait", "event=resident_error",
         "event=resident_output_ready", "event=resident_rendered",

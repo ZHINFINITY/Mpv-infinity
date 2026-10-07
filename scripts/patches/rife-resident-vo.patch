@@ -1,5 +1,5 @@
 diff --git a/options/options.c b/options/options.c
-index e8b590a..256d359 100644
+index e8b590af8..256d359a8 100644
 --- a/options/options.c
 +++ b/options/options.c
 @@ -940,6 +940,11 @@ static const m_option_t mp_opts[] = {
@@ -24,7 +24,7 @@ index e8b590a..256d359 100644
      .watch_history_path = "~~state/watch_history.jsonl",
      .autoload_files = true,
 diff --git a/options/options.h b/options/options.h
-index 26a7913..7bd9823 100644
+index 26a791343..7bd98232e 100644
 --- a/options/options.h
 +++ b/options/options.h
 @@ -414,6 +414,10 @@ typedef struct MPOpts {
@@ -39,7 +39,7 @@ index 26a7913..7bd9823 100644
      struct opengl_opts *opengl_opts;
      struct vulkan_opts *vulkan_opts;
 diff --git a/video/out/gpu/hwdec.h b/video/out/gpu/hwdec.h
-index ea29b0d..9901c00 100644
+index ea29b0dc2..9901c00a5 100644
 --- a/video/out/gpu/hwdec.h
 +++ b/video/out/gpu/hwdec.h
 @@ -1,6 +1,7 @@
@@ -65,7 +65,7 @@ index ea29b0d..9901c00 100644
  // Returns IMGFMT_NONE if the name doesn't get matched.
  int ra_hwdec_driver_get_imgfmt_for_name(const char *name);
 diff --git a/video/out/hwdec/hwdec_aimagereader.c b/video/out/hwdec/hwdec_aimagereader.c
-index 55883c0..3d74bea 100644
+index 55883c0be..3d74bea7f 100644
 --- a/video/out/hwdec/hwdec_aimagereader.c
 +++ b/video/out/hwdec/hwdec_aimagereader.c
 @@ -19,6 +19,10 @@
@@ -420,7 +420,7 @@ index 55883c0..3d74bea 100644
  
  const struct ra_hwdec_driver ra_hwdec_aimagereader = {
 diff --git a/video/out/vo_gpu_next.c b/video/out/vo_gpu_next.c
-index bd3d1aa..ff1d62c 100644
+index bd3d1aa1e..852dd26bf 100644
 --- a/video/out/vo_gpu_next.c
 +++ b/video/out/vo_gpu_next.c
 @@ -18,6 +18,8 @@
@@ -480,7 +480,7 @@ index bd3d1aa..ff1d62c 100644
      struct cache shader_cache, icc_cache;
      struct mp_csp_equalizer_state *video_eq;
      struct scaler_params scalers[SCALER_COUNT];
-@@ -178,6 +207,25 @@ struct priv {
+@@ -178,6 +207,38 @@ struct priv {
      struct frame_info perf_redraw;
  
      struct mp_image_params target_params;
@@ -502,11 +502,24 @@ index bd3d1aa..ff1d62c 100644
 +    unsigned int rife_wait_count;
 +    bool rife_output_ready_logged;
 +    bool rife_rendered_logged;
++    int rife_diag_vo_frames;
++    bool rife_diag_display_synced;
++    bool rife_diag_interpolation_enabled;
++    bool rife_diag_can_interpolate;
++    bool rife_diag_paused;
++    bool rife_diag_still;
++    double rife_diag_pts_offset;
++    double rife_diag_vsync_duration;
++    double rife_diag_pair_before_pts;
++    double rife_diag_pair_after_pts;
++    bool rife_diag_before_input_ready;
++    bool rife_diag_after_input_ready;
++    float rife_diag_timestep;
 +#endif
  };
  
  static void update_render_options(struct vo *vo);
-@@ -561,6 +609,10 @@ struct frame_priv {
+@@ -561,6 +622,10 @@ struct frame_priv {
      struct osd_state subs;
      uint64_t osd_sync;
      struct ra_hwdec *hwdec;
@@ -517,7 +530,7 @@ index bd3d1aa..ff1d62c 100644
      // Optional Dolby Vision FEL.
      struct ra_hwdec *el_hwdec;
      pl_tex el_tex[4];
-@@ -810,6 +862,57 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
+@@ -810,6 +875,57 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
          }
          s->perf = timer_pool_measure(s->timer);
          s->owner = owner;
@@ -575,7 +588,7 @@ index bd3d1aa..ff1d62c 100644
      }
  
      if (ra_hwdec_mapper_begin_access(s->mapper) < 0)
-@@ -1127,12 +1230,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1127,12 +1243,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
      }
      slot_release_owner(p, &p->hwdec, mpi);
      slot_release_owner(p, &p->el_hwdec, mpi);
@@ -597,7 +610,7 @@ index bd3d1aa..ff1d62c 100644
      talloc_free(mpi);
  }
  
-@@ -1154,14 +1266,441 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1279,491 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -645,6 +658,7 @@ index bd3d1aa..ff1d62c 100644
 +    RIFE_WAIT_INPUT_NOT_READY,
 +    RIFE_WAIT_CADENCE_MISS,
 +    RIFE_WAIT_INVALID_FRACTION,
++    RIFE_WAIT_SOURCE_BOUNDARY,
 +    RIFE_WAIT_OUTPUT_RING,
 +    RIFE_WAIT_SLOT_SYNC,
 +    RIFE_WAIT_ENGINE_NOT_READY,
@@ -660,6 +674,7 @@ index bd3d1aa..ff1d62c 100644
 +    case RIFE_WAIT_INPUT_NOT_READY: return "paired_ahb_input_unavailable";
 +    case RIFE_WAIT_CADENCE_MISS: return "target_cadence_miss";
 +    case RIFE_WAIT_INVALID_FRACTION: return "interpolation_fraction_out_of_range";
++    case RIFE_WAIT_SOURCE_BOUNDARY: return "source_frame_boundary_no_intermediate";
 +    case RIFE_WAIT_OUTPUT_RING: return "output_ring_unavailable";
 +    case RIFE_WAIT_SLOT_SYNC: return "output_slot_sync_unavailable";
 +    case RIFE_WAIT_ENGINE_NOT_READY: return "resident_engine_not_ready";
@@ -669,19 +684,27 @@ index bd3d1aa..ff1d62c 100644
 +    }
 +}
 +
-+static void rife_log_wait_reason(struct priv *p, int reason, int queue_frames)
++static void rife_log_wait_reason(struct priv *p, int reason, int mix_frames)
 +{
 +    if (p->rife_last_wait_reason != reason) {
 +        p->rife_last_wait_reason = reason;
 +        p->rife_wait_count = 0;
 +    }
 +    p->rife_wait_count++;
-+    if (p->rife_wait_count == 1 || p->rife_wait_count % 120 == 0)
-+        MP_INFO(p, "RIFE_DIAGNOSTIC event=resident_wait reason=%s repeat=%u pts=%.6f queue_frames=%d target_fps=%d cadence_origin_pts=%.6f\n",
++    if (p->rife_wait_count == 1 || p->rife_wait_count % 120 == 0) {
++        int queue_depth = p->queue ? pl_queue_num_frames(p->queue) : 0;
++        MP_INFO(p, "RIFE_DIAGNOSTIC event=resident_wait reason=%s repeat=%u pts=%.6f mix_frames=%d queue_depth=%d vo_frames=%d display_synced=%d mpv_interpolation=%d can_interpolate=%d paused=%d still=%d pts_offset=%.6f vsync_duration=%.6f pair_before_pts=%.6f pair_after_pts=%.6f before_input_ready=%d after_input_ready=%d timestep=%.6f target_fps=%d cadence_origin_pts=%.6f\n",
 +                rife_wait_reason_name(reason), p->rife_wait_count,
-+                p->last_pts, queue_frames,
++                p->last_pts, mix_frames, queue_depth, p->rife_diag_vo_frames,
++                p->rife_diag_display_synced, p->rife_diag_interpolation_enabled,
++                p->rife_diag_can_interpolate, p->rife_diag_paused,
++                p->rife_diag_still, p->rife_diag_pts_offset,
++                p->rife_diag_vsync_duration, p->rife_diag_pair_before_pts,
++                p->rife_diag_pair_after_pts, p->rife_diag_before_input_ready,
++                p->rife_diag_after_input_ready, p->rife_diag_timestep,
 +                p->rife_root_opts ? p->rife_root_opts->rife_target_fps : 0,
 +                p->rife_cadence_origin_pts);
++    }
 +}
 +
 +static void rife_sync_engine(struct priv *p)
@@ -837,6 +860,27 @@ index bd3d1aa..ff1d62c 100644
 +    return true;
 +}
 +
++static bool rife_prepare_frame_input(struct priv *p, const struct pl_frame *frame)
++{
++    struct mp_image *mpi = frame ? frame->user_data : NULL;
++    struct frame_priv *fp = mpi ? mpi->priv : NULL;
++    if (!fp)
++        return false;
++    if (fp->rife_input)
++        return true;
++    if (fp->rife_input_failed || !frame->acquire || !frame->release)
++        return false;
++
++    // libplacebo normally invokes this lazily while drawing, after the RIFE
++    // pair scheduler has run. Acquire/release each selected frame here so its
++    // AHB is imported before pair readiness is tested. Releasing between calls
++    // is required because gpu-next uses one hardware slot per frame role.
++    struct pl_frame *mutable_frame = (struct pl_frame *) frame;
++    bool acquired = mutable_frame->acquire(p->gpu, mutable_frame);
++    mutable_frame->release(p->gpu, mutable_frame);
++    return acquired && fp->rife_input != NULL;
++}
++
 +static bool rife_build_display_mix(struct priv *p, const struct pl_frame_mix *mix,
 +                                   struct pl_frame_mix *rife_mix,
 +                                   struct pl_frame *rife_frame,
@@ -844,6 +888,11 @@ index bd3d1aa..ff1d62c 100644
 +                                   uint64_t *rife_signature,
 +                                   float *rife_timestamp, int *slot_index)
 +{
++    p->rife_diag_pair_before_pts = NAN;
++    p->rife_diag_pair_after_pts = NAN;
++    p->rife_diag_before_input_ready = false;
++    p->rife_diag_after_input_ready = false;
++    p->rife_diag_timestep = NAN;
 +    if (!p->rife_root_opts->rife_resident ||
 +        p->rife_root_opts->rife_target_fps < 1)
 +        return false;
@@ -886,9 +935,18 @@ index bd3d1aa..ff1d62c 100644
 +    struct mp_image *mpi1 = next->user_data;
 +    struct frame_priv *fp0 = mpi0->priv;
 +    struct frame_priv *fp1 = mpi1->priv;
-+    if (!fp0 || !fp1 || !fp0->rife_input || !fp1->rife_input ||
-+        source->enhancement_layer || next->enhancement_layer ||
++    if (!fp0 || !fp1 || source->enhancement_layer || next->enhancement_layer ||
 +        mpi0->params.w != mpi1->params.w || mpi0->params.h != mpi1->params.h) {
++        rife_log_wait_reason(p, RIFE_WAIT_INPUT_NOT_READY, mix->num_frames);
++        return false;
++    }
++    p->rife_diag_pair_before_pts = before_pts;
++    p->rife_diag_pair_after_pts = after_pts;
++    p->rife_diag_before_input_ready = fp0->rife_input ||
++                                       rife_prepare_frame_input(p, source);
++    p->rife_diag_after_input_ready = fp1->rife_input ||
++                                     rife_prepare_frame_input(p, next);
++    if (!p->rife_diag_before_input_ready || !p->rife_diag_after_input_ready) {
 +        rife_log_wait_reason(p, RIFE_WAIT_INPUT_NOT_READY, mix->num_frames);
 +        return false;
 +    }
@@ -917,8 +975,13 @@ index bd3d1aa..ff1d62c 100644
 +    // Compute motion for the timestamp mpv will actually present, not the
 +    // nearest cadence-grid timestamp (which can be slightly offset).
 +    float timestep = (float) ((p->last_pts - before_pts) / source_duration);
-+    if (timestep <= 0.f || timestep >= 1.f) {
-+        rife_log_wait_reason(p, RIFE_WAIT_INVALID_FRACTION, mix->num_frames);
++    p->rife_diag_timestep = timestep;
++    if (!isfinite(timestep) || timestep <= 0.f || timestep >= 1.f) {
++        int reason = RIFE_WAIT_INVALID_FRACTION;
++        if ((timestep >= -1e-6f && timestep <= 1e-6f) ||
++            (timestep >= 1.f - 1e-6f && timestep <= 1.f + 1e-6f))
++            reason = RIFE_WAIT_SOURCE_BOUNDARY;
++        rife_log_wait_reason(p, reason, mix->num_frames);
 +        return false;
 +    }
 +
@@ -1039,7 +1102,33 @@ index bd3d1aa..ff1d62c 100644
  
      update_lut(p, &p->next_opts->lut);
      pars->params.lut = p->next_opts->lut.lut;
-@@ -1406,6 +1945,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1350,9 +1952,24 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+     const struct gl_video_opts *opts = p->opts_cache->opts;
+     bool will_redraw = frame->display_synced && frame->num_vsyncs > 1;
+     bool cache_frame = will_redraw || frame->still || p->paused;
++    bool resident_rife_active = false;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    resident_rife_active = p->rife_root_opts && p->rife_root_opts->rife_resident;
++#endif
+     bool can_interpolate = opts->interpolation && frame->display_synced &&
+-                           !frame->still && frame->num_frames > 1 && !p->paused;
++                           !frame->still &&
++                           (frame->num_frames > 1 || resident_rife_active) && !p->paused;
+     double pts_offset = can_interpolate ? frame->ideal_frame_vsync : 0;
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    p->rife_diag_vo_frames = frame->num_frames;
++    p->rife_diag_display_synced = frame->display_synced;
++    p->rife_diag_interpolation_enabled = opts->interpolation;
++    p->rife_diag_can_interpolate = can_interpolate;
++    p->rife_diag_paused = p->paused;
++    p->rife_diag_still = frame->still;
++    p->rife_diag_pts_offset = pts_offset;
++    p->rife_diag_vsync_duration = can_interpolate ? frame->ideal_frame_vsync_duration : 0;
++#endif
+     params.info_callback = info_callback;
+     params.info_priv = vo;
+     params.skip_caching_single_frame = !cache_frame;
+@@ -1406,6 +2023,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              p->last_id = 0;
              p->want_reset = false;
              p->flush_cache = true;
@@ -1049,7 +1138,7 @@ index bd3d1aa..ff1d62c 100644
          }
  
          if (p->flush_cache) {
-@@ -1652,6 +2194,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1652,6 +2272,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      update_tm_viz(&pars->color_map_params, &target);
  
      struct pl_frame_mix mix = {0};
@@ -1067,7 +1156,7 @@ index bd3d1aa..ff1d62c 100644
      if (frame->current) {
          // Update queue state
          struct pl_queue_params qparams = *pl_queue_params(
-@@ -1747,10 +2300,44 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1747,10 +2378,44 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              update_hook_opts_dynamic(p, p->hooks[i], frame->current);
      }
  
@@ -1112,7 +1201,7 @@ index bd3d1aa..ff1d62c 100644
      if (!render_ok) {
          MP_ERR(vo, "Failed rendering frame!\n");
          goto done;
-@@ -1777,7 +2364,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1777,7 +2442,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      }
      mp_mutex_unlock(&vo->params_mutex);
  
@@ -1124,7 +1213,7 @@ index bd3d1aa..ff1d62c 100644
      valid = true;
      // fall through
  
-@@ -1796,12 +2387,27 @@ static void flip_page(struct vo *vo)
+@@ -1796,12 +2465,27 @@ static void flip_page(struct vo *vo)
      struct ra_swapchain *sw = p->ra_ctx->swapchain;
  
      if (p->frame_pending) {
@@ -1155,7 +1244,7 @@ index bd3d1aa..ff1d62c 100644
  }
  
  static void get_vsync(struct vo *vo, struct vo_vsync_info *info)
-@@ -2464,6 +3070,13 @@ static void uninit(struct vo *vo)
+@@ -2464,6 +3148,13 @@ static void uninit(struct vo *vo)
          pl_gpu_finish(p->gpu);
  
      pl_queue_destroy(&p->queue); // destroy this first
@@ -1169,7 +1258,7 @@ index bd3d1aa..ff1d62c 100644
      for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
          pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
      for (int i = 0; i < p->num_sub_tex; i++)
-@@ -2519,6 +3132,10 @@ static int preinit(struct vo *vo)
+@@ -2519,6 +3210,10 @@ static int preinit(struct vo *vo)
      p->opts_cache = m_config_cache_alloc(p, vo->global, &gl_video_conf);
      p->next_opts_cache = m_config_cache_alloc(p, vo->global, &gl_next_conf);
      p->next_opts = p->next_opts_cache->opts;
