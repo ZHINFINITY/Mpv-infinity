@@ -480,7 +480,7 @@ index bd3d1aa1e..852dd26bf 100644
      struct cache shader_cache, icc_cache;
      struct mp_csp_equalizer_state *video_eq;
      struct scaler_params scalers[SCALER_COUNT];
-@@ -178,6 +241,66 @@ struct priv {
+@@ -178,7 +241,67 @@ struct priv {
      struct frame_info perf_redraw;
  
      struct mp_image_params target_params;
@@ -529,9 +529,9 @@ index bd3d1aa1e..852dd26bf 100644
 +    int rife_diag_source_width, rife_diag_source_height;
 +    int rife_diag_process_width, rife_diag_process_height;
 +#endif
-  };
-  
-  static void update_render_options(struct vo *vo);
+ };
+ 
+ static void update_render_options(struct vo *vo);
 +
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
 +static void rife_diag_reset_timing(struct priv *p)
@@ -547,6 +547,7 @@ index bd3d1aa1e..852dd26bf 100644
 +    p->rife_diag_present_submit = (struct rife_stage_timing) {0};
 +}
 +#endif
+ static void update_lut(struct priv *p, struct user_lut *lut);
 @@ -561,6 +684,10 @@ struct frame_priv {
      struct osd_state subs;
      uint64_t osd_sync;
@@ -1274,7 +1275,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (frame->current) {
          // Update queue state
          struct pl_queue_params qparams = *pl_queue_params(
-@@ -1747,8 +2519,51 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1747,10 +2519,51 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              update_hook_opts_dynamic(p, p->hooks[i], frame->current);
      }
  
@@ -1291,11 +1292,11 @@ index bd3d1aa1e..852dd26bf 100644
 +    }
 +#endif
 +
-+    // Render frame
+     // Render frame
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
 +    uint64_t rife_render_start_ns = rife_interpolated ? rife_monotonic_ns() : 0;
 +#endif
-+    stats_time_start(p->stats, "render");
+     stats_time_start(p->stats, "render");
      bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
      stats_time_end(p->stats, "render");
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
@@ -1326,7 +1327,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (!render_ok) {
          MP_ERR(vo, "Failed rendering frame!\n");
          goto done;
-@@ -1777,7 +2592,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1777,7 +2590,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      }
      mp_mutex_unlock(&vo->params_mutex);
  
@@ -1338,10 +1339,11 @@ index bd3d1aa1e..852dd26bf 100644
      valid = true;
      // fall through
  
-@@ -1796,11 +2615,35 @@ static void flip_page(struct vo *vo)
+@@ -1796,12 +2613,35 @@ static void flip_page(struct vo *vo)
      struct ra_swapchain *sw = p->ra_ctx->swapchain;
  
      if (p->frame_pending) {
+-        if (!pl_swapchain_submit_frame(p->sw))
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
 +        uint64_t rife_submit_start_ns = p->rife_pending_frame ? rife_monotonic_ns() : 0;
 +#endif
@@ -1376,7 +1378,7 @@ index bd3d1aa1e..852dd26bf 100644
  }
  
  static void get_vsync(struct vo *vo, struct vo_vsync_info *info)
-@@ -2464,6 +3307,13 @@ static void uninit(struct vo *vo)
+@@ -2464,6 +3304,13 @@ static void uninit(struct vo *vo)
          pl_gpu_finish(p->gpu);
  
      pl_queue_destroy(&p->queue); // destroy this first
@@ -1390,7 +1392,7 @@ index bd3d1aa1e..852dd26bf 100644
      for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
          pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
      for (int i = 0; i < p->num_sub_tex; i++)
-@@ -2519,6 +3369,10 @@ static int preinit(struct vo *vo)
+@@ -2519,6 +3366,10 @@ static int preinit(struct vo *vo)
      p->opts_cache = m_config_cache_alloc(p, vo->global, &gl_video_conf);
      p->next_opts_cache = m_config_cache_alloc(p, vo->global, &gl_next_conf);
      p->next_opts = p->next_opts_cache->opts;

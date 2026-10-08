@@ -245,9 +245,9 @@ def main() -> None:
             "VO must perform input import and synthesized output handoff")
     require("char output_error[512]" in vo and "detail=%s" in vo,
             "output writer diagnostics must be propagated into the Android playback log")
-    import_branch = section(vo, "} else if (rife_vfi_import_ahb_rgb8(",
+    import_branch = section(vo, "int import_result = rife_vfi_import_ahb_rgb8(",
                             "RIFE_DIAGNOSTIC event=ahb_input_imported")
-    require("} else {" in import_branch,
+    require("if (import_result != 0)" in import_branch and "} else {" in import_branch,
             "ahb_input_imported must be reachable only after a successful AHB import")
     draw = section(vo, "static bool draw_frame(", "static void flip_page(")
     require("source_mix = mix;" in draw and "if (!render_ok && rife_interpolated)" in draw,
