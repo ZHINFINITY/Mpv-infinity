@@ -130,6 +130,22 @@ data class NativeTrack(
   val external: Boolean = false,
 )
 
+internal fun media3ResizeModeForAspect(aspect: VideoAspect): Int = when (aspect) {
+  VideoAspect.Fit -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+  VideoAspect.Crop -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+  VideoAspect.Stretch -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+}
+
+internal class Media3AspectModeState(initialAspect: VideoAspect = VideoAspect.Fit) {
+  private var selectedAspect = initialAspect
+
+  fun select(aspect: VideoAspect) {
+    selectedAspect = aspect
+  }
+
+  fun resizeMode(): Int = media3ResizeModeForAspect(selectedAspect)
+}
+
 private data class NativeSubtitleSelection(
   val groupId: String?,
   val formatId: String?,
@@ -250,6 +266,7 @@ class NativeMedia3Engine(
     .setRenderersFactory(createRenderersFactory())
     .build()
   private var attachedView: PlayerView? = null
+  private val videoAspect = Media3AspectModeState()
   private var subtitleOverlay: LibassSubtitleSurfaceView? = null
   private var libassRenderer: LibassSubtitleRenderer? = null
   private val externalAssEnabled = mutableMapOf<String, Boolean>()
@@ -551,8 +568,7 @@ class NativeMedia3Engine(
     // a media layer so the standalone libass bitmap remains visible above the video surface.
     (view.videoSurfaceView as? SurfaceView)?.setZOrderMediaOverlay(true)
     view.useController = false
-    // Do not let a stale portrait measurement stretch native HDR video after rotation.
-    view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    view.resizeMode = videoAspect.resizeMode()
     view.player = player
     configureSubtitleView()
     view.post { if (attachedView === view) configureSubtitleView() }
@@ -564,7 +580,7 @@ class NativeMedia3Engine(
     val view = attachedView ?: return
     view.post {
       if (attachedView !== view) return@post
-      view.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+      view.resizeMode = videoAspect.resizeMode()
       view.requestLayout()
       view.videoSurfaceView?.requestLayout()
       view.invalidate()
@@ -573,11 +589,8 @@ class NativeMedia3Engine(
   }
 
   fun setVideoAspect(aspect: VideoAspect) {
-    attachedView?.resizeMode = when (aspect) {
-      VideoAspect.Fit -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-      VideoAspect.Crop -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-      VideoAspect.Stretch -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
-    }
+    videoAspect.select(aspect)
+    attachedView?.resizeMode = videoAspect.resizeMode()
   }
 
   fun setZoom(zoom: Float) {

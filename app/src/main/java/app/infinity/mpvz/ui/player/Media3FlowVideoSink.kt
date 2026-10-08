@@ -586,8 +586,6 @@ class Media3FlowVideoSink(
         1,
         1,
         GLES20.GL_RGBA,
-        GLES20.GL_RGBA,
-        GLES20.GL_UNSIGNED_BYTE,
       )
       inputSurfaceTexture = SurfaceTexture(inputTextureId).apply {
         setOnFrameAvailableListener({ onInputFrameAvailable() }, glHandler)
@@ -1017,24 +1015,22 @@ class Media3FlowVideoSink(
     processingHeight = height
     gridWidth = ceil(width.toDouble() / FLOW_GRID_STEP).toInt()
     gridHeight = ceil(height.toDouble() / FLOW_GRID_STEP).toInt()
-    outputTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE)
+    outputTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
     repeat(MAX_STORED_FRAMES) {
       framePool += FrameSlot().apply {
-        colorTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE)
+        colorTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
         lumaTexture = createTexture(
           GLES20.GL_TEXTURE_2D,
           width,
           height,
           GLES30.GL_RGBA8,
-          GLES20.GL_RGBA,
-          GLES20.GL_UNSIGNED_BYTE,
         )
       }
     }
     repeat(MAX_MOTION_PAIRS) {
       motionPairs += MotionPairSlot().apply {
-        forwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F, GLES20.GL_RGBA, GLES30.GL_HALF_FLOAT)
-        backwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F, GLES20.GL_RGBA, GLES30.GL_HALF_FLOAT)
+        forwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
+        backwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
       }
     }
     flowAvailable = lumaProgram != 0 && flowProgram != 0 && synthProgram != 0
@@ -1202,7 +1198,7 @@ class Media3FlowVideoSink(
     }
   }
 
-  private fun createTexture(target: Int, width: Int, height: Int, internalFormat: Int, format: Int, type: Int): Int {
+  private fun createTexture(target: Int, width: Int, height: Int, internalFormat: Int): Int {
     val ids = IntArray(1)
     GLES20.glGenTextures(1, ids, 0)
     checkGlError("texture glGenTextures", debugProbeOnly = true)
@@ -1218,8 +1214,10 @@ class Media3FlowVideoSink(
     GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
     checkGlError("texture wrap T", debugProbeOnly = true)
     if (target == GLES20.GL_TEXTURE_2D) {
-      GLES20.glTexImage2D(target, 0, internalFormat, width, height, 0, format, type, null)
-      checkGlError("texture allocation format=0x${internalFormat.toString(16)} size=${width}x$height", debugProbeOnly = true)
+      // GLES 3.1 only permits immutable texture objects in glBindImageTexture.
+      // All compute input/output and sampled 2D images use one immutable mip level.
+      GLES30.glTexStorage2D(target, 1, internalFormat, width, height)
+      checkGlError("immutable texture allocation format=0x${internalFormat.toString(16)} size=${width}x$height", debugProbeOnly = true)
     }
     return id
   }
