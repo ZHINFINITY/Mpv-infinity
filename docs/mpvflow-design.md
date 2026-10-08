@@ -15,6 +15,10 @@ This is an independently written prototype informed by SVP's public descriptions
 5. For each output timestamp, vectors warp samples from both source pictures. Forward/backward consistency and photometric agreement provide a confidence estimate; uncertain/occluded pixels fall back toward the nearer source picture. A large frame-wide change is treated as a scene cut and does not get motion-warped.
 6. The reduced output is converted back to the input dimensions and pixel format, with its presentation timestamp set to the target grid.
 
+## Media3 GPU path
+
+The opt-in Media3 sink keeps decoded SDR source textures and synthesized output at input dimensions, while luma and block-motion analysis use a reduced grid capped at 480 pixels on the longest side. The full-resolution synthesis shader maps the reduced motion vectors through normalized sampling and directly blends pixels whose adjacent-frame colors are effectively unchanged, avoiding needless warping of static UI and other stationary detail. This preserves spatial detail better than resizing the generated frame itself to the motion-analysis cap; it does not guarantee GPU completion time, displayed cadence, or visual quality until measured on-device.
+
 ## Rates and device constraints
 
 The UI offers the choices shown in the supplied SVPlayer image: **48, 60, 72, 90, 96, 120, and 144 fps**. It adds a `(!)` marker from 90 fps onward. The effective target is capped to the display refresh reported by Android. If the display rate is unavailable, the requested preset is used.

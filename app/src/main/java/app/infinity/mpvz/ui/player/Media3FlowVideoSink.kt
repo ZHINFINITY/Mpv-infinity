@@ -40,8 +40,6 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /** Diagnostics emitted by the Media3-owned GPU interpolation route. */
@@ -60,6 +58,7 @@ data class Media3FlowDiagnostics(
   val confidence: Float? = null,
   val motionGridWidth: Int = 0,
   val motionGridHeight: Int = 0,
+  /** Reduced luma/motion dimensions; synthesized output remains source-resolution. */
   val processingWidth: Int = 0,
   val processingHeight: Int = 0,
   val state: String = "off",
@@ -171,6 +170,8 @@ class Media3FlowVideoSink(
   private var framebuffer = 0
   private var graphicsProgramsCompiled = false
   private var computeProgramsCompiled = false
+  private var frameWidth = 0
+  private var frameHeight = 0
   private var processingWidth = 0
   private var processingHeight = 0
   private var gridWidth = 0
@@ -809,14 +810,15 @@ class Media3FlowVideoSink(
     bindTextureUnit(1, b.colorTexture)
     GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uFrame0"), 0)
     GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uFrame1"), 1)
-    GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uSize"), processingWidth, processingHeight)
+    GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uSize"), frameWidth, frameHeight)
+    GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uMotionSize"), processingWidth, processingHeight)
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uGrid"), gridWidth, gridHeight)
     GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uStep"), FLOW_GRID_STEP)
     GLES31.glUniform1f(GLES31.glGetUniformLocation(synthProgram, "uAlpha"), alpha)
     GLES31.glBindImageTexture(0, pair.forwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
     GLES31.glBindImageTexture(1, pair.backwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
     GLES31.glBindImageTexture(2, outputTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
-    GLES31.glDispatchCompute(ceil(processingWidth / 8.0).toInt(), ceil(processingHeight / 8.0).toInt(), 1)
+    GLES31.glDispatchCompute(ceil(frameWidth / 8.0).toInt(), ceil(frameHeight / 8.0).toInt(), 1)
     GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
   }
 
@@ -825,8 +827,8 @@ class Media3FlowVideoSink(
 
   private fun drawTexture(textureId: Int, presentationTimeNs: Long, ptsUs: Long): Boolean {
     if (windowSurface == EGL14.EGL_NO_SURFACE || !makeWindowCurrent()) return false
-    val width = outputResolution.width.takeIf { it > 0 } ?: processingWidth
-    val height = outputResolution.height.takeIf { it > 0 } ?: processingHeight
+    val width = outputResolution.width.takeIf { it > 0 } ?: frameWidth
+    val height = outputResolution.height.takeIf { it > 0 } ?: frameHeight
     GLES20.glViewport(0, 0, width, height)
     GLES20.glUseProgram(blitProgram)
     bindTextureUnit(0, textureId)
@@ -845,7 +847,7 @@ class Media3FlowVideoSink(
     check(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE) {
       "Media3 Flow input-copy framebuffer is incomplete"
     }
-    GLES20.glViewport(0, 0, processingWidth, processingHeight)
+    GLES20.glViewport(0, 0, frameWidth, frameHeight)
     GLES20.glUseProgram(copyProgram)
     GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
     GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, inputTextureId)
@@ -886,20 +888,24 @@ class Media3FlowVideoSink(
   }
 
   private fun ensureProcessingResources(sourceWidth: Int, sourceHeight: Int) {
-    val scale = min(1f, maxDimension.toFloat() / max(sourceWidth, sourceHeight).toFloat())
-    val width = max(16, (sourceWidth * scale).roundToInt())
-    val height = max(16, (sourceHeight * scale).roundToInt())
-    if (width == processingWidth && height == processingHeight && framePool.isNotEmpty()) return
+    val motionSize = Media3FlowGeometry.motionSize(sourceWidth, sourceHeight, maxDimension)
+    val width = motionSize.width
+    val height = motionSize.height
+    if (sourceWidth == frameWidth && sourceHeight == frameHeight &&
+      width == processingWidth && height == processingHeight && framePool.isNotEmpty()
+    ) return
     clearSourceFrames()
     destroyFrameResources()
+    frameWidth = sourceWidth
+    frameHeight = sourceHeight
     processingWidth = width
     processingHeight = height
     gridWidth = ceil(width.toDouble() / FLOW_GRID_STEP).toInt()
     gridHeight = ceil(height.toDouble() / FLOW_GRID_STEP).toInt()
-    outputTexture = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_RGBA8, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE)
+    outputTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE)
     repeat(MAX_STORED_FRAMES) {
       framePool += FrameSlot().apply {
-        colorTexture = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_RGBA8, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE)
+        colorTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE)
         lumaTexture = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_R32F, GLES30.GL_RED, GLES30.GL_FLOAT)
       }
     }
@@ -1341,7 +1347,8 @@ class Media3FlowVideoSink(
       void main() {
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);
         if (any(greaterThanEqual(p, uSize))) return;
-        vec3 c = texelFetch(uColor, p, 0).rgb;
+        vec2 uv = (vec2(p) + vec2(0.5)) / vec2(uSize);
+        vec3 c = texture(uColor, uv).rgb;
         float y = dot(c, vec3(0.2126, 0.7152, 0.0722));
         imageStore(uLuma, p, vec4(y, 0.0, 0.0, 1.0));
       }
@@ -1417,6 +1424,7 @@ class Media3FlowVideoSink(
       layout(rgba16f, binding = 1) readonly uniform highp image2D uBackward;
       layout(rgba8, binding = 2) writeonly uniform highp image2D uOutput;
       uniform ivec2 uSize;
+      uniform ivec2 uMotionSize;
       uniform ivec2 uGrid;
       uniform int uStep;
       uniform float uAlpha;
@@ -1436,14 +1444,22 @@ class Media3FlowVideoSink(
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);
         if (any(greaterThanEqual(p, uSize))) return;
         vec2 point = vec2(p) + vec2(0.5);
-        vec4 f = flowAt(point, 0);
-        vec2 backAtTarget = flowAt(point + f.xy, 1).xy;
+        vec2 uv = point / vec2(uSize);
+        vec2 motionPoint = point * vec2(uMotionSize) / vec2(uSize);
+        vec4 source0 = texture(uFrame0, uv);
+        vec4 source1 = texture(uFrame1, uv);
+        float staticChange = dot(abs(source0.rgb - source1.rgb), vec3(0.2126, 0.7152, 0.0722));
+        if (staticChange < 0.018) {
+          imageStore(uOutput, p, mix(source0, source1, uAlpha));
+          return;
+        }
+        vec4 f = flowAt(motionPoint, 0);
+        vec2 backAtTarget = flowAt(motionPoint + f.xy, 1).xy;
         float consistency = length(f.xy + backAtTarget);
         float confidence = 1.0 - smoothstep(1.0, 6.0, consistency);
         confidence *= 1.0 - smoothstep(0.04, 0.35, f.z);
-        vec2 uv = point / vec2(uSize);
-        vec2 uv0 = clamp(uv - uAlpha * f.xy / vec2(uSize), vec2(0.0), vec2(1.0));
-        vec2 uv1 = clamp(uv + (1.0 - uAlpha) * backAtTarget / vec2(uSize), vec2(0.0), vec2(1.0));
+        vec2 uv0 = clamp(uv - uAlpha * f.xy / vec2(uMotionSize), vec2(0.0), vec2(1.0));
+        vec2 uv1 = clamp(uv + (1.0 - uAlpha) * backAtTarget / vec2(uMotionSize), vec2(0.0), vec2(1.0));
         vec4 c0 = texture(uFrame0, uv0);
         vec4 c1 = texture(uFrame1, uv1);
         float weight0 = (1.0 - uAlpha) * confidence;
