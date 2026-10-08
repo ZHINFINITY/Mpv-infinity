@@ -121,6 +121,7 @@ class Media3FlowVideoSink(
     .apply { position(0) }
 
   @Volatile private var currentFormat: Format? = null
+  @Volatile private var videoAspect = VideoAspect.Fit
   @Volatile private var initialized = false
   @Volatile private var outputAvailable = false
   @Volatile private var storedFrameCount = 0
@@ -339,6 +340,11 @@ class Media3FlowVideoSink(
 
   override fun setPlaybackSpeed(speed: Float) {
     if (speed.isFinite() && speed > 0f) playbackSpeed = speed
+  }
+
+  fun setVideoAspect(aspect: VideoAspect) {
+    videoAspect = aspect
+    redraw()
   }
 
   override fun setVideoEffects(videoEffects: List<Effect>) {
@@ -915,10 +921,32 @@ class Media3FlowVideoSink(
     if (windowSurface == EGL14.EGL_NO_SURFACE || !makeWindowCurrent()) return false
     val width = outputResolution.width.takeIf { it > 0 } ?: frameWidth
     val height = outputResolution.height.takeIf { it > 0 } ?: frameHeight
-    GLES20.glViewport(0, 0, width, height)
+    val geometry = Media3FlowGeometry.blitGeometry(frameWidth, frameHeight, width, height, videoAspect)
+    val hasLetterbox = geometry.viewportWidth != width || geometry.viewportHeight != height
+    if (hasLetterbox) {
+      GLES20.glViewport(0, 0, width, height)
+      GLES20.glClearColor(0f, 0f, 0f, 1f)
+      GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+    }
+    GLES20.glViewport(
+      geometry.viewportX,
+      geometry.viewportY,
+      geometry.viewportWidth,
+      geometry.viewportHeight,
+    )
     GLES20.glUseProgram(blitProgram)
     bindTextureUnit(0, textureId)
     GLES20.glUniform1i(GLES20.glGetUniformLocation(blitProgram, "uImage"), 0)
+    GLES20.glUniform2f(
+      GLES20.glGetUniformLocation(blitProgram, "uTextureScale"),
+      geometry.textureScaleX,
+      geometry.textureScaleY,
+    )
+    GLES20.glUniform2f(
+      GLES20.glGetUniformLocation(blitProgram, "uTextureOffset"),
+      geometry.textureOffsetX,
+      geometry.textureOffsetY,
+    )
     drawFullscreenTriangle()
     EGLExt.eglPresentationTimeANDROID(eglDisplay, windowSurface, presentationTimeNs.coerceAtLeast(0L))
     val swapped = EGL14.eglSwapBuffers(eglDisplay, windowSurface)
@@ -1508,7 +1536,9 @@ class Media3FlowVideoSink(
       in vec2 vUv;
       out vec4 outColor;
       uniform sampler2D uImage;
-      void main() { outColor = texture(uImage, vUv); }
+      uniform vec2 uTextureScale;
+      uniform vec2 uTextureOffset;
+      void main() { outColor = texture(uImage, uTextureOffset + vUv * uTextureScale); }
     """
 
     private const val LUMA_COMPUTE_SHADER = """

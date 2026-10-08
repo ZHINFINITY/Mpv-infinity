@@ -144,6 +144,8 @@ internal class Media3AspectModeState(initialAspect: VideoAspect = VideoAspect.Fi
   }
 
   fun resizeMode(): Int = media3ResizeModeForAspect(selectedAspect)
+
+  fun aspect(): VideoAspect = selectedAspect
 }
 
 private data class NativeSubtitleSelection(
@@ -570,6 +572,7 @@ class NativeMedia3Engine(
     view.useController = false
     view.resizeMode = videoAspect.resizeMode()
     view.player = player
+    media3FlowSink?.setVideoAspect(videoAspect.aspect())
     configureSubtitleView()
     view.post { if (attachedView === view) configureSubtitleView() }
     startTimelineUpdates()
@@ -590,6 +593,7 @@ class NativeMedia3Engine(
 
   fun setVideoAspect(aspect: VideoAspect) {
     videoAspect.select(aspect)
+    media3FlowSink?.setVideoAspect(aspect)
     attachedView?.resizeMode = videoAspect.resizeMode()
   }
 
