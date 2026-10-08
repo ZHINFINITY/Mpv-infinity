@@ -47,6 +47,7 @@ import kotlin.math.roundToLong
 data class Media3FlowDiagnostics(
   val enabled: Boolean = false,
   val sourceFps: Float = 0f,
+  /** Successful EGL swap cadence; this is not a SurfaceFlinger scanout measurement. */
   val outputFps: Float = 0f,
   val generatedFps: Float = 0f,
   val targetFps: Int = 0,
@@ -55,6 +56,8 @@ data class Media3FlowDiagnostics(
   val skippedFrames: Long = 0L,
   /** CPU time spent submitting motion-estimation commands, not a GPU-completion timer. */
   val motionEstimateSubmitMs: Float = 0f,
+  /** Asynchronously retrieved GPU elapsed time for forward and backward motion passes. */
+  val motionEstimateGpuMs: Float? = null,
   /** Null until a non-blocking GPU confidence readback is available. */
   val confidence: Float? = null,
   val motionGridWidth: Int = 0,
@@ -83,7 +86,7 @@ class Media3FlowVideoSink(
   private val logTag = "Mpv∞-Media3Flow"
   private val displayHz = displayRefreshRate(appContext)
   private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
-  private val maxDimension = effectiveMpvFlowMaxDimension(targetFps).coerceIn(160, 480)
+  private val maxDimension = effectiveMpvFlowMaxDimension(targetFps).coerceIn(160, 640)
   private val glThread = HandlerThread("Media3Flow-GLES").apply { start() }
   private val glHandler = Handler(glThread.looper)
   private val inputLock = Any()
@@ -94,6 +97,7 @@ class Media3FlowVideoSink(
   private val motionPairs = ArrayList<MotionPairSlot>(MAX_MOTION_PAIRS)
   private val ptsHistory = ArrayDeque<Long>()
   private val outputWallTimes = ArrayDeque<Long>()
+  private val pendingGpuTimerQueries = ArrayDeque<PendingGpuTimerQuery>()
   private val generatedWallTimes = ArrayDeque<Long>()
   private val renderTaskPending = AtomicBoolean(false)
   private var choreographer: Choreographer? = null
@@ -152,6 +156,9 @@ class Media3FlowVideoSink(
   private val droppedFrames = AtomicLong(0L)
   private var skippedFrames = 0L
   private var lastMotionSubmitMs = 0f
+  private var lastMotionGpuMs: Float? = null
+  private var gpuTimerQueryIds = IntArray(0)
+  private var gpuTimerQueriesSupported = false
   private var lastMetricsAtNs = 0L
   private var lastTimingLogAtNs = 0L
   private var glProbeFramesRemaining = 8
@@ -200,6 +207,12 @@ class Media3FlowVideoSink(
   private data class PendingInput(val ptsUs: Long, val generation: Long, val handler: VideoSink.VideoFrameHandler)
   private data class FrameToken(val ptsUs: Long, val generation: Long, val releaseTimestampNs: Long)
   private data class PlaybackClock(val positionUs: Long, val elapsedRealtimeUs: Long)
+  private data class PendingGpuTimerQuery(
+    val id: Int,
+    val frame0PtsUs: Long,
+    val frame1PtsUs: Long,
+    val generation: Long,
+  )
 
   private class FrameSlot {
     var colorTexture = 0
@@ -214,6 +227,8 @@ class Media3FlowVideoSink(
     var frame0PtsUs = C.TIME_UNSET
     var frame1PtsUs = C.TIME_UNSET
     var available = false
+    var motionEstimateSubmitMs = 0f
+    var motionEstimateGpuMs: Float? = null
   }
 
   override fun setListener(listener: VideoSink.Listener, executor: Executor) {
@@ -491,6 +506,7 @@ class Media3FlowVideoSink(
   private fun renderAtDisplayFrame(frameTimeNanos: Long?) {
     if (!initialized || disposed || !outputAvailable) return
     if (!ensureEgl() || !makePbufferCurrent()) return
+    pollMotionGpuTimerQueries()
     val speed = playbackSpeed
     val clock = playbackClock
     val nowElapsedUs = SystemClock.elapsedRealtimeNanos() / 1_000L
@@ -707,11 +723,81 @@ class Media3FlowVideoSink(
       .forEach { it.available = false; it.frame0PtsUs = C.TIME_UNSET; it.frame1PtsUs = C.TIME_UNSET }
   }
 
+  private fun initializeMotionGpuTimerQueries() {
+    if (gpuTimerQueryIds.isNotEmpty()) return
+    val extensionCount = IntArray(1)
+    GLES30.glGetIntegerv(GLES30.GL_NUM_EXTENSIONS, extensionCount, 0)
+    val hasTimerExtension = (0 until extensionCount[0]).any { index ->
+      GLES30.glGetStringi(GLES20.GL_EXTENSIONS, index) == "GL_EXT_disjoint_timer_query"
+    }
+    if (!hasTimerExtension) {
+      Log.i(logTag, "GPU elapsed timer queries unavailable; reporting command-submit time only")
+      return
+    }
+    val ids = IntArray(MAX_GPU_TIMER_QUERIES)
+    GLES30.glGenQueries(ids.size, ids, 0)
+    if (ids.any { it == 0 }) {
+      GLES30.glDeleteQueries(ids.size, ids, 0)
+      Log.w(logTag, "Could not allocate GPU timer queries")
+      return
+    }
+    gpuTimerQueryIds = ids
+    gpuTimerQueriesSupported = true
+  }
+
+  private fun beginMotionGpuTimerQuery(generation: Long): Int? {
+    if (!gpuTimerQueriesSupported) return null
+    pollMotionGpuTimerQueries()
+    val inUse = pendingGpuTimerQueries.mapTo(HashSet()) { it.id }
+    val queryId = gpuTimerQueryIds.firstOrNull { it !in inUse } ?: return null
+    GLES30.glBeginQuery(GL_TIME_ELAPSED_EXT, queryId)
+    return queryId
+  }
+
+  private fun endMotionGpuTimerQuery(queryId: Int, frame0PtsUs: Long, frame1PtsUs: Long, generation: Long) {
+    GLES30.glEndQuery(GL_TIME_ELAPSED_EXT)
+    pendingGpuTimerQueries.addLast(PendingGpuTimerQuery(queryId, frame0PtsUs, frame1PtsUs, generation))
+  }
+
+  /** Poll availability before reading results; querying never waits for the GPU. */
+  private fun pollMotionGpuTimerQueries() {
+    if (!gpuTimerQueriesSupported || pendingGpuTimerQueries.isEmpty()) return
+    val pendingCount = pendingGpuTimerQueries.size
+    for (index in 0 until pendingCount) {
+      val pending = pendingGpuTimerQueries.removeFirst()
+      val available = IntArray(1)
+      GLES30.glGetQueryObjectuiv(pending.id, GLES30.GL_QUERY_RESULT_AVAILABLE, available, 0)
+      if (available[0] == 0) {
+        pendingGpuTimerQueries.addLast(pending)
+        continue
+      }
+      if (pending.generation != streamGeneration) continue
+      val disjoint = IntArray(1)
+      GLES30.glGetIntegerv(GL_GPU_DISJOINT_EXT, disjoint, 0)
+      if (disjoint[0] != 0) {
+        lastMotionGpuMs = null
+        Log.d(logTag, "Discarded a disjoint GPU timer result")
+        continue
+      }
+      val elapsed = IntArray(1)
+      GLES30.glGetQueryObjectuiv(pending.id, GLES30.GL_QUERY_RESULT, elapsed, 0)
+      val elapsedNs = elapsed[0].toLong() and 0xFFFF_FFFFL
+      if (elapsedNs > 0L) {
+        val elapsedMs = elapsedNs / 1_000_000f
+        lastMotionGpuMs = elapsedMs
+        motionPairs.firstOrNull {
+          it.frame0PtsUs == pending.frame0PtsUs && it.frame1PtsUs == pending.frame1PtsUs
+        }?.motionEstimateGpuMs = elapsedMs
+      }
+    }
+  }
+
   private fun analyzeNewestPair() {
     if (!flowAvailable || sourceFrames.size < 2) {
       lastBypassReason = "gpu_flow_unavailable"
       return
     }
+    pollMotionGpuTimerQueries()
     val frame0 = sourceFrames.elementAt(sourceFrames.size - 2)
     val frame1 = sourceFrames.last()
     val deltaUs = frame1.ptsUs - frame0.ptsUs
@@ -728,6 +814,8 @@ class Media3FlowVideoSink(
       return
     }
     val startNs = System.nanoTime()
+    val queryGeneration = streamGeneration
+    val gpuTimerQuery = beginMotionGpuTimerQuery(queryGeneration)
     try {
       GLES31.glUseProgram(flowProgram)
       checkGlError("motion glUseProgram", frameProbeOnly = true)
@@ -773,6 +861,8 @@ class Media3FlowVideoSink(
       reusable.frame1PtsUs = frame1.ptsUs
       reusable.available = true
       lastMotionSubmitMs = (System.nanoTime() - startNs) / 1_000_000f
+      reusable.motionEstimateSubmitMs = lastMotionSubmitMs
+      reusable.motionEstimateGpuMs = null
       lastBypassReason = null
       lastState = "motion_estimated"
     } catch (error: RuntimeException) {
@@ -782,6 +872,8 @@ class Media3FlowVideoSink(
       lastBypassReason = "motion_pass_error"
       lastState = "source_fallback"
       Log.w(logTag, "Motion pass failed; disabling GPU interpolation for this stream and retaining source frames", error)
+    } finally {
+      gpuTimerQuery?.let { endMotionGpuTimerQuery(it, frame0.ptsUs, frame1.ptsUs, queryGeneration) }
     }
   }
 
@@ -820,9 +912,12 @@ class Media3FlowVideoSink(
       motionPairs.firstOrNull { it.available && it.frame0PtsUs == a.ptsUs && it.frame1PtsUs == b.ptsUs }
     }
     val deltaUs = bracket?.let { it.second.ptsUs - it.first.ptsUs } ?: 0L
+    val estimatedMotionMs = pair?.let {
+      maxOf(it.motionEstimateSubmitMs, it.motionEstimateGpuMs ?: lastMotionGpuMs ?: 0f)
+    } ?: Float.POSITIVE_INFINITY
     val synthesize = bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
-      lastMotionSubmitMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
+      estimatedMotionMs < deltaUs / 1000f * ANALYSIS_DEADLINE_RESERVE
     val nowNs = System.nanoTime()
     val basePresentationNs = frameTimeNanos?.let {
       val refreshHz = displayHz.takeIf { rate -> rate.isFinite() && rate > 0f }?.toDouble() ?: targetFps.toDouble()
@@ -864,7 +959,7 @@ class Media3FlowVideoSink(
         while (generatedWallTimes.size > OUTPUT_RATE_WINDOW) generatedWallTimes.removeFirst()
       }
       lastRenderedPtsUs = targetPtsUs
-      outputWallTimes.addLast(System.nanoTime())
+      outputWallTimes.addLast(frameTimeNanos ?: System.nanoTime())
       while (outputWallTimes.size > OUTPUT_RATE_WINDOW) outputWallTimes.removeFirst()
       if (!firstFrameReported) {
         firstFrameReported = true
@@ -1071,6 +1166,8 @@ class Media3FlowVideoSink(
     sourceFrames.forEach { it.inUse = false; it.ptsUs = C.TIME_UNSET }
     sourceFrames.clear()
     motionPairs.forEach { it.available = false; it.frame0PtsUs = C.TIME_UNSET; it.frame1PtsUs = C.TIME_UNSET }
+    lastMotionGpuMs = null
+    lastMotionSubmitMs = 0f
     storedFrameCount = 0
   }
 
@@ -1094,6 +1191,7 @@ class Media3FlowVideoSink(
       if (!preflightOnly && !computeProgramsCompiled) {
         if (!makePbufferCurrent()) return false
         compileComputePrograms()
+        initializeMotionGpuTimerQueries()
         computeProgramsCompiled = true
       }
       return eglReady
@@ -1168,6 +1266,7 @@ class Media3FlowVideoSink(
     }
     if (!preflightOnly && !computeProgramsCompiled) {
       compileComputePrograms()
+      initializeMotionGpuTimerQueries()
       computeProgramsCompiled = true
     }
     if (framebuffer == 0) {
@@ -1332,6 +1431,13 @@ class Media3FlowVideoSink(
     lumaProgram = 0
     flowProgram = 0
     synthProgram = 0
+    if (gpuTimerQueryIds.isNotEmpty()) {
+      GLES30.glDeleteQueries(gpuTimerQueryIds.size, gpuTimerQueryIds, 0)
+    }
+    gpuTimerQueryIds = IntArray(0)
+    gpuTimerQueriesSupported = false
+    pendingGpuTimerQueries.clear()
+    lastMotionGpuMs = null
     if (framebuffer != 0) GLES20.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
     framebuffer = 0
     deleteTexture(inputTextureId)
@@ -1380,6 +1486,7 @@ class Media3FlowVideoSink(
       droppedFrames = droppedFrames.get(),
       skippedFrames = skippedFrames,
       motionEstimateSubmitMs = lastMotionSubmitMs,
+      motionEstimateGpuMs = lastMotionGpuMs,
       confidence = null,
       motionGridWidth = gridWidth,
       motionGridHeight = gridHeight,
@@ -1477,13 +1584,16 @@ class Media3FlowVideoSink(
     private const val MAX_QUEUED_FRAMES = 5
     private const val MAX_INPUT_RELEASE_AHEAD_US = 100_000L
     private const val FLOW_BLOCK_SIZE = 8
-    private const val FLOW_GRID_STEP = 6
-    private const val FLOW_SEARCH_RADIUS = 4
+    private const val FLOW_GRID_STEP = 4
+    private const val FLOW_SEARCH_RADIUS = 24
     private const val HISTORY_SIZE = 24
     private const val OUTPUT_RATE_WINDOW = 31
     private const val ANALYSIS_DEADLINE_RESERVE = 0.85f
     private const val METRICS_INTERVAL_NS = 500_000_000L
     private const val GL_INIT_TIMEOUT_MS = 5_000L
+    private const val MAX_GPU_TIMER_QUERIES = 3
+    private const val GL_TIME_ELAPSED_EXT = 0x88BF
+    private const val GL_GPU_DISJOINT_EXT = 0x8FBB
     private const val EGL_OPENGL_ES3_BIT_KHR = 0x0040
     private const val EGL_CONTEXT_MINOR_VERSION_KHR = 0x30FB
     private val GLES_VERSION_REGEX = Regex("OpenGL ES (\\d+)\\.(\\d+)")
@@ -1569,52 +1679,72 @@ class Media3FlowVideoSink(
       uniform int uBlock;
       uniform int uStep;
       uniform int uRadius;
+      float blockSad(ivec2 origin, ivec2 offset, int stride) {
+        float sad = 0.0;
+        float samples = 0.0;
+        for (int y = 0; y < uBlock; y += stride) {
+          for (int x = 0; x < uBlock; x += stride) {
+            ivec2 p = origin + ivec2(x, y);
+            sad += abs(imageLoad(uSource, p).r - imageLoad(uTarget, p + offset).r);
+            samples += 1.0;
+          }
+        }
+        return sad / max(samples, 1.0);
+      }
+      bool offsetIsValid(ivec2 origin, ivec2 offset, ivec2 limit) {
+        ivec2 targetOrigin = origin + offset;
+        return all(greaterThanEqual(targetOrigin, ivec2(0))) &&
+          all(lessThanEqual(targetOrigin, limit));
+      }
       void main() {
         ivec2 cell = ivec2(gl_GlobalInvocationID.xy);
         ivec2 grid = imageSize(uFlow);
         if (any(greaterThanEqual(cell, grid))) return;
         ivec2 limit = max(uSize - ivec2(uBlock), ivec2(0));
         ivec2 origin = min(cell * uStep, limit);
-        float coarseBest = 1e20;
-        ivec2 coarseOffset = ivec2(0);
-        for (int dy = -8; dy <= 8; dy += 2) {
-          if (abs(dy) > uRadius) continue;
-          for (int dx = -8; dx <= 8; dx += 2) {
-            if (abs(dx) > uRadius) continue;
-            ivec2 offset = ivec2(dx, dy);
-            ivec2 targetOrigin = origin + offset;
-            if (any(lessThan(targetOrigin, ivec2(0))) || any(greaterThan(targetOrigin, limit))) continue;
-            float sad = 0.0;
-            for (int y = 0; y < 8; y += 2) {
-              for (int x = 0; x < 8; x += 2) {
-                ivec2 p = origin + ivec2(x, y);
-                sad += abs(imageLoad(uSource, p).r - imageLoad(uTarget, p + offset).r);
-              }
-            }
-            if (sad < coarseBest) { coarseBest = sad; coarseOffset = offset; }
-          }
-        }
         float best = 1e20;
-        ivec2 bestOffset = coarseOffset;
-        for (int dy = coarseOffset.y - 1; dy <= coarseOffset.y + 1; dy++) {
+        ivec2 bestOffset = ivec2(0);
+        // Coarse displacement scan covers ±24 analysis pixels with four patch samples.
+        for (int dy = -24; dy <= 24; dy += 8) {
           if (abs(dy) > uRadius) continue;
-          for (int dx = coarseOffset.x - 1; dx <= coarseOffset.x + 1; dx++) {
+          for (int dx = -24; dx <= 24; dx += 8) {
             if (abs(dx) > uRadius) continue;
             ivec2 offset = ivec2(dx, dy);
-            ivec2 targetOrigin = origin + offset;
-            if (any(lessThan(targetOrigin, ivec2(0))) || any(greaterThan(targetOrigin, limit))) continue;
-            float sad = 0.0;
-            for (int y = 0; y < 8; y++) {
-              for (int x = 0; x < 8; x++) {
-                ivec2 p = origin + ivec2(x, y);
-                sad += abs(imageLoad(uSource, p).r - imageLoad(uTarget, p + offset).r);
-              }
-            }
-            if (sad < best) { best = sad; bestOffset = offset; }
+            if (!offsetIsValid(origin, offset, limit)) continue;
+            float cost = blockSad(origin, offset, 4);
+            if (cost < best) { best = cost; bestOffset = offset; }
           }
         }
-        float qualityCost = best / 64.0;
-        imageStore(uFlow, cell, vec4(vec2(bestOffset), qualityCost, 1.0));
+        // Refine the best displacement at progressively finer pixel steps.
+        for (int level = 0; level < 3; level++) {
+          int step = level == 0 ? 4 : (level == 1 ? 2 : 1);
+          int sampleStride = level == 0 ? 4 : (level == 1 ? 2 : 1);
+          ivec2 center = bestOffset;
+          float localBest = 1e20;
+          ivec2 localOffset = center;
+          for (int oy = -1; oy <= 1; oy++) {
+            for (int ox = -1; ox <= 1; ox++) {
+              ivec2 offset = center + ivec2(ox, oy) * step;
+              if (any(greaterThan(abs(offset), ivec2(uRadius)))) continue;
+              if (!offsetIsValid(origin, offset, limit)) continue;
+              float cost = blockSad(origin, offset, sampleStride);
+              if (cost < localBest) { localBest = cost; localOffset = offset; }
+            }
+          }
+          best = localBest;
+          bestOffset = localOffset;
+        }
+        float textureEnergy = 0.0;
+        for (int y = 0; y < uBlock; y++) {
+          for (int x = 0; x < uBlock; x++) {
+            ivec2 p = origin + ivec2(x, y);
+            float center = imageLoad(uSource, p).r;
+            if (x + 1 < uBlock) textureEnergy += abs(center - imageLoad(uSource, p + ivec2(1, 0)).r);
+            if (y + 1 < uBlock) textureEnergy += abs(center - imageLoad(uSource, p + ivec2(0, 1)).r);
+          }
+        }
+        textureEnergy /= max(float(2 * uBlock * (uBlock - 1)), 1.0);
+        imageStore(uFlow, cell, vec4(vec2(bestOffset), best, textureEnergy));
       }
     """
 
@@ -1644,6 +1774,15 @@ class Media3FlowVideoSink(
         vec4 bottom = mix(flowImageAt(ivec2(a.x, b.y), direction), flowImageAt(ivec2(b.x, b.y), direction), t.x);
         return mix(top, bottom, t.y);
       }
+      float inBounds(vec2 uv) {
+        return step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+      }
+      float flowReliability(vec4 flow, float cycleError, float valid) {
+        float consistency = 1.0 - smoothstep(0.75, 4.5, cycleError);
+        float matchQuality = 1.0 - smoothstep(0.06, 0.34, flow.z);
+        float textureConfidence = smoothstep(0.003, 0.03, flow.w);
+        return consistency * matchQuality * textureConfidence * valid;
+      }
       void main() {
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);
         if (any(greaterThanEqual(p, uSize))) return;
@@ -1657,20 +1796,39 @@ class Media3FlowVideoSink(
           imageStore(uOutput, p, mix(source0, source1, uAlpha));
           return;
         }
-        vec4 f = flowAt(motionPoint, 0);
-        vec2 backAtTarget = flowAt(motionPoint + f.xy, 1).xy;
-        float consistency = length(f.xy + backAtTarget);
-        float confidence = 1.0 - smoothstep(1.0, 6.0, consistency);
-        confidence *= 1.0 - smoothstep(0.04, 0.35, f.z);
-        vec2 uv0 = clamp(uv - uAlpha * f.xy / vec2(uMotionSize), vec2(0.0), vec2(1.0));
-        vec2 uv1 = clamp(uv + (1.0 - uAlpha) * backAtTarget / vec2(uMotionSize), vec2(0.0), vec2(1.0));
+        vec4 forwardAtMid = flowAt(motionPoint, 0);
+        vec4 backwardAtMid = flowAt(motionPoint, 1);
+        vec4 backwardAtTarget = flowAt(motionPoint + forwardAtMid.xy, 1);
+        vec4 forwardAtSource = flowAt(motionPoint + backwardAtMid.xy, 0);
+        float forwardCycleError = length(forwardAtMid.xy + backwardAtTarget.xy);
+        float backwardCycleError = length(backwardAtMid.xy + forwardAtSource.xy);
+        vec2 uv0Raw = uv - uAlpha * forwardAtSource.xy / vec2(uMotionSize);
+        vec2 uv1Raw = uv + (1.0 - uAlpha) * backwardAtTarget.xy / vec2(uMotionSize);
+        float valid0 = inBounds(uv0Raw);
+        float valid1 = inBounds(uv1Raw);
+        vec2 uv0 = clamp(uv0Raw, vec2(0.0), vec2(1.0));
+        vec2 uv1 = clamp(uv1Raw, vec2(0.0), vec2(1.0));
         vec4 c0 = texture(uFrame0, uv0);
         vec4 c1 = texture(uFrame1, uv1);
-        float weight0 = (1.0 - uAlpha) * confidence;
-        float weight1 = uAlpha * confidence;
-        if (confidence < 0.15) {
-          weight0 = uAlpha < 0.5 ? 1.0 : 0.0;
-          weight1 = 1.0 - weight0;
+        float confidence0 = flowReliability(forwardAtSource, forwardCycleError, valid0);
+        float confidence1 = flowReliability(backwardAtTarget, backwardCycleError, valid1);
+        if (max(confidence0, confidence1) < 0.12) {
+          imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
+          return;
+        }
+        float colorMismatch = dot(abs(c0.rgb - c1.rgb), vec3(0.2126, 0.7152, 0.0722));
+        float weight0 = (1.0 - uAlpha) * confidence0;
+        float weight1 = uAlpha * confidence1;
+        if (colorMismatch > 0.20) {
+          if (confidence0 > confidence1 * 1.25) {
+            weight1 = 0.0;
+          } else if (confidence1 > confidence0 * 1.25) {
+            weight0 = 0.0;
+          } else if (uAlpha < 0.5) {
+            weight1 = 0.0;
+          } else {
+            weight0 = 0.0;
+          }
         }
         vec4 color = c0 * weight0 + c1 * weight1;
         float total = max(weight0 + weight1, 1e-4);

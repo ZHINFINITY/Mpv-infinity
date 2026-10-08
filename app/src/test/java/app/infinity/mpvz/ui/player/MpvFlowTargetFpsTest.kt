@@ -42,10 +42,13 @@ class MpvFlowTargetFpsTest {
   }
 
   @Test
-  fun processingCapStepsDownAsTheRequestedRateRises() {
-    assertEquals(480, effectiveMpvFlowMaxDimension(60))
-    assertEquals(360, effectiveMpvFlowMaxDimension(72))
-    assertEquals(320, effectiveMpvFlowMaxDimension(96))
-    assertEquals(240, effectiveMpvFlowMaxDimension(144))
+  fun higherMotionAnalysisCapStepsDownWithoutRemovingAnyTargetRate() {
+    assertEquals(listOf(48, 60, 72, 90, 96, 120, 144), MPVFLOW_TARGET_FPS_OPTIONS)
+    assertEquals(640, effectiveMpvFlowMaxDimension(60))
+    assertEquals(480, effectiveMpvFlowMaxDimension(72))
+    assertEquals(480, effectiveMpvFlowMaxDimension(90))
+    assertEquals(400, effectiveMpvFlowMaxDimension(96))
+    assertEquals(400, effectiveMpvFlowMaxDimension(120))
+    assertEquals(320, effectiveMpvFlowMaxDimension(144))
   }
 }

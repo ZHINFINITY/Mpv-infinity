@@ -330,7 +330,7 @@
   <string name="pref_decoder_mpvflow_target_fps_title">MPVFlow target frame rate</string>
   <string name="pref_decoder_mpvflow_target_fps_value">%1$d fps</string>
   <string name="pref_decoder_mpvflow_target_fps_warning_value">(!) %1$d fps</string>
-  <string name="pref_decoder_mpvflow_target_fps_summary">Requested: %1$d fps. Choices mirror SVPlayer: 48, 60, 72, 90, 96, 120, and 144. (!) marks higher-cost targets; the effective rate is capped to display refresh. The automatic longest-side processing cap is 480 pixels through 60 fps, 360 at 72–90, 320 at 96–120, and 240 at 144. Test on your device; dropped frames and heat depend on the device.</string>
+  <string name="pref_decoder_mpvflow_target_fps_summary">Requested: %1$d fps. Choices mirror SVPlayer: 48, 60, 72, 90, 96, 120, and 144. (!) marks higher-cost targets; the effective rate is capped to display refresh. The automatic longest-side motion-analysis cap is 640 pixels through 60 fps, 480 at 72–90, 400 at 96–120, and 320 at 144. Test on your device; dropped frames and heat depend on the device.</string>
   <string name="pref_subtitles">Subtitles</string>
   <string name="pref_subtitles_summary">Preferred languages, fonts and search</string>
   <string name="pref_subtitle_search_title">Online Subtitle Search</string>

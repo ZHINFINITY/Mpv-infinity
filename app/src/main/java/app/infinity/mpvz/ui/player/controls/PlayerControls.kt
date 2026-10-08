@@ -2365,6 +2365,8 @@ private fun NativeStatsPageOverlay(
   val flowSourceRate = if (flow.sourceFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.sourceFps) else "—"
   val flowOutputRate = if (flow.outputFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.outputFps) else "—"
   val flowGeneratedRate = if (flow.generatedFps > 0f) String.format(java.util.Locale.US, "%.1f", flow.generatedFps) else "—"
+  val flowGpuTime = flow.motionEstimateGpuMs?.let { "${String.format(java.util.Locale.US, "%.2f", it)} ms" }
+    ?: "n/a"
   val flowMultiplier = if (flow.sourceFps > 0f && flow.outputFps > 0f) {
     String.format(java.util.Locale.US, "%.1f", flow.outputFps / flow.sourceFps)
   } else {
@@ -2422,13 +2424,14 @@ private fun NativeStatsPageOverlay(
           )
           if (flow.enabled) {
             Text(
-              "Media3 Flow: ${flow.state} · src $flowSourceRate fps → out $flowOutputRate/${flow.targetFps} fps " +
+              "Media3 Flow: ${flow.state} · src $flowSourceRate fps → EGL swaps $flowOutputRate/${flow.targetFps} fps " +
                 "($flowMultiplier×) · generated $flowGeneratedRate fps (${"%,d".format(java.util.Locale.US, flow.generatedFrames)} total)",
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )
             Text(
               "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms · " +
+                "ME GPU elapsed $flowGpuTime · " +
                 "confidence $flowConfidence · drop ${flow.droppedFrames} · skip ${flow.skippedFrames} · " +
                 "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +
                 "processing ${flow.processingWidth}×${flow.processingHeight}" +

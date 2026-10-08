@@ -41,10 +41,10 @@ internal fun effectiveMpvFlowTargetFps(value: Int, displayRefreshHz: Float): Int
 
 internal fun effectiveMpvFlowMaxDimension(targetFps: Int): Int =
   when {
-    targetFps >= 144 -> 240
-    targetFps >= 96 -> 320
-    targetFps >= 72 -> 360
-    else -> 480
+    targetFps >= 144 -> 320
+    targetFps >= 96 -> 400
+    targetFps >= 72 -> 480
+    else -> 640
   }
 
 internal val RIFE_PROCESSING_RESOLUTION_OPTIONS = listOf(-1, 0, 480, 720, 1080)
