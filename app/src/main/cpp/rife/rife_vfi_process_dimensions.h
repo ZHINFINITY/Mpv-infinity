@@ -16,6 +16,8 @@ static inline bool rife_vfi_process_dimensions(int source_width, int source_heig
 
     int limit = max_dimension;
     if (limit == 0)
+        // Preserve the existing Auto image-quality tradeoff; users can select
+        // a lower explicit cap when they prefer throughput over detail.
         limit = target_fps >= 60 ? 480 : target_fps >= 48 ? 720 : 1080;
 
     int width = source_width;

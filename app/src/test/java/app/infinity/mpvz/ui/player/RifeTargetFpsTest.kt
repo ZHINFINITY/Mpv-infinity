@@ -30,10 +30,11 @@ class RifeTargetFpsTest {
 
   @Test
   fun processingResolutionSupportsAutomaticCapsAndOriginalResolution() {
-    assertEquals(listOf(-1, 0, 480, 720, 1080), RIFE_PROCESSING_RESOLUTION_OPTIONS)
+    assertEquals(listOf(-1, 0, 360, 480, 720, 1080), RIFE_PROCESSING_RESOLUTION_OPTIONS)
     assertEquals(0, DEFAULT_RIFE_PROCESSING_RESOLUTION)
     assertEquals(0, normalizeRifeProcessingResolution(0))
     assertEquals(-1, normalizeRifeProcessingResolution(-1))
+    assertEquals(360, normalizeRifeProcessingResolution(380))
     assertEquals(480, normalizeRifeProcessingResolution(500))
     assertEquals(720, normalizeRifeProcessingResolution(800))
   }

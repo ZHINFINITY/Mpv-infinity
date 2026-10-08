@@ -644,10 +644,10 @@ index bd3d1aa1e..852dd26bf 100644
      talloc_free(mpi);
  }
 
-@@ -1154,14 +1346,577 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1346,584 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
- 
+
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
 +static void rife_clear_output_ring(struct priv *p)
 +{
@@ -1040,8 +1040,18 @@ index bd3d1aa1e..852dd26bf 100644
 +    p->rife_diag_before_input_ready = fp0->rife_input != NULL;
 +    p->rife_diag_after_input_ready = fp1->rife_input != NULL;
 +
-+    double source_duration = after_pts - before_pts;
 +    int target_fps = p->rife_root_opts->rife_target_fps;
++    int width = 0, height = 0;
++    bool process_dimensions_valid = rife_vfi_process_dimensions(
++        mpi0->params.w, mpi0->params.h,
++        p->rife_root_opts->rife_max_dimension, target_fps,
++        &width, &height);
++    if (process_dimensions_valid) {
++        p->rife_diag_process_width = width;
++        p->rife_diag_process_height = height;
++    }
++
++    double source_duration = after_pts - before_pts;
 +    if (source_duration <= 0 || source_duration * target_fps <= 1.0) {
 +        rife_log_wait_reason(p, RIFE_WAIT_NO_INTERMEDIATE_TICK, mix->num_frames);
 +        return false;
@@ -1074,10 +1084,7 @@ index bd3d1aa1e..852dd26bf 100644
 +        return false;
 +    }
 +
-+    int width = 0, height = 0;
-+    if (!rife_vfi_process_dimensions(mpi0->params.w, mpi0->params.h,
-+            p->rife_root_opts->rife_max_dimension, target_fps,
-+            &width, &height)) {
++    if (!process_dimensions_valid) {
 +        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=invalid_processing_dimensions source=%dx%d\n",
 +                mpi0->params.w, mpi0->params.h);
 +        rife_log_wait_reason(p, RIFE_WAIT_OUTPUT_RING, mix->num_frames);

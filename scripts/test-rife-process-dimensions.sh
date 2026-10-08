@@ -35,6 +35,7 @@ int main(void)
 
     // An explicit cap works independently of target FPS.
     expect_dimensions(1920, 1080, 720, 60, 720, 404);
+    expect_dimensions(1920, 1080, 360, 60, 360, 202);
     expect_dimensions(1920, 1080, 800, 30, 800, 450);
 
     // -1 preserves source resolution; invalid inputs fail without dimensions.

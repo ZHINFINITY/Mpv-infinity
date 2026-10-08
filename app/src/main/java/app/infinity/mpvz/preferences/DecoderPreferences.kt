@@ -23,7 +23,7 @@ internal fun normalizeRifeTargetFps(value: Int): Int =
   RIFE_TARGET_FPS_OPTIONS.minByOrNull { kotlin.math.abs(it.toLong() - value.toLong()) }
     ?: DEFAULT_RIFE_TARGET_FPS
 
-internal val RIFE_PROCESSING_RESOLUTION_OPTIONS = listOf(-1, 0, 480, 720, 1080)
+internal val RIFE_PROCESSING_RESOLUTION_OPTIONS = listOf(-1, 0, 360, 480, 720, 1080)
 internal const val DEFAULT_RIFE_PROCESSING_RESOLUTION = 0
 
 internal fun normalizeRifeProcessingResolution(value: Int): Int =

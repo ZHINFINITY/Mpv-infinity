@@ -51,6 +51,11 @@ def main() -> None:
     require('setOptionString("display-fps-override"' in view and
             "displayRefreshRateAvailable" in view,
             "resident scheduling must supply and require a usable display refresh rate")
+    post_init = section(view, "override fun postInitOptions()",
+                        "when (decoderPreferences.debanding.get())")
+    require('setOptionString("video-sync", "display-resample")' in post_init and
+            'setOptionString("display-fps-override"' in post_init,
+            "resident playback must reapply display-clock scheduling after mpv.conf parsing")
     require('isOwnedByMpvConf("display-fps-override")' in view,
             "the resident route must not override a user-owned display refresh setting")
     require('cp "$ROOT/app/src/main/cpp/rife/rife_vfi_output_layout.h" "$RIFE_DIR/src/rife_vfi_output_layout.h"' in native_build,
@@ -269,6 +274,13 @@ def main() -> None:
             "resident-submit failure diagnostics must not break non-Android MPV builds")
     require("rife_cadence_origin_from_presentation" in vo,
             "resident target cadence must align to the presentation PTS phase")
+    resident_mix = section(vo, "static bool rife_build_display_mix(",
+                           "static void update_options(")
+    require("float timestep = (float) ((p->last_pts - before_pts) / source_duration);" in resident_mix,
+            "interpolation time must be derived from mpv's current presentation PTS")
+    require(resident_mix.find("p->rife_diag_process_width = width") <
+            resident_mix.find("double source_duration = after_pts - before_pts;"),
+            "timing samples must retain the selected processing size even when a later cadence check waits")
     require("target_fps=%d cadence_origin_pts=%.6f" in vo,
             "resident wait events must include target FPS and cadence origin")
     require("frame->num_frames > 1 || resident_rife_active" in draw and
