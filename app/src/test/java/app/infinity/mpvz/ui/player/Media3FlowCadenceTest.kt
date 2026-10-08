@@ -23,6 +23,17 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun outputTickTimestampNeverRunsAheadOfThePlayerPosition() {
+    for (speed in listOf(0.5f, 1f, 2f, 4f)) {
+      for (positionUs in 0L..2_000_000L step 997L) {
+        val tick = Media3FlowCadence.outputTick(positionUs, 0L, 72, speed)!!
+        val targetPtsUs = Media3FlowCadence.outputTimestampUs(tick, 0L, 72, speed)!!
+        assertTrue("target $targetPtsUs exceeds position $positionUs at speed $speed", targetPtsUs <= positionUs)
+      }
+    }
+  }
+
+  @Test
   fun sourceRateUsesMedianPositiveTimestampDeltaAndIgnoresDiscontinuities() {
     val fps = Media3FlowCadence.estimateSourceFps(
       listOf(0L, 41_667L, 83_334L, 124_999L, 1_000L, 166_667L),
@@ -54,5 +65,15 @@ class Media3FlowCadenceTest {
     assertEquals(0L, Media3FlowCadence.skippedTicks(-1L, 0L))
     assertEquals(0L, Media3FlowCadence.skippedTicks(4L, 5L))
     assertEquals(2L, Media3FlowCadence.skippedTicks(4L, 7L))
+  }
+
+  @Test
+  fun fallbackNeverSelectsASourceFrameAheadOfTheRequestedPresentationTime() {
+    val ptsUs = longArrayOf(100_000L, 141_667L, 183_334L)
+
+    assertNull(Media3FlowCadence.sourceFrameIndexAtOrBefore(ptsUs, 99_999L))
+    assertEquals(0, Media3FlowCadence.sourceFrameIndexAtOrBefore(ptsUs, 100_000L))
+    assertEquals(1, Media3FlowCadence.sourceFrameIndexAtOrBefore(ptsUs, 180_000L))
+    assertEquals(2, Media3FlowCadence.sourceFrameIndexAtOrBefore(ptsUs, 183_334L))
   }
 }

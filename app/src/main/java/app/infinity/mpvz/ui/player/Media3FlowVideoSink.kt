@@ -2,6 +2,7 @@ package app.infinity.mpvz.ui.player
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.opengl.EGL14
@@ -77,6 +78,8 @@ class Media3FlowVideoSink(
   private val onDiagnostics: (Media3FlowDiagnostics) -> Unit,
 ) : VideoSink {
   private val appContext = context.applicationContext
+  private val isDebuggable =
+    (appContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
   private val logTag = "Mpv∞-Media3Flow"
   private val displayHz = displayRefreshRate(appContext)
   private val targetFps = effectiveMpvFlowTargetFps(requestedTargetFps, displayHz)
@@ -149,6 +152,12 @@ class Media3FlowVideoSink(
   private var skippedFrames = 0L
   private var lastMotionSubmitMs = 0f
   private var lastMetricsAtNs = 0L
+  private var lastTimingLogAtNs = 0L
+  private var glProbeFramesRemaining = 8
+  private var traceGlForCurrentInput = false
+  private var lastSurfaceTimestampNs = C.TIME_UNSET
+  private var lastFrameReleaseTimestampNs = C.TIME_UNSET
+  private var eglInfoLogged = false
   private var lastState = "waiting"
   private var lastBypassReason: String? = null
 
@@ -188,7 +197,7 @@ class Media3FlowVideoSink(
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
 
   private data class PendingInput(val ptsUs: Long, val generation: Long, val handler: VideoSink.VideoFrameHandler)
-  private data class FrameToken(val ptsUs: Long, val generation: Long)
+  private data class FrameToken(val ptsUs: Long, val generation: Long, val releaseTimestampNs: Long)
   private data class PlaybackClock(val positionUs: Long, val elapsedRealtimeUs: Long)
 
   private class FrameSlot {
@@ -257,7 +266,10 @@ class Media3FlowVideoSink(
   override fun redraw() {
     if (disposed) return
     glHandler.post {
-      if (makePbufferCurrent()) sourceFrames.lastOrNull()?.let { drawSourceFrame(it, System.nanoTime(), it.ptsUs) }
+      if (makePbufferCurrent()) {
+        sourceFrames.lastOrNull { it.ptsUs <= latestPositionUs }
+          ?.let { drawSourceFrame(it, System.nanoTime(), it.ptsUs) }
+      }
     }
   }
 
@@ -487,7 +499,10 @@ class Media3FlowVideoSink(
     if (renderNextFrameImmediately) {
       glHandler.post {
         lastOutputTick = -1L
-        if (makePbufferCurrent()) sourceFrames.lastOrNull()?.let { drawSourceFrame(it, System.nanoTime(), it.ptsUs) }
+        if (makePbufferCurrent()) {
+          sourceFrames.lastOrNull { it.ptsUs <= latestPositionUs }
+            ?.let { drawSourceFrame(it, System.nanoTime(), it.ptsUs) }
+        }
       }
     }
   }
@@ -528,16 +543,19 @@ class Media3FlowVideoSink(
   }
 
   private fun releaseNextDecoderFrame() {
-    val pending = synchronized(inputLock) {
+    val pendingAndToken = synchronized(inputLock) {
       if (inputInFlight || pendingInput.isEmpty() || disposed) return
-      pendingInput.removeFirst().also {
-        inputInFlight = true
-        expectedTexturePts.addLast(FrameToken(it.ptsUs, it.generation))
-      }
+      val pending = pendingInput.removeFirst()
+      val token = FrameToken(pending.ptsUs, pending.generation, System.nanoTime())
+      inputInFlight = true
+      expectedTexturePts.addLast(token)
+      pending to token
     }
+    val pending = pendingAndToken.first
+    val token = pendingAndToken.second
     try {
       // Handler.render is called on Media3's playback thread; GPU work stays on the dedicated GL thread.
-      pending.handler.render(System.nanoTime())
+      pending.handler.render(token.releaseTimestampNs)
     } catch (error: RuntimeException) {
       synchronized(inputLock) {
         if (expectedTexturePts.isNotEmpty()) expectedTexturePts.removeLast()
@@ -570,10 +588,16 @@ class Media3FlowVideoSink(
 
   private fun onInputFrameAvailable() {
     if (disposed) return
+    traceGlForCurrentInput = isDebuggable && glProbeFramesRemaining > 0
+    if (traceGlForCurrentInput) glProbeFramesRemaining--
+    var tokenResolved = false
     try {
-      if (!makePbufferCurrent()) return
-      val texture = inputSurfaceTexture ?: return
+      check(makePbufferCurrent()) { "Unable to make the Media3 Flow input context current" }
+      checkGlError("before SurfaceTexture.updateTexImage", debugProbeOnly = true, frameProbeOnly = true)
+      val texture = checkNotNull(inputSurfaceTexture) { "Media3 Flow input SurfaceTexture is unavailable" }
       texture.updateTexImage()
+      val surfaceTimestampNs = texture.timestamp
+      checkGlError("SurfaceTexture.updateTexImage", debugProbeOnly = true, frameProbeOnly = true)
       val transform = FloatArray(16)
       texture.getTransformMatrix(transform)
       val token = synchronized(inputLock) {
@@ -581,24 +605,34 @@ class Media3FlowVideoSink(
         inputInFlight = false
         value
       }
+      tokenResolved = true
       if (token == null || token.generation != streamGeneration) {
         droppedFrames.incrementAndGet()
         storedFrameCount = sourceFrames.size
         dispatchListener { it.onFrameAvailableForRendering() }
         return
       }
+      lastSurfaceTimestampNs = surfaceTimestampNs
+      lastFrameReleaseTimestampNs = token.releaseTimestampNs
       captureFrame(token.ptsUs, transform)
       storedFrameCount = sourceFrames.size
       dispatchListener { it.onFrameAvailableForRendering() }
       scheduleDisplayFrame()
     } catch (error: RuntimeException) {
-      synchronized(inputLock) {
-        if (expectedTexturePts.isNotEmpty()) expectedTexturePts.removeFirst()
-        inputInFlight = false
+      if (!tokenResolved) {
+        synchronized(inputLock) {
+          if (inputInFlight && expectedTexturePts.isNotEmpty()) {
+            expectedTexturePts.removeFirst()
+            inputInFlight = false
+          }
+        }
       }
       droppedFrames.incrementAndGet()
       dispatchListener { it.onFrameDropped() }
+      Log.w(logTag, "Input frame capture failed; dropping this frame", error)
       reportError(error)
+    } finally {
+      traceGlForCurrentInput = false
     }
   }
 
@@ -618,7 +652,16 @@ class Media3FlowVideoSink(
       return
     }
     copyExternalTexture(slot.colorTexture, transform)
-    if (flowAvailable) dispatchLuma(slot)
+    if (flowAvailable) {
+      try {
+        dispatchLuma(slot)
+      } catch (error: RuntimeException) {
+        flowAvailable = false
+        lastBypassReason = "luma_pass_error"
+        lastState = "source_fallback"
+        Log.w(logTag, "Luma preprocessing failed; keeping source-frame playback", error)
+      }
+    }
     slot.ptsUs = ptsUs
     slot.inUse = true
     sourceFrames.addLast(slot)
@@ -669,21 +712,44 @@ class Media3FlowVideoSink(
     val startNs = System.nanoTime()
     try {
       GLES31.glUseProgram(flowProgram)
-      GLES31.glUniform2i(GLES31.glGetUniformLocation(flowProgram, "uSize"), processingWidth, processingHeight)
-      GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uBlock"), FLOW_BLOCK_SIZE)
-      GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uStep"), FLOW_GRID_STEP)
-      GLES31.glUniform1i(GLES31.glGetUniformLocation(flowProgram, "uRadius"), FLOW_SEARCH_RADIUS)
+      checkGlError("motion glUseProgram", frameProbeOnly = true)
+      val sizeLocation = GLES31.glGetUniformLocation(flowProgram, "uSize")
+      checkGlError("motion lookup uSize", frameProbeOnly = true)
+      GLES31.glUniform2i(sizeLocation, processingWidth, processingHeight)
+      checkGlError("motion uniform uSize", frameProbeOnly = true)
+      val blockLocation = GLES31.glGetUniformLocation(flowProgram, "uBlock")
+      checkGlError("motion lookup uBlock", frameProbeOnly = true)
+      GLES31.glUniform1i(blockLocation, FLOW_BLOCK_SIZE)
+      checkGlError("motion uniform uBlock", frameProbeOnly = true)
+      val stepLocation = GLES31.glGetUniformLocation(flowProgram, "uStep")
+      checkGlError("motion lookup uStep", frameProbeOnly = true)
+      GLES31.glUniform1i(stepLocation, FLOW_GRID_STEP)
+      checkGlError("motion uniform uStep", frameProbeOnly = true)
+      val radiusLocation = GLES31.glGetUniformLocation(flowProgram, "uRadius")
+      checkGlError("motion lookup uRadius", frameProbeOnly = true)
+      GLES31.glUniform1i(radiusLocation, FLOW_SEARCH_RADIUS)
+      checkGlError("motion uniform uRadius", frameProbeOnly = true)
       GLES31.glBindImageTexture(0, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_R32F)
+      checkGlError("forward motion bind input 0", frameProbeOnly = true)
       GLES31.glBindImageTexture(1, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_R32F)
+      checkGlError("forward motion bind input 1", frameProbeOnly = true)
       GLES31.glBindImageTexture(2, reusable.forwardTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
+      checkGlError("forward motion bind output", frameProbeOnly = true)
       GLES31.glDispatchCompute(ceil(gridWidth / 8.0).toInt(), ceil(gridHeight / 8.0).toInt(), 1)
+      checkGlError("forward motion dispatch", frameProbeOnly = true)
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
+      checkGlError("forward motion barrier", frameProbeOnly = true)
 
       GLES31.glBindImageTexture(0, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_R32F)
+      checkGlError("backward motion bind input 0", frameProbeOnly = true)
       GLES31.glBindImageTexture(1, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_R32F)
+      checkGlError("backward motion bind input 1", frameProbeOnly = true)
       GLES31.glBindImageTexture(2, reusable.backwardTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
+      checkGlError("backward motion bind output", frameProbeOnly = true)
       GLES31.glDispatchCompute(ceil(gridWidth / 8.0).toInt(), ceil(gridHeight / 8.0).toInt(), 1)
+      checkGlError("backward motion dispatch", frameProbeOnly = true)
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
+      checkGlError("backward motion barrier", frameProbeOnly = true)
       checkGlError("motion estimate")
       reusable.frame0PtsUs = frame0.ptsUs
       reusable.frame1PtsUs = frame1.ptsUs
@@ -693,26 +759,37 @@ class Media3FlowVideoSink(
       lastState = "motion_estimated"
     } catch (error: RuntimeException) {
       reusable.available = false
+      flowAvailable = false
       lastMotionSubmitMs = (System.nanoTime() - startNs) / 1_000_000f
       lastBypassReason = "motion_pass_error"
       lastState = "source_fallback"
-      Log.w(logTag, "Motion pass failed; real source frames remain available", error)
+      Log.w(logTag, "Motion pass failed; disabling GPU interpolation for this stream and retaining source frames", error)
     }
   }
 
   private fun renderAtPosition(positionUs: Long, speed: Float, frameTimeNanos: Long?) {
     if ((!running && !allowFirstFrameBeforeStarted) || !outputAvailable || windowSurface == EGL14.EGL_NO_SURFACE) return
     if (sourceFrames.isEmpty()) return
-    val origin = originPtsUs.takeIf { it != C.TIME_UNSET } ?: sourceFrames.first().ptsUs
+    val sourceSnapshot = sourceFrames.toList()
+    val origin = originPtsUs.takeIf { it != C.TIME_UNSET } ?: sourceSnapshot.first().ptsUs
     val tick = Media3FlowCadence.outputTick(positionUs, origin, targetFps, speed)
     val inputDone = synchronized(inputLock) { pendingInput.isEmpty() && !inputInFlight }
     val finalPtsUs = lastInputPtsUs
     val forceFinalFrame = (endOfInput || endOfCurrentInput) && inputDone &&
       finalPtsUs != C.TIME_UNSET && positionUs >= finalPtsUs && lastRenderedPtsUs < finalPtsUs
     val cadencePtsUs = tick?.let { Media3FlowCadence.outputTimestampUs(it, origin, targetFps, speed) }
-      ?: sourceFrames.first().ptsUs
-    val targetPtsUs = if (forceFinalFrame) finalPtsUs else cadencePtsUs
+      ?: sourceSnapshot.first().ptsUs
+    val targetPtsUs = if (forceFinalFrame) finalPtsUs else cadencePtsUs.coerceAtMost(positionUs)
     if (tick != null && tick <= lastOutputTick && !forceFinalFrame) return
+    val sourcePts = LongArray(sourceSnapshot.size) { sourceSnapshot[it].ptsUs }
+    val sourceIndex = Media3FlowCadence.sourceFrameIndexAtOrBefore(sourcePts, targetPtsUs)
+    val sourceFrame = sourceIndex?.let(sourceSnapshot::get)
+    if (sourceFrame == null) {
+      skippedFrames++
+      lastBypassReason = "waiting_for_source_pts"
+      logTimingTrace(positionUs, speed, targetPtsUs, null, sourceSnapshot.first().ptsUs, null, System.nanoTime())
+      return
+    }
     if (tick != null && lastOutputTick >= 0L) {
       val missed = Media3FlowCadence.skippedTicks(lastOutputTick, tick)
       if (missed > 0L) {
@@ -720,7 +797,7 @@ class Media3FlowVideoSink(
         lastBypassReason = "output_deadline_missed"
       }
     }
-    val bracket = findSourcePair(targetPtsUs)
+    val bracket = findSourcePair(sourceSnapshot, targetPtsUs)
     val pair = bracket?.let { (a, b) ->
       motionPairs.firstOrNull { it.available && it.frame0PtsUs == a.ptsUs && it.frame1PtsUs == b.ptsUs }
     }
@@ -735,6 +812,7 @@ class Media3FlowVideoSink(
     } ?: nowNs
     val ptsOffsetNs = (((targetPtsUs - positionUs).toDouble() / speed.toDouble()) * 1000.0).toLong()
     val renderTimeNs = (basePresentationNs + ptsOffsetNs).coerceAtLeast(nowNs)
+    logTimingTrace(positionUs, speed, targetPtsUs, sourceFrame.ptsUs, sourceSnapshot.first().ptsUs, renderTimeNs, nowNs)
     if (!makeWindowCurrent()) return
     var synthesized = false
     val submitted = if (synthesize && bracket != null && pair != null) {
@@ -752,14 +830,14 @@ class Media3FlowVideoSink(
           lastBypassReason = "synthesis_pass_error"
           Log.w(logTag, "Frame synthesis failed; drawing a source frame", error)
         }
-        drawSourceFrame(sourceFrameAtOrBefore(targetPtsUs), renderTimeNs, targetPtsUs)
+        drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs)
       }
     } else {
       if (bracket != null && Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed)) {
         skippedFrames++
         if (lastBypassReason == null) lastBypassReason = "motion_not_ready_or_deadline"
       }
-      drawSourceFrame(sourceFrameAtOrBefore(targetPtsUs), renderTimeNs, targetPtsUs)
+      drawSourceFrame(sourceFrame, renderTimeNs, targetPtsUs)
     }
     if (submitted) {
       if (synthesized) {
@@ -790,8 +868,7 @@ class Media3FlowVideoSink(
     if (synthesized && submitted) lastBypassReason = null
   }
 
-  private fun findSourcePair(targetPtsUs: Long): Pair<FrameSlot, FrameSlot>? {
-    val frames = sourceFrames.toList()
+  private fun findSourcePair(frames: List<FrameSlot>, targetPtsUs: Long): Pair<FrameSlot, FrameSlot>? {
     for (index in 0 until frames.lastIndex) {
       val a = frames[index]
       val b = frames[index + 1]
@@ -799,9 +876,6 @@ class Media3FlowVideoSink(
     }
     return null
   }
-
-  private fun sourceFrameAtOrBefore(targetPtsUs: Long): FrameSlot =
-    sourceFrames.lastOrNull { it.ptsUs <= targetPtsUs } ?: sourceFrames.first()
 
   private fun dispatchSynthesis(a: FrameSlot, b: FrameSlot, pair: MotionPairSlot, targetPtsUs: Long) {
     val alpha = Media3FlowCadence.interpolationAlpha(a.ptsUs, b.ptsUs, targetPtsUs) ?: return
@@ -843,28 +917,55 @@ class Media3FlowVideoSink(
 
   private fun copyExternalTexture(destinationTexture: Int, transform: FloatArray) {
     GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer)
+    checkGlError("input copy bind framebuffer", frameProbeOnly = true)
     GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, destinationTexture, 0)
-    check(GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER) == GLES20.GL_FRAMEBUFFER_COMPLETE) {
+    checkGlError("input copy attach destination", frameProbeOnly = true)
+    val framebufferStatus = GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER)
+    checkGlError("input copy framebuffer status", frameProbeOnly = true)
+    check(framebufferStatus == GLES20.GL_FRAMEBUFFER_COMPLETE) {
       "Media3 Flow input-copy framebuffer is incomplete"
     }
     GLES20.glViewport(0, 0, frameWidth, frameHeight)
+    checkGlError("input copy viewport", frameProbeOnly = true)
     GLES20.glUseProgram(copyProgram)
+    checkGlError("input copy glUseProgram", frameProbeOnly = true)
     GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+    checkGlError("input copy glActiveTexture", frameProbeOnly = true)
     GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, inputTextureId)
-    GLES20.glUniform1i(GLES20.glGetUniformLocation(copyProgram, "uExternal"), 0)
-    GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(copyProgram, "uTextureMatrix"), 1, false, transform, 0)
+    checkGlError("input copy bind external texture", frameProbeOnly = true)
+    val externalLocation = GLES20.glGetUniformLocation(copyProgram, "uExternal")
+    checkGlError("input copy lookup uExternal", frameProbeOnly = true)
+    GLES20.glUniform1i(externalLocation, 0)
+    checkGlError("input copy uniform uExternal", frameProbeOnly = true)
+    val matrixLocation = GLES20.glGetUniformLocation(copyProgram, "uTextureMatrix")
+    checkGlError("input copy lookup uTextureMatrix", frameProbeOnly = true)
+    GLES20.glUniformMatrix4fv(matrixLocation, 1, false, transform, 0)
+    checkGlError("input copy uniform uTextureMatrix", frameProbeOnly = true)
     drawFullscreenTriangle()
+    checkGlError("input copy draw", frameProbeOnly = true)
     GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+    checkGlError("input copy unbind framebuffer", frameProbeOnly = true)
   }
 
   private fun dispatchLuma(slot: FrameSlot) {
     GLES31.glUseProgram(lumaProgram)
+    checkGlError("luma glUseProgram", frameProbeOnly = true)
     bindTextureUnit(0, slot.colorTexture)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(lumaProgram, "uColor"), 0)
-    GLES31.glUniform2i(GLES31.glGetUniformLocation(lumaProgram, "uSize"), processingWidth, processingHeight)
+    checkGlError("luma bind color texture", frameProbeOnly = true)
+    val colorLocation = GLES31.glGetUniformLocation(lumaProgram, "uColor")
+    checkGlError("luma lookup uColor", frameProbeOnly = true)
+    GLES31.glUniform1i(colorLocation, 0)
+    checkGlError("luma uniform uColor", frameProbeOnly = true)
+    val sizeLocation = GLES31.glGetUniformLocation(lumaProgram, "uSize")
+    checkGlError("luma lookup uSize", frameProbeOnly = true)
+    GLES31.glUniform2i(sizeLocation, processingWidth, processingHeight)
+    checkGlError("luma uniform uSize", frameProbeOnly = true)
     GLES31.glBindImageTexture(0, slot.lumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_R32F)
+    checkGlError("luma bind output image", frameProbeOnly = true)
     GLES31.glDispatchCompute(ceil(processingWidth / 8.0).toInt(), ceil(processingHeight / 8.0).toInt(), 1)
+    checkGlError("luma dispatch", frameProbeOnly = true)
     GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
+    checkGlError("luma barrier", frameProbeOnly = true)
   }
 
   private fun trimExpiredFrames(positionUs: Long) {
@@ -1004,9 +1105,17 @@ class Media3FlowVideoSink(
       if (pbufferSurface == EGL14.EGL_NO_SURFACE) return false
     }
     if (!makePbufferCurrent()) return false
-    if (!isGles31(GLES20.glGetString(GLES20.GL_VERSION).orEmpty())) {
+    val glVersion = GLES20.glGetString(GLES20.GL_VERSION).orEmpty()
+    if (!isGles31(glVersion)) {
       lastBypassReason = "gles31_required"
       return false
+    }
+    if (!eglInfoLogged) {
+      Log.i(
+        logTag,
+        "GLES context ready version=$glVersion vendor=${GLES20.glGetString(GLES20.GL_VENDOR)} renderer=${GLES20.glGetString(GLES20.GL_RENDERER)}",
+      )
+      eglInfoLogged = true
     }
     if (!graphicsProgramsCompiled) {
       compileGraphicsPrograms()
@@ -1075,14 +1184,21 @@ class Media3FlowVideoSink(
   private fun createTexture(target: Int, width: Int, height: Int, internalFormat: Int, format: Int, type: Int): Int {
     val ids = IntArray(1)
     GLES20.glGenTextures(1, ids, 0)
+    checkGlError("texture glGenTextures", debugProbeOnly = true)
     val id = ids[0]
     GLES20.glBindTexture(target, id)
+    checkGlError("texture glBindTexture", debugProbeOnly = true)
     GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+    checkGlError("texture min filter", debugProbeOnly = true)
     GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+    checkGlError("texture mag filter", debugProbeOnly = true)
     GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+    checkGlError("texture wrap S", debugProbeOnly = true)
     GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+    checkGlError("texture wrap T", debugProbeOnly = true)
     if (target == GLES20.GL_TEXTURE_2D) {
       GLES20.glTexImage2D(target, 0, internalFormat, width, height, 0, format, type, null)
+      checkGlError("texture allocation format=0x${internalFormat.toString(16)} size=${width}x$height", debugProbeOnly = true)
     }
     return id
   }
@@ -1099,9 +1215,13 @@ class Media3FlowVideoSink(
   private fun drawFullscreenTriangle() {
     vertexBuffer.position(0)
     GLES20.glEnableVertexAttribArray(0)
+    checkGlError("fullscreen enable vertex attribute", frameProbeOnly = true)
     GLES20.glVertexAttribPointer(0, 2, GLES20.GL_FLOAT, false, 0, vertexBuffer)
+    checkGlError("fullscreen vertex attribute pointer", frameProbeOnly = true)
     GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 3)
+    checkGlError("fullscreen draw", frameProbeOnly = true)
     GLES20.glDisableVertexAttribArray(0)
+    checkGlError("fullscreen disable vertex attribute", frameProbeOnly = true)
   }
 
   private fun linkProgram(vertexSource: String, fragmentSource: String): Int {
@@ -1224,6 +1344,31 @@ class Media3FlowVideoSink(
     runCatching { onDiagnostics(diagnostics) }
   }
 
+  private fun logTimingTrace(
+    positionUs: Long,
+    speed: Float,
+    targetPtsUs: Long,
+    sourcePtsUs: Long?,
+    nextSourcePtsUs: Long?,
+    presentationTimeNs: Long?,
+    nowNs: Long,
+  ) {
+    if (!isDebuggable || nowNs - lastTimingLogAtNs < METRICS_INTERVAL_NS) return
+    lastTimingLogAtNs = nowNs
+    val sourceLeadUs = sourcePtsUs?.let { it - targetPtsUs }?.toString() ?: "none"
+    val surfaceTimestampDeltaNs = if (
+      lastSurfaceTimestampNs != C.TIME_UNSET && lastFrameReleaseTimestampNs != C.TIME_UNSET
+    ) lastSurfaceTimestampNs - lastFrameReleaseTimestampNs else C.TIME_UNSET
+    Log.i(
+      logTag,
+      "clock playerPositionUs=$positionUs speed=$speed targetPtsUs=$targetPtsUs " +
+        "targetOffsetUs=${targetPtsUs - positionUs} sourcePtsUs=${sourcePtsUs ?: "none"} " +
+        "sourceLeadUs=$sourceLeadUs nextSourcePtsUs=${nextSourcePtsUs ?: "none"} " +
+        "inputReleaseTimestampNs=$lastFrameReleaseTimestampNs inputSurfaceTimestampNs=$lastSurfaceTimestampNs " +
+        "inputTimestampDeltaNs=$surfaceTimestampDeltaNs presentationTimeNs=${presentationTimeNs ?: "none"} nowNs=$nowNs",
+    )
+  }
+
   private fun dispatchListener(action: (VideoSink.Listener) -> Unit) {
     val current = listener
     val executor = listenerExecutor
@@ -1238,9 +1383,18 @@ class Media3FlowVideoSink(
   private fun videoSize(format: Format): VideoSize =
     VideoSize(format.width, format.height, format.rotationDegrees, format.pixelWidthHeightRatio)
 
-  private fun checkGlError(stage: String) {
-    val error = GLES20.glGetError()
-    check(error == GLES20.GL_NO_ERROR) { "$stage GLES error 0x${error.toString(16)}" }
+  private fun checkGlError(stage: String, debugProbeOnly: Boolean = false, frameProbeOnly: Boolean = false) {
+    if (debugProbeOnly && !isDebuggable) return
+    if (frameProbeOnly && (!isDebuggable || !traceGlForCurrentInput)) return
+    val errors = mutableListOf<Int>()
+    var error = GLES20.glGetError()
+    while (error != GLES20.GL_NO_ERROR && errors.size < 16) {
+      errors += error
+      error = GLES20.glGetError()
+    }
+    check(errors.isEmpty()) {
+      "$stage GLES error(s) ${errors.joinToString { "0x${it.toString(16)}" }}"
+    }
   }
 
   private fun isGles31(version: String): Boolean {

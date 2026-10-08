@@ -66,4 +66,12 @@ internal object Media3FlowCadence {
   /** Number of target ticks skipped when advancing from [previousTick] to [nextTick]. */
   fun skippedTicks(previousTick: Long, nextTick: Long): Long =
     if (previousTick < 0L || nextTick <= previousTick + 1L) 0L else nextTick - previousTick - 1L
+
+  /** Returns the newest source-frame index that is not ahead of [targetPtsUs], or null if none is due. */
+  fun sourceFrameIndexAtOrBefore(framePtsUs: LongArray, targetPtsUs: Long): Int? {
+    for (index in framePtsUs.lastIndex downTo 0) {
+      if (framePtsUs[index] <= targetPtsUs) return index
+    }
+    return null
+  }
 }
