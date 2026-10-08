@@ -418,7 +418,7 @@ index bd3d1aa1e..852dd26bf 100644
  #endif
  
  #if HAVE_D3D11 && defined(PL_HAVE_D3D11)
-@@ -115,6 +130,17 @@ struct hwdec_slot {
+@@ -115,6 +130,50 @@ struct hwdec_slot {
      pl_tex tex[4];            // plane textures of the current mapping
  };
  
@@ -431,6 +431,39 @@ index bd3d1aa1e..852dd26bf 100644
 +    EGLBoolean (EGLAPIENTRY *destroy_image)(EGLDisplay, EGLImageKHR);
 +    bool sampled;
 +};
++
++struct rife_stage_timing {
++    uint64_t total_us;
++    uint64_t max_us;
++    unsigned int samples;
++};
++
++static uint64_t rife_monotonic_ns(void)
++{
++    struct timespec now = {0};
++    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
++        return 0;
++    return (uint64_t) now.tv_sec * 1000000000ULL + (uint64_t) now.tv_nsec;
++}
++
++static uint64_t rife_elapsed_us(uint64_t start_ns)
++{
++    uint64_t end_ns = rife_monotonic_ns();
++    return start_ns && end_ns >= start_ns ? (end_ns - start_ns) / 1000ULL : 0;
++}
++
++static void rife_stage_timing_record(struct rife_stage_timing *stage, uint64_t elapsed_us)
++{
++    stage->total_us += elapsed_us;
++    if (elapsed_us > stage->max_us)
++        stage->max_us = elapsed_us;
++    stage->samples++;
++}
++
++static uint64_t rife_stage_timing_average(const struct rife_stage_timing *stage)
++{
++    return stage->samples ? stage->total_us / stage->samples : 0;
++}
 +#endif
 +
  struct priv {
@@ -447,7 +480,7 @@ index bd3d1aa1e..852dd26bf 100644
      struct cache shader_cache, icc_cache;
      struct mp_csp_equalizer_state *video_eq;
      struct scaler_params scalers[SCALER_COUNT];
-@@ -178,6 +208,38 @@ struct priv {
+@@ -178,6 +208,66 @@ struct priv {
      struct frame_info perf_redraw;
  
      struct mp_image_params target_params;
@@ -482,10 +515,38 @@ index bd3d1aa1e..852dd26bf 100644
 +    bool rife_diag_before_input_ready;
 +    bool rife_diag_after_input_ready;
 +    float rife_diag_timestep;
++    uint64_t rife_diag_window_start_ns;
++    unsigned int rife_diag_attempts;
++    unsigned int rife_diag_generated;
++    unsigned int rife_diag_waits;
++    struct rife_stage_timing rife_diag_import;
++    struct rife_stage_timing rife_diag_input_ready;
++    struct rife_stage_timing rife_diag_slot_sync;
++    struct rife_stage_timing rife_diag_inference;
++    struct rife_stage_timing rife_diag_output_complete;
++    struct rife_stage_timing rife_diag_render;
++    struct rife_stage_timing rife_diag_present_submit;
++    int rife_diag_source_width, rife_diag_source_height;
++    int rife_diag_process_width, rife_diag_process_height;
 +#endif
- };
- 
- static void update_render_options(struct vo *vo);
+  };
+  
+  static void update_render_options(struct vo *vo);
++
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++static void rife_diag_reset_timing(struct priv *p)
++{
++    p->rife_diag_window_start_ns = rife_monotonic_ns();
++    p->rife_diag_attempts = p->rife_diag_generated = p->rife_diag_waits = 0;
++    p->rife_diag_import = (struct rife_stage_timing) {0};
++    p->rife_diag_input_ready = (struct rife_stage_timing) {0};
++    p->rife_diag_slot_sync = (struct rife_stage_timing) {0};
++    p->rife_diag_inference = (struct rife_stage_timing) {0};
++    p->rife_diag_output_complete = (struct rife_stage_timing) {0};
++    p->rife_diag_render = (struct rife_stage_timing) {0};
++    p->rife_diag_present_submit = (struct rife_stage_timing) {0};
++}
++#endif
 @@ -561,6 +623,10 @@ struct frame_priv {
      struct osd_state subs;
      uint64_t osd_sync;
@@ -497,7 +558,7 @@ index bd3d1aa1e..852dd26bf 100644
      // Optional Dolby Vision FEL.
      struct ra_hwdec *el_hwdec;
      pl_tex el_tex[4];
-@@ -810,6 +876,56 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
+@@ -810,6 +876,61 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
          }
          s->perf = timer_pool_measure(s->timer);
          s->owner = owner;
@@ -536,13 +597,18 @@ index bd3d1aa1e..852dd26bf 100644
 +                    MP_VERBOSE(p, "RIFE AHB input rejected for this frame (timestamp delta %.6f s, AHB %ux%u, source %dx%d)\n",
 +                               pts_delta, desc.width, desc.height,
 +                               mpi->params.w, mpi->params.h);
-+                } else if (rife_vfi_import_ahb_rgb8(p->rife_engine, ahb,
-+                                                   width, height,
-+                                                   &fp->rife_input) != 0) {
-+                    fp->rife_input_failed = true;
-+                    p->rife_disabled_for_session = true;
-+                    MP_WARN(p, "RIFE AHB-to-NCNN Vulkan import failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
 +                } else {
++                    uint64_t import_start_ns = rife_monotonic_ns();
++                    int import_result = rife_vfi_import_ahb_rgb8(
++                        p->rife_engine, ahb, width, height, &fp->rife_input);
++                    uint64_t import_wall_us = rife_elapsed_us(import_start_ns);
++                    rife_stage_timing_record(&p->rife_diag_import, import_wall_us);
++                    if (import_result != 0) {
++                        fp->rife_input_failed = true;
++                        p->rife_disabled_for_session = true;
++                        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=ahb_input_import_failed duration_us=%" PRIu64 "\n", import_wall_us);
++                        MP_WARN(p, "RIFE AHB-to-NCNN Vulkan import failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
++                    } else {
 +                    MP_INFO(p, "RIFE_DIAGNOSTIC event=ahb_input_imported pts=%.6f image_timestamp_ns=%" PRId64 " pts_delta_ms=%.3f ahb_format=%u ahb_usage=0x%" PRIx64 " buffer_dimensions=%ux%u process_dimensions=%dx%d\n",
 +                            mpi->pts, image_timestamp_ns, pts_delta * 1000.0,
 +                            desc.format, (uint64_t) desc.usage,
@@ -576,7 +642,7 @@ index bd3d1aa1e..852dd26bf 100644
      talloc_free(mpi);
  }
 
-@@ -1154,14 +1279,520 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1279,577 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -616,6 +682,9 @@ index bd3d1aa1e..852dd26bf 100644
 +    p->rife_wait_count = 0;
 +    p->rife_output_ready_logged = false;
 +    p->rife_rendered_logged = false;
++    p->rife_diag_source_width = p->rife_diag_source_height = 0;
++    p->rife_diag_process_width = p->rife_diag_process_height = 0;
++    rife_diag_reset_timing(p);
 +}
 +
 +enum {
@@ -650,6 +719,37 @@ index bd3d1aa1e..852dd26bf 100644
 +    }
 +}
 +
++static void rife_diag_maybe_log_timing_sample(struct priv *p)
++{
++    uint64_t now_ns = rife_monotonic_ns();
++    if (!p->rife_diag_window_start_ns)
++        p->rife_diag_window_start_ns = now_ns;
++    if (!now_ns || now_ns - p->rife_diag_window_start_ns < 2000000000ULL)
++        return;
++
++    uint64_t window_ms = (now_ns - p->rife_diag_window_start_ns) / 1000000ULL;
++    int queue_depth = p->queue ? pl_queue_num_frames(p->queue) : 0;
++    MP_INFO(p, "RIFE_DIAGNOSTIC event=resident_timing_sample window_ms=%" PRIu64 " attempts=%u generated=%u waits=%u queue_depth=%d mix_frames=%d source_before_pts=%.6f source_after_pts=%.6f output_pts=%.6f timestep=%.6f cadence_index=%" PRId64 " target_fps=%d import_n=%u import_avg_us=%" PRIu64 " import_max_us=%" PRIu64 " input_ready_n=%u input_ready_avg_us=%" PRIu64 " input_ready_max_us=%" PRIu64 " slot_sync_n=%u slot_sync_avg_us=%" PRIu64 " slot_sync_max_us=%" PRIu64 " inference_n=%u inference_avg_us=%" PRIu64 " inference_max_us=%" PRIu64 " output_complete_n=%u output_complete_avg_us=%" PRIu64 " output_complete_max_us=%" PRIu64 " render_n=%u render_avg_us=%" PRIu64 " render_max_us=%" PRIu64 " present_submit_n=%u present_submit_avg_us=%" PRIu64 " present_submit_max_us=%" PRIu64 " source_dimensions=%dx%d process_dimensions=%dx%d pts_offset=%.6f vsync_duration=%.6f last_wait_reason=%s wait_repeat=%u display_synced=%d\n",
++            window_ms, p->rife_diag_attempts, p->rife_diag_generated,
++            p->rife_diag_waits, queue_depth, p->rife_diag_vo_frames,
++            p->rife_diag_pair_before_pts, p->rife_diag_pair_after_pts, p->last_pts,
++            p->rife_diag_timestep, p->rife_last_cadence_index,
++            p->rife_root_opts ? p->rife_root_opts->rife_target_fps : 0,
++            p->rife_diag_import.samples, rife_stage_timing_average(&p->rife_diag_import), p->rife_diag_import.max_us,
++            p->rife_diag_input_ready.samples, rife_stage_timing_average(&p->rife_diag_input_ready), p->rife_diag_input_ready.max_us,
++            p->rife_diag_slot_sync.samples, rife_stage_timing_average(&p->rife_diag_slot_sync), p->rife_diag_slot_sync.max_us,
++            p->rife_diag_inference.samples, rife_stage_timing_average(&p->rife_diag_inference), p->rife_diag_inference.max_us,
++            p->rife_diag_output_complete.samples, rife_stage_timing_average(&p->rife_diag_output_complete), p->rife_diag_output_complete.max_us,
++            p->rife_diag_render.samples, rife_stage_timing_average(&p->rife_diag_render), p->rife_diag_render.max_us,
++            p->rife_diag_present_submit.samples, rife_stage_timing_average(&p->rife_diag_present_submit), p->rife_diag_present_submit.max_us,
++            p->rife_diag_source_width, p->rife_diag_source_height,
++            p->rife_diag_process_width, p->rife_diag_process_height,
++            p->rife_diag_pts_offset, p->rife_diag_vsync_duration,
++            p->rife_last_wait_reason ? rife_wait_reason_name(p->rife_last_wait_reason) : "none",
++            p->rife_wait_count, p->rife_diag_display_synced);
++    rife_diag_reset_timing(p);
++}
++
 +static void rife_log_wait_reason(struct priv *p, int reason, int mix_frames)
 +{
 +    if (p->rife_last_wait_reason != reason) {
@@ -657,6 +757,8 @@ index bd3d1aa1e..852dd26bf 100644
 +        p->rife_wait_count = 0;
 +    }
 +    p->rife_wait_count++;
++    p->rife_diag_waits++;
++    rife_diag_maybe_log_timing_sample(p);
 +    if (p->rife_wait_count == 1 || p->rife_wait_count % 120 == 0) {
 +        int queue_depth = p->queue ? pl_queue_num_frames(p->queue) : 0;
 +        MP_INFO(p, "RIFE_DIAGNOSTIC event=resident_wait reason=%s repeat=%u pts=%.6f mix_frames=%d queue_depth=%d vo_frames=%d display_synced=%d mpv_interpolation=%d can_interpolate=%d paused=%d still=%d pts_offset=%.6f vsync_duration=%.6f pair_before_pts=%.6f pair_after_pts=%.6f before_input_ready=%d after_input_ready=%d timestep=%.6f target_fps=%d cadence_origin_pts=%.6f\n",
@@ -877,6 +979,11 @@ index bd3d1aa1e..852dd26bf 100644
 +    p->rife_diag_before_input_ready = false;
 +    p->rife_diag_after_input_ready = false;
 +    p->rife_diag_timestep = NAN;
++    p->rife_diag_attempts++;
++    p->rife_diag_pair_before_pts = NAN;
++    p->rife_diag_pair_after_pts = NAN;
++    p->rife_diag_source_width = p->rife_diag_source_height = 0;
++    p->rife_diag_process_width = p->rife_diag_process_height = 0;
 +    if (!p->rife_root_opts->rife_resident ||
 +        p->rife_root_opts->rife_target_fps < 1)
 +        return false;
@@ -926,6 +1033,8 @@ index bd3d1aa1e..852dd26bf 100644
 +    }
 +    p->rife_diag_pair_before_pts = before_pts;
 +    p->rife_diag_pair_after_pts = after_pts;
++    p->rife_diag_source_width = mpi0->params.w;
++    p->rife_diag_source_height = mpi0->params.h;
 +    p->rife_diag_before_input_ready = fp0->rife_input != NULL;
 +    p->rife_diag_after_input_ready = fp1->rife_input != NULL;
 +
@@ -989,45 +1098,59 @@ index bd3d1aa1e..852dd26bf 100644
 +        }
 +        // Conservative cross-API reuse: wait until the GLES compositor has
 +        // stopped sampling this ring slot before NCNN reacquires it.
++        uint64_t slot_sync_start_ns = rife_monotonic_ns();
 +        gl->Finish();
++        rife_stage_timing_record(&p->rife_diag_slot_sync, rife_elapsed_us(slot_sync_start_ns));
 +        slot->sampled = false;
 +    }
 +
 +    // Do not acquire decoder frames on source boundaries or cadence misses:
 +    // their original mix is rendered next, and an eager mapper handoff can
 +    // invalidate its queued frame planes. Import only when RIFE will run.
++    uint64_t input_ready_start_ns = rife_monotonic_ns();
 +    p->rife_diag_before_input_ready = p->rife_diag_before_input_ready ||
 +                                      rife_prepare_frame_input(p, source);
 +    p->rife_diag_after_input_ready = p->rife_diag_after_input_ready ||
 +                                     rife_prepare_frame_input(p, next);
++    rife_stage_timing_record(&p->rife_diag_input_ready,
++                             rife_elapsed_us(input_ready_start_ns));
 +    if (!p->rife_diag_before_input_ready || !p->rife_diag_after_input_ready) {
 +        rife_log_wait_reason(p, RIFE_WAIT_INPUT_NOT_READY, mix->num_frames);
 +        return false;
 +    }
 +
 +    RifeVfiGpuFrame *synthesized = NULL;
-+    if (rife_vfi_interpolate_gpu_frames(p->rife_engine, fp0->rife_input,
-+                                        fp1->rife_input, timestep,
-+                                        &synthesized) != 0 || !synthesized) {
++    uint64_t inference_start_ns = rife_monotonic_ns();
++    int inference_result = rife_vfi_interpolate_gpu_frames(
++        p->rife_engine, fp0->rife_input, fp1->rife_input, timestep, &synthesized);
++    uint64_t inference_wall_us = rife_elapsed_us(inference_start_ns);
++    rife_stage_timing_record(&p->rife_diag_inference, inference_wall_us);
++    if (inference_result != 0 || !synthesized) {
 +        p->rife_disabled_for_session = true;
-+        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_inference_failed pts=%.6f timestep=%.6f\n",
-+                p->last_pts, timestep);
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_inference_failed pts=%.6f timestep=%.6f duration_us=%" PRIu64 "\n",
++                p->last_pts, timestep, inference_wall_us);
 +        MP_WARN(p, "RIFE Vulkan inference failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
 +        return false;
 +    }
 +    char output_error[512] = {0};
++    uint64_t output_start_ns = rife_monotonic_ns();
 +    int write_result = rife_vfi_write_output_rgba(p->rife_engine, synthesized,
 +                                                   slot->output, output_error,
 +                                                   sizeof(output_error));
++    uint64_t output_complete_wall_us = rife_elapsed_us(output_start_ns);
++    rife_stage_timing_record(&p->rife_diag_output_complete, output_complete_wall_us);
 +    rife_vfi_gpu_frame_release(synthesized);
 +    if (write_result != 0) {
 +        p->rife_disabled_for_session = true;
-+        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_ahb_output_failed pts=%.6f result=%d detail=%s\n",
-+                p->last_pts, write_result,
++        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_ahb_output_failed pts=%.6f result=%d duration_us=%" PRIu64 " detail=%s\n",
++                p->last_pts, write_result, output_complete_wall_us,
 +                output_error[0] ? output_error : "unknown");
 +        MP_WARN(p, "RIFE Vulkan-to-AHB output handoff failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
 +        return false;
 +    }
++    p->rife_diag_generated++;
++    p->rife_diag_process_width = width;
++    p->rife_diag_process_height = height;
 +
 +    *rife_frame = *source;
 +    rife_frame->num_planes = 1;
@@ -1151,7 +1274,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (frame->current) {
          // Update queue state
          struct pl_queue_params qparams = *pl_queue_params(
-@@ -1747,10 +2396,44 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1747,8 +2396,51 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              update_hook_opts_dynamic(p, p->hooks[i], frame->current);
      }
  
@@ -1168,10 +1291,17 @@ index bd3d1aa1e..852dd26bf 100644
 +    }
 +#endif
 +
-     // Render frame
-     stats_time_start(p->stats, "render");
++    // Render frame
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    uint64_t rife_render_start_ns = rife_interpolated ? rife_monotonic_ns() : 0;
++#endif
++    stats_time_start(p->stats, "render");
      bool render_ok = pl_render_image_mix(p->rr, &mix, &target, &params);
      stats_time_end(p->stats, "render");
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++    if (rife_interpolated)
++        rife_stage_timing_record(&p->rife_diag_render, rife_elapsed_us(rife_render_start_ns));
++#endif
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
 +    if (!render_ok && rife_interpolated) {
 +        MP_WARN(vo, "RIFE_DIAGNOSTIC event=resident_render_fallback reason=generated_frame_render_failed\n");
@@ -1208,12 +1338,18 @@ index bd3d1aa1e..852dd26bf 100644
      valid = true;
      // fall through
  
-@@ -1796,12 +2483,27 @@ static void flip_page(struct vo *vo)
+@@ -1796,11 +2483,35 @@ static void flip_page(struct vo *vo)
      struct ra_swapchain *sw = p->ra_ctx->swapchain;
  
      if (p->frame_pending) {
--        if (!pl_swapchain_submit_frame(p->sw))
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++        uint64_t rife_submit_start_ns = p->rife_pending_frame ? rife_monotonic_ns() : 0;
++#endif
 +        bool submitted = pl_swapchain_submit_frame(p->sw);
++#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
++        if (p->rife_pending_frame)
++            rife_stage_timing_record(&p->rife_diag_present_submit, rife_elapsed_us(rife_submit_start_ns));
++#endif
 +        if (!submitted) {
              MP_ERR(vo, "Failed presenting frame!\n");
 +#if defined(__ANDROID__) && defined(MPV_HAS_RIFE) && HAVE_GL && defined(PL_HAVE_OPENGL)
@@ -1230,6 +1366,7 @@ index bd3d1aa1e..852dd26bf 100644
 +                    p->rife_pending_pts, p->rife_pending_signature);
 +        }
 +        p->rife_pending_frame = false;
++        rife_diag_maybe_log_timing_sample(p);
 +#endif
 +    } else {
 +        sw->fns->swap_buffers(sw);

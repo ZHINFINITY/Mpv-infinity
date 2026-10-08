@@ -327,6 +327,23 @@ def main() -> None:
     ):
         require(marker in vo, f"resident runtime diagnostics are missing {marker}")
 
+    timing_sample = section(vo, "static void rife_diag_maybe_log_timing_sample",
+                            "static void rife_log_wait_reason")
+    require("event=resident_timing_sample" in timing_sample and
+            "2000000000ULL" in timing_sample and
+            "source_before_pts=%.6f" in timing_sample and
+            "queue_depth=%d" in timing_sample and
+            "cadence_index=%" in timing_sample,
+            "native timing samples must be periodic and correlate queue/cadence/source/output PTS")
+    for stage in (
+        "rife_diag_import", "rife_diag_input_ready", "rife_diag_slot_sync", "rife_diag_inference",
+        "rife_diag_output_complete", "rife_diag_render", "rife_diag_present_submit",
+    ):
+        require(f"rife_stage_timing_record(&p->{stage}" in vo,
+                f"native timing samples are missing the {stage} measurement")
+    require("duration_us=%" in vo,
+            "stage failure diagnostics must retain the wall duration alongside failure context")
+
     print(
         "RIFE resident contracts passed: root options, Android display timing, shared reader lease, "
         "AHB import/output, fallback, submitted-frame diagnostic, and runtime stage diagnostics"

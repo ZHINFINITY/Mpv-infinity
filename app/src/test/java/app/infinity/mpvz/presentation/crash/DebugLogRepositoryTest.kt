@@ -116,7 +116,7 @@ class DebugLogRepositoryTest {
       rifeEntry(
         "setup",
         0L,
-        "RIFE_DIAGNOSTIC event=config resident_state=awaiting_gpu_resident_frame active_filter_path=resident_vulkan_ncnn target_fps=60 display_refresh_hz=120 renderer=gpu-next gpu_api=opengl decoder_mode=mediacodec,no resident_option_rc=0 model_option_rc=0 resident_timing_options_owned=false filter_set_result=skipped",
+        "RIFE_DIAGNOSTIC event=config resident_state=awaiting_gpu_resident_frame active_filter_path=resident_vulkan_ncnn target_fps=60 max_dimension=0 resolution_mode=auto display_refresh_hz=120 renderer=gpu-next gpu_api=opengl decoder_mode=mediacodec,no resident_option_rc=0 model_option_rc=0 resident_timing_options_owned=false filter_set_result=skipped",
       )
     val imports =
       (0 until 600).map { index ->
@@ -144,6 +144,18 @@ class DebugLogRepositoryTest {
         701L,
         "RIFE_DIAGNOSTIC event=resident_error reason=vulkan_inference_failed",
       )
+    val timing =
+      rifeEntry(
+        "timing",
+        702L,
+        "RIFE_DIAGNOSTIC event=resident_timing_sample window_ms=2000 attempts=120 generated=34 inference_avg_us=28000",
+      )
+    val sync =
+      rifeEntry(
+        "sync",
+        703L,
+        "RIFE_DIAGNOSTIC event=mpv_sync_sample sample=4 avsync_ms=-3.000 drop_frames=0",
+      )
     val recentEntries =
       (0 until DEBUG_LOG_ENTRY_LIMIT).map { index ->
         DebugLogEntry(
@@ -156,16 +168,20 @@ class DebugLogRepositoryTest {
         )
       }
 
-    val retained = retainDebugLogEntries(listOf(setup) + imports + listOf(lookahead, wait, failure) + recentEntries)
+    val retained =
+      retainDebugLogEntries(listOf(setup) + imports + listOf(lookahead, wait, failure, timing, sync) + recentEntries)
     val summary = buildRifeDiagnosticSummary(retained)
 
     assertEquals(500, retained.count(DebugLogEntry::isRifeDiagnostic))
     assertTrue(retained.any { it.id == "setup" })
     assertTrue(retained.any { it.id == "wait" })
     assertTrue(retained.any { it.id == "failure" })
+    assertTrue(retained.any { it.id == "timing" })
+    assertTrue(retained.any { it.id == "sync" })
     assertTrue(summary.any { it.contains("RUNTIME FAILURE reported: vulkan_inference_failed") })
     assertTrue(summary.any { it.contains("active_filter_path=resident_vulkan_ncnn") })
     assertTrue(summary.any { it.contains("display_refresh_hz=120") })
+    assertTrue(summary.any { it.contains("max_dimension=0") && it.contains("resolution_mode=auto") })
     assertTrue(summary.any { it.contains("resident_option_rc=0 model_option_rc=0") })
     assertTrue(summary.any { it.contains("resident_timing_options_owned=false") })
     assertTrue(summary.any { it.contains("resident_lookahead_required=true") && it.contains("video_latency_hacks_rc=0") })
@@ -194,5 +210,40 @@ class DebugLogRepositoryTest {
     assertTrue(summary.first().contains("Interpolation is not confirmed working"))
     assertTrue(summary.any { it.contains("imported=500") && it.contains("submitted=0") })
     assertTrue(summary.any { it.contains("no intermediate wait/error marker") })
+  }
+
+  @Test
+  fun summarizesPipelineTimingsAndMpvClockSamplesWithoutTreatingRecordsAsRates() {
+    val entries =
+      listOf(
+        "RIFE_DIAGNOSTIC event=resident_timing_sample window_ms=2000 attempts=120 generated=34 waits=86 " +
+          "queue_depth=3 mix_frames=2 source_before_pts=4.000000 source_after_pts=4.040000 output_pts=4.016667 " +
+          "timestep=0.416667 import_avg_us=1200 import_max_us=2100 input_ready_avg_us=200 input_ready_max_us=400 " +
+          "slot_sync_avg_us=500 slot_sync_max_us=1400 inference_avg_us=28000 inference_max_us=36000 " +
+          "output_complete_avg_us=7000 output_complete_max_us=9000 " +
+          "render_avg_us=2400 render_max_us=3300 present_submit_avg_us=800 present_submit_max_us=1000 " +
+          "source_dimensions=1920x1080 process_dimensions=480x270 pts_offset=0.004 target_fps=60",
+        "RIFE_DIAGNOSTIC event=mpv_sync_sample sample=3 phase=ready paused=false time_pos=4.020000 " +
+          "audio_pts=4.018000 video_pts=4.020000 avsync_ms=-2.000 drop_frames=1 decoder_drop_frames=2 " +
+          "mistimed_frames=3 source_dimensions=1920x1080 source_fps=24.000000",
+        "RIFE_DIAGNOSTIC event=gpu_resident_frame pts=4.016667",
+      ).mapIndexed { index, message ->
+        DebugLogEntry(
+          id = "diagnostic-$index",
+          timeMillis = index.toLong(),
+          timestamp = "00:00:00.000",
+          level = DebugLogLevel.Info,
+          tag = "Mpv∞",
+          message = message,
+        )
+      }
+
+    val summary = buildRifeDiagnosticSummary(entries)
+
+    assertTrue(summary.any { it.contains("not FPS or drop totals") })
+    assertTrue(summary.any { it.contains("inference_avg_us=28000") && it.contains("slot_sync_avg_us=500") })
+    assertTrue(summary.any { it.contains("process_dimensions=480x270") })
+    assertTrue(summary.any { it.contains("avsync_ms=-2.000") && it.contains("drop_frames=1") })
+    assertTrue(summary.any { it.contains("audio_pts=4.018000") && it.contains("video_pts=4.020000") })
   }
 }

@@ -12,6 +12,8 @@ package app.infinity.mpvz.ui.player
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.util.Log
 import android.view.Display
@@ -46,7 +48,10 @@ import `is`.xyz.mpv.KeyMapping
 import `is`.xyz.mpv.MPVLib
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import java.util.Locale
 import kotlin.reflect.KProperty
+
+private const val RIFE_SYNC_DIAGNOSTIC_INTERVAL_MS = 2_000L
 
 class MPVView(
   context: Context,
@@ -69,6 +74,55 @@ class MPVView(
   var onSurfaceReady: (() -> Unit)? = null
   private var rifeModelDirectory: String? = null
   private var rifeResidentModeSelected = false
+  private val rifeSyncDiagnosticHandler = Handler(Looper.getMainLooper())
+  private var rifeSyncDiagnosticSample = 0L
+  private val rifeSyncDiagnosticSampler =
+    object : Runnable {
+      override fun run() {
+        if (!rifeResidentModeSelected || !isSurfaceReady || !PlaybackSession.isInitialized) return
+        val playback = PlaybackSession.state.value
+        if (playback.phase == PlaybackPhase.READY || playback.phase == PlaybackPhase.BACKGROUND) {
+          fun number(
+            property: String,
+            scale: Double = 1.0,
+          ): String =
+            PlaybackSession.getPropertyDouble(property)
+              ?.takeIf { it.isFinite() }
+              ?.let { String.format(Locale.US, "%.3f", it * scale) }
+              ?: "na"
+          fun counter(property: String): String =
+            PlaybackSession.getPropertyInt(property)?.toString() ?: "na"
+
+          val width = PlaybackSession.getPropertyInt("video-params/w") ?: 0
+          val height = PlaybackSession.getPropertyInt("video-params/h") ?: 0
+          Log.i(
+            TAG,
+            "RIFE_DIAGNOSTIC event=mpv_sync_sample sample=${++rifeSyncDiagnosticSample} " +
+              "phase=${playback.phase.name.lowercase(Locale.ROOT)} paused=${playback.paused} " +
+              "time_pos=${number("time-pos")} audio_pts=${number("audio-pts")} " +
+              "video_pts=${number("video-pts")} avsync_ms=${number("avsync", 1_000.0)} " +
+              "drop_frames=${counter("drop-frame-count")} " +
+              "decoder_drop_frames=${counter("decoder-frame-drop-count")} " +
+              "mistimed_frames=${counter("mistimed-frame-count")} " +
+              "source_dimensions=${width}x$height source_fps=${number("container-fps")}",
+          )
+        }
+        if (rifeResidentModeSelected && isSurfaceReady) {
+          rifeSyncDiagnosticHandler.postDelayed(this, RIFE_SYNC_DIAGNOSTIC_INTERVAL_MS)
+        }
+      }
+    }
+
+  private fun startRifeSyncDiagnosticSampling() {
+    stopRifeSyncDiagnosticSampling()
+    if (rifeResidentModeSelected && isSurfaceReady) {
+      rifeSyncDiagnosticHandler.postDelayed(rifeSyncDiagnosticSampler, RIFE_SYNC_DIAGNOSTIC_INTERVAL_MS)
+    }
+  }
+
+  private fun stopRifeSyncDiagnosticSampling() {
+    rifeSyncDiagnosticHandler.removeCallbacks(rifeSyncDiagnosticSampler)
+  }
 
   private fun getDisplayRefreshRateHz(): Float {
     val viewDisplay = display
@@ -148,6 +202,7 @@ class MPVView(
   }
 
   fun releaseSurface() {
+    stopRifeSyncDiagnosticSampling()
     holder.removeCallback(this)
     if (isSurfaceReady || PlaybackSession.state.value.surfaceAttached) {
       isSurfaceReady = false
@@ -663,6 +718,7 @@ class MPVView(
 
   override fun surfaceCreated(holder: android.view.SurfaceHolder) {
     isSurfaceReady = PlaybackSession.bindSurface(holder.surface, width, height, this)
+    startRifeSyncDiagnosticSampling()
     applyFrameRate()
     post {
       if (isSurfaceReady && holder.surface.isValid) {
@@ -672,6 +728,7 @@ class MPVView(
   }
 
   override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+    stopRifeSyncDiagnosticSampling()
     isSurfaceReady = false
     PlaybackSession.unbindSurface(this)
   }

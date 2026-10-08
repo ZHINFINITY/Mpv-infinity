@@ -367,11 +367,26 @@ internal fun buildRifeDiagnosticSummary(entries: List<DebugLogEntry>): List<Stri
     latestWait?.message?.let {
       Regex("""(?:^|\s)${Regex.escape(name)}=([^\s]+)""").find(it)?.groupValues?.get(1)
     }
+  val latestTimingSample =
+    rifeEntries.lastOrNull { it.message.contains("event=resident_timing_sample", ignoreCase = true) }
+  val latestSyncSample =
+    rifeEntries.lastOrNull { it.message.contains("event=mpv_sync_sample", ignoreCase = true) }
+  fun eventFields(
+    entry: DebugLogEntry?,
+    names: List<String>,
+  ): List<String> =
+    names.mapNotNull { name ->
+      entry?.message?.let {
+        Regex("""(?:^|\s)${Regex.escape(name)}=([^\s]+)""").find(it)?.groupValues?.get(1)
+      }?.let { "$name=$it" }
+    }
   val setupFields =
     listOf(
       "resident_state",
       "active_filter_path",
       "target_fps",
+      "max_dimension",
+      "resolution_mode",
       "display_refresh_hz",
       "renderer",
       "gpu_api",
@@ -420,7 +435,77 @@ internal fun buildRifeDiagnosticSummary(entries: List<DebugLogEntry>): List<Stri
 
   return buildList {
     add("RIFE status: $status")
-    add("Captured stages (high-rate frame records may be sampled): imported=$imports, output_ready=$outputReady, rendered=$rendered, submitted=$submitted.")
+    add("Captured stage log records (not FPS or drop totals; high-rate frame records may be sampled): imported=$imports, output_ready=$outputReady, rendered=$rendered, submitted=$submitted.")
+    latestTimingSample?.let { sample ->
+      val fields =
+        eventFields(
+          sample,
+          listOf(
+            "window_ms",
+            "attempts",
+            "generated",
+            "waits",
+            "cadence_index",
+            "queue_depth",
+            "mix_frames",
+            "source_before_pts",
+            "source_after_pts",
+            "output_pts",
+            "timestep",
+            "import_n",
+            "import_avg_us",
+            "import_max_us",
+            "input_ready_n",
+            "input_ready_avg_us",
+            "input_ready_max_us",
+            "slot_sync_n",
+            "slot_sync_avg_us",
+            "slot_sync_max_us",
+            "inference_n",
+            "inference_avg_us",
+            "inference_max_us",
+            "output_complete_n",
+            "output_complete_avg_us",
+            "output_complete_max_us",
+            "render_n",
+            "render_avg_us",
+            "render_max_us",
+            "present_submit_n",
+            "present_submit_avg_us",
+            "present_submit_max_us",
+            "source_dimensions",
+            "process_dimensions",
+            "pts_offset",
+            "vsync_duration",
+            "last_wait_reason",
+            "wait_repeat",
+            "display_synced",
+            "target_fps",
+          ),
+        )
+      if (fields.isNotEmpty()) add("Latest pipeline timing sample: ${fields.joinToString(" ")}.")
+    }
+    latestSyncSample?.let { sample ->
+      val fields =
+        eventFields(
+          sample,
+          listOf(
+            "sample",
+            "phase",
+            "paused",
+            "time_pos",
+            "audio_pts",
+            "video_pts",
+            "avsync_ms",
+            "drop_frames",
+            "decoder_drop_frames",
+            "mistimed_frames",
+            "source_dimensions",
+            "source_fps",
+          ),
+        )
+      if (fields.isNotEmpty()) add("Latest MPV clock/drop sample: ${fields.joinToString(" ")}.")
+    }
     add("Wait/failure records: waits=${waits.size}, errors=$errorCount.")
     if (setupFields.isNotEmpty()) add("Setup: ${setupFields.joinToString(" ")}.")
     if (latestWaitReason != null) {
