@@ -469,7 +469,7 @@ index bd3d1aa1e..852dd26bf 100644
  struct priv {
      struct mp_log *log;
      struct mpv_global *global;
-@@ -159,6 +185,10 @@ struct priv {
+@@ -159,6 +218,10 @@ struct priv {
      struct m_config_cache *opts_cache;
      struct m_config_cache *next_opts_cache;
      struct gl_next_opts *next_opts;
@@ -480,7 +480,7 @@ index bd3d1aa1e..852dd26bf 100644
      struct cache shader_cache, icc_cache;
      struct mp_csp_equalizer_state *video_eq;
      struct scaler_params scalers[SCALER_COUNT];
-@@ -178,6 +208,66 @@ struct priv {
+@@ -178,6 +241,66 @@ struct priv {
      struct frame_info perf_redraw;
  
      struct mp_image_params target_params;
@@ -547,7 +547,7 @@ index bd3d1aa1e..852dd26bf 100644
 +    p->rife_diag_present_submit = (struct rife_stage_timing) {0};
 +}
 +#endif
-@@ -561,6 +623,10 @@ struct frame_priv {
+@@ -561,6 +684,10 @@ struct frame_priv {
      struct osd_state subs;
      uint64_t osd_sync;
      struct ra_hwdec *hwdec;
@@ -558,7 +558,7 @@ index bd3d1aa1e..852dd26bf 100644
      // Optional Dolby Vision FEL.
      struct ra_hwdec *el_hwdec;
      pl_tex el_tex[4];
-@@ -810,6 +876,61 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
+@@ -810,6 +937,61 @@ static bool slot_acquire(struct priv *p, struct hwdec_slot *s,
          }
          s->perf = timer_pool_measure(s->timer);
          s->owner = owner;
@@ -620,7 +620,7 @@ index bd3d1aa1e..852dd26bf 100644
      }
  
      if (ra_hwdec_mapper_begin_access(s->mapper) < 0)
-@@ -1127,12 +1243,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
+@@ -1127,12 +1309,21 @@ static void unmap_frame(pl_gpu gpu, struct pl_frame *frame,
      }
      slot_release_owner(p, &p->hwdec, mpi);
      slot_release_owner(p, &p->el_hwdec, mpi);
@@ -642,7 +642,7 @@ index bd3d1aa1e..852dd26bf 100644
      talloc_free(mpi);
  }
 
-@@ -1154,14 +1279,577 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1345,577 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -1220,7 +1220,7 @@ index bd3d1aa1e..852dd26bf 100644
  
      update_lut(p, &p->next_opts->lut);
      pars->params.lut = p->next_opts->lut.lut;
-@@ -1350,9 +1970,24 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1350,9 +2093,24 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      const struct gl_video_opts *opts = p->opts_cache->opts;
      bool will_redraw = frame->display_synced && frame->num_vsyncs > 1;
      bool cache_frame = will_redraw || frame->still || p->paused;
@@ -1246,7 +1246,7 @@ index bd3d1aa1e..852dd26bf 100644
      params.info_callback = info_callback;
      params.info_priv = vo;
      params.skip_caching_single_frame = !cache_frame;
-@@ -1406,6 +2041,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1406,6 +2164,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              p->last_id = 0;
              p->want_reset = false;
              p->flush_cache = true;
@@ -1256,7 +1256,7 @@ index bd3d1aa1e..852dd26bf 100644
          }
  
          if (p->flush_cache) {
-@@ -1652,6 +2290,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1652,6 +2413,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      update_tm_viz(&pars->color_map_params, &target);
  
      struct pl_frame_mix mix = {0};
@@ -1274,7 +1274,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (frame->current) {
          // Update queue state
          struct pl_queue_params qparams = *pl_queue_params(
-@@ -1747,8 +2396,51 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1747,8 +2519,51 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              update_hook_opts_dynamic(p, p->hooks[i], frame->current);
      }
  
@@ -1326,7 +1326,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (!render_ok) {
          MP_ERR(vo, "Failed rendering frame!\n");
          goto done;
-@@ -1777,7 +2460,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1777,7 +2592,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      }
      mp_mutex_unlock(&vo->params_mutex);
  
@@ -1338,7 +1338,7 @@ index bd3d1aa1e..852dd26bf 100644
      valid = true;
      // fall through
  
-@@ -1796,11 +2483,35 @@ static void flip_page(struct vo *vo)
+@@ -1796,11 +2615,35 @@ static void flip_page(struct vo *vo)
      struct ra_swapchain *sw = p->ra_ctx->swapchain;
  
      if (p->frame_pending) {
@@ -1376,7 +1376,7 @@ index bd3d1aa1e..852dd26bf 100644
  }
  
  static void get_vsync(struct vo *vo, struct vo_vsync_info *info)
-@@ -2464,6 +3166,13 @@ static void uninit(struct vo *vo)
+@@ -2464,6 +3307,13 @@ static void uninit(struct vo *vo)
          pl_gpu_finish(p->gpu);
  
      pl_queue_destroy(&p->queue); // destroy this first
@@ -1390,7 +1390,7 @@ index bd3d1aa1e..852dd26bf 100644
      for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
          pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
      for (int i = 0; i < p->num_sub_tex; i++)
-@@ -2519,6 +3228,10 @@ static int preinit(struct vo *vo)
+@@ -2519,6 +3369,10 @@ static int preinit(struct vo *vo)
      p->opts_cache = m_config_cache_alloc(p, vo->global, &gl_video_conf);
      p->next_opts_cache = m_config_cache_alloc(p, vo->global, &gl_next_conf);
      p->next_opts = p->next_opts_cache->opts;
