@@ -67,6 +67,25 @@ internal object Media3FlowCadence {
   fun skippedTicks(previousTick: Long, nextTick: Long): Long =
     if (previousTick < 0L || nextTick <= previousTick + 1L) 0L else nextTick - previousTick - 1L
 
+  /**
+   * Maps an adjusted media PTS onto the current monotonic clock. Frames too far ahead stay in the
+   * bounded input queue instead of being released to MediaCodec immediately.
+   */
+  fun inputReleaseTimeNs(
+    framePtsUs: Long,
+    clockPositionUs: Long,
+    nowNs: Long,
+    speed: Float,
+    maxLookAheadUs: Long,
+  ): Long? {
+    if (nowNs < 0L || maxLookAheadUs < 0L || !speed.isFinite() || speed <= 0f) return null
+    val wallDeltaUs = (framePtsUs.toDouble() - clockPositionUs.toDouble()) / speed.toDouble()
+    if (!wallDeltaUs.isFinite() || wallDeltaUs > maxLookAheadUs.toDouble()) return null
+    val releaseTimeNs = nowNs.toDouble() + wallDeltaUs.coerceAtLeast(0.0) * 1_000.0
+    if (!releaseTimeNs.isFinite() || releaseTimeNs > Long.MAX_VALUE.toDouble()) return null
+    return releaseTimeNs.roundToLong()
+  }
+
   /** Returns the newest source-frame index that is not ahead of [targetPtsUs], or null if none is due. */
   fun sourceFrameIndexAtOrBefore(framePtsUs: LongArray, targetPtsUs: Long): Int? {
     for (index in framePtsUs.lastIndex downTo 0) {

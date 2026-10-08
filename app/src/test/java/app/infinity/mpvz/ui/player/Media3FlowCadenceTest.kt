@@ -68,6 +68,53 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun decoderFramesAreReleasedOnThePlaybackClockNotImmediately() {
+    assertEquals(
+      1_040_000_000L,
+      Media3FlowCadence.inputReleaseTimeNs(
+        framePtsUs = 50_000L,
+        clockPositionUs = 10_000L,
+        nowNs = 1_000_000_000L,
+        speed = 1f,
+        maxLookAheadUs = 100_000L,
+      ),
+    )
+    assertEquals(
+      1_020_000_000L,
+      Media3FlowCadence.inputReleaseTimeNs(
+        framePtsUs = 50_000L,
+        clockPositionUs = 10_000L,
+        nowNs = 1_000_000_000L,
+        speed = 2f,
+        maxLookAheadUs = 100_000L,
+      ),
+    )
+  }
+
+  @Test
+  fun decoderFramesBeyondTheBoundedLookAheadRemainQueued() {
+    assertNull(
+      Media3FlowCadence.inputReleaseTimeNs(
+        framePtsUs = 160_000L,
+        clockPositionUs = 10_000L,
+        nowNs = 1_000_000_000L,
+        speed = 1f,
+        maxLookAheadUs = 100_000L,
+      ),
+    )
+    assertEquals(
+      1_075_000_000L,
+      Media3FlowCadence.inputReleaseTimeNs(
+        framePtsUs = 160_000L,
+        clockPositionUs = 10_000L,
+        nowNs = 1_000_000_000L,
+        speed = 2f,
+        maxLookAheadUs = 100_000L,
+      ),
+    )
+  }
+
+  @Test
   fun fallbackNeverSelectsASourceFrameAheadOfTheRequestedPresentationTime() {
     val ptsUs = longArrayOf(100_000L, 141_667L, 183_334L)
 

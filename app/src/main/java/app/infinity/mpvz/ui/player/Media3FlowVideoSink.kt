@@ -427,7 +427,6 @@ class Media3FlowVideoSink(
 
   override fun render(positionUs: Long, elapsedRealtimeUs: Long) {
     if (!initialized || disposed) return
-    releaseNextDecoderFrame()
     val speed = playbackSpeed
     val currentElapsedUs = SystemClock.elapsedRealtimeNanos() / 1_000L
     val elapsedSinceLoopUs =
@@ -437,8 +436,11 @@ class Media3FlowVideoSink(
         0L
       }
     val currentPositionUs =
-      positionUs + (elapsedSinceLoopUs.toDouble() * speed.toDouble()).roundToLong()
-    playbackClock = PlaybackClock(currentPositionUs, currentElapsedUs)
+      positionUs + inputTimestampAdjustmentUs +
+        (elapsedSinceLoopUs.toDouble() * speed.toDouble()).roundToLong()
+    val clock = PlaybackClock(currentPositionUs, currentElapsedUs)
+    playbackClock = clock
+    releaseNextDecoderFrame(clock, speed)
     if (!running && allowFirstFrameBeforeStarted) {
       postOneShotRender()
     }
@@ -542,11 +544,20 @@ class Media3FlowVideoSink(
     glThread.quitSafely()
   }
 
-  private fun releaseNextDecoderFrame() {
+  private fun releaseNextDecoderFrame(clock: PlaybackClock, speed: Float) {
+    val nowNs = System.nanoTime()
     val pendingAndToken = synchronized(inputLock) {
       if (inputInFlight || pendingInput.isEmpty() || disposed) return
-      val pending = pendingInput.removeFirst()
-      val token = FrameToken(pending.ptsUs, pending.generation, System.nanoTime())
+      val pending = pendingInput.first()
+      val releaseTimestampNs = Media3FlowCadence.inputReleaseTimeNs(
+        framePtsUs = pending.ptsUs,
+        clockPositionUs = clock.positionUs,
+        nowNs = nowNs,
+        speed = speed,
+        maxLookAheadUs = MAX_INPUT_RELEASE_AHEAD_US,
+      ) ?: return
+      pendingInput.removeFirst()
+      val token = FrameToken(pending.ptsUs, pending.generation, releaseTimestampNs.coerceAtLeast(nowNs))
       inputInFlight = true
       expectedTexturePts.addLast(token)
       pending to token
@@ -666,7 +677,10 @@ class Media3FlowVideoSink(
     slot.inUse = true
     sourceFrames.addLast(slot)
     if (originPtsUs == C.TIME_UNSET) {
-      originPtsUs = streamStartPositionUs.takeIf { it != C.TIME_UNSET } ?: ptsUs
+      originPtsUs = streamStartPositionUs
+        .takeIf { it != C.TIME_UNSET }
+        ?.plus(inputTimestampAdjustmentUs)
+        ?: ptsUs
       if (originPtsUs > ptsUs) originPtsUs = ptsUs
     }
     ptsHistory.addLast(ptsUs)
@@ -729,9 +743,9 @@ class Media3FlowVideoSink(
       checkGlError("motion lookup uRadius", frameProbeOnly = true)
       GLES31.glUniform1i(radiusLocation, FLOW_SEARCH_RADIUS)
       checkGlError("motion uniform uRadius", frameProbeOnly = true)
-      GLES31.glBindImageTexture(0, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_R32F)
+      GLES31.glBindImageTexture(0, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
       checkGlError("forward motion bind input 0", frameProbeOnly = true)
-      GLES31.glBindImageTexture(1, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_R32F)
+      GLES31.glBindImageTexture(1, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
       checkGlError("forward motion bind input 1", frameProbeOnly = true)
       GLES31.glBindImageTexture(2, reusable.forwardTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
       checkGlError("forward motion bind output", frameProbeOnly = true)
@@ -740,9 +754,9 @@ class Media3FlowVideoSink(
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
       checkGlError("forward motion barrier", frameProbeOnly = true)
 
-      GLES31.glBindImageTexture(0, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_R32F)
+      GLES31.glBindImageTexture(0, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
       checkGlError("backward motion bind input 0", frameProbeOnly = true)
-      GLES31.glBindImageTexture(1, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_R32F)
+      GLES31.glBindImageTexture(1, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
       checkGlError("backward motion bind input 1", frameProbeOnly = true)
       GLES31.glBindImageTexture(2, reusable.backwardTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
       checkGlError("backward motion bind output", frameProbeOnly = true)
@@ -960,7 +974,7 @@ class Media3FlowVideoSink(
     checkGlError("luma lookup uSize", frameProbeOnly = true)
     GLES31.glUniform2i(sizeLocation, processingWidth, processingHeight)
     checkGlError("luma uniform uSize", frameProbeOnly = true)
-    GLES31.glBindImageTexture(0, slot.lumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_R32F)
+    GLES31.glBindImageTexture(0, slot.lumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
     checkGlError("luma bind output image", frameProbeOnly = true)
     GLES31.glDispatchCompute(ceil(processingWidth / 8.0).toInt(), ceil(processingHeight / 8.0).toInt(), 1)
     checkGlError("luma dispatch", frameProbeOnly = true)
@@ -1007,7 +1021,14 @@ class Media3FlowVideoSink(
     repeat(MAX_STORED_FRAMES) {
       framePool += FrameSlot().apply {
         colorTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE)
-        lumaTexture = createTexture(GLES20.GL_TEXTURE_2D, width, height, GLES30.GL_R32F, GLES30.GL_RED, GLES30.GL_FLOAT)
+        lumaTexture = createTexture(
+          GLES20.GL_TEXTURE_2D,
+          width,
+          height,
+          GLES30.GL_RGBA8,
+          GLES20.GL_RGBA,
+          GLES20.GL_UNSIGNED_BYTE,
+        )
       }
     }
     repeat(MAX_MOTION_PAIRS) {
@@ -1428,6 +1449,7 @@ class Media3FlowVideoSink(
     private const val MAX_STORED_FRAMES = 3
     private const val MAX_MOTION_PAIRS = 2
     private const val MAX_QUEUED_FRAMES = 5
+    private const val MAX_INPUT_RELEASE_AHEAD_US = 100_000L
     private const val FLOW_BLOCK_SIZE = 8
     private const val FLOW_GRID_STEP = 6
     private const val FLOW_SEARCH_RADIUS = 4
@@ -1496,7 +1518,7 @@ class Media3FlowVideoSink(
       layout(local_size_x = 8, local_size_y = 8) in;
       precision highp float;
       layout(binding = 0) uniform sampler2D uColor;
-      layout(r32f, binding = 0) writeonly uniform highp image2D uLuma;
+      layout(rgba8, binding = 0) writeonly uniform highp image2D uLuma;
       uniform ivec2 uSize;
       void main() {
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);
@@ -1512,8 +1534,8 @@ class Media3FlowVideoSink(
       #version 310 es
       layout(local_size_x = 8, local_size_y = 8) in;
       precision highp float;
-      layout(r32f, binding = 0) readonly uniform highp image2D uSource;
-      layout(r32f, binding = 1) readonly uniform highp image2D uTarget;
+      layout(rgba8, binding = 0) readonly uniform highp image2D uSource;
+      layout(rgba8, binding = 1) readonly uniform highp image2D uTarget;
       layout(rgba16f, binding = 2) writeonly uniform highp image2D uFlow;
       uniform ivec2 uSize;
       uniform int uBlock;
