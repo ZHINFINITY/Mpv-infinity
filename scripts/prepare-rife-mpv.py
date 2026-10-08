@@ -102,6 +102,8 @@ def main() -> None:
     shutil.copy2(VENDOR / "vf_rife.c", video_filter_dir / "vf_rife.c")
     shutil.copy2(VENDOR / "rife_vfi.h", video_filter_dir / "rife_vfi.h")
     shutil.copy2(VENDOR / "rife_cadence.h", video_filter_dir / "rife_cadence.h")
+    shutil.copy2(VENDOR / "rife_vfi_process_dimensions.h",
+                 video_filter_dir / "rife_vfi_process_dimensions.h")
     apply_resident_vo_patch(mpv_dir)
     subprocess.run(
         [

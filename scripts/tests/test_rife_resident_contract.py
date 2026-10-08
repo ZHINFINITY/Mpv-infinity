@@ -38,6 +38,11 @@ def main() -> None:
     vo = (mpv / "video/out/vo_gpu_next.c").read_text()
     bridge = bridge_path.read_text()
     view = app_view.read_text()
+    process_dimensions = (
+        Path(__file__).resolve().parents[2]
+        / "app/src/main/cpp/rife/rife_vfi_process_dimensions.h"
+    ).read_text()
+    prepare_script = (Path(__file__).resolve().parents[1] / "prepare-rife-mpv.py").read_text()
     require("DisplayManager" in view and "Display.DEFAULT_DISPLAY" in view,
             "Android display refresh fallback must use DisplayManager when the view is unattached")
     require('setOptionString("display-fps-override"' in view and
@@ -47,6 +52,9 @@ def main() -> None:
             "the resident route must not override a user-owned display refresh setting")
     require('cp "$ROOT/app/src/main/cpp/rife/rife_vfi_output_layout.h" "$RIFE_DIR/src/rife_vfi_output_layout.h"' in native_build,
             "the native build must stage the private output-layout header beside the bridge")
+    require('shutil.copy2(VENDOR / "rife_vfi_process_dimensions.h",' in prepare_script and
+            'video_filter_dir / "rife_vfi_process_dimensions.h"' in prepare_script,
+            "the shared processing-dimensions header must be staged into the MPV include path")
 
     # These must be root libmpv options. App-side setOptionString calls must not
     # depend on gpu-next accepting arbitrary VO suboptions.
@@ -256,13 +264,19 @@ def main() -> None:
             "preflight release must end decoder access without freeing queue-owned frames")
     resident_mix = section(vo, "static bool rife_build_display_mix(",
                            "static void update_options(")
+    require('#include "video/filter/rife_vfi_process_dimensions.h"' in vo and
+            vo.count("rife_vfi_process_dimensions(") == 2 and
+            "rife_vfi_process_dimensions(mpi->params.w, mpi->params.h," in vo and
+            "rife_vfi_process_dimensions(mpi0->params.w, mpi0->params.h," in vo,
+            "AHB input import and output-ring sizing must use the same dimensions policy")
+    require("target_fps >= 60 ? 480 : target_fps >= 48 ? 720 : 1080" in process_dimensions,
+            "Auto processing limits must live in the shared dimensions helper")
     ring_failure = section(resident_mix, "if (!rife_init_output_ring(p, width, height))",
                            "int index = p->rife_output_cursor")
     require("return false;" in ring_failure,
             "output-ring failure must return before constructing/replacing the render mix")
-    require("if (max_dimension == 0)" in resident_mix and
-            "target_fps >= 60 ? 480 : target_fps >= 48 ? 720 : 1080" in resident_mix,
-            "resident Auto resolution must apply the documented target-FPS processing cap")
+    require("max_dimension == 0" not in resident_mix,
+            "output-ring sizing must not independently resolve Auto dimensions")
     require(resident_mix.find("rife_prepare_frame_input(p, source)") <
             resident_mix.find("!p->rife_diag_before_input_ready"),
             "both selected source frames must be pre-acquired before pair availability is tested")

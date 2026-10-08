@@ -42,6 +42,8 @@ jobs:
           repository: haasn/libplacebo
           ref: 0d043c7f6f79cd3687c023454bdacbe615e4d96f
           path: libplacebo-source
+      - name: Stage shared RIFE processing-dimensions header
+        run: cp app/src/main/cpp/rife/rife_vfi_process_dimensions.h mpv-source/video/filter/rife_vfi_process_dimensions.h
       - name: Check RIFE resident VO patch against pinned MPV
         working-directory: mpv-source
         run: |
@@ -87,6 +89,8 @@ jobs:
         run: chmod +x ./gradlew
       - name: Run RIFE cadence regression tests
         run: ./scripts/test-rife-cadence.sh
+      - name: Run shared RIFE processing-dimensions regression tests
+        run: ./scripts/test-rife-process-dimensions.sh
       - name: Run RIFE FP16 capability policy tests
         run: ./scripts/test-rife-fp16-policy.sh
       - name: Run RIFE Vulkan VkMat layout policy tests
