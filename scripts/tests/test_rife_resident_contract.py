@@ -276,6 +276,18 @@ def main() -> None:
             "resident target cadence must align to the presentation PTS phase")
     resident_mix = section(vo, "static bool rife_build_display_mix(",
                            "static void update_options(")
+    deadline_fallback = section(
+        resident_mix,
+        "if (rife_cadence_work_exceeds_target_frame_budget(",
+        "p->rife_diag_generated++",
+    )
+    require("event=resident_performance_fallback" in deadline_fallback and
+            "event=resident_output_discarded" in deadline_fallback and
+            "p->rife_disabled_for_session = true;" in deadline_fallback and
+            "return false;" in deadline_fallback,
+            "late RIFE output must be discarded and fall back to the original source mix")
+    require("!p->rife_disabled_for_session &&" in vo,
+            "performance fallback must stop later resident AHB imports for the session")
     require("float timestep = (float) ((p->last_pts - before_pts) / source_duration);" in resident_mix,
             "interpolation time must be derived from mpv's current presentation PTS")
     require(resident_mix.find("p->rife_diag_process_width = width") <
@@ -335,7 +347,8 @@ def main() -> None:
     for marker in (
         "event=resident_wait", "event=resident_error",
         "event=resident_output_ready", "event=resident_rendered",
-        "event=resident_present_failed",
+        "event=resident_present_failed", "event=resident_performance_fallback",
+        "event=resident_output_discarded",
     ):
         require(marker in vo, f"resident runtime diagnostics are missing {marker}")
 
@@ -358,7 +371,8 @@ def main() -> None:
 
     print(
         "RIFE resident contracts passed: root options, Android display timing, shared reader lease, "
-        "AHB import/output, fallback, submitted-frame diagnostic, and runtime stage diagnostics"
+        "AHB import/output, deadline-safe source fallback, submitted-frame diagnostic, "
+        "and runtime stage diagnostics"
     )
 
 

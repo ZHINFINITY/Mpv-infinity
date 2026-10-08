@@ -90,6 +90,41 @@ static inline bool rife_cadence_work_exceeds_budget(int64_t completed_ns,
     return additional_ns > budget_ns - completed_ns;
 }
 
+static inline bool rife_cadence_target_frame_budget_ns(int target_fps,
+                                                        int64_t *budget_ns)
+{
+    if (target_fps <= 0)
+        return false;
+    return rife_cadence_source_budget_ns(1.0 / (double)target_fps, budget_ns);
+}
+
+// Estimate synchronous work against its target frame interval. Missing
+// inference timing or overflowed measurements fail closed to source video.
+static inline bool rife_cadence_work_exceeds_target_frame_budget(
+    uint64_t input_ready_us, uint64_t slot_sync_us,
+    uint64_t inference_us, uint64_t output_complete_us,
+    int target_fps)
+{
+    int64_t budget_ns = 0;
+    if (!rife_cadence_target_frame_budget_ns(target_fps, &budget_ns))
+        return true;
+    if (inference_us == 0)
+        return true;
+    const uint64_t stages_us[] = {
+        input_ready_us, slot_sync_us, inference_us, output_complete_us,
+    };
+    uint64_t estimated_work_us = 0;
+    for (unsigned int i = 0; i < sizeof(stages_us) / sizeof(stages_us[0]); i++) {
+        if (stages_us[i] > UINT64_MAX - estimated_work_us)
+            return true;
+        estimated_work_us += stages_us[i];
+    }
+    if (estimated_work_us > (uint64_t)INT64_MAX / 1000ULL)
+        return true;
+    return rife_cadence_work_exceeds_budget(
+        (int64_t)(estimated_work_us * 1000ULL), 0, budget_ns);
+}
+
 // Estimate the remaining gap cost without multiplying potentially large values.
 static inline bool rife_cadence_prediction_exceeds_budget(
     int64_t completed_ns, int64_t average_per_output_ns,
