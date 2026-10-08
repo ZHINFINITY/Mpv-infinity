@@ -81,17 +81,26 @@ import org.koin.android.ext.android.inject
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.util.ArrayDeque
 
 class CrashActivity : AppCompatActivity() {
   private var logcat: String = ""
   private val appearancePreferences: AppearancePreferences by inject()
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
+    super.onCreate()
     val debugLogsMode = intent.getBooleanExtra(EXTRA_DEBUG_LOGS_MODE, false)
     if (!debugLogsMode) {
-      lifecycle.coroutineScope.launch {
-        logcat = collectLogcat()
+      val hasPreCrashSnapshot =
+        intent.getBooleanExtra(CrashLogSnapshotStore.EXTRA_PRECRASH_SNAPSHOT_AVAILABLE, false)
+      val preCrashSnapshot =
+        if (hasPreCrashSnapshot) CrashLogSnapshotStore.read(noBackupFilesDir) else null
+      if (!preCrashSnapshot.isNullOrBlank()) {
+        logcat = preCrashSnapshot
+      } else {
+        lifecycle.coroutineScope.launch {
+          logcat = withContext(Dispatchers.IO) { collectLogcat() }
+        }
       }
     }
     setContent {
@@ -171,6 +180,8 @@ class CrashActivity : AppCompatActivity() {
 
   companion object {
     private const val EXTRA_DEBUG_LOGS_MODE = "debug_logs_mode"
+    private const val PRECRASH_LOGCAT_MAX_LINES = 2_000
+    private const val PRECRASH_LOGCAT_MAX_LINE_CHARS = 16 * 1024
 
     suspend fun shareLogs(
       deviceInfo: String,
@@ -224,6 +235,46 @@ class CrashActivity : AppCompatActivity() {
           appendLine("Logcat:")
           appendLine(logcat)
         }.toString()
+
+    /** Captures a bounded snapshot before the uncaught-exception handler exits this process. */
+    fun collectPreCrashLogcat(): String =
+      runCatching {
+        val process =
+          ProcessBuilder(
+            "logcat",
+            "-d",
+            "-v",
+            "threadtime",
+            "-t",
+            PRECRASH_LOGCAT_MAX_LINES.toString(),
+          ).redirectErrorStream(true)
+            .start()
+        val lines = ArrayDeque<String>()
+        var retainedChars = 0
+        process.inputStream.bufferedReader().use { reader ->
+          while (true) {
+            val line = reader.readLine() ?: break
+            val retainedLine = line.takeLast(PRECRASH_LOGCAT_MAX_LINE_CHARS)
+            lines.addLast(retainedLine)
+            retainedChars += retainedLine.length + 1
+            while (
+              lines.size > PRECRASH_LOGCAT_MAX_LINES ||
+                retainedChars > CrashLogSnapshotStore.MAX_SNAPSHOT_CHARS
+            ) {
+              retainedChars -= lines.removeFirst().length + 1
+            }
+          }
+        }
+        val exitCode = process.waitFor()
+        buildString(retainedChars + 128) {
+          appendLine("Pre-crash logcat snapshot (bounded to the latest $PRECRASH_LOGCAT_MAX_LINES lines):")
+          for (line in lines) appendLine(line)
+          if (exitCode != 0) appendLine("logcat exited with code $exitCode")
+        }
+      }.getOrElse { error ->
+        if (error is InterruptedException) Thread.currentThread().interrupt()
+        "Pre-crash logcat snapshot failed: ${error.javaClass.simpleName}: ${error.message}"
+      }
 
     fun collectLogcat(): String {
       val process = Runtime.getRuntime()
