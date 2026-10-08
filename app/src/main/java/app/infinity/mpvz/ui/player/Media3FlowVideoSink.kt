@@ -745,6 +745,27 @@ class Media3FlowVideoSink(
     gpuTimerQueriesSupported = true
   }
 
+  /** Advertises optional Qualcomm paths without changing the portable custom-shader renderer. */
+  private fun logQualcommExtensionSupport() {
+    val extensions = try {
+      val extensionCount = IntArray(1)
+      GLES30.glGetIntegerv(GLES30.GL_NUM_EXTENSIONS, extensionCount, 0)
+      buildSet {
+        for (index in 0 until extensionCount[0].coerceAtLeast(0)) {
+          GLES30.glGetStringi(GLES20.GL_EXTENSIONS, index)?.let(::add)
+        }
+      }
+    } catch (error: RuntimeException) {
+      Log.w(logTag, "Could not query optional Qualcomm GLES extensions", error)
+      return
+    }
+    Log.i(
+      logTag,
+      "QCOM GLES extension probe: motionEstimation=${"GL_QCOM_motion_estimation" in extensions} " +
+        "frameExtrapolation=${"GL_QCOM_frame_extrapolation" in extensions}",
+    )
+  }
+
   private fun beginMotionGpuTimerQuery(generation: Long): Int? {
     if (!gpuTimerQueriesSupported) return null
     pollMotionGpuTimerQueries()
@@ -1258,6 +1279,7 @@ class Media3FlowVideoSink(
         logTag,
         "GLES context ready version=$glVersion vendor=${GLES20.glGetString(GLES20.GL_VENDOR)} renderer=${GLES20.glGetString(GLES20.GL_RENDERER)}",
       )
+      logQualcommExtensionSupport()
       eglInfoLogged = true
     }
     if (!graphicsProgramsCompiled) {
