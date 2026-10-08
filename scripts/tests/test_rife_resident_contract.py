@@ -43,6 +43,9 @@ def main() -> None:
         / "app/src/main/cpp/rife/rife_vfi_process_dimensions.h"
     ).read_text()
     prepare_script = (Path(__file__).resolve().parents[1] / "prepare-rife-mpv.py").read_text()
+    frame_api_patcher = (
+        Path(__file__).resolve().parents[1] / "patch-rife-vulkan-frame-api.py"
+    ).read_text()
     require("DisplayManager" in view and "Display.DEFAULT_DISPLAY" in view,
             "Android display refresh fallback must use DisplayManager when the view is unattached")
     require('setOptionString("display-fps-override"' in view and
@@ -136,6 +139,21 @@ def main() -> None:
             "if (submit_result != 0)" in bridge and
             "vkDeviceWaitIdle" not in bridge,
             "output handoff must wait for its compute submission without a device-wide stall")
+    output_frame = section(bridge, "struct RifeVfiGpuFrame {", "struct RifeVfiOutput {")
+    require(output_frame.index("image = ncnn::VkMat();") <
+            output_frame.index("reclaim_blob_allocator(blob_allocator)"),
+            "GPU frame image storage must be released before its blob allocator returns to the pool")
+    gpu_interpolation = section(
+        bridge,
+        "static int rife_vfi_interpolate_vulkan_internal(",
+        'extern "C" int rife_vfi_import_ahb_rgb8(',
+    )
+    require("&synthesized->blob_allocator" in gpu_interpolation and
+            "ncnn::VkAllocator** out_blob_allocator" in frame_api_patcher and
+            "*gpu_out_allocator = blob_vkallocator;" in frame_api_patcher and
+            "blob_vkallocator = 0;" in frame_api_patcher and
+            "RifeVulkanAllocatorGuard" in frame_api_patcher,
+            "RIFE GPU output must transfer its allocator with the VkMat instead of returning it to the pool")
     output_writer = section(
         bridge,
         'extern "C" int rife_vfi_write_output_rgba(',

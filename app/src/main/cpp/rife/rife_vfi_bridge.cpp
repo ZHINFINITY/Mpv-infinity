@@ -800,7 +800,8 @@ static int rife_vfi_interpolate_vulkan_internal(
     {
         std::lock_guard<std::mutex> lock(engine->process_mutex);
         result = engine->network->process_v4_gpu(
-            *input0, *input1, timestep, synthesized->image);
+            *input0, *input1, timestep, synthesized->image,
+            &synthesized->blob_allocator);
     }
     if (result != 0) {
         delete synthesized;

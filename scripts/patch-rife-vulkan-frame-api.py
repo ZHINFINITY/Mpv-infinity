@@ -44,8 +44,9 @@ def patch_header(text: str) -> str:
         text,
         "    int process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const;",
         "    int process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage) const;\n"
-        "    // Vulkan-resident RGB tensors in/out; caller owns input and output VkMat lifetimes.\n"
-        "    int process_v4_gpu(const ncnn::VkMat& in0image, const ncnn::VkMat& in1image, float timestep, ncnn::VkMat& outimage) const;\n"
+        "    // Vulkan-resident RGB tensors in/out; caller owns VkMat and returned blob allocator lifetimes.\n"
+        "    int process_v4_gpu(const ncnn::VkMat& in0image, const ncnn::VkMat& in1image, float timestep, ncnn::VkMat& outimage,\n"
+        "                       ncnn::VkAllocator** out_blob_allocator) const;\n"
         f"    {HEADER_MARKER}",
         "RIFE public process_v4 declaration",
     )
@@ -54,7 +55,8 @@ def patch_header(text: str) -> str:
         "private:\n",
         "private:\n"
         "    int process_v4_internal(const ncnn::Mat& in0image, const ncnn::Mat& in1image, float timestep, ncnn::Mat& outimage,\n"
-        "                           const ncnn::VkMat* gpu_in0, const ncnn::VkMat* gpu_in1, ncnn::VkMat* gpu_out) const;\n",
+        "                           const ncnn::VkMat* gpu_in0, const ncnn::VkMat* gpu_in1,\n"
+        "                           ncnn::VkMat* gpu_out, ncnn::VkAllocator** gpu_out_allocator) const;\n",
         "RIFE private section",
     )
     return text
@@ -78,18 +80,22 @@ def patch_source(text: str) -> str:
     wrappers = (
         "int RIFE::process_v4(const ncnn::Mat& in0image, const ncnn::Mat& in1image, "
         "float timestep, ncnn::Mat& outimage) const\n{\n"
-        "    return process_v4_internal(in0image, in1image, timestep, outimage, 0, 0, 0);\n"
+        "    return process_v4_internal(in0image, in1image, timestep, outimage, 0, 0, 0, 0);\n"
         "}\n\n"
         "int RIFE::process_v4_gpu(const ncnn::VkMat& in0image, const ncnn::VkMat& in1image, "
-        "float timestep, ncnn::VkMat& outimage) const\n{\n"
+        "float timestep, ncnn::VkMat& outimage, ncnn::VkAllocator** out_blob_allocator) const\n{\n"
+        "    if (!out_blob_allocator)\n"
+        "        return -1;\n"
+        "    *out_blob_allocator = 0;\n"
         "    ncnn::Mat unused_input0;\n"
         "    ncnn::Mat unused_input1;\n"
         "    ncnn::Mat unused_output;\n"
-        "    return process_v4_internal(unused_input0, unused_input1, timestep, unused_output, &in0image, &in1image, &outimage);\n"
+        "    return process_v4_internal(unused_input0, unused_input1, timestep, unused_output, &in0image, &in1image, &outimage, out_blob_allocator);\n"
         "}\n\n"
         "int RIFE::process_v4_internal(const ncnn::Mat& in0image, const ncnn::Mat& in1image, "
         "float timestep, ncnn::Mat& outimage, const ncnn::VkMat* gpu_in0, "
-        "const ncnn::VkMat* gpu_in1, ncnn::VkMat* gpu_out) const\n{\n"
+        "const ncnn::VkMat* gpu_in1, ncnn::VkMat* gpu_out, "
+        "ncnn::VkAllocator** gpu_out_allocator) const\n{\n"
         f"    {SOURCE_MARKER}"
     )
     text = replace_once(text, signature, wrappers, "RIFE process_v4 implementation")
@@ -101,8 +107,11 @@ def patch_source(text: str) -> str:
     body = replace_once(
         body,
         "    if (!vkdev)\n    {\n        // cpu only\n        return process_cpu(in0image, in1image, timestep, outimage);\n    }",
+        "    if (gpu_out_allocator)\n"
+        "        *gpu_out_allocator = 0;\n"
         "    if ((gpu_in0 == 0) != (gpu_in1 == 0) ||\n"
-        "        ((gpu_in0 != 0) != (gpu_out != 0)))\n"
+        "        ((gpu_in0 != 0) != (gpu_out != 0)) ||\n"
+        "        (gpu_out && !gpu_out_allocator))\n"
         "        return -1;\n"
         "    if (!vkdev)\n    {\n"
         "        // A GPU frame must never silently fall back through host pixels.\n"
@@ -217,6 +226,41 @@ def patch_source(text: str) -> str:
         "RIFE Vulkan input upload block",
     )
 
+    allocator_anchor = (
+        "    ncnn::VkAllocator* blob_vkallocator = vkdev->acquire_blob_allocator();\n"
+        "    ncnn::VkAllocator* staging_vkallocator = vkdev->acquire_staging_allocator();"
+    )
+    allocator_guard = (
+        "\n\n"
+        "    struct RifeVulkanAllocatorGuard\n"
+        "    {\n"
+        "        ncnn::VulkanDevice *device;\n"
+        "        ncnn::VkAllocator *&blob;\n"
+        "        ncnn::VkAllocator *&staging;\n"
+        "\n"
+        "        RifeVulkanAllocatorGuard(ncnn::VulkanDevice *device_,\n"
+        "                                 ncnn::VkAllocator *&blob_,\n"
+        "                                 ncnn::VkAllocator *&staging_)\n"
+        "            : device(device_), blob(blob_), staging(staging_)\n"
+        "        {\n"
+        "        }\n"
+        "\n"
+        "        ~RifeVulkanAllocatorGuard()\n"
+        "        {\n"
+        "            if (blob)\n"
+        "                device->reclaim_blob_allocator(blob);\n"
+        "            if (staging)\n"
+        "                device->reclaim_staging_allocator(staging);\n"
+        "        }\n"
+        "    } allocator_guard(vkdev, blob_vkallocator, staging_vkallocator);"
+    )
+    body = replace_once(
+        body,
+        allocator_anchor,
+        allocator_anchor + allocator_guard,
+        "RIFE Vulkan allocator lifetime guard",
+    )
+
     download_start = body.index("    // download\n")
     reclaim_anchor = "    vkdev->reclaim_blob_allocator(blob_vkallocator);"
     download_end = body.index(reclaim_anchor, download_start)
@@ -232,16 +276,25 @@ def patch_source(text: str) -> str:
         "    " + line if line else line
         for line in download_block.rstrip("\n").splitlines()
     )
+    reclaim_tail = body[download_end:]
+    reclaim_tail = replace_once(
+        reclaim_tail,
+        reclaim_anchor + "\n    vkdev->reclaim_staging_allocator(staging_vkallocator);",
+        "",
+        "RIFE Vulkan allocator guard cleanup",
+    )
     body = (
         body[:download_start]
         + "    if (gpu_out)\n    {\n"
         + "        if (cmd.submit_and_wait() != 0)\n"
         + "            return -1;\n"
         + "        *gpu_out = out_gpu;\n"
+        + "        *gpu_out_allocator = blob_vkallocator;\n"
+        + "        blob_vkallocator = 0;\n"
         + "    }\n    else\n    {\n"
         + indented_download
         + "\n    }\n"
-        + body[download_end:]
+        + reclaim_tail
     )
 
     return text[:body_start] + body + text[body_end:]
