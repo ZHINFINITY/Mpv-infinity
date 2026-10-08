@@ -303,7 +303,7 @@ def main() -> None:
     require('#include "video/filter/rife_vfi_process_dimensions.h"' in vo and
             vo.count("rife_vfi_process_dimensions(") == 2 and
             "rife_vfi_process_dimensions(mpi->params.w, mpi->params.h," in vo and
-            "rife_vfi_process_dimensions(mpi0->params.w, mpi0->params.h," in vo,
+            "rife_vfi_process_dimensions(\n        mpi0->params.w, mpi0->params.h," in vo,
             "AHB input import and output-ring sizing must use the same dimensions policy")
     require("target_fps >= 60 ? 480 : target_fps >= 48 ? 720 : 1080" in process_dimensions,
             "Auto processing limits must live in the shared dimensions helper")
