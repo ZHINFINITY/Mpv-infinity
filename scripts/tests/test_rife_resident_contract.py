@@ -276,9 +276,11 @@ def main() -> None:
             "resident RIFE must keep display-PTS scheduling active for one-frame VO batches")
     prepare = section(vo, "static bool rife_prepare_frame_input(",
                       "static bool rife_build_display_mix(")
-    require("mutable_frame->acquire(p->gpu, mutable_frame)" in prepare and
-            "mutable_frame->release(p->gpu, mutable_frame)" in prepare,
-            "resident pair inputs must be acquired/imported and released before readiness checks")
+    require("struct pl_frame preflight_frame = *frame;" in prepare and
+            "preflight_frame.acquire(p->gpu, &preflight_frame)" in prepare and
+            "preflight_frame.release(p->gpu, &preflight_frame)" in prepare and
+            "(struct pl_frame *) frame" not in prepare,
+            "preflight acquire callbacks must mutate only a temporary frame copy, never the queued source frame")
     hwdec_release = section(vo, "static void hwdec_release(",
                             "static bool format_supported(")
     require("slot_release(&p->hwdec);" in hwdec_release and
@@ -299,9 +301,20 @@ def main() -> None:
             "output-ring failure must return before constructing/replacing the render mix")
     require("max_dimension == 0" not in resident_mix,
             "output-ring sizing must not independently resolve Auto dimensions")
-    require(resident_mix.find("rife_prepare_frame_input(p, source)") <
-            resident_mix.find("!p->rife_diag_before_input_ready"),
-            "both selected source frames must be pre-acquired before pair availability is tested")
+    source_duration_check = resident_mix.find("source_duration * target_fps <= 1.0")
+    cadence_check = resident_mix.find("rife_cadence_grid_index")
+    timestep_check = resident_mix.find("if (!isfinite(timestep)")
+    ring_check = resident_mix.find("if (!rife_init_output_ring(p, width, height))")
+    slot_sync_check = resident_mix.find("if (slot->sampled)")
+    preflight_source = resident_mix.find("rife_prepare_frame_input(p, source)")
+    preflight_next = resident_mix.find("rife_prepare_frame_input(p, next)")
+    inference = resident_mix.find("rife_vfi_interpolate_gpu_frames(")
+    require("p->rife_diag_before_input_ready = fp0->rife_input != NULL;" in resident_mix and
+            "p->rife_diag_after_input_ready = fp1->rife_input != NULL;" in resident_mix,
+            "wait diagnostics must report cached input readiness without acquiring decoder frames")
+    require(0 <= source_duration_check < cadence_check < timestep_check < ring_check <
+            slot_sync_check < preflight_source < preflight_next < inference,
+            "decoder AHB preflight must happen only after an eligible cadence/timestep, ring setup, and slot sync")
     require("mix_frames=%d queue_depth=%d" in vo and "vo_frames=%d" in vo and
             "display_synced=%d" in vo and "pair_after_pts=%.6f" in vo,
             "wait diagnostics must distinguish render-mix size from queue depth and expose timing/pair state")

@@ -576,7 +576,7 @@ index bd3d1aa1e..852dd26bf 100644
      talloc_free(mpi);
  }
 
-@@ -1154,14 +1279,514 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1279,520 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
  
@@ -856,12 +856,12 @@ index bd3d1aa1e..852dd26bf 100644
 +        return false;
 +
 +    // libplacebo normally invokes this lazily while drawing, after the RIFE
-+    // pair scheduler has run. Acquire/release each selected frame here so its
-+    // AHB is imported before pair readiness is tested. Releasing between calls
-+    // is required because gpu-next uses one hardware slot per frame role.
-+    struct pl_frame *mutable_frame = (struct pl_frame *) frame;
-+    bool acquired = mutable_frame->acquire(p->gpu, mutable_frame);
-+    mutable_frame->release(p->gpu, mutable_frame);
++    // pair scheduler has run. Import the AHB before inference and release the
++    // one hardware slot before preparing its peer. acquire may mutate planes,
++    // so keep mapper writes in a disposable copy, not the queued source frame.
++    struct pl_frame preflight_frame = *frame;
++    bool acquired = preflight_frame.acquire(p->gpu, &preflight_frame);
++    preflight_frame.release(p->gpu, &preflight_frame);
 +    return acquired && fp->rife_input != NULL;
 +}
 +
@@ -926,14 +926,8 @@ index bd3d1aa1e..852dd26bf 100644
 +    }
 +    p->rife_diag_pair_before_pts = before_pts;
 +    p->rife_diag_pair_after_pts = after_pts;
-+    p->rife_diag_before_input_ready = fp0->rife_input ||
-+                                       rife_prepare_frame_input(p, source);
-+    p->rife_diag_after_input_ready = fp1->rife_input ||
-+                                     rife_prepare_frame_input(p, next);
-+    if (!p->rife_diag_before_input_ready || !p->rife_diag_after_input_ready) {
-+        rife_log_wait_reason(p, RIFE_WAIT_INPUT_NOT_READY, mix->num_frames);
-+        return false;
-+    }
++    p->rife_diag_before_input_ready = fp0->rife_input != NULL;
++    p->rife_diag_after_input_ready = fp1->rife_input != NULL;
 +
 +    double source_duration = after_pts - before_pts;
 +    int target_fps = p->rife_root_opts->rife_target_fps;
@@ -997,6 +991,18 @@ index bd3d1aa1e..852dd26bf 100644
 +        // stopped sampling this ring slot before NCNN reacquires it.
 +        gl->Finish();
 +        slot->sampled = false;
++    }
++
++    // Do not acquire decoder frames on source boundaries or cadence misses:
++    // their original mix is rendered next, and an eager mapper handoff can
++    // invalidate its queued frame planes. Import only when RIFE will run.
++    p->rife_diag_before_input_ready = p->rife_diag_before_input_ready ||
++                                      rife_prepare_frame_input(p, source);
++    p->rife_diag_after_input_ready = p->rife_diag_after_input_ready ||
++                                     rife_prepare_frame_input(p, next);
++    if (!p->rife_diag_before_input_ready || !p->rife_diag_after_input_ready) {
++        rife_log_wait_reason(p, RIFE_WAIT_INPUT_NOT_READY, mix->num_frames);
++        return false;
 +    }
 +
 +    RifeVfiGpuFrame *synthesized = NULL;
