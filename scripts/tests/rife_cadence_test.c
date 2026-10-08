@@ -105,33 +105,6 @@ static void test_prediction_budget(void)
     assert(!rife_cadence_prediction_exceeds_budget(0, 0, 0, budget));
 }
 
-static void test_target_frame_deadline_policy(void)
-{
-    int64_t budget = 0;
-    assert(rife_cadence_target_frame_budget_ns(60, &budget));
-    assert(budget == 14166666);
-    assert(rife_cadence_target_frame_budget_ns(30, &budget));
-    assert(budget == 28333333);
-    assert(!rife_cadence_target_frame_budget_ns(0, &budget));
-
-    // The attached phone's ~10 ms input readiness, ~39 ms inference, and
-    // ~3 ms output handoff cannot meet either target synchronously.
-    assert(rife_cadence_work_exceeds_target_frame_budget(
-        10000, 1600, 39000, 3000, 60));
-    assert(rife_cadence_work_exceeds_target_frame_budget(
-        10000, 1600, 39000, 3000, 30));
-    assert(!rife_cadence_work_exceeds_target_frame_budget(
-        7000, 1000, 4000, 1000, 60));
-    assert(!rife_cadence_work_exceeds_target_frame_budget(
-        10000, 0, 4000, 0, 60));
-    assert(rife_cadence_work_exceeds_target_frame_budget(
-        1000, 0, 0, 0, 60));
-    assert(rife_cadence_work_exceeds_target_frame_budget(
-        10000, 0, 5000, 0, 60));
-    assert(rife_cadence_work_exceeds_target_frame_budget(
-        UINT64_MAX, 1, 1, 1, 60));
-}
-
 int main(void)
 {
     test_output_counts();
@@ -139,7 +112,6 @@ int main(void)
     test_presentation_aligned_origin_avoids_source_phase_miss();
     test_source_pair_budget();
     test_prediction_budget();
-    test_target_frame_deadline_policy();
     puts("RIFE cadence tests passed");
     return 0;
 }

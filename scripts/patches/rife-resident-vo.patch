@@ -644,7 +644,7 @@ index bd3d1aa1e..852dd26bf 100644
      talloc_free(mpi);
  }
 
-@@ -1154,14 +1346,607 @@ static void info_callback(void *priv, const struct pl_render_info *info)
+@@ -1154,14 +1346,584 @@ static void info_callback(void *priv, const struct pl_render_info *info)
      pl_dispatch_info_move(&frame->info[info->index], info->pass);
  }
 
@@ -1157,29 +1157,6 @@ index bd3d1aa1e..852dd26bf 100644
 +        MP_WARN(p, "RIFE Vulkan-to-AHB output handoff failed; disabling resident RIFE for this session and preserving ordinary mpv rendering\n");
 +        return false;
 +    }
-+    uint64_t input_ready_avg_us =
-+        rife_stage_timing_average(&p->rife_diag_input_ready);
-+    uint64_t slot_sync_avg_us =
-+        rife_stage_timing_average(&p->rife_diag_slot_sync);
-+    uint64_t inference_avg_us =
-+        rife_stage_timing_average(&p->rife_diag_inference);
-+    uint64_t output_complete_avg_us =
-+        rife_stage_timing_average(&p->rife_diag_output_complete);
-+    if (rife_cadence_work_exceeds_target_frame_budget(
-+            input_ready_avg_us, slot_sync_avg_us, inference_avg_us,
-+            output_complete_avg_us, target_fps)) {
-+        int64_t target_budget_ns = 0;
-+        rife_cadence_target_frame_budget_ns(target_fps, &target_budget_ns);
-+        p->rife_disabled_for_session = true;
-+        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_performance_fallback reason=estimated_target_frame_work_over_budget pts=%.6f target_fps=%d input_ready_avg_us=%" PRIu64 " slot_sync_avg_us=%" PRIu64 " inference_avg_us=%" PRIu64 " output_complete_avg_us=%" PRIu64 " target_budget_us=%" PRIu64 "\n",
-+                p->last_pts, target_fps, input_ready_avg_us, slot_sync_avg_us,
-+                inference_avg_us, output_complete_avg_us,
-+                (uint64_t) target_budget_ns / 1000ULL);
-+        MP_WARN(p, "RIFE_DIAGNOSTIC event=resident_output_discarded pts=%.6f reason=target_deadline_exceeded action=preserve_source_mix_disable_resident_for_session\n",
-+                p->last_pts);
-+        MP_WARN(p, "RIFE resident work exceeded its measured frame budget; discarding the late result and preserving ordinary source-frame playback for this session\n");
-+        return false;
-+    }
 +    p->rife_diag_generated++;
 +    p->rife_diag_process_width = width;
 +    p->rife_diag_process_height = height;
@@ -1252,7 +1229,7 @@ index bd3d1aa1e..852dd26bf 100644
  
      update_lut(p, &p->next_opts->lut);
      pars->params.lut = p->next_opts->lut.lut;
-@@ -1350,9 +2117,24 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1350,9 +2094,24 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      const struct gl_video_opts *opts = p->opts_cache->opts;
      bool will_redraw = frame->display_synced && frame->num_vsyncs > 1;
      bool cache_frame = will_redraw || frame->still || p->paused;
@@ -1278,7 +1255,7 @@ index bd3d1aa1e..852dd26bf 100644
      params.info_callback = info_callback;
      params.info_priv = vo;
      params.skip_caching_single_frame = !cache_frame;
-@@ -1406,6 +2188,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1406,6 +2165,9 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              p->last_id = 0;
              p->want_reset = false;
              p->flush_cache = true;
@@ -1288,7 +1265,7 @@ index bd3d1aa1e..852dd26bf 100644
          }
  
          if (p->flush_cache) {
-@@ -1652,6 +2437,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1652,6 +2414,17 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      update_tm_viz(&pars->color_map_params, &target);
  
      struct pl_frame_mix mix = {0};
@@ -1306,7 +1283,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (frame->current) {
          // Update queue state
          struct pl_queue_params qparams = *pl_queue_params(
-@@ -1747,10 +2543,51 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1747,10 +2520,51 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
              update_hook_opts_dynamic(p, p->hooks[i], frame->current);
      }
  
@@ -1358,7 +1335,7 @@ index bd3d1aa1e..852dd26bf 100644
      if (!render_ok) {
          MP_ERR(vo, "Failed rendering frame!\n");
          goto done;
-@@ -1777,7 +2614,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
+@@ -1777,7 +2591,11 @@ static bool draw_frame(struct vo *vo, struct vo_frame *frame)
      }
      mp_mutex_unlock(&vo->params_mutex);
  
@@ -1370,7 +1347,7 @@ index bd3d1aa1e..852dd26bf 100644
      valid = true;
      // fall through
  
-@@ -1796,12 +2637,35 @@ static void flip_page(struct vo *vo)
+@@ -1796,12 +2614,35 @@ static void flip_page(struct vo *vo)
      struct ra_swapchain *sw = p->ra_ctx->swapchain;
  
      if (p->frame_pending) {
@@ -1409,7 +1386,7 @@ index bd3d1aa1e..852dd26bf 100644
  }
  
  static void get_vsync(struct vo *vo, struct vo_vsync_info *info)
-@@ -2464,6 +3328,13 @@ static void uninit(struct vo *vo)
+@@ -2464,6 +3305,13 @@ static void uninit(struct vo *vo)
          pl_gpu_finish(p->gpu);
  
      pl_queue_destroy(&p->queue); // destroy this first
@@ -1423,7 +1400,7 @@ index bd3d1aa1e..852dd26bf 100644
      for (int i = 0; i < MP_ARRAY_SIZE(p->osd_state.entries); i++)
          pl_tex_destroy(p->gpu, &p->osd_state.entries[i].tex);
      for (int i = 0; i < p->num_sub_tex; i++)
-@@ -2519,6 +3390,10 @@ static int preinit(struct vo *vo)
+@@ -2519,6 +3367,10 @@ static int preinit(struct vo *vo)
      p->opts_cache = m_config_cache_alloc(p, vo->global, &gl_video_conf);
      p->next_opts_cache = m_config_cache_alloc(p, vo->global, &gl_next_conf);
      p->next_opts = p->next_opts_cache->opts;
