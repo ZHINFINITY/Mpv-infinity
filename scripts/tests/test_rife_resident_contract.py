@@ -147,6 +147,10 @@ def main() -> None:
             "input_dims=%d input_w=%d input_h=%d input_d=%d input_c=%d input_elempack=%d input_elemsize=%zu input_cstep=%zu" in output_writer,
             "output writer must bridge packed RGB8 and planar FP32 with tensor-field diagnostics")
     output_init = section(bridge, "bool initialize_output_slot(", "\n#endif")
+    require("output->image_memory.refcount = 1;" in output_init and
+            "output->image_memory.refcount = 0;" not in output_init and
+            "ncnn::VkImageMat(width, height, &output->image_memory" in output_init,
+            "external output AHB metadata must remain caller-owned during ncnn command cleanup")
     for stage in (
         "stage=output_precondition_failed",
         "stage=vulkan_output_extensions_unavailable",

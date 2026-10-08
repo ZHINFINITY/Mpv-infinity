@@ -566,7 +566,10 @@ bool initialize_output_slot(RifeVfiOutput *output, int width, int height,
     output->image_memory.image_layout = VK_IMAGE_LAYOUT_UNDEFINED;
     output->image_memory.stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     output->image_memory.command_refcount = 0;
-    output->image_memory.refcount = 0;
+    // VkImageMat's external-data constructor does not hold a refcounted wrapper;
+    // NCNN VkCompute deletes VkImageMemory when refcount and the last command
+    // reference are both zero. Keep this embedded slot owned until our cleanup.
+    output->image_memory.refcount = 1;
     output->wrapper_allocator = vkdev->acquire_blob_allocator();
     if (!output->wrapper_allocator) {
         set_error(error, error_size, "stage=wrapper_allocator_unavailable");
