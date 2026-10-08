@@ -750,11 +750,11 @@ class Media3FlowVideoSink(
     val extensions = try {
       val extensionCount = IntArray(1)
       GLES30.glGetIntegerv(GLES30.GL_NUM_EXTENSIONS, extensionCount, 0)
-      buildSet {
-        for (index in 0 until extensionCount[0].coerceAtLeast(0)) {
-          GLES30.glGetStringi(GLES20.GL_EXTENSIONS, index)?.let(::add)
-        }
+      val discovered = mutableSetOf<String>()
+      for (index in 0 until extensionCount[0].coerceAtLeast(0)) {
+        GLES30.glGetStringi(GLES20.GL_EXTENSIONS, index)?.let(discovered::add)
       }
+      discovered
     } catch (error: RuntimeException) {
       Log.w(logTag, "Could not query optional Qualcomm GLES extensions", error)
       return
