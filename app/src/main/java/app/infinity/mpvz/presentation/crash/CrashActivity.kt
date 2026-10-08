@@ -88,7 +88,7 @@ class CrashActivity : AppCompatActivity() {
   private val appearancePreferences: AppearancePreferences by inject()
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate()
+    super.onCreate(savedInstanceState)
     val debugLogsMode = intent.getBooleanExtra(EXTRA_DEBUG_LOGS_MODE, false)
     if (!debugLogsMode) {
       val hasPreCrashSnapshot =
