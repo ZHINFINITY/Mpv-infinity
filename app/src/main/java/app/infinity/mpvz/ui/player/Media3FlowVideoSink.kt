@@ -1807,7 +1807,7 @@ class Media3FlowVideoSink(
       }
     """
 
-    private const val FLOW_COMPUTE_SHADER = """
+    internal const val FLOW_COMPUTE_SHADER = """
       #version 310 es
       layout(local_size_x = 8, local_size_y = 8) in;
       precision highp float;
@@ -1866,17 +1866,7 @@ class Media3FlowVideoSink(
             if (cost < best) { best = cost; bestOffset = offset; }
           }
         }
-        float textureEnergy = 0.0;
-        for (int y = 0; y < uBlock; y++) {
-          for (int x = 0; x < uBlock; x++) {
-            ivec2 p = origin + ivec2(x, y);
-            float center = imageLoad(uSource, p).r;
-            if (x + 1 < uBlock) textureEnergy += abs(center - imageLoad(uSource, p + ivec2(1, 0)).r);
-            if (y + 1 < uBlock) textureEnergy += abs(center - imageLoad(uSource, p + ivec2(0, 1)).r);
-          }
-        }
-        textureEnergy /= max(float(2 * uBlock * (uBlock - 1)), 1.0);
-        imageStore(uFlow, cell, vec4(vec2(bestOffset), best, textureEnergy));
+        imageStore(uFlow, cell, vec4(vec2(bestOffset), best, 1.0));
       }
     """
 
@@ -1901,11 +1891,6 @@ class Media3FlowVideoSink(
       vec4 flowImageAt(ivec2 p, int direction) {
         return direction == 0 ? imageLoad(uForward, p) : imageLoad(uBackward, p);
       }
-      float flowMatchWeight(vec4 flow) {
-        float matchQuality = 1.0 - smoothstep(0.06, MAX_MATCH_ERROR, flow.z);
-        float textureConfidence = smoothstep(0.003, 0.03, flow.w);
-        return matchQuality * textureConfidence;
-      }
       vec4 flowAt(vec2 p, int direction) {
         vec2 gridPos = (p - vec2(uGridAnchorOffset)) / float(uStep);
         gridPos = clamp(gridPos, vec2(0.0), vec2(uGrid - ivec2(1)));
@@ -1919,18 +1904,6 @@ class Media3FlowVideoSink(
         vec4 top = mix(flow00, flow10, t.x);
         vec4 bottom = mix(flow01, flow11, t.x);
         vec4 interpolated = mix(top, bottom, t.y);
-        // In smooth regions, ambiguous block matches should contribute less to the motion field.
-        float weight00 = (1.0 - t.x) * (1.0 - t.y) * flowMatchWeight(flow00);
-        float weight10 = t.x * (1.0 - t.y) * flowMatchWeight(flow10);
-        float weight01 = (1.0 - t.x) * t.y * flowMatchWeight(flow01);
-        float weight11 = t.x * t.y * flowMatchWeight(flow11);
-        float totalWeight = weight00 + weight10 + weight01 + weight11;
-        if (totalWeight > 1e-5) {
-          vec2 weightedFlow =
-            weight00 * flow00.xy + weight10 * flow10.xy +
-            weight01 * flow01.xy + weight11 * flow11.xy;
-          interpolated.xy = weightedFlow / totalWeight;
-        }
         float horizontalTop = dot(flow10.xy - flow00.xy, flow10.xy - flow00.xy);
         float horizontalBottom = dot(flow11.xy - flow01.xy, flow11.xy - flow01.xy);
         float verticalLeft = dot(flow01.xy - flow00.xy, flow01.xy - flow00.xy);
@@ -1958,8 +1931,7 @@ class Media3FlowVideoSink(
       float flowReliability(vec4 flow, float cycleError, float valid) {
         float consistency = 1.0 - smoothstep(0.75, 4.5, cycleError);
         float matchQuality = 1.0 - smoothstep(0.06, MAX_MATCH_ERROR, flow.z);
-        float textureConfidence = smoothstep(0.003, 0.03, flow.w);
-        return consistency * matchQuality * textureConfidence * valid;
+        return consistency * matchQuality * valid;
       }
       void main() {
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);

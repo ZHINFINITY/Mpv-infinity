@@ -58,14 +58,15 @@ class Media3FlowGeometryTest {
   }
 
   @Test
-  fun synthesisWeightsSmoothRegionVectorsByMatchAndTextureConfidence() {
-    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(shader.contains("float flowMatchWeight(vec4 flow) {"))
-    assertTrue(shader.contains("return matchQuality * textureConfidence;"))
-    assertTrue(shader.contains("float totalWeight = weight00 + weight10 + weight01 + weight11;"))
-    assertTrue(shader.contains("interpolated.xy = weightedFlow / totalWeight;"))
-    assertTrue(shader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {"))
-    assertTrue(shader.contains("interpolated.xy = nearestFlow.xy;"))
+  fun motionConfidenceKeepsBaselineBehaviorOnLowTextureRegions() {
+    val motionShader = Media3FlowVideoSink.FLOW_COMPUTE_SHADER
+    val synthesisShader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+    assertTrue(motionShader.contains("imageStore(uFlow, cell, vec4(vec2(bestOffset), best, 1.0));"))
+    assertFalse(motionShader.contains("textureEnergy"))
+    assertTrue(synthesisShader.contains("return consistency * matchQuality * valid;"))
+    assertFalse(synthesisShader.contains("textureConfidence"))
+    assertTrue(synthesisShader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {"))
+    assertTrue(synthesisShader.contains("interpolated.xy = nearestFlow.xy;"))
   }
 
   @Test
