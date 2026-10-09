@@ -850,7 +850,7 @@ class Media3FlowVideoSink(
       checkGlError("motion uniform uBlock", frameProbeOnly = true)
       val stepLocation = GLES31.glGetUniformLocation(flowProgram, "uStep")
       checkGlError("motion lookup uStep", frameProbeOnly = true)
-      GLES31.glUniform1i(stepLocation, FLOW_GRID_STEP)
+      GLES31.glUniform1i(stepLocation, MEDIA3_FLOW_GRID_STEP)
       checkGlError("motion uniform uStep", frameProbeOnly = true)
       val radiusLocation = GLES31.glGetUniformLocation(flowProgram, "uRadius")
       checkGlError("motion lookup uRadius", frameProbeOnly = true)
@@ -1021,7 +1021,7 @@ class Media3FlowVideoSink(
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uSize"), frameWidth, frameHeight)
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uMotionSize"), processingWidth, processingHeight)
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uGrid"), gridWidth, gridHeight)
-    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uStep"), FLOW_GRID_STEP)
+    GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uStep"), MEDIA3_FLOW_GRID_STEP)
     GLES31.glUniform1f(GLES31.glGetUniformLocation(synthProgram, "uAlpha"), alpha)
     GLES31.glBindImageTexture(0, pair.forwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
     GLES31.glBindImageTexture(1, pair.backwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
@@ -1157,8 +1157,9 @@ class Media3FlowVideoSink(
     frameHeight = sourceHeight
     processingWidth = width
     processingHeight = height
-    gridWidth = ceil(width.toDouble() / FLOW_GRID_STEP).toInt()
-    gridHeight = ceil(height.toDouble() / FLOW_GRID_STEP).toInt()
+    val motionGridSize = Media3FlowGeometry.motionGridSize(width, height)
+    gridWidth = motionGridSize.width
+    gridHeight = motionGridSize.height
     outputTexture = createTexture(GLES20.GL_TEXTURE_2D, sourceWidth, sourceHeight, GLES30.GL_RGBA8)
     repeat(MAX_STORED_FRAMES) {
       framePool += FrameSlot().apply {
@@ -1606,7 +1607,6 @@ class Media3FlowVideoSink(
     private const val MAX_QUEUED_FRAMES = 5
     private const val MAX_INPUT_RELEASE_AHEAD_US = 100_000L
     private const val FLOW_BLOCK_SIZE = 8
-    private const val FLOW_GRID_STEP = 4
     private const val FLOW_SEARCH_RADIUS = 24
     private const val HISTORY_SIZE = 24
     private const val OUTPUT_RATE_WINDOW = 31

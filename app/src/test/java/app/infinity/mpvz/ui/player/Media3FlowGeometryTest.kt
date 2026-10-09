@@ -15,6 +15,11 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun motionGridKeepsSixPixelVectorSpacingAtTheRaisedAnalysisCap() {
+    assertEquals(Media3FlowGridSize(107, 60), Media3FlowGeometry.motionGridSize(640, 360))
+  }
+
+  @Test
   fun sourcesBelowCapKeepTheirNativeMotionDimensions() {
     assertEquals(Media3FlowMotionSize(320, 180), Media3FlowGeometry.motionSize(320, 180, 480))
   }

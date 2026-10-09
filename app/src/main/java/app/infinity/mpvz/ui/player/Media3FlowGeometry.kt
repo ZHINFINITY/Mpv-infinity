@@ -1,11 +1,16 @@
 package app.infinity.mpvz.ui.player
 
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** Reduced dimensions for motion estimation; source/output textures stay at source dimensions. */
 internal data class Media3FlowMotionSize(val width: Int, val height: Int)
+
+internal const val MEDIA3_FLOW_GRID_STEP = 6
+
+internal data class Media3FlowGridSize(val width: Int, val height: Int)
 
 internal data class Media3FlowBlitGeometry(
   val viewportX: Int,
@@ -26,6 +31,14 @@ internal object Media3FlowGeometry {
     return Media3FlowMotionSize(
       width = max(16, (sourceWidth * scale).roundToInt()),
       height = max(16, (sourceHeight * scale).roundToInt()),
+    )
+  }
+
+  fun motionGridSize(processingWidth: Int, processingHeight: Int): Media3FlowGridSize {
+    require(processingWidth > 0 && processingHeight > 0) { "Processing dimensions must be positive" }
+    return Media3FlowGridSize(
+      width = ceil(processingWidth.toDouble() / MEDIA3_FLOW_GRID_STEP).toInt(),
+      height = ceil(processingHeight.toDouble() / MEDIA3_FLOW_GRID_STEP).toInt(),
     )
   }
 
