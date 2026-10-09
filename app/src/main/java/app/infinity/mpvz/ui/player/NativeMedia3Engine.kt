@@ -225,6 +225,18 @@ class NativeMedia3Engine(
       )
     },
   )
+  init {
+    if (enableMedia3Flow) {
+      val diagnostics = _flowDiagnostics.value
+      Log.i(
+        logTag,
+        "media3_flow_route enabled=${diagnostics.enabled} state=${diagnostics.state} " +
+          "reason=${diagnostics.bypassReason ?: "none"} targetFps=${diagnostics.targetFps} " +
+          "deviceGles31Supported=$flowDeviceSupported sinkCreated=${media3FlowSink != null}",
+      )
+    }
+  }
+
   private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
     .setAllowCrossProtocolRedirects(true)
     .setConnectTimeoutMs(15_000)

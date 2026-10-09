@@ -71,6 +71,12 @@ data class Media3FlowDiagnostics(
   val bypassReason: String? = null,
 )
 
+private data class FlowFrameRateSurfacePolicy(
+  val userPreferenceLabel: String,
+  val changeStrategy: Int,
+  val strategyLabel: String,
+)
+
 /**
  * A GPU-backed Media3 sink. Decoder frames arrive on a private SurfaceTexture; source images,
  * motion fields, and interpolated output remain GPU-resident. The bounded queue and cadence guard
@@ -164,6 +170,12 @@ class Media3FlowVideoSink(
   private var gpuTimerQueriesSupported = false
   private var lastMetricsAtNs = 0L
   private var lastTimingLogAtNs = 0L
+  private var lastFlowSummaryLogAtNs = 0L
+  private var lastFlowSummarySignature: String? = null
+  private var lastFrameRateRequestLogSignature: String? = null
+  @Volatile private var outputFrameRateHintFps = 0f
+  @Volatile private var matchContentFrameRatePreferenceLabel = "unknown"
+  @Volatile private var surfaceFrameRateChangeStrategyLabel = "unknown"
   private var glProbeFramesRemaining = 8
   private var traceGlForCurrentInput = false
   private var lastSurfaceTimestampNs = C.TIME_UNSET
@@ -1479,13 +1491,22 @@ class Media3FlowVideoSink(
       } else {
         0f
       }
+      val policy = if (android.os.Build.VERSION.SDK_INT >= 31) {
+        Api31.frameRateSurfacePolicy(appContext)
+      } else {
+        null
+      }
+      outputFrameRateHintFps = frameRate
+      matchContentFrameRatePreferenceLabel = policy?.userPreferenceLabel ?: "unavailable_api30"
+      surfaceFrameRateChangeStrategyLabel = when {
+        frameRate == 0f -> "off"
+        policy != null -> policy.strategyLabel
+        else -> "only_if_seamless_default"
+      }
+      logFrameRateRequest()
       runCatching {
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-          Api31.setFrameRate(
-            surface,
-            frameRate,
-            Api31.userPreferredChangeFrameRateStrategy(appContext),
-          )
+        if (policy != null) {
+          Api31.setFrameRate(surface, frameRate, policy.changeStrategy)
         } else {
           Api30.setFrameRate(surface, frameRate)
         }
@@ -1534,6 +1555,71 @@ class Media3FlowVideoSink(
       bypassReason = reason,
     )
     runCatching { onDiagnostics(diagnostics) }
+    logFlowSummary(diagnostics, nowNs)
+  }
+
+  private fun logFlowSummary(diagnostics: Media3FlowDiagnostics, nowNs: Long) {
+    if (!isDebuggable) return
+    val signature = "${diagnostics.state}|${diagnostics.bypassReason ?: "none"}"
+    val stateChanged = signature != lastFlowSummarySignature
+    val minimumIntervalNs = if (stateChanged) FLOW_STATE_LOG_MIN_INTERVAL_NS else FLOW_SUMMARY_LOG_INTERVAL_NS
+    if (lastFlowSummaryLogAtNs != 0L && nowNs - lastFlowSummaryLogAtNs < minimumIntervalNs) return
+    lastFlowSummaryLogAtNs = nowNs
+    lastFlowSummarySignature = signature
+
+    val inputSize = currentFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
+    val gpuElapsed = when {
+      !gpuTimerQueriesSupported -> "unsupported"
+      diagnostics.motionEstimateGpuMs == null -> "pending"
+      else -> "${formatLogFloat(diagnostics.motionEstimateGpuMs)}ms"
+    }
+    val confidence = diagnostics.confidence?.let { formatLogFloat(it) } ?: "n/a"
+    Log.i(
+      logTag,
+      "flow_summary state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
+        "positionUs=$latestPositionUs speed=${formatLogFloat(playbackSpeed)} " +
+        "sourceFps=${formatLogFloat(diagnostics.sourceFps)} targetFps=${diagnostics.targetFps} " +
+        "eglSwapFps=${formatLogFloat(diagnostics.outputFps)} generatedFps=${formatLogFloat(diagnostics.generatedFps)} " +
+        "generatedTotal=${diagnostics.generatedFrames} dropsTotal=${diagnostics.droppedFrames} " +
+        "missedOutputTicksTotal=${diagnostics.missedOutputTicks} skippedTotal=${diagnostics.skippedFrames} " +
+        "input=$inputSize processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
+        "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
+        "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
+        "motionGpuElapsedMs=$gpuElapsed gpuTimerQueries=${if (gpuTimerQueriesSupported) "supported" else "unsupported"} " +
+        "confidence=$confidence displayReportedHz=${formatLogFloat(displayRefreshRate(appContext))} " +
+        "displayModeInitialHz=${formatLogFloat(displayHz)} surfaceHintFps=${formatLogFloat(outputFrameRateHintFps)} " +
+        "matchContentPreference=$matchContentFrameRatePreferenceLabel " +
+        "surfaceSwitchStrategy=$surfaceFrameRateChangeStrategyLabel " +
+        "media3Strategy=${if (changeFrameRateStrategy == C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF) "off" else "only_if_seamless"}",
+    )
+  }
+
+  private fun logFrameRateRequest() {
+    if (!isDebuggable) return
+    val media3Policy = if (changeFrameRateStrategy == C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF) {
+      "off"
+    } else {
+      "only_if_seamless"
+    }
+    val signature = "$outputFrameRateHintFps|$matchContentFrameRatePreferenceLabel|" +
+      "$surfaceFrameRateChangeStrategyLabel|$running|$media3Policy"
+    if (signature == lastFrameRateRequestLogSignature) return
+    lastFrameRateRequestLogSignature = signature
+    Log.i(
+      logTag,
+      "frame_rate_request hintFps=${formatLogFloat(outputFrameRateHintFps)} targetFps=$targetFps " +
+        "running=$running media3Strategy=$media3Policy " +
+        "matchContentPreference=$matchContentFrameRatePreferenceLabel " +
+        "surfaceSwitchStrategy=$surfaceFrameRateChangeStrategyLabel " +
+        "initialDisplayHz=${formatLogFloat(displayHz)}",
+    )
+  }
+
+  private fun formatLogFloat(value: Float): String =
+    if (value.isFinite()) {
+      String.format(java.util.Locale.US, "%.2f", value)
+    } else {
+      "n/a"
   }
 
   private fun logTimingTrace(
@@ -1626,6 +1712,8 @@ class Media3FlowVideoSink(
     private const val OUTPUT_RATE_WINDOW = 31
     private const val ANALYSIS_DEADLINE_RESERVE = 0.85f
     private const val METRICS_INTERVAL_NS = 500_000_000L
+    private const val FLOW_SUMMARY_LOG_INTERVAL_NS = 5_000_000_000L
+    private const val FLOW_STATE_LOG_MIN_INTERVAL_NS = 1_000_000_000L
     private const val GL_INIT_TIMEOUT_MS = 5_000L
     private const val MAX_GPU_TIMER_QUERIES = 3
     private const val GL_TIME_ELAPSED_EXT = 0x88BF
@@ -1902,13 +1990,29 @@ class Media3FlowVideoSink(
     }
 
     @JvmStatic
-    fun userPreferredChangeFrameRateStrategy(context: Context): Int = runCatching {
-      val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
-        ?: return@runCatching Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
-      Media3FlowFrameRatePolicy.surfaceChangeStrategy(
-        displayManager.getMatchContentFrameRateUserPreference(),
+    fun frameRateSurfacePolicy(context: Context): FlowFrameRateSurfacePolicy {
+      val preference = runCatching {
+        val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+          ?: return@runCatching DisplayManager.MATCH_CONTENT_FRAMERATE_UNKNOWN
+        displayManager.getMatchContentFrameRateUserPreference()
+      }.getOrDefault(DisplayManager.MATCH_CONTENT_FRAMERATE_UNKNOWN)
+      val preferenceLabel = when (preference) {
+        DisplayManager.MATCH_CONTENT_FRAMERATE_ALWAYS -> "always"
+        DisplayManager.MATCH_CONTENT_FRAMERATE_NEVER -> "never"
+        DisplayManager.MATCH_CONTENT_FRAMERATE_SEAMLESSS_ONLY -> "seamless_only"
+        else -> "unknown:$preference"
+      }
+      val changeStrategy = Media3FlowFrameRatePolicy.surfaceChangeStrategy(preference)
+      return FlowFrameRateSurfacePolicy(
+        userPreferenceLabel = preferenceLabel,
+        changeStrategy = changeStrategy,
+        strategyLabel = if (preference == DisplayManager.MATCH_CONTENT_FRAMERATE_ALWAYS) {
+          "always"
+        } else {
+          "only_if_seamless"
+        },
       )
-    }.getOrDefault(Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS)
+    }
   }
 
   private fun displayRefreshRate(context: Context): Float = runCatching {
