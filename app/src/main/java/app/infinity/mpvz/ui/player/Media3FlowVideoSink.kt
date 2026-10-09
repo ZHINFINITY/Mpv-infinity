@@ -2320,6 +2320,12 @@ class Media3FlowVideoSink(
       shared uint coverageClass[64];
       shared uint interframeChangedClass[64];
       const float MAX_MATCH_ERROR = 0.34;
+      // Preserve the visually clean baseline calibration; bidirectional confidence and
+      // the bounds/edge guards below remain stricter than that baseline.
+      const float CYCLE_ERROR_START = 1.0;
+      const float CYCLE_ERROR_END = 6.0;
+      const float MATCH_ERROR_START = 0.04;
+      const float MATCH_ERROR_END = 0.35;
       const float STATIC_VECTOR_PROBE_THRESHOLD = 0.5;
       const float INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = ${INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD};
       const float STATIC_BLEND_LUMA_DELTA_THRESHOLD = ${STATIC_BLEND_LUMA_DELTA_THRESHOLD};
@@ -2366,8 +2372,8 @@ class Media3FlowVideoSink(
         return step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
       }
       float flowReliability(vec4 flow, float cycleError, float valid) {
-        float consistency = 1.0 - smoothstep(0.75, 4.5, cycleError);
-        float matchQuality = 1.0 - smoothstep(0.06, MAX_MATCH_ERROR, flow.z);
+        float consistency = 1.0 - smoothstep(CYCLE_ERROR_START, CYCLE_ERROR_END, cycleError);
+        float matchQuality = 1.0 - smoothstep(MATCH_ERROR_START, MATCH_ERROR_END, flow.z);
         return consistency * matchQuality * valid;
       }
       void main() {
