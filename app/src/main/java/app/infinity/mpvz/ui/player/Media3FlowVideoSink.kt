@@ -1891,6 +1891,9 @@ class Media3FlowVideoSink(
       uniform int uStep;
       uniform float uGridAnchorOffset;
       uniform float uAlpha;
+      const float MAX_MATCH_ERROR = 0.34;
+      const float FLOW_EDGE_START_SQUARED = 9.0;
+      const float FLOW_EDGE_END_SQUARED = 81.0;
       vec4 flowImageAt(ivec2 p, int direction) {
         return direction == 0 ? imageLoad(uForward, p) : imageLoad(uBackward, p);
       }
@@ -1900,16 +1903,32 @@ class Media3FlowVideoSink(
         ivec2 a = clamp(ivec2(floor(gridPos)), ivec2(0), uGrid - 1);
         ivec2 b = min(a + ivec2(1), uGrid - 1);
         vec2 t = fract(gridPos);
-        vec4 top = mix(flowImageAt(ivec2(a.x, a.y), direction), flowImageAt(ivec2(b.x, a.y), direction), t.x);
-        vec4 bottom = mix(flowImageAt(ivec2(a.x, b.y), direction), flowImageAt(ivec2(b.x, b.y), direction), t.x);
-        return mix(top, bottom, t.y);
+        vec4 flow00 = flowImageAt(ivec2(a.x, a.y), direction);
+        vec4 flow10 = flowImageAt(ivec2(b.x, a.y), direction);
+        vec4 flow01 = flowImageAt(ivec2(a.x, b.y), direction);
+        vec4 flow11 = flowImageAt(ivec2(b.x, b.y), direction);
+        vec4 top = mix(flow00, flow10, t.x);
+        vec4 bottom = mix(flow01, flow11, t.x);
+        vec4 interpolated = mix(top, bottom, t.y);
+        float horizontalTop = dot(flow10.xy - flow00.xy, flow10.xy - flow00.xy);
+        float horizontalBottom = dot(flow11.xy - flow01.xy, flow11.xy - flow01.xy);
+        float verticalLeft = dot(flow01.xy - flow00.xy, flow01.xy - flow00.xy);
+        float verticalRight = dot(flow11.xy - flow10.xy, flow11.xy - flow10.xy);
+        float localMotionDisagreementSq = max(
+          max(horizontalTop, horizontalBottom),
+          max(verticalLeft, verticalRight)
+        );
+        float edgePenalty = smoothstep(FLOW_EDGE_START_SQUARED, FLOW_EDGE_END_SQUARED, localMotionDisagreementSq);
+        // Treat a blend across competing motion layers as unreliable; synthesis will prefer one source.
+        interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);
+        return interpolated;
       }
       float inBounds(vec2 uv) {
         return step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
       }
       float flowReliability(vec4 flow, float cycleError, float valid) {
         float consistency = 1.0 - smoothstep(0.75, 4.5, cycleError);
-        float matchQuality = 1.0 - smoothstep(0.06, 0.34, flow.z);
+        float matchQuality = 1.0 - smoothstep(0.06, MAX_MATCH_ERROR, flow.z);
         float textureConfidence = smoothstep(0.003, 0.03, flow.w);
         return consistency * matchQuality * textureConfidence * valid;
       }
@@ -1943,6 +1962,8 @@ class Media3FlowVideoSink(
         vec2 uv1 = clamp(uv1Raw, vec2(0.0), vec2(1.0));
         vec4 c0 = texture(uFrame0, uv0);
         vec4 c1 = texture(uFrame1, uv1);
+        forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);
+        backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);
         float confidence0 = flowReliability(forwardAtSource, cycleError, valid0);
         float confidence1 = flowReliability(backwardAtTarget, cycleError, valid1);
         if (max(confidence0, confidence1) < 0.12) {

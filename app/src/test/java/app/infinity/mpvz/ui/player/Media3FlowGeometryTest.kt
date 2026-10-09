@@ -37,6 +37,17 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun synthesisRejectsBlendedVectorsAcrossLocalMotionDiscontinuities() {
+    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+    assertTrue(shader.contains("float localMotionDisagreementSq = max("))
+    assertTrue(shader.contains("smoothstep(FLOW_EDGE_START_SQUARED, FLOW_EDGE_END_SQUARED, localMotionDisagreementSq)"))
+    assertTrue(shader.contains("interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);"))
+    assertTrue(shader.contains("forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);"))
+    assertTrue(shader.contains("backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);"))
+    assertTrue(shader.contains("float matchQuality = 1.0 - smoothstep(0.06, MAX_MATCH_ERROR, flow.z);"))
+  }
+
+  @Test
   fun synthesisSubtractsBackwardFlowWhenSamplingFrameOne() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;"))
