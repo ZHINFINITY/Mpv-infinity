@@ -584,7 +584,15 @@ class Media3FlowVideoSink(
   private fun releaseNextDecoderFrame(clock: PlaybackClock, speed: Float) {
     val nowNs = System.nanoTime()
     val pendingAndToken = synchronized(inputLock) {
-      if (inputInFlight || pendingInput.isEmpty() || disposed) return
+      // Backpressure before Media3 releases into SurfaceTexture: a released frame cannot be
+      // recovered if all owned GPU frame slots are still retaining earlier PTS values.
+      if (disposed || pendingInput.isEmpty() ||
+        !Media3FlowCadence.canReleaseNextDecoderFrame(
+          storedFrameCount = storedFrameCount,
+          maxStoredFrames = MAX_STORED_FRAMES,
+          inputInFlight = inputInFlight,
+        )
+      ) return
       val pending = pendingInput.first()
       val releaseTimestampNs = Media3FlowCadence.inputReleaseTimeNs(
         framePtsUs = pending.ptsUs,
@@ -606,8 +614,10 @@ class Media3FlowVideoSink(
       pending.handler.render(token.releaseTimestampNs)
     } catch (error: RuntimeException) {
       synchronized(inputLock) {
-        if (expectedTexturePts.isNotEmpty()) expectedTexturePts.removeLast()
-        inputInFlight = false
+        if (expectedTexturePts.isNotEmpty()) {
+          expectedTexturePts.removeLast()
+          inputInFlight = false
+        }
       }
       droppedFrames.incrementAndGet()
       dispatchListener { it.onFrameDropped() }
@@ -648,7 +658,6 @@ class Media3FlowVideoSink(
       texture.getTransformMatrix(transform)
       val token = synchronized(inputLock) {
         val value = if (expectedTexturePts.isEmpty()) null else expectedTexturePts.removeFirst()
-        inputInFlight = false
         value
       }
       tokenResolved = true
@@ -678,6 +687,9 @@ class Media3FlowVideoSink(
       Log.w(logTag, "Input frame capture failed; dropping this frame", error)
       reportError(error)
     } finally {
+      synchronized(inputLock) {
+        inputInFlight = false
+      }
       traceGlForCurrentInput = false
     }
   }

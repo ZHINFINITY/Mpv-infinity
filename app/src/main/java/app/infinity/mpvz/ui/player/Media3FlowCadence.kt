@@ -67,6 +67,14 @@ internal object Media3FlowCadence {
   fun skippedTicks(previousTick: Long, nextTick: Long): Long =
     if (previousTick < 0L || nextTick <= previousTick + 1L) 0L else nextTick - previousTick - 1L
 
+  /** Keeps a decoder frame queued until the sink can retain it in an owned GPU frame slot. */
+  fun canReleaseNextDecoderFrame(
+    storedFrameCount: Int,
+    maxStoredFrames: Int,
+    inputInFlight: Boolean,
+  ): Boolean =
+    !inputInFlight && maxStoredFrames > 0 && storedFrameCount in 0 until maxStoredFrames
+
   /**
    * Maps an adjusted media PTS onto the current monotonic clock. Frames too far ahead stay in the
    * bounded input queue instead of being released to MediaCodec immediately.

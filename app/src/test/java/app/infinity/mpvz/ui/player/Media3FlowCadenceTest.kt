@@ -39,6 +39,7 @@ class Media3FlowCadenceTest {
       listOf(0L, 41_667L, 83_334L, 124_999L, 1_000L, 166_667L),
     )
     assertEquals(24f, fps, 0.05f)
+    assertEquals(12f, Media3FlowCadence.estimateSourceFps(listOf(0L, 83_333L, 166_667L)), 0.05f)
     assertEquals(0f, Media3FlowCadence.estimateSourceFps(listOf(5L, 5L, 4L)), 0f)
   }
 
@@ -65,6 +66,16 @@ class Media3FlowCadenceTest {
     assertEquals(0L, Media3FlowCadence.skippedTicks(-1L, 0L))
     assertEquals(0L, Media3FlowCadence.skippedTicks(4L, 5L))
     assertEquals(2L, Media3FlowCadence.skippedTicks(4L, 7L))
+  }
+
+  @Test
+  fun decoderInputWaitsForAFreeGpuFrameSlotAndCompletedSurfaceCapture() {
+    assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(0, 3, inputInFlight = false))
+    assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(2, 3, inputInFlight = false))
+    assertFalse(Media3FlowCadence.canReleaseNextDecoderFrame(3, 3, inputInFlight = false))
+    assertFalse(Media3FlowCadence.canReleaseNextDecoderFrame(2, 3, inputInFlight = true))
+    assertFalse(Media3FlowCadence.canReleaseNextDecoderFrame(4, 3, inputInFlight = false))
+    assertFalse(Media3FlowCadence.canReleaseNextDecoderFrame(0, 0, inputInFlight = false))
   }
 
   @Test
