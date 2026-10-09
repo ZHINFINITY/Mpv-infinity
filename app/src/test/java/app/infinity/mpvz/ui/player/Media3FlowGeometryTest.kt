@@ -16,8 +16,15 @@ class Media3FlowGeometryTest {
   }
 
   @Test
-  fun motionGridKeepsSixPixelVectorSpacingAtTheRaisedAnalysisCap() {
-    assertEquals(Media3FlowGridSize(107, 60), Media3FlowGeometry.motionGridSize(640, 360))
+  fun motionGridUsesOnlyValidRegularBlockOriginsAtDivisibleAndNonDivisibleSizes() {
+    val nonDivisibleGrid = Media3FlowGeometry.motionGridSize(640, 360)
+    assertEquals(Media3FlowGridSize(106, 59), nonDivisibleGrid)
+    assertEquals(630, (nonDivisibleGrid.width - 1) * MEDIA3_FLOW_GRID_STEP)
+    assertEquals(348, (nonDivisibleGrid.height - 1) * MEDIA3_FLOW_GRID_STEP)
+    assertTrue((nonDivisibleGrid.width - 1) * MEDIA3_FLOW_GRID_STEP <= 640 - MEDIA3_FLOW_BLOCK_SIZE)
+    assertTrue((nonDivisibleGrid.height - 1) * MEDIA3_FLOW_GRID_STEP <= 360 - MEDIA3_FLOW_BLOCK_SIZE)
+
+    assertEquals(Media3FlowGridSize(105, 60), Media3FlowGeometry.motionGridSize(632, 362))
   }
 
   @Test

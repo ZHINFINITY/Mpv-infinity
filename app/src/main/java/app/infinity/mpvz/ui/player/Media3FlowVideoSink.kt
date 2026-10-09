@@ -846,7 +846,7 @@ class Media3FlowVideoSink(
       checkGlError("motion uniform uSize", frameProbeOnly = true)
       val blockLocation = GLES31.glGetUniformLocation(flowProgram, "uBlock")
       checkGlError("motion lookup uBlock", frameProbeOnly = true)
-      GLES31.glUniform1i(blockLocation, FLOW_BLOCK_SIZE)
+      GLES31.glUniform1i(blockLocation, MEDIA3_FLOW_BLOCK_SIZE)
       checkGlError("motion uniform uBlock", frameProbeOnly = true)
       val stepLocation = GLES31.glGetUniformLocation(flowProgram, "uStep")
       checkGlError("motion lookup uStep", frameProbeOnly = true)
@@ -1606,7 +1606,6 @@ class Media3FlowVideoSink(
     private const val MAX_MOTION_PAIRS = 2
     private const val MAX_QUEUED_FRAMES = 5
     private const val MAX_INPUT_RELEASE_AHEAD_US = 100_000L
-    private const val FLOW_BLOCK_SIZE = 8
     private const val FLOW_SEARCH_RADIUS = 24
     private const val HISTORY_SIZE = 24
     private const val OUTPUT_RATE_WINDOW = 31

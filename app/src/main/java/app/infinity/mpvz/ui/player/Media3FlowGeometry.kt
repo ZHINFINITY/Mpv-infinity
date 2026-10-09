@@ -1,6 +1,5 @@
 package app.infinity.mpvz.ui.player
 
-import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -9,6 +8,7 @@ import kotlin.math.roundToInt
 internal data class Media3FlowMotionSize(val width: Int, val height: Int)
 
 internal const val MEDIA3_FLOW_GRID_STEP = 6
+internal const val MEDIA3_FLOW_BLOCK_SIZE = 8
 
 internal data class Media3FlowGridSize(val width: Int, val height: Int)
 
@@ -35,10 +35,12 @@ internal object Media3FlowGeometry {
   }
 
   fun motionGridSize(processingWidth: Int, processingHeight: Int): Media3FlowGridSize {
-    require(processingWidth > 0 && processingHeight > 0) { "Processing dimensions must be positive" }
+    require(processingWidth >= MEDIA3_FLOW_BLOCK_SIZE && processingHeight >= MEDIA3_FLOW_BLOCK_SIZE) {
+      "Processing dimensions must fit a motion block"
+    }
     return Media3FlowGridSize(
-      width = ceil(processingWidth.toDouble() / MEDIA3_FLOW_GRID_STEP).toInt(),
-      height = ceil(processingHeight.toDouble() / MEDIA3_FLOW_GRID_STEP).toInt(),
+      width = (processingWidth - MEDIA3_FLOW_BLOCK_SIZE) / MEDIA3_FLOW_GRID_STEP + 1,
+      height = (processingHeight - MEDIA3_FLOW_BLOCK_SIZE) / MEDIA3_FLOW_GRID_STEP + 1,
     )
   }
 
