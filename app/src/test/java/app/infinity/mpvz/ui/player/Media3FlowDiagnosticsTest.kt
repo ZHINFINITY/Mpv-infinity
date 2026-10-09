@@ -31,8 +31,24 @@ class Media3FlowDiagnosticsTest {
   fun coverageReportsWarpFallbackAndStaticBlendCountsAndPercentages() {
     val coverage = Media3FlowDiagnosticMath.summarizeCoverage(
       listOf(
-        FlowCoverageSample(motionWarpPixels = 80L, sourceFrameFallbackPixels = 20L, staticBlendPixels = 0L),
-        FlowCoverageSample(motionWarpPixels = 40L, sourceFrameFallbackPixels = 20L, staticBlendPixels = 40L),
+        FlowCoverageSample(
+          motionWarpPixels = 80L,
+          sourceFrameFallbackPixels = 20L,
+          staticBlendPixels = 0L,
+          staticVectorLikelyMotionSamples = 15L,
+          staticVectorUncertainMotionSamples = 5L,
+          staticVectorNearZeroConfidentSamples = 15L,
+          staticVectorNearZeroUncertainSamples = 5L,
+        ),
+        FlowCoverageSample(
+          motionWarpPixels = 40L,
+          sourceFrameFallbackPixels = 20L,
+          staticBlendPixels = 40L,
+          staticVectorLikelyMotionSamples = 5L,
+          staticVectorUncertainMotionSamples = 10L,
+          staticVectorNearZeroConfidentSamples = 2L,
+          staticVectorNearZeroUncertainSamples = 3L,
+        ),
       ),
     )
 
@@ -44,5 +60,14 @@ class Media3FlowDiagnosticsTest {
     assertEquals(60f, coverage.motionWarpPercent!!, 0.001f)
     assertEquals(20f, coverage.sourceFrameFallbackPercent!!, 0.001f)
     assertEquals(20f, coverage.staticBlendPercent!!, 0.001f)
+    assertEquals(60L, coverage.staticVectorProbeSamples)
+    assertEquals(20L, coverage.staticVectorLikelyMotionSamples)
+    assertEquals(15L, coverage.staticVectorUncertainMotionSamples)
+    assertEquals(17L, coverage.staticVectorNearZeroConfidentSamples)
+    assertEquals(8L, coverage.staticVectorNearZeroUncertainSamples)
+    assertEquals(100f / 3f, coverage.staticVectorLikelyMotionPercent!!, 0.001f)
+    assertEquals(25f, coverage.staticVectorUncertainMotionPercent!!, 0.001f)
+    assertEquals(28.3333f, coverage.staticVectorNearZeroConfidentPercent!!, 0.001f)
+    assertEquals(13.3333f, coverage.staticVectorNearZeroUncertainPercent!!, 0.001f)
   }
 }

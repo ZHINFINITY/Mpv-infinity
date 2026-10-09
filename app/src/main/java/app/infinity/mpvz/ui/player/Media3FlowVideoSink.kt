@@ -1075,18 +1075,42 @@ class Media3FlowVideoSink(
         var warped = 0L
         var sourceFallback = 0L
         var staticBlend = 0L
+        var staticVectorLikelyMotion = 0L
+        var staticVectorUncertainMotion = 0L
+        var staticVectorNearZeroConfident = 0L
+        var staticVectorNearZeroUncertain = 0L
         for (group in 0 until slot.groupCount) {
           val offset = group * COVERAGE_BYTES_PER_GROUP
           warped += data.getInt(offset).toLong() and 0xFFFF_FFFFL
           sourceFallback += data.getInt(offset + Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
           staticBlend += data.getInt(offset + 2 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
+          when (data.getInt(offset + 3 * Int.SIZE_BYTES)) {
+            1 -> staticVectorLikelyMotion++
+            2 -> staticVectorUncertainMotion++
+            3 -> staticVectorNearZeroConfident++
+            4 -> staticVectorNearZeroUncertain++
+          }
         }
+        val staticVectorProbeSamples = staticVectorLikelyMotion + staticVectorUncertainMotion +
+          staticVectorNearZeroConfident + staticVectorNearZeroUncertain
         val unmapped = runCatching { GLES31.glUnmapBuffer(GLES31.GL_SHADER_STORAGE_BUFFER) }.getOrDefault(false)
-        if (!unmapped || warped + sourceFallback + staticBlend != slot.expectedPixelCount) {
+        if (!unmapped || warped + sourceFallback + staticBlend != slot.expectedPixelCount ||
+          staticVectorProbeSamples > slot.groupCount.toLong() || staticVectorProbeSamples > staticBlend
+        ) {
           invalidCoverageSamples++
           continue
         }
-        coverageSamples.addLast(FlowCoverageSample(warped, sourceFallback, staticBlend))
+        coverageSamples.addLast(
+          FlowCoverageSample(
+            motionWarpPixels = warped,
+            sourceFrameFallbackPixels = sourceFallback,
+            staticBlendPixels = staticBlend,
+            staticVectorLikelyMotionSamples = staticVectorLikelyMotion,
+            staticVectorUncertainMotionSamples = staticVectorUncertainMotion,
+            staticVectorNearZeroConfidentSamples = staticVectorNearZeroConfident,
+            staticVectorNearZeroUncertainSamples = staticVectorNearZeroUncertain,
+          ),
+        )
         while (coverageSamples.size > COVERAGE_HISTORY_SIZE) coverageSamples.removeFirst()
       } finally {
         GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, 0)
@@ -1933,7 +1957,14 @@ class Media3FlowVideoSink(
     val coverageSummary = "samples=${coverage.samples} warp=${coverage.motionWarpPixels}(${formatFlowPercent(coverage.motionWarpPercent)}%) " +
       "sourceFallback=${coverage.sourceFrameFallbackPixels}(${formatFlowPercent(coverage.sourceFrameFallbackPercent)}%) " +
       "staticBlend=${coverage.staticBlendPixels}(${formatFlowPercent(coverage.staticBlendPercent)}%) " +
-      "pixels=${coverage.sampledPixels} skipped=${coverage.skippedSamples} invalid=${coverage.invalidSamples}"
+      "pixels=${coverage.sampledPixels} skipped=${coverage.skippedSamples} invalid=${coverage.invalidSamples} " +
+      "staticVectorProbe=${coverage.staticVectorProbeSamples}(magnitudeCutoffProcessingPx=0.5,reliabilityCutoff=0.15) " +
+      "likely=${coverage.staticVectorLikelyMotionSamples}(${formatFlowPercent(coverage.staticVectorLikelyMotionPercent)}%) " +
+      "uncertain=${coverage.staticVectorUncertainMotionSamples}(${formatFlowPercent(coverage.staticVectorUncertainMotionPercent)}%) " +
+      "nearZeroConfident=${coverage.staticVectorNearZeroConfidentSamples} " +
+      "(${formatFlowPercent(coverage.staticVectorNearZeroConfidentPercent)}%) " +
+      "nearZeroUncertain=${coverage.staticVectorNearZeroUncertainSamples} " +
+      "(${formatFlowPercent(coverage.staticVectorNearZeroUncertainPercent)}%)"
     Log.i(
       logTag,
       "flow_summary state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
@@ -2260,6 +2291,7 @@ class Media3FlowVideoSink(
       layout(std430, binding = 3) writeonly buffer FlowCoverageBuffer { uvec4 coverage[]; };
       shared uint coverageClass[64];
       const float MAX_MATCH_ERROR = 0.34;
+      const float STATIC_VECTOR_PROBE_THRESHOLD = 0.5;
       const float FLOW_EDGE_START_SQUARED = 9.0;
       const float FLOW_EDGE_END_SQUARED = 81.0;
       vec4 flowImageAt(ivec2 p, int direction) {
@@ -2310,6 +2342,7 @@ class Media3FlowVideoSink(
       void main() {
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);
         uint pixelClass = 0u;
+        uint staticVectorClass = 0u;
         if (all(lessThan(p, uSize))) {
           vec2 point = vec2(p) + vec2(0.5);
           vec2 uv = point / vec2(uSize);
@@ -2320,6 +2353,24 @@ class Media3FlowVideoSink(
           if (staticChange < 0.018) {
             imageStore(uOutput, p, mix(source0, source1, uAlpha));
             pixelClass = 3u;
+            // Sample the existing vectors at one pixel per workgroup; this probe never writes color.
+            if (uCoverageEnabled != 0 && gl_LocalInvocationIndex == 0u) {
+              vec4 staticForward = flowAt(motionPoint, 0);
+              vec4 staticBackward = flowAt(motionPoint, 1);
+              float staticCycleError = length(staticForward.xy + staticBackward.xy);
+              float staticConfidence = min(
+                flowReliability(staticForward, staticCycleError, 1.0),
+                flowReliability(staticBackward, staticCycleError, 1.0)
+              );
+              float staticVectorMagnitude = max(length(staticForward.xy), length(staticBackward.xy));
+              if (staticVectorMagnitude <= STATIC_VECTOR_PROBE_THRESHOLD) {
+                staticVectorClass = staticConfidence >= 0.15 ? 3u : 4u;
+              } else if (staticConfidence >= 0.15) {
+                staticVectorClass = 1u;
+              } else {
+                staticVectorClass = 2u;
+              }
+            }
           } else {
             vec4 forwardAtMid = flowAt(motionPoint, 0);
             vec4 backwardAtMid = flowAt(motionPoint, 1);
@@ -2364,6 +2415,7 @@ class Media3FlowVideoSink(
               else if (coverageClass[index] == 3u) counts.z++;
             }
             uint groupIndex = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+            counts.w = staticVectorClass;
             coverage[groupIndex] = counts;
           }
         }

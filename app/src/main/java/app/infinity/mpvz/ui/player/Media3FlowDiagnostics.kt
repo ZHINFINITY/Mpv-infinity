@@ -45,6 +45,20 @@ data class FlowPixelCoverageStats(
   val motionWarpPercent: Float? = null,
   val sourceFrameFallbackPercent: Float? = null,
   val staticBlendPercent: Float? = null,
+  /** One vector probe is taken at most per 8x8 output workgroup on sampled frames. */
+  val staticVectorProbeSamples: Long = 0L,
+  /** Magnitude >0.5 processing pixels and bidirectional reliability >=0.15. */
+  val staticVectorLikelyMotionSamples: Long = 0L,
+  /** Magnitude >0.5 processing pixels and bidirectional reliability <0.15. */
+  val staticVectorUncertainMotionSamples: Long = 0L,
+  /** Magnitude <=0.5 processing pixels and bidirectional reliability >=0.15. */
+  val staticVectorNearZeroConfidentSamples: Long = 0L,
+  /** Magnitude <=0.5 processing pixels and bidirectional reliability <0.15. */
+  val staticVectorNearZeroUncertainSamples: Long = 0L,
+  val staticVectorLikelyMotionPercent: Float? = null,
+  val staticVectorUncertainMotionPercent: Float? = null,
+  val staticVectorNearZeroConfidentPercent: Float? = null,
+  val staticVectorNearZeroUncertainPercent: Float? = null,
   val skippedSamples: Long = 0L,
   val invalidSamples: Long = 0L,
 )
@@ -53,6 +67,10 @@ internal data class FlowCoverageSample(
   val motionWarpPixels: Long,
   val sourceFrameFallbackPixels: Long,
   val staticBlendPixels: Long,
+  val staticVectorLikelyMotionSamples: Long = 0L,
+  val staticVectorUncertainMotionSamples: Long = 0L,
+  val staticVectorNearZeroConfidentSamples: Long = 0L,
+  val staticVectorNearZeroUncertainSamples: Long = 0L,
 )
 
 internal object Media3FlowDiagnosticMath {
@@ -74,9 +92,20 @@ internal object Media3FlowDiagnosticMath {
     val warped = samples.sumOf { it.motionWarpPixels.coerceAtLeast(0L) }
     val fallback = samples.sumOf { it.sourceFrameFallbackPixels.coerceAtLeast(0L) }
     val staticBlend = samples.sumOf { it.staticBlendPixels.coerceAtLeast(0L) }
+    val staticVectorLikelyMotion = samples.sumOf { it.staticVectorLikelyMotionSamples.coerceAtLeast(0L) }
+    val staticVectorUncertainMotion = samples.sumOf { it.staticVectorUncertainMotionSamples.coerceAtLeast(0L) }
+    val staticVectorNearZeroConfident = samples.sumOf { it.staticVectorNearZeroConfidentSamples.coerceAtLeast(0L) }
+    val staticVectorNearZeroUncertain = samples.sumOf { it.staticVectorNearZeroUncertainSamples.coerceAtLeast(0L) }
+    val staticVectorProbeSamples = staticVectorLikelyMotion + staticVectorUncertainMotion +
+      staticVectorNearZeroConfident + staticVectorNearZeroUncertain
     val total = warped + fallback + staticBlend
     if (total <= 0L) return FlowPixelCoverageStats(samples = samples.size)
     fun percentage(count: Long): Float = (count.toDouble() * 100.0 / total).toFloat()
+    fun staticProbePercentage(count: Long): Float? = if (staticVectorProbeSamples > 0L) {
+      (count.toDouble() * 100.0 / staticVectorProbeSamples).toFloat()
+    } else {
+      null
+    }
     return FlowPixelCoverageStats(
       samples = samples.size,
       sampledPixels = total,
@@ -86,6 +115,15 @@ internal object Media3FlowDiagnosticMath {
       motionWarpPercent = percentage(warped),
       sourceFrameFallbackPercent = percentage(fallback),
       staticBlendPercent = percentage(staticBlend),
+      staticVectorProbeSamples = staticVectorProbeSamples,
+      staticVectorLikelyMotionSamples = staticVectorLikelyMotion,
+      staticVectorUncertainMotionSamples = staticVectorUncertainMotion,
+      staticVectorNearZeroConfidentSamples = staticVectorNearZeroConfident,
+      staticVectorNearZeroUncertainSamples = staticVectorNearZeroUncertain,
+      staticVectorLikelyMotionPercent = staticProbePercentage(staticVectorLikelyMotion),
+      staticVectorUncertainMotionPercent = staticProbePercentage(staticVectorUncertainMotion),
+      staticVectorNearZeroConfidentPercent = staticProbePercentage(staticVectorNearZeroConfident),
+      staticVectorNearZeroUncertainPercent = staticProbePercentage(staticVectorNearZeroUncertain),
     )
   }
 }

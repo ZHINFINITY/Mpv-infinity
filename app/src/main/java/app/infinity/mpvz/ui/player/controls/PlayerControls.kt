@@ -2492,6 +2492,20 @@ private fun NativeStatsPageOverlay(
               style = MaterialTheme.typography.bodySmall,
               color = Color.White,
             )
+            Text(
+              "Static-path vector probe (1/64 image positions; n=${flowCoverage.staticVectorProbeSamples}; " +
+                "motion cutoff 0.5 processing px; confidence cutoff 0.15): likely motion/confident " +
+                "${flowCoverage.staticVectorLikelyMotionSamples} " +
+                "(${formatFlowPercent(flowCoverage.staticVectorLikelyMotionPercent)}) · uncertain " +
+                "${flowCoverage.staticVectorUncertainMotionSamples} " +
+                "(${formatFlowPercent(flowCoverage.staticVectorUncertainMotionPercent)}) · near-zero/confident " +
+                "${flowCoverage.staticVectorNearZeroConfidentSamples} " +
+                "(${formatFlowPercent(flowCoverage.staticVectorNearZeroConfidentPercent)}) · near-zero/uncertain " +
+                "${flowCoverage.staticVectorNearZeroUncertainSamples} " +
+                "(${formatFlowPercent(flowCoverage.staticVectorNearZeroUncertainPercent)})",
+              style = MaterialTheme.typography.bodySmall,
+              color = Color.White,
+            )
           }
           Text(
             "Position: $position / $duration · Buffer ahead: $bufferAhead",
