@@ -1919,8 +1919,16 @@ class Media3FlowVideoSink(
           max(verticalLeft, verticalRight)
         );
         float edgePenalty = smoothstep(FLOW_EDGE_START_SQUARED, FLOW_EDGE_END_SQUARED, localMotionDisagreementSq);
-        // Treat a blend across competing motion layers as unreliable; synthesis will prefer one source.
-        interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);
+        // Do not average foreground and background vectors across a motion boundary.
+        if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {
+          ivec2 nearestCell = ivec2(t.x < 0.5 ? a.x : b.x, t.y < 0.5 ? a.y : b.y);
+          vec4 nearestFlow = flowImageAt(nearestCell, direction);
+          interpolated.xy = nearestFlow.xy;
+          interpolated.z = max(nearestFlow.z, MAX_MATCH_ERROR * edgePenalty);
+          interpolated.w = nearestFlow.w;
+        } else {
+          interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);
+        }
         return interpolated;
       }
       float inBounds(vec2 uv) {
