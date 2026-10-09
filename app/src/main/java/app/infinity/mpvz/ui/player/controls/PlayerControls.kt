@@ -2432,7 +2432,8 @@ private fun NativeStatsPageOverlay(
             Text(
               "ME submit ${String.format(java.util.Locale.US, "%.2f", flow.motionEstimateSubmitMs)} ms · " +
                 "ME GPU elapsed $flowGpuTime · " +
-                "confidence $flowConfidence · drop ${flow.droppedFrames} · skip ${flow.skippedFrames} · " +
+                "confidence $flowConfidence · drops ${flow.droppedFrames} total · " +
+                "missed output ticks ${flow.missedOutputTicks} · skip ${flow.skippedFrames} · " +
                 "motion grid ${flow.motionGridWidth}×${flow.motionGridHeight} · " +
                 "processing ${flow.processingWidth}×${flow.processingHeight}" +
                 (flow.bypassReason?.let { " · $it" } ?: ""),

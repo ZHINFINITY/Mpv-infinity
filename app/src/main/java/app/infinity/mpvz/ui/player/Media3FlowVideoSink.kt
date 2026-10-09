@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
+import android.hardware.display.DisplayManager
 import android.opengl.EGL14
 import android.opengl.EGLExt
 import android.opengl.GLES11Ext
@@ -53,6 +54,7 @@ data class Media3FlowDiagnostics(
   val targetFps: Int = 0,
   val generatedFrames: Long = 0L,
   val droppedFrames: Long = 0L,
+  val missedOutputTicks: Long = 0L,
   val skippedFrames: Long = 0L,
   /** CPU time spent submitting motion-estimation commands, not a GPU-completion timer. */
   val motionEstimateSubmitMs: Float = 0f,
@@ -154,6 +156,7 @@ class Media3FlowVideoSink(
   @Volatile private var firstFrameReported = false
   private var generatedFrames = 0L
   private val droppedFrames = AtomicLong(0L)
+  private val missedOutputTicks = AtomicLong(0L)
   private var skippedFrames = 0L
   private var lastMotionSubmitMs = 0f
   private var lastMotionGpuMs: Float? = null
@@ -925,6 +928,7 @@ class Media3FlowVideoSink(
       val missed = Media3FlowCadence.skippedTicks(lastOutputTick, tick)
       if (missed > 0L) {
         droppedFrames.addAndGet(missed)
+        missedOutputTicks.addAndGet(missed)
         lastBypassReason = "output_deadline_missed"
       }
     }
@@ -1475,7 +1479,17 @@ class Media3FlowVideoSink(
       } else {
         0f
       }
-      runCatching { Api30.setFrameRate(surface, frameRate) }
+      runCatching {
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+          Api31.setFrameRate(
+            surface,
+            frameRate,
+            Api31.userPreferredChangeFrameRateStrategy(appContext),
+          )
+        } else {
+          Api30.setFrameRate(surface, frameRate)
+        }
+      }
         .onFailure { Log.d(logTag, "Unable to set display frame-rate hint", it) }
     }
   }
@@ -1507,6 +1521,7 @@ class Media3FlowVideoSink(
       targetFps = targetFps,
       generatedFrames = generatedFrames,
       droppedFrames = droppedFrames.get(),
+      missedOutputTicks = missedOutputTicks.get(),
       skippedFrames = skippedFrames,
       motionEstimateSubmitMs = lastMotionSubmitMs,
       motionEstimateGpuMs = lastMotionGpuMs,
@@ -1872,6 +1887,28 @@ class Media3FlowVideoSink(
       }
       surface.setFrameRate(frameRate, compatibility)
     }
+  }
+
+  @androidx.annotation.RequiresApi(31)
+  private object Api31 {
+    @JvmStatic
+    fun setFrameRate(surface: Surface, frameRate: Float, changeFrameRateStrategy: Int) {
+      val compatibility = if (frameRate == 0f) {
+        Surface.FRAME_RATE_COMPATIBILITY_DEFAULT
+      } else {
+        Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE
+      }
+      surface.setFrameRate(frameRate, compatibility, changeFrameRateStrategy)
+    }
+
+    @JvmStatic
+    fun userPreferredChangeFrameRateStrategy(context: Context): Int = runCatching {
+      val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+        ?: return@runCatching Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS
+      Media3FlowFrameRatePolicy.surfaceChangeStrategy(
+        displayManager.getMatchContentFrameRateUserPreference(),
+      )
+    }.getOrDefault(Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS)
   }
 
   private fun displayRefreshRate(context: Context): Float = runCatching {
