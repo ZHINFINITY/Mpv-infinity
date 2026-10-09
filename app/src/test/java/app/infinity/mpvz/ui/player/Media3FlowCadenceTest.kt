@@ -69,6 +69,13 @@ class Media3FlowCadenceTest {
   }
 
   @Test
+  fun motionEstimateUsesPairGpuTimeWhenAvailableAndSubmitTimeWhilePending() {
+    assertEquals(3f, Media3FlowCadence.motionEstimateMs(3f, null), 0f)
+    assertEquals(7f, Media3FlowCadence.motionEstimateMs(3f, 7f), 0f)
+    assertEquals(3f, Media3FlowCadence.motionEstimateMs(3f, 2f), 0f)
+  }
+
+  @Test
   fun decoderInputWaitsForAFreeGpuFrameSlotAndCompletedSurfaceCapture() {
     assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(0, 3, inputInFlight = false))
     assertTrue(Media3FlowCadence.canReleaseNextDecoderFrame(2, 3, inputInFlight = false))

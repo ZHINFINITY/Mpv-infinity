@@ -1,10 +1,16 @@
 package app.infinity.mpvz.ui.player
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Media3FlowGeometryTest {
+  @Test
+  fun motionSearchKeepsTheKnownGoodBoundedAnalysisRadius() {
+    assertEquals(4, MEDIA3_FLOW_SEARCH_RADIUS)
+  }
+
   @Test
   fun fullHdSourceUsesReducedMotionGrid() {
     assertEquals(Media3FlowMotionSize(480, 270), Media3FlowGeometry.motionSize(1920, 1080, 480))
@@ -49,6 +55,17 @@ class Media3FlowGeometryTest {
     assertTrue(shader.contains("forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);"))
     assertTrue(shader.contains("backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);"))
     assertTrue(shader.contains("float matchQuality = 1.0 - smoothstep(0.06, MAX_MATCH_ERROR, flow.z);"))
+  }
+
+  @Test
+  fun synthesisUsesConfidenceAsAGateAndPreservesSourceTimeBlendWeights() {
+    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+    assertTrue(shader.contains("float confidence = min(confidence0, confidence1);"))
+    assertTrue(shader.contains("if (confidence < 0.15) {"))
+    assertTrue(shader.contains("imageStore(uOutput, p, mix(c0, c1, uAlpha));"))
+    assertFalse(shader.contains("colorMismatch"))
+    assertFalse(shader.contains("(1.0 - uAlpha) * confidence0"))
+    assertFalse(shader.contains("uAlpha * confidence1"))
   }
 
   @Test

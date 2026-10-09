@@ -881,7 +881,7 @@ class Media3FlowVideoSink(
       checkGlError("motion uniform uStep", frameProbeOnly = true)
       val radiusLocation = GLES31.glGetUniformLocation(flowProgram, "uRadius")
       checkGlError("motion lookup uRadius", frameProbeOnly = true)
-      GLES31.glUniform1i(radiusLocation, FLOW_SEARCH_RADIUS)
+      GLES31.glUniform1i(radiusLocation, MEDIA3_FLOW_SEARCH_RADIUS)
       checkGlError("motion uniform uRadius", frameProbeOnly = true)
       GLES31.glBindImageTexture(0, frame0.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
       checkGlError("forward motion bind input 0", frameProbeOnly = true)
@@ -962,7 +962,7 @@ class Media3FlowVideoSink(
     }
     val deltaUs = bracket?.let { it.second.ptsUs - it.first.ptsUs } ?: 0L
     val estimatedMotionMs = pair?.let {
-      maxOf(it.motionEstimateSubmitMs, it.motionEstimateGpuMs ?: lastMotionGpuMs ?: 0f)
+      Media3FlowCadence.motionEstimateMs(it.motionEstimateSubmitMs, it.motionEstimateGpuMs)
     } ?: Float.POSITIVE_INFINITY
     val synthesize = bracket != null && pair != null &&
       Media3FlowCadence.needsInterpolation(deltaUs, targetFps, speed) &&
@@ -1723,7 +1723,6 @@ class Media3FlowVideoSink(
     private const val MAX_MOTION_PAIRS = 2
     private const val MAX_QUEUED_FRAMES = 5
     private const val MAX_INPUT_RELEASE_AHEAD_US = 100_000L
-    private const val FLOW_SEARCH_RADIUS = 24
     private const val HISTORY_SIZE = 24
     private const val OUTPUT_RATE_WINDOW = 31
     private const val ANALYSIS_DEADLINE_RESERVE = 0.85f
@@ -1842,37 +1841,30 @@ class Media3FlowVideoSink(
         if (any(greaterThanEqual(cell, grid))) return;
         ivec2 limit = max(uSize - ivec2(uBlock), ivec2(0));
         ivec2 origin = min(cell * uStep, limit);
-        float best = 1e20;
-        ivec2 bestOffset = ivec2(0);
-        // Coarse displacement scan covers ±24 analysis pixels with four patch samples.
-        for (int dy = -24; dy <= 24; dy += 8) {
+        float coarseBest = 1e20;
+        ivec2 coarseOffset = ivec2(0);
+        // Keep the compact ±4 analysis-pixel search used by the smooth baseline.
+        for (int dy = -8; dy <= 8; dy += 2) {
           if (abs(dy) > uRadius) continue;
-          for (int dx = -24; dx <= 24; dx += 8) {
+          for (int dx = -8; dx <= 8; dx += 2) {
             if (abs(dx) > uRadius) continue;
             ivec2 offset = ivec2(dx, dy);
             if (!offsetIsValid(origin, offset, limit)) continue;
-            float cost = blockSad(origin, offset, 4);
-            if (cost < best) { best = cost; bestOffset = offset; }
+            float cost = blockSad(origin, offset, 2);
+            if (cost < coarseBest) { coarseBest = cost; coarseOffset = offset; }
           }
         }
-        // Refine the best displacement at progressively finer pixel steps.
-        for (int level = 0; level < 3; level++) {
-          int step = level == 0 ? 4 : (level == 1 ? 2 : 1);
-          int sampleStride = level == 0 ? 4 : (level == 1 ? 2 : 1);
-          ivec2 center = bestOffset;
-          float localBest = 1e20;
-          ivec2 localOffset = center;
-          for (int oy = -1; oy <= 1; oy++) {
-            for (int ox = -1; ox <= 1; ox++) {
-              ivec2 offset = center + ivec2(ox, oy) * step;
-              if (any(greaterThan(abs(offset), ivec2(uRadius)))) continue;
-              if (!offsetIsValid(origin, offset, limit)) continue;
-              float cost = blockSad(origin, offset, sampleStride);
-              if (cost < localBest) { localBest = cost; localOffset = offset; }
-            }
+        float best = 1e20;
+        ivec2 bestOffset = coarseOffset;
+        for (int dy = coarseOffset.y - 1; dy <= coarseOffset.y + 1; dy++) {
+          if (abs(dy) > uRadius) continue;
+          for (int dx = coarseOffset.x - 1; dx <= coarseOffset.x + 1; dx++) {
+            if (abs(dx) > uRadius) continue;
+            ivec2 offset = ivec2(dx, dy);
+            if (!offsetIsValid(origin, offset, limit)) continue;
+            float cost = blockSad(origin, offset, 1);
+            if (cost < best) { best = cost; bestOffset = offset; }
           }
-          best = localBest;
-          bestOffset = localOffset;
         }
         float textureEnergy = 0.0;
         for (int y = 0; y < uBlock; y++) {
@@ -1986,27 +1978,13 @@ class Media3FlowVideoSink(
         backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);
         float confidence0 = flowReliability(forwardAtSource, cycleError, valid0);
         float confidence1 = flowReliability(backwardAtTarget, cycleError, valid1);
-        if (max(confidence0, confidence1) < 0.12) {
+        // Confidence decides whether to trust motion; it must not distort the source-time blend.
+        float confidence = min(confidence0, confidence1);
+        if (confidence < 0.15) {
           imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
           return;
         }
-        float colorMismatch = dot(abs(c0.rgb - c1.rgb), vec3(0.2126, 0.7152, 0.0722));
-        float weight0 = (1.0 - uAlpha) * confidence0;
-        float weight1 = uAlpha * confidence1;
-        if (colorMismatch > 0.20) {
-          if (confidence0 > confidence1 * 1.25) {
-            weight1 = 0.0;
-          } else if (confidence1 > confidence0 * 1.25) {
-            weight0 = 0.0;
-          } else if (uAlpha < 0.5) {
-            weight1 = 0.0;
-          } else {
-            weight0 = 0.0;
-          }
-        }
-        vec4 color = c0 * weight0 + c1 * weight1;
-        float total = max(weight0 + weight1, 1e-4);
-        imageStore(uOutput, p, vec4(color.rgb / total, 1.0));
+        imageStore(uOutput, p, mix(c0, c1, uAlpha));
       }
     """
   }

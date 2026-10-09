@@ -67,6 +67,10 @@ internal object Media3FlowCadence {
   fun skippedTicks(previousTick: Long, nextTick: Long): Long =
     if (previousTick < 0L || nextTick <= previousTick + 1L) 0L else nextTick - previousTick - 1L
 
+  /** Uses this pair's GPU time when ready; otherwise keeps the baseline submit-time estimate. */
+  fun motionEstimateMs(submitMs: Float, pairGpuMs: Float?): Float =
+    maxOf(submitMs, pairGpuMs ?: 0f)
+
   /** Keeps a decoder frame queued until the sink can retain it in an owned GPU frame slot. */
   fun canReleaseNextDecoderFrame(
     storedFrameCount: Int,

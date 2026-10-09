@@ -9,6 +9,8 @@ internal data class Media3FlowMotionSize(val width: Int, val height: Int)
 
 internal const val MEDIA3_FLOW_GRID_STEP = 6
 internal const val MEDIA3_FLOW_BLOCK_SIZE = 8
+/** Motion-search radius in reduced-image pixels; retained from the smooth 1fda64fe baseline. */
+internal const val MEDIA3_FLOW_SEARCH_RADIUS = 4
 
 internal data class Media3FlowGridSize(val width: Int, val height: Int)
 
