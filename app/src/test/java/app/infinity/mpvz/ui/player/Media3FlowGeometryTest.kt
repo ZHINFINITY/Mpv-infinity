@@ -1,6 +1,7 @@
 package app.infinity.mpvz.ui.player
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Media3FlowGeometryTest {
@@ -17,6 +18,13 @@ class Media3FlowGeometryTest {
   @Test
   fun motionGridKeepsSixPixelVectorSpacingAtTheRaisedAnalysisCap() {
     assertEquals(Media3FlowGridSize(107, 60), Media3FlowGeometry.motionGridSize(640, 360))
+  }
+
+  @Test
+  fun synthesisSubtractsBackwardFlowWhenSamplingFrameOne() {
+    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+    assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;"))
+    assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtTarget.xy;"))
   }
 
   @Test

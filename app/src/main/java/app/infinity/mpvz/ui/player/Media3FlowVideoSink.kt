@@ -1770,7 +1770,7 @@ class Media3FlowVideoSink(
       }
     """
 
-    private const val SYNTH_COMPUTE_SHADER = """
+    internal const val SYNTH_COMPUTE_SHADER = """
       #version 310 es
       layout(local_size_x = 8, local_size_y = 8) in;
       precision highp float;
@@ -1820,20 +1820,23 @@ class Media3FlowVideoSink(
         }
         vec4 forwardAtMid = flowAt(motionPoint, 0);
         vec4 backwardAtMid = flowAt(motionPoint, 1);
-        vec4 backwardAtTarget = flowAt(motionPoint + forwardAtMid.xy, 1);
-        vec4 forwardAtSource = flowAt(motionPoint + backwardAtMid.xy, 0);
-        float forwardCycleError = length(forwardAtMid.xy + backwardAtTarget.xy);
-        float backwardCycleError = length(backwardAtMid.xy + forwardAtSource.xy);
-        vec2 uv0Raw = uv - uAlpha * forwardAtSource.xy / vec2(uMotionSize);
-        vec2 uv1Raw = uv + (1.0 - uAlpha) * backwardAtTarget.xy / vec2(uMotionSize);
+        vec2 source0Point = motionPoint - uAlpha * forwardAtMid.xy;
+        vec2 source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;
+        vec4 forwardAtSource = flowAt(source0Point, 0);
+        vec4 backwardAtTarget = flowAt(source1Point, 1);
+        source0Point = motionPoint - uAlpha * forwardAtSource.xy;
+        source1Point = motionPoint - (1.0 - uAlpha) * backwardAtTarget.xy;
+        float cycleError = length(forwardAtSource.xy + backwardAtTarget.xy);
+        vec2 uv0Raw = uv + (source0Point - motionPoint) / vec2(uMotionSize);
+        vec2 uv1Raw = uv + (source1Point - motionPoint) / vec2(uMotionSize);
         float valid0 = inBounds(uv0Raw);
         float valid1 = inBounds(uv1Raw);
         vec2 uv0 = clamp(uv0Raw, vec2(0.0), vec2(1.0));
         vec2 uv1 = clamp(uv1Raw, vec2(0.0), vec2(1.0));
         vec4 c0 = texture(uFrame0, uv0);
         vec4 c1 = texture(uFrame1, uv1);
-        float confidence0 = flowReliability(forwardAtSource, forwardCycleError, valid0);
-        float confidence1 = flowReliability(backwardAtTarget, backwardCycleError, valid1);
+        float confidence0 = flowReliability(forwardAtSource, cycleError, valid0);
+        float confidence1 = flowReliability(backwardAtTarget, cycleError, valid1);
         if (max(confidence0, confidence1) < 0.12) {
           imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
           return;
