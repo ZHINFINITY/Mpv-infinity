@@ -32,6 +32,8 @@ import app.infinity.mpvz.preferences.effectiveMpvFlowMaxDimension
 import app.infinity.mpvz.preferences.effectiveMpvFlowTargetFps
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
@@ -69,6 +71,9 @@ data class Media3FlowDiagnostics(
   val processingHeight: Int = 0,
   val state: String = "off",
   val bypassReason: String? = null,
+  val gpuTimings: FlowGpuTimingStats = FlowGpuTimingStats(),
+  val cpuTimings: FlowCpuTimingStats = FlowCpuTimingStats(),
+  val pixelCoverage: FlowPixelCoverageStats = FlowPixelCoverageStats(),
 )
 
 private data class FlowFrameRateSurfacePolicy(
@@ -106,6 +111,11 @@ class Media3FlowVideoSink(
   private val ptsHistory = ArrayDeque<Long>()
   private val outputWallTimes = ArrayDeque<Long>()
   private val pendingGpuTimerQueries = ArrayDeque<PendingGpuTimerQuery>()
+  private val gpuDurationSamplesNs = Array(FlowGpuStage.values().size) { ArrayDeque<Long>() }
+  private val cpuTimingLock = Any()
+  private val cpuDurationSamplesNs = Array(FlowCpuStage.values().size) { ArrayDeque<Long>() }
+  private val coverageBuffers = ArrayList<CoverageBufferSlot>(COVERAGE_BUFFER_COUNT)
+  private val coverageSamples = ArrayDeque<FlowCoverageSample>()
   private val generatedWallTimes = ArrayDeque<Long>()
   private val renderTaskPending = AtomicBoolean(false)
   private var choreographer: Choreographer? = null
@@ -168,6 +178,15 @@ class Media3FlowVideoSink(
   private var lastMotionGpuMs: Float? = null
   private var gpuTimerQueryIds = IntArray(0)
   private var gpuTimerQueriesSupported = false
+  private var activeGpuTimerQuery: PendingGpuTimerQuery? = null
+  private var validGpuTimerResults = 0L
+  private var disjointGpuTimerResults = 0L
+  private var zeroGpuTimerResults = 0L
+  private var skippedGpuTimerQueries = 0L
+  private var coverageStatsAvailable = false
+  private var coverageDispatchCount = 0L
+  private var skippedCoverageSamples = 0L
+  private var invalidCoverageSamples = 0L
   private var lastMetricsAtNs = 0L
   private var lastTimingLogAtNs = 0L
   private var lastFlowSummaryLogAtNs = 0L
@@ -219,15 +238,33 @@ class Media3FlowVideoSink(
 
   fun isPreflightAvailable(): Boolean = preflightAvailable && !disposed
 
-  private data class PendingInput(val ptsUs: Long, val generation: Long, val handler: VideoSink.VideoFrameHandler)
+  private data class PendingInput(
+    val ptsUs: Long,
+    val generation: Long,
+    val handler: VideoSink.VideoFrameHandler,
+    val enqueuedAtNs: Long,
+  )
   private data class FrameToken(val ptsUs: Long, val generation: Long, val releaseTimestampNs: Long)
   private data class PlaybackClock(val positionUs: Long, val elapsedRealtimeUs: Long)
+  private enum class FlowGpuStage { DOWNSAMPLE, MOTION_FORWARD, MOTION_BACKWARD, CONSISTENCY_AND_WARP, PRESENTATION_DRAW }
+  private enum class FlowCpuStage { INPUT_QUEUE_WAIT, FRAME_HANDLER_CALL, EGL_SWAP_WAIT }
   private data class PendingGpuTimerQuery(
     val id: Int,
+    val stage: FlowGpuStage,
     val frame0PtsUs: Long,
     val frame1PtsUs: Long,
     val generation: Long,
   )
+
+  private class CoverageBufferSlot {
+    var bufferId = 0
+    var fenceSync = 0L
+    var groupCount = 0
+    var byteSize = 0
+    var expectedPixelCount = 0L
+    var framePtsUs = C.TIME_UNSET
+    var presented = false
+  }
 
   private class FrameSlot {
     var colorTexture = 0
@@ -244,6 +281,8 @@ class Media3FlowVideoSink(
     var available = false
     var motionEstimateSubmitMs = 0f
     var motionEstimateGpuMs: Float? = null
+    var motionForwardGpuMs: Float? = null
+    var motionBackwardGpuMs: Float? = null
   }
 
   override fun setListener(listener: VideoSink.Listener, executor: Executor) {
@@ -453,7 +492,7 @@ class Media3FlowVideoSink(
       val buffered = pendingInput.size + storedFrameCount + if (inputInFlight) 1 else 0
       if (buffered >= MAX_QUEUED_FRAMES) return false
       val ptsUs = bufferPresentationTimeUs + inputTimestampAdjustmentUs
-      pendingInput.addLast(PendingInput(ptsUs, streamGeneration, videoFrameHandler))
+      pendingInput.addLast(PendingInput(ptsUs, streamGeneration, videoFrameHandler, System.nanoTime()))
       lastInputPtsUs = max(lastInputPtsUs, ptsUs)
     }
     return true
@@ -521,7 +560,8 @@ class Media3FlowVideoSink(
   private fun renderAtDisplayFrame(frameTimeNanos: Long?) {
     if (!initialized || disposed || !outputAvailable) return
     if (!ensureEgl() || !makePbufferCurrent()) return
-    pollMotionGpuTimerQueries()
+    pollGpuTimerQueries()
+    pollCoverageBuffers()
     val speed = playbackSpeed
     val clock = playbackClock
     val nowElapsedUs = SystemClock.elapsedRealtimeNanos() / 1_000L
@@ -609,6 +649,8 @@ class Media3FlowVideoSink(
     }
     val pending = pendingAndToken.first
     val token = pendingAndToken.second
+    recordCpuDuration(FlowCpuStage.INPUT_QUEUE_WAIT, (System.nanoTime() - pending.enqueuedAtNs).coerceAtLeast(0L))
+    val handlerStartNs = System.nanoTime()
     try {
       // Handler.render is called on Media3's playback thread; GPU work stays on the dedicated GL thread.
       pending.handler.render(token.releaseTimestampNs)
@@ -622,6 +664,8 @@ class Media3FlowVideoSink(
       droppedFrames.incrementAndGet()
       dispatchListener { it.onFrameDropped() }
       reportError(error)
+    } finally {
+      recordCpuDuration(FlowCpuStage.FRAME_HANDLER_CALL, (System.nanoTime() - handlerStartNs).coerceAtLeast(0L))
     }
   }
 
@@ -793,51 +837,272 @@ class Media3FlowVideoSink(
     )
   }
 
-  private fun beginMotionGpuTimerQuery(generation: Long): Int? {
+  private fun beginGpuTimerQuery(
+    stage: FlowGpuStage,
+    frame0PtsUs: Long = C.TIME_UNSET,
+    frame1PtsUs: Long = C.TIME_UNSET,
+    generation: Long = streamGeneration,
+  ): PendingGpuTimerQuery? {
     if (!gpuTimerQueriesSupported) return null
-    pollMotionGpuTimerQueries()
+    if (activeGpuTimerQuery != null) {
+      skippedGpuTimerQueries++
+      return null
+    }
+    pollGpuTimerQueries()
     val inUse = pendingGpuTimerQueries.mapTo(HashSet()) { it.id }
-    val queryId = gpuTimerQueryIds.firstOrNull { it !in inUse } ?: return null
+    val queryId = gpuTimerQueryIds.firstOrNull { it !in inUse }
+    if (queryId == null) {
+      skippedGpuTimerQueries++
+      return null
+    }
+    val query = PendingGpuTimerQuery(queryId, stage, frame0PtsUs, frame1PtsUs, generation)
     GLES30.glBeginQuery(GL_TIME_ELAPSED_EXT, queryId)
-    return queryId
+    activeGpuTimerQuery = query
+    return query
   }
 
-  private fun endMotionGpuTimerQuery(queryId: Int, frame0PtsUs: Long, frame1PtsUs: Long, generation: Long) {
+  private fun endGpuTimerQuery(query: PendingGpuTimerQuery?) {
+    if (query == null || activeGpuTimerQuery?.id != query.id) return
     GLES30.glEndQuery(GL_TIME_ELAPSED_EXT)
-    pendingGpuTimerQueries.addLast(PendingGpuTimerQuery(queryId, frame0PtsUs, frame1PtsUs, generation))
+    pendingGpuTimerQueries.addLast(query)
+    activeGpuTimerQuery = null
   }
 
-  /** Poll availability before reading results; querying never waits for the GPU. */
-  private fun pollMotionGpuTimerQueries() {
+  /** Only available query results are read; a zero-timeout availability check never waits. */
+  private fun pollGpuTimerQueries() {
     if (!gpuTimerQueriesSupported || pendingGpuTimerQueries.isEmpty()) return
     val pendingCount = pendingGpuTimerQueries.size
-    for (index in 0 until pendingCount) {
+    repeat(pendingCount) {
       val pending = pendingGpuTimerQueries.removeFirst()
       val available = IntArray(1)
       GLES30.glGetQueryObjectuiv(pending.id, GLES30.GL_QUERY_RESULT_AVAILABLE, available, 0)
       if (available[0] == 0) {
         pendingGpuTimerQueries.addLast(pending)
-        continue
+        return@repeat
       }
-      if (pending.generation != streamGeneration) continue
+      if (pending.generation != streamGeneration) return@repeat
       val disjoint = IntArray(1)
       GLES30.glGetIntegerv(GL_GPU_DISJOINT_EXT, disjoint, 0)
       if (disjoint[0] != 0) {
-        lastMotionGpuMs = null
-        Log.d(logTag, "Discarded a disjoint GPU timer result")
-        continue
+        disjointGpuTimerResults++
+        if (pending.stage == FlowGpuStage.MOTION_FORWARD || pending.stage == FlowGpuStage.MOTION_BACKWARD) {
+          lastMotionGpuMs = null
+        }
+        return@repeat
       }
       val elapsed = IntArray(1)
       GLES30.glGetQueryObjectuiv(pending.id, GLES30.GL_QUERY_RESULT, elapsed, 0)
       val elapsedNs = elapsed[0].toLong() and 0xFFFF_FFFFL
-      if (elapsedNs > 0L) {
-        val elapsedMs = elapsedNs / 1_000_000f
-        lastMotionGpuMs = elapsedMs
-        motionPairs.firstOrNull {
-          it.frame0PtsUs == pending.frame0PtsUs && it.frame1PtsUs == pending.frame1PtsUs
-        }?.motionEstimateGpuMs = elapsedMs
+      validGpuTimerResults++
+      if (elapsedNs == 0L) {
+        zeroGpuTimerResults++
+        return@repeat
+      }
+      val stageSamples = gpuDurationSamplesNs[pending.stage.ordinal]
+      stageSamples.addLast(elapsedNs)
+      while (stageSamples.size > GPU_TIMING_HISTORY_SIZE) stageSamples.removeFirst()
+      when (pending.stage) {
+        FlowGpuStage.MOTION_FORWARD, FlowGpuStage.MOTION_BACKWARD -> updateMotionPairGpuTime(pending, elapsedNs)
+        else -> Unit
       }
     }
+  }
+
+  private fun updateMotionPairGpuTime(query: PendingGpuTimerQuery, elapsedNs: Long) {
+    val pair = motionPairs.firstOrNull {
+      it.frame0PtsUs == query.frame0PtsUs && it.frame1PtsUs == query.frame1PtsUs
+    } ?: return
+    val elapsedMs = elapsedNs / 1_000_000f
+    when (query.stage) {
+      FlowGpuStage.MOTION_FORWARD -> pair.motionForwardGpuMs = elapsedMs
+      FlowGpuStage.MOTION_BACKWARD -> pair.motionBackwardGpuMs = elapsedMs
+      else -> return
+    }
+    val forwardMs = pair.motionForwardGpuMs
+    val backwardMs = pair.motionBackwardGpuMs
+    if (forwardMs != null && backwardMs != null) {
+      pair.motionEstimateGpuMs = forwardMs + backwardMs
+      lastMotionGpuMs = pair.motionEstimateGpuMs
+    }
+  }
+
+  private fun recordCpuDuration(stage: FlowCpuStage, elapsedNs: Long) {
+    synchronized(cpuTimingLock) {
+      val samples = cpuDurationSamplesNs[stage.ordinal]
+      samples.addLast(elapsedNs.coerceAtLeast(0L))
+      while (samples.size > CPU_TIMING_HISTORY_SIZE) samples.removeFirst()
+    }
+  }
+
+  private fun gpuTimingSnapshot(): FlowGpuTimingStats {
+    val status = when {
+      !gpuTimerQueriesSupported -> "unsupported"
+      validGpuTimerResults > 0L && disjointGpuTimerResults > 0L -> "valid_with_disjoint_results"
+      validGpuTimerResults > 0L -> "valid"
+      disjointGpuTimerResults > 0L -> "disjoint_only"
+      pendingGpuTimerQueries.isNotEmpty() -> "pending"
+      skippedGpuTimerQueries > 0L -> "query_pool_limited"
+      else -> "waiting_for_samples"
+    }
+    fun summary(stage: FlowGpuStage) =
+      Media3FlowDiagnosticMath.summarizeNanoseconds(gpuDurationSamplesNs[stage.ordinal].toList())
+    return FlowGpuTimingStats(
+      supported = gpuTimerQueriesSupported,
+      status = status,
+      validResults = validGpuTimerResults,
+      pendingResults = pendingGpuTimerQueries.size + if (activeGpuTimerQuery != null) 1 else 0,
+      disjointResultsDiscarded = disjointGpuTimerResults,
+      zeroDurationResults = zeroGpuTimerResults,
+      skippedBecausePoolFull = skippedGpuTimerQueries,
+      downsample = summary(FlowGpuStage.DOWNSAMPLE),
+      motionForward = summary(FlowGpuStage.MOTION_FORWARD),
+      motionBackward = summary(FlowGpuStage.MOTION_BACKWARD),
+      consistencyAndWarp = summary(FlowGpuStage.CONSISTENCY_AND_WARP),
+      presentationDraw = summary(FlowGpuStage.PRESENTATION_DRAW),
+    )
+  }
+
+  private fun cpuTimingSnapshot(): FlowCpuTimingStats = synchronized(cpuTimingLock) {
+    fun summary(stage: FlowCpuStage) =
+      Media3FlowDiagnosticMath.summarizeNanoseconds(cpuDurationSamplesNs[stage.ordinal].toList())
+    FlowCpuTimingStats(
+      inputQueueWait = summary(FlowCpuStage.INPUT_QUEUE_WAIT),
+      frameHandlerCall = summary(FlowCpuStage.FRAME_HANDLER_CALL),
+      eglSwapWait = summary(FlowCpuStage.EGL_SWAP_WAIT),
+    )
+  }
+
+  private fun pixelCoverageSnapshot(): FlowPixelCoverageStats =
+    Media3FlowDiagnosticMath.summarizeCoverage(coverageSamples.toList()).copy(
+      skippedSamples = skippedCoverageSamples,
+      invalidSamples = invalidCoverageSamples,
+    )
+
+  private fun markCoverageFramePresented(framePtsUs: Long) {
+    coverageBuffers.firstOrNull { it.fenceSync != 0L && it.framePtsUs == framePtsUs }?.presented = true
+  }
+
+  private fun initializeCoverageBuffers() {
+    if (coverageBuffers.isNotEmpty()) return
+    val ids = IntArray(COVERAGE_BUFFER_COUNT)
+    GLES31.glGenBuffers(ids.size, ids, 0)
+    val validIds = ids.filter { it != 0 }
+    if (validIds.isEmpty()) {
+      Log.w(logTag, "Could not allocate Flow coverage buffers; pixel coverage will be unavailable")
+      return
+    }
+    validIds.forEach { id ->
+      GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, id)
+      GLES31.glBufferData(
+        GLES31.GL_SHADER_STORAGE_BUFFER,
+        COVERAGE_BYTES_PER_GROUP,
+        null,
+        GLES30.GL_DYNAMIC_READ,
+      )
+      coverageBuffers += CoverageBufferSlot().apply {
+        bufferId = id
+        byteSize = COVERAGE_BYTES_PER_GROUP
+      }
+    }
+    GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, 0)
+    coverageStatsAvailable = true
+  }
+
+  private fun acquireCoverageBuffer(framePtsUs: Long): CoverageBufferSlot? {
+    coverageDispatchCount++
+    if (coverageDispatchCount % COVERAGE_SAMPLE_INTERVAL != 0L) return null
+    if (!coverageStatsAvailable) {
+      skippedCoverageSamples++
+      return null
+    }
+    val slot = coverageBuffers.firstOrNull { it.fenceSync == 0L }
+    if (slot == null) {
+      skippedCoverageSamples++
+      return null
+    }
+    val groupsX = ceil(frameWidth / 8.0).toInt()
+    val groupsY = ceil(frameHeight / 8.0).toInt()
+    val groupsLong = groupsX.toLong() * groupsY.toLong()
+    val byteSizeLong = groupsLong * COVERAGE_BYTES_PER_GROUP
+    if (groupsLong <= 0L || byteSizeLong > Int.MAX_VALUE) {
+      skippedCoverageSamples++
+      return null
+    }
+    val byteSize = byteSizeLong.toInt()
+    GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, slot.bufferId)
+    if (slot.byteSize != byteSize) {
+      GLES31.glBufferData(GLES31.GL_SHADER_STORAGE_BUFFER, byteSize, null, GLES30.GL_DYNAMIC_READ)
+      slot.byteSize = byteSize
+    }
+    GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, FLOW_COVERAGE_BINDING, slot.bufferId)
+    slot.groupCount = groupsLong.toInt()
+    slot.expectedPixelCount = frameWidth.toLong() * frameHeight.toLong()
+    slot.framePtsUs = framePtsUs
+    slot.presented = false
+    return slot
+  }
+
+  private fun pollCoverageBuffers() {
+    if (!coverageStatsAvailable) return
+    for (slot in coverageBuffers) {
+      val fence = slot.fenceSync
+      if (fence == 0L) continue
+      val waitResult = GLES31.glClientWaitSync(fence, 0, 0L)
+      if (waitResult == GL_TIMEOUT_EXPIRED) continue
+      GLES31.glDeleteSync(fence)
+      slot.fenceSync = 0L
+      if (waitResult != GL_ALREADY_SIGNALED && waitResult != GL_CONDITION_SATISFIED) {
+        invalidCoverageSamples++
+        continue
+      }
+      if (!slot.presented) {
+        skippedCoverageSamples++
+        continue
+      }
+      GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, slot.bufferId)
+      try {
+        val mapped = runCatching {
+          GLES31.glMapBufferRange(
+            GLES31.GL_SHADER_STORAGE_BUFFER,
+            0,
+            slot.byteSize,
+            GLES30.GL_MAP_READ_BIT,
+          ) as? ByteBuffer
+        }.getOrNull()
+        if (mapped == null) {
+          invalidCoverageSamples++
+          continue
+        }
+        val data = mapped.order(ByteOrder.nativeOrder())
+        var warped = 0L
+        var sourceFallback = 0L
+        var staticBlend = 0L
+        for (group in 0 until slot.groupCount) {
+          val offset = group * COVERAGE_BYTES_PER_GROUP
+          warped += data.getInt(offset).toLong() and 0xFFFF_FFFFL
+          sourceFallback += data.getInt(offset + Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
+          staticBlend += data.getInt(offset + 2 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
+        }
+        val unmapped = runCatching { GLES31.glUnmapBuffer(GLES31.GL_SHADER_STORAGE_BUFFER) }.getOrDefault(false)
+        if (!unmapped || warped + sourceFallback + staticBlend != slot.expectedPixelCount) {
+          invalidCoverageSamples++
+          continue
+        }
+        coverageSamples.addLast(FlowCoverageSample(warped, sourceFallback, staticBlend))
+        while (coverageSamples.size > COVERAGE_HISTORY_SIZE) coverageSamples.removeFirst()
+      } finally {
+        GLES31.glBindBuffer(GLES31.GL_SHADER_STORAGE_BUFFER, 0)
+      }
+    }
+  }
+
+  private fun destroyCoverageBuffers() {
+    coverageBuffers.forEach { slot ->
+      if (slot.fenceSync != 0L) GLES31.glDeleteSync(slot.fenceSync)
+      if (slot.bufferId != 0) GLES31.glDeleteBuffers(1, intArrayOf(slot.bufferId), 0)
+    }
+    coverageBuffers.clear()
+    coverageStatsAvailable = false
   }
 
   private fun analyzeNewestPair() {
@@ -845,7 +1110,7 @@ class Media3FlowVideoSink(
       lastBypassReason = "gpu_flow_unavailable"
       return
     }
-    pollMotionGpuTimerQueries()
+    pollGpuTimerQueries()
     val frame0 = sourceFrames.elementAt(sourceFrames.size - 2)
     val frame1 = sourceFrames.last()
     val deltaUs = frame1.ptsUs - frame0.ptsUs
@@ -861,9 +1126,15 @@ class Media3FlowVideoSink(
       lastBypassReason = "motion_pair_queue_full"
       return
     }
+    reusable.available = false
+    reusable.frame0PtsUs = frame0.ptsUs
+    reusable.frame1PtsUs = frame1.ptsUs
+    reusable.motionEstimateGpuMs = null
+    reusable.motionForwardGpuMs = null
+    reusable.motionBackwardGpuMs = null
     val startNs = System.nanoTime()
     val queryGeneration = streamGeneration
-    val gpuTimerQuery = beginMotionGpuTimerQuery(queryGeneration)
+    var stageQuery: PendingGpuTimerQuery? = null
     try {
       GLES31.glUseProgram(flowProgram)
       checkGlError("motion glUseProgram", frameProbeOnly = true)
@@ -889,10 +1160,13 @@ class Media3FlowVideoSink(
       checkGlError("forward motion bind input 1", frameProbeOnly = true)
       GLES31.glBindImageTexture(2, reusable.forwardTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
       checkGlError("forward motion bind output", frameProbeOnly = true)
+      stageQuery = beginGpuTimerQuery(FlowGpuStage.MOTION_FORWARD, frame0.ptsUs, frame1.ptsUs, queryGeneration)
       GLES31.glDispatchCompute(ceil(gridWidth / 8.0).toInt(), ceil(gridHeight / 8.0).toInt(), 1)
       checkGlError("forward motion dispatch", frameProbeOnly = true)
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
       checkGlError("forward motion barrier", frameProbeOnly = true)
+      endGpuTimerQuery(stageQuery)
+      stageQuery = null
 
       GLES31.glBindImageTexture(0, frame1.lumaTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA8)
       checkGlError("backward motion bind input 0", frameProbeOnly = true)
@@ -900,13 +1174,14 @@ class Media3FlowVideoSink(
       checkGlError("backward motion bind input 1", frameProbeOnly = true)
       GLES31.glBindImageTexture(2, reusable.backwardTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA16F)
       checkGlError("backward motion bind output", frameProbeOnly = true)
+      stageQuery = beginGpuTimerQuery(FlowGpuStage.MOTION_BACKWARD, frame0.ptsUs, frame1.ptsUs, queryGeneration)
       GLES31.glDispatchCompute(ceil(gridWidth / 8.0).toInt(), ceil(gridHeight / 8.0).toInt(), 1)
       checkGlError("backward motion dispatch", frameProbeOnly = true)
       GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
       checkGlError("backward motion barrier", frameProbeOnly = true)
+      endGpuTimerQuery(stageQuery)
+      stageQuery = null
       checkGlError("motion estimate")
-      reusable.frame0PtsUs = frame0.ptsUs
-      reusable.frame1PtsUs = frame1.ptsUs
       reusable.available = true
       lastMotionSubmitMs = (System.nanoTime() - startNs) / 1_000_000f
       reusable.motionEstimateSubmitMs = lastMotionSubmitMs
@@ -921,7 +1196,7 @@ class Media3FlowVideoSink(
       lastState = "source_fallback"
       Log.w(logTag, "Motion pass failed; disabling GPU interpolation for this stream and retaining source frames", error)
     } finally {
-      gpuTimerQuery?.let { endMotionGpuTimerQuery(it, frame0.ptsUs, frame1.ptsUs, queryGeneration) }
+      endGpuTimerQuery(stageQuery)
     }
   }
 
@@ -1003,6 +1278,7 @@ class Media3FlowVideoSink(
     }
     if (submitted) {
       if (synthesized) {
+        markCoverageFramePresented(targetPtsUs)
         generatedFrames++
         generatedWallTimes.addLast(System.nanoTime())
         while (generatedWallTimes.size > OUTPUT_RATE_WINDOW) generatedWallTimes.removeFirst()
@@ -1041,6 +1317,7 @@ class Media3FlowVideoSink(
 
   private fun dispatchSynthesis(a: FrameSlot, b: FrameSlot, pair: MotionPairSlot, targetPtsUs: Long) {
     val alpha = Media3FlowCadence.interpolationAlpha(a.ptsUs, b.ptsUs, targetPtsUs) ?: return
+    val coverageSlot = acquireCoverageBuffer(targetPtsUs)
     GLES31.glUseProgram(synthProgram)
     bindTextureUnit(0, a.colorTexture)
     bindTextureUnit(1, b.colorTexture)
@@ -1055,11 +1332,41 @@ class Media3FlowVideoSink(
       Media3FlowGeometry.motionGridAnchorOffset(),
     )
     GLES31.glUniform1f(GLES31.glGetUniformLocation(synthProgram, "uAlpha"), alpha)
+    GLES31.glUniform1i(
+      GLES31.glGetUniformLocation(synthProgram, "uCoverageEnabled"),
+      if (coverageSlot != null) 1 else 0,
+    )
+    (coverageSlot ?: coverageBuffers.firstOrNull())?.let {
+      GLES31.glBindBufferBase(GLES31.GL_SHADER_STORAGE_BUFFER, FLOW_COVERAGE_BINDING, it.bufferId)
+    }
     GLES31.glBindImageTexture(0, pair.forwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
     GLES31.glBindImageTexture(1, pair.backwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
     GLES31.glBindImageTexture(2, outputTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
-    GLES31.glDispatchCompute(ceil(frameWidth / 8.0).toInt(), ceil(frameHeight / 8.0).toInt(), 1)
-    GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT)
+    val synthesisQuery = beginGpuTimerQuery(
+      FlowGpuStage.CONSISTENCY_AND_WARP,
+      pair.frame0PtsUs,
+      pair.frame1PtsUs,
+    )
+    var dispatchSubmitted = false
+    try {
+      GLES31.glDispatchCompute(ceil(frameWidth / 8.0).toInt(), ceil(frameHeight / 8.0).toInt(), 1)
+      var barrierBits = GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT or GLES31.GL_TEXTURE_FETCH_BARRIER_BIT
+      if (coverageSlot != null) {
+        barrierBits = barrierBits or GLES31.GL_SHADER_STORAGE_BARRIER_BIT or GLES31.GL_BUFFER_UPDATE_BARRIER_BIT
+      }
+      GLES31.glMemoryBarrier(barrierBits)
+      dispatchSubmitted = true
+    } finally {
+      endGpuTimerQuery(synthesisQuery)
+    }
+    if (coverageSlot != null) {
+      if (dispatchSubmitted) {
+        val fence = runCatching { GLES31.glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0) }.getOrDefault(0L)
+        if (fence != 0L) coverageSlot.fenceSync = fence else skippedCoverageSamples++
+      } else {
+        skippedCoverageSamples++
+      }
+    }
   }
 
   private fun drawSourceFrame(slot: FrameSlot, presentationTimeNs: Long, ptsUs: Long): Boolean =
@@ -1095,9 +1402,16 @@ class Media3FlowVideoSink(
       geometry.textureOffsetX,
       geometry.textureOffsetY,
     )
-    drawFullscreenTriangle()
+    val presentationQuery = beginGpuTimerQuery(FlowGpuStage.PRESENTATION_DRAW)
+    try {
+      drawFullscreenTriangle()
+    } finally {
+      endGpuTimerQuery(presentationQuery)
+    }
     EGLExt.eglPresentationTimeANDROID(eglDisplay, windowSurface, presentationTimeNs.coerceAtLeast(0L))
+    val swapStartNs = System.nanoTime()
     val swapped = EGL14.eglSwapBuffers(eglDisplay, windowSurface)
+    recordCpuDuration(FlowCpuStage.EGL_SWAP_WAIT, (System.nanoTime() - swapStartNs).coerceAtLeast(0L))
     if (!swapped) Log.w(logTag, "eglSwapBuffers failed at ptsUs=$ptsUs error=0x${EGL14.eglGetError().toString(16)}")
     makePbufferCurrent()
     return swapped
@@ -1150,10 +1464,15 @@ class Media3FlowVideoSink(
     checkGlError("luma uniform uSize", frameProbeOnly = true)
     GLES31.glBindImageTexture(0, slot.lumaTexture, 0, false, 0, GLES31.GL_WRITE_ONLY, GLES30.GL_RGBA8)
     checkGlError("luma bind output image", frameProbeOnly = true)
-    GLES31.glDispatchCompute(ceil(processingWidth / 8.0).toInt(), ceil(processingHeight / 8.0).toInt(), 1)
-    checkGlError("luma dispatch", frameProbeOnly = true)
-    GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
-    checkGlError("luma barrier", frameProbeOnly = true)
+    val downsampleQuery = beginGpuTimerQuery(FlowGpuStage.DOWNSAMPLE)
+    try {
+      GLES31.glDispatchCompute(ceil(processingWidth / 8.0).toInt(), ceil(processingHeight / 8.0).toInt(), 1)
+      checkGlError("luma dispatch", frameProbeOnly = true)
+      GLES31.glMemoryBarrier(GLES31.GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
+      checkGlError("luma barrier", frameProbeOnly = true)
+    } finally {
+      endGpuTimerQuery(downsampleQuery)
+    }
   }
 
   private fun trimExpiredFrames(positionUs: Long) {
@@ -1210,6 +1529,7 @@ class Media3FlowVideoSink(
         backwardTexture = createTexture(GLES20.GL_TEXTURE_2D, gridWidth, gridHeight, GLES30.GL_RGBA16F)
       }
     }
+    initializeCoverageBuffers()
     flowAvailable = lumaProgram != 0 && flowProgram != 0 && synthProgram != 0
     if (!flowAvailable) lastBypassReason = "compute_shader_unavailable"
     setOutputFrameRate()
@@ -1219,7 +1539,14 @@ class Media3FlowVideoSink(
   private fun clearSourceFrames() {
     sourceFrames.forEach { it.inUse = false; it.ptsUs = C.TIME_UNSET }
     sourceFrames.clear()
-    motionPairs.forEach { it.available = false; it.frame0PtsUs = C.TIME_UNSET; it.frame1PtsUs = C.TIME_UNSET }
+    motionPairs.forEach {
+      it.available = false
+      it.frame0PtsUs = C.TIME_UNSET
+      it.frame1PtsUs = C.TIME_UNSET
+      it.motionEstimateGpuMs = null
+      it.motionForwardGpuMs = null
+      it.motionBackwardGpuMs = null
+    }
     lastMotionGpuMs = null
     lastMotionSubmitMs = 0f
     storedFrameCount = 0
@@ -1478,6 +1805,7 @@ class Media3FlowVideoSink(
 
   private fun destroyGlResources() {
     destroyFrameResources()
+    destroyCoverageBuffers()
     intArrayOf(copyProgram, blitProgram, lumaProgram, flowProgram, synthProgram)
       .filter { it != 0 }
       .forEach { GLES20.glDeleteProgram(it) }
@@ -1492,6 +1820,7 @@ class Media3FlowVideoSink(
     gpuTimerQueryIds = IntArray(0)
     gpuTimerQueriesSupported = false
     pendingGpuTimerQueries.clear()
+    activeGpuTimerQuery = null
     lastMotionGpuMs = null
     if (framebuffer != 0) GLES20.glDeleteFramebuffers(1, intArrayOf(framebuffer), 0)
     framebuffer = 0
@@ -1569,6 +1898,9 @@ class Media3FlowVideoSink(
       processingHeight = processingHeight,
       state = state,
       bypassReason = reason,
+      gpuTimings = gpuTimingSnapshot(),
+      cpuTimings = cpuTimingSnapshot(),
+      pixelCoverage = pixelCoverageSnapshot(),
     )
     runCatching { onDiagnostics(diagnostics) }
     logFlowSummary(diagnostics, nowNs)
@@ -1584,12 +1916,26 @@ class Media3FlowVideoSink(
     lastFlowSummarySignature = signature
 
     val inputSize = currentFormat?.let { "${it.width}x${it.height}" } ?: "unknown"
+    val gpuTiming = diagnostics.gpuTimings
+    val cpuTiming = diagnostics.cpuTimings
+    val coverage = diagnostics.pixelCoverage
     val gpuElapsed = when {
       !gpuTimerQueriesSupported -> "unsupported"
       diagnostics.motionEstimateGpuMs == null -> "pending"
-      else -> "${formatLogFloat(diagnostics.motionEstimateGpuMs)}ms"
+      else -> "${formatLogFloat(diagnostics.motionEstimateGpuMs * 1_000f)}us"
     }
     val confidence = diagnostics.confidence?.let { formatLogFloat(it) } ?: "n/a"
+    val gpuStages = "downsample=${formatFlowDuration(gpuTiming.downsample)} " +
+      "motionF=${formatFlowDuration(gpuTiming.motionForward)} motionB=${formatFlowDuration(gpuTiming.motionBackward)} " +
+      "consistencyWarp=${formatFlowDuration(gpuTiming.consistencyAndWarp)} " +
+      "presentation=${formatFlowDuration(gpuTiming.presentationDraw)}"
+    val cpuStages = "queueWait=${formatFlowDuration(cpuTiming.inputQueueWait)} " +
+      "frameHandler=${formatFlowDuration(cpuTiming.frameHandlerCall)} " +
+      "eglSwapWait=${formatFlowDuration(cpuTiming.eglSwapWait)}"
+    val coverageSummary = "samples=${coverage.samples} warp=${coverage.motionWarpPixels}(${formatFlowPercent(coverage.motionWarpPercent)}%) " +
+      "sourceFallback=${coverage.sourceFrameFallbackPixels}(${formatFlowPercent(coverage.sourceFrameFallbackPercent)}%) " +
+      "staticBlend=${coverage.staticBlendPixels}(${formatFlowPercent(coverage.staticBlendPercent)}%) " +
+      "pixels=${coverage.sampledPixels} skipped=${coverage.skippedSamples} invalid=${coverage.invalidSamples}"
     Log.i(
       logTag,
       "flow_summary state=${diagnostics.state} bypass=${diagnostics.bypassReason ?: "none"} " +
@@ -1601,7 +1947,11 @@ class Media3FlowVideoSink(
         "input=$inputSize processing=${diagnostics.processingWidth}x${diagnostics.processingHeight} " +
         "motionGrid=${diagnostics.motionGridWidth}x${diagnostics.motionGridHeight} " +
         "motionSubmitCpuMs=${formatLogFloat(diagnostics.motionEstimateSubmitMs)} " +
-        "motionGpuElapsedMs=$gpuElapsed gpuTimerQueries=${if (gpuTimerQueriesSupported) "supported" else "unsupported"} " +
+        "motionGpuElapsed=$gpuElapsed gpuTimerStatus=${gpuTiming.status} " +
+        "gpuQueryCounts=valid:${gpuTiming.validResults},pending:${gpuTiming.pendingResults}," +
+        "disjoint:${gpuTiming.disjointResultsDiscarded},zero:${gpuTiming.zeroDurationResults}," +
+        "skipped:${gpuTiming.skippedBecausePoolFull} gpuStagesUs={$gpuStages} " +
+        "cpuStagesUs={$cpuStages} coverage={$coverageSummary} " +
         "confidence=$confidence displayReportedHz=${formatLogFloat(displayRefreshRate(appContext))} " +
         "displayModeInitialHz=${formatLogFloat(displayHz)} surfaceHintFps=${formatLogFloat(outputFrameRateHintFps)} " +
         "matchContentPreference=$matchContentFrameRatePreferenceLabel " +
@@ -1636,7 +1986,19 @@ class Media3FlowVideoSink(
       String.format(java.util.Locale.US, "%.2f", value)
     } else {
       "n/a"
+    }
+
+  private fun formatFlowDuration(summary: FlowDurationSummary): String {
+    if (summary.sampleCount == 0) return "n/a"
+    fun value(durationUs: Double?): String = durationUs?.let {
+      String.format(java.util.Locale.US, "%.1f", it)
+    } ?: "n/a"
+    return "${value(summary.averageUs)}/${value(summary.p95Us)}/${value(summary.maximumUs)}us(n=${summary.sampleCount})"
   }
+
+  private fun formatFlowPercent(value: Float?): String = value?.let {
+    String.format(java.util.Locale.US, "%.1f", it)
+  } ?: "n/a"
 
   private fun logTimingTrace(
     positionUs: Long,
@@ -1730,9 +2092,20 @@ class Media3FlowVideoSink(
     private const val FLOW_SUMMARY_LOG_INTERVAL_NS = 5_000_000_000L
     private const val FLOW_STATE_LOG_MIN_INTERVAL_NS = 1_000_000_000L
     private const val GL_INIT_TIMEOUT_MS = 5_000L
-    private const val MAX_GPU_TIMER_QUERIES = 3
+    private const val MAX_GPU_TIMER_QUERIES = 64
+    private const val GPU_TIMING_HISTORY_SIZE = 90
+    private const val CPU_TIMING_HISTORY_SIZE = 90
+    private const val COVERAGE_BUFFER_COUNT = 3
+    private const val COVERAGE_HISTORY_SIZE = 12
+    private const val COVERAGE_SAMPLE_INTERVAL = 8L
+    private const val COVERAGE_BYTES_PER_GROUP = 16
+    private const val FLOW_COVERAGE_BINDING = 3
     private const val GL_TIME_ELAPSED_EXT = 0x88BF
     private const val GL_GPU_DISJOINT_EXT = 0x8FBB
+    private const val GL_SYNC_GPU_COMMANDS_COMPLETE = 0x9117
+    private const val GL_ALREADY_SIGNALED = 0x911A
+    private const val GL_TIMEOUT_EXPIRED = 0x911B
+    private const val GL_CONDITION_SATISFIED = 0x911C
     private const val EGL_OPENGL_ES3_BIT_KHR = 0x0040
     private const val EGL_CONTEXT_MINOR_VERSION_KHR = 0x30FB
     private val GLES_VERSION_REGEX = Regex("OpenGL ES (\\d+)\\.(\\d+)")
@@ -1885,6 +2258,9 @@ class Media3FlowVideoSink(
       uniform int uStep;
       uniform float uGridAnchorOffset;
       uniform float uAlpha;
+      uniform int uCoverageEnabled;
+      layout(std430, binding = 3) writeonly buffer FlowCoverageBuffer { uvec4 coverage[]; };
+      shared uint coverageClass[64];
       const float MAX_MATCH_ERROR = 0.34;
       const float FLOW_EDGE_START_SQUARED = 9.0;
       const float FLOW_EDGE_END_SQUARED = 81.0;
@@ -1935,45 +2311,64 @@ class Media3FlowVideoSink(
       }
       void main() {
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-        if (any(greaterThanEqual(p, uSize))) return;
-        vec2 point = vec2(p) + vec2(0.5);
-        vec2 uv = point / vec2(uSize);
-        vec2 motionPoint = point * vec2(uMotionSize) / vec2(uSize);
-        vec4 source0 = texture(uFrame0, uv);
-        vec4 source1 = texture(uFrame1, uv);
-        float staticChange = dot(abs(source0.rgb - source1.rgb), vec3(0.2126, 0.7152, 0.0722));
-        if (staticChange < 0.018) {
-          imageStore(uOutput, p, mix(source0, source1, uAlpha));
-          return;
+        uint pixelClass = 0u;
+        if (all(lessThan(p, uSize))) {
+          vec2 point = vec2(p) + vec2(0.5);
+          vec2 uv = point / vec2(uSize);
+          vec2 motionPoint = point * vec2(uMotionSize) / vec2(uSize);
+          vec4 source0 = texture(uFrame0, uv);
+          vec4 source1 = texture(uFrame1, uv);
+          float staticChange = dot(abs(source0.rgb - source1.rgb), vec3(0.2126, 0.7152, 0.0722));
+          if (staticChange < 0.018) {
+            imageStore(uOutput, p, mix(source0, source1, uAlpha));
+            pixelClass = 3u;
+          } else {
+            vec4 forwardAtMid = flowAt(motionPoint, 0);
+            vec4 backwardAtMid = flowAt(motionPoint, 1);
+            vec2 source0Point = motionPoint - uAlpha * forwardAtMid.xy;
+            vec2 source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;
+            vec4 forwardAtSource = flowAt(source0Point, 0);
+            vec4 backwardAtTarget = flowAt(source1Point, 1);
+            source0Point = motionPoint - uAlpha * forwardAtSource.xy;
+            source1Point = motionPoint - (1.0 - uAlpha) * backwardAtTarget.xy;
+            float cycleError = length(forwardAtSource.xy + backwardAtTarget.xy);
+            vec2 uv0Raw = uv + (source0Point - motionPoint) / vec2(uMotionSize);
+            vec2 uv1Raw = uv + (source1Point - motionPoint) / vec2(uMotionSize);
+            float valid0 = inBounds(uv0Raw);
+            float valid1 = inBounds(uv1Raw);
+            vec2 uv0 = clamp(uv0Raw, vec2(0.0), vec2(1.0));
+            vec2 uv1 = clamp(uv1Raw, vec2(0.0), vec2(1.0));
+            vec4 c0 = texture(uFrame0, uv0);
+            vec4 c1 = texture(uFrame1, uv1);
+            forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);
+            backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);
+            float confidence0 = flowReliability(forwardAtSource, cycleError, valid0);
+            float confidence1 = flowReliability(backwardAtTarget, cycleError, valid1);
+            // Confidence decides whether to trust motion; it must not distort the source-time blend.
+            float confidence = min(confidence0, confidence1);
+            if (confidence < 0.15) {
+              imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
+              pixelClass = 2u;
+            } else {
+              imageStore(uOutput, p, mix(c0, c1, uAlpha));
+              pixelClass = 1u;
+            }
+          }
         }
-        vec4 forwardAtMid = flowAt(motionPoint, 0);
-        vec4 backwardAtMid = flowAt(motionPoint, 1);
-        vec2 source0Point = motionPoint - uAlpha * forwardAtMid.xy;
-        vec2 source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;
-        vec4 forwardAtSource = flowAt(source0Point, 0);
-        vec4 backwardAtTarget = flowAt(source1Point, 1);
-        source0Point = motionPoint - uAlpha * forwardAtSource.xy;
-        source1Point = motionPoint - (1.0 - uAlpha) * backwardAtTarget.xy;
-        float cycleError = length(forwardAtSource.xy + backwardAtTarget.xy);
-        vec2 uv0Raw = uv + (source0Point - motionPoint) / vec2(uMotionSize);
-        vec2 uv1Raw = uv + (source1Point - motionPoint) / vec2(uMotionSize);
-        float valid0 = inBounds(uv0Raw);
-        float valid1 = inBounds(uv1Raw);
-        vec2 uv0 = clamp(uv0Raw, vec2(0.0), vec2(1.0));
-        vec2 uv1 = clamp(uv1Raw, vec2(0.0), vec2(1.0));
-        vec4 c0 = texture(uFrame0, uv0);
-        vec4 c1 = texture(uFrame1, uv1);
-        forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);
-        backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);
-        float confidence0 = flowReliability(forwardAtSource, cycleError, valid0);
-        float confidence1 = flowReliability(backwardAtTarget, cycleError, valid1);
-        // Confidence decides whether to trust motion; it must not distort the source-time blend.
-        float confidence = min(confidence0, confidence1);
-        if (confidence < 0.15) {
-          imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);
-          return;
+        if (uCoverageEnabled != 0) {
+          coverageClass[gl_LocalInvocationIndex] = pixelClass;
+          barrier();
+          if (gl_LocalInvocationIndex == 0u) {
+            uvec4 counts = uvec4(0u);
+            for (uint index = 0u; index < 64u; index++) {
+              if (coverageClass[index] == 1u) counts.x++;
+              else if (coverageClass[index] == 2u) counts.y++;
+              else if (coverageClass[index] == 3u) counts.z++;
+            }
+            uint groupIndex = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+            coverage[groupIndex] = counts;
+          }
         }
-        imageStore(uOutput, p, mix(c0, c1, uAlpha));
       }
     """
   }

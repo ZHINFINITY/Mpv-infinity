@@ -81,6 +81,25 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun sampledCoverageClassifiesWarpFallbackAndStaticBlendWithoutEarlyReturns() {
+    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+    val main = shader.substringAfter("void main()")
+
+    assertTrue(shader.contains("layout(std430, binding = 3) writeonly buffer FlowCoverageBuffer"))
+    assertTrue(shader.contains("uniform int uCoverageEnabled;"))
+    assertTrue(shader.contains("shared uint coverageClass[64];"))
+    assertTrue(shader.contains("pixelClass = 1u;"))
+    assertTrue(shader.contains("pixelClass = 2u;"))
+    assertTrue(shader.contains("pixelClass = 3u;"))
+    assertTrue(shader.contains("barrier();"))
+    assertTrue(shader.contains("coverage[groupIndex] = counts;"))
+    assertTrue(shader.contains("imageStore(uOutput, p, mix(c0, c1, uAlpha));"))
+    assertTrue(shader.contains("imageStore(uOutput, p, uAlpha < 0.5 ? source0 : source1);"))
+    assertTrue(shader.contains("imageStore(uOutput, p, mix(source0, source1, uAlpha));"))
+    assertFalse(main.contains("return;"))
+  }
+
+  @Test
   fun synthesisSubtractsBackwardFlowWhenSamplingFrameOne() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;"))
