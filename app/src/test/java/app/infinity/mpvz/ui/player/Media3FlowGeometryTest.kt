@@ -54,7 +54,7 @@ class Media3FlowGeometryTest {
     assertTrue(shader.contains("interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);"))
     assertTrue(shader.contains("forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);"))
     assertTrue(shader.contains("backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);"))
-    assertTrue(shader.contains("float matchQuality = 1.0 - smoothstep(0.06, MAX_MATCH_ERROR, flow.z);"))
+    assertTrue(shader.contains("float matchQuality = 1.0 - smoothstep(MATCH_ERROR_START, MATCH_ERROR_END, flow.z);"))
   }
 
   @Test
