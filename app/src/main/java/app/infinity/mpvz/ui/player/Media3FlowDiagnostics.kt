@@ -45,6 +45,16 @@ data class FlowPixelCoverageStats(
   val motionWarpPercent: Float? = null,
   val sourceFrameFallbackPercent: Float? = null,
   val staticBlendPercent: Float? = null,
+  /** Pixels whose same-coordinate weighted absolute RGB delta reaches the diagnostic threshold. */
+  val interframeChangedPixels: Long = 0L,
+  val interframeChangedFramePercent: Float? = null,
+  val interframeChangedWarpPixels: Long = 0L,
+  val interframeChangedSourceFallbackPixels: Long = 0L,
+  val interframeChangedStaticBlendPixels: Long = 0L,
+  /** Outcome percentages use interframeChangedPixels as their denominator. */
+  val interframeChangedWarpPercent: Float? = null,
+  val interframeChangedSourceFallbackPercent: Float? = null,
+  val interframeChangedStaticBlendPercent: Float? = null,
   /** One vector probe is taken at most per 8x8 output workgroup on sampled frames. */
   val staticVectorProbeSamples: Long = 0L,
   /** Magnitude >0.5 processing pixels and bidirectional reliability >=0.15. */
@@ -71,6 +81,10 @@ internal data class FlowCoverageSample(
   val staticVectorUncertainMotionSamples: Long = 0L,
   val staticVectorNearZeroConfidentSamples: Long = 0L,
   val staticVectorNearZeroUncertainSamples: Long = 0L,
+  val interframeChangedPixels: Long = 0L,
+  val interframeChangedWarpPixels: Long = 0L,
+  val interframeChangedSourceFallbackPixels: Long = 0L,
+  val interframeChangedStaticBlendPixels: Long = 0L,
 )
 
 internal object Media3FlowDiagnosticMath {
@@ -92,6 +106,10 @@ internal object Media3FlowDiagnosticMath {
     val warped = samples.sumOf { it.motionWarpPixels.coerceAtLeast(0L) }
     val fallback = samples.sumOf { it.sourceFrameFallbackPixels.coerceAtLeast(0L) }
     val staticBlend = samples.sumOf { it.staticBlendPixels.coerceAtLeast(0L) }
+    val interframeChanged = samples.sumOf { it.interframeChangedPixels.coerceAtLeast(0L) }
+    val interframeChangedWarp = samples.sumOf { it.interframeChangedWarpPixels.coerceAtLeast(0L) }
+    val interframeChangedFallback = samples.sumOf { it.interframeChangedSourceFallbackPixels.coerceAtLeast(0L) }
+    val interframeChangedStaticBlend = samples.sumOf { it.interframeChangedStaticBlendPixels.coerceAtLeast(0L) }
     val staticVectorLikelyMotion = samples.sumOf { it.staticVectorLikelyMotionSamples.coerceAtLeast(0L) }
     val staticVectorUncertainMotion = samples.sumOf { it.staticVectorUncertainMotionSamples.coerceAtLeast(0L) }
     val staticVectorNearZeroConfident = samples.sumOf { it.staticVectorNearZeroConfidentSamples.coerceAtLeast(0L) }
@@ -101,6 +119,11 @@ internal object Media3FlowDiagnosticMath {
     val total = warped + fallback + staticBlend
     if (total <= 0L) return FlowPixelCoverageStats(samples = samples.size)
     fun percentage(count: Long): Float = (count.toDouble() * 100.0 / total).toFloat()
+    fun changedOutcomePercentage(count: Long): Float? = if (interframeChanged > 0L) {
+      (count.toDouble() * 100.0 / interframeChanged).toFloat()
+    } else {
+      null
+    }
     fun staticProbePercentage(count: Long): Float? = if (staticVectorProbeSamples > 0L) {
       (count.toDouble() * 100.0 / staticVectorProbeSamples).toFloat()
     } else {
@@ -115,6 +138,14 @@ internal object Media3FlowDiagnosticMath {
       motionWarpPercent = percentage(warped),
       sourceFrameFallbackPercent = percentage(fallback),
       staticBlendPercent = percentage(staticBlend),
+      interframeChangedPixels = interframeChanged,
+      interframeChangedFramePercent = percentage(interframeChanged),
+      interframeChangedWarpPixels = interframeChangedWarp,
+      interframeChangedSourceFallbackPixels = interframeChangedFallback,
+      interframeChangedStaticBlendPixels = interframeChangedStaticBlend,
+      interframeChangedWarpPercent = changedOutcomePercentage(interframeChangedWarp),
+      interframeChangedSourceFallbackPercent = changedOutcomePercentage(interframeChangedFallback),
+      interframeChangedStaticBlendPercent = changedOutcomePercentage(interframeChangedStaticBlend),
       staticVectorProbeSamples = staticVectorProbeSamples,
       staticVectorLikelyMotionSamples = staticVectorLikelyMotion,
       staticVectorUncertainMotionSamples = staticVectorUncertainMotion,

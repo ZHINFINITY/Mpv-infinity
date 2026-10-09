@@ -39,6 +39,10 @@ class Media3FlowDiagnosticsTest {
           staticVectorUncertainMotionSamples = 5L,
           staticVectorNearZeroConfidentSamples = 15L,
           staticVectorNearZeroUncertainSamples = 5L,
+          interframeChangedPixels = 10L,
+          interframeChangedWarpPixels = 8L,
+          interframeChangedSourceFallbackPixels = 2L,
+          interframeChangedStaticBlendPixels = 0L,
         ),
         FlowCoverageSample(
           motionWarpPixels = 40L,
@@ -48,6 +52,10 @@ class Media3FlowDiagnosticsTest {
           staticVectorUncertainMotionSamples = 10L,
           staticVectorNearZeroConfidentSamples = 2L,
           staticVectorNearZeroUncertainSamples = 3L,
+          interframeChangedPixels = 10L,
+          interframeChangedWarpPixels = 8L,
+          interframeChangedSourceFallbackPixels = 1L,
+          interframeChangedStaticBlendPixels = 1L,
         ),
       ),
     )
@@ -60,6 +68,14 @@ class Media3FlowDiagnosticsTest {
     assertEquals(60f, coverage.motionWarpPercent!!, 0.001f)
     assertEquals(20f, coverage.sourceFrameFallbackPercent!!, 0.001f)
     assertEquals(20f, coverage.staticBlendPercent!!, 0.001f)
+    assertEquals(20L, coverage.interframeChangedPixels)
+    assertEquals(10f, coverage.interframeChangedFramePercent!!, 0.001f)
+    assertEquals(16L, coverage.interframeChangedWarpPixels)
+    assertEquals(3L, coverage.interframeChangedSourceFallbackPixels)
+    assertEquals(1L, coverage.interframeChangedStaticBlendPixels)
+    assertEquals(80f, coverage.interframeChangedWarpPercent!!, 0.001f)
+    assertEquals(15f, coverage.interframeChangedSourceFallbackPercent!!, 0.001f)
+    assertEquals(5f, coverage.interframeChangedStaticBlendPercent!!, 0.001f)
     assertEquals(60L, coverage.staticVectorProbeSamples)
     assertEquals(20L, coverage.staticVectorLikelyMotionSamples)
     assertEquals(15L, coverage.staticVectorUncertainMotionSamples)

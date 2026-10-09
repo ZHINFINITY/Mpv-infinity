@@ -1079,11 +1079,19 @@ class Media3FlowVideoSink(
         var staticVectorUncertainMotion = 0L
         var staticVectorNearZeroConfident = 0L
         var staticVectorNearZeroUncertain = 0L
+        var interframeChangedWarp = 0L
+        var interframeChangedSourceFallback = 0L
+        var interframeChangedStaticBlend = 0L
+        var interframeChangedPixels = 0L
         for (group in 0 until slot.groupCount) {
           val offset = group * COVERAGE_BYTES_PER_GROUP
           warped += data.getInt(offset).toLong() and 0xFFFF_FFFFL
           sourceFallback += data.getInt(offset + Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
           staticBlend += data.getInt(offset + 2 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
+          interframeChangedWarp += data.getInt(offset + 4 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
+          interframeChangedSourceFallback += data.getInt(offset + 5 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
+          interframeChangedStaticBlend += data.getInt(offset + 6 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
+          interframeChangedPixels += data.getInt(offset + 7 * Int.SIZE_BYTES).toLong() and 0xFFFF_FFFFL
           when (data.getInt(offset + 3 * Int.SIZE_BYTES)) {
             1 -> staticVectorLikelyMotion++
             2 -> staticVectorUncertainMotion++
@@ -1093,9 +1101,13 @@ class Media3FlowVideoSink(
         }
         val staticVectorProbeSamples = staticVectorLikelyMotion + staticVectorUncertainMotion +
           staticVectorNearZeroConfident + staticVectorNearZeroUncertain
+        val interframeChangedOutcomePixels = interframeChangedWarp + interframeChangedSourceFallback +
+          interframeChangedStaticBlend
         val unmapped = runCatching { GLES31.glUnmapBuffer(GLES31.GL_SHADER_STORAGE_BUFFER) }.getOrDefault(false)
         if (!unmapped || warped + sourceFallback + staticBlend != slot.expectedPixelCount ||
-          staticVectorProbeSamples > slot.groupCount.toLong() || staticVectorProbeSamples > staticBlend
+          staticVectorProbeSamples > slot.groupCount.toLong() || staticVectorProbeSamples > staticBlend ||
+          interframeChangedPixels != interframeChangedOutcomePixels ||
+          interframeChangedPixels > slot.expectedPixelCount
         ) {
           invalidCoverageSamples++
           continue
@@ -1109,6 +1121,10 @@ class Media3FlowVideoSink(
             staticVectorUncertainMotionSamples = staticVectorUncertainMotion,
             staticVectorNearZeroConfidentSamples = staticVectorNearZeroConfident,
             staticVectorNearZeroUncertainSamples = staticVectorNearZeroUncertain,
+            interframeChangedPixels = interframeChangedPixels,
+            interframeChangedWarpPixels = interframeChangedWarp,
+            interframeChangedSourceFallbackPixels = interframeChangedSourceFallback,
+            interframeChangedStaticBlendPixels = interframeChangedStaticBlend,
           ),
         )
         while (coverageSamples.size > COVERAGE_HISTORY_SIZE) coverageSamples.removeFirst()
@@ -1957,7 +1973,17 @@ class Media3FlowVideoSink(
     val coverageSummary = "samples=${coverage.samples} warp=${coverage.motionWarpPixels}(${formatFlowPercent(coverage.motionWarpPercent)}%) " +
       "sourceFallback=${coverage.sourceFrameFallbackPixels}(${formatFlowPercent(coverage.sourceFrameFallbackPercent)}%) " +
       "staticBlend=${coverage.staticBlendPixels}(${formatFlowPercent(coverage.staticBlendPercent)}%) " +
+      "interframeChangedPixels=${coverage.interframeChangedPixels}/${coverage.sampledPixels}" +
+      "(${formatFlowPercent(coverage.interframeChangedFramePercent)}%ofFrame,weightedAbsRgbDeltaMin=$INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD," +
+      "staticBlendCut=$STATIC_BLEND_LUMA_DELTA_THRESHOLD) " +
+      "changedOutcomesDenom=${coverage.interframeChangedPixels} " +
+      "changedWarp=${coverage.interframeChangedWarpPixels}(${formatFlowPercent(coverage.interframeChangedWarpPercent)}%) " +
+      "changedSourceFallback=${coverage.interframeChangedSourceFallbackPixels}" +
+      "(${formatFlowPercent(coverage.interframeChangedSourceFallbackPercent)}%) " +
+      "changedStaticBlend=${coverage.interframeChangedStaticBlendPixels}" +
+      "(${formatFlowPercent(coverage.interframeChangedStaticBlendPercent)}%) " +
       "pixels=${coverage.sampledPixels} skipped=${coverage.skippedSamples} invalid=${coverage.invalidSamples} " +
+      "sampleEveryDispatch=$COVERAGE_SAMPLE_INTERVAL " +
       "staticVectorProbe=${coverage.staticVectorProbeSamples}(magnitudeCutoffProcessingPx=0.5,reliabilityCutoff=0.15) " +
       "likely=${coverage.staticVectorLikelyMotionSamples}(${formatFlowPercent(coverage.staticVectorLikelyMotionPercent)}%) " +
       "uncertain=${coverage.staticVectorUncertainMotionSamples}(${formatFlowPercent(coverage.staticVectorUncertainMotionPercent)}%) " +
@@ -2127,8 +2153,10 @@ class Media3FlowVideoSink(
     private const val COVERAGE_BUFFER_COUNT = 3
     private const val COVERAGE_HISTORY_SIZE = 12
     private const val COVERAGE_SAMPLE_INTERVAL = 8L
-    private const val COVERAGE_BYTES_PER_GROUP = 16
+    private const val COVERAGE_BYTES_PER_GROUP = 8 * Int.SIZE_BYTES
     private const val FLOW_COVERAGE_BINDING = 3
+    private const val INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = 0.01f
+    private const val STATIC_BLEND_LUMA_DELTA_THRESHOLD = 0.018f
     private const val GL_TIME_ELAPSED_EXT = 0x88BF
     private const val GL_GPU_DISJOINT_EXT = 0x8FBB
     private const val GL_SYNC_GPU_COMMANDS_COMPLETE = 0x9117
@@ -2290,8 +2318,11 @@ class Media3FlowVideoSink(
       uniform int uCoverageEnabled;
       layout(std430, binding = 3) writeonly buffer FlowCoverageBuffer { uvec4 coverage[]; };
       shared uint coverageClass[64];
+      shared uint interframeChangedClass[64];
       const float MAX_MATCH_ERROR = 0.34;
       const float STATIC_VECTOR_PROBE_THRESHOLD = 0.5;
+      const float INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = ${INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD};
+      const float STATIC_BLEND_LUMA_DELTA_THRESHOLD = ${STATIC_BLEND_LUMA_DELTA_THRESHOLD};
       const float FLOW_EDGE_START_SQUARED = 9.0;
       const float FLOW_EDGE_END_SQUARED = 81.0;
       vec4 flowImageAt(ivec2 p, int direction) {
@@ -2343,6 +2374,7 @@ class Media3FlowVideoSink(
         ivec2 p = ivec2(gl_GlobalInvocationID.xy);
         uint pixelClass = 0u;
         uint staticVectorClass = 0u;
+        uint changedPixelClass = 0u;
         if (all(lessThan(p, uSize))) {
           vec2 point = vec2(p) + vec2(0.5);
           vec2 uv = point / vec2(uSize);
@@ -2350,7 +2382,7 @@ class Media3FlowVideoSink(
           vec4 source0 = texture(uFrame0, uv);
           vec4 source1 = texture(uFrame1, uv);
           float staticChange = dot(abs(source0.rgb - source1.rgb), vec3(0.2126, 0.7152, 0.0722));
-          if (staticChange < 0.018) {
+          if (staticChange < STATIC_BLEND_LUMA_DELTA_THRESHOLD) {
             imageStore(uOutput, p, mix(source0, source1, uAlpha));
             pixelClass = 3u;
             // Sample the existing vectors at one pixel per workgroup; this probe never writes color.
@@ -2403,20 +2435,30 @@ class Media3FlowVideoSink(
               pixelClass = 1u;
             }
           }
+          if (uCoverageEnabled != 0 && staticChange >= INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD) {
+            changedPixelClass = pixelClass;
+          }
         }
         if (uCoverageEnabled != 0) {
           coverageClass[gl_LocalInvocationIndex] = pixelClass;
+          interframeChangedClass[gl_LocalInvocationIndex] = changedPixelClass;
           barrier();
           if (gl_LocalInvocationIndex == 0u) {
             uvec4 counts = uvec4(0u);
+            uvec4 changedCounts = uvec4(0u);
             for (uint index = 0u; index < 64u; index++) {
               if (coverageClass[index] == 1u) counts.x++;
               else if (coverageClass[index] == 2u) counts.y++;
               else if (coverageClass[index] == 3u) counts.z++;
+              if (interframeChangedClass[index] == 1u) changedCounts.x++;
+              else if (interframeChangedClass[index] == 2u) changedCounts.y++;
+              else if (interframeChangedClass[index] == 3u) changedCounts.z++;
+              if (interframeChangedClass[index] != 0u) changedCounts.w++;
             }
             uint groupIndex = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
             counts.w = staticVectorClass;
-            coverage[groupIndex] = counts;
+            coverage[groupIndex * 2u] = counts;
+            coverage[groupIndex * 2u + 1u] = changedCounts;
           }
         }
       }
