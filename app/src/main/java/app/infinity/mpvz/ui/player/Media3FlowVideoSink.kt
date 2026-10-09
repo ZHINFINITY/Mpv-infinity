@@ -1038,6 +1038,10 @@ class Media3FlowVideoSink(
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uMotionSize"), processingWidth, processingHeight)
     GLES31.glUniform2i(GLES31.glGetUniformLocation(synthProgram, "uGrid"), gridWidth, gridHeight)
     GLES31.glUniform1i(GLES31.glGetUniformLocation(synthProgram, "uStep"), MEDIA3_FLOW_GRID_STEP)
+    GLES31.glUniform1f(
+      GLES31.glGetUniformLocation(synthProgram, "uGridAnchorOffset"),
+      Media3FlowGeometry.motionGridAnchorOffset(),
+    )
     GLES31.glUniform1f(GLES31.glGetUniformLocation(synthProgram, "uAlpha"), alpha)
     GLES31.glBindImageTexture(0, pair.forwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
     GLES31.glBindImageTexture(1, pair.backwardTexture, 0, false, 0, GLES31.GL_READ_ONLY, GLES30.GL_RGBA16F)
@@ -1885,12 +1889,14 @@ class Media3FlowVideoSink(
       uniform ivec2 uMotionSize;
       uniform ivec2 uGrid;
       uniform int uStep;
+      uniform float uGridAnchorOffset;
       uniform float uAlpha;
       vec4 flowImageAt(ivec2 p, int direction) {
         return direction == 0 ? imageLoad(uForward, p) : imageLoad(uBackward, p);
       }
       vec4 flowAt(vec2 p, int direction) {
-        vec2 gridPos = p / float(uStep);
+        vec2 gridPos = (p - vec2(uGridAnchorOffset)) / float(uStep);
+        gridPos = clamp(gridPos, vec2(0.0), vec2(uGrid - ivec2(1)));
         ivec2 a = clamp(ivec2(floor(gridPos)), ivec2(0), uGrid - 1);
         ivec2 b = min(a + ivec2(1), uGrid - 1);
         vec2 t = fract(gridPos);

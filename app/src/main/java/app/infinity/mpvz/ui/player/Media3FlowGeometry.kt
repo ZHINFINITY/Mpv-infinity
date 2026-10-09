@@ -44,6 +44,9 @@ internal object Media3FlowGeometry {
     )
   }
 
+  /** Block-matching vectors describe the center of each sampled patch, not its top-left corner. */
+  fun motionGridAnchorOffset(): Float = MEDIA3_FLOW_BLOCK_SIZE / 2f
+
   /** Geometry for the custom sink's visible blit; Crop adjusts UVs, Fit letterboxes, Stretch fills. */
   fun blitGeometry(
     sourceWidth: Int,

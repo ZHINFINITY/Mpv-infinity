@@ -28,6 +28,15 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun synthesisSamplesMotionAtPatchCentersAndClampsGridEdges() {
+    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+    assertEquals(4f, Media3FlowGeometry.motionGridAnchorOffset(), 0f)
+    assertTrue(shader.contains("uniform float uGridAnchorOffset;"))
+    assertTrue(shader.contains("vec2 gridPos = (p - vec2(uGridAnchorOffset)) / float(uStep);"))
+    assertTrue(shader.contains("gridPos = clamp(gridPos, vec2(0.0), vec2(uGrid - ivec2(1)));"))
+  }
+
+  @Test
   fun synthesisSubtractsBackwardFlowWhenSamplingFrameOne() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;"))
