@@ -2319,7 +2319,6 @@ class Media3FlowVideoSink(
       layout(std430, binding = 3) writeonly buffer FlowCoverageBuffer { uvec4 coverage[]; };
       shared uint coverageClass[64];
       shared uint interframeChangedClass[64];
-      const float MAX_MATCH_ERROR = 0.34;
       // Preserve the visually clean baseline calibration; bidirectional confidence and
       // the bounds/edge guards below remain stricter than that baseline.
       const float CYCLE_ERROR_START = 1.0;
@@ -2330,7 +2329,6 @@ class Media3FlowVideoSink(
       const float INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = ${INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD};
       const float STATIC_BLEND_LUMA_DELTA_THRESHOLD = ${STATIC_BLEND_LUMA_DELTA_THRESHOLD};
       const float FLOW_EDGE_START_SQUARED = 9.0;
-      const float FLOW_EDGE_END_SQUARED = 81.0;
       vec4 flowImageAt(ivec2 p, int direction) {
         return direction == 0 ? imageLoad(uForward, p) : imageLoad(uBackward, p);
       }
@@ -2355,16 +2353,14 @@ class Media3FlowVideoSink(
           max(horizontalTop, horizontalBottom),
           max(verticalLeft, verticalRight)
         );
-        float edgePenalty = smoothstep(FLOW_EDGE_START_SQUARED, FLOW_EDGE_END_SQUARED, localMotionDisagreementSq);
         // Do not average foreground and background vectors across a motion boundary.
         if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {
           ivec2 nearestCell = ivec2(t.x < 0.5 ? a.x : b.x, t.y < 0.5 ? a.y : b.y);
           vec4 nearestFlow = flowImageAt(nearestCell, direction);
           interpolated.xy = nearestFlow.xy;
-          interpolated.z = max(nearestFlow.z, MAX_MATCH_ERROR * edgePenalty);
+          // Reliability must reflect measured match error, not edge disagreement itself.
+          interpolated.z = nearestFlow.z;
           interpolated.w = nearestFlow.w;
-        } else {
-          interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);
         }
         return interpolated;
       }
