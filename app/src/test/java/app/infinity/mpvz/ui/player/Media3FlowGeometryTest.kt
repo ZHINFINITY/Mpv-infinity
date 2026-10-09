@@ -58,6 +58,17 @@ class Media3FlowGeometryTest {
   }
 
   @Test
+  fun synthesisWeightsSmoothRegionVectorsByMatchAndTextureConfidence() {
+    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+    assertTrue(shader.contains("float flowMatchWeight(vec4 flow) {"))
+    assertTrue(shader.contains("return matchQuality * textureConfidence;"))
+    assertTrue(shader.contains("float totalWeight = weight00 + weight10 + weight01 + weight11;"))
+    assertTrue(shader.contains("interpolated.xy = weightedFlow / totalWeight;"))
+    assertTrue(shader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {"))
+    assertTrue(shader.contains("interpolated.xy = nearestFlow.xy;"))
+  }
+
+  @Test
   fun synthesisUsesConfidenceAsAGateAndPreservesSourceTimeBlendWeights() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     assertTrue(shader.contains("float confidence = min(confidence0, confidence1);"))
