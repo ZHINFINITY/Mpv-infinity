@@ -71,14 +71,14 @@ class Media3FlowGeometryTest {
   }
 
   @Test
-  fun synthesisSelectsOneVectorAcrossLocalMotionDiscontinuities() {
+  fun synthesisKeepsMotionFieldContinuousAcrossGridCells() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(shader.contains("float localMotionDisagreementSq = max("))
-    assertTrue(shader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {"))
-    assertTrue(shader.contains("ivec2 nearestCell = ivec2(t.x < 0.5 ? a.x : b.x, t.y < 0.5 ? a.y : b.y);"))
-    assertTrue(shader.contains("interpolated.xy = nearestFlow.xy;"))
-    assertTrue(shader.contains("interpolated.z = nearestFlow.z;"))
-    assertTrue(shader.contains("interpolated.w = nearestFlow.w;"))
+    assertTrue(shader.contains("vec4 top = mix(flow00, flow10, t.x);"))
+    assertTrue(shader.contains("vec4 bottom = mix(flow01, flow11, t.x);"))
+    assertTrue(shader.contains("vec4 interpolated = mix(top, bottom, t.y);"))
+    assertTrue(shader.contains("return interpolated;"))
+    assertFalse(shader.contains("nearestCell"))
+    assertFalse(shader.contains("FLOW_EDGE_START_SQUARED"))
     assertFalse(shader.contains("MAX_MATCH_ERROR * edgePenalty"))
     assertTrue(shader.contains("forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);"))
     assertTrue(shader.contains("backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);"))
@@ -86,11 +86,10 @@ class Media3FlowGeometryTest {
   }
 
   @Test
-  fun edgeDisagreementDoesNotInventMatchErrorButMeasuredPoorMatchesStillFail() {
+  fun measuredMatchErrorStillRejectsPoorVectorsAfterRemovingEdgeSnapping() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
-    assertTrue(shader.contains("const float FLOW_EDGE_START_SQUARED = 9.0;"))
-    assertTrue(shader.contains("interpolated.z = nearestFlow.z;"))
-    assertFalse(shader.contains("FLOW_EDGE_END_SQUARED"))
+    assertFalse(shader.contains("FLOW_EDGE_START_SQUARED"))
+    assertFalse(shader.contains("nearestFlow"))
     assertFalse(shader.contains("MAX_MATCH_ERROR * edgePenalty"))
 
     val goodMeasuredMatchQuality = 1f - smoothstep(0.04f, 0.35f, 0.01f)
@@ -112,8 +111,8 @@ class Media3FlowGeometryTest {
     assertFalse(motionShader.contains("textureEnergy"))
     assertTrue(synthesisShader.contains("return consistency * matchQuality * valid;"))
     assertFalse(synthesisShader.contains("textureConfidence"))
-    assertTrue(synthesisShader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {"))
-    assertTrue(synthesisShader.contains("interpolated.xy = nearestFlow.xy;"))
+    assertTrue(synthesisShader.contains("vec4 interpolated = mix(top, bottom, t.y);"))
+    assertFalse(synthesisShader.contains("nearestCell"))
   }
 
   @Test

@@ -29,6 +29,6 @@ class Media3FlowSynthesisPolicyTest {
     assertTrue(shader.contains("float valid1 = inBounds(uv1Raw);"))
     assertTrue(shader.contains("valid0 *= inBounds(cyclePoint0 / vec2(uMotionSize));"))
     assertTrue(shader.contains("valid1 *= inBounds(cyclePoint1 / vec2(uMotionSize));"))
-    assertTrue(shader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED)"))
+    assertFalse(shader.contains("nearestCell"))
   }
 }

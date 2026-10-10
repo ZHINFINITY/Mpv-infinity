@@ -2399,7 +2399,6 @@ class Media3FlowVideoSink(
       const float STATIC_VECTOR_PROBE_THRESHOLD = 0.5;
       const float INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD = ${INTERFRAME_CHANGE_DIAGNOSTIC_LUMA_THRESHOLD};
       const float STATIC_BLEND_LUMA_DELTA_THRESHOLD = ${STATIC_BLEND_LUMA_DELTA_THRESHOLD};
-      const float FLOW_EDGE_START_SQUARED = 9.0;
       vec4 flowImageAt(ivec2 p, int direction) {
         return direction == 0 ? imageLoad(uForward, p) : imageLoad(uBackward, p);
       }
@@ -2416,23 +2415,6 @@ class Media3FlowVideoSink(
         vec4 top = mix(flow00, flow10, t.x);
         vec4 bottom = mix(flow01, flow11, t.x);
         vec4 interpolated = mix(top, bottom, t.y);
-        float horizontalTop = dot(flow10.xy - flow00.xy, flow10.xy - flow00.xy);
-        float horizontalBottom = dot(flow11.xy - flow01.xy, flow11.xy - flow01.xy);
-        float verticalLeft = dot(flow01.xy - flow00.xy, flow01.xy - flow00.xy);
-        float verticalRight = dot(flow11.xy - flow10.xy, flow11.xy - flow10.xy);
-        float localMotionDisagreementSq = max(
-          max(horizontalTop, horizontalBottom),
-          max(verticalLeft, verticalRight)
-        );
-        // Do not average foreground and background vectors across a motion boundary.
-        if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {
-          ivec2 nearestCell = ivec2(t.x < 0.5 ? a.x : b.x, t.y < 0.5 ? a.y : b.y);
-          vec4 nearestFlow = flowImageAt(nearestCell, direction);
-          interpolated.xy = nearestFlow.xy;
-          // Keep edge fallback decisions tied to measured match and cycle error, not a synthetic penalty.
-          interpolated.z = nearestFlow.z;
-          interpolated.w = nearestFlow.w;
-        }
         return interpolated;
       }
       float inBounds(vec2 uv) {
