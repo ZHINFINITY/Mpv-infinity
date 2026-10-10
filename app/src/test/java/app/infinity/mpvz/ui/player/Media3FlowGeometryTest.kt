@@ -46,15 +46,30 @@ class Media3FlowGeometryTest {
   fun synthesisSelectsOneVectorAcrossLocalMotionDiscontinuities() {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     assertTrue(shader.contains("float localMotionDisagreementSq = max("))
+    assertTrue(shader.contains("float edgePenalty = smoothstep(FLOW_EDGE_START_SQUARED, FLOW_EDGE_END_SQUARED, localMotionDisagreementSq);"))
     assertTrue(shader.contains("if (localMotionDisagreementSq > FLOW_EDGE_START_SQUARED) {"))
     assertTrue(shader.contains("ivec2 nearestCell = ivec2(t.x < 0.5 ? a.x : b.x, t.y < 0.5 ? a.y : b.y);"))
     assertTrue(shader.contains("interpolated.xy = nearestFlow.xy;"))
-    assertTrue(shader.contains("interpolated.z = nearestFlow.z;"))
+    assertTrue(shader.contains("interpolated.z = max(nearestFlow.z, MAX_MATCH_ERROR * edgePenalty);"))
     assertTrue(shader.contains("interpolated.w = nearestFlow.w;"))
-    assertFalse(shader.contains("MAX_MATCH_ERROR * edgePenalty"))
+    assertTrue(shader.contains("interpolated.z = max(interpolated.z, MAX_MATCH_ERROR * edgePenalty);"))
     assertTrue(shader.contains("forwardAtSource.z = max(forwardAtSource.z, forwardAtMid.z);"))
     assertTrue(shader.contains("backwardAtTarget.z = max(backwardAtTarget.z, backwardAtMid.z);"))
     assertTrue(shader.contains("float matchQuality = 1.0 - smoothstep(MATCH_ERROR_START, MATCH_ERROR_END, flow.z);"))
+  }
+
+  @Test
+  fun severeNeighboringMotionConflictRejectsAnOtherwiseLowSadNearestVector() {
+    val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
+    assertTrue(shader.contains("const float MAX_MATCH_ERROR = 0.34;"))
+    assertTrue(shader.contains("const float FLOW_EDGE_START_SQUARED = 9.0;"))
+    assertTrue(shader.contains("const float FLOW_EDGE_END_SQUARED = 81.0;"))
+    assertTrue(shader.contains("interpolated.z = max(nearestFlow.z, MAX_MATCH_ERROR * edgePenalty);"))
+
+    val edgePenalty = smoothstep(9f, 81f, 81f)
+    val edgeMatchError = maxOf(0.01f, 0.34f * edgePenalty)
+    val matchQuality = 1f - smoothstep(0.04f, 0.35f, edgeMatchError)
+    assertTrue("A 9-pixel vector conflict must not pass the 0.15 warp-confidence gate", matchQuality < 0.15f)
   }
 
   @Test
@@ -113,6 +128,11 @@ class Media3FlowGeometryTest {
     val shader = Media3FlowVideoSink.SYNTH_COMPUTE_SHADER
     assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtMid.xy;"))
     assertTrue(shader.contains("source1Point = motionPoint - (1.0 - uAlpha) * backwardAtTarget.xy;"))
+  }
+
+  private fun smoothstep(edge0: Float, edge1: Float, value: Float): Float {
+    val t = ((value - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
   }
 
   @Test
