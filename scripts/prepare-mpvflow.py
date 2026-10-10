@@ -50,19 +50,27 @@ def base_sources_close(meson: str) -> int:
 
 
 def enable_android_vulkan_dependency(meson: str) -> str:
-    if meson.count(MPV_VULKAN_DEPENDENCY) != 1:
-        raise SystemExit("Pinned MPV Vulkan dependency check changed; refusing an unverified Android Vulkan build")
     if "vulkan/vulkan_core.h" not in meson or "VK_VERSION_1_3" not in meson:
         raise SystemExit("Pinned MPV Vulkan header-version guard is missing; refusing an unverified Android Vulkan build")
-    return meson.replace(MPV_VULKAN_DEPENDENCY, ANDROID_VULKAN_DEPENDENCY, 1)
+    old_count = meson.count(MPV_VULKAN_DEPENDENCY)
+    new_count = meson.count(ANDROID_VULKAN_DEPENDENCY)
+    if old_count == 1 and new_count == 0:
+        return meson.replace(MPV_VULKAN_DEPENDENCY, ANDROID_VULKAN_DEPENDENCY, 1)
+    if old_count == 0 and new_count == 1:
+        return meson
+    raise SystemExit("Pinned MPV Vulkan dependency check changed; refusing an unverified Android Vulkan build")
 
 
 def enable_android_glslang_library_search(meson: str) -> str:
-    if meson.count(PLACEBO_GLSLANG_LIBRARY_LOOKUP) != 1:
-        raise SystemExit("Pinned libplacebo glslang lookup changed; refusing a Vulkan build with an unverified SPIR-V compiler path")
     if meson.count(PLACEBO_SPIRV_LIBRARY_LOOKUP) != 1:
         raise SystemExit("Pinned libplacebo SPIR-V Vulkan-SDK lookup changed; refusing an unverified compiler search path")
-    return meson.replace(PLACEBO_GLSLANG_LIBRARY_LOOKUP, ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP, 1)
+    old_count = meson.count(PLACEBO_GLSLANG_LIBRARY_LOOKUP)
+    new_count = meson.count(ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP)
+    if old_count == 1 and new_count == 0:
+        return meson.replace(PLACEBO_GLSLANG_LIBRARY_LOOKUP, ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP, 1)
+    if old_count == 0 and new_count == 1:
+        return meson
+    raise SystemExit("Pinned libplacebo glslang lookup changed; refusing a Vulkan build with an unverified SPIR-V compiler path")
 
 
 def main() -> None:

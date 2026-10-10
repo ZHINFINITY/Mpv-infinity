@@ -13,6 +13,7 @@ BUILDSCRIPTS="$MPV_BUILDER_DIR/buildscripts"
 export ANDROID_HOME="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export MPV_SOURCE_DIR
+export MPVFLOW_ROOT="$ROOT"
 export DONT_BUILD_RELEASE=1
 export CACHE_MODE=none
 export cores="${MPVFLOW_MPV_BUILD_CORES:-2}"
@@ -63,9 +64,10 @@ download_marker = "IN_CI=1 ./include/download-deps.sh\n"
 if ci.count(download_marker) != 1:
     raise SystemExit(f"Expected one dependency download step in {ci_path}; refusing unsafe patch")
 symver_patch = 'python3 "$GITHUB_WORKSPACE/scripts/patch-ffmpeg-symver.py" deps/ffmpeg/configure\n'
-ci = ci.replace(download_marker, download_marker + symver_patch, 1)
+flow_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --libplacebo-dir deps/libplacebo\n'
+ci = ci.replace(download_marker, download_marker + symver_patch + flow_prepare, 1)
 ci_path.write_text(ci)
-print("Prepared the pinned Android MPV builder and restored FFmpeg's Android symbol-version probe")
+print("Prepared the pinned Android MPV builder, FFmpeg probe, and MPVFlow sources before dependency compilation")
 
 download = download_path.read_text()
 libplacebo_clone = "[ ! -d libplacebo ] && git clone --recursive https://github.com/haasn/libplacebo"

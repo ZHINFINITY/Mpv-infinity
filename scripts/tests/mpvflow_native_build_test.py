@@ -33,6 +33,7 @@ assert old_dependency not in patched, "Android build must not require missing Vu
 assert new_dependency in patched, "Android Vulkan dependency must remain required and validate NDK headers"
 assert header_check in patched, "Android build must retain the Vulkan 1.3 header-symbol requirement"
 assert patched.startswith("before\n") and patched.endswith("after\n"), "dependency patch must preserve adjacent MPV Meson content"
+assert prepare.enable_android_vulkan_dependency(patched) == patched, "MPV Vulkan preparation must be safe to repeat after dependency compilation"
 
 for bad_meson in (
     "no Vulkan dependency here\n",
@@ -60,6 +61,9 @@ assert "cxx.find_library('glslang', required: required, static: static, dirs: vu
 )
 assert "dirs: vulkan_lib_dirs" in patched_placebo_meson.splitlines()[0], (
     "the existing SPIRV Vulkan SDK lookup must remain intact"
+)
+assert prepare.enable_android_glslang_library_search(patched_placebo_meson) == patched_placebo_meson, (
+    "libplacebo glslang preparation must be safe to repeat after dependency compilation"
 )
 for bad_placebo_meson in (
     "no glslang lookup here\n",
@@ -90,6 +94,7 @@ required_fragments = (
     'export LDFLAGS="${LDFLAGS:-} -L$prefix_dir/lib -lc++"',
     "-Dglslang=enabled -Dvulkan-sdk=",
     "-Dvulkan=enabled",
+    'export MPVFLOW_ROOT="$ROOT"',
     "libSPIRV.a libglslang.a libglslang-default-resource-limits.a",
     'PLACEBO_PC="$MPV_PREFIX/pkgconfig/libplacebo.pc"',
     'PLACEBO_VERSION="$(sed -n \'s/^Version: *//p\' "$PLACEBO_PC")"',
@@ -208,10 +213,13 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
         "$WGET https://github.com/mpv-player/mpv/archive/master.tar.gz -O master.tgz\n"
         "tar -xzf master.tgz -C deps/mpv --strip-components=1\n"
         "rm master.tgz\n"
+        "build_prefix() {\n"
+        "IN_CI=1 ./include/download-deps.sh\n"
+        'msg "Compiling"\n'
         "./buildall.sh --only-deps mpv\n"
+        "}\n"
         "./buildall.sh -n mpv\n"
-        "./buildall.sh -n\n"
-        "IN_CI=1 ./include/download-deps.sh\n",
+        "./buildall.sh -n\n",
         encoding="utf-8",
     )
     depinfo.write_text("dep_mpv=(ffmpeg libass lua libplacebo qairt)\nv_ci_ffmpeg=n8.0.1\n", encoding="utf-8")
@@ -254,6 +262,12 @@ with tempfile.TemporaryDirectory(prefix="mpvflow-builder-patch-test-") as tempor
     patched_downloads = downloads.read_text(encoding="utf-8")
     assert "0d043c7f6f79cd3687c023454bdacbe615e4d96f" in patched_downloads, "libplacebo pin was lost"
     assert "git -C glslang fetch --depth 1 origin 1062752a891c95b2bfeed9e356562d88f9df84ac" in patched_downloads
+    patched_ci = ci.read_text(encoding="utf-8")
+    early_prepare = 'python3 "$MPVFLOW_ROOT/scripts/prepare-mpvflow.py" --mpv-dir deps/mpv --libplacebo-dir deps/libplacebo'
+    assert early_prepare in patched_ci, "Flow preparation must be injected after source download"
+    assert patched_ci.index(early_prepare) < patched_ci.index('msg "Compiling"') < patched_ci.index(
+        "./buildall.sh --arch arm64 --only-deps mpv"
+    ), "Flow Vulkan/glslang source fixes must run before the dependency prefix builds libplacebo"
     patched_placebo = libplacebo.read_text(encoding="utf-8")
     assert "-Dglslang=enabled" in patched_placebo and "-Dvulkan=enabled" in patched_placebo
     assert "cmake --install" in patched_placebo and "libSPIRV.a" in patched_placebo
