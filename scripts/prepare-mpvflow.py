@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "app/src/main/cpp/mpvflow"
 MPV_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', version: '>= 1.3.238', required: vulkan_opt)"
 ANDROID_VULKAN_DEPENDENCY = "vulkan = dependency('vulkan', required: vulkan_opt)"
+PLACEBO_SPIRV_LIBRARY_LOOKUP = "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)"
+PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static)"
+ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP = "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)"
 
 
 def base_sources_close(meson: str) -> int:
@@ -54,16 +57,27 @@ def enable_android_vulkan_dependency(meson: str) -> str:
     return meson.replace(MPV_VULKAN_DEPENDENCY, ANDROID_VULKAN_DEPENDENCY, 1)
 
 
+def enable_android_glslang_library_search(meson: str) -> str:
+    if meson.count(PLACEBO_GLSLANG_LIBRARY_LOOKUP) != 1:
+        raise SystemExit("Pinned libplacebo glslang lookup changed; refusing a Vulkan build with an unverified SPIR-V compiler path")
+    if meson.count(PLACEBO_SPIRV_LIBRARY_LOOKUP) != 1:
+        raise SystemExit("Pinned libplacebo SPIR-V Vulkan-SDK lookup changed; refusing an unverified compiler search path")
+    return meson.replace(PLACEBO_GLSLANG_LIBRARY_LOOKUP, ANDROID_PLACEBO_GLSLANG_LIBRARY_LOOKUP, 1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mpv-dir", required=True, type=Path)
+    parser.add_argument("--libplacebo-dir", required=True, type=Path)
     args = parser.parse_args()
     mpv_dir = args.mpv_dir.resolve()
+    libplacebo_dir = args.libplacebo_dir.resolve()
     meson_path = mpv_dir / "meson.build"
     vo_path = mpv_dir / "video/out/vo_gpu_next.c"
-    for path in (meson_path, vo_path):
+    glslang_meson_path = libplacebo_dir / "src/glsl/meson.build"
+    for path in (meson_path, vo_path, glslang_meson_path):
         if not path.is_file():
-            raise SystemExit(f"Pinned mpv source is missing {path}")
+            raise SystemExit(f"Pinned native source is missing required file {path}")
 
     required = (
         VENDOR / "mpvflow_gpu.c",
@@ -81,6 +95,7 @@ def main() -> None:
     vo = vo_path.read_text()
     meson = meson_path.read_text()
     meson = enable_android_vulkan_dependency(meson)
+    glslang_meson = enable_android_glslang_library_search(glslang_meson_path.read_text())
     vo_marker = "MPVFLOW_GPU_INTEGRATION"
     meson_marker = "# MPVFLOW_ANDROID_GPU"
     if vo_marker not in vo:
@@ -108,9 +123,11 @@ def main() -> None:
     elif gpu_source not in meson:
         raise SystemExit("GPU Flow Meson marker exists without its source registration")
 
+    glslang_meson_path.write_text(glslang_meson)
     print(
-        f"Installed direct GPU MPVFlow into {mpv_dir}; the legacy CPU filter is "
-        "not compiled or registered by this build."
+        f"Installed direct GPU MPVFlow into {mpv_dir} and corrected libplacebo's "
+        f"Android glslang search path in {glslang_meson_path}; the legacy CPU "
+        "filter is not compiled or registered by this build."
     )
 
 

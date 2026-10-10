@@ -13,6 +13,10 @@ PREPARE = ROOT / "scripts/prepare-mpvflow.py"
 BUILD = ROOT / "scripts/build-mpvflow-mpv-runtime.sh"
 PLAYBACK_SESSION = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/PlaybackSession.kt"
 MPV_VIEW = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/MPVView.kt"
+APP_BUILD = ROOT / "app/build.gradle.kts"
+MPV_CONF_POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/preferences/MpvConfigOverride.kt"
+POLICY = ROOT / "app/src/main/java/app/infinity/mpvz/ui/player/RendererBackendPolicy.kt"
+POLICY_TEST = ROOT / "app/src/test/java/app/infinity/mpvz/ui/player/RendererBackendPolicyTest.kt"
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("prepare_mpvflow", PREPARE)
@@ -42,7 +46,39 @@ for bad_meson in (
     else:
         raise AssertionError("unexpected MPV Vulkan source changes must fail closed")
 
+placebo_meson = (
+    "spirv = cxx.find_library('SPIRV', required: required, static: static, dirs: vulkan_lib_dirs)\n"
+    "glslang_deps += spirv\n"
+    "glslang_deps += cxx.find_library('glslang', required: required, static: static)\n"
+)
+patched_placebo_meson = prepare.enable_android_glslang_library_search(placebo_meson)
+assert "cxx.find_library('glslang', required: required, static: static)" not in patched_placebo_meson, (
+    "Android glslang lookup must not rely on compiler-default library directories"
+)
+assert "cxx.find_library('glslang', required: required, static: static, dirs: vulkan_lib_dirs)" in patched_placebo_meson, (
+    "Android glslang lookup must use the same Vulkan SDK library directory as SPIRV"
+)
+assert "dirs: vulkan_lib_dirs" in patched_placebo_meson.splitlines()[0], (
+    "the existing SPIRV Vulkan SDK lookup must remain intact"
+)
+for bad_placebo_meson in (
+    "no glslang lookup here\n",
+    placebo_meson + placebo_meson.splitlines()[-1] + "\n",
+    placebo_meson.replace(", dirs: vulkan_lib_dirs", ""),
+):
+    try:
+        prepare.enable_android_glslang_library_search(bad_placebo_meson)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unexpected libplacebo compiler lookup changes must fail closed")
+
 build = BUILD.read_text(encoding="utf-8")
+prepare_call = 'python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"'
+assert prepare_call in build, "the native build must patch pinned libplacebo before compilation"
+assert build.index("./include/ci.sh install") < build.index(prepare_call) < build.index("./include/ci.sh build"), (
+    "the libplacebo search-path correction must run after dependency checkout and before native builds"
+)
 required_fragments = (
     "1062752a891c95b2bfeed9e356562d88f9df84ac",
     "-DCMAKE_TOOLCHAIN_FILE=",
@@ -105,11 +141,54 @@ for marker in (
     "BuildConfig.MPV_HAS_MPVFLOW",
     "BuildConfig.MPV_SUPPORTS_VULKAN",
     "!decoderPreferences.rifeFrameInterpolation.get()",
+    "!MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.FRAME_INTERPOLATION)",
     "PlaybackEngineMode.NATIVE",
 ):
     assert marker in flow_selector, f"Flow Vulkan selection must retain guard {marker!r}"
 for marker in ('vo = "gpu-next"', 'gpuApi = "vulkan"', 'gpuContext = "androidvk"'):
     assert marker in view_source, f"MPV Flow Vulkan backend must configure {marker!r}"
+
+flow_hwdec = init_options.split("val hardwareDecodeMode =", 1)[1].split(
+    "val hardwareDecodeOptionResult", 1
+)[0]
+assert "RendererBackendPolicy.gpuFlowHwdecMode(" in flow_hwdec
+assert "BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN" in flow_hwdec, (
+    "MPV Flow must not request a direct MediaCodec/Vulkan path absent from the APK flavor"
+)
+standard_flavor = APP_BUILD.read_text(encoding="utf-8").split('create("standard") {', 1)[1].split(
+    'create("noVulkan") {', 1
+)[0]
+assert 'MPV_SUPPORTS_MEDIACODEC_VULKAN", "false"' in standard_flavor, (
+    "the standard ARM64 Flow build must keep its direct-import capability accurately declared"
+)
+mpv_conf_source = MPV_CONF_POLICY.read_text(encoding="utf-8")
+frame_interpolation_ownership = mpv_conf_source.split("val FRAME_INTERPOLATION =", 1)[1].split(
+    "\n    )", 1
+)[0]
+for option in ("gpu-api", "gpu-context"):
+    assert f'"{option}"' in frame_interpolation_ownership, (
+        f"mpv.conf-owned {option} must disable MPV Flow rather than select an unsupported backend"
+    )
+policy_source = POLICY.read_text(encoding="utf-8")
+flow_hwdec_policy = policy_source.split("fun gpuFlowHwdecMode(", 1)[1].split(
+    "fun preferredHwdecMode(", 1
+)[0]
+for marker in (
+    "buildSupportsMediaCodecVulkan: Boolean",
+    "usesVulkan = true",
+    "buildSupportsMediaCodecVulkan = buildSupportsMediaCodecVulkan",
+    "): String = preferredHwdecMode(",
+):
+    assert marker in flow_hwdec_policy, f"Flow hwdec policy must honor its Vulkan capability: missing {marker!r}"
+policy_tests = POLICY_TEST.read_text(encoding="utf-8")
+for marker in (
+    '"mediacodec,mediacodec-copy,no"',
+    '"mediacodec-copy,no"',
+    '"no"',
+    "buildSupportsMediaCodecVulkan = true",
+    "buildSupportsMediaCodecVulkan = false",
+):
+    assert marker in policy_tests, f"Flow hwdec tests must cover direct, copy and disabled modes: missing {marker!r}"
 
 start_marker = "<<'PY'\n"
 start = build.index(start_marker) + len(start_marker)

@@ -15,8 +15,15 @@ class RendererBackendPolicyTest {
   }
 
   @Test
-  fun gpuFlowDoesNotRequestMediaCodecCopyMode() {
-    assertEquals("mediacodec,no", RendererBackendPolicy.gpuFlowHwdecMode(true))
-    assertEquals("no", RendererBackendPolicy.gpuFlowHwdecMode(false))
+  fun gpuFlowUsesDirectMediaCodecOnlyWhenTheBuildSupportsVulkanImport() {
+    assertEquals(
+      "mediacodec,mediacodec-copy,no",
+      RendererBackendPolicy.gpuFlowHwdecMode(true, buildSupportsMediaCodecVulkan = true),
+    )
+    assertEquals(
+      "mediacodec-copy,no",
+      RendererBackendPolicy.gpuFlowHwdecMode(true, buildSupportsMediaCodecVulkan = false),
+    )
+    assertEquals("no", RendererBackendPolicy.gpuFlowHwdecMode(false, buildSupportsMediaCodecVulkan = false))
   }
 }

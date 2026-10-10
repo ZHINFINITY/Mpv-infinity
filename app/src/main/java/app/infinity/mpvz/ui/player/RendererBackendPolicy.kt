@@ -31,8 +31,14 @@ internal object RendererBackendPolicy {
     gpuApi: String,
   ): Boolean = renderer == "gpu-next" && gpuApi == "vulkan"
 
-  fun gpuFlowHwdecMode(hardwareDecodingEnabled: Boolean): String =
-    if (hardwareDecodingEnabled) "mediacodec,no" else "no"
+  fun gpuFlowHwdecMode(
+    hardwareDecodingEnabled: Boolean,
+    buildSupportsMediaCodecVulkan: Boolean,
+  ): String = preferredHwdecMode(
+    hardwareDecodingEnabled = hardwareDecodingEnabled,
+    usesVulkan = true,
+    buildSupportsMediaCodecVulkan = buildSupportsMediaCodecVulkan,
+  )
 
   fun preferredHwdecMode(
     hardwareDecodingEnabled: Boolean,

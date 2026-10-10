@@ -181,7 +181,7 @@ cd "$BUILDSCRIPTS"
 ./include/ci.sh install
 
 cd "$ROOT"
-python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv"
+python3 "$ROOT/scripts/prepare-mpvflow.py" --mpv-dir "$BUILDSCRIPTS/deps/mpv" --libplacebo-dir "$BUILDSCRIPTS/deps/libplacebo"
 
 cd "$BUILDSCRIPTS"
 ./include/ci.sh build

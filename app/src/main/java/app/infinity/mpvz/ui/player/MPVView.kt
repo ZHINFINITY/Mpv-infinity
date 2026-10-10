@@ -315,16 +315,21 @@ class MPVView(
       )
     }
 
-    // Fongmi can map direct MediaCodec frames into Vulkan; other Vulkan builds start with copy mode.
+    // Prefer direct MediaCodec AHardwareBuffer import when this APK supports it; other Vulkan
+    // builds retain hardware decoding through MediaCodec-copy and upload the source frame to Vulkan.
     if (rifeFrameInterpolationEnabled) {
       // RIFE consumes software-readable RGB frames and does not use codec MV side data.
       val softwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", "no")
       Log.i(TAG, "RIFE_OPTIONS hwdec_no_rc=$softwareDecodeOptionResult model_dir=$rifeModelDirectory")
     } else if (mpvFlowFrameInterpolationEnabled) {
-      // GPU-next/OpenGL ES imports MediaCodec AHardwareBuffers directly. Do not request
-      // mediacodec-copy: Flow never uses the CPU filter or downloads synthesized pixels.
+      // Prefer direct MediaCodec/Vulkan frames when supported. The standard flavor uses
+      // mediacodec-copy so hardware decoding remains enabled when direct Vulkan import is absent;
+      // Flow still performs interpolation on Vulkan and never reads synthesized output back.
       val hardwareDecodeMode =
-        RendererBackendPolicy.gpuFlowHwdecMode(decoderPreferences.tryHWDecoding.get())
+        RendererBackendPolicy.gpuFlowHwdecMode(
+          hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
+          buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
+        )
       val hardwareDecodeOptionResult = PlaybackSession.setOptionString("hwdec", hardwareDecodeMode)
       val hardwareDecodeCodecsOptionResult =
         if (!MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec-codecs")) {
@@ -441,7 +446,10 @@ class MPVView(
         }
       val interpolationHwdecDiagnostic =
         if (mpvFlowFrameInterpolationEnabled) {
-          RendererBackendPolicy.gpuFlowHwdecMode(decoderPreferences.tryHWDecoding.get())
+          RendererBackendPolicy.gpuFlowHwdecMode(
+            hardwareDecodingEnabled = decoderPreferences.tryHWDecoding.get(),
+            buildSupportsMediaCodecVulkan = BuildConfig.MPV_SUPPORTS_MEDIACODEC_VULKAN,
+          )
         } else {
           "renderer_default"
         }

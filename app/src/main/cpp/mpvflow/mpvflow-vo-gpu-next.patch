@@ -173,7 +173,7 @@ index bd3d1aa1ec..e5301791b7 100644
 +    p->flow_init_logged = true;
 +    MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=renderer_init state=initialized backend=vulkan-spirv "
 +            "target_fps=%d reason=ready status=0 max_dimension=%d search_radius=%d "
-+            "cpu_filter=no cpu_readback=no\n",
++            "cpu_filter=no synthesized_output_cpu_readback=no\n",
 +            p->next_opts->mpvflow_target_fps, p->next_opts->mpvflow_max_dimension,
 +            config.search_radius);
 +}
@@ -433,7 +433,7 @@ index bd3d1aa1ec..e5301791b7 100644
 +                        if (!p->flow_active_logged) {
 +                            MP_INFO(vo, "MPVFLOW_DIAGNOSTIC event=output state=synthesized backend=vulkan-spirv "
 +                                    "target_fps=%d reason=motion_pair input_path=%s source=%dx%d processing=%dx%d "
-+                                    "motion=yes cpu_filter=no cpu_readback=no\n",
++                                    "motion=yes cpu_filter=no synthesized_output_cpu_readback=no\n",
 +                                    p->next_opts->mpvflow_target_fps,
 +                                    fp0->hwdec ? "direct-hw-surface" : "software-upload",
 +                                    fp0->flow_source_w, fp0->flow_source_h,
